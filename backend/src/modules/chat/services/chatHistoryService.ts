@@ -601,11 +601,14 @@ export class ChatHistoryService {
               })),
             }
           : undefined,
-        retrievalInfo: metadata.retrieval
-          ? this.retrievalInfoPresenter.present(metadata.retrieval as RetrievalExecutionDiagnostics, {
-              execution: toRetrievalExecutionPath(route),
-            })
-          : undefined,
+        retrievalInfo: metadata.retrievalTrace?.summary
+          ?? (
+            metadata.retrieval
+              ? this.retrievalInfoPresenter.present(metadata.retrieval as RetrievalExecutionDiagnostics, {
+                  execution: toRetrievalExecutionPath(route),
+                })
+              : undefined
+          ),
         retrievalTrace: metadata.retrievalTrace,
         errorMessage: metadata.errorMessage ?? null,
         route,

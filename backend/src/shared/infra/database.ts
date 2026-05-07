@@ -30,6 +30,25 @@ export class Database {
     return result.rows;
   }
 
+  async queryOptional<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T | null> {
+    const rows = await this.query<T>(text, params);
+    return rows[0] ?? null;
+  }
+
+  async queryOne<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T> {
+    const row = await this.queryOptional<T>(text, params);
+    if (!row) {
+      throw new Error("Expected query to return one row");
+    }
+
+    return row;
+  }
+
+  async execute(text: string, params: unknown[] = []): Promise<number> {
+    const result = await this.pool.query(text, params);
+    return result.rowCount ?? 0;
+  }
+
   async withTransaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
 

@@ -24,7 +24,7 @@ import type { AbuseControlService } from "../../modules/security/services/abuseC
 import type { AuditService } from "../../modules/audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
-import type { SkillCatalogEntryDefinition } from "../../modules/skills/public.js";
+import type { SkillCatalogEntryDefinition, SkillDefinition } from "../../modules/skills/public.js";
 
 export interface ApplicationDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
@@ -97,6 +97,7 @@ export interface ApplicationExtensionRegistry {
   contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
   answerFeedbackHistoryProviderRegistration?: ApplicationAnswerFeedbackHistoryProviderRegistration;
   skillCatalogEntries: SkillCatalogEntryDefinition[];
+  skillDefinitions: SkillDefinition[];
 }
 
 export interface ApplicationModuleRegistrationContext {
@@ -117,6 +118,7 @@ export interface ApplicationModuleRegistrationContext {
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillCatalogEntry(entry: SkillCatalogEntryDefinition): void;
+  registerSkillDefinition(definition: SkillDefinition): void;
 }
 
 export interface ApplicationModule {
@@ -136,6 +138,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   routeMounts: [],
   accountCreatedHooks: [],
   skillCatalogEntries: [],
+  skillDefinitions: [],
 });
 
 const createRegistrationContext = (registry: ApplicationExtensionRegistry): ApplicationModuleRegistrationContext => ({
@@ -189,6 +192,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerSkillCatalogEntry(entry) {
     registry.skillCatalogEntries.push(entry);
+  },
+  registerSkillDefinition(definition) {
+    registry.skillDefinitions.push(definition);
   },
 });
 

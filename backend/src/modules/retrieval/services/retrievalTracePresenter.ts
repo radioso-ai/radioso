@@ -57,6 +57,39 @@ const sanitizeStage = (stage: RetrievalTraceStage): RetrievalTraceStage => ({
   outputs: stage.outputs ? (summarizeValue(stage.outputs) as Record<string, unknown>) : undefined,
 });
 
+const toSupportStatus = (
+  validation: AnswerOutcomeInput["validation"] | undefined,
+): "supported" | "unsupported" | "not_checked" => {
+  if (!validation?.ran) {
+    return "not_checked";
+  }
+
+  return (validation.supportedSegmentCount ?? 0) > 0 && (validation.substantiveUnsupportedSegmentCount ?? 0) === 0
+    ? "supported"
+    : "unsupported";
+};
+
+const withAnswerSupportDiagnostic = (
+  summary: RetrievalTraceSummary,
+  outcome: AnswerOutcomeInput,
+): RetrievalTraceSummary => {
+  if (!summary.skillDiagnostic?.evidence) {
+    return summary;
+  }
+
+  return {
+    ...summary,
+    skillDiagnostic: {
+      ...summary.skillDiagnostic,
+      evidence: {
+        ...summary.skillDiagnostic.evidence,
+        supportStatus: toSupportStatus(outcome.validation),
+        groundingOutcome: outcome.answerOutcome,
+      },
+    },
+  };
+};
+
 export class RetrievalTracePresenter {
   present(input: RetrievalTrace, summary: RetrievalTraceSummary): RetrievalTrace {
     return {
@@ -122,7 +155,7 @@ export class RetrievalTracePresenter {
           ? [...baseTrace.links, { fromStageId: "diagnostics", toStageId: "answer", kind: "sequence" }]
           : baseTrace.links,
       },
-      input.summary,
+      withAnswerSupportDiagnostic(input.summary, input.outcome),
     );
   }
 }

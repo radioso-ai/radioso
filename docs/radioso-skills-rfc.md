@@ -17,7 +17,7 @@ Today, a caller has to know which Radioso surface to use before it makes a reque
 
 The skills model should make that contract explicit.
 
-For example, an SDK or MCP client should be able to discover that a workspace supports `retrieval.answer`, see that it requires document-read capability, understand that the stable execution path is still the retrieval answer endpoint, and receive diagnostics that explain which retrieval strategy ran.
+For example, an SDK or MCP client should be able to discover that a workspace supports `retrieval.answer`, see that it requires document-read capability, understand that the stable execution path is still the retrieval answer endpoint, and receive diagnostics that explain which retrieval shape and step overrides ran.
 
 The practical value is not a generic agent layer. The practical value is that customers can build against a workspace that says what it can do, enforces what it is allowed to do, and explains what happened after each grounded action.
 
@@ -47,10 +47,11 @@ Use these terms consistently.
 | Skill | Product-facing unit of work that a caller can discover or invoke | `retrieval.answer`, `retrieval.search`, `human_contact.request` |
 | Capability | Internal permission or runtime primitive used to allow, deny, or compose work | document read, retrieval answer, email delivery |
 | Intent | A routing or classification signal derived from input | definition lookup, contact human, unsupported social turn |
-| Strategy | The execution plan used inside a skill | lexical-heavy lookup, date-aware reranking, broad semantic summary |
+| Shape | A named partial specialization of a skill definition | definition lookup, event/date lookup, broad semantic summary |
+| Step | A typed data-only clause inside a skill definition | candidate retrieval, context selection, delivery dispatch |
 | Agent | One possible caller or orchestrator of skills | assistant chat, MCP client, SDK integration |
 
-In practice, skills are the public product model. Capabilities are the internal control model. Intents help choose a path. Strategies describe how a chosen skill runs.
+In practice, skills are the public product model. Capabilities are the internal control model. Intents help choose a path. Shapes and steps describe how a chosen skill run is resolved.
 
 Do not use intent as the durable product abstraction. Intent is useful, but it is too close to classification. Radioso needs a model that also covers deterministic work and explicit integrations.
 
@@ -81,27 +82,29 @@ Skills may execute in different modes.
 
 Deterministic skills run a known action once selected. Examples include sending a password reset email, submitting a human contact request, or deleting a document after authorization.
 
-Probabilistic skills may use LLMs, classifiers, ranking, or reranking as part of selection or execution. Retrieval answer is the main example. It may classify the query shape, rewrite the query, choose a retrieval strategy, rerank candidates, and synthesize a grounded response.
+Probabilistic skills may use LLMs, classifiers, ranking, or reranking as part of selection or execution. Retrieval answer is the main example. It may classify the query shape, rewrite the query, resolve a retrieval shape, rerank candidates, and synthesize a grounded response.
 
 The system should not hide probabilistic behavior. A skill execution should expose enough metadata for operators and developers to inspect what happened.
 
 ## Retrieval As The Pilot Skill
 
-Retrieval should be the first strategy-aware skill because it already has multiple execution shapes.
+Retrieval should be the first shape-aware skill because it already has multiple execution shapes.
 
 The current product often treats grounded questions as one broad retrieval problem. In practice, query shape matters.
 
-Example strategies for `retrieval.answer`:
+Example shapes for `retrieval.answer`:
 
-| Strategy | Best for | Likely behavior |
+| Shape | Best for | Likely behavior |
 |---|---|---|
-| `definition_lookup` | "What is X?" or acronym and policy term questions | lexical-heavy search, semantic assist, minimal or no reranking unless ambiguous |
-| `event_date_lookup` | "When is the next concert in my city?" | keyword and entity boosting, date signal extraction, reranking, stricter evidence checks |
-| `policy_answer` | procedural, compliance, or support questions | hybrid search, support validation, citations, conservative answer synthesis |
-| `exploratory_summary` | broad overview or comparison requests | broader candidate pool, diversity, synthesis across sources |
-| `follow_up_grounding` | conversational follow-ups | context-aware rewrite before search, then strategy selection |
+| `definition_lookup` | entity, term, acronym, or concept identification | lexical-heavy search, semantic assist, minimal or no reranking unless ambiguous |
+| `event_date_lookup` | event, schedule, deadline, or date/time answers | keyword and entity boosting, date signal extraction, reranking, stricter evidence checks |
+| `policy_answer` | procedural, compliance, or support answers | hybrid search, support validation, citations, conservative answer synthesis |
+| `exploratory_summary` | broad synthesis, overview, or comparison answers | broader candidate pool, diversity, synthesis across sources |
+| `follow_up_grounding` | conversational follow-ups | context-aware rewrite before search, then shape resolution |
 
-These strategies should not become user-facing promises until the contracts and diagnostics are ready. They are an internal execution model first.
+These shapes should not become user-facing promises until the contracts and diagnostics are ready. They are an internal execution model first.
+
+In the first shape-aware slice, `retrieval.answer` selects one of these shapes from language-neutral structured query interpretation metadata and existing continuity metadata, then resolves the skill steps by merging default step clauses with the selected shape's partial overrides. The selected shape and safe resolved-step summary are exposed through the existing `retrievalTrace` response and the activity/debug graph. There is no new generic skill execution endpoint and no separate trace store.
 
 ## Skill Diagnostics
 
@@ -110,7 +113,8 @@ Every skill execution should be inspectable.
 At minimum, diagnostics should include:
 
 - selected skill
-- selected strategy, when applicable
+- selected shape, when applicable
+- resolved step overrides, when applicable
 - whether selection was deterministic or probabilistic
 - selection confidence or reason, when available
 - capability checks applied
@@ -120,6 +124,8 @@ At minimum, diagnostics should include:
 - caller surface, such as assistant, retrieval API, SDK, or MCP
 
 Diagnostics are part of the product value. They keep expansion from becoming opaque.
+
+For retrieval answer, the operator-facing diagnostic surface is the existing retrieval trace graph. New runs include a `shape_selection` stage and summary fields such as `shapeName`, `queryShape`, `resolvedSteps`, and `skillDiagnostic`. The same trace is stored in the existing audit-backed chat or search history metadata when those surfaces already persist retrieval debug data.
 
 ## Skill Catalog
 
@@ -140,14 +146,15 @@ A catalog entry can describe:
 - supported caller surfaces
 - required capabilities
 - execution class, such as interactive or deferred
-- whether strategy diagnostics are available
+- whether shape diagnostics are available
+- supported steps and shapes, when a skill definition exists
 - related stable endpoints
 
 The catalog does not add generic execution. It describes existing public contracts before a future execution surface exists.
 
 The catalog is useful only if it describes real callable work. It should not become a static taxonomy page disconnected from the API, SDK, or MCP server.
 
-A first useful catalog entry for `retrieval.answer` should identify the related stable endpoint, the required capability, the supported caller surfaces, and whether strategy diagnostics are available. It should also make clear that callers do not need to switch to a new execution endpoint to benefit from the skills model.
+A first useful catalog entry for `retrieval.answer` should identify the related stable endpoint, the required capability, the supported caller surfaces, and whether shape diagnostics are available. It should also make clear that callers do not need to switch to a new execution endpoint to benefit from the skills model.
 
 In practice, the catalog should help a caller answer three questions:
 
@@ -171,6 +178,16 @@ The first catalog includes these built-in entries:
 
 These entries are discovery metadata. Callers still use the listed existing contracts to perform work.
 
+When the Enterprise backend module is installed, the catalog can also include `human_contact.request`. That skill is owned by the contact module and describes the existing human-contact mechanics: availability check, trigger evaluation, draft build, request submit, delivery dispatch, and audit record. The OSS catalog does not advertise it unless the EE module registers the definition.
+
+## Skill Definitions
+
+A skill definition is data, not an executor. It contains stable catalog metadata, typed step definitions, optional named shapes, and partial step overrides. A resolver combines the default step clauses with the selected shape's overrides and returns a resolved run that execution services can inspect.
+
+For `retrieval.answer`, the retrieval pipeline still owns query interpretation, candidate retrieval, context selection, prompt assembly, and diagnostics. The skill definition only describes those steps and the shape-specific clauses. For example, `definition_lookup` overrides the `context_selection` step so rerank is disabled and lexical bias is preferred; the context-selection stage reads that resolved clause instead of checking the shape name directly.
+
+For `human_contact.request`, the EE contact service still owns settings, draft creation, submit, delivery, and audit behavior. The skill definition makes that work discoverable and diagnosable without adding a generic `POST /skills/{name}/execute` surface.
+
 ## Diagnostic Definition
 
 The shared diagnostic definition can represent deterministic and probabilistic skill execution.
@@ -178,7 +195,7 @@ The shared diagnostic definition can represent deterministic and probabilistic s
 Core fields include:
 
 - `skillName`
-- `strategy`
+- `shapeName`
 - `selectionMode`
 - `selectionReason`
 - `selectionConfidence`
@@ -190,9 +207,9 @@ Core fields include:
 - `error`
 - `evidence`
 
-Retrieval-specific evidence metadata can include query shape, retrieval strategy, candidate source summary, ranking choices, evidence status, support status, and grounding outcome.
+Retrieval-specific evidence metadata can include query shape, retrieval shape, resolved-step summaries, candidate source summary, ranking choices, evidence status, support status, and grounding outcome.
 
-The catalog exposes whether diagnostics are defined and whether a skill is strategy-aware. Later execution features can emit concrete diagnostic records without changing the vocabulary again.
+The catalog exposes whether diagnostics are defined and whether a skill is shape-aware. Retrieval answer now emits concrete diagnostic records through its existing trace contract. Later execution features can reuse the vocabulary without changing the trace surface again.
 
 ## Generic Execution
 
@@ -204,13 +221,13 @@ POST /api/v1/skills/{skillName}/execute
 
 Do not start there.
 
-Generic execution is only useful after Radioso has clear skill definitions, capability checks, diagnostics, and at least one proven strategy-aware skill. If added too early, it can blur the assistant and retrieval boundary that the current architecture is trying to clarify.
+Generic execution is only useful after Radioso has clear skill definitions, capability checks, diagnostics, and at least one proven shape-aware skill. If added too early, it can blur the assistant and retrieval boundary that the current architecture is trying to clarify.
 
 Before adding generic execution, Radioso should have evidence that the catalog and diagnostics are already useful through existing surfaces.
 
 Reasonable gates include:
 
-- at least one retrieval skill exposes strategy diagnostics through an existing public contract
+- at least one retrieval skill exposes shape diagnostics through an existing public contract
 - at least one deterministic skill is represented in the catalog without special-case vocabulary
 - at least two caller surfaces, such as SDK and MCP, can consume skill metadata
 - capability checks are described consistently between the catalog and runtime enforcement
@@ -239,7 +256,9 @@ Second, inventory existing proto-skills and identify which stable endpoint or mo
 
 Third, add a read-only skill catalog that describes current supported skills without changing execution.
 
-Fourth, make retrieval answer the first strategy-aware skill. Add strategy selection and diagnostics behind the existing retrieval answer contract where possible. This should be the first visible product slice, not only an internal refactor.
+Fourth, make retrieval answer the first shape-aware skill. Add shape resolution and diagnostics behind the existing retrieval answer contract where possible. This should be the first visible product slice, not only an internal refactor.
+
+This fourth step is intentionally narrow. It adds shape resolution for `retrieval.answer`, emits shape tags in `retrieval.pipeline.completed` telemetry, and adds shape and resolved-step metadata to the existing trace graph. It does not make shapes a caller-selected API parameter.
 
 Fifth, let assistant chat and MCP surface skill metadata without forcing all execution through one generic path.
 

@@ -81,7 +81,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
   constructor(private readonly database: Database) {}
 
   async findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null> {
-    const [row] = await this.database.query<RetrievalSettingsRow>(
+    const row = await this.database.queryOptional<RetrievalSettingsRow>(
       `SELECT workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, citation_display_enabled, attribute_controls, custom_instruction, created_at, updated_at
        FROM retrieval_settings
        WHERE workspace_id = $1`,
@@ -92,7 +92,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
   }
 
   async upsert(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
-    const [row] = await this.database.query<RetrievalSettingsRow>(
+    const row = await this.database.queryOne<RetrievalSettingsRow>(
       `INSERT INTO retrieval_settings (
          workspace_id,
          query_rewrite_enabled,

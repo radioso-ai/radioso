@@ -62,9 +62,35 @@ describe("retrieval answer contract", () => {
             path: "retrieval_answer",
             retrievalInvoked: true,
           },
+          shapeName: expect.any(String),
+          queryShape: expect.any(String),
+          resolvedSteps: expect.any(Array),
+          skillDiagnostic: expect.objectContaining({
+            skillName: "retrieval.answer",
+            shapeName: expect.any(String),
+            selectionMode: expect.any(String),
+            callerSurface: "retrieval_api",
+            evidence: expect.objectContaining({
+              supportStatus: "supported",
+            }),
+          }),
         }),
       }),
     });
+    expect(response.body.retrievalTrace.stages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stageId: "shape_selection",
+          kind: "shape_selection",
+          status: "applied",
+          outputs: expect.objectContaining({
+            shapeName: expect.any(String),
+            queryShape: expect.any(String),
+            resolvedSteps: expect.any(Array),
+          }),
+        }),
+      ]),
+    );
     expect(response.body).not.toHaveProperty("conversationId");
   });
 

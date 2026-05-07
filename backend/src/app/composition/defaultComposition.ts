@@ -83,13 +83,16 @@ export const createDefaultApplicationComposition = (options: {
     accountCreatedHooks: registry.accountCreatedHooks,
     documentJobDispatcher: registry.documentJobDispatcher,
     documentJobConsumer: registry.documentJobConsumer,
-    websiteEmbedIntegration: registry.websiteEmbedIntegration,
-    usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
-    chatActionProviderRegistration: registry.chatActionProviderRegistration,
-    contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
-    answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,
-    skillCatalogRegistry: createDefaultSkillCatalogRegistry(registry.skillCatalogEntries),
-    lifecycle: coordinator,
+  websiteEmbedIntegration: registry.websiteEmbedIntegration,
+  usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
+  chatActionProviderRegistration: registry.chatActionProviderRegistration,
+  contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
+  answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,
+  skillCatalogRegistry: createDefaultSkillCatalogRegistry([
+    ...registry.skillCatalogEntries,
+    ...registry.skillDefinitions,
+  ]),
+  lifecycle: coordinator,
     modules: coordinator.registeredModules,
   };
 };

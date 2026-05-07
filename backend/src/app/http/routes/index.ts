@@ -14,6 +14,7 @@ import { createMcpContextRoutes } from "./mcpContextRoutes.js";
 import { createRetrievalRoutes } from "./retrievalRoutes.js";
 import { createConnectorRoutes } from "../../../modules/connectors/http/connectorRoutes.js";
 import { createPublicChatRoutes } from "./publicChatRoutes.js";
+import { createSkillRoutes } from "./skillRoutes.js";
 
 export const createApiRouter = (dependencies: AppDependencies): Router => {
   const router = Router();
@@ -39,6 +40,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/assistant", createAssistantRoutes(dependencies));
   router.use("/api/v1/history", createHistoryRoutes(dependencies));
   router.use("/api/v1/retrieval", createRetrievalRoutes(dependencies));
+  router.use("/api/v1/skills", createSkillRoutes(dependencies));
   router.use("/api/v1/settings", createSettingsRoutes(dependencies));
   router.use("/api/v1/connectors", createConnectorRoutes(dependencies));
   router.use("/api/v1/document", createDocumentRoutes(dependencies));

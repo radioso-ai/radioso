@@ -68,6 +68,10 @@ import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capability
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import { NoopChatActionProvider } from "../../src/modules/chat/services/chatActionProvider.js";
 import { NoopContactHistoryProvider } from "../../src/modules/chat/services/contactHistoryProvider.js";
+import {
+  createDefaultSkillCatalogRegistry,
+  SkillCatalogService,
+} from "../../src/modules/skills/public.js";
 import type { ApplicationRouteMount } from "../../src/app/composition/applicationModule.js";
 import type { AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import {
@@ -579,6 +583,11 @@ export const createTestDependencies = (overrides: {
     chatGateway,
     usageLimitPolicy,
   });
+  const capabilityPolicy = new DefaultAllowCapabilityPolicy();
+  const skillCatalogService = new SkillCatalogService({
+    capabilityPolicy,
+    registry: createDefaultSkillCatalogRegistry(),
+  });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
     retrievalSettingsService,
@@ -592,7 +601,7 @@ export const createTestDependencies = (overrides: {
     telemetryService,
     incidentReportingService: persistentIncidentReportingService,
     productAnalyticsService,
-    capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    capabilityPolicy,
     usageLimitPolicy,
     chatActionProvider: new NoopChatActionProvider(),
     contactHistoryProvider: new NoopContactHistoryProvider(),
@@ -636,6 +645,7 @@ export const createTestDependencies = (overrides: {
     retrievalSearchService,
     retrievalAnswerService,
     platformSettingsService,
+    skillCatalogService,
     accountRepository,
     userRepository,
     workspaceRepository,

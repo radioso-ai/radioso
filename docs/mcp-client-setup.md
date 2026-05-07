@@ -36,6 +36,19 @@ The retrieval answer endpoint accepts optional `conversationContext` hints for r
 
 For debugging, MCP grounded-answer calls are marked in retrieval diagnostics as `mcp_capability` executions. This keeps them separate from direct retrieval API calls and assistant-backed chat turns.
 
+## Skills Catalog
+
+Radioso also exposes a read-only skills catalog through the main API:
+
+```http
+GET /api/v1/skills
+GET /api/v1/skills/{skillName}
+```
+
+MCP clients can use the catalog to understand the shared skill vocabulary without changing how tools execute. For example, `retrieval.answer` points to the retrieval answer API and the MCP `answer_grounded` tool, while `mcp.describe_capabilities` points to the MCP capability discovery tool.
+
+The catalog does not force MCP traffic through assistant chat. MCP tools remain retrieval-first and document-capability-oriented unless an integration explicitly chooses the assistant chat API.
+
 ### macOS GUI Launches
 
 If you normally open Cursor from the Dock, Spotlight, Raycast, or a desktop launcher, use the macOS helper instead:

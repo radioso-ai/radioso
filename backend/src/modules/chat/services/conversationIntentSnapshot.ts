@@ -2,7 +2,7 @@ import type { MessageRecord } from "../../../db/repositories/messageRepository.j
 import type {
   RewriteContinuityState,
   StructuredRewriteResult,
-} from "../../retrieval/domain/retrievalPipelineTypes.js";
+} from "../../retrieval/public.js";
 
 interface ConversationIntentTurn {
   role: MessageRecord["role"];

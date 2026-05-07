@@ -9,9 +9,13 @@ import type {
 } from "../../../db/repositories/messageRepository.js";
 import type { HistoryItemsRepositoryPort } from "../../../db/repositories/historyItemsRepository.js";
 import type { DocumentSearchHistoryEntry } from "../../documents/services/documentSearchHistoryService.js";
-import type { RetrievalExecutionDiagnostics, RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
-import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
+import {
+  RetrievalInfoPresenter,
+  type RetrievalExecutionDiagnostics,
+  type RetrievalInfo,
+  type RetrievalTrace,
+} from "../../retrieval/public.js";
 import type { AssistantTurnOutcome, HiddenSupportEvidence, ValidationDisposition } from "./answerSupportValidationTypes.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";

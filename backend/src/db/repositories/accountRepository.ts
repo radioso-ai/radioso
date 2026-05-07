@@ -25,7 +25,7 @@ export class AccountRepository implements AccountRepositoryPort {
   constructor(private readonly database: Database) {}
 
   async create(params: { name: string; email: string; passwordHash: string }): Promise<AccountRecord> {
-    const [row] = await this.database.query<AccountRow>(
+    const row = await this.database.queryOne<AccountRow>(
       `INSERT INTO accounts (id, name, email, password_hash)
        VALUES ($1, $2, $3, $4)
        RETURNING id, name, email, password_hash, created_at, updated_at`,
@@ -36,7 +36,7 @@ export class AccountRepository implements AccountRepositoryPort {
   }
 
   async findByEmail(email: string): Promise<AccountRecord | null> {
-    const [row] = await this.database.query<AccountRow>(
+    const row = await this.database.queryOptional<AccountRow>(
       `SELECT id, name, email, password_hash, created_at, updated_at
        FROM accounts
        WHERE email = $1`,
@@ -47,7 +47,7 @@ export class AccountRepository implements AccountRepositoryPort {
   }
 
   async findById(id: string): Promise<AccountRecord | null> {
-    const [row] = await this.database.query<AccountRow>(
+    const row = await this.database.queryOptional<AccountRow>(
       `SELECT id, name, email, password_hash, created_at, updated_at
        FROM accounts
        WHERE id = $1`,
@@ -58,7 +58,7 @@ export class AccountRepository implements AccountRepositoryPort {
   }
 
   async updateName(id: string, name: string): Promise<AccountRecord> {
-    const [row] = await this.database.query<AccountRow>(
+    const row = await this.database.queryOne<AccountRow>(
       `UPDATE accounts
        SET name = $2,
            updated_at = NOW()
@@ -71,13 +71,6 @@ export class AccountRepository implements AccountRepositoryPort {
   }
 
   async deleteById(id: string): Promise<boolean> {
-    const rows = await this.database.query<{ id: string }>(
-      `DELETE FROM accounts
-       WHERE id = $1
-       RETURNING id`,
-      [id],
-    );
-
-    return rows.length > 0;
+    return (await this.database.execute("DELETE FROM accounts WHERE id = $1", [id])) > 0;
   }
 }

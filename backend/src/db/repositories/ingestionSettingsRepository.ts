@@ -31,7 +31,7 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
   constructor(private readonly database: Database) {}
 
   async findByWorkspaceId(workspaceId: string): Promise<IngestionSettingsRecord | null> {
-    const [row] = await this.database.query<IngestionSettingsRow>(
+    const row = await this.database.queryOptional<IngestionSettingsRow>(
       `SELECT workspace_id, chunking_strategy, fixed_window_chunk_size, fixed_window_chunk_overlap,
               structured_min_chunk_size, structured_max_chunk_size, created_at, updated_at
        FROM ingestion_settings
@@ -43,7 +43,7 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
   }
 
   async upsert(workspaceId: string, input: IngestionSettingsInput): Promise<IngestionSettingsRecord> {
-    const [row] = await this.database.query<IngestionSettingsRow>(
+    const row = await this.database.queryOne<IngestionSettingsRow>(
       `INSERT INTO ingestion_settings (
          workspace_id,
          chunking_strategy,

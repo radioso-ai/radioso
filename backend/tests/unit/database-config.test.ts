@@ -3,6 +3,16 @@ import { describe, expect, it } from "vitest";
 import { getEnv } from "../../src/app/config/env.js";
 import { Database } from "../../src/shared/infra/database.js";
 
+const stubPoolQuery = (database: Database, rows: unknown[], rowCount: number): void => {
+  database.pool.query = (async () => ({
+    rows,
+    rowCount,
+    command: "SELECT",
+    oid: 0,
+    fields: [],
+  })) as unknown as typeof database.pool.query;
+};
+
 describe("database configuration", () => {
   it("parses explicit database pool and timeout controls", () => {
     const env = getEnv({
@@ -59,5 +69,31 @@ describe("database configuration", () => {
     expect(database.pool.options.application_name).toBe("radioso-test");
 
     return database.close();
+  });
+
+  it("returns null for optional single-row queries with no rows", async () => {
+    const database = new Database("postgres://test:test@localhost:5432/test");
+    stubPoolQuery(database, [], 0);
+
+    await expect(database.queryOptional<{ id: string }>("SELECT id FROM users WHERE id = $1", ["missing"])).resolves.toBeNull();
+    await database.close();
+  });
+
+  it("throws when required single-row queries return no rows", async () => {
+    const database = new Database("postgres://test:test@localhost:5432/test");
+    stubPoolQuery(database, [], 0);
+
+    await expect(database.queryOne<{ id: string }>("SELECT id FROM users WHERE id = $1", ["missing"])).rejects.toThrow(
+      "Expected query to return one row",
+    );
+    await database.close();
+  });
+
+  it("returns affected row count for execute", async () => {
+    const database = new Database("postgres://test:test@localhost:5432/test");
+    stubPoolQuery(database, [], 3);
+
+    await expect(database.execute("DELETE FROM sessions WHERE user_id = $1", ["user-1"])).resolves.toBe(3);
+    await database.close();
   });
 });

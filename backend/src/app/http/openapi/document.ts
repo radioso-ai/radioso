@@ -425,6 +425,7 @@ const GeneralSettingsResponseSchema = registry.register(
     websiteEmbedLauncherLabel: z.string(),
     websiteEmbedLauncherIcon: z.enum(websiteEmbedLauncherIcons),
     websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions),
+    mcpAssistantAccessEnabled: z.boolean(),
   }),
 );
 
@@ -504,6 +505,7 @@ const PlatformChannelsSettingsSectionSchema = registry.register(
     websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions),
     websiteEmbedScriptUrl: z.string().nullable(),
     websiteEmbedSnippet: z.string().nullable(),
+    mcpAssistantAccessEnabled: z.boolean(),
   }),
 );
 
@@ -979,7 +981,7 @@ const AssistantChatRequestSchema = registry.register(
         suggestionSourceMessageId: z.string().uuid().optional(),
       }).optional(),
       sourceContext: z.object({
-        surface: z.enum(["authenticated_chat", "public_chat", "website_embed"]).optional(),
+    surface: z.enum(["authenticated_chat", "public_chat", "website_embed", "mcp"]).optional(),
         sourceOrigin: z.string().trim().max(200).nullable().optional(),
       }).optional(),
       metadataFilter: z.record(z.unknown()).optional(),
@@ -996,7 +998,7 @@ const AssistantChatRequestSchema = registry.register(
         suggestionSourceMessageId: z.string().uuid().optional(),
       }).optional(),
       sourceContext: z.object({
-        surface: z.enum(["authenticated_chat", "public_chat", "website_embed"]).optional(),
+        surface: z.enum(["authenticated_chat", "public_chat", "website_embed", "mcp"]).optional(),
         sourceOrigin: z.string().trim().max(200).nullable().optional(),
       }).optional(),
       metadataFilter: z.record(z.unknown()).optional(),

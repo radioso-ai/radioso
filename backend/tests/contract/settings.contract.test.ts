@@ -51,6 +51,7 @@ describe("settings contract", () => {
         websiteEmbedLauncherPosition: expect.any(String),
         websiteEmbedScriptUrl: null,
         websiteEmbedSnippet: null,
+        mcpAssistantAccessEnabled: false,
       },
     });
     expect(response.body.retrieval).not.toHaveProperty("conversationMode");
@@ -111,6 +112,33 @@ describe("settings contract", () => {
         anonymousChatEnabled: true,
         anonymousRateLimit: 20,
         anonymousChatUrl: expect.any(String),
+        mcpAssistantAccessEnabled: false,
+      },
+    });
+
+    const mcpChannelsUpdate = await request(app)
+      .put("/api/v1/settings")
+      .set(adminSessionHeaders(session))
+      .send({
+        channels: {
+          mcpAssistantAccessEnabled: true,
+        },
+      });
+
+    expect(mcpChannelsUpdate.status).toBe(200);
+    expect(mcpChannelsUpdate.body).toMatchObject({
+      assistant: {
+        assistantName: "Marta",
+        conversationMode: "exploratory",
+      },
+      retrieval: {
+        queryRewriteEnabled: true,
+        vectorTopK: 12,
+      },
+      channels: {
+        anonymousChatEnabled: true,
+        anonymousRateLimit: 20,
+        mcpAssistantAccessEnabled: true,
       },
     });
   });

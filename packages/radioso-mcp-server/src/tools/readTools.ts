@@ -25,6 +25,12 @@ const answerGroundedSchema = z.object({
   metadataFilter: z.record(z.string(), z.unknown()).optional(),
   query: z.string().min(1),
 });
+const chatWithAssistantSchema = z.object({
+  conversationId: z.string().uuid().optional(),
+  message: z.string().min(1),
+  metadataFilter: z.record(z.string(), z.unknown()).optional(),
+  userExpectedLocale: z.string().trim().max(35).optional(),
+});
 
 const capabilityNames = {
   readTools: [
@@ -33,6 +39,7 @@ const capabilityNames = {
     "get_document",
     "search_documents",
     "answer_grounded",
+    "chat_with_assistant",
     "get_retrieval_settings",
   ],
   writeTools: [
@@ -134,6 +141,20 @@ export const createReadToolDefinitions = (): GenericToolDefinition[] => [
     },
     inputSchema: answerGroundedSchema,
     name: "answer_grounded",
+  },
+  {
+    accessMode: "read",
+    description: "Send a non-streaming message through the configured Radioso assistant. This uses assistant behavior and stores the conversation with MCP source attribution when enabled for the workspace.",
+    execute: async (args: unknown, context) => {
+      const parsed = chatWithAssistantSchema.parse(args);
+      const data = await context.adapter.chatWithAssistant(parsed);
+      return {
+        data,
+        summary: `Assistant chat completed for message "${parsed.message}".`,
+      };
+    },
+    inputSchema: chatWithAssistantSchema,
+    name: "chat_with_assistant",
   },
   {
     accessMode: "read",

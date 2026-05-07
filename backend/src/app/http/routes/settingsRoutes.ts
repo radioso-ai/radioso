@@ -76,6 +76,7 @@ export const updateGeneralSettingsSchema = z.object({
   websiteEmbedLauncherLabel: z.string().max(80).optional(),
   websiteEmbedLauncherIcon: z.enum(websiteEmbedLauncherIcons).optional(),
   websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions).optional(),
+  mcpAssistantAccessEnabled: z.boolean().optional(),
 });
 
 export const updatePlatformSettingsSchema = z.object({
@@ -111,6 +112,7 @@ export const updatePlatformSettingsSchema = z.object({
     websiteEmbedLauncherLabel: z.string().max(80).optional(),
     websiteEmbedLauncherIcon: z.enum(websiteEmbedLauncherIcons).optional(),
     websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions).optional(),
+    mcpAssistantAccessEnabled: z.boolean().optional(),
   }).optional(),
 });
 
@@ -270,6 +272,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     websiteEmbedLauncherLabel: settings.channels.websiteEmbedLauncherLabel,
     websiteEmbedLauncherIcon: settings.channels.websiteEmbedLauncherIcon,
     websiteEmbedLauncherPosition: settings.channels.websiteEmbedLauncherPosition,
+    mcpAssistantAccessEnabled: settings.channels.mcpAssistantAccessEnabled,
   });
 
   router.get("/general", workspaceSession, async (_req, res, next) => {
@@ -304,6 +307,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
             websiteEmbedLauncherLabel: req.body.websiteEmbedLauncherLabel,
             websiteEmbedLauncherIcon: req.body.websiteEmbedLauncherIcon,
             websiteEmbedLauncherPosition: req.body.websiteEmbedLauncherPosition,
+            mcpAssistantAccessEnabled: req.body.mcpAssistantAccessEnabled,
           },
         },
         { accountId },

@@ -6,6 +6,7 @@ import type { ToolExecutionContext } from "../src/types.js";
 
 const createAdapter = (): RadiosoApiAdapter => ({
   answerGrounded: vi.fn().mockResolvedValue({ answer: "Grounded answer", citations: [{ text: "Citation" }] }),
+  chatWithAssistant: vi.fn().mockResolvedValue({ answer: "Assistant answer", conversationId: "conversation-1" }),
   createDocument: vi.fn(),
   deleteDocument: vi.fn(),
   getDocument: vi.fn().mockResolvedValue({ id: "doc-1", title: "FAQ" }),
@@ -22,11 +23,11 @@ const createToolContext = (adapter: RadiosoApiAdapter): ToolExecutionContext => 
   adapter,
   authInfo: {
     approvalRequiredTools: ["create_document", "update_retrieval_settings"],
-    grantedTools: ["answer_grounded", "list_documents", "create_document", "update_retrieval_settings"],
+    grantedTools: ["answer_grounded", "chat_with_assistant", "list_documents", "create_document", "update_retrieval_settings"],
     sessionId: "session-1",
     upstreamApiVersion: "0.1.0",
-    upstreamMcpContextVersion: "2026-04-22",
-    upstreamSupportedTools: ["answer_grounded", "list_documents", "create_document", "update_retrieval_settings"],
+    upstreamMcpContextVersion: "2026-05-06",
+    upstreamSupportedTools: ["answer_grounded", "chat_with_assistant", "list_documents", "create_document", "update_retrieval_settings"],
     workspaceId: "workspace-1",
     workspaceName: "Default",
   },
@@ -43,6 +44,7 @@ describe("createReadToolDefinitions", () => {
       "get_document",
       "search_documents",
       "answer_grounded",
+      "chat_with_assistant",
       "get_retrieval_settings",
     ]);
   });
@@ -56,16 +58,36 @@ describe("createReadToolDefinitions", () => {
     expect(result.summary).toMatch(/available/i);
     expect(result.data).toMatchObject({
       approvalRequiredTools: expect.arrayContaining(["create_document", "update_retrieval_settings"]),
-      readTools: expect.arrayContaining(["answer_grounded", "list_documents"]),
+      readTools: expect.arrayContaining(["answer_grounded", "chat_with_assistant", "list_documents"]),
       upstream: expect.objectContaining({
         apiVersion: "0.1.0",
-        mcpContextVersion: "2026-04-22",
+        mcpContextVersion: "2026-05-06",
       }),
       workspace: expect.objectContaining({
         id: "workspace-1",
         name: "Default",
       }),
       writeTools: expect.arrayContaining(["create_document", "update_retrieval_settings"]),
+    });
+  });
+
+  it("calls assistant chat through the MCP assistant tool", async () => {
+    const adapter = createAdapter();
+    const tool = createReadToolDefinitions().find((definition) => definition.name === "chat_with_assistant");
+
+    const result = await tool?.execute({
+      conversationId: "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      message: "hello",
+      metadataFilter: { audience: "support" },
+      userExpectedLocale: "en",
+    }, createToolContext(adapter));
+
+    expect(result?.summary).toMatch(/assistant chat completed/i);
+    expect(adapter.chatWithAssistant).toHaveBeenCalledWith({
+      conversationId: "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      message: "hello",
+      metadataFilter: { audience: "support" },
+      userExpectedLocale: "en",
     });
   });
 });

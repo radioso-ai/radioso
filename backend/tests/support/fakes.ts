@@ -455,6 +455,7 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       anonymousChatEnabled: false,
       anonymousChatToken: null,
       anonymousRateLimit: 10,
+      mcpAssistantAccessEnabled: false,
       websiteEmbedEnabled: false,
       websiteEmbedToken: null,
       websiteEmbedAllowedOrigins: [],
@@ -570,6 +571,7 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       websiteEmbedLauncherLabel: string;
       websiteEmbedLauncherIcon: WorkspaceRecord["websiteEmbedLauncherIcon"];
       websiteEmbedLauncherPosition: WorkspaceRecord["websiteEmbedLauncherPosition"];
+      mcpAssistantAccessEnabled: boolean;
     },
   ): Promise<WorkspaceRecord> {
     const item = this.items.get(workspaceId);
@@ -591,6 +593,7 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       websiteEmbedLauncherLabel: input.websiteEmbedLauncherLabel,
       websiteEmbedLauncherIcon: input.websiteEmbedLauncherIcon,
       websiteEmbedLauncherPosition: input.websiteEmbedLauncherPosition,
+      mcpAssistantAccessEnabled: input.mcpAssistantAccessEnabled,
       updatedAt: new Date(),
     };
     this.items.set(workspaceId, updated);

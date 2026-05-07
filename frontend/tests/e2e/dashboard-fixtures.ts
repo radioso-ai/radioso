@@ -43,6 +43,7 @@ export const basePlatformSettings = () => ({
     websiteEmbedLauncherLabel: "Chat with us",
     websiteEmbedLauncherIcon: "chat",
     websiteEmbedLauncherPosition: "bottom-right",
+    mcpAssistantAccessEnabled: false,
   },
 });
 

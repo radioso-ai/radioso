@@ -15,8 +15,9 @@ describe("createRadiosoMcpServer", () => {
       serverName: "radioso-test",
     });
 
-    expect(server.toolDefinitions).toHaveLength(11);
+    expect(server.toolDefinitions).toHaveLength(12);
     expect(server.toolDefinitions.map((tool) => tool.name)).toContain("answer_grounded");
+    expect(server.toolDefinitions.map((tool) => tool.name)).toContain("chat_with_assistant");
     expect(server.toolDefinitions.map((tool) => tool.name)).toContain("update_retrieval_settings");
   });
 

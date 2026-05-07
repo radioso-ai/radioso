@@ -135,7 +135,7 @@ describe("createRadiosoApiAdapter", () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
         apiVersion: "0.1.0",
-        mcpContextVersion: "2026-04-22",
+        mcpContextVersion: "2026-05-06",
         supportedTools: ["describe_capabilities", "create_document"],
         workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
         workspaceName: "Default",
@@ -204,5 +204,99 @@ describe("createRadiosoApiAdapter", () => {
     expect(headers).not.toHaveProperty("x-radioso-source-channel");
     expect(headers).not.toHaveProperty("x-radioso-source-signature");
     expect(headers).not.toHaveProperty("x-radioso-source-timestamp");
+  });
+
+  it("calls assistant chat with MCP source context", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          apiVersion: "0.1.0",
+          mcpContextVersion: "2026-05-06",
+          supportedTools: ["chat_with_assistant"],
+          workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
+          workspaceName: "Default",
+        }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ answer: "Hello", conversationId: "conversation-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+    const adapter = createRadiosoApiAdapter(
+      {
+        apiToken: "radioso_test",
+        baseUrl: "http://localhost:8080",
+        requestTimeoutMs: 30_000,
+        serverName: "radioso-test",
+      },
+      fetchMock,
+    );
+
+    await adapter.chatWithAssistant({
+      conversationId: "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      message: "hello",
+      metadataFilter: { audience: "support" },
+      userExpectedLocale: "en",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8080/api/v1/assistant/chat",
+      expect.objectContaining({
+        body: JSON.stringify({
+          conversationId: "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+          message: "hello",
+          metadataFilter: { audience: "support" },
+          sourceContext: {
+            surface: "mcp",
+            sourceOrigin: "radioso-test",
+          },
+          stream: false,
+          userExpectedLocale: "en",
+        }),
+        method: "POST",
+        headers: expect.objectContaining({
+          authorization: "Bearer radioso_test",
+          "content-type": "application/json",
+        }),
+      }),
+    );
+  });
+
+  it("rejects assistant chat when upstream MCP context does not support it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        apiVersion: "0.1.0",
+        mcpContextVersion: "2026-05-06",
+        supportedTools: ["answer_grounded"],
+        workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
+        workspaceName: "Default",
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const adapter = createRadiosoApiAdapter(
+      {
+        apiToken: "radioso_test",
+        baseUrl: "http://localhost:8080",
+        requestTimeoutMs: 30_000,
+        serverName: "radioso-test",
+      },
+      fetchMock,
+    );
+
+    await expect(adapter.chatWithAssistant({ message: "hello" })).rejects.toMatchObject({
+      code: "unsupported_capability",
+      status: 403,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

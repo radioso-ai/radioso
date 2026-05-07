@@ -9,7 +9,7 @@ import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.j
 
 const workspaceValidation = {
   apiVersion: "0.1.0",
-  mcpContextVersion: "2026-04-22",
+  mcpContextVersion: "2026-05-06",
   supportedTools: ["describe_capabilities", "create_document", "get_retrieval_settings"],
   workspaceHint: "Default",
   workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",

@@ -26,10 +26,24 @@ describe("general settings contract", () => {
       websiteEmbedScriptUrl: null,
       websiteEmbedSnippet: null,
       websiteEmbedAllowedOrigins: [],
+      mcpAssistantAccessEnabled: false,
     });
     expect(response.body.websiteEmbedLauncherLabel).toEqual(expect.any(String));
     expect(response.body.websiteEmbedLauncherIcon).toEqual(expect.any(String));
     expect(response.body.websiteEmbedLauncherPosition).toEqual(expect.any(String));
+  });
+
+  it("PUT /api/v1/settings/general toggles MCP assistant access", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app);
+
+    const response = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({ mcpAssistantAccessEnabled: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body.mcpAssistantAccessEnabled).toBe(true);
   });
 
   it("PUT /api/v1/settings/general enables anonymous chat and generates URL", async () => {

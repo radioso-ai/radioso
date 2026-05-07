@@ -234,13 +234,14 @@ components:
         mcpContextVersion:
           type: string
           enum:
-            - 2026-04-22
+            - 2026-05-06
         supportedTools:
           type: array
           items:
             type: string
             enum:
               - answer_grounded
+              - chat_with_assistant
               - create_document
               - delete_document
               - describe_capabilities
@@ -1019,6 +1020,8 @@ components:
           enum: &a8
             - bottom-right
             - bottom-left
+        mcpAssistantAccessEnabled:
+          type: boolean
     GeneralSettingsResponse:
       type: object
       properties:
@@ -1070,6 +1073,8 @@ components:
         websiteEmbedLauncherPosition:
           type: string
           enum: *a8
+        mcpAssistantAccessEnabled:
+          type: boolean
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
@@ -1087,6 +1092,7 @@ components:
         - websiteEmbedLauncherLabel
         - websiteEmbedLauncherIcon
         - websiteEmbedLauncherPosition
+        - mcpAssistantAccessEnabled
     AssistantSettingsSection:
       type: object
       properties:
@@ -1283,6 +1289,8 @@ components:
           type:
             - string
             - "null"
+        mcpAssistantAccessEnabled:
+          type: boolean
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
@@ -1295,6 +1303,7 @@ components:
         - websiteEmbedLauncherPosition
         - websiteEmbedScriptUrl
         - websiteEmbedSnippet
+        - mcpAssistantAccessEnabled
     PlatformSettingsResponse:
       type: object
       properties:
@@ -1454,6 +1463,8 @@ components:
             websiteEmbedLauncherPosition:
               type: string
               enum: *a8
+            mcpAssistantAccessEnabled:
+              type: boolean
     PublicChatSessionResponse:
       type: object
       properties:
@@ -2549,6 +2560,7 @@ components:
                     - authenticated_chat
                     - public_chat
                     - website_embed
+                    - mcp
                 sourceOrigin:
                   type:
                     - string
@@ -2599,6 +2611,7 @@ components:
                     - authenticated_chat
                     - public_chat
                     - website_embed
+                    - mcp
                 sourceOrigin:
                   type:
                     - string

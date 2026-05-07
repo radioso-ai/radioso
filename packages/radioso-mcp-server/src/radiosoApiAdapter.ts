@@ -32,6 +32,12 @@ export interface RadiosoApiAdapter {
     };
     metadataFilter?: Record<string, unknown>;
   }): Promise<unknown>;
+  chatWithAssistant(body: {
+    message: string;
+    conversationId?: string;
+    metadataFilter?: Record<string, unknown>;
+    userExpectedLocale?: string;
+  }): Promise<unknown>;
   getRetrievalSettings(): Promise<RetrievalSettingsRecord>;
   createDocument(body: {
     title: string;
@@ -146,6 +152,21 @@ export const createRadiosoApiAdapter = (
     customInstruction: settings.assistant?.customInstruction ?? "",
   } as RetrievalSettingsRecord);
 
+  const assertAssistantChatSupported = async (): Promise<void> => {
+    const context = await request<WorkspaceMcpContextRecord>(
+      "/api/v1/workspace/mcp/context",
+      {},
+      { notFoundCode: "unsupported_capability" },
+    );
+    if (!context.supportedTools.includes("chat_with_assistant")) {
+      throw new RadiosoApiError(
+        "MCP assistant access is not enabled for this workspace.",
+        403,
+        "unsupported_capability",
+      );
+    }
+  };
+
   return {
     answerGrounded: (body) =>
       request("/api/v1/retrieval/answer", {
@@ -155,6 +176,23 @@ export const createRadiosoApiAdapter = (
         },
         method: "POST",
       }, { notFoundCode: "unsupported_capability" }),
+    chatWithAssistant: async (body) => {
+      await assertAssistantChatSupported();
+      return request("/api/v1/assistant/chat", {
+        body: JSON.stringify({
+          conversationId: body.conversationId,
+          message: body.message,
+          metadataFilter: body.metadataFilter,
+          sourceContext: {
+            surface: "mcp",
+            sourceOrigin: config.serverName,
+          },
+          stream: false,
+          userExpectedLocale: body.userExpectedLocale,
+        }),
+        method: "POST",
+      }, { notFoundCode: "unsupported_capability" });
+    },
     createDocument: (body) =>
       request("/api/v1/document", {
         body: JSON.stringify(body),

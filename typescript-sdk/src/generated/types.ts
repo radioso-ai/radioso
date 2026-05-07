@@ -867,8 +867,8 @@ export interface components {
             /** @enum {string} */
             apiVersion: "0.1.0";
             /** @enum {string} */
-            mcpContextVersion: "2026-04-22";
-            supportedTools: ("answer_grounded" | "create_document" | "delete_document" | "describe_capabilities" | "get_document" | "get_retrieval_settings" | "list_documents" | "reprocess_document" | "search_documents" | "update_document" | "update_retrieval_settings")[];
+            mcpContextVersion: "2026-05-06";
+            supportedTools: ("answer_grounded" | "chat_with_assistant" | "create_document" | "delete_document" | "describe_capabilities" | "get_document" | "get_retrieval_settings" | "list_documents" | "reprocess_document" | "search_documents" | "update_document" | "update_retrieval_settings")[];
             /** Format: uuid */
             workspaceId: string;
             workspaceName: string;
@@ -1161,6 +1161,7 @@ export interface components {
             websiteEmbedLauncherIcon?: "chat" | "sparkles" | "message";
             /** @enum {string} */
             websiteEmbedLauncherPosition?: "bottom-right" | "bottom-left";
+            mcpAssistantAccessEnabled?: boolean;
         };
         GeneralSettingsResponse: {
             anonymousChatEnabled: boolean;
@@ -1181,6 +1182,7 @@ export interface components {
             websiteEmbedLauncherIcon: "chat" | "sparkles" | "message";
             /** @enum {string} */
             websiteEmbedLauncherPosition: "bottom-right" | "bottom-left";
+            mcpAssistantAccessEnabled: boolean;
         };
         AssistantSettingsSection: {
             assistantName: string;
@@ -1257,6 +1259,7 @@ export interface components {
             websiteEmbedLauncherPosition: "bottom-right" | "bottom-left";
             websiteEmbedScriptUrl: string | null;
             websiteEmbedSnippet: string | null;
+            mcpAssistantAccessEnabled: boolean;
         };
         PlatformSettingsResponse: {
             assistant: components["schemas"]["AssistantSettingsSection"];
@@ -1324,6 +1327,7 @@ export interface components {
                 websiteEmbedLauncherIcon?: "chat" | "sparkles" | "message";
                 /** @enum {string} */
                 websiteEmbedLauncherPosition?: "bottom-right" | "bottom-left";
+                mcpAssistantAccessEnabled?: boolean;
             };
         };
         PublicChatSessionResponse: {
@@ -1756,7 +1760,7 @@ export interface components {
             };
             sourceContext?: {
                 /** @enum {string} */
-                surface?: "authenticated_chat" | "public_chat" | "website_embed";
+                surface?: "authenticated_chat" | "public_chat" | "website_embed" | "mcp";
                 sourceOrigin?: string | null;
             };
             metadataFilter?: {
@@ -1780,7 +1784,7 @@ export interface components {
             };
             sourceContext?: {
                 /** @enum {string} */
-                surface?: "authenticated_chat" | "public_chat" | "website_embed";
+                surface?: "authenticated_chat" | "public_chat" | "website_embed" | "mcp";
                 sourceOrigin?: string | null;
             };
             metadataFilter?: {

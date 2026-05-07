@@ -34,6 +34,7 @@ import {
   type HumanContactAvailability,
   type RetrievalSettings,
 } from '@/lib/api'
+import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { editionController } from '@/lib/edition-controller'
 import { normalizeLocaleTag } from '@/lib/locale'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -118,6 +119,22 @@ const isValidHumanContactWebhookUrl = (value: string) => {
 }
 
 const isValidHumanContactEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+const MCP_SERVER_URL = 'http://127.0.0.1:8787/mcp'
+const MCP_ASSISTANT_TOOL_NAME = 'chat_with_assistant'
+const MCP_TOKEN_EXCHANGE_COMMAND = `source <(
+  RADIOSO_WORKSPACE_TOKEN=radioso_... \\
+  npm --prefix packages/radioso-mcp-server run -s token:exchange
+)`
+const MCP_CURSOR_CONFIG = `{
+  "mcpServers": {
+    "radioso": {
+      "url": "http://127.0.0.1:8787/mcp",
+      "headers": {
+        "Authorization": "Bearer \${env:RADIOSO_MCP_ACCESS_TOKEN}"
+      }
+    }
+  }
+}`
 
 const assistantConversationModeLabels: Record<
   RetrievalSettings['conversationMode'],
@@ -187,6 +204,14 @@ export function WorkspaceAssistantChannelsTab({
   const workspaceDraftVersionRef = useRef(0)
   const anonDraftVersionRef = useRef(0)
   const assistantBehaviorDraftVersionRef = useRef(0)
+  const workspaceTokenSettingsHref = activeWorkspace
+    ? buildDashboardHref(accountId, {
+        section: 'settings',
+        workspaceId: activeWorkspace.id,
+        workspacePublicRouteKey: activeWorkspace.publicRouteKey,
+        anchor: 'workspace-access',
+      })
+    : buildDashboardHref(accountId, { section: 'settings', anchor: 'workspace-access' })
 
   useEffect(() => {
     let active = true
@@ -355,6 +380,22 @@ export function WorkspaceAssistantChannelsTab({
       setSavedAnonSettings(updated)
     } catch (error) {
       console.error('Failed to update anonymous chat settings:', error)
+    } finally {
+      setIsAnonSaving(false)
+    }
+  }
+
+  const handleMcpAssistantToggle = async (enabled: boolean) => {
+    if (!anonSettings) return
+    setIsAnonSaving(true)
+    try {
+      const updated = await generalSettingsApi.updateGeneralSettings({
+        mcpAssistantAccessEnabled: enabled,
+      })
+      setAnonSettings(updated)
+      setSavedAnonSettings(updated)
+    } catch (error) {
+      console.error('Failed to update MCP assistant access:', error)
     } finally {
       setIsAnonSaving(false)
     }
@@ -1023,6 +1064,81 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'channels' && isAnonLoading ? (
           <section className="flex min-h-[320px] items-center justify-center">
             <LogoSpinner imageClassName="h-7 w-7" />
+          </section>
+          ) : null}
+
+          {mode === 'channels' && !isAnonLoading ? (
+          <section id="mcp-assistant" className="space-y-6 scroll-mt-24">
+            {anonSettings ? (
+              <section className="scroll-mt-24 rounded-2xl border border-border bg-card/95 p-5 shadow-sm">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
+                      <Sparkles className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-medium text-foreground">MCP assistant access</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Let MCP clients call this assistant through the Radioso MCP server.
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    id="mcpAssistantAccessToggle"
+                    checked={anonSettings.mcpAssistantAccessEnabled}
+                    onCheckedChange={handleMcpAssistantToggle}
+                    disabled={isAnonSaving}
+                    className="sm:mt-3"
+                  />
+                </div>
+
+                <div className="mt-5 space-y-5">
+                  <div className="rounded bg-muted/50 p-3 text-sm text-muted-foreground">
+                    Status:{' '}
+                    <span className="font-medium text-foreground">
+                      {anonSettings.mcpAssistantAccessEnabled ? 'enabled' : 'off'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    When enabled, MCP clients can use the assistant persona, instructions, retrieval behavior, citations,
+                    and normal assistant history. Retrieval-only MCP tools stay available separately.
+                  </p>
+
+                  {anonSettings.mcpAssistantAccessEnabled ? (
+                    <div className="space-y-4">
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label className="text-foreground">MCP server URL</Label>
+                          <CopyValueField value={MCP_SERVER_URL} ariaLabel="Copy MCP server URL" wrap className="w-full" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-foreground">Assistant tool</Label>
+                          <CopyValueField value={MCP_ASSISTANT_TOOL_NAME} ariaLabel="Copy MCP assistant tool name" wrap className="w-full" />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <Label className="text-foreground">Workspace token prerequisite</Label>
+                          <Button asChild size="sm" variant="outline">
+                            <a href={workspaceTokenSettingsHref}>Open API token settings</a>
+                          </Button>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Exchange a workspace token for a short-lived MCP access token before configuring your client.
+                        </p>
+                        <CopyValueField value={MCP_TOKEN_EXCHANGE_COMMAND} ariaLabel="Copy MCP token exchange command" wrap className="w-full" />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-foreground">Cursor URL-mode config</Label>
+                        <CopyValueField value={MCP_CURSOR_CONFIG} ariaLabel="Copy Cursor MCP config" wrap className="w-full" />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
           </section>
           ) : null}
 

@@ -95,7 +95,7 @@ ACCESS_TOKEN=$(
     -d '{
       "radiosoApiToken": "radioso_example",
       "clientName": "operator-shell",
-      "requestedTools": ["describe_capabilities","list_documents","answer_grounded","create_document"]
+      "requestedTools": ["describe_capabilities","list_documents","answer_grounded","chat_with_assistant","create_document"]
     }' \
   | jq -r '.accessToken'
 )
@@ -223,7 +223,7 @@ node dist/src/cli/stdio.js
 
 If `RADIOSO_MCP_SIGNING_SECRET` is omitted in stdio mode, the package uses the reserved compatibility secret internally. Remote HTTP mode does not allow that fallback.
 
-If you want stdio-originated `answer_grounded` traffic to be labeled as `MCP` in Radioso history, explicitly set `RADIOSO_MCP_SIGNING_SECRET` in stdio mode to the same non-default secret the backend is using.
+`answer_grounded` is retrieval-first and does not create assistant conversation history. To expose the configured Radioso assistant through MCP, enable MCP assistant access in `Agent -> Channels` and use `chat_with_assistant`.
 
 ## Available Tools
 
@@ -232,6 +232,7 @@ If you want stdio-originated `answer_grounded` traffic to be labeled as `MCP` in
 - `get_document`
 - `search_documents`
 - `answer_grounded`
+- `chat_with_assistant`
 - `get_retrieval_settings`
 - `create_document`
 - `update_document`

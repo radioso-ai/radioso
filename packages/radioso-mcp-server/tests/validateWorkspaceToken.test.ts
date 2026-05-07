@@ -9,7 +9,7 @@ describe("validateWorkspaceToken", () => {
       .mockResolvedValueOnce(
         new Response(JSON.stringify({
           apiVersion: "0.1.0",
-          mcpContextVersion: "2026-04-22",
+          mcpContextVersion: "2026-05-06",
           supportedTools: ["describe_capabilities"],
           workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
           workspaceName: "Default",

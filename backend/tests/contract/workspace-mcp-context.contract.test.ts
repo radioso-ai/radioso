@@ -1,7 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp, issueTestToken } from "../support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestToken } from "../support/testApp.js";
 
 describe("workspace MCP context contract", () => {
   it("returns workspace identity plus MCP capability metadata for a valid bearer token", async () => {
@@ -15,7 +15,7 @@ describe("workspace MCP context contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       apiVersion: "0.1.0",
-      mcpContextVersion: "2026-04-22",
+      mcpContextVersion: "2026-05-06",
       supportedTools: expect.arrayContaining([
         "answer_grounded",
         "create_document",
@@ -28,6 +28,36 @@ describe("workspace MCP context contract", () => {
         "update_document",
         "update_retrieval_settings",
       ]),
+      workspaceId: token.workspaceId,
+      workspaceName: "Default",
+    });
+    expect(response.body.supportedTools).not.toContain("chat_with_assistant");
+  });
+
+  it("includes assistant chat when the workspace enables MCP assistant access", async () => {
+    const { app } = createTestApp();
+    const token = await issueTestToken(app, "workspace-mcp-assistant-context@example.com");
+
+    const settingsResponse = await request(app)
+      .put("/api/v1/settings")
+      .set(adminSessionHeaders(token))
+      .send({
+        channels: {
+          mcpAssistantAccessEnabled: true,
+        },
+      });
+
+    expect(settingsResponse.status).toBe(200);
+
+    const response = await request(app)
+      .get("/api/v1/workspace/mcp/context")
+      .set("authorization", `Bearer ${token.token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      apiVersion: "0.1.0",
+      mcpContextVersion: "2026-05-06",
+      supportedTools: expect.arrayContaining(["chat_with_assistant"]),
       workspaceId: token.workspaceId,
       workspaceName: "Default",
     });

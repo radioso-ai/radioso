@@ -8,7 +8,7 @@ import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.j
 
 const defaultWorkspaceValidation = {
   apiVersion: "0.1.0",
-  mcpContextVersion: "2026-04-22",
+  mcpContextVersion: "2026-05-06",
   supportedTools: [
     "describe_capabilities",
     "search_documents",

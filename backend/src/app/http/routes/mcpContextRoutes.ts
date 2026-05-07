@@ -7,6 +7,7 @@ import { requireApiToken, type ApiTokenDependencies } from "../middleware/requir
 
 export const supportedMcpTools = [
   "answer_grounded",
+  "chat_with_assistant",
   "create_document",
   "delete_document",
   "describe_capabilities",
@@ -21,7 +22,7 @@ export const supportedMcpTools = [
 
 export const workspaceMcpContextSchema = z.object({
   apiVersion: z.literal("0.1.0"),
-  mcpContextVersion: z.literal("2026-04-22"),
+  mcpContextVersion: z.literal("2026-05-06"),
   supportedTools: z.array(z.enum(supportedMcpTools)),
   workspaceId: z.string().uuid(),
   workspaceName: z.string().min(1),
@@ -40,10 +41,14 @@ export const createMcpContextRoutes = (dependencies: McpContextRouteDependencies
         throw forbidden("Workspace token no longer resolves to an active workspace.");
       }
 
+      const supportedToolsForWorkspace = workspace.mcpAssistantAccessEnabled
+        ? [...supportedMcpTools]
+        : supportedMcpTools.filter((tool) => tool !== "chat_with_assistant");
+
       res.status(200).json({
         apiVersion: "0.1.0",
-        mcpContextVersion: "2026-04-22",
-        supportedTools: [...supportedMcpTools],
+        mcpContextVersion: "2026-05-06",
+        supportedTools: supportedToolsForWorkspace,
         workspaceId: workspace.id,
         workspaceName: workspace.name,
       });

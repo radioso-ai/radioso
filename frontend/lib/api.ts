@@ -110,6 +110,7 @@ export interface PlatformSettings {
     websiteEmbedLauncherLabel?: string
     websiteEmbedLauncherIcon?: 'chat' | 'sparkles' | 'message'
     websiteEmbedLauncherPosition?: 'bottom-right' | 'bottom-left'
+    mcpAssistantAccessEnabled: boolean
   }
 }
 
@@ -1350,6 +1351,7 @@ export interface GeneralSettings {
   websiteEmbedLauncherLabel?: string
   websiteEmbedLauncherIcon?: 'chat' | 'sparkles' | 'message'
   websiteEmbedLauncherPosition?: 'bottom-right' | 'bottom-left'
+  mcpAssistantAccessEnabled: boolean
 }
 
 export interface WorkspaceTokenResponse {
@@ -1411,6 +1413,7 @@ export const generalSettingsApi = {
     websiteEmbedLauncherLabel?: string
     websiteEmbedLauncherIcon?: 'chat' | 'sparkles' | 'message'
     websiteEmbedLauncherPosition?: 'bottom-right' | 'bottom-left'
+    mcpAssistantAccessEnabled?: boolean
   }): Promise<GeneralSettings> {
     const settings = await request<PlatformSettings>('/settings', {
       method: 'PUT',
@@ -1431,6 +1434,7 @@ export const generalSettingsApi = {
           websiteEmbedLauncherLabel: data.websiteEmbedLauncherLabel,
           websiteEmbedLauncherIcon: data.websiteEmbedLauncherIcon,
           websiteEmbedLauncherPosition: data.websiteEmbedLauncherPosition,
+          mcpAssistantAccessEnabled: data.mcpAssistantAccessEnabled,
         },
       }),
     }, { withApiToken: true })

@@ -64,6 +64,7 @@ const platformSettingsPayload = {
     anonymousRateLimit: 10,
     anonymousChatUrl: null,
     anonymousChatToken: null,
+    mcpAssistantAccessEnabled: false,
   },
 }
 

@@ -169,6 +169,7 @@ export class PlatformSettingsService {
       websiteEmbedLauncherLabel: normalizedWebsiteEmbed.websiteEmbedLauncherLabel,
       websiteEmbedLauncherIcon: normalizedWebsiteEmbed.websiteEmbedLauncherIcon,
       websiteEmbedLauncherPosition: normalizedWebsiteEmbed.websiteEmbedLauncherPosition,
+      mcpAssistantAccessEnabled: channels.mcpAssistantAccessEnabled ?? workspace.mcpAssistantAccessEnabled,
     });
 
     await this.recordChannelAuditEvents({
@@ -182,6 +183,7 @@ export class PlatformSettingsService {
       websiteEmbedAllowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
       websiteEmbedLauncherPosition: normalizedWebsiteEmbed.websiteEmbedLauncherPosition,
       rotateWebsiteEmbedToken: channels.rotateWebsiteEmbedToken ?? false,
+      mcpAssistantAccessEnabled: channels.mcpAssistantAccessEnabled ?? workspace.mcpAssistantAccessEnabled,
     });
 
     return updated;
@@ -198,6 +200,7 @@ export class PlatformSettingsService {
     websiteEmbedAllowedOrigins: string[];
     websiteEmbedLauncherPosition: WorkspaceRecord["websiteEmbedLauncherPosition"];
     rotateWebsiteEmbedToken: boolean;
+    mcpAssistantAccessEnabled: boolean;
   }): Promise<void> {
     const auditService = this.dependencies.auditService;
     if (!auditService) {
@@ -247,6 +250,16 @@ export class PlatformSettingsService {
           enabled: input.websiteEmbedEnabled,
           allowedOrigins: input.websiteEmbedAllowedOrigins,
         },
+      });
+    }
+
+    if (input.mcpAssistantAccessEnabled !== input.previousWorkspace.mcpAssistantAccessEnabled) {
+      await auditService.record({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        eventType: input.mcpAssistantAccessEnabled ? "mcp_assistant.enabled" : "mcp_assistant.disabled",
+        eventStatus: "success",
+        metadata: {},
       });
     }
   }
@@ -326,6 +339,7 @@ export class PlatformSettingsService {
       websiteEmbedLauncherPosition: workspace.websiteEmbedLauncherPosition,
       websiteEmbedScriptUrl: this.websiteEmbedIntegration.buildScriptUrl(),
       websiteEmbedSnippet: this.websiteEmbedIntegration.buildSnippet(workspace),
+      mcpAssistantAccessEnabled: workspace.mcpAssistantAccessEnabled,
     };
   }
 

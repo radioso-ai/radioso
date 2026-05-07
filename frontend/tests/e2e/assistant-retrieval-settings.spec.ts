@@ -51,10 +51,21 @@ test("shared settings saves assistant, retrieval, and channel sections without c
   expect(settingsUpdates.at(-1)).not.toHaveProperty("channels");
 
   await page.goto(`/w/${workspaceKey}/agents/current?tab=channels`);
+  await expect(page.getByText("MCP assistant access")).toBeVisible();
+  await page.locator("#mcpAssistantAccessToggle").click();
+
+  await expect.poll(() => settingsUpdates.length).toBeGreaterThanOrEqual(3);
+  expect(settingsUpdates.at(-1)).toMatchObject({
+    channels: {
+      mcpAssistantAccessEnabled: true,
+    },
+  });
+  await expect(page.getByText("chat_with_assistant")).toBeVisible();
+
   await expect(page.getByText("Anonymous chat")).toBeVisible();
   await page.locator("#anonChatToggle").click();
 
-  await expect.poll(() => settingsUpdates.length).toBeGreaterThanOrEqual(3);
+  await expect.poll(() => settingsUpdates.length).toBeGreaterThanOrEqual(4);
   expect(settingsUpdates.at(-1)).toMatchObject({
     channels: {
       anonymousChatEnabled: true,

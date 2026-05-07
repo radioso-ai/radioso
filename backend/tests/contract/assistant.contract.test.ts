@@ -95,6 +95,43 @@ describe("assistant contract", () => {
     });
   });
 
+  it("accepts MCP assistant source context and records MCP chat history", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "assistant-mcp-source@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "MCP Assistant", content: "MCP assistant access uses the assistant chat product." });
+
+    const response = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set(adminSessionHeaders(session))
+      .send({
+        message: "What does MCP assistant access use?",
+        stream: false,
+        sourceContext: {
+          surface: "mcp",
+          sourceOrigin: "radioso-test",
+        },
+      });
+
+    expect(response.status).toBe(200);
+
+    const history = await request(app)
+      .get("/api/v1/history/chat")
+      .set(adminSessionHeaders(session));
+
+    expect(history.status).toBe(200);
+    expect(history.body.conversations).toEqual([
+      expect.objectContaining({
+        id: response.body.conversationId,
+        sourceChannel: "mcp",
+        sourceOrigin: "radioso-test",
+      }),
+    ]);
+  });
+
   it("documents assistant chat in the generated schema", () => {
     const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
 

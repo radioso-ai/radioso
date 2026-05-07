@@ -32,6 +32,7 @@ export class CapabilityPolicyError extends Error {
 
 export const TOOL_CATALOG: Record<string, { accessMode: CapabilityAccessMode }> = {
   answer_grounded: { accessMode: "read" },
+  chat_with_assistant: { accessMode: "read" },
   create_document: { accessMode: "write" },
   delete_document: { accessMode: "write" },
   describe_capabilities: { accessMode: "read" },

@@ -24,6 +24,7 @@ export interface WorkspaceRecord extends AssistantBootstrapSettingsRecord, Websi
   anonymousChatEnabled: boolean;
   anonymousChatToken: string | null;
   anonymousRateLimit: number;
+  mcpAssistantAccessEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,6 +47,7 @@ interface WorkspaceRow {
   website_embed_launcher_label: string | null;
   website_embed_launcher_icon: string | null;
   website_embed_launcher_position: string | null;
+  mcp_assistant_access_enabled: boolean | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -79,10 +81,17 @@ const mapWorkspace = (row: WorkspaceRow): WorkspaceRecord => {
     anonymousChatEnabled: row.anonymous_chat_enabled ?? false,
     anonymousChatToken: row.anonymous_chat_token ?? null,
     anonymousRateLimit: row.anonymous_rate_limit ?? 10,
+    mcpAssistantAccessEnabled: row.mcp_assistant_access_enabled ?? false,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
 };
+
+const workspaceReturningColumns = `id, account_id, name, public_route_key, assistant_name, greeting_instruction,
+                 assistant_default_locale, proactive_greeting_enabled, anonymous_chat_enabled, anonymous_chat_token,
+                 anonymous_rate_limit, website_embed_enabled, website_embed_token, website_embed_allowed_origins,
+                 website_embed_launcher_label, website_embed_launcher_icon, website_embed_launcher_position,
+                 mcp_assistant_access_enabled, created_at, updated_at`;
 
 export interface WorkspaceRepositoryPort {
   create(accountId: string, name: string, publicRouteKey?: string): Promise<WorkspaceRecord>;
@@ -132,10 +141,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
     const [row] = await this.database.query<WorkspaceRow>(
       `INSERT INTO workspaces (id, account_id, name, public_route_key)
        VALUES ($1, $2, $3, $4)
-       RETURNING id, account_id, name, public_route_key, assistant_name, greeting_instruction, assistant_default_locale,
-                 proactive_greeting_enabled, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit,
-                 website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
-                 website_embed_launcher_icon, website_embed_launcher_position, created_at, updated_at`,
+       RETURNING ${workspaceReturningColumns}`,
       [randomUUID(), accountId, name, publicRouteKey ?? createWorkspacePublicRouteKey(name)],
     );
 
@@ -147,7 +153,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       `SELECT id, account_id, name, public_route_key, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
              , assistant_name, greeting_instruction, assistant_default_locale, proactive_greeting_enabled
              , website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
-               website_embed_launcher_icon, website_embed_launcher_position
+               website_embed_launcher_icon, website_embed_launcher_position, mcp_assistant_access_enabled
        FROM workspaces
        WHERE id = $1`,
       [id],
@@ -161,7 +167,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       `SELECT id, account_id, name, public_route_key, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
              , assistant_name, greeting_instruction, assistant_default_locale, proactive_greeting_enabled
              , website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
-               website_embed_launcher_icon, website_embed_launcher_position
+               website_embed_launcher_icon, website_embed_launcher_position, mcp_assistant_access_enabled
        FROM workspaces
        WHERE id = $1 AND account_id = $2`,
       [workspaceId, accountId],
@@ -175,7 +181,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       `SELECT id, account_id, name, public_route_key, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
              , assistant_name, greeting_instruction, assistant_default_locale, proactive_greeting_enabled
              , website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
-               website_embed_launcher_icon, website_embed_launcher_position
+               website_embed_launcher_icon, website_embed_launcher_position, mcp_assistant_access_enabled
        FROM workspaces
        WHERE public_route_key = $1`,
       [publicRouteKey],
@@ -189,7 +195,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       `SELECT id, account_id, name, public_route_key, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
              , assistant_name, greeting_instruction, assistant_default_locale, proactive_greeting_enabled
              , website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
-               website_embed_launcher_icon, website_embed_launcher_position
+               website_embed_launcher_icon, website_embed_launcher_position, mcp_assistant_access_enabled
        FROM workspaces
        WHERE account_id = $1
        ORDER BY created_at ASC`,
@@ -212,10 +218,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
     const [row] = await this.database.query<WorkspaceRow>(
       `UPDATE workspaces SET name = $1, updated_at = NOW()
        WHERE id = $2
-       RETURNING id, account_id, name, public_route_key, assistant_name, greeting_instruction, assistant_default_locale,
-                 proactive_greeting_enabled, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit,
-                 website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
-                 website_embed_launcher_icon, website_embed_launcher_position, created_at, updated_at`,
+       RETURNING ${workspaceReturningColumns}`,
       [name, workspaceId],
     );
 
@@ -231,7 +234,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       `SELECT id, account_id, name, public_route_key, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
              , assistant_name, greeting_instruction, assistant_default_locale, proactive_greeting_enabled
              , website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
-               website_embed_launcher_icon, website_embed_launcher_position
+               website_embed_launcher_icon, website_embed_launcher_position, mcp_assistant_access_enabled
        FROM workspaces
        WHERE anonymous_chat_token = $1`,
       [token],
@@ -245,7 +248,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       `SELECT id, account_id, name, public_route_key, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
              , assistant_name, greeting_instruction, assistant_default_locale, proactive_greeting_enabled
              , website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
-               website_embed_launcher_icon, website_embed_launcher_position
+               website_embed_launcher_icon, website_embed_launcher_position, mcp_assistant_access_enabled
        FROM workspaces
        WHERE website_embed_token = $1`,
       [token],
@@ -264,10 +267,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       `UPDATE workspaces
        SET anonymous_chat_enabled = $1, anonymous_chat_token = $2, anonymous_rate_limit = $3, updated_at = NOW()
        WHERE id = $4
-       RETURNING id, account_id, name, public_route_key, assistant_name, greeting_instruction, assistant_default_locale,
-                 proactive_greeting_enabled, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit,
-                 website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
-                 website_embed_launcher_icon, website_embed_launcher_position, created_at, updated_at`,
+       RETURNING ${workspaceReturningColumns}`,
       [enabled, token, rateLimit, workspaceId],
     );
 
@@ -294,10 +294,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
            proactive_greeting_enabled = $4,
            updated_at = NOW()
        WHERE id = $5
-       RETURNING id, account_id, name, public_route_key, assistant_name, greeting_instruction, assistant_default_locale,
-                 proactive_greeting_enabled, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit,
-                 website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
-                 website_embed_launcher_icon, website_embed_launcher_position, created_at, updated_at`,
+       RETURNING ${workspaceReturningColumns}`,
       [
         normalized.assistantName,
         normalized.greetingInstruction,
@@ -330,6 +327,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       websiteEmbedLauncherLabel: string;
       websiteEmbedLauncherIcon: WebsiteEmbedLauncherIcon;
       websiteEmbedLauncherPosition: WebsiteEmbedLauncherPosition;
+      mcpAssistantAccessEnabled: boolean;
     },
   ): Promise<WorkspaceRecord> {
     const [row] = await this.database.query<WorkspaceRow>(
@@ -347,12 +345,10 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
            website_embed_launcher_label = $11,
            website_embed_launcher_icon = $12,
            website_embed_launcher_position = $13,
+           mcp_assistant_access_enabled = $14,
            updated_at = NOW()
-       WHERE id = $14
-       RETURNING id, account_id, name, public_route_key, assistant_name, greeting_instruction, assistant_default_locale,
-                 proactive_greeting_enabled, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit,
-                 website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
-                 website_embed_launcher_icon, website_embed_launcher_position, created_at, updated_at`,
+       WHERE id = $15
+       RETURNING ${workspaceReturningColumns}`,
       [
         input.anonymousChatEnabled,
         input.anonymousChatToken,
@@ -367,6 +363,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
         input.websiteEmbedLauncherLabel,
         input.websiteEmbedLauncherIcon,
         input.websiteEmbedLauncherPosition,
+        input.mcpAssistantAccessEnabled,
         workspaceId,
       ],
     );

@@ -4,6 +4,7 @@ export const DEFAULT_TOOLS = [
   "get_document",
   "search_documents",
   "answer_grounded",
+  "chat_with_assistant",
   "get_retrieval_settings",
   "create_document",
   "update_document",

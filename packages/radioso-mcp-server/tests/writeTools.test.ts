@@ -6,6 +6,7 @@ import type { ToolExecutionContext } from "../src/types.js";
 
 const createAdapter = (): RadiosoApiAdapter => ({
   answerGrounded: vi.fn(),
+  chatWithAssistant: vi.fn(),
   createDocument: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
   deleteDocument: vi.fn().mockResolvedValue(undefined),
   getDocument: vi.fn(),

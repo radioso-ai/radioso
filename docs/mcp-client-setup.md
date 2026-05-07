@@ -29,12 +29,15 @@ MCP is retrieval-first by default. Tools such as `search_documents` and `answer_
 In practice:
 
 - Use MCP `answer_grounded` when a client wants a grounded RAG answer from workspace documents.
+- Use MCP `chat_with_assistant` when a client should talk to the configured assistant. This tool is available only after **MCP assistant access** is enabled in `Agent -> Channels`.
 - Use MCP document tools when a client wants document capability access.
-- Use `POST /api/v1/assistant/chat` only when the integration explicitly wants the customer-facing assistant chat product.
+- Use `POST /api/v1/assistant/chat` directly only when a non-MCP integration explicitly wants the customer-facing assistant chat product.
 
 The retrieval answer endpoint accepts optional `conversationContext` hints for rewrite continuity. The caller owns those hints. Radioso retrieval uses them to improve the search query, but retrieval does not become the owner of assistant chat history.
 
 For debugging, MCP grounded-answer calls are marked in retrieval diagnostics as `mcp_capability` executions. This keeps them separate from direct retrieval API calls and assistant-backed chat turns.
+
+`chat_with_assistant` is different. It calls the assistant chat API with MCP source attribution, uses the workspace assistant behavior and retrieval settings, and stores normal assistant conversation history with `sourceChannel` set to `mcp`.
 
 ### macOS GUI Launches
 
@@ -128,7 +131,8 @@ The Responses API can call a remote MCP server directly. A typical tool stanza l
     "list_documents",
     "get_document",
     "search_documents",
-    "answer_grounded"
+    "answer_grounded",
+    "chat_with_assistant"
   ],
   "require_approval": "never"
 }

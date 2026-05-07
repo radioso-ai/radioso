@@ -169,7 +169,7 @@ curl -sS \
 
 Assistant conversations are listed from `GET /api/v1/history` and fetched from `GET /api/v1/history/<conversation-id>`. Shared workspace settings are read and merge-updated through `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
 
-Assistant and retrieval responses include diagnostic metadata that identifies whether the work ran as assistant direct, assistant retrieval-backed, retrieval-only, or MCP capability traffic.
+Assistant and retrieval responses include diagnostic metadata that identifies whether the work ran as assistant direct, assistant retrieval-backed, retrieval-only, or MCP capability traffic. MCP clients can call retrieval-only tools by default. If MCP assistant access is enabled under the assistant Channels settings, MCP clients can also use `chat_with_assistant` to create normal assistant conversations with `sourceChannel` set to `mcp`.
 
 ### TypeScript SDK
 
@@ -197,7 +197,7 @@ for await (const event of client.chat.stream({ message: "Summarize the FAQ" })) 
 
 ### MCP server
 
-The standalone `packages/radioso-mcp-server/` package exposes your workspace as an MCP context layer. Cursor can use a local server directly. Claude Desktop, ChatGPT deep-research, and other hosted remote MCP clients require a public HTTPS deployment plus compatible auth.
+The standalone `packages/radioso-mcp-server/` package exposes your workspace as an MCP context layer. Cursor can use a local server directly. Claude Desktop, ChatGPT deep-research, and other hosted remote MCP clients require a public HTTPS deployment plus compatible auth. Retrieval-first tools such as `answer_grounded` remain separate from assistant-bound MCP access through `chat_with_assistant`.
 
 ---
 

@@ -343,7 +343,7 @@
           "mcpContextVersion": {
             "type": "string",
             "enum": [
-              "2026-04-22"
+              "2026-05-06"
             ]
           },
           "supportedTools": {
@@ -352,6 +352,7 @@
               "type": "string",
               "enum": [
                 "answer_grounded",
+                "chat_with_assistant",
                 "create_document",
                 "delete_document",
                 "describe_capabilities",
@@ -1510,6 +1511,9 @@
               "bottom-right",
               "bottom-left"
             ]
+          },
+          "mcpAssistantAccessEnabled": {
+            "type": "boolean"
           }
         }
       },
@@ -1592,6 +1596,9 @@
               "bottom-right",
               "bottom-left"
             ]
+          },
+          "mcpAssistantAccessEnabled": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1610,7 +1617,8 @@
           "websiteEmbedAllowedOrigins",
           "websiteEmbedLauncherLabel",
           "websiteEmbedLauncherIcon",
-          "websiteEmbedLauncherPosition"
+          "websiteEmbedLauncherPosition",
+          "mcpAssistantAccessEnabled"
         ]
       },
       "AssistantSettingsSection": {
@@ -1929,6 +1937,9 @@
               "string",
               "null"
             ]
+          },
+          "mcpAssistantAccessEnabled": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1942,7 +1953,8 @@
           "websiteEmbedLauncherIcon",
           "websiteEmbedLauncherPosition",
           "websiteEmbedScriptUrl",
-          "websiteEmbedSnippet"
+          "websiteEmbedSnippet",
+          "mcpAssistantAccessEnabled"
         ]
       },
       "PlatformSettingsResponse": {
@@ -2212,6 +2224,9 @@
                   "bottom-right",
                   "bottom-left"
                 ]
+              },
+              "mcpAssistantAccessEnabled": {
+                "type": "boolean"
               }
             }
           }
@@ -3553,6 +3568,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "assistantMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "answer": {
             "type": "string"
           },
@@ -3636,6 +3655,7 @@
         },
         "required": [
           "conversationId",
+          "assistantMessageId",
           "answer",
           "conversationMode",
           "conversationModeMetadata",
@@ -3807,7 +3827,8 @@
                     "enum": [
                       "authenticated_chat",
                       "public_chat",
-                      "website_embed"
+                      "website_embed",
+                      "mcp"
                     ]
                   },
                   "sourceOrigin": {
@@ -3880,7 +3901,8 @@
                     "enum": [
                       "authenticated_chat",
                       "public_chat",
-                      "website_embed"
+                      "website_embed",
+                      "mcp"
                     ]
                   },
                   "sourceOrigin": {

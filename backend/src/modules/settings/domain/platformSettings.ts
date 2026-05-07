@@ -37,6 +37,7 @@ export interface PlatformChannelsSettingsSection {
   websiteEmbedLauncherPosition: WebsiteEmbedLauncherPosition;
   websiteEmbedScriptUrl: string | null;
   websiteEmbedSnippet: string | null;
+  mcpAssistantAccessEnabled: boolean;
 }
 
 export interface PlatformSettingsResource {
@@ -68,6 +69,7 @@ export interface PlatformChannelsSettingsPatch {
   websiteEmbedLauncherLabel?: string;
   websiteEmbedLauncherIcon?: WebsiteEmbedLauncherIcon;
   websiteEmbedLauncherPosition?: WebsiteEmbedLauncherPosition;
+  mcpAssistantAccessEnabled?: boolean;
 }
 
 export interface PlatformSettingsPatch {

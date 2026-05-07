@@ -42,7 +42,7 @@ export class UserRepository implements UserRepositoryPort {
   constructor(private readonly database: Database) {}
 
   async create(params: { id?: string; email: string; passwordHash: string; emailVerifiedAt?: Date | null }): Promise<UserRecord> {
-    const [row] = await this.database.query<UserRow>(
+    const row = await this.database.queryOne<UserRow>(
       `INSERT INTO users (id, email, password_hash, email_verified_at)
        VALUES ($1, $2, $3, $4)
        RETURNING id, email, password_hash, email_verified_at, created_at, updated_at`,
@@ -53,7 +53,7 @@ export class UserRepository implements UserRepositoryPort {
   }
 
   async findByEmail(email: string): Promise<UserRecord | null> {
-    const [row] = await this.database.query<UserRow>(
+    const row = await this.database.queryOptional<UserRow>(
       `SELECT id, email, password_hash, email_verified_at, created_at, updated_at
        FROM users
        WHERE email = $1`,
@@ -64,7 +64,7 @@ export class UserRepository implements UserRepositoryPort {
   }
 
   async findById(id: string): Promise<UserRecord | null> {
-    const [row] = await this.database.query<UserRow>(
+    const row = await this.database.queryOptional<UserRow>(
       `SELECT id, email, password_hash, email_verified_at, created_at, updated_at
        FROM users
        WHERE id = $1`,
@@ -75,7 +75,7 @@ export class UserRepository implements UserRepositoryPort {
   }
 
   async updatePassword(id: string, passwordHash: string): Promise<UserRecord> {
-    const [row] = await this.database.query<UserRow>(
+    const row = await this.database.queryOne<UserRow>(
       `UPDATE users
        SET password_hash = $2,
            updated_at = NOW()
@@ -88,7 +88,7 @@ export class UserRepository implements UserRepositoryPort {
   }
 
   async markEmailVerified(id: string, verifiedAt: Date): Promise<UserRecord> {
-    const [row] = await this.database.query<UserRow>(
+    const row = await this.database.queryOne<UserRow>(
       `UPDATE users
        SET email_verified_at = COALESCE(email_verified_at, $2),
            updated_at = NOW()
@@ -101,7 +101,6 @@ export class UserRepository implements UserRepositoryPort {
   }
 
   async deleteById(id: string): Promise<boolean> {
-    const result = await this.database.pool.query("DELETE FROM users WHERE id = $1", [id]);
-    return (result.rowCount ?? 0) > 0;
+    return (await this.database.execute("DELETE FROM users WHERE id = $1", [id])) > 0;
   }
 }

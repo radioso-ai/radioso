@@ -65,7 +65,7 @@ describe("retrieval search contract", () => {
     expect(response.body.retrievalTrace.stages).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          stageId: "strategy_selection",
+          stageId: "shape_selection",
         }),
       ]),
     );

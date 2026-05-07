@@ -3025,7 +3025,7 @@
           "triggerBackoff": {
             "$ref": "#/components/schemas/TriggerBackoff"
           },
-          "strategy": {
+          "shapeName": {
             "type": "string",
             "enum": [
               "definition_lookup",
@@ -3048,13 +3048,20 @@
               "general_grounding"
             ]
           },
+          "resolvedSteps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {}
+            }
+          },
           "skillDiagnostic": {
             "type": "object",
             "properties": {
               "skillName": {
                 "type": "string"
               },
-              "strategy": {
+              "shapeName": {
                 "type": "string"
               },
               "selectionMode": {
@@ -3155,7 +3162,7 @@
                   "queryShape": {
                     "type": "string"
                   },
-                  "retrievalStrategy": {
+                  "retrievalShape": {
                     "type": "string"
                   },
                   "candidateSourceSummary": {
@@ -3165,6 +3172,13 @@
                   "ranking": {
                     "type": "object",
                     "additionalProperties": {}
+                  },
+                  "resolvedSteps": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
                   },
                   "evidenceStatus": {
                     "type": "string",
@@ -3699,7 +3713,7 @@
           "defined": {
             "type": "boolean"
           },
-          "strategyAware": {
+          "shapeAware": {
             "type": "boolean"
           },
           "supportedFields": {
@@ -3711,7 +3725,7 @@
         },
         "required": [
           "defined",
-          "strategyAware"
+          "shapeAware"
         ]
       },
       "SkillDiagnosticEvidence": {
@@ -3720,7 +3734,7 @@
           "queryShape": {
             "type": "string"
           },
-          "retrievalStrategy": {
+          "retrievalShape": {
             "type": "string"
           },
           "candidateSourceSummary": {
@@ -3730,6 +3744,13 @@
           "ranking": {
             "type": "object",
             "additionalProperties": {}
+          },
+          "resolvedSteps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {}
+            }
           },
           "evidenceStatus": {
             "type": "string",
@@ -3760,7 +3781,7 @@
           "skillName": {
             "type": "string"
           },
-          "strategy": {
+          "shapeName": {
             "type": "string"
           },
           "selectionMode": {
@@ -3861,7 +3882,7 @@
               "queryShape": {
                 "type": "string"
               },
-              "retrievalStrategy": {
+              "retrievalShape": {
                 "type": "string"
               },
               "candidateSourceSummary": {
@@ -3871,6 +3892,13 @@
               "ranking": {
                 "type": "object",
                 "additionalProperties": {}
+              },
+              "resolvedSteps": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
               },
               "evidenceStatus": {
                 "type": "string",
@@ -3924,7 +3952,8 @@
               "documents",
               "mcp",
               "platform",
-              "auth"
+              "auth",
+              "contact"
             ]
           },
           "executionClass": {
@@ -3966,6 +3995,44 @@
           },
           "diagnostics": {
             "$ref": "#/components/schemas/SkillDiagnosticsSummary"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "kind"
+              ]
+            }
+          },
+          "shapes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
           }
         },
         "required": [

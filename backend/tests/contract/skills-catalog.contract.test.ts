@@ -37,8 +37,19 @@ describe("skills catalog contract", () => {
         ],
         diagnostics: expect.objectContaining({
           defined: true,
-          strategyAware: true,
+          shapeAware: true,
         }),
+        steps: expect.arrayContaining([
+          expect.objectContaining({
+            name: "context_selection",
+            kind: "context_selection",
+          }),
+        ]),
+        shapes: expect.arrayContaining([
+          expect.objectContaining({
+            name: "definition_lookup",
+          }),
+        ]),
       }),
     ]));
     expect(response.body.skills).not.toEqual(expect.arrayContaining([
@@ -65,7 +76,7 @@ describe("skills catalog contract", () => {
       requiredCapabilities: ["retrieval.answer"],
       diagnostics: {
         defined: true,
-        strategyAware: true,
+        shapeAware: true,
       },
     });
   });

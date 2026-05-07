@@ -1074,8 +1074,9 @@ describe("chat integration", () => {
           path: "assistant_retrieval",
           retrievalInvoked: true,
         },
-        strategy: expect.any(String),
+        shapeName: expect.any(String),
         queryShape: expect.any(String),
+        resolvedSteps: expect.any(Array),
         skillDiagnostic: expect.objectContaining({
           skillName: "retrieval.answer",
           callerSurface: "assistant",
@@ -1126,7 +1127,7 @@ describe("chat integration", () => {
       retrievalInvoked: true,
     });
     expect(assistantTurn?.debug?.retrievalTrace?.summary).toMatchObject({
-      strategy: response.body.retrievalTrace.summary.strategy,
+      shapeName: response.body.retrievalTrace.summary.shapeName,
       queryShape: response.body.retrievalTrace.summary.queryShape,
       skillDiagnostic: expect.objectContaining({
         skillName: "retrieval.answer",

@@ -302,6 +302,36 @@ describe("enterprise human contact service", () => {
         },
       },
     });
+    expect(answerCalls).toBe(0);
+  });
+
+  it("does not use English user text as a deterministic contact trigger", async () => {
+    let answerCalls = 0;
+    const { service } = createService({
+      chatGateway: {
+        async answer() {
+          answerCalls += 1;
+          return "{}";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    const suggestion = await service.evaluateChatAction({
+      workspaceId: "workspace-1",
+      assistantMessageId: "assistant-message-1",
+      query: "Please have a human contact me.",
+      answer: "Here is the grounded answer.",
+      answerOutcome: "grounded_success",
+    });
+
+    expect(suggestion).toBeNull();
+    expect(answerCalls).toBe(1);
   });
 
   it("returns an editable draft without generating a summary", async () => {

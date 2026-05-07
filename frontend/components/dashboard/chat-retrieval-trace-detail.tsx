@@ -291,13 +291,13 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
     )
   }
 
-  if (stage.stageId === 'strategy_selection') {
+  if (stage.stageId === 'shape_selection') {
     return (
-      <Section title="Strategy selection">
+      <Section title="Shape selection">
         <KeyValueList
           rows={[
             { label: 'Skill', value: outputs.skillName as string | undefined },
-            { label: 'Strategy', value: formatLabel(outputs.strategy) },
+            { label: 'Shape', value: formatLabel(outputs.shapeName) },
             { label: 'Query shape', value: formatLabel(outputs.queryShape) },
             { label: 'Selection mode', value: formatLabel(outputs.selectionMode) },
             { label: 'Selection reason', value: stage.reason },
@@ -307,6 +307,7 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
             },
           ]}
         />
+        <RawBlock label="Resolved steps" value={outputs.resolvedSteps} />
       </Section>
     )
   }

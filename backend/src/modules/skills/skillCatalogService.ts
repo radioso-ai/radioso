@@ -45,8 +45,7 @@ export class SkillCatalogService {
     }
 
     if (entry.availabilityCheck !== "capability_policy") {
-      const { availabilityCheck: _availabilityCheck, ...catalogEntry } = entry;
-      return { ...catalogEntry, availability };
+      return { ...this.stripInternalFields(entry), availability };
     }
 
     for (const capability of entry.requiredCapabilities) {
@@ -72,6 +71,17 @@ export class SkillCatalogService {
 
   private stripInternalFields(entry: SkillCatalogEntryDefinition): Omit<SkillCatalogEntryDefinition, "availabilityCheck"> {
     const { availabilityCheck: _availabilityCheck, ...catalogEntry } = entry;
-    return catalogEntry;
+    return {
+      ...catalogEntry,
+      steps: entry.steps?.map((step) => ({
+        name: step.name,
+        kind: step.kind,
+      })),
+      shapes: entry.shapes?.map((shape) => ({
+        name: shape.name,
+        displayName: shape.displayName,
+        description: shape.description,
+      })),
+    };
   }
 }

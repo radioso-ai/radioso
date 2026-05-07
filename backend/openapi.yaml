@@ -2005,7 +2005,7 @@ components:
           $ref: "#/components/schemas/TriggerAnalysis"
         triggerBackoff:
           $ref: "#/components/schemas/TriggerBackoff"
-        strategy:
+        shapeName:
           type: string
           enum:
             - definition_lookup
@@ -2024,12 +2024,17 @@ components:
             - follow_up_grounding
             - default_hybrid
             - general_grounding
+        resolvedSteps:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
         skillDiagnostic:
           type: object
           properties:
             skillName:
               type: string
-            strategy:
+            shapeName:
               type: string
             selectionMode:
               type: string
@@ -2101,7 +2106,7 @@ components:
               properties:
                 queryShape:
                   type: string
-                retrievalStrategy:
+                retrievalShape:
                   type: string
                 candidateSourceSummary:
                   type: object
@@ -2109,6 +2114,11 @@ components:
                 ranking:
                   type: object
                   additionalProperties: {}
+                resolvedSteps:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: {}
                 evidenceStatus:
                   type: string
                   enum: &a10
@@ -2484,7 +2494,7 @@ components:
       properties:
         defined:
           type: boolean
-        strategyAware:
+        shapeAware:
           type: boolean
         supportedFields:
           type: array
@@ -2492,13 +2502,13 @@ components:
             type: string
       required:
         - defined
-        - strategyAware
+        - shapeAware
     SkillDiagnosticEvidence:
       type: object
       properties:
         queryShape:
           type: string
-        retrievalStrategy:
+        retrievalShape:
           type: string
         candidateSourceSummary:
           type: object
@@ -2506,6 +2516,11 @@ components:
         ranking:
           type: object
           additionalProperties: {}
+        resolvedSteps:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
         evidenceStatus:
           type: string
           enum: *a10
@@ -2519,7 +2534,7 @@ components:
       properties:
         skillName:
           type: string
-        strategy:
+        shapeName:
           type: string
         selectionMode:
           type: string
@@ -2578,7 +2593,7 @@ components:
           properties:
             queryShape:
               type: string
-            retrievalStrategy:
+            retrievalShape:
               type: string
             candidateSourceSummary:
               type: object
@@ -2586,6 +2601,11 @@ components:
             ranking:
               type: object
               additionalProperties: {}
+            resolvedSteps:
+              type: array
+              items:
+                type: object
+                additionalProperties: {}
             evidenceStatus:
               type: string
               enum: *a10
@@ -2618,6 +2638,7 @@ components:
             - mcp
             - platform
             - auth
+            - contact
         executionClass:
           type: string
           enum:
@@ -2641,6 +2662,31 @@ components:
             $ref: "#/components/schemas/SkillContractReference"
         diagnostics:
           $ref: "#/components/schemas/SkillDiagnosticsSummary"
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              kind:
+                type: string
+            required:
+              - name
+              - kind
+        shapes:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              displayName:
+                type: string
+              description:
+                type: string
+            required:
+              - name
       required:
         - name
         - displayName

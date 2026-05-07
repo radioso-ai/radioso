@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { selectRetrievalAnswerShape } from "../../src/modules/retrieval/services/retrievalShapeResolver.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
@@ -115,7 +116,7 @@ describe("retrieval execution telemetry service", () => {
     expect(metrics).toContain('execution_path="retrieval_answer"');
   });
 
-  it("emits retrieval strategy tags without raw query or document content", async () => {
+  it("emits retrieval shape tags without raw query or document content", async () => {
     const emitted: unknown[] = [];
     const telemetryService = {
       async emit(event: unknown) {
@@ -124,6 +125,30 @@ describe("retrieval execution telemetry service", () => {
       },
     };
     const service = new RetrievalExecutionTelemetryService(telemetryService as never);
+
+    const shapeSelection = selectRetrievalAnswerShape({
+      query: "What is BM25?",
+      rewrittenQuery: {
+        originalQuery: "What is BM25?",
+        rewrittenQuery: "BM25",
+        effectiveQuery: "BM25",
+        semanticQuery: "BM25",
+        lexicalQuery: "BM25",
+        responseIntent: "retrieval",
+        rewriteApplied: true,
+        retrievalEligible: true,
+        status: "applied",
+        confidence: 0.9,
+        structuredResult: {
+          rewrittenQuery: "BM25",
+          queryShape: "definition_lookup",
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        },
+      },
+    });
 
     await service.create({
       workspaceId: "workspace-1",
@@ -140,12 +165,7 @@ describe("retrieval execution telemetry service", () => {
       normalizedCandidateCount: 2,
       finalContextCount: 1,
       candidateFallbackApplied: false,
-      strategySelection: {
-        strategy: "definition_lookup",
-        queryShape: "definition_lookup",
-        selectionMode: "deterministic",
-        selectionReason: "Definition-style question.",
-      },
+      shapeSelection,
     });
 
     expect(emitted).toHaveLength(1);
@@ -153,16 +173,16 @@ describe("retrieval execution telemetry service", () => {
       eventType: "retrieval.pipeline.completed",
       metadata: {
         skillName: "retrieval.answer",
-        strategy: "definition_lookup",
+        shapeName: "definition_lookup",
         queryShape: "definition_lookup",
-        selectionMode: "deterministic",
-        selectionReason: "Definition-style question.",
+        selectionMode: "probabilistic",
+        selectionReason: shapeSelection.selectionReason,
       },
       tags: {
         skill_name: "retrieval.answer",
-        strategy: "definition_lookup",
+        shape_name: "definition_lookup",
         query_shape: "definition_lookup",
-        selection_mode: "deterministic",
+        selection_mode: "probabilistic",
       },
     });
     expect(JSON.stringify(emitted[0])).not.toContain("What is BM25");

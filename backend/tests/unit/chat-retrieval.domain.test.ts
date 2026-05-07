@@ -11,6 +11,7 @@ import { PromptContextSelectorService } from "../../src/modules/retrieval/servic
 import { OpenAIQueryRewriteGateway, QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalAnswerService } from "../../src/modules/retrieval/services/retrievalAnswerService.js";
+import { selectRetrievalAnswerShape } from "../../src/modules/retrieval/services/retrievalShapeResolver.js";
 import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 
 const message = (content: string, role: MessageRecord["role"] = "user"): MessageRecord => ({
@@ -1432,7 +1433,7 @@ describe("chat retrieval domain", () => {
     expect(result.contexts).toHaveLength(RETRIEVAL_BEHAVIOR.finalContextTopK);
   });
 
-  it("skips semantic reranking for definition lookup strategy", async () => {
+  it("skips semantic reranking for definition lookup shape", async () => {
     let rerankCalled = false;
     const stage = new ContextSelectionStageService(
       new RerankService({
@@ -1468,12 +1469,29 @@ describe("chat retrieval domain", () => {
         semanticQuery: "what is bm25",
       },
       activeQuery: "what is bm25",
-      strategySelection: {
-        strategy: "definition_lookup",
-        queryShape: "definition_lookup",
-        selectionMode: "deterministic",
-        selectionReason: "Definition-style query.",
-      },
+      shapeSelection: selectRetrievalAnswerShape({
+        query: "what is bm25",
+        rewrittenQuery: {
+          originalQuery: "what is bm25",
+          rewrittenQuery: "bm25",
+          effectiveQuery: "bm25",
+          semanticQuery: "bm25",
+          lexicalQuery: "bm25",
+          responseIntent: "retrieval",
+          rewriteApplied: true,
+          retrievalEligible: true,
+          status: "applied",
+          confidence: 0.9,
+          structuredResult: {
+            rewrittenQuery: "bm25",
+            queryShape: "definition_lookup",
+            turnKind: "fresh_subject",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.9,
+          },
+        },
+      }),
       scoredCandidates,
     } as never);
 

@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { SkillDiagnostic } from "../../skills/public.js";
+import type { ResolvedSkillRun, SkillDiagnostic } from "../../skills/public.js";
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "./queryConstraintTypes.js";
 
@@ -45,7 +45,7 @@ export type ResponseIntent = (typeof RESPONSE_INTENT)[keyof typeof RESPONSE_INTE
 
 export type ResponseLanguagePolicy = "match_user_question";
 
-export type RetrievalAnswerStrategy =
+export type RetrievalAnswerShapeName =
   | "definition_lookup"
   | "event_date_lookup"
   | "policy_answer"
@@ -54,7 +54,7 @@ export type RetrievalAnswerStrategy =
   | "default_hybrid";
 
 export type RetrievalQueryShape =
-  | RetrievalAnswerStrategy
+  | RetrievalAnswerShapeName
   | "general_grounding";
 
 export interface StructuredRewriteResult {
@@ -186,12 +186,13 @@ export interface RetrievalExecutionMetadata {
   retrievalInvoked: boolean;
 }
 
-export interface RetrievalAnswerStrategySelection {
-  strategy: RetrievalAnswerStrategy;
+export interface RetrievalAnswerShapeSelection {
+  shapeName: RetrievalAnswerShapeName;
   queryShape: RetrievalQueryShape;
   selectionMode: "deterministic" | "probabilistic";
   selectionReason: string;
   selectionConfidence?: number;
+  resolvedRun: ResolvedSkillRun;
 }
 
 export interface RetrievalTraceSummary {
@@ -235,8 +236,9 @@ export interface RetrievalTraceSummary {
   };
   triggerAnalysis?: TriggerAnalysisResult;
   triggerBackoff?: TriggerBackoffDecision;
-  strategy?: RetrievalAnswerStrategy;
+  shapeName?: RetrievalAnswerShapeName;
   queryShape?: RetrievalQueryShape;
+  resolvedSteps?: Array<Record<string, unknown>>;
   skillDiagnostic?: SkillDiagnostic;
 }
 
@@ -299,6 +301,6 @@ export interface RetrievalExecutionDiagnostics {
   fallbackReason?: string;
   triggerAnalysis?: TriggerAnalysisResult;
   triggerBackoff?: TriggerBackoffDecision;
-  strategySelection?: RetrievalAnswerStrategySelection;
+  shapeSelection?: RetrievalAnswerShapeSelection;
   skillDiagnostic?: SkillDiagnostic;
 }

@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Retrieval Strategy Diagnostics
+# Specification Quality Checklist: Retrieval Shape Diagnostics
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-05-07

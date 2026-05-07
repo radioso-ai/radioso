@@ -1,19 +1,19 @@
-# Feature Specification: Retrieval Strategy Diagnostics
+# Feature Specification: Retrieval Shape Diagnostics
 
 **Feature Branch**: `060-retrieval-strategy-diagnostics`
 **Created**: 2026-05-07
 **Status**: Approved
-**Input**: User description: "Add strategy-aware execution for retrieval.answer and expose retrieval strategy diagnostics through the existing retrieval trace graph, audit metadata, telemetry, OpenAPI, SDK types, and docs without adding generic skill execution or a new trace store."
+**Input**: User description: "Add shape-aware execution for retrieval.answer and expose retrieval shape diagnostics through the existing retrieval trace graph, audit metadata, telemetry, OpenAPI, SDK types, and docs without adding generic skill execution or a new trace store."
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - See The Retrieval Strategy Used (Priority: P1)
+### User Story 1 - See The Retrieval Shape Used (Priority: P1)
 
-An operator inspecting a grounded answer can see which retrieval strategy ran and why, using the existing retrieval trace graph and debug surfaces.
+An operator inspecting a grounded answer can see which retrieval shape ran and why, using the existing retrieval trace graph and debug surfaces.
 
 **Why this priority**: This delivers the core inspectability value without introducing a new execution model or trace store.
 
-**Independent Test**: Can be fully tested by calling the retrieval answer endpoint and verifying that the response trace includes strategy metadata, a strategy-selection stage, and a valid skill diagnostic.
+**Independent Test**: Can be fully tested by calling the retrieval answer endpoint and verifying that the response trace includes shape metadata, a shape-selection stage, and a valid skill diagnostic.
 
 **Acceptance Scenarios**:
 
@@ -23,40 +23,40 @@ An operator inspecting a grounded answer can see which retrieval strategy ran an
 
 ---
 
-### User Story 2 - Preserve Strategy Diagnostics In History (Priority: P2)
+### User Story 2 - Preserve Shape Diagnostics In History (Priority: P2)
 
-An operator reviewing previous chat or activity history can see the same retrieval strategy diagnostics that were produced during the original answer.
+An operator reviewing previous chat or activity history can see the same retrieval shape diagnostics that were produced during the original answer.
 
-**Why this priority**: Strategy diagnostics are useful only if they survive beyond the live response and remain available in existing audit-backed debug views.
+**Why this priority**: Shape diagnostics are useful only if they survive beyond the live response and remain available in existing audit-backed debug views.
 
-**Independent Test**: Can be fully tested by creating a chat turn that invokes retrieval, fetching chat history, and verifying that the stored debug payload includes the strategy diagnostic in the existing retrieval trace.
+**Independent Test**: Can be fully tested by creating a chat turn that invokes retrieval, fetching chat history, and verifying that the stored debug payload includes the shape diagnostic in the existing retrieval trace.
 
 **Acceptance Scenarios**:
 
-1. **Given** an assistant turn invokes retrieval answer behavior, **When** chat history is fetched later, **Then** the assistant turn debug payload includes the persisted retrieval trace strategy fields.
-2. **Given** a document search history record has no strategy metadata because it predates this feature, **When** the record is viewed, **Then** the history response remains valid and shows the trace without inventing strategy values.
+1. **Given** an assistant turn invokes retrieval answer behavior, **When** chat history is fetched later, **Then** the assistant turn debug payload includes the persisted retrieval trace shape fields.
+2. **Given** a document search history record has no shape metadata because it predates this feature, **When** the record is viewed, **Then** the history response remains valid and shows the trace without inventing shape values.
 
 ---
 
-### User Story 3 - Audit Retrieval Strategy Through Telemetry (Priority: P3)
+### User Story 3 - Audit Retrieval Shape Through Telemetry (Priority: P3)
 
-An engineer or operator analyzing performance telemetry can group retrieval answer runs by skill, strategy, query shape, execution surface, and fallback status.
+An engineer or operator analyzing performance telemetry can group retrieval answer runs by skill, shape, query shape, execution surface, and fallback status.
 
 **Why this priority**: Performance audits need structured tags and metadata, not only response-time counters.
 
-**Independent Test**: Can be fully tested by exercising retrieval execution telemetry and verifying emitted telemetry contains strategy metadata without raw prompt or document content.
+**Independent Test**: Can be fully tested by exercising retrieval execution telemetry and verifying emitted telemetry contains shape metadata without raw prompt or document content.
 
 **Acceptance Scenarios**:
 
-1. **Given** a retrieval pipeline completes, **When** telemetry is emitted, **Then** `retrieval.pipeline.completed` includes `skillName`, `strategy`, `queryShape`, `selectionMode`, `selectionReason`, fallback status, and execution surface.
-2. **Given** telemetry metadata is inspected, **When** user content or document content would otherwise be present, **Then** only redacted summaries, counts, IDs, and strategy labels are emitted.
+1. **Given** a retrieval pipeline completes, **When** telemetry is emitted, **Then** `retrieval.pipeline.completed` includes `skillName`, `shapeName`, `queryShape`, `selectionMode`, `selectionReason`, fallback status, and execution surface.
+2. **Given** telemetry metadata is inspected, **When** user content or document content would otherwise be present, **Then** only redacted summaries, counts, IDs, and shape labels are emitted.
 
 ### Edge Cases
 
-- What happens when a query matches multiple strategy patterns?
-- What happens when follow-up context suggests a different strategy than the latest query alone?
-- What happens when rerank is disabled by settings but the selected strategy normally benefits from reranking?
-- What happens when old audit records have retrieval traces without strategy metadata?
+- What happens when a query matches multiple shape patterns?
+- What happens when follow-up context suggests a different shape than the latest query alone?
+- What happens when rerank is disabled by settings but the selected shape normally benefits from reranking?
+- What happens when old audit records have retrieval traces without shape metadata?
 - What happens when retrieval is skipped for a non-retrieval assistant turn?
 
 ## Constitution Constraints *(mandatory)*
@@ -80,35 +80,38 @@ An engineer or operator analyzing performance telemetry can group retrieval answ
 
 ## Architecture Constraints *(mandatory)*
 
-- **Boundary Rule**: Retrieval owns strategy selection and trace assembly; telemetry service owns event emission; audit persistence continues to store existing chat/search debug metadata; HTTP routes and presenters only return already-assembled trace data.
-- **Encapsulation Rule**: Do not put strategy selection rules in route handlers, chat orchestration, OpenAPI schemas, or frontend graph components. Do not make retrieval answer a generic skill executor.
-- **New Seams Required**: Add a focused retrieval strategy selector and a small diagnostic mapper that converts retrieval execution data into the existing skill diagnostic shape.
+- **Boundary Rule**: Retrieval owns shape resolution and trace assembly; telemetry service owns event emission; audit persistence continues to store existing chat/search debug metadata; HTTP routes and presenters only return already-assembled trace data.
+- **Encapsulation Rule**: Do not put shape resolution rules in route handlers, chat orchestration, OpenAPI schemas, or frontend graph components. Do not make retrieval answer a generic skill executor.
+- **New Seams Required**: Add shared skill definitions, a skill run resolver, a focused retrieval shape resolver, and a small diagnostic mapper that converts retrieval execution data into the existing skill diagnostic shape.
 - **Anti-Goals**: Do not add `POST /api/v1/skills/{skillName}/execute`. Do not add a new trace database table. Do not replace the existing retrieval trace graph. Do not change MCP tool names. Do not route all assistant behavior through skills.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: System MUST define stable internal retrieval answer strategy names: `definition_lookup`, `event_date_lookup`, `policy_answer`, `exploratory_summary`, `follow_up_grounding`, and `default_hybrid`.
-- **FR-002**: System MUST select a retrieval answer strategy from existing continuity metadata and language-neutral structured query interpretation metadata before the trace is assembled.
+- **FR-001**: System MUST define stable internal retrieval answer shape names: `definition_lookup`, `event_date_lookup`, `policy_answer`, `exploratory_summary`, `follow_up_grounding`, and `default_hybrid`.
+- **FR-002**: System MUST select a retrieval answer shape from existing continuity metadata and language-neutral structured query interpretation metadata before the trace is assembled.
 - **FR-003**: Structured definition-shaped queries MUST select `definition_lookup` and expose a selection reason.
 - **FR-004**: Structured event or date-oriented queries MUST select `event_date_lookup` and keep rerank status visible in diagnostics.
 - **FR-005**: Follow-up grounded turns MUST use existing rewrite and continuity metadata when selecting `follow_up_grounding`.
-- **FR-006**: Uncertain or unmatched retrieval answer queries MUST select `default_hybrid` rather than failing strategy selection.
-- **FR-007**: Retrieval traces for retrieval answer runs MUST include `strategy`, `queryShape`, and `skillDiagnostic` in the summary.
-- **FR-008**: Retrieval traces for retrieval answer runs MUST include a `strategy_selection` stage in the stage graph.
+- **FR-006**: Uncertain or unmatched retrieval answer queries MUST select `default_hybrid` rather than failing shape resolution.
+- **FR-007**: Retrieval traces for retrieval answer runs MUST include `shapeName`, `queryShape`, `resolvedSteps`, and `skillDiagnostic` in the summary.
+- **FR-008**: Retrieval traces for retrieval answer runs MUST include a `shape_selection` stage in the stage graph.
 - **FR-009**: The emitted skill diagnostic MUST validate against the shared skills diagnostic schema and identify `retrieval.answer`.
-- **FR-010**: `retrieval.pipeline.completed` telemetry MUST include strategy, query shape, skill name, selection mode, selection reason, fallback status, and execution surface.
+- **FR-010**: `retrieval.pipeline.completed` telemetry MUST include shape name, query shape, skill name, selection mode, selection reason, fallback status, and execution surface.
 - **FR-011**: Telemetry and persisted debug metadata MUST NOT include raw prompts, raw document contents, provider secrets, or full retrieved chunk text beyond existing safe trace references.
-- **FR-012**: Existing chat history and document search history readers MUST tolerate older traces that do not contain strategy fields.
+- **FR-012**: Existing chat history and document search history readers MUST tolerate older traces that do not contain shape fields.
 - **FR-013**: Public API and SDK contract artifacts MUST be updated for additive trace fields.
-- **FR-014**: Product documentation MUST describe the existing activity/debug graph as the operator-facing surface for retrieval strategy diagnostics.
+- **FR-014**: Product documentation MUST describe the existing activity/debug graph as the operator-facing surface for retrieval shape diagnostics.
 - **FR-015**: The feature MUST include a message-queue impact review and state whether document worker dispatch, AMQP payloads, retry semantics, queue tests, or queue docs are affected.
+- **FR-016**: `retrieval.answer` MUST be represented as a skill definition with data-only steps and shape overrides.
+- **FR-017**: EE `human_contact.request` MUST be represented as an EE-only skill definition registered only when the EE module is installed.
+- **FR-018**: Human contact deterministic triggers MUST come from structured outcomes or explicit UI action sources, not English keyword or regex matching.
 
 ### Key Entities
 
-- **Retrieval Strategy Selection**: The traceable decision that assigns a strategy and query shape to one retrieval answer run.
-- **Strategy Selection Stage**: A retrieval trace graph stage that records the selected strategy, query shape, selection mode, and reason.
+- **Retrieval Shape Selection**: The traceable decision that assigns a shape and query shape to one retrieval answer run.
+- **Shape Selection Stage**: A retrieval trace graph stage that records the selected shape, query shape, selection mode, and reason.
 - **Skill Diagnostic**: The shared diagnostic payload for `retrieval.answer`, embedded in the existing retrieval trace summary.
 - **Telemetry Event Metadata**: Redacted structured metadata attached to `retrieval.pipeline.completed` for performance and behavior audit.
 
@@ -116,9 +119,9 @@ An engineer or operator analyzing performance telemetry can group retrieval answ
 
 ### Measurable Outcomes
 
-- **SC-001**: 100% of new retrieval answer responses include a retrieval trace summary strategy and query shape.
-- **SC-002**: 100% of new retrieval answer traces include a `strategy_selection` stage.
-- **SC-003**: Strategy diagnostics validate against the shared skill diagnostic schema in unit coverage.
-- **SC-004**: Chat history replay preserves retrieval strategy diagnostics for assistant turns created after the feature ships.
-- **SC-005**: Telemetry tests show strategy metadata is emitted without raw prompt or document content.
+- **SC-001**: 100% of new retrieval answer responses include a retrieval trace summary shape and query shape.
+- **SC-002**: 100% of new retrieval answer traces include a `shape_selection` stage.
+- **SC-003**: Shape diagnostics validate against the shared skill diagnostic schema in unit coverage.
+- **SC-004**: Chat history replay preserves retrieval shape diagnostics for assistant turns created after the feature ships.
+- **SC-005**: Telemetry tests show shape metadata is emitted without raw prompt or document content.
 - **SC-006**: Existing retrieval search, assistant route names, MCP tool names, and generic skills catalog behavior remain unchanged.

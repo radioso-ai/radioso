@@ -1,16 +1,12 @@
 import { capabilityNames } from "../../shared/domain/capabilityPolicy.js";
 import { skillDiagnosticFieldNames, type SkillCatalogEntryDefinition } from "./domain.js";
+import { retrievalAnswerSkillDefinition } from "./definitions/retrieval.answer.js";
 import { SkillCatalogRegistry } from "./skillCatalogRegistry.js";
 
 const diagnostics = {
   defined: true,
-  strategyAware: false,
+  shapeAware: false,
   supportedFields: [...skillDiagnosticFieldNames],
-};
-
-const strategyDiagnostics = {
-  ...diagnostics,
-  strategyAware: true,
 };
 
 export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
@@ -53,31 +49,9 @@ export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
         path: "/api/v1/retrieval/search",
       },
     ],
-    diagnostics: strategyDiagnostics,
+    diagnostics,
   },
-  {
-    name: "retrieval.answer",
-    displayName: "Retrieval answer",
-    description: "Generate a grounded answer from workspace evidence without assistant persona.",
-    owner: "retrieval",
-    executionClass: "interactive",
-    supportedCallers: ["retrieval_api", "sdk", "mcp"],
-    requiredCapabilities: [capabilityNames.retrieval.answer],
-    contractReferences: [
-      {
-        kind: "http",
-        label: "Retrieval answer API",
-        method: "POST",
-        path: "/api/v1/retrieval/answer",
-      },
-      {
-        kind: "mcp_tool",
-        label: "MCP grounded answer tool",
-        path: "answer_grounded",
-      },
-    ],
-    diagnostics: strategyDiagnostics,
-  },
+  retrievalAnswerSkillDefinition,
   {
     name: "documents.ingest",
     displayName: "Document ingestion",
@@ -122,7 +96,7 @@ export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
         path: "search_documents",
       },
     ],
-    diagnostics: strategyDiagnostics,
+    diagnostics,
   },
   {
     name: "documents.delete",

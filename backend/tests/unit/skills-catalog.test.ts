@@ -45,8 +45,14 @@ describe("skills catalog", () => {
       ]),
       diagnostics: {
         defined: true,
-        strategyAware: true,
+        shapeAware: true,
       },
+      steps: expect.arrayContaining([
+        expect.objectContaining({ name: "context_selection", kind: "context_selection" }),
+      ]),
+      shapes: expect.arrayContaining([
+        expect.objectContaining({ name: "definition_lookup" }),
+      ]),
     });
     for (const skill of catalog.skills) {
       expect(skill.contractReferences).not.toContainEqual(expect.objectContaining({
@@ -118,7 +124,7 @@ describe("skills catalog", () => {
   it("validates deterministic, retrieval, and unsupported diagnostic shapes", () => {
     expect(skillDiagnosticFieldNames).toEqual(expect.arrayContaining([
       "skillName",
-      "strategy",
+      "shapeName",
       "selectionMode",
       "capabilityChecks",
       "fallback",
@@ -136,7 +142,7 @@ describe("skills catalog", () => {
 
     expect(validateSkillDiagnostic({
       skillName: "retrieval.answer",
-      strategy: "definition_lookup",
+      shapeName: "definition_lookup",
       selectionMode: "probabilistic",
       selectionReason: "query_shape_definition",
       selectionConfidence: 0.86,
@@ -146,7 +152,7 @@ describe("skills catalog", () => {
       outcome: "success",
       evidence: {
         queryShape: "definition_lookup",
-        retrievalStrategy: "definition_lookup",
+        retrievalShape: "definition_lookup",
         evidenceStatus: "found",
         supportStatus: "supported",
         groundingOutcome: "grounded_success",

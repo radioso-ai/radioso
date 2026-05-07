@@ -8,6 +8,7 @@ import type {
   RetrievalTraceStageStatus,
 } from "../domain/retrievalPipelineTypes.js";
 import type { PromptAssemblyStageResult } from "./retrievalPipelineStages.js";
+import { getContextSelectionClauses, summarizeResolvedSteps } from "./retrievalShapeResolver.js";
 
 interface StageTiming {
   startedAt: string;
@@ -23,7 +24,7 @@ export interface RetrievalTraceAssemblerInput {
     totalDurationMs: number;
     retrievalContext: StageTiming;
     queryInterpretation: StageTiming;
-    strategySelection?: StageTiming;
+    shapeSelection?: StageTiming;
     semanticRetrieval: StageTiming;
     lexicalRetrieval: StageTiming;
     candidatePreparation: StageTiming;
@@ -122,6 +123,9 @@ export class RetrievalTraceAssembler {
       durationMs: Math.max(0, Math.round(timings.lexicalRetrieval.durationMs / Math.max(lexicalBranches.length, 1))),
     };
 
+    const contextSelectionClauses = getContextSelectionClauses(prompt.shapeSelection?.resolvedRun);
+    const resolvedSteps = summarizeResolvedSteps(diagnostics.shapeSelection?.resolvedRun);
+
     const stages: RetrievalTraceStage[] = [
       buildStage("context", "context", "Context", "applied", timings.retrievalContext, {
         settings: {
@@ -207,25 +211,26 @@ export class RetrievalTraceAssembler {
           reason: prompt.triggerAnalysis.failureReason,
         },
       ),
-      ...(diagnostics.strategySelection
+      ...(diagnostics.shapeSelection
         ? [
             buildStage(
-              "strategy_selection",
-              "strategy_selection",
-              "Strategy selection",
+              "shape_selection",
+              "shape_selection",
+              "Shape selection",
               "applied",
-              timings.strategySelection ?? timings.queryInterpretation,
+              timings.shapeSelection ?? timings.queryInterpretation,
               {
                 outputs: {
                   skillName: diagnostics.skillDiagnostic?.skillName ?? "retrieval.answer",
-                  strategy: diagnostics.strategySelection.strategy,
-                  queryShape: diagnostics.strategySelection.queryShape,
-                  selectionMode: diagnostics.strategySelection.selectionMode,
+                  shapeName: diagnostics.shapeSelection.shapeName,
+                  queryShape: diagnostics.shapeSelection.queryShape,
+                  selectionMode: diagnostics.shapeSelection.selectionMode,
+                  resolvedSteps,
                 },
                 metrics: {
-                  selectionConfidence: diagnostics.strategySelection.selectionConfidence ?? 1,
+                  selectionConfidence: diagnostics.shapeSelection.selectionConfidence ?? 1,
                 },
-                reason: diagnostics.strategySelection.selectionReason,
+                reason: diagnostics.shapeSelection.selectionReason,
               },
             ),
           ]
@@ -284,12 +289,11 @@ export class RetrievalTraceAssembler {
       buildStage("selection", "context_selection", "Context selection", toStatus(prompt.rerankStatus), timings.contextSelection, {
         settings: {
           rerankEnabled: prompt.settings.rerankEnabled,
-          effectiveRerankEnabled: prompt.strategySelection?.strategy === "definition_lookup"
+          effectiveRerankEnabled: contextSelectionClauses.ranking.rerankMode === "disabled"
             ? false
             : prompt.settings.rerankEnabled,
-          strategyRerankOverride: prompt.strategySelection?.strategy === "definition_lookup"
-            ? "definition_lookup_skips_rerank"
-            : undefined,
+          shapeRerankOverride: contextSelectionClauses.ranking.rerankMode === "disabled" ? "disabled_by_shape" : undefined,
+          lexicalBias: contextSelectionClauses.ranking.lexicalBias,
           rerankTopK: prompt.settings.rerankTopK,
         },
         outputs: {
@@ -339,16 +343,16 @@ export class RetrievalTraceAssembler {
     const links: RetrievalTraceLink[] = [
       { fromStageId: "context", toStageId: "interpretation", kind: "sequence" },
       { fromStageId: "interpretation", toStageId: "trigger_analysis", kind: "sequence" },
-      ...(diagnostics.strategySelection
-        ? [{ fromStageId: "trigger_analysis", toStageId: "strategy_selection", kind: "sequence" as const }]
+      ...(diagnostics.shapeSelection
+        ? [{ fromStageId: "trigger_analysis", toStageId: "shape_selection", kind: "sequence" as const }]
         : []),
       ...semanticBranches.map((branch) => ({
-        fromStageId: diagnostics.strategySelection ? "strategy_selection" : "trigger_analysis",
+        fromStageId: diagnostics.shapeSelection ? "shape_selection" : "trigger_analysis",
         toStageId: branch.stageId,
         kind: "branch" as const,
       })),
       ...lexicalBranches.map((branch) => ({
-        fromStageId: diagnostics.strategySelection ? "strategy_selection" : "trigger_analysis",
+        fromStageId: diagnostics.shapeSelection ? "shape_selection" : "trigger_analysis",
         toStageId: branch.stageId,
         kind: "branch" as const,
       })),
@@ -408,8 +412,9 @@ export class RetrievalTraceAssembler {
         },
         triggerAnalysis: diagnostics.triggerAnalysis,
         triggerBackoff: diagnostics.triggerBackoff,
-        strategy: diagnostics.strategySelection?.strategy,
-        queryShape: diagnostics.strategySelection?.queryShape,
+        shapeName: diagnostics.shapeSelection?.shapeName,
+        queryShape: diagnostics.shapeSelection?.queryShape,
+        resolvedSteps,
         skillDiagnostic: diagnostics.skillDiagnostic,
       },
     };

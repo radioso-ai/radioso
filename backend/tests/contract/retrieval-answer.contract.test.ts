@@ -62,12 +62,13 @@ describe("retrieval answer contract", () => {
             path: "retrieval_answer",
             retrievalInvoked: true,
           },
-          strategy: expect.any(String),
+          shapeName: expect.any(String),
           queryShape: expect.any(String),
+          resolvedSteps: expect.any(Array),
           skillDiagnostic: expect.objectContaining({
             skillName: "retrieval.answer",
-            strategy: expect.any(String),
-            selectionMode: "deterministic",
+            shapeName: expect.any(String),
+            selectionMode: expect.any(String),
             callerSurface: "retrieval_api",
             evidence: expect.objectContaining({
               supportStatus: "supported",
@@ -79,12 +80,13 @@ describe("retrieval answer contract", () => {
     expect(response.body.retrievalTrace.stages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          stageId: "strategy_selection",
-          kind: "strategy_selection",
+          stageId: "shape_selection",
+          kind: "shape_selection",
           status: "applied",
           outputs: expect.objectContaining({
-            strategy: expect.any(String),
+            shapeName: expect.any(String),
             queryShape: expect.any(String),
+            resolvedSteps: expect.any(Array),
           }),
         }),
       ]),

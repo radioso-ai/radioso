@@ -46,13 +46,13 @@ export function ChatRetrievalInfo({
         </section>
       ) : null}
 
-      {retrievalInfo?.strategy || retrievalInfo?.skillDiagnostic ? (
+      {retrievalInfo?.shapeName || retrievalInfo?.skillDiagnostic ? (
         <section className="rounded-lg border border-border/70 bg-background/60 p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium text-foreground">Retrieval strategy</p>
-            {retrievalInfo.strategy ? (
+            <p className="text-sm font-medium text-foreground">Retrieval shape</p>
+            {retrievalInfo.shapeName ? (
               <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                {formatExecutionLabel(retrievalInfo.strategy)}
+                {formatExecutionLabel(retrievalInfo.shapeName)}
               </span>
             ) : null}
             {retrievalInfo.queryShape ? (

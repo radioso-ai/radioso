@@ -7,7 +7,7 @@ import type {
   RetrievalSubquery,
   ResponseLanguagePolicy,
   RewrittenRetrievalQuery,
-  RetrievalAnswerStrategySelection,
+  RetrievalAnswerShapeSelection,
   RetrievalExecutionMetadata,
   TriggerAnalysisResult,
   TriggerBackoffDecision,
@@ -45,7 +45,7 @@ export interface QueryInterpretationStageResult extends RetrievalContextStageRes
   triggerAnalysis: TriggerAnalysisResult;
   promptHistory: MessageRecord[];
   continuityDecision: "unchanged" | "updated" | "unresolved" | "rejected";
-  strategySelection?: RetrievalAnswerStrategySelection;
+  shapeSelection?: RetrievalAnswerShapeSelection;
 }
 
 export interface RetrievalBranchResult {

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { CapabilityName } from "../../shared/domain/capabilityPolicy.js";
 
-export const skillOwnerSchema = z.enum(["assistant", "retrieval", "documents", "mcp", "platform", "auth"]);
+export const skillOwnerSchema = z.enum(["assistant", "retrieval", "documents", "mcp", "platform", "auth", "contact"]);
 export type SkillOwner = z.infer<typeof skillOwnerSchema>;
 
 export const skillExecutionClassSchema = z.enum(["interactive", "deferred", "administrative"]);
@@ -34,10 +34,23 @@ export type SkillContractReference = z.infer<typeof skillContractReferenceSchema
 
 export const skillDiagnosticsSummarySchema = z.object({
   defined: z.boolean(),
-  strategyAware: z.boolean(),
+  shapeAware: z.boolean(),
   supportedFields: z.array(z.string()).optional(),
 });
 export type SkillDiagnosticsSummary = z.infer<typeof skillDiagnosticsSummarySchema>;
+
+const skillStepSummarySchema = z.object({
+  name: z.string(),
+  kind: z.string(),
+});
+export type SkillStepSummary = z.infer<typeof skillStepSummarySchema>;
+
+const skillShapeSummarySchema = z.object({
+  name: z.string(),
+  displayName: z.string().optional(),
+  description: z.string().optional(),
+});
+export type SkillShapeSummary = z.infer<typeof skillShapeSummarySchema>;
 
 export const skillCatalogEntrySchema = z.object({
   name: z.string(),
@@ -50,6 +63,8 @@ export const skillCatalogEntrySchema = z.object({
   requiredCapabilities: z.array(z.string()),
   contractReferences: z.array(skillContractReferenceSchema),
   diagnostics: skillDiagnosticsSummarySchema,
+  steps: z.array(skillStepSummarySchema).optional(),
+  shapes: z.array(skillShapeSummarySchema).optional(),
 });
 export type SkillCatalogEntry = Omit<z.infer<typeof skillCatalogEntrySchema>, "requiredCapabilities"> & {
   requiredCapabilities: CapabilityName[];
@@ -79,9 +94,10 @@ export const skillCapabilityCheckSchema = z.object({
 
 export const skillDiagnosticEvidenceSchema = z.object({
   queryShape: z.string().optional(),
-  retrievalStrategy: z.string().optional(),
+  retrievalShape: z.string().optional(),
   candidateSourceSummary: z.record(z.unknown()).optional(),
   ranking: z.record(z.unknown()).optional(),
+  resolvedSteps: z.array(z.record(z.unknown())).optional(),
   evidenceStatus: z.enum(["found", "missing", "partial", "not_applicable"]).optional(),
   supportStatus: z.enum(["supported", "unsupported", "not_checked", "not_applicable"]).optional(),
   groundingOutcome: z.string().optional(),
@@ -89,7 +105,7 @@ export const skillDiagnosticEvidenceSchema = z.object({
 
 export const skillDiagnosticSchema = z.object({
   skillName: z.string(),
-  strategy: z.string().optional(),
+  shapeName: z.string().optional(),
   selectionMode: z.enum(["deterministic", "probabilistic"]),
   selectionReason: z.string().optional(),
   selectionConfidence: z.number().min(0).max(1).optional(),
@@ -110,9 +126,57 @@ export const skillDiagnosticSchema = z.object({
 });
 export type SkillDiagnostic = z.infer<typeof skillDiagnosticSchema>;
 
+export type SkillStepClauses = Record<string, unknown>;
+
+export interface SkillStepDefinition {
+  name: string;
+  kind: string;
+  displayName?: string;
+  clauses: SkillStepClauses;
+  trace?: {
+    expose: boolean;
+    redact?: string[];
+  };
+  telemetry?: {
+    eventName?: string;
+    tags?: string[];
+  };
+}
+
+export type SkillStepOverride = Partial<SkillStepClauses>;
+
+export interface SkillShapeDefinition {
+  name: string;
+  displayName?: string;
+  description?: string;
+  stepOverrides: Record<string, SkillStepOverride>;
+}
+
+export interface SkillDefinition extends SkillCatalogEntryDefinition {
+  steps: SkillStepDefinition[];
+  shapes?: SkillShapeDefinition[];
+}
+
+export interface ResolvedSkillStep {
+  name: string;
+  kind: string;
+  displayName?: string;
+  clauses: SkillStepClauses;
+  overrideApplied: boolean;
+  appliedOverride?: SkillStepOverride;
+}
+
+export interface ResolvedSkillRun {
+  skillName: string;
+  shapeName: string;
+  requestedShapeName?: string;
+  shapeFound: boolean;
+  resolvedSteps: ResolvedSkillStep[];
+}
+
 export const skillDiagnosticFieldNames = [
   "skillName",
-  "strategy",
+  "shapeName",
   "selectionMode",
   "selectionReason",
   "selectionConfidence",

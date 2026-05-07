@@ -22,7 +22,7 @@ import { RetrievalContextStageService } from "./retrievalContextStage.js";
 import { RetrievalDiagnosticsStageService } from "./retrievalDiagnosticsStage.js";
 import { RetrievalPipelineTraceBuilder } from "./retrievalPipelineTraceBuilder.js";
 import { MetadataRuleScoringService } from "./metadataRuleScoringService.js";
-import { selectRetrievalAnswerStrategy } from "./retrievalStrategySelector.js";
+import { selectRetrievalAnswerShape } from "./retrievalShapeResolver.js";
 import type {
   QueryInterpretationStageResult,
   CandidatePreparationStage,
@@ -133,8 +133,8 @@ export class RetrievalPipelineService {
   }
 
   async runInterpreted(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult> {
-    const strategySelection = this.shouldSelectRetrievalAnswerStrategy(input.request)
-      ? await this.measure(() => selectRetrievalAnswerStrategy({
+    const shapeSelection = this.shouldSelectRetrievalAnswerShape(input.request)
+      ? await this.measure(() => selectRetrievalAnswerShape({
           query: input.request.query,
           rewrittenQuery: input.interpretation.result.rewrittenQuery,
           continuityDecision: input.interpretation.result.continuityDecision,
@@ -146,7 +146,7 @@ export class RetrievalPipelineService {
       result: {
         ...input.interpretation.result,
         request: input.request,
-        strategySelection: strategySelection?.result,
+        shapeSelection: shapeSelection?.result,
       },
     };
     const retrieval = await this.measure(() => this.candidateRetrievalStage.execute(interpretation.result));
@@ -158,7 +158,7 @@ export class RetrievalPipelineService {
       traceStartedAtMs: input.traceStartedAtMs,
       context: input.context,
       interpretation,
-      strategySelection,
+      shapeSelection,
       retrieval,
       prepared,
       selection,
@@ -249,7 +249,7 @@ export class RetrievalPipelineService {
     };
   }
 
-  private shouldSelectRetrievalAnswerStrategy(input: RetrievalPipelineRequest): boolean {
+  private shouldSelectRetrievalAnswerShape(input: RetrievalPipelineRequest): boolean {
     return input.execution?.path === "retrieval_answer" ||
       input.execution?.path === "mcp_grounded_answer" ||
       input.execution?.path === "assistant_retrieval";

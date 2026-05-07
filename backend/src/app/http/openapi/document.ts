@@ -783,7 +783,7 @@ const RetrievalInfoSchema = registry.register(
     rewrite: RewriteInfoSchema.optional(),
     triggerAnalysis: TriggerAnalysisSchema.optional(),
     triggerBackoff: TriggerBackoffSchema.optional(),
-    strategy: z.enum([
+    shapeName: z.enum([
       "definition_lookup",
       "event_date_lookup",
       "policy_answer",
@@ -800,6 +800,7 @@ const RetrievalInfoSchema = registry.register(
       "default_hybrid",
       "general_grounding",
     ]).optional(),
+    resolvedSteps: z.array(z.record(z.unknown())).optional(),
     skillDiagnostic: skillDiagnosticSchema.optional(),
   }),
 );

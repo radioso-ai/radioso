@@ -58,7 +58,7 @@ describe("hybrid retrieval info", () => {
       },
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       parsedQuery: {
         originalQuery: "retreats in Estonia",
         semanticQuery: "retreats",
@@ -113,6 +113,7 @@ describe("hybrid retrieval info", () => {
         restoredCandidateCount: 3,
       },
     });
+    expect(result.resolvedSteps).toEqual([]);
   });
 
   it("includes execution metadata when a caller supplies the capability surface", () => {

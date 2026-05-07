@@ -437,7 +437,7 @@ export interface RetrievalInfo {
     relaxedRuleIds: string[]
     restoredCandidateCount?: number
   }
-  strategy?:
+  shapeName?:
     | 'definition_lookup'
     | 'event_date_lookup'
     | 'policy_answer'
@@ -453,11 +453,12 @@ export interface RetrievalInfo {
     | 'default_hybrid'
     | 'general_grounding'
   skillDiagnostic?: SkillDiagnostic
+  resolvedSteps?: Array<Record<string, unknown>>
 }
 
 export interface SkillDiagnostic {
   skillName: string
-  strategy?: string
+  shapeName?: string
   selectionMode: 'deterministic' | 'probabilistic'
   selectionReason?: string
   selectionConfidence?: number
@@ -480,9 +481,10 @@ export interface SkillDiagnostic {
   }
   evidence?: {
     queryShape?: string
-    retrievalStrategy?: string
+    retrievalShape?: string
     candidateSourceSummary?: Record<string, unknown>
     ranking?: Record<string, unknown>
+    resolvedSteps?: Array<Record<string, unknown>>
     evidenceStatus?: 'found' | 'missing' | 'partial' | 'not_applicable'
     supportStatus?: 'supported' | 'unsupported' | 'not_checked' | 'not_applicable'
     groundingOutcome?: string

@@ -2,6 +2,7 @@ import { RerankService } from "./rerankService.js";
 import { PromptContextSelectorService } from "./promptContextSelectorService.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { CandidatePreparationStageResult, ContextSelectionStage as ContextSelectionStageContract } from "./retrievalPipelineStages.js";
+import { getContextSelectionClauses } from "./retrievalShapeResolver.js";
 
 export class ContextSelectionStageService implements ContextSelectionStageContract {
   constructor(
@@ -11,7 +12,8 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
 
   async execute(input: CandidatePreparationStageResult) {
     const finalContextTopK = RETRIEVAL_BEHAVIOR.finalContextTopK;
-    const rerankEnabled = input.strategySelection?.strategy === "definition_lookup"
+    const clauses = getContextSelectionClauses(input.shapeSelection?.resolvedRun);
+    const rerankEnabled = clauses.ranking.rerankMode === "disabled"
       ? false
       : input.settings.rerankEnabled;
     const rerankCandidateCount = Math.min(

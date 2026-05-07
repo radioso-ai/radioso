@@ -20,7 +20,7 @@ const getSequentialStages = (trace: RetrievalTrace) =>
     'context',
     'interpretation',
     'trigger_analysis',
-    'strategy_selection',
+    'shape_selection',
     'preparation',
     'selection',
     'prompt',
@@ -79,14 +79,14 @@ const summaryLine = (stage: RetrievalTraceStage) => {
       : 'Trigger matching'
   }
 
-  if (stage.stageId === 'strategy_selection') {
-    const outputs = stage.outputs as { strategy?: string; queryShape?: string } | undefined
-    const strategy = outputs?.strategy?.replaceAll('_', ' ')
+  if (stage.stageId === 'shape_selection') {
+    const outputs = stage.outputs as { shapeName?: string; queryShape?: string } | undefined
+    const shapeName = outputs?.shapeName?.replaceAll('_', ' ')
     const queryShape = outputs?.queryShape?.replaceAll('_', ' ')
-    if (strategy && queryShape && strategy !== queryShape) {
-      return `${strategy} • ${queryShape}`
+    if (shapeName && queryShape && shapeName !== queryShape) {
+      return `${shapeName} • ${queryShape}`
     }
-    return strategy ?? queryShape ?? 'Retrieval strategy'
+    return shapeName ?? queryShape ?? 'Retrieval shape'
   }
 
   if (stage.stageId === 'prompt') {

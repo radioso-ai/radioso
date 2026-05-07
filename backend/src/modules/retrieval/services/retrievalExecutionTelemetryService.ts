@@ -3,7 +3,7 @@ import type {
   ResponseLanguagePolicy,
   RetrievalExecutionDiagnostics,
   RetrievalExecutionMetadata,
-  RetrievalAnswerStrategySelection,
+  RetrievalAnswerShapeSelection,
   RetrievalSubquery,
   TriggerAnalysisResult,
   TriggerBackoffDecision,
@@ -12,7 +12,7 @@ import type {
 } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
-import { buildRetrievalAnswerSkillDiagnostic } from "./retrievalStrategySelector.js";
+import { buildRetrievalAnswerSkillDiagnostic } from "./retrievalShapeResolver.js";
 import type { SkillCallerSurface } from "../../skills/public.js";
 
 const toCallerSurface = (execution?: RetrievalExecutionMetadata): SkillCallerSurface => {
@@ -31,7 +31,7 @@ export class RetrievalExecutionTelemetryService {
   async create(input: {
     workspaceId: string;
     execution?: RetrievalExecutionMetadata;
-    strategySelection?: RetrievalAnswerStrategySelection;
+    shapeSelection?: RetrievalAnswerShapeSelection;
     rewriteStatus: RewriteStatus;
     rerankStatus: RerankStatus;
     originalCandidateCount: number;
@@ -67,8 +67,8 @@ export class RetrievalExecutionTelemetryService {
       merged: input.normalizedCandidateCount,
       final: input.finalContextCount,
     };
-    const skillDiagnostic = input.strategySelection
-      ? buildRetrievalAnswerSkillDiagnostic(input.strategySelection, {
+    const skillDiagnostic = input.shapeSelection
+      ? buildRetrievalAnswerSkillDiagnostic(input.shapeSelection, {
           callerSurface: toCallerSurface(input.execution),
           rerankStatus: input.rerankStatus,
           candidateCounts,
@@ -110,10 +110,10 @@ export class RetrievalExecutionTelemetryService {
         executionPath: input.execution?.path,
         retrievalInvoked: input.execution?.retrievalInvoked ?? input.retrievalSkipped !== true,
         skillName: skillDiagnostic?.skillName,
-        strategy: input.strategySelection?.strategy,
-        queryShape: input.strategySelection?.queryShape,
-        selectionMode: input.strategySelection?.selectionMode,
-        selectionReason: input.strategySelection?.selectionReason,
+        shapeName: input.shapeSelection?.shapeName,
+        queryShape: input.shapeSelection?.queryShape,
+        selectionMode: input.shapeSelection?.selectionMode,
+        selectionReason: input.shapeSelection?.selectionReason,
       },
       tags: {
         rewrite_status: input.rewriteStatus,
@@ -123,9 +123,9 @@ export class RetrievalExecutionTelemetryService {
         execution_surface: input.execution?.surface ?? "unknown",
         execution_path: input.execution?.path ?? "unknown",
         skill_name: skillDiagnostic?.skillName ?? "unknown",
-        strategy: input.strategySelection?.strategy ?? "unknown",
-        query_shape: input.strategySelection?.queryShape ?? "unknown",
-        selection_mode: input.strategySelection?.selectionMode ?? "unknown",
+        shape_name: input.shapeSelection?.shapeName ?? "unknown",
+        query_shape: input.shapeSelection?.queryShape ?? "unknown",
+        selection_mode: input.shapeSelection?.selectionMode ?? "unknown",
       },
     });
 

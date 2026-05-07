@@ -182,5 +182,7 @@ describe("Enterprise frontend route sync", () => {
     expect(dockerfile).toContain("ee/packages/embed-widget/feature-manifest.mjs");
     expect(dockerfile).toContain("ee/packages/auth-frontend/package.json");
     expect(dockerfile).toContain("ee/packages/embed-widget/package.json");
+    expect(dockerfile).toContain("ee/readme.md");
+    expect(dockerfile).toContain("docs-portal/content/quickstarts/website-embed.mdx");
   });
 });

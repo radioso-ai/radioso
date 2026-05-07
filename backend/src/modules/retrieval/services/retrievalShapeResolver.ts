@@ -42,7 +42,7 @@ const retrievalShapeNames = new Set(retrievalAnswerSkillDefinition.shapes?.map((
 
 const isFollowUp = (input: RetrievalShapeResolverInput): boolean => {
   const turnKind = input.rewrittenQuery?.structuredResult?.turnKind;
-  if ((input.historyMessageCount ?? 0) === 0) {
+  if ((input.historyMessageCount ?? 0) === 0 || input.continuityDecision !== "updated") {
     return false;
   }
   return (

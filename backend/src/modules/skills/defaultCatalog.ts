@@ -6,7 +6,13 @@ import { SkillCatalogRegistry } from "./skillCatalogRegistry.js";
 const diagnostics = {
   defined: true,
   shapeAware: false,
+  strategyAware: false,
   supportedFields: [...skillDiagnosticFieldNames],
+};
+
+const legacyStrategyDiagnostics = {
+  ...diagnostics,
+  strategyAware: true,
 };
 
 export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
@@ -31,7 +37,7 @@ export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
         path: "chat.stream",
       },
     ],
-    diagnostics,
+    diagnostics: legacyStrategyDiagnostics,
   },
   {
     name: "retrieval.search",
@@ -49,7 +55,7 @@ export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
         path: "/api/v1/retrieval/search",
       },
     ],
-    diagnostics,
+    diagnostics: legacyStrategyDiagnostics,
   },
   retrievalAnswerSkillDefinition,
   {

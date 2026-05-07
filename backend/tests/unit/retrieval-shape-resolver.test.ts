@@ -139,6 +139,40 @@ describe("retrieval shape resolver", () => {
     });
   });
 
+  it("does not select follow-up grounding when continuity was not updated", () => {
+    const selection = selectRetrievalAnswerShape({
+      query: "What about that?",
+      continuityDecision: "rejected",
+      historyMessageCount: 2,
+      rewrittenQuery: {
+        originalQuery: "What about that?",
+        rewrittenQuery: "What about that?",
+        effectiveQuery: "What about that?",
+        semanticQuery: "What about that?",
+        lexicalQuery: "What about that?",
+        responseIntent: "retrieval",
+        rewriteApplied: false,
+        retrievalEligible: true,
+        status: "rejected",
+        confidence: 0.4,
+        structuredResult: {
+          rewrittenQuery: "What about that?",
+          queryShape: "general_grounding",
+          turnKind: "referential_followup",
+          relatedEntities: [],
+          unresolved: true,
+          confidence: 0.4,
+        },
+      },
+    });
+
+    expect(selection).toMatchObject({
+      shapeName: "default_hybrid",
+      queryShape: "general_grounding",
+      selectionMode: "deterministic",
+    });
+  });
+
   it("falls back to the default hybrid shape for uncertain queries", () => {
     const selection = selectRetrievalAnswerShape({
       query: "Narayani Arudra",

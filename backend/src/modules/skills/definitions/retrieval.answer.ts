@@ -25,6 +25,7 @@ export const retrievalAnswerSkillDefinition: SkillDefinition = {
   diagnostics: {
     defined: true,
     shapeAware: true,
+    strategyAware: true,
     supportedFields: [...skillDiagnosticFieldNames],
   },
   steps: [

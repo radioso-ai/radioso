@@ -75,7 +75,7 @@ export class SkillCatalogService {
       ...catalogEntry,
       diagnostics: {
         ...entry.diagnostics,
-        strategyAware: entry.diagnostics.shapeAware,
+        strategyAware: entry.diagnostics.strategyAware ?? entry.diagnostics.shapeAware,
       },
       steps: entry.steps?.map((step) => ({
         name: step.name,

@@ -33,7 +33,12 @@ export interface TriggerAnalysisGatewayInput {
   rules: RetrievalMetadataRule[];
 }
 
-const TRIGGER_ANALYSIS_SYSTEM_PROMPT = loadPromptTemplate("retrieval/trigger-analysis-system.md");
+let triggerAnalysisSystemPrompt: string | undefined;
+
+const getTriggerAnalysisSystemPrompt = (): string => {
+  triggerAnalysisSystemPrompt ??= loadPromptTemplate("retrieval/trigger-analysis-system.md");
+  return triggerAnalysisSystemPrompt;
+};
 
 const DEFAULT_RESPONSE_LANGUAGE_POLICY: ResponseLanguagePolicy = "match_user_question";
 const TRIGGER_MATCH_ENACTMENT_THRESHOLD = RETRIEVAL_BEHAVIOR.hybrid.triggerMatchEnactmentThreshold;
@@ -109,7 +114,7 @@ export class ModelTriggerAnalysisGateway implements TriggerAnalysisGateway {
 
   async analyze(input: TriggerAnalysisGatewayInput): Promise<TriggerAnalysisResult> {
     const raw = await this.client.complete({
-      systemPrompt: TRIGGER_ANALYSIS_SYSTEM_PROMPT,
+      systemPrompt: getTriggerAnalysisSystemPrompt(),
       prompt: buildTriggerAnalysisPrompt({
         query: input.query,
         activeQuery: input.activeQuery,

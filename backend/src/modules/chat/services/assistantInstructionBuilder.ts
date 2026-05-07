@@ -3,8 +3,7 @@ import {
   type ResponseIdentity,
 } from "../../../shared/domain/responseIdentity.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import type { ResponseLanguagePolicy } from "../../retrieval/domain/retrievalPipelineTypes.js";
-import { ConversationModeInstructionBuilder } from "../../retrieval/services/conversationModeInstructionBuilder.js";
+import { ConversationModeInstructionBuilder, type ResponseLanguagePolicy } from "../../retrieval/public.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 
 export interface AssistantInstructionInput {

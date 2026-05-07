@@ -5,10 +5,15 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
-import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
-import { RetrievalTracePresenter } from "../../retrieval/services/retrievalTracePresenter.js";
-import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
-import { resolveContextSourceUrl } from "../../retrieval/services/contextSourceUrl.js";
+import {
+  resolveContextSourceUrl,
+  RetrievalInfoPresenter,
+  RetrievalTracePresenter,
+  type RetrievalInfo,
+  type RetrievalPipelineService,
+  type RetrievalTrace,
+  type RewriteContinuityState,
+} from "../../retrieval/public.js";
 import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
 import {
   AnswerPresentationService,
@@ -33,7 +38,6 @@ import {
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { ConversationModeExpansionService } from "./conversationModeExpansionService.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
-import type { RetrievalTrace, RewriteContinuityState } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { ChatResponse, ChatRoute, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";

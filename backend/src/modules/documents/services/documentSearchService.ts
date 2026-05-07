@@ -2,8 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { DocumentRepositoryPort, DocumentSummaryRecord } from "./documentIngestionService.js";
-import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
-import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
+import type { RetrievalPipelineService, RetrievalTrace } from "../../retrieval/public.js";
 
 export type DocumentSearchActionType =
   | "open_document"

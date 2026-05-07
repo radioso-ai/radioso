@@ -4,8 +4,7 @@ import type { AnswerSegment, ChatCitation } from "../../../modules/chat/services
 import type { ChatStreamEvent } from "../../../modules/chat/services/chatService.js";
 import type { ConversationMode } from "../../../modules/settings/domain/retrievalSettings.js";
 import type { ChatRoute, ChatSuggestion, ConversationModeMetadata } from "../../../modules/chat/types/chatResponses.js";
-import type { RetrievalInfo } from "../../../modules/retrieval/services/retrievalInfoPresenter.js";
-import type { RetrievalTrace } from "../../../modules/retrieval/domain/retrievalPipelineTypes.js";
+import type { RetrievalInfo, RetrievalTrace } from "../../../modules/retrieval/public.js";
 
 export const sendChatJson = (
   res: Response,

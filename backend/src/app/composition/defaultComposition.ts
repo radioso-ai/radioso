@@ -1,13 +1,18 @@
 import type { Env } from "../config/env.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
-import { AmqpDocumentJobConsumer, AmqpDocumentJobDispatcher } from "../../modules/documents/infra/amqpDocumentJobQueue.js";
-import { CloudTasksDocumentJobDispatcher } from "../../modules/documents/infra/cloudTasksDocumentJobDispatcher.js";
-import { GcsDocumentStorage, type DocumentStoragePort } from "../../modules/documents/infra/gcsDocumentStorage.js";
-import { LocalDocumentStorage } from "../../modules/documents/infra/localDocumentStorage.js";
-import type { DocumentJobConsumerPort } from "../../modules/documents/services/documentJobConsumer.js";
-import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "../../modules/documents/services/documentJobDispatcher.js";
-import type { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
+import {
+  AmqpDocumentJobConsumer,
+  AmqpDocumentJobDispatcher,
+  CloudTasksDocumentJobDispatcher,
+  GcsDocumentStorage,
+  LocalDocumentStorage,
+  NoopDocumentJobDispatcher,
+  type DocumentJobConsumerPort,
+  type DocumentJobDispatcherPort,
+  type DocumentProcessingWorker,
+  type DocumentStoragePort,
+} from "../../modules/documents/composition.js";
 import {
   ChunkingStrategyRegistry,
   FixedWindowChunkingStrategy,

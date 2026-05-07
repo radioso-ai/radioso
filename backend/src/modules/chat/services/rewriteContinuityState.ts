@@ -1,6 +1,6 @@
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { RetrievalExecutionDiagnostics, RewriteContinuityState } from "../../retrieval/public.js";
-import type { ChatCitation } from "./answerPresentationService.js";
+import type { ChatCitation } from "../contracts/answerTypes.js";
 
 const normalizeContinuityValue = (value?: string): string | undefined => {
   if (typeof value !== "string") {

@@ -1,5 +1,6 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import type { AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
+import type { DocumentSearchHistoryEntry, DocumentSearchHistoryPage } from "../contracts/historyTypes.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import { defaultActions, type DocumentSearchResponse, type DocumentSearchResult } from "./documentSearchService.js";
 
@@ -9,22 +10,6 @@ interface DocumentSearchAuditMetadata extends Record<string, unknown> {
   resultCount: number;
   results: DocumentSearchResult[];
   retrievalTrace?: import("../../retrieval/public.js").RetrievalTrace;
-}
-
-export interface DocumentSearchHistoryEntry {
-  searchId: string;
-  query: string;
-  createdAt: string;
-  resultCount: number;
-  traceAvailable: boolean;
-  previewTopTitles: string[];
-}
-
-export interface DocumentSearchHistoryPage {
-  searches: DocumentSearchHistoryEntry[];
-  total: number;
-  nextCursor: string | null;
-  hasMore: boolean;
 }
 
 export const toDocumentSearchHistoryEntry = (event: { id: string; metadata: unknown; createdAt: Date }): DocumentSearchHistoryEntry => {

@@ -48,15 +48,17 @@ Worker dispatch has two parts. The dispatcher publishes a wake-up notification a
 
 ## Module Public Surfaces
 
-Some modules expose a public entry point for production code outside the module. The public entry point is named `public.ts` and lists the symbols the module intentionally shares.
+Some modules expose a public entry point for production code outside the module. The public entry point lists the symbols the module intentionally shares.
 
 In practice, production cross-module imports should go through that public surface. Internal folders such as `domain/`, `services/`, and `infra/` stay private unless the owning module promotes a symbol intentionally.
 
 Retrieval is the first backend pilot for this pattern. Production code outside `backend/src/modules/retrieval/` must import retrieval-owned contracts and chat-safe helpers through `backend/src/modules/retrieval/public.ts`. Composition-only services that depend back on other modules use narrower root-level entry points such as `backend/src/modules/retrieval/composition.ts`, while provider registration uses `backend/src/modules/retrieval/llmAdapters.ts`. These narrower entry points are restricted to their intended consumers so the general public surface does not create import cycles. Direct production imports from retrieval internals are blocked by the backend boundary lint check.
 
-Backend tests are excluded from the first retrieval boundary pass. Focused unit tests may still import internals while the production boundary is proven.
+Documents and chat follow the same rule with their own entry points. Shared document records, repository ports, storage ports, queue ports, and history DTOs live behind `backend/src/modules/documents/contracts/`; application wiring uses `backend/src/modules/documents/composition.ts`, and chat history presentation uses `backend/src/modules/documents/historySupport.ts`. Shared chat response types, stream events, citations, and extension provider ports live behind `backend/src/modules/chat/contracts/`; application wiring uses `backend/src/modules/chat/composition.ts`, LLM provider registration uses `backend/src/modules/chat/llmAdapters.ts`, and retrieval answer assembly uses `backend/src/modules/chat/retrievalSupport.ts`.
 
-Documents, chat, and settings are likely follow-up candidates. Future pilots should add one module public surface at a time, document the contract, and keep the enforcement rule narrow enough that contributors can understand the failure.
+Backend tests are excluded from these boundary checks. Focused unit tests may still import internals while each production boundary is proven.
+
+Settings is a likely follow-up candidate. Future pilots should add one module public surface at a time, document the contract, and keep the enforcement rule narrow enough that contributors can understand the failure.
 
 ## Adding A New Extension
 

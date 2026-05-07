@@ -1,7 +1,7 @@
 import type {
   DocumentRecord,
   DocumentSummaryRecord,
-} from "../../modules/documents/services/documentIngestionService.js";
+} from "../../modules/documents/contracts/index.js";
 import {
   inferMetadataValueType,
   type MetadataValueType,

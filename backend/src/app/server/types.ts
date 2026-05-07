@@ -1,16 +1,20 @@
-import type { ChatService } from "../../modules/chat/services/chatService.js";
-import type { ChatBootstrapService } from "../../modules/chat/services/chatBootstrapService.js";
-import type { ChatHistoryService } from "../../modules/chat/services/chatHistoryService.js";
-import type { AssistantChatService } from "../../modules/chat/services/assistantChatService.js";
-import type { AssistantHistoryService } from "../../modules/chat/services/assistantHistoryService.js";
-import type { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
-import type { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
-import type { DocumentImportService } from "../../modules/documents/services/documentImportService.js";
-import type { DocumentSearchHistoryService } from "../../modules/documents/services/documentSearchHistoryService.js";
-import type { DocumentSearchService } from "../../modules/documents/services/documentSearchService.js";
-import type { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
-import type { DocumentJobConsumerPort } from "../../modules/documents/services/documentJobConsumer.js";
-import type { WorkspaceIngestionReprocessService } from "../../modules/documents/services/workspaceIngestionReprocessService.js";
+import type {
+  AssistantChatService,
+  AssistantHistoryService,
+  ChatBootstrapService,
+  ChatHistoryService,
+  ChatService,
+} from "../../modules/chat/composition.js";
+import type {
+  DocumentDeletionService,
+  DocumentImportService,
+  DocumentIngestionService,
+  DocumentJobConsumerPort,
+  DocumentProcessingWorker,
+  DocumentSearchHistoryService,
+  DocumentSearchService,
+  WorkspaceIngestionReprocessService,
+} from "../../modules/documents/composition.js";
 import type { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
 import type { PlatformSettingsService } from "../../modules/settings/services/platformSettingsService.js";
 import type { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
@@ -39,8 +43,7 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../composition/applicationModule.js";
-import type { ChatActionProviderPort } from "../../modules/chat/services/chatActionProvider.js";
-import type { ContactHistoryProviderPort } from "../../modules/chat/services/contactHistoryProvider.js";
+import type { ChatActionProviderPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 
 export interface AppDependencies {

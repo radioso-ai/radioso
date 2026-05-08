@@ -189,6 +189,27 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('<li')
   })
 
+  it('does not split hyphenated markdown link labels inside real list items', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content:
+              'Ananda offers several ways to explore **Ananda Yoga**:\n\n- A **3-day intensive residential course**, **[Ananda Yoga in silenzio - 3 Giorni](https://corsi.ananda.it/corso/0008136-corso-residenziale-intensivo-ananda-yoga-in-silenzio-3-giorni)**, focused on deeper practice.\n- For learning more, see **[Ananda Yoga videos](https://anandaeurope.org/video/guided-ananda-yoga)**.',
+            createdAt: '2026-04-02T10:00:00.000Z',
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html.match(/<li/g)?.length).toBe(2)
+    expect(html).toContain('Ananda Yoga in silenzio - 3 Giorni')
+    expect(html).not.toContain('3 Giorni]</li>')
+  })
+
   it('renders answer feedback controls when handlers are provided', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread

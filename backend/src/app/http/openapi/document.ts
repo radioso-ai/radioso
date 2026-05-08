@@ -51,6 +51,11 @@ import {
 import { websiteEmbedLauncherIcons, websiteEmbedLauncherPositions } from "../../../modules/settings/contracts/websiteEmbed.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/public.js";
 import {
+  agentConversationModes,
+  agentSurfaceIcons,
+  agentSurfacePositions,
+} from "../../../modules/agents/public.js";
+import {
   MAX_SUGGESTED_QUESTIONS_COUNT,
   MIN_SUGGESTED_QUESTIONS_COUNT,
   conversationModes,
@@ -531,6 +536,100 @@ const UpdatePlatformSettingsRequestSchema = registry.register(
   updatePlatformSettingsSchema,
 );
 
+const AgentSchema = registry.register(
+  "Agent",
+  z.object({
+    id: z.string().uuid(),
+    workspaceId: z.string().uuid(),
+    name: z.string(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  }),
+);
+
+const ConversationAgentSurfaceSettingsSchema = registry.register(
+  "ConversationAgentSurfaceSettings",
+  z.object({
+    authenticatedChat: z.object({
+      enabled: z.boolean(),
+    }),
+    anonymousChat: z.object({
+      enabled: z.boolean(),
+      token: z.string().nullable(),
+      messagesPerMinute: z.number().int().min(1).max(60),
+    }),
+    websiteEmbed: z.object({
+      enabled: z.boolean(),
+      token: z.string().nullable(),
+      allowedOrigins: z.array(z.string()),
+      launcherLabel: z.string(),
+      icon: z.enum(agentSurfaceIcons),
+      launcherPosition: z.enum(agentSurfacePositions),
+    }),
+  }),
+);
+
+const ConversationAgentSchema = registry.register(
+  "ConversationAgent",
+  AgentSchema.extend({
+    isDefault: z.boolean(),
+    customInstruction: z.string(),
+    conversationMode: z.enum(agentConversationModes),
+    suggestedQuestionsEnabled: z.boolean(),
+    suggestedQuestionsCount: z.number().int().min(1).max(4),
+    retrievalEnabled: z.boolean(),
+    greetingInstruction: z.string(),
+    assistantDefaultLocale: z.string().nullable(),
+    proactiveGreetingEnabled: z.boolean(),
+    assistantBootstrapActive: z.boolean(),
+    surfaceSettings: ConversationAgentSurfaceSettingsSchema,
+  }),
+);
+
+const AgentListResponseSchema = registry.register(
+  "AgentListResponse",
+  z.object({
+    agents: z.array(ConversationAgentSchema),
+  }),
+);
+
+const ConversationAgentRequestSchema = registry.register(
+  "ConversationAgentRequest",
+  z.object({
+    name: z.string().max(200).optional(),
+    customInstruction: z.string().max(2000).optional(),
+    conversationMode: z.enum(agentConversationModes).optional(),
+    suggestedQuestionsEnabled: z.boolean().optional(),
+    suggestedQuestionsCount: z.number().int().min(1).max(4).optional(),
+    retrievalEnabled: z.boolean().optional(),
+    greetingInstruction: z.string().max(200).optional(),
+    assistantDefaultLocale: z.string().max(35).nullable().optional(),
+    proactiveGreetingEnabled: z.boolean().optional(),
+    surfaceSettings: z.object({
+      authenticatedChat: z.object({
+        enabled: z.boolean().optional(),
+      }).optional(),
+      anonymousChat: z.object({
+        enabled: z.boolean().optional(),
+        messagesPerMinute: z.number().int().min(1).max(60).optional(),
+      }).optional(),
+      websiteEmbed: z.object({
+        enabled: z.boolean().optional(),
+        allowedOrigins: z.array(z.string().max(200)).max(20).optional(),
+        launcherLabel: z.string().max(80).optional(),
+        icon: z.enum(agentSurfaceIcons).optional(),
+        launcherPosition: z.enum(agentSurfacePositions).optional(),
+      }).optional(),
+    }).optional(),
+    rotateAnonymousChatToken: z.boolean().optional(),
+    rotateWebsiteEmbedToken: z.boolean().optional(),
+  }),
+);
+
+const AgentParamsSchema = z.object({
+  agentId: z.string().uuid(),
+});
+
 const PublicChatPageContextSchema = z.object({
   pageUrl: z.string().trim().max(2048).nullable().optional(),
   pageTitle: z.string().trim().max(180).nullable().optional(),
@@ -542,6 +641,8 @@ const PublicChatPageContextSchema = z.object({
 const PublicChatSessionResponseSchema = registry.register(
   "PublicChatSessionResponse",
   z.object({
+    agentId: z.string().uuid().optional(),
+    agentName: z.string().optional(),
     workspaceName: z.string(),
     publicChatToken: z.string(),
     publicSessionId: z.string().uuid(),
@@ -556,6 +657,7 @@ const PublicChatSessionRequestSchema = registry.register(
   "PublicChatSessionRequest",
   z.object({
     channel: z.enum(["anonymous_link", "website_embed"]),
+    agentId: z.string().uuid().optional(),
     anonymousSessionId: z.string().uuid().optional(),
     pageContext: PublicChatPageContextSchema,
   }),
@@ -981,6 +1083,8 @@ const AssistantRouteDiagnosticsSchema = registry.register(
 );
 
 const chatResponseCoreShape = {
+  agentId: z.string().uuid().optional(),
+  agentName: z.string().optional(),
   answer: z.string(),
   citations: z.array(CitationSchema).optional(),
   answerSegments: z.array(AnswerSegmentSchema).optional(),
@@ -1028,6 +1132,7 @@ const AssistantChatRequestSchema = registry.register(
   "AssistantChatRequest",
   z.union([
     z.object({
+      agentId: z.string().uuid().optional(),
       conversationId: z.string().uuid().optional(),
       message: z.string().min(1),
       startConversation: z.literal(false).optional().default(false),
@@ -1046,6 +1151,7 @@ const AssistantChatRequestSchema = registry.register(
       description: "Standard assistant turn. `message` is required for non-bootstrap requests.",
     }),
     z.object({
+      agentId: z.string().uuid().optional(),
       startConversation: z.literal(true),
       stream: z.literal(false).default(false),
       message: z.string().min(1).optional(),
@@ -1068,6 +1174,7 @@ const PublicChatRequestSchema = registry.register(
   "PublicChatRequest",
   z.union([
     z.object({
+      agentId: z.string().uuid().optional(),
       conversationId: z.string().uuid().optional(),
       message: z.string().min(1),
       startConversation: z.literal(false).optional().default(false),
@@ -1088,6 +1195,7 @@ const PublicChatRequestSchema = registry.register(
       description: "Standard public chat turn. `message` is required for non-bootstrap requests.",
     }),
     z.object({
+      agentId: z.string().uuid().optional(),
       startConversation: z.literal(true),
       stream: z.literal(false).default(false),
       message: z.string().min(1).optional(),
@@ -1113,6 +1221,7 @@ const ChatConversationSummarySchema = registry.register(
   "ChatConversationSummary",
   z.object({
     id: z.string().uuid(),
+    agentId: z.string().uuid().nullable(),
     sourceChannel: z.string().nullable(),
     sourceOrigin: z.string().nullable(),
     anonymousSessionId: z.string().nullable(),
@@ -1243,6 +1352,7 @@ const ChatConversationDetailSchema = registry.register(
   z.object({
     conversationId: z.string().uuid(),
     workspaceId: z.string().uuid(),
+    agentId: z.string().uuid().nullable(),
     sourceChannel: z.string().nullable(),
     sourceOrigin: z.string().nullable(),
     createdAt: z.string().datetime(),
@@ -2538,6 +2648,94 @@ registry.registerPath({
         },
       },
     },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/agents",
+  tags: ["Agents"],
+  summary: "List workspace agents",
+  operationId: "listAgents",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Agents returned",
+      content: { "application/json": { schema: AgentListResponseSchema } },
+    },
+    401: { description: "Authentication required", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/agents",
+  tags: ["Agents"],
+  summary: "Create a workspace agent",
+  operationId: "createAgent",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: { "application/json": { schema: ConversationAgentRequestSchema } },
+    },
+  },
+  responses: {
+    201: { description: "Agent created", content: { "application/json": { schema: ConversationAgentSchema } } },
+    400: { description: "Request validation failed", content: { "application/json": { schema: ErrorResponseSchema } } },
+    401: { description: "Authentication required", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/agents/{agentId}",
+  tags: ["Agents"],
+  summary: "Get a workspace agent",
+  operationId: "getAgent",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: { params: AgentParamsSchema },
+  responses: {
+    200: { description: "Agent returned", content: { "application/json": { schema: ConversationAgentSchema } } },
+    401: { description: "Authentication required", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "Agent not found", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/v1/agents/{agentId}",
+  tags: ["Agents"],
+  summary: "Update a workspace agent",
+  operationId: "updateAgent",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    params: AgentParamsSchema,
+    body: {
+      required: true,
+      content: { "application/json": { schema: ConversationAgentRequestSchema } },
+    },
+  },
+  responses: {
+    200: { description: "Agent updated", content: { "application/json": { schema: ConversationAgentSchema } } },
+    400: { description: "Request validation failed", content: { "application/json": { schema: ErrorResponseSchema } } },
+    401: { description: "Authentication required", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "Agent not found", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/agents/{agentId}/default",
+  tags: ["Agents"],
+  summary: "Set the default workspace agent",
+  operationId: "setDefaultAgent",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: { params: AgentParamsSchema },
+  responses: {
+    200: { description: "Default agent updated", content: { "application/json": { schema: ConversationAgentSchema } } },
+    401: { description: "Authentication required", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "Agent not found", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
 

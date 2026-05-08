@@ -39,6 +39,7 @@ type WebsiteEmbedSettingsControllerProps = {
   setSavedAnonSettings: Dispatch<SetStateAction<GeneralSettings | null>>
   isAnonSaving: boolean
   setIsAnonSaving: Dispatch<SetStateAction<boolean>>
+  updateGeneralSettings?: typeof generalSettingsApi.updateGeneralSettings
   anonDraftVersionRef: MutableRefObject<number>
   saveSequenceRef: MutableRefObject<number>
   setSaveState: (state: SaveState) => void
@@ -86,6 +87,7 @@ function WebsiteEmbedSettingsPanel({
   setSavedAnonSettings,
   isAnonSaving,
   setIsAnonSaving,
+  updateGeneralSettings = generalSettingsApi.updateGeneralSettings,
   anonDraftVersionRef,
   saveSequenceRef,
   setSaveState,
@@ -355,7 +357,7 @@ function WebsiteEmbedSettingsPanel({
       setSaveState('saving')
       setSaveError(null)
       try {
-        const updated = await generalSettingsApi.updateGeneralSettings({
+        const updated = await updateGeneralSettings({
           websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
           websiteEmbedAllowedOrigins: parseWebsiteEmbedOrigins(websiteEmbedOrigins),
           websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
@@ -392,6 +394,7 @@ function WebsiteEmbedSettingsPanel({
     setSaveError,
     setSavedAnonSettings,
     setSaveState,
+    updateGeneralSettings,
     websiteEmbedOrigins,
   ])
 
@@ -426,7 +429,7 @@ function WebsiteEmbedSettingsPanel({
         anonSettings.websiteEmbedLauncherPosition !== savedAnonSettings?.websiteEmbedLauncherPosition
 
       if (hasPersistedChanges) {
-        const updated = await generalSettingsApi.updateGeneralSettings({
+        const updated = await updateGeneralSettings({
           websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
           websiteEmbedAllowedOrigins: nextOrigins,
           websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
@@ -466,7 +469,7 @@ function WebsiteEmbedSettingsPanel({
     if (!anonSettings) return
     setIsAnonSaving(true)
     try {
-      const updated = await generalSettingsApi.updateGeneralSettings({
+      const updated = await updateGeneralSettings({
         rotateWebsiteEmbedToken: true,
       })
       setAnonSettings(updated)

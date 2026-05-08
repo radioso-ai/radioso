@@ -9,6 +9,7 @@ export interface DashboardRouteState {
   section: DashboardSection
   workspaceId?: string
   workspacePublicRouteKey?: string
+  agentId?: string
   agentTab?: AgentTab
   knowledgeTab?: KnowledgeTab
   settingsTab?: SettingsTab
@@ -25,6 +26,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'section',
   'workspaceId',
   'workspacePublicRouteKey',
+  'agentId',
   'agentTab',
   'knowledgeTab',
   'settingsTab',
@@ -42,6 +44,7 @@ const DEFAULT_AGENT_TAB: AgentTab = 'chat'
 const DEFAULT_KNOWLEDGE_TAB: KnowledgeTab = 'documents'
 const DEFAULT_HISTORY_FILTER: HistoryFilter = 'all'
 const DEFAULT_SETTINGS_TAB: SettingsTab = 'workspace'
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const parsePositiveInt = (value: string | null): number | undefined => {
   if (!value) {
@@ -78,6 +81,8 @@ const parseAgentTab = (value: string | null): AgentTab | undefined => {
 
   return undefined
 }
+
+const isValidAgentId = (value: string): boolean => UUID_PATTERN.test(value)
 
 const parseKnowledgeTab = (value: string | null): KnowledgeTab | undefined => {
   if (value === 'documents' || value === 'ingestion' || value === 'retrieval') {
@@ -124,6 +129,9 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
   }
 
   if (state.section === 'agents') {
+    if (state.agentId) {
+      normalized.agentId = state.agentId
+    }
     if (state.agentTab && state.agentTab !== DEFAULT_AGENT_TAB) {
       normalized.agentTab = state.agentTab
     }
@@ -253,7 +261,7 @@ export const buildLegacyDashboardHref = (
   let pathname = `${basePath}/${normalized.section}`
 
   if (normalized.section === 'agents') {
-    pathname = `${basePath}/agents/current`
+    pathname = normalized.agentId ? `${basePath}/agents/${normalized.agentId}` : `${basePath}/agents`
   }
 
   if (normalized.section === 'knowledge') {
@@ -279,7 +287,7 @@ export const buildDashboardHref = (
   let pathname = `${basePath}/${normalized.section}`
 
   if (normalized.section === 'agents') {
-    pathname = `${basePath}/agents/current`
+    pathname = normalized.agentId ? `${basePath}/agents/${normalized.agentId}` : `${basePath}/agents`
   }
 
   if (normalized.section === 'knowledge') {
@@ -375,12 +383,16 @@ export const parseDashboardRoute = (
   }
 
   if (sectionCandidate === 'agents') {
-    if ((secondSegment && secondSegment !== 'current') || thirdSegment || rest.length > 0) {
+    if (thirdSegment || rest.length > 0) {
+      return null
+    }
+    if (secondSegment && !isValidAgentId(secondSegment)) {
       return null
     }
     return normalizeState({
       section: 'agents',
       workspaceId,
+      ...(secondSegment ? { agentId: secondSegment } : {}),
       agentTab: parseAgentTab(searchParams?.get('tab') ?? null),
       anchor: parseAnchor(searchParams?.get('anchor') ?? null),
     })

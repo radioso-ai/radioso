@@ -4,6 +4,7 @@ import type { AuditService } from "../../audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { AgentService } from "../../agents/public.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import {
   resolveContextSourceUrl,
@@ -207,6 +208,7 @@ export class ChatService {
     workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
     private readonly chatActionProvider: ChatActionProviderPort = new NoopChatActionProvider(),
+    agentService?: Pick<AgentService, "resolve">,
   ) {
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
@@ -214,6 +216,7 @@ export class ChatService {
       retrievalPipeline,
       auditService,
       workspaceRepository,
+      agentService,
     );
     this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, history, prompt }) =>
       this.chatGateway.answer({
@@ -382,6 +385,7 @@ export class ChatService {
 
   async answer(input: {
     workspaceId: string;
+    agentId?: string | null;
     accountId?: string;
     conversationId?: string;
     query: string;
@@ -473,6 +477,8 @@ export class ChatService {
 
       return {
         conversationId: session.conversation.id,
+        agentId: session.agent.id,
+        agentName: session.agent.name,
         assistantMessageId,
         route,
         answer: presentation.answer,
@@ -494,6 +500,7 @@ export class ChatService {
 
   async *streamAnswer(input: {
     workspaceId: string;
+    agentId?: string | null;
     accountId?: string;
     conversationId?: string;
     query: string;
@@ -688,6 +695,8 @@ export class ChatService {
       yield {
         type: "done",
         conversationId: session.conversation.id,
+        agentId: session.agent.id,
+        agentName: session.agent.name,
         assistantMessageId,
         route,
         answer: presentation.answer,

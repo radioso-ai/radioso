@@ -4,16 +4,13 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { sendChatSse } from "../presenters/chatPresenter.js";
-import { badRequest, serviceUnavailable } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, serviceUnavailable } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
 import { anonymousRateLimiter, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../modules/settings/contracts/websiteEmbed.js";
-import {
-  isAssistantBootstrapActive,
-  resolveAssistantDisplayName,
-} from "../../../modules/settings/contracts/assistantBootstrap.js";
+import { isAgentBootstrapActive, resolveAgentDisplayName } from "../../../modules/agents/public.js";
 import { issuePublicChatSession } from "../../../modules/settings/contracts/publicChatSession.js";
 
 const localeHintSchema = z.string().trim().max(35);
@@ -67,13 +64,34 @@ export const publicConversationParamsSchema = z.object({
 
 const publicChatSessionSchema = z.object({
   channel: z.enum(["anonymous_link", "website_embed"]),
+  agentId: z.string().uuid().optional(),
   anonymousSessionId: z.string().uuid().optional(),
   pageContext: pageContextSchema,
 });
 
+const resolvePublicChatSessionSecret = (env: {
+  NODE_ENV: string;
+  PUBLIC_CHAT_SESSION_SECRET?: string;
+  WORKSPACE_TOKEN_SECRET?: string;
+}) => {
+  if (env.PUBLIC_CHAT_SESSION_SECRET) {
+    return env.PUBLIC_CHAT_SESSION_SECRET;
+  }
+
+  // Local Docker/dev setups already require WORKSPACE_TOKEN_SECRET; use it as a dev-only fallback
+  // so public chat works out of the box without weakening deployed environments.
+  if (env.NODE_ENV === "development") {
+    return env.WORKSPACE_TOKEN_SECRET;
+  }
+
+  return undefined;
+};
+
 type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   AppDependencies,
   | "env"
+  | "agentRepository"
+  | "agentService"
   | "assistantChatService"
   | "auditService"
   | "chatActionProvider"
@@ -84,10 +102,13 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
 
 export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies): Router => {
   const router = Router();
+  const publicChatSessionSecret = resolvePublicChatSessionSecret(dependencies.env);
   const sessionMiddleware = resolveAnonymousSession(
     dependencies.workspaceRepository,
-    dependencies.env.PUBLIC_CHAT_SESSION_SECRET,
+    publicChatSessionSecret,
     dependencies.env.SESSION_COOKIE_SECRET,
+    dependencies.agentRepository,
+    dependencies.agentService,
   );
   const rateLimitAnonymousChat = anonymousRateLimiter(dependencies);
   const resolveOrigin = (value: string | undefined) => {
@@ -109,7 +130,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   // POST /api/v1/public/chat/:token/sessions — exchange a public launch token for a chat session
   router.post("/:token/sessions", validateBody(publicChatSessionSchema), async (req, res, next) => {
     try {
-      const sessionSecret = dependencies.env.PUBLIC_CHAT_SESSION_SECRET;
+      const sessionSecret = publicChatSessionSecret;
       if (!sessionSecret) {
         throw serviceUnavailable("Public chat sessions are not configured.", {
           missingEnv: "PUBLIC_CHAT_SESSION_SECRET",
@@ -121,8 +142,12 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       const requestedSessionId = req.body.anonymousSessionId ?? randomUUID();
 
       if (req.body.channel === "anonymous_link") {
-        const workspace = await dependencies.workspaceRepository.findByAnonymousChatToken(launchToken);
-        if (!workspace || !workspace.anonymousChatEnabled) {
+        const agentByToken = await dependencies.agentRepository.findByAnonymousChatToken(launchToken);
+        const workspace = agentByToken
+          ? await dependencies.workspaceRepository.findById(agentByToken.workspaceId)
+          : await dependencies.workspaceRepository.findByAnonymousChatToken(launchToken);
+        const agent = agentByToken ?? (workspace ? await dependencies.agentService.resolve(workspace.id, req.body.agentId) : null);
+        if (!workspace || !agent || !agent.surfaceSettings.anonymousChat.enabled) {
           res.status(404).json({
             error: {
               code: "not_found",
@@ -134,6 +159,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
 
         const session = issuePublicChatSession(sessionSecret, {
           workspaceId: workspace.id,
+          agentId: agent.id,
           publicChatToken: launchToken,
           publicSessionId: requestedSessionId,
           sourceChannel: "anonymous",
@@ -141,14 +167,16 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         });
 
         res.status(200).json({
-          workspaceName: resolveAssistantDisplayName({
-            assistantName: workspace.assistantName,
+          workspaceName: resolveAgentDisplayName({
+            agentName: agent.name,
             workspaceName: workspace.name,
           }),
+          agentId: agent.id,
+          agentName: agent.name,
           publicChatToken: launchToken,
           publicSessionId: session.publicSessionId,
           publicSessionToken: session.token,
-          assistantBootstrapActive: isAssistantBootstrapActive(workspace),
+          assistantBootstrapActive: isAgentBootstrapActive(agent),
           actions: await resolvePublicSessionActions(workspace.id),
           expiresAt: session.expiresAt,
         });
@@ -165,7 +193,10 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         return;
       }
 
-      const workspace = await dependencies.workspaceRepository.findByWebsiteEmbedToken(launchToken);
+      const agentByToken = await dependencies.agentRepository.findByWebsiteEmbedToken(launchToken);
+      const workspace = agentByToken
+        ? await dependencies.workspaceRepository.findById(agentByToken.workspaceId)
+        : await dependencies.workspaceRepository.findByWebsiteEmbedToken(launchToken);
       if (!workspace) {
         res.status(404).json({
           error: {
@@ -176,7 +207,35 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         return;
       }
 
-      if (!isAllowedWebsiteEmbedOrigin(workspace.websiteEmbedAllowedOrigins, origin)) {
+      let agent = agentByToken;
+      if (!agent) {
+        try {
+          agent = await dependencies.agentService.resolve(workspace.id, req.body.agentId);
+        } catch (error) {
+          if (error instanceof AppError && error.statusCode === 404) {
+            res.status(404).json({
+              error: {
+                code: "not_found",
+                message: "Public chat not found",
+              },
+            });
+            return;
+          }
+          throw error;
+        }
+      }
+
+      if (!agent) {
+        res.status(404).json({
+          error: {
+            code: "not_found",
+            message: "Public chat not found",
+          },
+        });
+        return;
+      }
+
+      if (!isAllowedWebsiteEmbedOrigin(agent.surfaceSettings.websiteEmbed.allowedOrigins, origin)) {
         await dependencies.auditService.record({
           accountId: workspace.accountId,
           workspaceId: workspace.id,
@@ -194,7 +253,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         return;
       }
 
-      if (!workspace.websiteEmbedEnabled || !workspace.anonymousChatToken) {
+      if (!agent.surfaceSettings.websiteEmbed.enabled) {
         await dependencies.auditService.record({
           accountId: workspace.accountId,
           workspaceId: workspace.id,
@@ -202,7 +261,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           eventStatus: "failure",
           metadata: {
             origin,
-            reason: !workspace.websiteEmbedEnabled ? "embed_disabled" : "missing_public_chat_token",
+            reason: "embed_disabled",
           },
         });
 
@@ -225,21 +284,24 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
 
       const session = issuePublicChatSession(sessionSecret, {
         workspaceId: workspace.id,
-        publicChatToken: workspace.anonymousChatToken,
+        agentId: agent.id,
+        publicChatToken: launchToken,
         publicSessionId: requestedSessionId,
         sourceChannel: "website_embed",
         sourceOrigin: origin,
       });
 
       res.status(200).json({
-        workspaceName: resolveAssistantDisplayName({
-          assistantName: workspace.assistantName,
+        workspaceName: resolveAgentDisplayName({
+          agentName: agent.name,
           workspaceName: workspace.name,
         }),
-        publicChatToken: workspace.anonymousChatToken,
+        agentId: agent.id,
+        agentName: agent.name,
+        publicChatToken: launchToken,
         publicSessionId: session.publicSessionId,
         publicSessionToken: session.token,
-        assistantBootstrapActive: isAssistantBootstrapActive(workspace),
+        assistantBootstrapActive: isAgentBootstrapActive(agent),
         actions: await resolvePublicSessionActions(workspace.id),
         expiresAt: session.expiresAt,
       });
@@ -256,8 +318,9 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     validateBody(anonymousChatSchema),
     async (req, res, next) => {
       try {
-        const { workspaceId, anonymousSessionId, sourceChannel, sourceOrigin } = res.locals as {
+        const { workspaceId, agentId, anonymousSessionId, sourceChannel, sourceOrigin } = res.locals as {
           workspaceId: string;
+          agentId: string;
           anonymousSessionId: string;
           sourceChannel: string | null;
           sourceOrigin: string | null;
@@ -266,6 +329,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         if (req.body.startConversation) {
           const bootstrap = await dependencies.assistantChatService.answer({
             workspaceId,
+            agentId,
             startConversation: true,
             stream: false,
             sourceChannel,
@@ -284,6 +348,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
 
         const input = {
           workspaceId,
+          agentId,
           message: req.body.message!,
           stream: req.body.stream,
           userExpectedLocale: req.body.userExpectedLocale,
@@ -310,8 +375,9 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   // GET /api/v1/public/chat/:token — list conversations for this anonymous session
   router.get("/:token", sessionMiddleware, async (req, res, next) => {
     try {
-      const { workspaceId, workspaceName, anonymousSessionId } = res.locals as {
+      const { workspaceId, agentId, workspaceName, anonymousSessionId } = res.locals as {
         workspaceId: string;
+        agentId: string;
         workspaceName: string;
         anonymousSessionId: string;
       };
@@ -323,7 +389,10 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       const page = await dependencies.chatHistoryService.listAnonymousConversations(
         workspaceId,
         anonymousSessionId,
-        parsedQuery.data,
+        {
+          ...parsedQuery.data,
+          agentId,
+        },
       );
 
       res.status(200).json({
@@ -339,7 +408,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   // GET /api/v1/public/chat/:token/history/:conversationId — get conversation detail
   router.get("/:token/history/:conversationId", sessionMiddleware, async (req, res, next) => {
     try {
-      const { anonymousSessionId } = res.locals as { anonymousSessionId: string };
+      const { agentId, anonymousSessionId } = res.locals as { agentId: string; anonymousSessionId: string };
       const parsedParams = publicConversationParamsSchema.safeParse(req.params);
       if (!parsedParams.success) {
         next(badRequest("Invalid request params", parsedParams.error.flatten()));
@@ -357,6 +426,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         conversationId,
         res.locals.workspaceId as string,
         anonymousSessionId,
+        agentId,
       );
       if (!conversation) {
         res.status(404).json({ error: { code: "not_found", message: "Conversation not found" } });

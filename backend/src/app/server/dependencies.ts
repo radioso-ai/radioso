@@ -15,6 +15,7 @@ import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { UserRepository } from "../../db/repositories/userRepository.js";
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
+import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
 import { ChunkRepository } from "../../db/repositories/chunkRepository.js";
@@ -86,6 +87,7 @@ import {
 import type { AppDependencies } from "./types.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import { SkillCatalogService } from "../../modules/skills/public.js";
+import { AgentService } from "../../modules/agents/public.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -242,6 +244,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const conversationRepository = new ConversationRepository(database);
   const messageRepository = new MessageRepository(database);
   const workspaceRepository = new WorkspaceRepository(database);
+  const agentRepository = new AgentRepository(database);
   const bootstrapGreetingCacheRepository = new BootstrapGreetingCacheRepository(database);
   const retrievalPipeline = new RetrievalPipelineService(
     retrievalSettingsService,
@@ -297,6 +300,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
           logger,
         })
       : composition.answerFeedbackHistoryProviderRegistration;
+  const agentService = new AgentService(agentRepository, workspaceRepository, retrievalSettingsService);
   const groundedMissResponseComposer = llmRegistry.createGroundedMissResponseComposer();
   const chatService = new ChatService(
     conversationRepository,
@@ -309,15 +313,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceRepository,
     usageLimitPolicy,
     chatActionProvider,
+    agentService,
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
     bootstrapGreetingCacheRepository,
     chatGateway,
     auditService,
-    retrievalSettingsService,
     usageLimitPolicy,
     productAnalyticsService,
+    agentService,
   );
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
@@ -337,6 +342,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
+    agentService,
     retrievalSettingsService,
     auditService,
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
@@ -412,10 +418,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalSearchService,
     retrievalAnswerService,
     platformSettingsService,
+    agentService,
     skillCatalogService,
     accountRepository,
     userRepository,
     workspaceRepository,
+    agentRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,
     messageRepository,

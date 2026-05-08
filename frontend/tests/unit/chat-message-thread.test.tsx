@@ -103,6 +103,25 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('Answer text')
   })
 
+  it('preserves real list items with hyphenated markdown link labels', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '- **[Ananda Yoga in silenzio - 3 Giorni](https://example.com/course)**',
+            createdAt: '2026-04-02T10:00:00.000Z',
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html.match(/<li/g)?.length).toBe(1)
+    expect(html).toContain('Ananda Yoga in silenzio - 3 Giorni')
+  })
+
   it('renders suggestion actions as buttons when selection is enabled', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread

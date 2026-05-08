@@ -1,25 +1,46 @@
 module.exports = {
   forbidden: [
     {
-      name: "no-external-retrieval-internals",
+      name: "no-external-agents-nonpublic",
       severity: "error",
       comment:
-        "Production code outside retrieval must import retrieval-owned symbols through explicit retrieval public entrypoints.",
+        "Production code outside agents must import agent-owned symbols through agents public.ts.",
       from: {
         path: "^src/",
         pathNot: [
-          "^src/modules/retrieval/",
+          "^src/modules/agents/",
         ],
       },
       to: {
-        path: "^src/modules/retrieval/(domain|services|infra)/",
+        path: "^src/modules/agents/",
+        pathNot: [
+          "^src/modules/agents/public\\.ts$",
+        ],
       },
     },
     {
-      name: "no-unapproved-retrieval-root-entrypoints",
+      name: "no-external-skills-nonpublic",
       severity: "error",
       comment:
-        "Production code outside retrieval may only import approved retrieval root entrypoints.",
+        "Production code outside skills must import skill-owned symbols through skills public.ts.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/modules/skills/",
+        ],
+      },
+      to: {
+        path: "^src/modules/skills/",
+        pathNot: [
+          "^src/modules/skills/public\\.ts$",
+        ],
+      },
+    },
+    {
+      name: "no-external-retrieval-nonpublic",
+      severity: "error",
+      comment:
+        "Production code outside retrieval must import retrieval-owned symbols through retrieval public.ts or app composition.",
       from: {
         path: "^src/",
         pathNot: [
@@ -27,9 +48,9 @@ module.exports = {
         ],
       },
       to: {
-        path: "^src/modules/retrieval/[^/]+\\.ts$",
+        path: "^src/modules/retrieval/",
         pathNot: [
-          "^src/modules/retrieval/(public|composition|llmAdapters)\\.ts$",
+          "^src/modules/retrieval/(public|composition)\\.ts$",
         ],
       },
     },
@@ -48,22 +69,6 @@ module.exports = {
       },
       to: {
         path: "^src/modules/retrieval/composition\\.ts$",
-      },
-    },
-    {
-      name: "no-retrieval-llm-adapters-outside-provider-registry",
-      severity: "error",
-      comment:
-        "The retrieval LLM adapter entrypoint is only for shared LLM provider registration.",
-      from: {
-        path: "^src/",
-        pathNot: [
-          "^src/modules/retrieval/",
-          "^src/shared/infra/llm/providerRegistry\\.ts$",
-        ],
-      },
-      to: {
-        path: "^src/modules/retrieval/llmAdapters\\.ts$",
       },
     },
     {

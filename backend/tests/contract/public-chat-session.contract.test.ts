@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 
-import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import { issuePublicChatSession } from "../../src/modules/settings/contracts/publicChatSession.js";
+import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
 describe("public chat session contract", () => {
   const enableWebsiteEmbed = async (app: any, session: { cookie: string; workspaceId: string }) => {
@@ -35,7 +37,7 @@ describe("public chat session contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       workspaceName: expect.any(String),
-      publicChatToken: expect.any(String),
+      publicChatToken: token,
       publicSessionId: expect.any(String),
       publicSessionToken: expect.any(String),
       assistantBootstrapActive: false,
@@ -60,6 +62,33 @@ describe("public chat session contract", () => {
       code: "service_unavailable",
       message: "Public chat sessions are not configured.",
     });
+  });
+
+  it("uses the workspace token secret as a development-only public session fallback", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        NODE_ENV: "development",
+        PUBLIC_CHAT_SESSION_SECRET: undefined,
+        WORKSPACE_TOKEN_SECRET: "development-workspace-token-secret",
+      },
+    });
+    const session = await issueTestSession(app, "public-embed-dev-fallback@example.com");
+
+    const token = await enableWebsiteEmbed(app, session);
+    const origin = "https://example.com";
+    const publicSession = await createWebsiteEmbedPublicSession(app, token, origin);
+
+    expect(publicSession.status).toBe(200);
+
+    const chatResponse = await request(app)
+      .post(`/api/v1/public/chat/${token}`)
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken)
+      .send({
+        message: "What can you do?",
+        stream: false,
+      });
+
+    expect(chatResponse.status).toBe(200);
   });
 
   it("rejects an unapproved origin", async () => {
@@ -125,6 +154,40 @@ describe("public chat session contract", () => {
       publicSessionId: expect.any(String),
       publicSessionToken: expect.any(String),
     });
+  });
+
+  it("falls back to the current default agent when a signed session carries a stale agent id", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-stale-agent@example.com");
+
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+      });
+
+    const anonymousChatToken = new URL(settings.body.anonymousChatUrl).pathname.split("/").at(-1) as string;
+    const publicSession = issuePublicChatSession("00112233445566778899aabbccddeeff", {
+      workspaceId: session.workspaceId,
+      agentId: randomUUID(),
+      publicChatToken: anonymousChatToken,
+      publicSessionId: randomUUID(),
+      sourceChannel: "anonymous",
+      sourceOrigin: null,
+    });
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${anonymousChatToken}`)
+      .set("x-radioso-public-session", publicSession.token)
+      .send({
+        message: "What can you do?",
+        stream: false,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.agentId).toEqual(expect.any(String));
+    expect(response.body.agentId).not.toBe(publicSession.agentId);
   });
 
   it("allows website embed launches even when anonymous chat is disabled", async () => {
@@ -195,6 +258,76 @@ describe("public chat session contract", () => {
         }),
       ]),
     );
+  });
+
+  it("scopes public history to the resolved agent for shared anonymous session ids", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestToken(app, "public-chat-agent-history-scope@example.com");
+    const authorization = `Bearer ${session.token}`;
+
+    const agents = await request(app)
+      .get("/api/v1/agents")
+      .set("Authorization", authorization)
+      .expect(200);
+    const defaultAgentId = agents.body.agents[0].id as string;
+
+    const defaultAgent = await request(app)
+      .put(`/api/v1/agents/${defaultAgentId}`)
+      .set("Authorization", authorization)
+      .send({
+        surfaceSettings: {
+          anonymousChat: { enabled: true },
+        },
+        rotateAnonymousChatToken: true,
+      })
+      .expect(200);
+    const sideAgent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({ name: "Side public agent" })
+      .expect(201);
+    const sideAgentWithToken = await request(app)
+      .put(`/api/v1/agents/${sideAgent.body.id}`)
+      .set("Authorization", authorization)
+      .send({
+        surfaceSettings: {
+          anonymousChat: { enabled: true },
+        },
+        rotateAnonymousChatToken: true,
+      })
+      .expect(200);
+
+    const defaultToken = defaultAgent.body.surfaceSettings.anonymousChat.token as string;
+    const sideToken = sideAgentWithToken.body.surfaceSettings.anonymousChat.token as string;
+
+    const defaultSession = await request(app)
+      .post(`/api/v1/public/chat/${defaultToken}/sessions`)
+      .send({ channel: "anonymous_link" })
+      .expect(200);
+    const defaultChat = await request(app)
+      .post(`/api/v1/public/chat/${defaultToken}`)
+      .set("x-radioso-public-session", defaultSession.body.publicSessionToken)
+      .send({ message: "hello default", stream: false })
+      .expect(200);
+
+    const sideSession = await request(app)
+      .post(`/api/v1/public/chat/${sideToken}/sessions`)
+      .send({
+        channel: "anonymous_link",
+        anonymousSessionId: defaultChat.headers["x-radioso-anonymous-session"],
+      })
+      .expect(200);
+
+    const sideHistory = await request(app)
+      .get(`/api/v1/public/chat/${sideToken}`)
+      .set("x-radioso-public-session", sideSession.body.publicSessionToken)
+      .expect(200);
+    expect(sideHistory.body.conversations).toEqual([]);
+
+    await request(app)
+      .get(`/api/v1/public/chat/${sideToken}/history/${defaultChat.body.conversationId}`)
+      .set("x-radioso-public-session", sideSession.body.publicSessionToken)
+      .expect(404);
   });
 
   it("records an audit event when launch is denied because embed is disabled", async () => {

@@ -35,6 +35,7 @@ import {
 
 export interface ChatConversationSummary {
   id: string;
+  agentId: string | null;
   sourceChannel: string | null;
   sourceOrigin: string | null;
   anonymousSessionId: string | null;
@@ -99,6 +100,7 @@ export interface ChatConversationTurn {
 export interface ChatConversationDetail {
   conversationId: string;
   workspaceId: string;
+  agentId: string | null;
   sourceChannel: string | null;
   sourceOrigin: string | null;
   createdAt: string;
@@ -155,6 +157,7 @@ export interface ContactHistoryDetailResponse {
 
 export interface PublicConversationSummary {
   id: string;
+  agentId: string | null;
   sourceChannel: string | null;
   sourceOrigin: string | null;
   preview: string | null;
@@ -429,7 +432,7 @@ export class ChatHistoryService {
   async listAnonymousConversations(
     workspaceId: string,
     anonymousSessionId: string,
-    input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; cursor?: string; agentId?: string | null } = { limit: 50, offset: 0 },
   ): Promise<PublicConversationPage> {
     const { conversations, total, nextCursor, hasMore } = await this.conversationRepository.listPageByAnonymousSession(
       workspaceId,
@@ -446,6 +449,7 @@ export class ChatHistoryService {
         const summary = messageSummaries.get(conversation.id);
         return {
           id: conversation.id,
+          agentId: conversation.agentId,
           sourceChannel: conversation.sourceChannel,
           sourceOrigin: conversation.sourceOrigin,
           preview: summary?.preview ?? null,
@@ -495,6 +499,7 @@ export class ChatHistoryService {
     return {
       conversationId: conversation.id,
       workspaceId: conversation.workspaceId,
+      agentId: conversation.agentId,
       sourceChannel: conversation.sourceChannel,
       sourceOrigin: conversation.sourceOrigin,
       createdAt: toIsoString(conversation.createdAt),

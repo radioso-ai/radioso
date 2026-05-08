@@ -2,10 +2,12 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { z } from "zod";
 
-import { notFound } from "../../../shared/domain/errors.js";
+import { AppError, notFound } from "../../../shared/domain/errors.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
+import type { AgentService } from "../../../modules/agents/public.js";
+import { isAgentBootstrapActive } from "../../../modules/agents/public.js";
 import {
-  isAssistantBootstrapActive,
   resolveAssistantDisplayName,
 } from "../../../modules/settings/contracts/assistantBootstrap.js";
 import { verifyPublicChatSession } from "../../../modules/settings/contracts/publicChatSession.js";
@@ -77,6 +79,8 @@ export const resolveAnonymousSession = (
   workspaceRepository: WorkspaceRepositoryPort,
   publicChatSessionSecret: string | undefined,
   anonymousRateLimitCookieSecret: string | undefined = publicChatSessionSecret,
+  agentRepository?: Pick<AgentRepositoryPort, "findByAnonymousChatToken" | "findByWebsiteEmbedToken">,
+  agentService?: Pick<AgentService, "resolve">,
 ): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -88,14 +92,33 @@ export const resolveAnonymousSession = (
       }
 
       const { token } = parsedParams.data;
-      const workspace = await workspaceRepository.findByAnonymousChatToken(token);
+      const agentByAnonymousToken = agentRepository ? await agentRepository.findByAnonymousChatToken(token) : null;
+      const agentByWebsiteEmbedToken = agentByAnonymousToken
+        ? null
+        : agentRepository ? await agentRepository.findByWebsiteEmbedToken(token) : null;
+      const agentByToken = agentByAnonymousToken ?? agentByWebsiteEmbedToken;
+      const workspace = agentByToken
+        ? await workspaceRepository.findById(agentByToken.workspaceId)
+        : await workspaceRepository.findByAnonymousChatToken(token)
+          ?? await workspaceRepository.findByWebsiteEmbedToken(token);
       const publicSession = verifyPublicChatSession(req.get(PUBLIC_CHAT_SESSION_HEADER), publicChatSessionSecret);
+      let agent = agentByToken;
+      if (!agent && workspace && agentService) {
+        try {
+          agent = await agentService.resolve(workspace.id, publicSession?.agentId);
+        } catch (error) {
+          if (!(error instanceof AppError && error.statusCode === 404) || !publicSession?.agentId) {
+            throw error;
+          }
+          agent = await agentService.resolve(workspace.id);
+        }
+      }
       const hasValidPublicSession =
         Boolean(publicSession) &&
         publicSession?.workspaceId === workspace?.id &&
         publicSession?.publicChatToken === token;
 
-      if (!workspace || !hasValidPublicSession) {
+      if (!workspace || !agent || !hasValidPublicSession) {
         next(notFound("Not found"));
         return;
       }
@@ -127,17 +150,18 @@ export const resolveAnonymousSession = (
       res.setHeader(PUBLIC_CHAT_SESSION_ID_HEADER, sessionId);
 
       res.locals.workspaceId = workspace.id;
+      res.locals.agentId = agent.id;
       res.locals.workspaceName = resolveAssistantDisplayName({
-        assistantName: workspace.assistantName,
+        assistantName: agent.name,
         workspaceName: workspace.name,
       });
       res.locals.anonymousSessionId = sessionId;
       res.locals.anonymousRateLimitId = rateLimitId;
       res.locals.anonymousRateLimitIdFromCookie = Boolean(rateLimitIdFromCookie);
-      res.locals.anonymousRateLimit = workspace.anonymousRateLimit;
+      res.locals.anonymousRateLimit = agent.surfaceSettings.anonymousChat.messagesPerMinute;
       res.locals.sourceChannel = publicSession?.sourceChannel ?? "anonymous";
       res.locals.sourceOrigin = publicSession?.sourceOrigin ?? null;
-      res.locals.assistantBootstrapActive = isAssistantBootstrapActive(workspace);
+      res.locals.assistantBootstrapActive = isAgentBootstrapActive(agent);
       next();
     } catch (error) {
       next(error);

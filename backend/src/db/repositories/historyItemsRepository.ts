@@ -30,6 +30,7 @@ interface HistoryItemsRow {
   sort_at: Date | null;
   conversation_id: string | null;
   conversation_workspace_id: string | null;
+  conversation_agent_id: string | null;
   source_channel: string | null;
   source_origin: string | null;
   anonymous_session_id: string | null;
@@ -63,6 +64,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            c.id::text AS stable_id,
            c.id AS conversation_id,
            c.workspace_id AS conversation_workspace_id,
+           c.agent_id AS conversation_agent_id,
            c.source_channel,
            c.source_origin,
            c.anonymous_session_id,
@@ -89,6 +91,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            a.id::text AS stable_id,
            NULL::uuid AS conversation_id,
            NULL::uuid AS conversation_workspace_id,
+           NULL::uuid AS conversation_agent_id,
            NULL::text AS source_channel,
            NULL::text AS source_origin,
            NULL::text AS anonymous_session_id,
@@ -141,6 +144,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
           conversation: {
             id: row.conversation_id,
             workspaceId: row.conversation_workspace_id,
+            agentId: row.conversation_agent_id ?? null,
             sourceChannel: row.source_channel,
             sourceOrigin: row.source_origin,
             anonymousSessionId: row.anonymous_session_id,

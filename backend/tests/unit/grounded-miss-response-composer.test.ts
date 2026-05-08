@@ -79,7 +79,7 @@ describe("grounded miss response composer", () => {
     await composer.composeNoContext({
       query: "I like potato chips",
       conversationMode: "exploratory",
-      answerInstructionBlock: "Workspace-specific instructions:\nHelp visitors choose and book Ananda courses.",
+      answerInstructionBlock: "Configured response instructions:\nHelp visitors choose and book Ananda courses.",
     });
 
     expect(observedPrompt).toContain("Answer Instructions:");

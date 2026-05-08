@@ -6,14 +6,19 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
 
   execute(input: ContextSelectionStageResult) {
     const includeResponseBehavior = input.request.responseBehaviorEnabled ?? input.request.responseIdentity !== null;
+    const responseBehavior = input.request.responseBehavior;
+    const conversationMode = responseBehavior?.conversationMode ?? input.settings.conversationMode;
+    const suggestedQuestionsEnabled = responseBehavior?.suggestedQuestionsEnabled ?? input.settings.suggestedQuestionsEnabled;
+    const suggestedQuestionsCount = responseBehavior?.suggestedQuestionsCount ?? input.settings.suggestedQuestionsCount;
+    const customInstruction = responseBehavior?.customInstruction ?? input.settings.customInstruction;
     const prompt = this.promptBuilder.build({
       query: input.request.query,
       retrievalQuery: input.activeQuery,
       history: input.promptHistory,
       settings: {
         responseIdentity: input.request.responseIdentity,
-        customInstruction: includeResponseBehavior ? input.settings.customInstruction : undefined,
-        conversationMode: includeResponseBehavior ? input.settings.conversationMode : undefined,
+        customInstruction: includeResponseBehavior ? customInstruction : undefined,
+        conversationMode: includeResponseBehavior ? conversationMode : undefined,
         responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
       },
       intentTopic: input.rewrittenQuery.structuredResult?.intentTopic,
@@ -30,10 +35,10 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       responseSettings: {
         citationDisplayEnabled: input.settings.citationDisplayEnabled,
         answerSupportValidationEnabled: input.settings.answerSupportValidationEnabled ?? true,
-        conversationMode: includeResponseBehavior ? input.settings.conversationMode : "factual",
-        suggestedQuestionsEnabled: includeResponseBehavior ? input.settings.suggestedQuestionsEnabled : false,
-        suggestedQuestionsCount: includeResponseBehavior ? input.settings.suggestedQuestionsCount : 0,
-        customInstruction: includeResponseBehavior ? input.settings.customInstruction : undefined,
+        conversationMode: includeResponseBehavior ? conversationMode : "factual",
+        suggestedQuestionsEnabled: includeResponseBehavior ? suggestedQuestionsEnabled : false,
+        suggestedQuestionsCount: includeResponseBehavior ? suggestedQuestionsCount : 0,
+        customInstruction: includeResponseBehavior ? customInstruction : undefined,
         responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
       },
     };

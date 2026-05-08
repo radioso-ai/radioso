@@ -2217,9 +2217,333 @@
           }
         }
       },
+      "Agent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ConversationAgentSurfaceSettings": {
+        "type": "object",
+        "properties": {
+          "authenticatedChat": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled"
+            ]
+          },
+          "anonymousChat": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "token": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "messagesPerMinute": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60
+              }
+            },
+            "required": [
+              "enabled",
+              "token",
+              "messagesPerMinute"
+            ]
+          },
+          "websiteEmbed": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "token": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "allowedOrigins": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "launcherLabel": {
+                "type": "string"
+              },
+              "icon": {
+                "type": "string",
+                "enum": [
+                  "chat",
+                  "sparkles",
+                  "message"
+                ]
+              },
+              "launcherPosition": {
+                "type": "string",
+                "enum": [
+                  "bottom-right",
+                  "bottom-left"
+                ]
+              }
+            },
+            "required": [
+              "enabled",
+              "token",
+              "allowedOrigins",
+              "launcherLabel",
+              "icon",
+              "launcherPosition"
+            ]
+          }
+        },
+        "required": [
+          "authenticatedChat",
+          "anonymousChat",
+          "websiteEmbed"
+        ]
+      },
+      "ConversationAgent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Agent"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "isDefault": {
+                "type": "boolean"
+              },
+              "customInstruction": {
+                "type": "string"
+              },
+              "conversationMode": {
+                "type": "string",
+                "enum": [
+                  "factual",
+                  "guided",
+                  "exploratory"
+                ]
+              },
+              "suggestedQuestionsEnabled": {
+                "type": "boolean"
+              },
+              "suggestedQuestionsCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4
+              },
+              "retrievalEnabled": {
+                "type": "boolean"
+              },
+              "greetingInstruction": {
+                "type": "string"
+              },
+              "assistantDefaultLocale": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "proactiveGreetingEnabled": {
+                "type": "boolean"
+              },
+              "assistantBootstrapActive": {
+                "type": "boolean"
+              },
+              "surfaceSettings": {
+                "$ref": "#/components/schemas/ConversationAgentSurfaceSettings"
+              }
+            },
+            "required": [
+              "isDefault",
+              "customInstruction",
+              "conversationMode",
+              "suggestedQuestionsEnabled",
+              "suggestedQuestionsCount",
+              "retrievalEnabled",
+              "greetingInstruction",
+              "assistantDefaultLocale",
+              "proactiveGreetingEnabled",
+              "assistantBootstrapActive",
+              "surfaceSettings"
+            ]
+          }
+        ]
+      },
+      "AgentListResponse": {
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationAgent"
+            }
+          }
+        },
+        "required": [
+          "agents"
+        ]
+      },
+      "ConversationAgentRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "customInstruction": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "conversationMode": {
+            "type": "string",
+            "enum": [
+              "factual",
+              "guided",
+              "exploratory"
+            ]
+          },
+          "suggestedQuestionsEnabled": {
+            "type": "boolean"
+          },
+          "suggestedQuestionsCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
+          },
+          "retrievalEnabled": {
+            "type": "boolean"
+          },
+          "greetingInstruction": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "assistantDefaultLocale": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 35
+          },
+          "proactiveGreetingEnabled": {
+            "type": "boolean"
+          },
+          "surfaceSettings": {
+            "type": "object",
+            "properties": {
+              "authenticatedChat": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "anonymousChat": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "messagesPerMinute": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 60
+                  }
+                }
+              },
+              "websiteEmbed": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "allowedOrigins": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "maxItems": 20
+                  },
+                  "launcherLabel": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "icon": {
+                    "type": "string",
+                    "enum": [
+                      "chat",
+                      "sparkles",
+                      "message"
+                    ]
+                  },
+                  "launcherPosition": {
+                    "type": "string",
+                    "enum": [
+                      "bottom-right",
+                      "bottom-left"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "rotateAnonymousChatToken": {
+            "type": "boolean"
+          },
+          "rotateWebsiteEmbedToken": {
+            "type": "boolean"
+          }
+        }
+      },
       "PublicChatSessionResponse": {
         "type": "object",
         "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
           "workspaceName": {
             "type": "string"
           },
@@ -2263,6 +2587,10 @@
               "anonymous_link",
               "website_embed"
             ]
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
           },
           "anonymousSessionId": {
             "type": "string",
@@ -4201,6 +4529,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
           "answer": {
             "type": "string"
           },
@@ -4299,6 +4634,13 @@
           "conversationId": {
             "type": "string",
             "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
           },
           "answer": {
             "type": "string"
@@ -4406,6 +4748,10 @@
           {
             "type": "object",
             "properties": {
+              "agentId": {
+                "type": "string",
+                "format": "uuid"
+              },
               "conversationId": {
                 "type": "string",
                 "format": "uuid"
@@ -4481,6 +4827,10 @@
           {
             "type": "object",
             "properties": {
+              "agentId": {
+                "type": "string",
+                "format": "uuid"
+              },
               "startConversation": {
                 "type": "boolean",
                 "enum": [
@@ -4559,6 +4909,10 @@
           {
             "type": "object",
             "properties": {
+              "agentId": {
+                "type": "string",
+                "format": "uuid"
+              },
               "conversationId": {
                 "type": "string",
                 "format": "uuid"
@@ -4650,6 +5004,10 @@
           {
             "type": "object",
             "properties": {
+              "agentId": {
+                "type": "string",
+                "format": "uuid"
+              },
               "startConversation": {
                 "type": "boolean",
                 "enum": [
@@ -4746,6 +5104,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
           "sourceChannel": {
             "type": [
               "string",
@@ -4793,6 +5158,7 @@
         },
         "required": [
           "id",
+          "agentId",
           "sourceChannel",
           "sourceOrigin",
           "anonymousSessionId",
@@ -5204,6 +5570,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
           "sourceChannel": {
             "type": [
               "string",
@@ -5267,6 +5640,7 @@
         "required": [
           "conversationId",
           "workspaceId",
+          "agentId",
           "sourceChannel",
           "sourceOrigin",
           "createdAt",
@@ -7146,6 +7520,285 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FlatErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "List workspace agents",
+        "operationId": "listAgents",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agents returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Create a workspace agent",
+        "operationId": "createAgent",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationAgentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationAgent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get a workspace agent",
+        "operationId": "getAgent",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationAgent"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Update a workspace agent",
+        "operationId": "updateAgent",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationAgentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationAgent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/default": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Set the default workspace agent",
+        "operationId": "setDefaultAgent",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default agent updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationAgent"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

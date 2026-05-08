@@ -52,6 +52,8 @@ export const streamChatEvents = async (
   let answerSegments: AnswerSegment[] | undefined
   let suggestions: ChatSuggestion[] | undefined
   let assistantMessageId: string | undefined
+  let agentId: string | undefined
+  let agentName: string | undefined
   let conversationMode: ChatResponse['conversationMode'] | undefined
   let conversationModeMetadata: ChatResponse['conversationModeMetadata'] | undefined
   let retrievalInfo: RetrievalInfo | undefined
@@ -98,6 +100,8 @@ export const streamChatEvents = async (
       const completionPayload = payload as ChatStreamCompletion
       conversationId = completionPayload.conversationId ?? conversationId
       assistantMessageId = completionPayload.assistantMessageId ?? assistantMessageId
+      agentId = completionPayload.agentId ?? agentId
+      agentName = completionPayload.agentName ?? agentName
       answer = completionPayload.answer ?? answer
       citations = completionPayload.citations
       answerSegments = completionPayload.answerSegments
@@ -110,6 +114,8 @@ export const streamChatEvents = async (
       handlers.onDone?.({
         conversationId,
         assistantMessageId,
+        agentId,
+        agentName,
         route,
         answer,
         citations,
@@ -160,6 +166,8 @@ export const streamChatEvents = async (
   return {
     conversationId,
     assistantMessageId,
+    agentId,
+    agentName,
     route,
     answer,
     citations,

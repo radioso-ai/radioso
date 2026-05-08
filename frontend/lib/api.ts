@@ -85,6 +85,11 @@ export interface RetrievalSettings {
   customInstruction: string
 }
 
+export type AssistantBehaviorSettings = Pick<
+  RetrievalSettings,
+  'conversationMode' | 'suggestedQuestionsEnabled' | 'suggestedQuestionsCount' | 'customInstruction'
+>
+
 export interface PlatformSettings {
   assistant: {
     assistantName: string
@@ -255,6 +260,7 @@ export interface DocumentSearchHistoryListResponse {
 }
 
 export interface ChatRequest {
+  agentId?: string
   query?: string
   stream: boolean
   conversationId?: string
@@ -272,6 +278,8 @@ export interface WebsiteEmbedPageContext {
 }
 
 export interface PublicChatSessionResponse {
+  agentId?: string
+  agentName?: string
   workspaceName: string
   publicChatToken: string
   publicSessionId: string
@@ -282,6 +290,7 @@ export interface PublicChatSessionResponse {
 }
 
 const toAssistantChatPayload = (data: ChatRequest) => ({
+  agentId: data.agentId,
   conversationId: data.conversationId,
   message: data.query,
   startConversation: data.bootstrapGreeting,
@@ -556,6 +565,8 @@ export interface RetrievalTrace {
 }
 
 export interface ChatResponse {
+  agentId?: string
+  agentName?: string
   conversationId?: string
   assistantMessageId?: string
   route?: {
@@ -614,6 +625,8 @@ export interface ChatStreamSuggestions {
 }
 
 export interface ChatStreamCompletion {
+  agentId?: string
+  agentName?: string
   conversationId?: string
   assistantMessageId?: string
   route?: ChatResponse['route']
@@ -1230,6 +1243,8 @@ export const chatApi = {
       handlers.onDone?.({
         conversationId: payload.conversationId,
         assistantMessageId: payload.assistantMessageId,
+        agentId: payload.agentId,
+        agentName: payload.agentName,
         route: payload.route,
         answer: payload.answer,
         citations: payload.citations,
@@ -1247,7 +1262,7 @@ export const chatApi = {
   },
 
   async bootstrapConversation(
-    data: Pick<ChatRequest, 'stream' | 'bootstrapGreeting' | 'userExpectedLocale'>,
+    data: Pick<ChatRequest, 'agentId' | 'stream' | 'bootstrapGreeting' | 'userExpectedLocale'>,
   ): Promise<ChatResponse | undefined> {
     return request<ChatResponse>('/assistant/chat', {
       method: 'POST',
@@ -1427,6 +1442,111 @@ export interface GeneralSettings {
   websiteEmbedLauncherPosition?: 'bottom-right' | 'bottom-left'
 }
 
+export interface AgentSettings {
+  id: string
+  workspaceId: string
+  name: string
+  isDefault: boolean
+  customInstruction: string
+  conversationMode: RetrievalSettings['conversationMode']
+  suggestedQuestionsEnabled: boolean
+  suggestedQuestionsCount: number
+  greetingInstruction: string
+  assistantDefaultLocale: string | null
+  proactiveGreetingEnabled: boolean
+  assistantBootstrapActive: boolean
+  retrievalEnabled: boolean
+  surfaceSettings: {
+    authenticatedChat: {
+      enabled: boolean
+    }
+    anonymousChat: {
+      enabled: boolean
+      token: string | null
+      messagesPerMinute: number
+    }
+    websiteEmbed: {
+      enabled: boolean
+      token: string | null
+      allowedOrigins: string[]
+      launcherLabel: string
+      icon: 'chat' | 'sparkles' | 'message'
+      launcherPosition: 'bottom-right' | 'bottom-left'
+    }
+  }
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AgentListResponse {
+  agents: AgentSettings[]
+}
+
+export type AgentSettingsUpdate = Partial<{
+  name: string
+  customInstruction: string
+  conversationMode: RetrievalSettings['conversationMode']
+  suggestedQuestionsEnabled: boolean
+  suggestedQuestionsCount: number
+  greetingInstruction: string
+  assistantDefaultLocale: string | null
+  proactiveGreetingEnabled: boolean
+  retrievalEnabled: boolean
+  surfaceSettings: {
+    authenticatedChat?: {
+      enabled?: boolean
+    }
+    anonymousChat?: {
+      enabled?: boolean
+      messagesPerMinute?: number
+    }
+    websiteEmbed?: {
+      enabled?: boolean
+      allowedOrigins?: string[]
+      launcherLabel?: string
+      icon?: 'chat' | 'sparkles' | 'message'
+      launcherPosition?: 'bottom-right' | 'bottom-left'
+    }
+  }
+  rotateAnonymousChatToken: boolean
+  rotateWebsiteEmbedToken: boolean
+}>
+
+const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings => ({
+  anonymousChatEnabled: agent.surfaceSettings.anonymousChat.enabled,
+  anonymousChatUrl: agent.surfaceSettings.anonymousChat.enabled && agent.surfaceSettings.anonymousChat.token && typeof window !== 'undefined'
+      ? `${window.location.origin}/chat/${agent.surfaceSettings.anonymousChat.token}`
+      : null,
+  anonymousRateLimit: agent.surfaceSettings.anonymousChat.messagesPerMinute,
+  assistantName: agent.name,
+  greetingInstruction: agent.greetingInstruction,
+  assistantDefaultLocale: agent.assistantDefaultLocale,
+  proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
+  assistantBootstrapActive: agent.assistantBootstrapActive,
+  websiteEmbedEnabled: agent.surfaceSettings.websiteEmbed.enabled,
+  websiteEmbedToken: agent.surfaceSettings.websiteEmbed.token,
+  websiteEmbedScriptUrl: typeof window !== 'undefined' ? `${window.location.origin}/embed-widget.js` : null,
+  websiteEmbedSnippet: undefined,
+  websiteEmbedAllowedOrigins: agent.surfaceSettings.websiteEmbed.allowedOrigins,
+  websiteEmbedLauncherLabel: agent.surfaceSettings.websiteEmbed.launcherLabel,
+  websiteEmbedLauncherIcon: agent.surfaceSettings.websiteEmbed.icon,
+  websiteEmbedLauncherPosition: agent.surfaceSettings.websiteEmbed.launcherPosition,
+})
+
+const agentToAssistantBehaviorSettings = (agent: AgentSettings): AssistantBehaviorSettings => ({
+  conversationMode: agent.conversationMode,
+  suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
+  suggestedQuestionsCount: agent.suggestedQuestionsCount,
+  customInstruction: agent.customInstruction,
+})
+
+const retrievalSettingsToAssistantBehaviorSettings = (settings: RetrievalSettings): AssistantBehaviorSettings => ({
+  conversationMode: settings.conversationMode,
+  suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
+  suggestedQuestionsCount: settings.suggestedQuestionsCount,
+  customInstruction: settings.customInstruction,
+})
+
 export interface WorkspaceTokenResponse {
   token: string
 }
@@ -1510,6 +1630,97 @@ export const generalSettingsApi = {
       }),
     }, { withApiToken: true })
     return toGeneralSettings(settings)
+  },
+}
+
+export const agentsApi = {
+  async listAgents(): Promise<AgentListResponse> {
+    return request<AgentListResponse>('/agents', {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async createAgent(data: {
+    name: string
+    customInstruction?: string
+    retrievalEnabled?: boolean
+  }): Promise<AgentSettings> {
+    return request<AgentSettings>('/agents', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async getAgent(agentId: string): Promise<AgentSettings> {
+    return request<AgentSettings>(`/agents/${agentId}`, {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async updateAgent(agentId: string, data: AgentSettingsUpdate): Promise<AgentSettings> {
+    return request<AgentSettings>(`/agents/${agentId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async setDefaultAgent(agentId: string): Promise<AgentSettings> {
+    return request<AgentSettings>(`/agents/${agentId}/default`, {
+      method: 'POST',
+    }, { withApiToken: true })
+  },
+
+  async getGeneralSettings(agentId: string): Promise<GeneralSettings> {
+    return agentToGeneralSettings(await this.getAgent(agentId))
+  },
+
+  async updateGeneralSettings(agentId: string, data: Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]): Promise<GeneralSettings> {
+    return agentToGeneralSettings(await this.updateAgent(agentId, {
+      surfaceSettings: {
+        anonymousChat: {
+          enabled: data.anonymousChatEnabled,
+          messagesPerMinute: data.anonymousRateLimit,
+        },
+        websiteEmbed: {
+          enabled: data.websiteEmbedEnabled,
+          allowedOrigins: data.websiteEmbedAllowedOrigins,
+          launcherLabel: data.websiteEmbedLauncherLabel,
+          icon: data.websiteEmbedLauncherIcon,
+          launcherPosition: data.websiteEmbedLauncherPosition,
+        },
+      },
+      rotateAnonymousChatToken: data.rotateAnonymousChatToken,
+      name: data.assistantName,
+      greetingInstruction: data.greetingInstruction,
+      assistantDefaultLocale: data.assistantDefaultLocale,
+      proactiveGreetingEnabled: data.proactiveGreetingEnabled,
+      rotateWebsiteEmbedToken: data.rotateWebsiteEmbedToken,
+    }))
+  },
+
+  async getBehaviorSettings(agentId: string): Promise<AssistantBehaviorSettings> {
+    return agentToAssistantBehaviorSettings(await this.getAgent(agentId))
+  },
+
+  async updateBehaviorSettings(agentId: string, data: AssistantBehaviorSettings): Promise<AssistantBehaviorSettings> {
+    return agentToAssistantBehaviorSettings(await this.updateAgent(agentId, {
+      conversationMode: data.conversationMode,
+      suggestedQuestionsEnabled: data.suggestedQuestionsEnabled,
+      suggestedQuestionsCount: data.suggestedQuestionsCount,
+      customInstruction: data.customInstruction,
+    }))
+  },
+
+  async getWorkspaceBehaviorSettings(): Promise<AssistantBehaviorSettings> {
+    return retrievalSettingsToAssistantBehaviorSettings(await settingsApi.getRetrievalSettings())
+  },
+
+  async updateWorkspaceBehaviorSettings(data: AssistantBehaviorSettings): Promise<AssistantBehaviorSettings> {
+    const current = await settingsApi.getRetrievalSettings()
+    return retrievalSettingsToAssistantBehaviorSettings(await settingsApi.updateRetrievalSettings({
+      ...current,
+      ...data,
+    }))
   },
 }
 
@@ -1748,6 +1959,8 @@ export const publicChatApi = {
       handlers.onDone?.({
         conversationId: payload.conversationId,
         assistantMessageId: payload.assistantMessageId,
+        agentId: payload.agentId,
+        agentName: payload.agentName,
         route: payload.route,
         answer: payload.answer,
         citations: payload.citations,

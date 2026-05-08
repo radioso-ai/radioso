@@ -42,14 +42,17 @@ import {
 import {
   buildDashboardHref,
   type DashboardSection,
+  type DashboardRouteState,
 } from '@/lib/dashboard-routes'
 import { WorkspaceSwitcher } from './workspace-switcher'
 import { useWorkspace } from '@/lib/workspace-context'
-import { generalSettingsApi } from '@/lib/api'
+import { agentsApi } from '@/lib/api'
+import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
 
 interface AppSidebarProps {
   accountId: string
   currentView: DashboardSection
+  routeState: DashboardRouteState
 }
 
 const navItems = [
@@ -58,57 +61,73 @@ const navItems = [
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
 
-const assistantNameByWorkspace = new Map<string, string | null>()
+const agentByRoute = new Map<string, { id: string | null; name: string | null }>()
 
-export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
+export function AppSidebar({ accountId, currentView, routeState }: AppSidebarProps) {
   const { user, logout } = useAuth()
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
   const { theme, setTheme } = useTheme()
   const workspaceCacheKey = activeWorkspaceId ? `${accountId}:${activeWorkspaceId}` : null
-  const [assistantNameState, setAssistantNameState] = useState<{
-    workspaceCacheKey: string | null
-    assistantName: string | null
+  const routeAgentId = currentView === 'agents' ? routeState.agentId ?? null : null
+  const preferredAgentId = routeAgentId ?? getLastSelectedAgentId(activeWorkspaceId)
+  const agentCacheKey = workspaceCacheKey ? `${workspaceCacheKey}:${preferredAgentId ?? 'default-agent'}` : null
+  const [agentNameState, setAgentNameState] = useState<{
+    agentCacheKey: string | null
+    agentId: string | null
+    agentName: string | null
   }>(() => ({
-    workspaceCacheKey,
-    assistantName: workspaceCacheKey && assistantNameByWorkspace.has(workspaceCacheKey)
-      ? (assistantNameByWorkspace.get(workspaceCacheKey) ?? null)
+    agentCacheKey,
+    agentId: agentCacheKey && agentByRoute.has(agentCacheKey)
+      ? (agentByRoute.get(agentCacheKey)?.id ?? null)
+      : null,
+    agentName: agentCacheKey && agentByRoute.has(agentCacheKey)
+      ? (agentByRoute.get(agentCacheKey)?.name ?? null)
       : null,
   }))
-  const cachedAssistantName = workspaceCacheKey && assistantNameByWorkspace.has(workspaceCacheKey)
-    ? assistantNameByWorkspace.get(workspaceCacheKey) ?? null
+  const cachedAgent = agentCacheKey && agentByRoute.has(agentCacheKey)
+    ? agentByRoute.get(agentCacheKey) ?? null
     : null
-  const assistantName = assistantNameState.workspaceCacheKey === workspaceCacheKey
-    ? assistantNameState.assistantName
-    : cachedAssistantName
-  const agentName = assistantName?.trim() || activeWorkspace?.name || 'Agent'
+  const selectedAgentId = agentNameState.agentCacheKey === agentCacheKey
+    ? agentNameState.agentId
+    : cachedAgent?.id ?? null
+  const selectedAgentName = agentNameState.agentCacheKey === agentCacheKey
+    ? agentNameState.agentName
+    : cachedAgent?.name ?? null
+  const agentName = selectedAgentName?.trim() || activeWorkspace?.name || 'Agent'
   const agentLabel = `Agent: ${agentName}`
 
   useEffect(() => {
-    if (!workspaceCacheKey) {
+    if (!workspaceCacheKey || !agentCacheKey) {
       return
     }
 
     let active = true
-    const loadAssistantName = async () => {
+    const loadAgentName = async () => {
       try {
-        const settings = await generalSettingsApi.getGeneralSettings()
+        const response = await agentsApi.listAgents()
         if (!active) return
-        assistantNameByWorkspace.set(workspaceCacheKey, settings.assistantName)
-        setAssistantNameState({ workspaceCacheKey, assistantName: settings.assistantName })
+        const agent = preferredAgentId
+          ? response.agents.find((item) => item.id === preferredAgentId) ?? null
+          : response.agents.find((item) => item.isDefault) ?? response.agents[0] ?? null
+        const agentId = agent?.id ?? null
+        const agentName = agent?.name ?? null
+        if (agentId) {
+          setLastSelectedAgentId(activeWorkspaceId, agentId)
+        }
+        agentByRoute.set(agentCacheKey, { id: agentId, name: agentName })
+        setAgentNameState({ agentCacheKey, agentId, agentName })
       } catch {
         if (!active) return
-        if (!assistantNameByWorkspace.has(workspaceCacheKey)) {
-          setAssistantNameState({ workspaceCacheKey, assistantName: null })
+        if (!agentByRoute.has(agentCacheKey)) {
+          setAgentNameState({ agentCacheKey, agentId: null, agentName: null })
         }
       }
     }
 
-    void loadAssistantName()
+    void loadAgentName()
     const handleAssistantNameUpdated = (event: Event) => {
-      const customEvent = event as CustomEvent<{ assistantName?: string }>
-      const assistantName = customEvent.detail?.assistantName ?? null
-      assistantNameByWorkspace.set(workspaceCacheKey, assistantName)
-      setAssistantNameState({ workspaceCacheKey, assistantName })
+      void event
+      void loadAgentName()
     }
 
     window.addEventListener('radioso:assistant-name-updated', handleAssistantNameUpdated)
@@ -116,7 +135,15 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
       active = false
       window.removeEventListener('radioso:assistant-name-updated', handleAssistantNameUpdated)
     }
-  }, [workspaceCacheKey])
+  }, [activeWorkspaceId, agentCacheKey, preferredAgentId, workspaceCacheKey])
+
+  const agentHref = buildDashboardHref(accountId, {
+    section: 'agents',
+    workspaceId: activeWorkspaceId ?? undefined,
+    workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+    agentId: currentView === 'agents' ? routeState.agentId ?? selectedAgentId ?? undefined : selectedAgentId ?? undefined,
+    agentTab: currentView === 'agents' ? routeState.agentTab : undefined,
+  })
 
   return (
     <Sidebar collapsible="icon">
@@ -146,11 +173,7 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={currentView === 'agents'} tooltip={agentLabel}>
                   <Link
-                    href={buildDashboardHref(accountId, {
-                      section: 'agents',
-                      workspaceId: activeWorkspaceId ?? undefined,
-                      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-                    })}
+                    href={agentHref}
                   >
                     <Bot className="w-4 h-4" />
                     <span>{agentLabel}</span>

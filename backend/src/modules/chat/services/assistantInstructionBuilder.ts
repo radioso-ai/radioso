@@ -36,7 +36,7 @@ export class AssistantInstructionBuilder {
     }
 
     const sanitized = customInstruction.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
-    return sanitized.trim() ? `Workspace-specific instructions:\n${sanitized}` : null;
+    return sanitized.trim() ? `Configured response instructions:\n${sanitized}` : null;
   }
 
   private renderResponseIdentity(responseIdentity?: ResponseIdentity | null): string | null {

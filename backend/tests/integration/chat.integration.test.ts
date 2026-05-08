@@ -1628,6 +1628,85 @@ describe("chat integration", () => {
     expect(observedPrompt).toContain("Answer Instructions:");
   });
 
+  it("uses selected agent behavior for retrieval-enabled direct turns", async () => {
+    let observedPrompt = "";
+    const { app } = createTestApp({
+      queryRewriteGateway: {
+        async rewrite(input) {
+          return {
+            rewrittenQuery: input.query,
+            semanticQuery: input.query,
+            lexicalQuery: input.query,
+            responseIntent: "assistant_identity" as const,
+            turnKind: "ambiguous" as const,
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.91,
+          };
+        },
+      },
+      chatGateway: {
+        async answer({ prompt }) {
+          observedPrompt = prompt;
+          return "I'm Balaram, and I help answer questions from this workspace.";
+        },
+        async *streamAnswer() {
+          yield "unused";
+        },
+      },
+    });
+
+    const { token } = await issueTestToken(app, "selected-agent-behavior@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "You are Vikram, the customer support assistant.",
+      })
+      .expect(200);
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({
+        name: "Balaram",
+        customInstruction: "You are Balaram, the course guide.",
+        retrievalEnabled: true,
+      })
+      .expect(201);
+
+    const response = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", authorization)
+      .send({ agentId: agent.body.id, message: "who are you?", stream: false })
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      agentId: agent.body.id,
+      agentName: "Balaram",
+      route: {
+        type: "direct",
+        reason: "assistant_identity",
+      },
+    });
+    expect(observedPrompt).toContain("Balaram");
+    expect(observedPrompt).not.toContain("Vikram");
+    expect(observedPrompt).toContain("You are Balaram, the course guide.");
+  });
+
   it("keeps mixed social-plus-substantive turns on the retrieval path", async () => {
     const deterministicGateway: ChatGateway = {
       async answer() {

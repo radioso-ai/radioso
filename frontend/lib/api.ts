@@ -880,18 +880,45 @@ export interface AccountUserSummary {
   membershipId: string
   userId: string
   email: string
-  role: 'owner' | 'member'
+  role: 'owner' | 'admin' | 'member'
   status: 'active'
   createdAt: string
 }
+
+export type AccountMembershipRole = AccountUserSummary['role']
+export type AssignableAccountRole = Exclude<AccountMembershipRole, 'owner'>
+export type WorkspaceGrantRole = 'admin' | 'member'
 
 export interface AccountInvitationSummary {
   id: string
   email: string
   status: 'pending' | 'accepted' | 'revoked' | 'expired'
+  role: AssignableAccountRole
   expiresAt: string
   acceptedAt: string | null
   createdAt: string
+}
+
+export interface WorkspaceGrantSummary {
+  workspaceId: string
+  userId: string
+  role: WorkspaceGrantRole
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SupportImpersonationSummary {
+  id: string
+  accountId: string
+  staffUserId: string
+  approverUserId: string
+  reason: string
+  status: 'approved' | 'active' | 'ended' | 'expired' | 'revoked'
+  approvedAt: string
+  startedAt: string | null
+  expiresAt: string
+  endedAt: string | null
+  active: boolean
 }
 
 export interface AccountUsersResponse {
@@ -899,12 +926,14 @@ export interface AccountUsersResponse {
   currentUserId: string
   users: AccountUserSummary[]
   invitations: AccountInvitationSummary[]
+  workspaceGrants: WorkspaceGrantSummary[]
+  supportImpersonations: SupportImpersonationSummary[]
 }
 
 export interface AccessibleAccountSummary {
   accountId: string
   organizationName: string
-  role: 'owner' | 'member'
+  role: AccountMembershipRole
   workspaceId: string
   workspaceName: string
   workspacePublicRouteKey: string
@@ -1022,14 +1051,14 @@ export const authApi = {
 
 // Settings API
 export const settingsApi = {
-  async getRetrievalSettings(): Promise<RetrievalSettings> {
+  async getRetrievalSettings(options: { auth?: 'apiToken' | 'session' } = {}): Promise<RetrievalSettings> {
     const settings = await request<PlatformSettings>("/settings", {
       method: "GET",
-    }, { withApiToken: true })
+    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
     return toRetrievalSettings(settings)
   },
 
-  async updateRetrievalSettings(data: RetrievalSettings): Promise<RetrievalSettings> {
+  async updateRetrievalSettings(data: RetrievalSettings, options: { auth?: 'apiToken' | 'session' } = {}): Promise<RetrievalSettings> {
     const { metadataFieldSuggestions, ...payload } = data
     void metadataFieldSuggestions
     const settings = await request<PlatformSettings>("/settings", {
@@ -1054,7 +1083,7 @@ export const settingsApi = {
           metadataRules: payload.metadataRules,
         },
       }),
-    }, { withApiToken: true })
+    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
     return toRetrievalSettings(settings)
   },
 
@@ -1462,10 +1491,10 @@ export interface AccountUsageSummary {
 
 // General Settings API
 export const generalSettingsApi = {
-  async getGeneralSettings(): Promise<GeneralSettings> {
+  async getGeneralSettings(options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {
     const settings = await request<PlatformSettings>('/settings', {
       method: 'GET',
-    }, { withApiToken: true })
+    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
     return toGeneralSettings(settings)
   },
 
@@ -1486,7 +1515,7 @@ export const generalSettingsApi = {
     websiteEmbedLauncherLabel?: string
     websiteEmbedLauncherIcon?: 'chat' | 'sparkles' | 'message'
     websiteEmbedLauncherPosition?: 'bottom-right' | 'bottom-left'
-  }): Promise<GeneralSettings> {
+  }, options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {
     const settings = await request<PlatformSettings>('/settings', {
       method: 'PUT',
       body: JSON.stringify({
@@ -1508,7 +1537,7 @@ export const generalSettingsApi = {
           websiteEmbedLauncherPosition: data.websiteEmbedLauncherPosition,
         },
       }),
-    }, { withApiToken: true })
+    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
     return toGeneralSettings(settings)
   },
 }
@@ -1539,15 +1568,35 @@ export const accountApi = {
     }, { withSession: true })
   },
 
-  async createInvitation(email: string): Promise<CreateAccountInvitationResponse> {
+  async createInvitation(email: string, role: AssignableAccountRole = 'member'): Promise<CreateAccountInvitationResponse> {
     return request<CreateAccountInvitationResponse>('/account/invitations', {
       method: 'POST',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, role }),
+    }, { withSession: true })
+  },
+
+  async updateUserRole(membershipId: string, role: AssignableAccountRole): Promise<AccountUserSummary> {
+    return request<AccountUserSummary>(`/account/users/${membershipId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
     }, { withSession: true })
   },
 
   async removeUser(membershipId: string): Promise<void> {
     await request<void>(`/account/users/${membershipId}`, {
+      method: 'DELETE',
+    }, { withSession: true })
+  },
+
+  async setWorkspaceGrant(workspaceId: string, userId: string, role: WorkspaceGrantRole): Promise<WorkspaceGrantSummary> {
+    return request<WorkspaceGrantSummary>(`/account/workspaces/${workspaceId}/grants/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ role }),
+    }, { withSession: true })
+  },
+
+  async removeWorkspaceGrant(workspaceId: string, userId: string): Promise<void> {
+    await request<void>(`/account/workspaces/${workspaceId}/grants/${userId}`, {
       method: 'DELETE',
     }, { withSession: true })
   },

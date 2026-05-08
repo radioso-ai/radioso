@@ -11,7 +11,18 @@ import {
   loginSchema,
   registerSchema,
 } from "../routes/authRoutes.js";
-import { accountMembershipParamsSchema, accountSwitchSchema, createAccountInvitationSchema } from "../routes/accountUserRoutes.js";
+import {
+  accountMembershipParamsSchema,
+  accountSwitchSchema,
+  createAccountInvitationSchema,
+  updateMembershipRoleSchema,
+  workspaceGrantParamsSchema,
+  workspaceGrantSchema,
+} from "../routes/accountUserRoutes.js";
+import {
+  approveSupportImpersonationSchema,
+  supportImpersonationParamsSchema,
+} from "../routes/supportRoutes.js";
 import {
   createWorkspaceSchema,
   renameWorkspaceSchema,
@@ -203,6 +214,12 @@ const RegisterRequestSchema = registry.register("RegisterRequest", registerSchem
 const LoginRequestSchema = registry.register("LoginRequest", loginSchema);
 const InvitationAcceptRequestSchema = registry.register("InvitationAcceptRequest", invitationAcceptSchema);
 const AccountInvitationCreateRequestSchema = registry.register("AccountInvitationCreateRequest", createAccountInvitationSchema);
+const AccountMembershipRoleUpdateRequestSchema = registry.register("AccountMembershipRoleUpdateRequest", updateMembershipRoleSchema);
+const WorkspaceGrantRequestSchema = registry.register("WorkspaceGrantRequest", workspaceGrantSchema);
+const SupportImpersonationApproveRequestSchema = registry.register(
+  "SupportImpersonationApproveRequest",
+  approveSupportImpersonationSchema,
+);
 const WorkspaceCreateRequestSchema = registry.register("WorkspaceCreateRequest", createWorkspaceSchema);
 const WorkspaceRenameRequestSchema = registry.register("WorkspaceRenameRequest", renameWorkspaceSchema);
 
@@ -212,7 +229,7 @@ const AccountUserSchema = registry.register(
     membershipId: z.string().uuid(),
     userId: z.string().uuid(),
     email: z.string().email(),
-    role: z.enum(["owner", "member"]),
+    role: z.enum(["owner", "admin", "member"]),
     status: z.literal("active"),
     createdAt: z.string().datetime(),
   }),
@@ -224,9 +241,38 @@ const AccountInvitationSchema = registry.register(
     id: z.string().uuid(),
     email: z.string().email(),
     status: z.enum(["pending", "accepted", "revoked", "expired"]),
+    role: z.enum(["admin", "member"]),
     expiresAt: z.string().datetime(),
     acceptedAt: z.string().datetime().nullable(),
     createdAt: z.string().datetime(),
+  }),
+);
+
+const WorkspaceGrantSchema = registry.register(
+  "WorkspaceGrant",
+  z.object({
+    workspaceId: z.string().uuid(),
+    userId: z.string().uuid(),
+    role: z.enum(["admin", "member"]),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  }),
+);
+
+const SupportImpersonationSchema = registry.register(
+  "SupportImpersonation",
+  z.object({
+    id: z.string().uuid(),
+    accountId: z.string().uuid(),
+    staffUserId: z.string().uuid(),
+    approverUserId: z.string().uuid(),
+    reason: z.string(),
+    status: z.enum(["approved", "active", "ended", "expired", "revoked"]),
+    approvedAt: z.string().datetime(),
+    startedAt: z.string().datetime().nullable(),
+    expiresAt: z.string().datetime(),
+    endedAt: z.string().datetime().nullable(),
+    active: z.boolean(),
   }),
 );
 
@@ -237,6 +283,8 @@ const AccountUsersResponseSchema = registry.register(
     currentUserId: z.string().uuid(),
     users: z.array(AccountUserSchema),
     invitations: z.array(AccountInvitationSchema),
+    workspaceGrants: z.array(WorkspaceGrantSchema),
+    supportImpersonations: z.array(SupportImpersonationSchema),
   }),
 );
 
@@ -245,7 +293,7 @@ const AccessibleAccountSchema = registry.register(
   z.object({
     accountId: z.string().uuid(),
     organizationName: z.string(),
-    role: z.enum(["owner", "member"]),
+    role: z.enum(["owner", "admin", "member"]),
     workspaceId: z.string().uuid(),
     workspaceName: z.string(),
     workspacePublicRouteKey: z.string(),
@@ -1719,6 +1767,164 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/account/users/{membershipId}",
+  tags: ["Account"],
+  summary: "Update an account user's role",
+  operationId: "updateAccountUserRole",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  request: {
+    params: accountMembershipParamsSchema,
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: AccountMembershipRoleUpdateRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Membership role updated",
+      content: {
+        "application/json": {
+          schema: AccountUserSchema,
+        },
+      },
+    },
+    403: {
+      description: "Role management is not allowed for the caller",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/v1/account/workspaces/{workspaceId}/grants/{userId}",
+  tags: ["Account"],
+  summary: "Set a workspace role grant",
+  operationId: "setWorkspaceGrant",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  request: {
+    params: workspaceGrantParamsSchema,
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: WorkspaceGrantRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Workspace grant updated",
+      content: {
+        "application/json": {
+          schema: WorkspaceGrantSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/account/workspaces/{workspaceId}/grants/{userId}",
+  tags: ["Account"],
+  summary: "Remove a workspace role grant",
+  operationId: "removeWorkspaceGrant",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  request: {
+    params: workspaceGrantParamsSchema,
+  },
+  responses: {
+    204: {
+      description: "Workspace grant removed",
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/support/impersonations",
+  tags: ["Support"],
+  summary: "Approve a support impersonation session",
+  operationId: "approveSupportImpersonation",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: SupportImpersonationApproveRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Support impersonation approved",
+      content: {
+        "application/json": {
+          schema: SupportImpersonationSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/support/impersonations/{id}/start",
+  tags: ["Support"],
+  summary: "Start an approved support impersonation session",
+  operationId: "startSupportImpersonation",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  request: {
+    params: supportImpersonationParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Support impersonation started",
+      content: {
+        "application/json": {
+          schema: SupportImpersonationSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/support/impersonations/{id}/end",
+  tags: ["Support"],
+  summary: "End a support impersonation session",
+  operationId: "endSupportImpersonation",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  request: {
+    params: supportImpersonationParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Support impersonation ended",
+      content: {
+        "application/json": {
+          schema: SupportImpersonationSchema,
         },
       },
     },

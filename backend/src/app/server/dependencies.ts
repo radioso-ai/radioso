@@ -11,6 +11,8 @@ import {
 } from "../../modules/chat/composition.js";
 import { AccountMembershipRepository } from "../../db/repositories/accountMembershipRepository.js";
 import { AccountInvitationRepository } from "../../db/repositories/accountInvitationRepository.js";
+import { WorkspaceGrantRepository } from "../../db/repositories/workspaceGrantRepository.js";
+import { SupportImpersonationRepository } from "../../db/repositories/supportImpersonationRepository.js";
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { UserRepository } from "../../db/repositories/userRepository.js";
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
@@ -29,6 +31,7 @@ import { SessionRepository } from "../../db/repositories/sessionRepository.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
 import { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
+import { SupportImpersonationService } from "../../modules/support/services/supportImpersonationService.js";
 import { AuditService } from "../../modules/audit/composition.js";
 import { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../modules/workspace/services/workspaceSummaryService.js";
@@ -159,7 +162,20 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const accountRepository = new AccountRepository(database);
   const userRepository = new UserRepository(database);
   const sessionRepository = new SessionRepository(database);
-  const accountAccessService = new AccountAccessService(accountMembershipRepository, auditService);
+  const workspaceRepository = new WorkspaceRepository(database);
+  const workspaceGrantRepository = new WorkspaceGrantRepository(database);
+  const supportImpersonationService = new SupportImpersonationService(
+    new SupportImpersonationRepository(database),
+    userRepository,
+    auditService,
+    env,
+  );
+  const accountAccessService = new AccountAccessService(
+    accountMembershipRepository,
+    auditService,
+    workspaceGrantRepository,
+    workspaceRepository,
+  );
   const accountInvitationService = new AccountInvitationService(
     new AccountInvitationRepository(database),
     userRepository,
@@ -241,7 +257,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   );
   const conversationRepository = new ConversationRepository(database);
   const messageRepository = new MessageRepository(database);
-  const workspaceRepository = new WorkspaceRepository(database);
   const bootstrapGreetingCacheRepository = new BootstrapGreetingCacheRepository(database);
   const retrievalPipeline = new RetrievalPipelineService(
     retrievalSettingsService,
@@ -389,6 +404,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     authService,
     accountAccessService,
     accountInvitationService,
+    supportImpersonationService,
     workspaceSessionService,
     abuseControlService,
     auditService,

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/public.js";
 import {
@@ -152,7 +153,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     }
   });
 
-  router.put("/", workspaceSession, validateBody(updatePlatformSettingsSchema), async (req, res, next) => {
+  router.put("/", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), validateBody(updatePlatformSettingsSchema), async (req, res, next) => {
     try {
       const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
       const settings = await dependencies.platformSettingsService.updateForWorkspace(workspaceId, req.body, { accountId });
@@ -189,7 +190,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     }
   });
 
-  router.put("/retrieval", workspaceSession, validateBody(updateSettingsSchema), async (req, res, next) => {
+  router.put("/retrieval", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), validateBody(updateSettingsSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.platformSettingsService.updateForWorkspace(workspaceId, {
@@ -229,7 +230,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     }
   });
 
-  router.put("/ingestion", workspaceSession, validateBody(updateIngestionSettingsSchema), async (req, res, next) => {
+  router.put("/ingestion", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), validateBody(updateIngestionSettingsSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.ingestionSettingsService.updateForWorkspace(workspaceId, req.body);
@@ -239,7 +240,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     }
   });
 
-  router.post("/ingestion/reprocess", workspaceSession, async (_req, res, next) => {
+  router.post("/ingestion/reprocess", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const result = await dependencies.workspaceIngestionReprocessService.reprocessWorkspace(workspaceId);
@@ -282,7 +283,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     }
   });
 
-  router.put("/general", workspaceSession, validateBody(updateGeneralSettingsSchema), async (req, res, next) => {
+  router.put("/general", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), validateBody(updateGeneralSettingsSchema), async (req, res, next) => {
     try {
       const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
       const settings = await dependencies.platformSettingsService.updateForWorkspace(

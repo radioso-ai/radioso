@@ -5,6 +5,7 @@ import type { AuditService } from "../../audit/contracts/index.js";
 import type { UserRepositoryPort } from "../../../db/repositories/userRepository.js";
 import type {
   AccountInvitationRecord,
+  AccountInvitationRole,
   AccountInvitationRepositoryPort,
   AccountInvitationStatus,
 } from "../../../db/repositories/accountInvitationRepository.js";
@@ -19,6 +20,7 @@ export interface AccountInvitationSummary {
   status: AccountInvitationStatus;
   expiresAt: string;
   acceptedAt: string | null;
+  role: AccountInvitationRole;
   createdAt: string;
 }
 
@@ -31,6 +33,7 @@ const serializeInvitation = (
   status,
   expiresAt: invitation.expiresAt.toISOString(),
   acceptedAt: invitation.acceptedAt?.toISOString() ?? null,
+  role: invitation.role,
   createdAt: invitation.createdAt.toISOString(),
 });
 
@@ -53,8 +56,14 @@ export class AccountInvitationService {
     accountId: string;
     invitedByUserId: string;
     email: string;
+    role?: AccountInvitationRole;
   }): Promise<AccountInvitationSummary & { acceptanceUrl: string }> {
     const membership = await this.accountAccessService.requireActiveMembership(input.accountId, input.invitedByUserId);
+    await this.accountAccessService.requirePermission({
+      accountId: input.accountId,
+      userId: input.invitedByUserId,
+      permission: "account.users.manage",
+    });
     const email = normalizeEmail(input.email);
     const existingUser = await this.userRepository.findByEmail(email);
 
@@ -88,6 +97,7 @@ export class AccountInvitationService {
       email,
       invitedByMembershipId: membership.id,
       tokenHash: sha256(invitationToken),
+      role: input.role ?? "member",
       expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
     });
 
@@ -137,7 +147,7 @@ export class AccountInvitationService {
     await this.accountAccessService.ensureMembership({
       accountId: invitation.accountId,
       userId,
-      role: "member",
+      role: invitation.role,
     });
 
     await this.invitationRepository.update({

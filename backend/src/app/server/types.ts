@@ -46,6 +46,7 @@ import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../com
 import type { ChatActionProviderPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillCatalogService } from "../../modules/skills/public.js";
+import type { SupportImpersonationService } from "../../modules/support/services/supportImpersonationService.js";
 
 export interface AppDependencies {
   env: Env;
@@ -63,6 +64,7 @@ export interface AppDependencies {
   authService: AuthService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
+  supportImpersonationService: SupportImpersonationService;
   workspaceSessionService: WorkspaceSessionService;
   abuseControlService: AbuseControlService;
   auditService: AuditService;

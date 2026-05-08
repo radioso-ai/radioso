@@ -109,6 +109,67 @@ describe('accountApi.getWorkspaceToken', () => {
     )
   })
 
+  it('updates account user roles with session credentials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+      },
+      json: async () => ({
+        membershipId: 'membership-1',
+        userId: 'user-1',
+        email: 'teammate@example.com',
+        role: 'admin',
+        status: 'active',
+        createdAt: '2026-04-09T00:00:00.000Z',
+      }),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await accountApi.updateUserRole('membership-1', 'admin')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/account/users/membership-1',
+      expect.objectContaining({
+        method: 'PATCH',
+        credentials: 'include',
+        body: JSON.stringify({ role: 'admin' }),
+      }),
+    )
+  })
+
+  it('sets workspace grants with session credentials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+      },
+      json: async () => ({
+        workspaceId: 'workspace-1',
+        userId: 'user-1',
+        role: 'admin',
+        createdAt: '2026-04-09T00:00:00.000Z',
+        updatedAt: '2026-04-09T00:00:00.000Z',
+      }),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await accountApi.setWorkspaceGrant('workspace-1', 'user-1', 'admin')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/account/workspaces/workspace-1/grants/user-1',
+      expect.objectContaining({
+        method: 'PUT',
+        credentials: 'include',
+        body: JSON.stringify({ role: 'admin' }),
+      }),
+    )
+  })
+
   it('lists accessible accounts with session credentials', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

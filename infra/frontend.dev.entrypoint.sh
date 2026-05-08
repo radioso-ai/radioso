@@ -113,6 +113,8 @@ frontend_modules_ready() {
   for required_module in \
     "next/package.json" \
     "next/dist/pages/_error" \
+    "next/dist/build/webpack/loaders/next-app-loader" \
+    "next/dist/build/webpack/loaders/next-flight-client-entry-loader" \
     "next/dist/compiled/jest-worker/processChild.js" \
     "@swc/helpers/package.json"
   do
@@ -132,7 +134,7 @@ frontend_dependencies_ready() {
 
 install_frontend_dependencies() {
   echo "Installing frontend dependencies..."
-  npm install --include=optional --no-audit --no-fund
+  npm ci --include=optional --no-audit --no-fund
   mkdir -p node_modules
   printf '%s' "$CURRENT_INSTALL_STATE" > "$INSTALL_STATE_FILE"
   SAVED_INSTALL_STATE="$CURRENT_INSTALL_STATE"

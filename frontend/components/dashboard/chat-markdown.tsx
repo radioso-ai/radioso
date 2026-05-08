@@ -38,6 +38,10 @@ const expandInlineUnorderedLists = (content: string) =>
   content
     .split('\n')
     .map((line) => {
+      if (/^\s{0,3}([-+*•])\s+/.test(line)) {
+        return line
+      }
+
       const matches = Array.from(line.matchAll(UNORDERED_LIST_MARKER_PATTERN))
       if (matches.length < 2) {
         return line

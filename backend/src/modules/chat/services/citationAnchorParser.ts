@@ -6,6 +6,11 @@ export interface CitationAnchorGroup {
 
 const ANCHOR_PATTERN = /\[\[(\d+)\]\]/g;
 
+const removeDetachedPunctuationSpacing = (text: string): string =>
+  text
+    .replace(/[ \t]+([.,;:!?])/g, "$1")
+    .replace(/[ \t]+(\r?\n)/g, "$1");
+
 export const findCitationAnchorGroups = (answer: string): CitationAnchorGroup[] => {
   const matches = [...answer.matchAll(ANCHOR_PATTERN)].map((match) => ({
     start: match.index ?? 0,
@@ -43,7 +48,7 @@ export const findCitationAnchorGroups = (answer: string): CitationAnchorGroup[] 
 };
 
 export const stripResidualCitationSyntax = (text: string): string =>
-  text
+  removeDetachedPunctuationSpacing(text
     .replace(/\[\[[^\]]*\]\]/g, "")
     .replace(/\[\[[^\s.,;:!?)]*/g, "")
-    .replace(/\]\]/g, "");
+    .replace(/\]\]/g, ""));

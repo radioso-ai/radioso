@@ -437,6 +437,60 @@ export interface RetrievalInfo {
     relaxedRuleIds: string[]
     restoredCandidateCount?: number
   }
+  shapeName?:
+    | 'definition_lookup'
+    | 'event_date_lookup'
+    | 'policy_answer'
+    | 'exploratory_summary'
+    | 'follow_up_grounding'
+    | 'default_hybrid'
+  queryShape?:
+    | 'definition_lookup'
+    | 'event_date_lookup'
+    | 'policy_answer'
+    | 'exploratory_summary'
+    | 'follow_up_grounding'
+    | 'default_hybrid'
+    | 'general_grounding'
+  skillDiagnostic?: SkillDiagnostic
+  resolvedSteps?: Array<Record<string, unknown>>
+}
+
+export interface SkillDiagnostic {
+  skillName: string
+  shapeName?: string
+  strategy?: string
+  selectionMode: 'deterministic' | 'probabilistic'
+  selectionReason?: string
+  selectionConfidence?: number
+  callerSurface: 'assistant' | 'retrieval_api' | 'sdk' | 'mcp' | 'dashboard' | 'public_embed'
+  capabilityChecks: Array<{
+    capability: string
+    allowed: boolean
+    reason?: string
+  }>
+  parameters?: Record<string, unknown>
+  fallback?: {
+    used: boolean
+    reason?: string
+    path?: string
+  }
+  outcome: 'success' | 'unsupported' | 'forbidden' | 'failed' | 'skipped'
+  error?: {
+    code: string
+    message?: string
+  }
+  evidence?: {
+    queryShape?: string
+    retrievalShape?: string
+    retrievalStrategy?: string
+    candidateSourceSummary?: Record<string, unknown>
+    ranking?: Record<string, unknown>
+    resolvedSteps?: Array<Record<string, unknown>>
+    evidenceStatus?: 'found' | 'missing' | 'partial' | 'not_applicable'
+    supportStatus?: 'supported' | 'unsupported' | 'not_checked' | 'not_applicable'
+    groundingOutcome?: string
+  }
 }
 
 export interface ParsedQueryInfo {
@@ -523,6 +577,26 @@ export interface ChatResponse {
   }
   retrievalInfo: RetrievalInfo
   retrievalTrace: RetrievalTrace
+}
+
+export type AnswerFeedbackValue = 'up' | 'down'
+
+export interface AnswerFeedbackEntry {
+  id: string
+  value: AnswerFeedbackValue
+  comment: string | null
+  actorType: 'authenticated_user' | 'api_token' | 'anonymous_user'
+  actorId: string
+  accountId: string | null
+  userId: string | null
+  anonymousSessionId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AnswerFeedbackState {
+  value: AnswerFeedbackValue
+  comment?: string | null
 }
 
 export interface ChatStreamConversation {
@@ -626,6 +700,7 @@ export interface ChatConversationTurn {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
+  answerFeedbackEntries?: AnswerFeedbackEntry[]
   debug?: ChatConversationTurnDebug
 }
 
@@ -1515,6 +1590,70 @@ export const accountApi = {
     }, { withSession: true })
     storeWorkspaceToken(workspaceId, response.token)
     return response
+  },
+}
+
+export const answerFeedbackApi = {
+  async submit(
+    input: { assistantMessageId: string; value: AnswerFeedbackValue; comment?: string | null },
+  ): Promise<AnswerFeedbackEntry> {
+    return request<AnswerFeedbackEntry>(`/ee/answer-feedback/messages/${input.assistantMessageId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        value: input.value,
+        comment: input.comment ?? undefined,
+      }),
+    }, { withApiToken: true })
+  },
+
+  async clear(assistantMessageId: string): Promise<{ cleared: boolean }> {
+    return request<{ cleared: boolean }>(`/ee/answer-feedback/messages/${assistantMessageId}`, {
+      method: 'DELETE',
+    }, { withApiToken: true })
+  },
+
+  async submitPublic(
+    token: string,
+    input: { assistantMessageId: string; value: AnswerFeedbackValue; comment?: string | null },
+  ): Promise<AnswerFeedbackEntry> {
+    const response = await fetch(`${API_BASE}/ee/answer-feedback/public/chat/${encodeURIComponent(token)}/messages/${input.assistantMessageId}`, {
+      method: 'PUT',
+      cache: 'no-store',
+      credentials: 'include',
+      headers: attachAnonymousSessionHeader(token, {
+        'Content-Type': 'application/json',
+        'X-Forwarded-Prefix': '/backend',
+      }),
+      body: JSON.stringify({
+        value: input.value,
+        comment: input.comment ?? undefined,
+      }),
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    persistAnonymousSessionHeader(token, response)
+    return response.json() as Promise<AnswerFeedbackEntry>
+  },
+
+  async clearPublic(token: string, assistantMessageId: string): Promise<{ cleared: boolean }> {
+    const response = await fetch(`${API_BASE}/ee/answer-feedback/public/chat/${encodeURIComponent(token)}/messages/${assistantMessageId}`, {
+      method: 'DELETE',
+      cache: 'no-store',
+      credentials: 'include',
+      headers: attachAnonymousSessionHeader(token, {
+        'X-Forwarded-Prefix': '/backend',
+      }),
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    persistAnonymousSessionHeader(token, response)
+    return response.json() as Promise<{ cleared: boolean }>
   },
 }
 

@@ -36,6 +36,8 @@ The retrieval answer endpoint accepts optional `conversationContext` hints for r
 
 For debugging, MCP grounded-answer calls are marked in retrieval diagnostics as `mcp_capability` executions. This keeps them separate from direct retrieval API calls and assistant-backed chat turns.
 
+Grounded-answer diagnostics also include retrieval shape metadata in the existing `retrievalTrace` graph. Look for the `shape_selection` stage and summary fields such as `shapeName`, `queryShape`, `resolvedSteps`, and `skillDiagnostic`. These fields explain which resolved retrieval shape and step overrides were applied.
+
 ## Skills Catalog
 
 Radioso also exposes a read-only skills catalog through the main API:

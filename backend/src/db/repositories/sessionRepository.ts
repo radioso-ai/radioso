@@ -29,7 +29,7 @@ export class SessionRepository implements SessionRepositoryPort {
   constructor(private readonly database: Database) {}
 
   async create(params: { userId: string; accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<SessionRecord> {
-    const [row] = await this.database.query<SessionRow>(
+    const row = await this.database.queryOne<SessionRow>(
       `INSERT INTO sessions (id, user_id, account_id, session_token_hash, expires_at)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id, user_id, account_id, session_token_hash, created_at, expires_at, last_seen_at, revoked_at`,
@@ -40,7 +40,7 @@ export class SessionRepository implements SessionRepositoryPort {
   }
 
   async findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<SessionRecord | null> {
-    const [row] = await this.database.query<SessionRow>(
+    const row = await this.database.queryOptional<SessionRow>(
       `SELECT id, user_id, account_id, session_token_hash, created_at, expires_at, last_seen_at, revoked_at
        FROM sessions
        WHERE session_token_hash = $1
@@ -62,14 +62,12 @@ export class SessionRepository implements SessionRepositoryPort {
   }
 
   async revokeAllForUser(userId: string, revokedAt: Date): Promise<number> {
-    const result = await this.database.pool.query(
+    return this.database.execute(
       `UPDATE sessions
        SET revoked_at = $2
        WHERE user_id = $1
          AND revoked_at IS NULL`,
       [userId, revokedAt],
     );
-
-    return result.rowCount ?? 0;
   }
 }

@@ -46,7 +46,7 @@ export class BootstrapGreetingCacheRepository implements BootstrapGreetingCacheR
   constructor(private readonly database: Database) {}
 
   async findByWorkspaceAndFingerprint(workspaceId: string, fingerprint: string): Promise<BootstrapGreetingCacheRecord | null> {
-    const [row] = await this.database.query<BootstrapGreetingCacheRow>(
+    const row = await this.database.queryOptional<BootstrapGreetingCacheRow>(
       `SELECT id, workspace_id, fingerprint, locale_used, greeting_text, created_at, updated_at
        FROM bootstrap_greeting_cache
        WHERE workspace_id = $1 AND fingerprint = $2`,
@@ -62,7 +62,7 @@ export class BootstrapGreetingCacheRepository implements BootstrapGreetingCacheR
     localeUsed: string | null;
     greetingText: string;
   }): Promise<BootstrapGreetingCacheRecord> {
-    const [row] = await this.database.query<BootstrapGreetingCacheRow>(
+    const row = await this.database.queryOne<BootstrapGreetingCacheRow>(
       `INSERT INTO bootstrap_greeting_cache (id, workspace_id, fingerprint, locale_used, greeting_text)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (workspace_id, fingerprint)

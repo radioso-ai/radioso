@@ -429,6 +429,7 @@ export class ChatService {
           validation: presentation.validation,
         },
       });
+      const resolvedRetrievalInfo = retrievalTrace.summary ?? retrievalInfo;
 
       const assistantMessage = await this.messageRepository.create({
         conversationId: session.conversation.id,
@@ -481,7 +482,7 @@ export class ChatService {
         suggestions,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
-        retrievalInfo,
+        retrievalInfo: resolvedRetrievalInfo,
         retrievalTrace,
       };
     } catch (error) {
@@ -641,6 +642,7 @@ export class ChatService {
           validation: presentation.validation,
         },
       });
+      const resolvedRetrievalInfo = retrievalTrace.summary ?? retrievalInfo;
 
       const assistantMessage = await this.messageRepository.create({
         conversationId: session.conversation.id,
@@ -695,7 +697,7 @@ export class ChatService {
         suggestions: actionSuggestions,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
-        retrievalInfo,
+        retrievalInfo: resolvedRetrievalInfo,
         retrievalTrace,
       };
 

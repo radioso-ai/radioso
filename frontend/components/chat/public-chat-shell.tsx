@@ -20,7 +20,14 @@ import {
   type HumanContactInlineRequest,
 } from '@/components/chat/human-contact-inline-composer'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
-import { type ChatSuggestion, type HumanContactTriggerSource, type WebsiteEmbedPageContext } from '@/lib/api'
+import {
+  answerFeedbackApi,
+  type AnswerFeedbackState,
+  type AnswerFeedbackValue,
+  type ChatSuggestion,
+  type HumanContactTriggerSource,
+  type WebsiteEmbedPageContext,
+} from '@/lib/api'
 import { createClientId } from '@/lib/client-id'
 import { editionController } from '@/lib/edition-controller'
 import { HUMAN_CONTACT_REQUEST_TRIGGER_REASON, isHumanContactRequest } from '@/lib/human-contact-intent'
@@ -531,6 +538,19 @@ function PublicChatContent({
     await startNewChat()
   }
 
+  const handleAnswerFeedback = async (input: {
+    assistantMessageId: string
+    value: AnswerFeedbackValue
+    comment?: string | null
+  }): Promise<AnswerFeedbackState> => {
+    const feedback = await answerFeedbackApi.submitPublic(publicChatToken, input)
+    return { value: feedback.value, comment: feedback.comment }
+  }
+
+  const handleClearAnswerFeedback = async (assistantMessageId: string) => {
+    await answerFeedbackApi.clearPublic(publicChatToken, assistantMessageId)
+  }
+
   const handleContactSubmitted = (content: string) => {
     setContactRequest(null)
     setContactConfirmation({
@@ -685,6 +705,8 @@ function PublicChatContent({
               messages={visibleMessages}
               onOpenDocument={async () => 'unavailable'}
               onSuggestionSelect={handleSuggestionSelect}
+              onAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleAnswerFeedback : undefined}
+              onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
               assistantAvatarUrl={avatarUrl}
               assistantAvatarLabel={resolvedWorkspaceName}
               hideAssistantAvatar={surface === 'embed' && isNarrowLayout}

@@ -17,6 +17,8 @@ import {
   publicChatApi,
   readStoredAnonymousSessionId,
   readStoredPublicSessionToken,
+  type AnswerFeedbackEntry,
+  type AnswerFeedbackState,
   type AnswerSegment,
   type Citation,
   type ChatSuggestion,
@@ -38,6 +40,8 @@ export interface ChatMessage {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
+  answerFeedback?: AnswerFeedbackState
+  answerFeedbackEntries?: AnswerFeedbackEntry[]
   retrievalInfo?: RetrievalInfo
   retrievalTrace?: RetrievalTrace
   persistedAssistantMessageId?: string
@@ -106,7 +110,21 @@ const isRateLimitError = (error: unknown): { message: string; retryAfterSeconds:
   }
 }
 
-const toChatMessages = (detail: ChatConversationDetail): ChatMessage[] =>
+const resolveOwnFeedback = (
+  entries: AnswerFeedbackEntry[] | undefined,
+  anonymousSessionId: string | null | undefined,
+): AnswerFeedbackState | undefined => {
+  const entry = entries?.find((feedback) =>
+    feedback.actorType === 'anonymous_user' &&
+    feedback.anonymousSessionId === anonymousSessionId,
+  )
+  return entry ? { value: entry.value, comment: entry.comment } : undefined
+}
+
+const toChatMessages = (
+  detail: ChatConversationDetail,
+  anonymousSessionId?: string | null,
+): ChatMessage[] =>
   detail.messages
     .filter((message): message is typeof message & { role: 'user' | 'assistant' } => message.role !== 'system')
     .map((message) => ({
@@ -118,6 +136,10 @@ const toChatMessages = (detail: ChatConversationDetail): ChatMessage[] =>
       citations: message.citations,
       answerSegments: message.answerSegments,
       suggestions: message.suggestions,
+      answerFeedback: message.role === 'assistant'
+        ? resolveOwnFeedback(message.answerFeedbackEntries, anonymousSessionId)
+        : undefined,
+      answerFeedbackEntries: message.role === 'assistant' ? message.answerFeedbackEntries : undefined,
       retrievalInfo: message.debug?.retrievalInfo,
       retrievalTrace: message.debug?.retrievalTrace,
       persistedAssistantMessageId: message.role === 'assistant' ? message.id : undefined,
@@ -154,8 +176,11 @@ const restoreMessageSuggestions = (
   )
 }
 
-const getLatestAssistantMessage = (detail: ChatConversationDetail): ChatMessage | null => {
-  const assistantMessages = toChatMessages(detail).filter((message) => message.role === 'assistant')
+const getLatestAssistantMessage = (
+  detail: ChatConversationDetail,
+  anonymousSessionId?: string | null,
+): ChatMessage | null => {
+  const assistantMessages = toChatMessages(detail, anonymousSessionId).filter((message) => message.role === 'assistant')
   return assistantMessages.at(-1) ?? null
 }
 
@@ -335,7 +360,7 @@ export function AnonymousChatProvider({
       )
 
       setConversationId(detail.conversationId)
-      setMessages(toChatMessages(detail))
+      setMessages(toChatMessages(detail, readStoredAnonymousSessionId(token)))
       setHasOlderMessages(detail.hasOlderMessages)
       setNextMessageCursor(detail.nextCursor)
     } catch (error) {
@@ -397,7 +422,7 @@ export function AnonymousChatProvider({
       const detail = await publicChatApi.getConversationDetail(token, nextConversationId, {
         limit: MESSAGE_WINDOW_SIZE,
       })
-      const assistantMessage = getLatestAssistantMessage(detail)
+      const assistantMessage = getLatestAssistantMessage(detail, readStoredAnonymousSessionId(token))
       if (!assistantMessage) {
         return false
       }
@@ -414,6 +439,8 @@ export function AnonymousChatProvider({
                 citations: assistantMessage.citations,
                 answerSegments: assistantMessage.answerSegments,
                 suggestions: assistantMessage.suggestions,
+                answerFeedback: assistantMessage.answerFeedback,
+                answerFeedbackEntries: assistantMessage.answerFeedbackEntries,
                 retrievalInfo: assistantMessage.retrievalInfo,
                 retrievalTrace: assistantMessage.retrievalTrace,
                 persistedAssistantMessageId: assistantMessage.persistedAssistantMessageId ?? assistantMessage.id,
@@ -589,7 +616,7 @@ export function AnonymousChatProvider({
         limit: MESSAGE_WINDOW_SIZE,
         cursor: nextMessageCursor,
       })
-      const olderMessages = toChatMessages(detail)
+      const olderMessages = toChatMessages(detail, readStoredAnonymousSessionId(token))
       setMessages((current) => {
         const seen = new Set(current.map((message) => message.id))
         const nextOlder = olderMessages.filter((message) => !seen.has(message.id))

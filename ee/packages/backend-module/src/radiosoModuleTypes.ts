@@ -8,6 +8,8 @@ export interface ApplicationModuleRegistrationContext {
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHandler): void;
   registerChatActionProvider(provider: ApplicationChatActionProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
+  registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
+  registerSkillDefinition?(definition: SkillDefinition): void;
 }
 
 export type ApplicationAccountCreatedHandler = (context: {
@@ -24,6 +26,40 @@ export interface ApplicationModule {
   register?(context: ApplicationModuleRegistrationContext): void;
   initialize?(): Promise<void>;
   shutdown?(): Promise<void>;
+}
+
+export interface SkillDefinition {
+  name: string;
+  displayName: string;
+  description: string;
+  owner: "assistant" | "retrieval" | "documents" | "mcp" | "platform" | "auth" | "contact";
+  executionClass: "interactive" | "deferred" | "administrative";
+  supportedCallers: Array<"assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed">;
+  requiredCapabilities: string[];
+  contractReferences: Array<{
+    kind: "http" | "sdk" | "mcp_tool" | "documentation";
+    label: string;
+    method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+    path: string;
+  }>;
+  diagnostics: {
+    defined: boolean;
+    shapeAware: boolean;
+    strategyAware: boolean;
+    supportedFields?: string[];
+  };
+  steps: Array<{
+    name: string;
+    kind: string;
+    displayName?: string;
+    clauses: Record<string, unknown>;
+  }>;
+  shapes?: Array<{
+    name: string;
+    displayName?: string;
+    description?: string;
+    stepOverrides: Record<string, Record<string, unknown>>;
+  }>;
 }
 
 export interface WebsiteEmbedIntegrationProvider {
@@ -255,6 +291,35 @@ export type ApplicationContactHistoryProviderRegistration =
         error(entry: unknown, message?: string): void;
       };
     }) => ContactHistoryProvider);
+
+export interface AnswerFeedbackHistoryEntry {
+  id: string;
+  value: "up" | "down";
+  comment: string | null;
+  actorType: "authenticated_user" | "api_token" | "anonymous_user";
+  actorId: string;
+  accountId: string | null;
+  userId: string | null;
+  anonymousSessionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AnswerFeedbackHistoryProvider {
+  listByAssistantMessageIds(
+    workspaceId: string,
+    assistantMessageIds: string[],
+  ): Promise<Map<string, AnswerFeedbackHistoryEntry[]>>;
+}
+
+export type ApplicationAnswerFeedbackHistoryProviderRegistration =
+  | AnswerFeedbackHistoryProvider
+  | ((context: {
+      database: UsageLimitDatabasePort;
+      logger: {
+        error(entry: unknown, message?: string): void;
+      };
+    }) => AnswerFeedbackHistoryProvider);
 
 export interface WebsiteEmbedIntegrationWorkspace {
   name: string;

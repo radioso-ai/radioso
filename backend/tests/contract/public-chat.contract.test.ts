@@ -204,7 +204,27 @@ describe("public chat contract", () => {
   });
 
   it("GET /api/v1/public/chat/:token/history/:conversationId returns messages", async () => {
-    const { app } = createTestApp();
+    const { app } = createTestApp({
+      answerFeedbackHistoryProvider: {
+        async listByAssistantMessageIds(_workspaceId, assistantMessageIds) {
+          return new Map(assistantMessageIds.map((assistantMessageId) => [
+            assistantMessageId,
+            [{
+              id: "11111111-1111-1111-1111-111111111111",
+              value: "down" as const,
+              comment: "Needs more detail.",
+              actorType: "anonymous_user" as const,
+              actorId: "public-session-feedback",
+              accountId: null,
+              userId: null,
+              anonymousSessionId: "public-session-feedback",
+              createdAt: "2026-05-08T10:00:00.000Z",
+              updatedAt: "2026-05-08T10:00:00.000Z",
+            }],
+          ]));
+        },
+      },
+    });
     const session = await issueTestSession(app, "public-chat-history@example.com");
     await request(app)
       .post("/api/v1/document/")
@@ -248,6 +268,13 @@ describe("public chat contract", () => {
           role: "assistant",
           citations: expect.any(Array),
           answerSegments: expect.any(Array),
+          answerFeedbackEntries: [
+            expect.objectContaining({
+              value: "down",
+              comment: "Needs more detail.",
+              actorType: "anonymous_user",
+            }),
+          ],
         }),
       ]),
     );

@@ -18,12 +18,13 @@ import type {
   ChatActionProviderPort,
   ContactHistoryProviderPort,
 } from "../../modules/chat/contracts/index.js";
+import type { AnswerFeedbackHistoryProviderPort } from "../../modules/chat/composition.js";
 import type { AppDependencies } from "../server/types.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { AuditService } from "../../modules/audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
-import type { SkillCatalogEntryDefinition } from "../../modules/skills/public.js";
+import type { SkillCatalogEntryDefinition, SkillDefinition } from "../../modules/skills/public.js";
 
 export interface ApplicationDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
@@ -65,6 +66,13 @@ export type ApplicationContactHistoryProviderRegistration =
       logger: AppLogger;
     }) => ContactHistoryProviderPort);
 
+export type ApplicationAnswerFeedbackHistoryProviderRegistration =
+  | AnswerFeedbackHistoryProviderPort
+  | ((context: {
+      database: ApplicationDatabasePort;
+      logger: AppLogger;
+    }) => AnswerFeedbackHistoryProviderPort);
+
 export type ApplicationAccountCreatedHook = (context: {
   accountId: string;
   database: ApplicationDatabasePort;
@@ -87,7 +95,9 @@ export interface ApplicationExtensionRegistry {
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
   chatActionProviderRegistration?: ApplicationChatActionProviderRegistration;
   contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
+  answerFeedbackHistoryProviderRegistration?: ApplicationAnswerFeedbackHistoryProviderRegistration;
   skillCatalogEntries: SkillCatalogEntryDefinition[];
+  skillDefinitions: SkillDefinition[];
 }
 
 export interface ApplicationModuleRegistrationContext {
@@ -106,7 +116,9 @@ export interface ApplicationModuleRegistrationContext {
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
   registerChatActionProvider(provider: ApplicationChatActionProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
+  registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillCatalogEntry(entry: SkillCatalogEntryDefinition): void;
+  registerSkillDefinition(definition: SkillDefinition): void;
 }
 
 export interface ApplicationModule {
@@ -126,6 +138,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   routeMounts: [],
   accountCreatedHooks: [],
   skillCatalogEntries: [],
+  skillDefinitions: [],
 });
 
 const createRegistrationContext = (registry: ApplicationExtensionRegistry): ApplicationModuleRegistrationContext => ({
@@ -174,8 +187,14 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   registerContactHistoryProvider(provider) {
     registry.contactHistoryProviderRegistration = provider;
   },
+  registerAnswerFeedbackHistoryProvider(provider) {
+    registry.answerFeedbackHistoryProviderRegistration = provider;
+  },
   registerSkillCatalogEntry(entry) {
     registry.skillCatalogEntries.push(entry);
+  },
+  registerSkillDefinition(definition) {
+    registry.skillDefinitions.push(definition);
   },
 });
 

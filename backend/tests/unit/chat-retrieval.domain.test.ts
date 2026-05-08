@@ -11,6 +11,7 @@ import { PromptContextSelectorService } from "../../src/modules/retrieval/servic
 import { OpenAIQueryRewriteGateway, QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalAnswerService } from "../../src/modules/retrieval/services/retrievalAnswerService.js";
+import { selectRetrievalAnswerShape } from "../../src/modules/retrieval/services/retrievalShapeResolver.js";
 import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 
 const message = (content: string, role: MessageRecord["role"] = "user"): MessageRecord => ({
@@ -1085,7 +1086,13 @@ describe("chat retrieval domain", () => {
     expect(createInput?.messages[0]?.content).toContain('"inScopeRequest":"string|null"');
     expect(createInput?.messages[0]?.content).toContain('"outsideScopeRequest":"string|null"');
     expect(createInput?.messages[0]?.content).toContain('"responseLanguage":"string"');
+    expect(createInput?.messages[0]?.content).toContain(
+      '"queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding"',
+    );
     expect(createInput?.messages[0]?.content).toContain("Never output vague placeholders");
+    expect(createInput?.messages[0]?.content).toContain(
+      "Do not guess one branch and do not collapse several branches into one bag-of-terms rewrite.",
+    );
     expect(createInput?.messages).toHaveLength(1);
     expect(createInput?.messages[0]?.content).not.toContain(
       "Retrieval continuity state from the most recent successful assistant turn",
@@ -1616,6 +1623,151 @@ describe("chat retrieval domain", () => {
 
     expect(rerankCandidateCount).toBe(15);
     expect(result.contexts).toHaveLength(RETRIEVAL_BEHAVIOR.finalContextTopK);
+  });
+
+  it("skips semantic reranking for definition lookup shape", async () => {
+    let rerankCalled = false;
+    const stage = new ContextSelectionStageService(
+      new RerankService({
+        async rerank(input) {
+          rerankCalled = true;
+          return input.contexts.map((context, index) => ({
+            chunkId: context.chunkId,
+            relevanceScore: 1 - index / 100,
+          }));
+        },
+      }),
+      new PromptContextSelectorService(10_000),
+    );
+
+    const scoredCandidates: RetrievedCandidate[] = Array.from({ length: 3 }, (_, index) => ({
+      chunkId: `definition-${index + 1}`,
+      documentId: `definition-doc-${index + 1}`,
+      title: `Definition ${index + 1}`,
+      content: `Definition content ${index + 1}.`,
+      similarity: 1 - index / 100,
+      retrievalSources: ["lexical"],
+      retrievalText: `Definition ${index + 1} Definition content ${index + 1}.`,
+      semanticScore: 0,
+      lexicalScore: 1 - index / 100,
+    }));
+
+    const result = await stage.execute({
+      settings: {
+        rerankEnabled: true,
+        rerankTopK: 5,
+      },
+      activeParsedQuery: {
+        semanticQuery: "what is bm25",
+      },
+      activeQuery: "what is bm25",
+      shapeSelection: selectRetrievalAnswerShape({
+        query: "what is bm25",
+        rewrittenQuery: {
+          originalQuery: "what is bm25",
+          rewrittenQuery: "bm25",
+          effectiveQuery: "bm25",
+          semanticQuery: "bm25",
+          lexicalQuery: "bm25",
+          responseIntent: "retrieval",
+          rewriteApplied: true,
+          retrievalEligible: true,
+          status: "applied",
+          confidence: 0.9,
+          structuredResult: {
+            rewrittenQuery: "bm25",
+            queryShape: "definition_lookup",
+            turnKind: "fresh_subject",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.9,
+          },
+        },
+      }),
+      scoredCandidates,
+    } as never);
+
+    expect(rerankCalled).toBe(false);
+    expect(result.rerankStatus).toBe("skipped");
+  });
+
+  it("preserves lexical-preferred ordering in final contexts when definition lookup skips rerank", async () => {
+    const stage = new ContextSelectionStageService(
+      new RerankService({
+        async rerank(input) {
+          return input.contexts.map((context, index) => ({
+            chunkId: context.chunkId,
+            relevanceScore: 1 - index / 100,
+          }));
+        },
+      }),
+      new PromptContextSelectorService(10_000),
+    );
+
+    const semanticCandidate: RetrievedCandidate = {
+      chunkId: "semantic-definition",
+      documentId: "semantic-doc",
+      title: "Semantic definition",
+      content: "Semantic-only definition content.",
+      similarity: 0.99,
+      retrievalSources: ["semantic_original"],
+      retrievalText: "Semantic definition Semantic-only definition content.",
+      semanticScore: 0.99,
+      lexicalScore: 0,
+    };
+    const lexicalCandidate: RetrievedCandidate = {
+      chunkId: "lexical-definition",
+      documentId: "lexical-doc",
+      title: "Lexical definition",
+      content: "Exact lexical definition content.",
+      similarity: 0.2,
+      retrievalSources: ["lexical"],
+      retrievalText: "Lexical definition Exact lexical definition content.",
+      semanticScore: 0,
+      lexicalScore: 0.2,
+    };
+
+    const result = await stage.execute({
+      settings: {
+        rerankEnabled: true,
+        rerankTopK: 5,
+      },
+      activeParsedQuery: {
+        semanticQuery: "bm25",
+      },
+      activeQuery: "bm25",
+      shapeSelection: selectRetrievalAnswerShape({
+        query: "bm25",
+        rewrittenQuery: {
+          originalQuery: "bm25",
+          rewrittenQuery: "bm25",
+          effectiveQuery: "bm25",
+          semanticQuery: "bm25",
+          lexicalQuery: "bm25",
+          responseIntent: "retrieval",
+          rewriteApplied: true,
+          retrievalEligible: true,
+          status: "applied",
+          confidence: 0.9,
+          structuredResult: {
+            rewrittenQuery: "bm25",
+            queryShape: "definition_lookup",
+            turnKind: "fresh_subject",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.9,
+          },
+        },
+      }),
+      scoredCandidates: [lexicalCandidate, semanticCandidate],
+    } as never);
+
+    expect(result.rerankStatus).toBe("skipped");
+    expect(result.rerankedContexts.map((context) => context.chunkId)).toEqual([
+      "lexical-definition",
+      "semantic-definition",
+    ]);
+    expect(result.contexts[0]?.chunkId).toBe("lexical-definition");
   });
 
   it("does not let a low rerank top K shrink the final prompt context cap", async () => {

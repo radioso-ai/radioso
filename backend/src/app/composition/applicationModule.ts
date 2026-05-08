@@ -18,6 +18,7 @@ import type {
   ChatActionProviderPort,
   ContactHistoryProviderPort,
 } from "../../modules/chat/contracts/index.js";
+import type { AnswerFeedbackHistoryProviderPort } from "../../modules/chat/composition.js";
 import type { AppDependencies } from "../server/types.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { AuditService } from "../../modules/audit/contracts/index.js";
@@ -65,6 +66,13 @@ export type ApplicationContactHistoryProviderRegistration =
       logger: AppLogger;
     }) => ContactHistoryProviderPort);
 
+export type ApplicationAnswerFeedbackHistoryProviderRegistration =
+  | AnswerFeedbackHistoryProviderPort
+  | ((context: {
+      database: ApplicationDatabasePort;
+      logger: AppLogger;
+    }) => AnswerFeedbackHistoryProviderPort);
+
 export type ApplicationAccountCreatedHook = (context: {
   accountId: string;
   database: ApplicationDatabasePort;
@@ -87,6 +95,7 @@ export interface ApplicationExtensionRegistry {
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
   chatActionProviderRegistration?: ApplicationChatActionProviderRegistration;
   contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
+  answerFeedbackHistoryProviderRegistration?: ApplicationAnswerFeedbackHistoryProviderRegistration;
   skillCatalogEntries: SkillCatalogEntryDefinition[];
   skillDefinitions: SkillDefinition[];
 }
@@ -107,6 +116,7 @@ export interface ApplicationModuleRegistrationContext {
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
   registerChatActionProvider(provider: ApplicationChatActionProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
+  registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillCatalogEntry(entry: SkillCatalogEntryDefinition): void;
   registerSkillDefinition(definition: SkillDefinition): void;
 }
@@ -176,6 +186,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerContactHistoryProvider(provider) {
     registry.contactHistoryProviderRegistration = provider;
+  },
+  registerAnswerFeedbackHistoryProvider(provider) {
+    registry.answerFeedbackHistoryProviderRegistration = provider;
   },
   registerSkillCatalogEntry(entry) {
     registry.skillCatalogEntries.push(entry);

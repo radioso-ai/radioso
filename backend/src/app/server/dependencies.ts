@@ -5,6 +5,7 @@ import {
   ChatBootstrapService,
   ChatHistoryService,
   ChatService,
+  NoopAnswerFeedbackHistoryProvider,
   NoopChatActionProvider,
   NoopContactHistoryProvider,
 } from "../../modules/chat/composition.js";
@@ -286,8 +287,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       ? composition.contactHistoryProviderRegistration({
           database,
           logger,
-        })
+      })
       : composition.contactHistoryProviderRegistration;
+  const answerFeedbackHistoryProvider = !composition.answerFeedbackHistoryProviderRegistration
+    ? new NoopAnswerFeedbackHistoryProvider()
+    : typeof composition.answerFeedbackHistoryProviderRegistration === "function"
+      ? composition.answerFeedbackHistoryProviderRegistration({
+          database,
+          logger,
+        })
+      : composition.answerFeedbackHistoryProviderRegistration;
   const groundedMissResponseComposer = llmRegistry.createGroundedMissResponseComposer();
   const chatService = new ChatService(
     conversationRepository,
@@ -316,6 +325,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditEventRepository,
     new HistoryItemsRepository(database),
     contactHistoryProvider,
+    answerFeedbackHistoryProvider,
   );
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);

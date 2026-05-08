@@ -173,6 +173,38 @@ The HMAC is computed over the raw JSON body with the workspace signing token.
 Failed email or webhook delivery retries with exponential backoff for up to 8
 attempts, then the request is marked failed with the final delivery error.
 
+## Assistant answer feedback
+
+The Enterprise backend module adds thumbs up and thumbs down feedback for
+persisted assistant answers. The feature is available in authenticated chat,
+anonymous public chat, and website embed sessions.
+
+Feedback is stored per assistant message and per actor or anonymous session.
+Thumbs down can include an optional free-form comment. Comments are stored as
+written and are limited to 2000 characters.
+
+Routes are mounted by the Enterprise backend module:
+
+```text
+PUT    /api/v1/ee/answer-feedback/messages/{assistantMessageId}
+DELETE /api/v1/ee/answer-feedback/messages/{assistantMessageId}
+PUT    /api/v1/ee/answer-feedback/public/chat/{token}/messages/{assistantMessageId}
+DELETE /api/v1/ee/answer-feedback/public/chat/{token}/messages/{assistantMessageId}
+```
+
+The request body for `PUT` is:
+
+```json
+{
+  "value": "down",
+  "comment": "Optional feedback text"
+}
+```
+
+Operators review submitted feedback in conversation history detail beside the
+assistant message that received it. The first version does not add aggregate
+counts, charts, or a separate analytics dashboard.
+
 ## Website crawler provider port
 
 The Enterprise backend module owns website crawling as an Enterprise-only provider port.

@@ -367,6 +367,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         conversation.workspaceId,
         conversationId,
         parsedQuery.data,
+        { includeAnswerFeedback: true },
       );
       res.status(200).json(detail);
     } catch (error) {

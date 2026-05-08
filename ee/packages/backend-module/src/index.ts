@@ -1,5 +1,6 @@
 import type { ApplicationModule } from "./radiosoModuleTypes.js";
 
+import { createAnswerFeedbackApplicationModule } from "./answerFeedback/applicationModule.js";
 import { createHumanContactApplicationModule } from "./humanContact/applicationModule.js";
 import { createEnterpriseAuthApplicationModule } from "./mail/applicationModule.js";
 import { createUsageLimitsApplicationModule } from "./usageLimits/applicationModule.js";
@@ -41,6 +42,7 @@ export {
   type FrontendRouteContribution,
 } from "./featureManifest.js";
 export { createUsageLimitsApplicationModule } from "./usageLimits/applicationModule.js";
+export { createAnswerFeedbackApplicationModule } from "./answerFeedback/applicationModule.js";
 export { createEnterpriseAuthApplicationModule } from "./mail/applicationModule.js";
 export { createHumanContactApplicationModule } from "./humanContact/applicationModule.js";
 export { createWebsiteCrawlerApplicationModule } from "./websiteCrawler/applicationModule.js";
@@ -53,6 +55,7 @@ export const createEnterpriseBackendModule = (
     createUsageLimitsApplicationModule(),
     createEnterpriseAuthApplicationModule(),
     createHumanContactApplicationModule(),
+    createAnswerFeedbackApplicationModule(),
     createWebsiteCrawlerApplicationModule({
       websiteCrawlerProvider: options.websiteCrawlerProvider,
     }),

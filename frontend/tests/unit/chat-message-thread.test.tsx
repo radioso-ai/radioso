@@ -189,4 +189,80 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('<li')
   })
 
+  it('renders answer feedback controls when handlers are provided', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            persistedAssistantMessageId: 'persisted-assistant-1',
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+        onAnswerFeedback={() => {}}
+        onClearAnswerFeedback={() => {}}
+      />,
+    )
+
+    expect(html).toContain('aria-label="Thumbs up"')
+    expect(html).toContain('aria-label="Thumbs down"')
+  })
+
+  it('does not render answer feedback controls for unpersisted assistant messages', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'client-bootstrap-assistant-1',
+            role: 'assistant',
+            content: 'Bootstrap greeting',
+            createdAt: '2026-04-02T10:00:00.000Z',
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+        onAnswerFeedback={() => {}}
+        onClearAnswerFeedback={() => {}}
+      />,
+    )
+
+    expect(html).not.toContain('aria-label="Thumbs up"')
+    expect(html).not.toContain('aria-label="Thumbs down"')
+  })
+
+  it('renders per-message feedback comments in history', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            answerFeedbackEntries: [
+              {
+                id: 'feedback-1',
+                value: 'down',
+                comment: 'This missed the policy detail.',
+                actorType: 'anonymous_user',
+                actorId: 'session-1',
+                accountId: null,
+                userId: null,
+                anonymousSessionId: 'session-1',
+                createdAt: '2026-04-02T10:01:00.000Z',
+                updatedAt: '2026-04-02T10:01:00.000Z',
+              },
+            ],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('Thumbs down')
+    expect(html).toContain('This missed the policy detail.')
+  })
+
 })

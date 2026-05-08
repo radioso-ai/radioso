@@ -31,6 +31,7 @@ describe('editionController', () => {
     ])
 
     expect(controller.canUseHumanContact()).toBe(false)
+    expect(controller.canUseAssistantAnswerFeedback()).toBe(false)
     expect(controller.shouldLoadHumanContactSettings('channels')).toBe(false)
     expect(controller.canUseWebsiteEmbed()).toBe(false)
     expect(controller.shouldRenderWebsiteEmbedSettings('channels')).toBe(false)
@@ -45,6 +46,7 @@ describe('editionController', () => {
     const contactSuggestion = { text: 'Talk to a human', action: { kind: 'contact_human' } }
 
     expect(controller.canUseHumanContact()).toBe(true)
+    expect(controller.canUseAssistantAnswerFeedback()).toBe(true)
     expect(controller.shouldLoadHumanContactSettings('channels')).toBe(true)
     expect(controller.canUseWebsiteEmbed()).toBe(true)
     expect(controller.shouldRenderWebsiteEmbedSettings('channels')).toBe(true)

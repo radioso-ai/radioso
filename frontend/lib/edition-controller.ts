@@ -21,6 +21,7 @@ export const editionController = {
   canUseEnterpriseUsageLimits: () => isEnterprise,
   canUseWebsiteEmbed: () => isEnterprise,
   canUseHumanContact: () => isEnterprise,
+  canUseAssistantAnswerFeedback: () => isEnterprise,
 
   shouldLoadHumanContactSettings: (mode: 'workspace' | 'assistant' | 'channels') =>
     isEnterprise && mode === 'channels',

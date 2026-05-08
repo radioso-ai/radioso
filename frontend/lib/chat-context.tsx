@@ -12,6 +12,7 @@ import {
 import {
   chatApi,
   generalSettingsApi,
+  type AnswerFeedbackState,
   type AnswerSegment,
   type Citation,
   type ChatSuggestion,
@@ -31,6 +32,7 @@ export interface ChatMessage {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
+  answerFeedback?: AnswerFeedbackState
   retrievalInfo?: RetrievalInfo
   retrievalTrace?: RetrievalTrace
   persistedAssistantMessageId?: string

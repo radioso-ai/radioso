@@ -27,6 +27,7 @@ export class PromptBuilder {
       customInstruction?: string;
       conversationMode?: ConversationMode;
       responseLanguagePolicy?: ResponseLanguagePolicy;
+      responseLanguage?: string;
     };
     intentTopic?: string;
     inScopeRequest?: string;
@@ -49,6 +50,7 @@ export class PromptBuilder {
       customInstruction: input.settings.customInstruction,
       conversationMode: input.settings.conversationMode,
       responseLanguagePolicy: input.settings.responseLanguagePolicy,
+      responseLanguage: input.settings.responseLanguage,
     });
 
     return {

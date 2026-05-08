@@ -2726,7 +2726,7 @@ describe("chat service streaming", () => {
     ]);
   });
 
-  it("suppresses exploratory suggestions when the user asks for just the answer", async () => {
+  it("does not suppress exploratory suggestions from language-specific directness wording", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2774,7 +2774,9 @@ describe("chat service streaming", () => {
           suggestionCallCount += 1;
           return JSON.stringify({
             suggestions: [
-              { text: "What parser rules does the guide cover?", kind: "deeper", contextIndex: 1 },
+              { text: "How should teams apply these rules?", kind: "deeper", contextIndex: 1 },
+              { text: "What setup examples are available?", kind: "deeper", contextIndex: 1 },
+              { text: "Which workflow risks should I compare?", kind: "broader", contextIndex: 1 },
             ],
           });
         }
@@ -2801,14 +2803,27 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(suggestionCallCount).toBe(0);
-    expect(response.suggestions).toBeUndefined();
+    expect(suggestionCallCount).toBe(1);
+    expect(response.suggestions).toEqual([
+      expect.objectContaining({
+        text: "How should teams apply these rules?",
+        kind: "deeper",
+      }),
+      expect.objectContaining({
+        text: "What setup examples are available?",
+        kind: "deeper",
+      }),
+      expect.objectContaining({
+        text: "Which workflow risks should I compare?",
+        kind: "broader",
+      }),
+    ]);
     expect(response.conversationModeMetadata).toEqual({
       conversationMode: "exploratory",
-      brevityOverrideApplied: true,
-      expansionApplied: false,
-      expansionKind: "none",
-      suggestionCount: 0,
+      brevityOverrideApplied: false,
+      expansionApplied: true,
+      expansionKind: "expansive",
+      suggestionCount: 3,
       followUpQuestionApplied: false,
     });
   });

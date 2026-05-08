@@ -94,6 +94,29 @@ describe('workspace API auth', () => {
     expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer radioso_cached_token')
   })
 
+  it('can load general settings with session auth and active workspace context', async () => {
+    vi.stubGlobal('window', {
+      localStorage: createLocalStorage({
+        'radioso.activeWorkspaceId': 'workspace-1',
+      }),
+    })
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      createJsonResponse(platformSettingsPayload),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generalSettingsApi.getGeneralSettings({ auth: 'session' })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const headers = new Headers(requestInit.headers)
+    expect(requestUrl).toBe('/backend/api/v1/settings')
+    expect(requestInit.credentials).toBe('include')
+    expect(headers.get('Authorization')).toBeNull()
+    expect(headers.get('X-Workspace-Id')).toBe('workspace-1')
+  })
+
   it('requests workspace summary with bearer workspace auth', async () => {
     vi.stubGlobal('window', {
       localStorage: createLocalStorage({

@@ -97,7 +97,7 @@ export class AuthService {
   async listAccessibleAccounts(userId: string): Promise<Array<{
     accountId: string;
     organizationName: string;
-    role: "owner" | "member";
+    role: "owner" | "admin" | "member";
     workspaceId: string;
     workspaceName: string;
     workspacePublicRouteKey: string;

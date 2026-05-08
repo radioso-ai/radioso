@@ -510,6 +510,12 @@ export const request = async <T>(
   if (!headers.has("X-Forwarded-Prefix")) {
     headers.set("X-Forwarded-Prefix", "/backend");
   }
+  if (options.withSession && !headers.has("X-Workspace-Id")) {
+    const workspaceId = getStoredActiveWorkspaceId()
+    if (workspaceId) {
+      headers.set("X-Workspace-Id", workspaceId)
+    }
+  }
 
   if (options.withApiToken) {
     headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken()}`);

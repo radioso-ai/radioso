@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
+import { SupportImpersonationService } from "../../src/modules/support/services/supportImpersonationService.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
@@ -82,7 +83,9 @@ import {
   InMemoryAccountRepository,
   InMemoryAccountInvitationRepository,
   InMemoryAccountMembershipRepository,
+  InMemorySupportImpersonationRepository,
   InMemoryUserRepository,
+  InMemoryWorkspaceGrantRepository,
   InMemoryWorkspaceTokenRepository,
   InMemoryChunkRepository,
   InMemoryConversationRepository,
@@ -152,6 +155,7 @@ export const createTestEnv = (): Env => ({
   WORKER_AMQP_PREFETCH: 1,
   DOCUMENT_PROCESSING_JOB_LEASE_MS: 300_000,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
+  SUPPORT_STAFF_EMAILS: "support@example.com,approver@example.com",
 });
 
 interface TestRepositories {
@@ -242,7 +246,20 @@ export const createTestDependencies = (overrides: {
   const userRepository = new InMemoryUserRepository();
   const accountMembershipRepository = new InMemoryAccountMembershipRepository();
   accountMembershipRepository.setUserRepository(userRepository);
-  const accountAccessService = new AccountAccessService(accountMembershipRepository, auditService);
+  const workspaceRepository = new InMemoryWorkspaceRepository();
+  const workspaceGrantRepository = new InMemoryWorkspaceGrantRepository();
+  const supportImpersonationService = new SupportImpersonationService(
+    new InMemorySupportImpersonationRepository(),
+    userRepository,
+    auditService,
+    env,
+  );
+  const accountAccessService = new AccountAccessService(
+    accountMembershipRepository,
+    auditService,
+    workspaceGrantRepository,
+    workspaceRepository,
+  );
   const accountInvitationService = new AccountInvitationService(
     new InMemoryAccountInvitationRepository(),
     userRepository,
@@ -496,7 +513,6 @@ export const createTestDependencies = (overrides: {
     await drainDocumentProcessingQueue();
     return result;
   };
-  const workspaceRepository = new InMemoryWorkspaceRepository();
   const retrievalPipeline = new RetrievalPipelineService(
     retrievalSettingsService,
     embeddingService,
@@ -617,6 +633,7 @@ export const createTestDependencies = (overrides: {
     auditService,
     accountAccessService,
     accountInvitationService,
+    supportImpersonationService,
     workspaceSessionService,
     abuseControlService,
     authService: new AuthService({

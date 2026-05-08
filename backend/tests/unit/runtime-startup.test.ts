@@ -61,6 +61,7 @@ const createEnv = (): Env => ({
   WORKER_AMQP_PREFETCH: 1,
   DOCUMENT_PROCESSING_JOB_LEASE_MS: 300_000,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
+  SUPPORT_STAFF_EMAILS: "",
 });
 
 const createLogger = () => {

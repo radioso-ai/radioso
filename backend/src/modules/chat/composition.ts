@@ -14,3 +14,9 @@ export {
   NoopContactHistoryProvider,
   type ContactHistoryProviderPort,
 } from "./services/contactHistoryProvider.js";
+export {
+  NoopAnswerFeedbackHistoryProvider,
+  type AnswerFeedbackHistoryProviderPort,
+  type ChatAnswerFeedbackEntry,
+  type ChatAnswerFeedbackValue,
+} from "./services/answerFeedbackHistoryProvider.js";

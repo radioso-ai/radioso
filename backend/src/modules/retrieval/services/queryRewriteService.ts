@@ -1,5 +1,9 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import {
+  normalizeLlmClassifierLabel,
+  normalizeLlmClassifierLanguageLabel,
+} from "../../../shared/domain/llmClassifierFields.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.js";
@@ -227,12 +231,15 @@ export class QueryRewriteService {
       });
       const result = this.normalizeStructuredResult(input.query, rawResult);
       const rawResponseIntent = this.normalizeResponseIntent(result.responseIntent);
+      const responseIntent = this.shouldRescueProceduralQuery(input.query, result)
+        ? RESPONSE_INTENT.RETRIEVAL
+        : rawResponseIntent;
       const normalizedStructuredResult = {
         ...result,
-        responseIntent: rawResponseIntent,
+        responseIntent,
       };
       const lowConfidenceNonRetrieval =
-        rawResponseIntent !== RESPONSE_INTENT.RETRIEVAL
+        responseIntent !== RESPONSE_INTENT.RETRIEVAL
         && normalizedStructuredResult.confidence < NON_RETRIEVAL_INTENT_CONFIDENCE_THRESHOLD;
 
       if (lowConfidenceNonRetrieval) {
@@ -248,7 +255,7 @@ export class QueryRewriteService {
         return this.intentOnlyResult({
           query: input.query,
           result: normalizedStructuredResult,
-          responseIntent: rawResponseIntent,
+          responseIntent,
         });
       }
 
@@ -262,7 +269,6 @@ export class QueryRewriteService {
         normalizedStructuredResult.lexicalQuery ?? normalizedStructuredResult.rewrittenQuery,
         hasConversationContext,
       );
-      const responseIntent = rawResponseIntent;
       const compatibilityRewrite = semanticQuery;
       const responseLanguagePolicy = normalizedStructuredResult.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY;
       const lexicalRewriteAccepted = lexicalQuery !== input.query;
@@ -528,11 +534,12 @@ export class QueryRewriteService {
         inScopeRequest: this.normalizeScopeRequest(result.inScopeRequest),
         outsideScopeRequest: this.normalizeScopeRequest(result.outsideScopeRequest),
         responseLanguagePolicy,
+        responseLanguage: this.normalizeResponseLanguage(result.responseLanguage),
         queryShape: this.normalizeQueryShape(result.queryShape),
         retrievalSubqueries: this.normalizeRetrievalSubqueries(result.retrievalSubqueries),
         turnKind: this.normalizeTurnKind(result.turnKind),
-        proposedActiveSubject: result.proposedActiveSubject?.trim() || undefined,
-        relatedEntities: [...new Set((result.relatedEntities ?? []).map((entity) => entity.trim()).filter(Boolean))],
+        proposedActiveSubject: this.normalizeClassifierLabel(result.proposedActiveSubject),
+        relatedEntities: this.normalizeClassifierLabels(result.relatedEntities),
         unresolved: Boolean(result.unresolved),
         confidence: result.confidence ?? 0.5,
       };
@@ -547,6 +554,7 @@ export class QueryRewriteService {
       inScopeRequest: undefined,
       outsideScopeRequest: undefined,
       responseLanguagePolicy: DEFAULT_RESPONSE_LANGUAGE_POLICY,
+      responseLanguage: undefined,
       queryShape: undefined,
       retrievalSubqueries: undefined,
       turnKind: REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP,
@@ -593,7 +601,7 @@ export class QueryRewriteService {
 
     const normalized = retrievalSubqueries
       .map((subquery, index) => {
-        const label = this.normalizeRewrite(subquery?.label);
+        const label = this.normalizeClassifierLabel(subquery?.label);
         const semanticQuery = this.normalizeRewrite(subquery?.semanticQuery);
         const lexicalQuery = this.normalizeLexicalRewrite(subquery?.lexicalQuery ?? semanticQuery);
         if (!label || !semanticQuery || !lexicalQuery) {
@@ -635,6 +643,28 @@ export class QueryRewriteService {
     return value === "match_user_question" ? value : DEFAULT_RESPONSE_LANGUAGE_POLICY;
   }
 
+  private normalizeResponseLanguage(value?: string): string | undefined {
+    return normalizeLlmClassifierLanguageLabel(value);
+  }
+
+  private normalizeClassifierLabel(value?: string): string | undefined {
+    return normalizeLlmClassifierLabel(value);
+  }
+
+  private normalizeClassifierLabels(values?: string[]): string[] {
+    if (!Array.isArray(values)) {
+      return [];
+    }
+
+    return [
+      ...new Set(
+        values
+          .map((value) => this.normalizeClassifierLabel(value))
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ].slice(0, 8);
+  }
+
   private normalizeResponseIntent(value?: string): ResponseIntent {
     switch (value) {
       case RESPONSE_INTENT.SOCIAL_ONLY:
@@ -646,20 +676,31 @@ export class QueryRewriteService {
     }
   }
 
+  private shouldRescueProceduralQuery(query: string, result: StructuredRewriteResult): boolean {
+    if (this.normalizeResponseIntent(result.responseIntent) !== RESPONSE_INTENT.SOCIAL_ONLY) {
+      return false;
+    }
+
+    const classifierText = [
+      query,
+      result.intentTopic,
+      result.inScopeRequest,
+      result.outsideScopeRequest,
+    ].filter((value): value is string => typeof value === "string" && value.trim().length > 0).join(" ");
+
+    if (SELF_CONTAINED_NON_RETRIEVAL_PATTERN.test(classifierText)) {
+      return false;
+    }
+
+    return PROCEDURAL_LOOKUP_PATTERN.test(query);
+  }
+
   private normalizeIntentTopic(value?: string): string | undefined {
     if (typeof value !== "string") {
       return undefined;
     }
 
-    const normalized = value
-      .replace(/[`#*_~[\]()]/g, "")
-      .replace(/https?:\/\/\S+/gi, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 80)
-      .trim();
-
-    return normalized.length > 0 ? normalized : undefined;
+    return this.normalizeClassifierLabel(value);
   }
 
   private normalizeScopeRequest(value?: string): string | undefined {
@@ -751,6 +792,12 @@ const tokenizeRewriteTerms = (value: string): string[] =>
     .map((term) => term.trim())
     .filter((term) => term.length >= 3);
 
+const PROCEDURAL_LOOKUP_PATTERN =
+  /\b(?:how\s+(?:do|can|could|should)\s+i|how\s+to|where\s+(?:do|can|could|should)\s+i|what\s+(?:do|should)\s+i\s+do|can\s+i|could\s+i|is\s+it\s+possible\s+to|i\s+(?:can'?t|cannot)\s+(?:access|log\s*in|login|sign\s*in|change|reset|recover|find|book|register|enroll|cancel|update)|help\s+me\s+(?:access|log\s*in|login|sign\s*in|change|reset|recover|find|book|register|enroll|cancel|update)|need\s+help\s+(?:with|to))\b/i;
+
+const SELF_CONTAINED_NON_RETRIEVAL_PATTERN =
+  /\b(?:arithmetic|calculate|calculation|compute|equation|math|sqrt|square\s+root|python|javascript|typescript|java|regex|sql|code|coding|programming|syntax|debug|translate|translation|trivia|joke|poem|story|draft\s+(?:an?\s+)?(?:email|message|letter|reply)|medical|legal|financial|relationship)\b/i;
+
 const stripSingleWrappingQuotePair = (value: string): string => {
   const first = value[0];
   const last = value[value.length - 1];
@@ -833,6 +880,7 @@ const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
       typeof parsed.responseLanguagePolicy === "string" && parsed.responseLanguagePolicy === "match_user_question"
         ? parsed.responseLanguagePolicy
         : DEFAULT_RESPONSE_LANGUAGE_POLICY,
+    responseLanguage: typeof parsed.responseLanguage === "string" ? parsed.responseLanguage : undefined,
     queryShape:
       typeof parsed.queryShape === "string" &&
       (

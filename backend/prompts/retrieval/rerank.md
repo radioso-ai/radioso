@@ -1,24 +1,15 @@
-Rank candidate chunks for answering the query using only the information inside each chunk.
+Reranking
+Rank candidates for answering the query using only information inside each chunk.
+Query: {{query}}
+Candidates: {{candidates}}
+Scores
+ScoreMeaning1.0Directly answers the query or contains the exact requested fact0.8Strongly relevant, likely useful0.5Partially relevant or incomplete0.2Weakly related0.0Irrelevant
+Rules
 
-Query:
-{{query}}
+Prefer direct evidence over keyword overlap.
+For exact IDs, names, codes, URLs, numbers, dates, or quoted phrases — prioritize exact matches.
+Do not infer facts not present in the chunk.
+Score each chunk independently.
 
-Candidates:
-{{candidates}}
-
-Scoring:
-- 1.0: directly answers the query or contains the exact requested fact.
-- 0.8: strongly relevant and likely useful.
-- 0.5: partially relevant but incomplete.
-- 0.2: weakly related.
-- 0.0: irrelevant.
-
-Rules:
-- Prefer direct evidence over similar words.
-- For exact IDs, names, codes, URLs, numbers, dates, or quoted phrases, prioritize exact matches.
-- Do not infer facts not present in the chunk.
-- Score each chunk independently.
-- Return only valid JSON.
-
-Output format:
+Output — valid JSON only:
 {"scores":[{"candidateIndex":1,"relevanceScore":0.0}]}

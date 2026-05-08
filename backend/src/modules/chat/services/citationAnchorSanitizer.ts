@@ -3,10 +3,15 @@ import { UNSUPPORTED_NOTICE_MARKER } from "./unsupportedNoticeMarker.js";
 const COMPLETE_ANCHOR = /\[\[\d+\]\]/g;
 const ANY_BRACKET_ANCHOR = /\[\[[^\]]*?\]\]/g;
 
-const stripCompleteAnchors = (text: string): string =>
+const removeDetachedPunctuationSpacing = (text: string): string =>
   text
+    .replace(/[ \t]+([.,;:!?])/g, "$1")
+    .replace(/[ \t]+(\r?\n)/g, "$1");
+
+const stripCompleteAnchors = (text: string): string =>
+  removeDetachedPunctuationSpacing(text
     .replace(COMPLETE_ANCHOR, "")
-    .replace(ANY_BRACKET_ANCHOR, "");
+    .replace(ANY_BRACKET_ANCHOR, ""));
 
 const stripUnsupportedNoticeMarkers = (text: string): string =>
   text.split(UNSUPPORTED_NOTICE_MARKER).join("");
@@ -47,6 +52,12 @@ export class CitationAnchorSanitizer {
     if (stripped.endsWith("[")) {
       this.carry = "[";
       return stripped.slice(0, -1);
+    }
+
+    const trailingWhitespace = stripped.match(/[ \t]+$/)?.[0];
+    if (trailingWhitespace) {
+      this.carry = trailingWhitespace;
+      return stripped.slice(0, -trailingWhitespace.length);
     }
 
     return stripped;

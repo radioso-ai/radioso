@@ -43,6 +43,9 @@ export const remapAnswerSegmentsToCitationEvidence = (
 };
 
 const hasParagraphBreak = (text: string): boolean => /\r?\n\r?\n/.test(text);
+const MARKDOWN_LINK_LINE_END = /((?:\*\*)?\[[^\]\n]+]\([^\s)\n]+(?:\([^\s)\n]*\)[^\s)\n]*)?\)(?:\*\*)?)([ \t]*)$/;
+const LIST_ITEM_START = /^\s{0,3}(?:[-+*]|\d+\.)\s+/;
+const SENTENCE_START = /^\s*(?:["'“‘(]*[\p{Lu}]|If\b|You\b|For\b|To\b|In\b|On\b)/u;
 
 const sameCitationIndices = (left?: number[], right?: number[]): boolean => {
   if (!left || !right || left.length !== right.length) {
@@ -58,12 +61,29 @@ const toChatCitation = (citation: CitationEvidence): ChatCitation => ({
   title: citation.title,
 });
 
+const addMissingPunctuationAfterTerminalMarkdownLinks = (text: string): string => {
+  const lines = text.split(/\n/);
+
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const line = lines[index] ?? "";
+    const nextLine = lines[index + 1] ?? "";
+
+    if (LIST_ITEM_START.test(line) || LIST_ITEM_START.test(nextLine) || !SENTENCE_START.test(nextLine)) {
+      continue;
+    }
+
+    lines[index] = line.replace(MARKDOWN_LINK_LINE_END, "$1.$2");
+  }
+
+  return lines.join("\n");
+};
+
 export class AnswerPresentationService {
   normalize(input: {
     answer: string;
     citations: CitationEvidence[];
   }): NormalizedPresentedAnswer {
-    const trimmedAnswer = input.answer.trim();
+    const trimmedAnswer = addMissingPunctuationAfterTerminalMarkdownLinks(input.answer.trim());
     return {
       ...this.normalizeAnchoredAnswer(stripUnsupportedNoticeMarker(trimmedAnswer), input.citations),
       unsupportedNoticeMarked: hasUnsupportedNoticeMarker(trimmedAnswer),

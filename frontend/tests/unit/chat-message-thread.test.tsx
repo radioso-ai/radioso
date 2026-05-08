@@ -189,6 +189,27 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('<li')
   })
 
+  it('does not split hyphenated markdown link labels inside real list items', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content:
+              'Valmora offers several ways to explore **Valmora Yoga**:\n\n- A **3-day intensive residential course**, **[Valmora Yoga in silenzio - 3 Giorni](https://courses.valmora.example/corso/0008136-corso-residenziale-intensivo-valmora-yoga-in-silenzio-3-giorni)**, focused on deeper practice.\n- For learning more, see **[Valmora Yoga videos](https://valmora-europe.example/video/guided-valmora-yoga)**.',
+            createdAt: '2026-04-02T10:00:00.000Z',
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html.match(/<li/g)?.length).toBe(2)
+    expect(html).toContain('Valmora Yoga in silenzio - 3 Giorni')
+    expect(html).not.toContain('3 Giorni]</li>')
+  })
+
   it('renders answer feedback controls when handlers are provided', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread

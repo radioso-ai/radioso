@@ -270,6 +270,7 @@ export class ChatService {
       customInstruction: responseSettings?.customInstruction,
       conversationMode: responseSettings?.conversationMode,
       responseLanguagePolicy: responseSettings?.responseLanguagePolicy,
+      responseLanguage: session.retrieval.diagnostics.rewriteProposal?.responseLanguage,
     });
   }
 

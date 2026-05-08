@@ -35,6 +35,6 @@ When the workspace has honest support for it, the assistant can show two kinds o
 
 If the available material only supports one of those lanes, the assistant shows only that lane. It does not invent broader discovery prompts just to fill space.
 
-### Per-Turn Override
+### Suggestion Count
 
-If a user explicitly asks for brevity, directness, or "just the answer," the assistant suppresses optional exploration for that turn even if the workspace mode is guided or exploratory.
+When suggested questions are enabled, the assistant asks the suggestion generator for the configured number of follow-up questions. Final display can still show fewer if returned suggestions fail validation or cannot be tied back to a retrieved context.

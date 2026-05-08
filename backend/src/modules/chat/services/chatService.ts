@@ -66,24 +66,6 @@ export class BlankChatAnswerError extends Error {
 
 const isBlankChatAnswerError = (error: unknown): error is BlankChatAnswerError => error instanceof BlankChatAnswerError;
 
-const DIRECT_ANSWER_PATTERNS = [
-  /\bjust the answer\b/i,
-  /\bjust answer\b/i,
-  /\bbriefly\b/i,
-  /\bbe brief\b/i,
-  /\bshort answer\b/i,
-  /\bone sentence\b/i,
-  /\bconcise\b/i,
-  /\bsuccinct\b/i,
-  /\bno follow[- ]up\b/i,
-  /\bwithout extra detail/i,
-  /\bsolo la risposta\b/i,
-  /\bin breve\b/i,
-];
-
-const shouldSuppressOptionalSuggestions = (query: string): boolean =>
-  DIRECT_ANSWER_PATTERNS.some((pattern) => pattern.test(query));
-
 const buildSkippedValidationSummary = (): AnswerValidationSummary => ({
   ran: false,
   answerModified: false,
@@ -1104,22 +1086,7 @@ export class ChatService {
     presentation: Omit<PresentedAnswer, "conversationModeMetadata">,
   ): Promise<PresentedAnswer> {
     const conversationMode = this.getConversationMode(session);
-    const brevityOverrideApplied = shouldSuppressOptionalSuggestions(session.userMessage.content);
-
-    if (brevityOverrideApplied) {
-      return {
-        ...presentation,
-        suggestions: undefined,
-        conversationModeMetadata: this.getConversationModeMetadata(session, {
-          brevityOverrideApplied: true,
-          ...inferConversationModeMetadata({
-            conversationMode,
-            brevityOverrideApplied: true,
-            suggestionCount: 0,
-          }),
-        }),
-      };
-    }
+    const brevityOverrideApplied = false;
 
     const conversationIntentSnapshot = buildConversationIntentSnapshot({
       history: session.history,
@@ -1147,7 +1114,6 @@ export class ChatService {
       })),
       history: session.history,
       conversationIntentSnapshot,
-      suppressOptionalSuggestions: brevityOverrideApplied,
     });
     const suggestions = expanded.suggestions;
 

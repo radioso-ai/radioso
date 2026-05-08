@@ -157,23 +157,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/account/switch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Switch the current session to another accessible account */
-        post: operations["switchAccount"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/account/users/{membershipId}": {
         parameters: {
             query?: never;
@@ -186,6 +169,93 @@ export interface paths {
         post?: never;
         /** Remove account user access */
         delete: operations["removeAccountUser"];
+        options?: never;
+        head?: never;
+        /** Update an account user's role */
+        patch: operations["updateAccountUserRole"];
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/grants/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set a workspace role grant */
+        put: operations["setWorkspaceGrant"];
+        post?: never;
+        /** Remove a workspace role grant */
+        delete: operations["removeWorkspaceGrant"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/support/impersonations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve a support impersonation session */
+        post: operations["approveSupportImpersonation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/support/impersonations/{id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start an approved support impersonation session */
+        post: operations["startSupportImpersonation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/support/impersonations/{id}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** End a support impersonation session */
+        post: operations["endSupportImpersonation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Switch the current session to another accessible account */
+        post: operations["switchAccount"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -947,6 +1017,26 @@ export interface components {
         AccountInvitationCreateRequest: {
             /** Format: email */
             email: string;
+            /**
+             * @default member
+             * @enum {string}
+             */
+            role: "admin" | "member";
+        };
+        AccountMembershipRoleUpdateRequest: {
+            /** @enum {string} */
+            role: "admin" | "member";
+        };
+        WorkspaceGrantRequest: {
+            /** @enum {string} */
+            role: "admin" | "member";
+        };
+        SupportImpersonationApproveRequest: {
+            /** Format: uuid */
+            accountId: string;
+            /** Format: uuid */
+            staffUserId?: string;
+            reason: string;
         };
         WorkspaceCreateRequest: {
             name: string;
@@ -962,7 +1052,7 @@ export interface components {
             /** Format: email */
             email: string;
             /** @enum {string} */
-            role: "owner" | "member";
+            role: "owner" | "admin" | "member";
             /** @enum {string} */
             status: "active";
             /** Format: date-time */
@@ -975,12 +1065,48 @@ export interface components {
             email: string;
             /** @enum {string} */
             status: "pending" | "accepted" | "revoked" | "expired";
+            /** @enum {string} */
+            role: "admin" | "member";
             /** Format: date-time */
             expiresAt: string;
             /** Format: date-time */
             acceptedAt: string | null;
             /** Format: date-time */
             createdAt: string;
+        };
+        WorkspaceGrant: {
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            userId: string;
+            /** @enum {string} */
+            role: "admin" | "member";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        SupportImpersonation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            accountId: string;
+            /** Format: uuid */
+            staffUserId: string;
+            /** Format: uuid */
+            approverUserId: string;
+            reason: string;
+            /** @enum {string} */
+            status: "approved" | "active" | "ended" | "expired" | "revoked";
+            /** Format: date-time */
+            approvedAt: string;
+            /** Format: date-time */
+            startedAt: string | null;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            endedAt: string | null;
+            active: boolean;
         };
         AccountUsersResponse: {
             /** Format: uuid */
@@ -989,13 +1115,15 @@ export interface components {
             currentUserId: string;
             users: components["schemas"]["AccountUser"][];
             invitations: components["schemas"]["AccountInvitation"][];
+            workspaceGrants: components["schemas"]["WorkspaceGrant"][];
+            supportImpersonations: components["schemas"]["SupportImpersonation"][];
         };
         AccessibleAccount: {
             /** Format: uuid */
             accountId: string;
             organizationName: string;
             /** @enum {string} */
-            role: "owner" | "member";
+            role: "owner" | "admin" | "member";
             /** Format: uuid */
             workspaceId: string;
             workspaceName: string;
@@ -2644,44 +2772,6 @@ export interface operations {
             };
         };
     };
-    switchAccount: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** Format: uuid */
-                    accountId: string;
-                    /** Format: uuid */
-                    preferredWorkspaceId?: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Account switched */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoginResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     removeAccountUser: {
         parameters: {
             query?: never;
@@ -2729,6 +2819,195 @@ export interface operations {
             };
             /** @description Membership cannot be removed */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAccountUserRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                membershipId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountMembershipRoleUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Membership role updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountUser"];
+                };
+            };
+            /** @description Role management is not allowed for the caller */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setWorkspaceGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceGrantRequest"];
+            };
+        };
+        responses: {
+            /** @description Workspace grant updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceGrant"];
+                };
+            };
+        };
+    };
+    removeWorkspaceGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace grant removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    approveSupportImpersonation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupportImpersonationApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Support impersonation approved */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportImpersonation"];
+                };
+            };
+        };
+    };
+    startSupportImpersonation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Support impersonation started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportImpersonation"];
+                };
+            };
+        };
+    };
+    endSupportImpersonation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Support impersonation ended */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportImpersonation"];
+                };
+            };
+        };
+    };
+    switchAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    accountId: string;
+                    /** Format: uuid */
+                    preferredWorkspaceId?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Account switched */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

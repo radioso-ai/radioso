@@ -30,6 +30,7 @@ import {
   generalSettingsApi,
   humanContactApi,
   settingsApi,
+  type AccountMembershipRole,
   type GeneralSettings,
   type HumanContactAvailability,
   type RetrievalSettings,
@@ -150,6 +151,7 @@ export function WorkspaceAssistantChannelsTab({
   const [workspaceNameDraft, setWorkspaceNameDraft] = useState<string | null>(null)
   const [organizationName, setOrganizationName] = useState(() => readCachedOrganizationName(accountId))
   const [savedOrganizationName, setSavedOrganizationName] = useState(() => readCachedOrganizationName(accountId))
+  const [currentAccountRole, setCurrentAccountRole] = useState<AccountMembershipRole | null>(null)
   const [isOrganizationLoading, setIsOrganizationLoading] = useState(true)
   const [organizationError, setOrganizationError] = useState<string | null>(null)
   const [renameError, setRenameError] = useState<string | null>(null)
@@ -187,6 +189,10 @@ export function WorkspaceAssistantChannelsTab({
   const workspaceDraftVersionRef = useRef(0)
   const anonDraftVersionRef = useRef(0)
   const assistantBehaviorDraftVersionRef = useRef(0)
+  const canManageOrganization = currentAccountRole === 'owner' || currentAccountRole === 'admin'
+  const canManageWorkspaceLifecycle = currentAccountRole === 'owner' || currentAccountRole === 'admin'
+  const canReadWorkspaceTokens = Boolean(currentAccountRole)
+  const canRotateWorkspaceTokens = currentAccountRole === 'owner' || currentAccountRole === 'admin'
 
   useEffect(() => {
     let active = true
@@ -198,12 +204,14 @@ export function WorkspaceAssistantChannelsTab({
         if (!active) return
         const current = response.accounts.find((account) => account.accountId === accountId)
         const nextOrganizationName = current?.organizationName ?? ''
+        setCurrentAccountRole(current?.role ?? null)
         setOrganizationName(nextOrganizationName)
         setSavedOrganizationName(nextOrganizationName)
         writeCachedOrganizationName(accountId, nextOrganizationName)
         setOrganizationError(null)
       } catch {
         if (!active) return
+        setCurrentAccountRole(null)
         setOrganizationError('Failed to load organization')
       } finally {
         if (active) {
@@ -239,7 +247,7 @@ export function WorkspaceAssistantChannelsTab({
     setIsAnonLoading(true)
     const loadAnonSettings = async () => {
       try {
-        const data = await generalSettingsApi.getGeneralSettings()
+        const data = await generalSettingsApi.getGeneralSettings({ auth: 'session' })
         if (!active) return
         setAnonSettings(data)
         setSavedAnonSettings(data)
@@ -278,7 +286,7 @@ export function WorkspaceAssistantChannelsTab({
     setIsAssistantBehaviorLoading(true)
     const loadAssistantBehaviorSettings = async () => {
       try {
-        const data = await settingsApi.getRetrievalSettings()
+        const data = await settingsApi.getRetrievalSettings({ auth: 'session' })
         if (!active) return
         setAssistantBehaviorSettings(data)
         setSavedAssistantBehaviorSettings(data)
@@ -350,7 +358,7 @@ export function WorkspaceAssistantChannelsTab({
       const updated = await generalSettingsApi.updateGeneralSettings({
         anonymousChatEnabled: enabled,
         anonymousRateLimit: anonSettings?.anonymousRateLimit ?? 10,
-      })
+      }, { auth: 'session' })
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
     } catch (error) {
@@ -371,7 +379,7 @@ export function WorkspaceAssistantChannelsTab({
       const updated = await generalSettingsApi.updateGeneralSettings({
         anonymousChatEnabled: anonSettings?.anonymousChatEnabled ?? false,
         anonymousRateLimit: value,
-      })
+      }, { auth: 'session' })
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
     } catch (error) {
@@ -382,7 +390,7 @@ export function WorkspaceAssistantChannelsTab({
   }
 
   const handleDelete = async () => {
-    if (!activeWorkspace || !deleteConfirmValid) return
+    if (!activeWorkspace || !deleteConfirmValid || !canManageWorkspaceLifecycle) return
     setIsDeleting(true)
     try {
       await deleteWorkspace(activeWorkspace.id)
@@ -394,7 +402,7 @@ export function WorkspaceAssistantChannelsTab({
   }
 
   const handleRevealApiToken = async () => {
-    if (!activeWorkspaceId) return
+    if (!activeWorkspaceId || !canReadWorkspaceTokens) return
     setIsApiTokenLoading(true)
     setApiTokenError(null)
     try {
@@ -409,7 +417,7 @@ export function WorkspaceAssistantChannelsTab({
   }
 
   const handleRotateApiToken = async () => {
-    if (!activeWorkspaceId) return
+    if (!activeWorkspaceId || !canRotateWorkspaceTokens) return
 
     setIsRotatingApiToken(true)
     setRotateApiTokenError(null)
@@ -514,7 +522,7 @@ export function WorkspaceAssistantChannelsTab({
   }
 
   useEffect(() => {
-    if (!accountId || isOrganizationLoading) {
+    if (!accountId || isOrganizationLoading || !canManageOrganization) {
       return
     }
     const trimmed = organizationName.trim()
@@ -552,7 +560,7 @@ export function WorkspaceAssistantChannelsTab({
       }
     }, 700)
     return () => window.clearTimeout(timeout)
-  }, [accountId, isOrganizationLoading, organizationName, saveSequenceRef, savedOrganizationName, setSaveError, setSaveState])
+  }, [accountId, canManageOrganization, isOrganizationLoading, organizationName, saveSequenceRef, savedOrganizationName, setSaveError, setSaveState])
 
   useEffect(() => {
     if (!activeWorkspace || !hasNameChange) {
@@ -605,7 +613,7 @@ export function WorkspaceAssistantChannelsTab({
           assistantName: anonSettings.assistantName,
           assistantDefaultLocale: anonSettings.assistantDefaultLocale,
           proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
-        })
+        }, { auth: 'session' })
         if (saveSequenceRef.current !== saveId) return
         setSavedAnonSettings(updated)
         setAssistantSettingsError(null)
@@ -643,7 +651,7 @@ export function WorkspaceAssistantChannelsTab({
       setSaveState('saving')
       setSaveError(null)
       try {
-        const updated = await settingsApi.updateRetrievalSettings(assistantBehaviorSettings)
+        const updated = await settingsApi.updateRetrievalSettings(assistantBehaviorSettings, { auth: 'session' })
         if (saveSequenceRef.current !== saveId) return
         setSavedAssistantBehaviorSettings(updated)
         setAssistantSettingsError(null)
@@ -669,7 +677,7 @@ export function WorkspaceAssistantChannelsTab({
     try {
       const updated = await generalSettingsApi.updateGeneralSettings({
         rotateAnonymousChatToken: true,
-      })
+      }, { auth: 'session' })
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
     } catch (error) {
@@ -785,7 +793,11 @@ export function WorkspaceAssistantChannelsTab({
                   maxLength={80}
                   className="flex-1"
                   placeholder={isOrganizationLoading ? 'Loading organization name…' : undefined}
+                  disabled={isOrganizationLoading || !canManageOrganization}
                 />
+                {!canManageOrganization ? (
+                  <p className="text-sm text-muted-foreground">Only owners and admins can rename the organization.</p>
+                ) : null}
                 {organizationError ? <p className="text-sm text-destructive">{organizationError}</p> : null}
               </div>
             </SettingsCard>
@@ -827,7 +839,7 @@ export function WorkspaceAssistantChannelsTab({
                     size="sm"
                     variant="outline"
                     onClick={handleRevealApiToken}
-                    disabled={!activeWorkspaceId || isApiTokenLoading}
+                    disabled={!activeWorkspaceId || isApiTokenLoading || !canReadWorkspaceTokens}
                   >
                     {isApiTokenLoading ? <Spinner className="mr-2" /> : null}
                     Reveal API token
@@ -842,7 +854,9 @@ export function WorkspaceAssistantChannelsTab({
                   <CopyValueField value={apiToken} ariaLabel="Copy API token" className="w-full" />
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Reveal the token only when you need to copy it into another client.
+                    {canReadWorkspaceTokens
+                      ? 'Reveal the token only when you need to copy it into another client.'
+                      : 'Sign in to reveal workspace API tokens.'}
                   </p>
                 )}
                 {apiTokenError ? <p className="text-sm text-destructive">{apiTokenError}</p> : null}
@@ -1363,7 +1377,12 @@ export function WorkspaceAssistantChannelsTab({
                 }}
               >
                 <DialogTrigger asChild>
-                  <Button variant="destructive" size="sm" className="sm:self-start">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="sm:self-start"
+                    disabled={!canRotateWorkspaceTokens}
+                  >
                     <RefreshCw className="mr-2 h-4 w-4" />
                     Rotate token
                   </Button>
@@ -1383,7 +1402,7 @@ export function WorkspaceAssistantChannelsTab({
                     <Button
                       variant="outline"
                       onClick={() => setRotateApiTokenDialogOpen(false)}
-                      disabled={isRotatingApiToken}
+                      disabled={isRotatingApiToken || !canRotateWorkspaceTokens}
                     >
                       Cancel
                     </Button>
@@ -1419,8 +1438,14 @@ export function WorkspaceAssistantChannelsTab({
                     variant="destructive"
                     size="sm"
                     className="sm:self-start"
-                    disabled={isLastWorkspace}
-                    title={isLastWorkspace ? 'Cannot delete the last workspace' : undefined}
+                    disabled={isLastWorkspace || !canManageWorkspaceLifecycle}
+                    title={
+                      !canManageWorkspaceLifecycle
+                        ? 'Only owners and admins can delete workspaces'
+                        : isLastWorkspace
+                          ? 'Cannot delete the last workspace'
+                          : undefined
+                    }
                   >
                     <Trash2 className="w-4 h-4 mr-2" />
                     Delete
@@ -1443,6 +1468,7 @@ export function WorkspaceAssistantChannelsTab({
                       value={deleteConfirmName}
                       onChange={(event) => setDeleteConfirmName(event.target.value)}
                       placeholder={activeWorkspace?.name}
+                      disabled={!canManageWorkspaceLifecycle}
                     />
                   </div>
                   <DialogFooter>
@@ -1452,7 +1478,7 @@ export function WorkspaceAssistantChannelsTab({
                     <Button
                       variant="destructive"
                       onClick={handleDelete}
-                      disabled={!deleteConfirmValid || isDeleting}
+                      disabled={!deleteConfirmValid || isDeleting || !canManageWorkspaceLifecycle}
                     >
                       {isDeleting ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
                       Delete workspace

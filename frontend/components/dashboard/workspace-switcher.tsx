@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 import { useWorkspace } from '@/lib/workspace-context'
-import { accountApi, seedWorkspaceSession, setPendingAccountSwitchId } from '@/lib/api'
+import { accountApi, seedWorkspaceSession, setPendingAccountSwitchId, type AccountMembershipRole } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 import { buildDashboardHref, type DashboardSection } from '@/lib/dashboard-routes'
 import { Building2, ChevronsUpDown, Check, Plus, Layers } from 'lucide-react'
@@ -44,7 +44,7 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
   const [accounts, setAccounts] = useState<Array<{
     accountId: string
     organizationName: string
-    role: 'owner' | 'member'
+    role: AccountMembershipRole
     workspaceId: string
     workspaceName: string
   }>>([])

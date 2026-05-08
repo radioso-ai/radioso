@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
@@ -146,7 +147,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.post("/", workspaceSession, validateBody(documentSchema), async (req, res, next) => {
+  router.post("/", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), validateBody(documentSchema), async (req, res, next) => {
     try {
       const { accountId, workspaceId } = res.locals as { accountId?: string; workspaceId: string };
       const result = await dependencies.documentIngestionService.ingest({
@@ -163,7 +164,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.post("/import", workspaceSession, uploadRateLimit, async (req, res, next) => {
+  router.post("/import", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), uploadRateLimit, async (req, res, next) => {
     let usageReservation: Awaited<ReturnType<AppDependencies["usageLimitPolicy"]["reserveDocument"]>> | null = null;
     try {
       const { accountId, workspaceId } = res.locals as { accountId?: string; workspaceId: string };
@@ -208,7 +209,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.put("/:documentId", workspaceSession, validateBody(documentSchema), async (req, res, next) => {
+  router.put("/:documentId", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), validateBody(documentSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
@@ -226,7 +227,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.post("/:documentId/reprocess", workspaceSession, async (req, res, next) => {
+  router.post("/:documentId/reprocess", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
@@ -240,7 +241,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.delete("/:documentId", workspaceSession, async (req, res, next) => {
+  router.delete("/:documentId", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);

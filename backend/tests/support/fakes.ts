@@ -9,9 +9,19 @@ import type {
 } from "../../src/db/repositories/accountMembershipRepository.js";
 import type {
   AccountInvitationRecord,
+  AccountInvitationRole,
   AccountInvitationRepositoryPort,
   AccountInvitationStatus,
 } from "../../src/db/repositories/accountInvitationRepository.js";
+import type {
+  WorkspaceGrantRecord,
+  WorkspaceGrantRepositoryPort,
+  WorkspaceGrantRole,
+} from "../../src/db/repositories/workspaceGrantRepository.js";
+import type {
+  SupportImpersonationRecord,
+  SupportImpersonationRepositoryPort,
+} from "../../src/db/repositories/supportImpersonationRepository.js";
 import type {
   AccountRecord,
   AccountRepositoryPort,
@@ -142,6 +152,7 @@ export class InMemoryAccountRepository implements AccountRepositoryPort {
   async deleteById(id: string): Promise<boolean> {
     return this.items.delete(id);
   }
+
 }
 
 export class InMemoryUserRepository implements UserRepositoryPort {
@@ -325,6 +336,20 @@ export class InMemoryAccountMembershipRepository implements AccountMembershipRep
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
   }
 
+  async updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipRecord> {
+    const existing = this.items.get(id);
+    if (!existing) {
+      throw notFound("Membership not found");
+    }
+    const updated = {
+      ...existing,
+      role,
+      updatedAt: new Date(),
+    };
+    this.items.set(id, updated);
+    return updated;
+  }
+
   async deleteById(id: string): Promise<boolean> {
     return this.items.delete(id);
   }
@@ -338,6 +363,7 @@ export class InMemoryAccountInvitationRepository implements AccountInvitationRep
     email: string;
     invitedByMembershipId: string;
     tokenHash: string;
+    role?: AccountInvitationRole;
     status?: AccountInvitationStatus;
     expiresAt: Date;
   }): Promise<AccountInvitationRecord> {
@@ -351,6 +377,7 @@ export class InMemoryAccountInvitationRepository implements AccountInvitationRep
       expiresAt: params.expiresAt,
       acceptedAt: null,
       acceptedByUserId: null,
+      role: params.role ?? "member",
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -395,6 +422,131 @@ export class InMemoryAccountInvitationRepository implements AccountInvitationRep
       updatedAt: new Date(),
     };
     this.items.set(updated.id, updated);
+    return updated;
+  }
+}
+
+export class InMemoryWorkspaceGrantRepository implements WorkspaceGrantRepositoryPort {
+  private readonly items = new Map<string, WorkspaceGrantRecord>();
+
+  async upsert(input: {
+    workspaceId: string;
+    accountId: string;
+    userId: string;
+    role: WorkspaceGrantRole;
+  }): Promise<WorkspaceGrantRecord> {
+    const existing = [...this.items.values()].find(
+      (item) => item.workspaceId === input.workspaceId && item.userId === input.userId,
+    );
+    const record: WorkspaceGrantRecord = {
+      id: existing?.id ?? randomUUID(),
+      workspaceId: input.workspaceId,
+      accountId: input.accountId,
+      userId: input.userId,
+      role: input.role,
+      createdAt: existing?.createdAt ?? new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async findByWorkspaceAndUser(workspaceId: string, userId: string): Promise<WorkspaceGrantRecord | null> {
+    return [...this.items.values()].find((item) => item.workspaceId === workspaceId && item.userId === userId) ?? null;
+  }
+
+  async listByAccount(accountId: string): Promise<WorkspaceGrantRecord[]> {
+    return [...this.items.values()].filter((item) => item.accountId === accountId);
+  }
+
+  async listByWorkspace(workspaceId: string): Promise<WorkspaceGrantRecord[]> {
+    return [...this.items.values()].filter((item) => item.workspaceId === workspaceId);
+  }
+
+  async deleteByAccountAndUser(accountId: string, userId: string): Promise<number> {
+    const matches = [...this.items.values()].filter((item) => item.accountId === accountId && item.userId === userId);
+    for (const match of matches) {
+      this.items.delete(match.id);
+    }
+    return matches.length;
+  }
+
+  async deleteByWorkspaceAndUser(workspaceId: string, accountId: string, userId: string): Promise<boolean> {
+    const existing = [...this.items.values()].find(
+      (item) => item.workspaceId === workspaceId && item.accountId === accountId && item.userId === userId,
+    );
+    if (!existing) {
+      return false;
+    }
+    return this.items.delete(existing.id);
+  }
+}
+
+export class InMemorySupportImpersonationRepository implements SupportImpersonationRepositoryPort {
+  private readonly items = new Map<string, SupportImpersonationRecord>();
+
+  async createApproved(input: {
+    accountId: string;
+    staffUserId: string;
+    approverUserId: string;
+    reason: string;
+    expiresAt: Date;
+  }): Promise<SupportImpersonationRecord> {
+    const now = new Date();
+    const record: SupportImpersonationRecord = {
+      id: randomUUID(),
+      accountId: input.accountId,
+      staffUserId: input.staffUserId,
+      approverUserId: input.approverUserId,
+      reason: input.reason,
+      status: "approved",
+      approvedAt: now,
+      startedAt: null,
+      expiresAt: input.expiresAt,
+      endedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async findById(id: string): Promise<SupportImpersonationRecord | null> {
+    return this.items.get(id) ?? null;
+  }
+
+  async listByAccount(accountId: string, now: Date): Promise<SupportImpersonationRecord[]> {
+    void now;
+    return [...this.items.values()].filter((item) => item.accountId === accountId);
+  }
+
+  async markStarted(id: string, startedAt: Date): Promise<SupportImpersonationRecord> {
+    const existing = this.items.get(id);
+    if (!existing) {
+      throw notFound("Support impersonation session not found");
+    }
+    const updated: SupportImpersonationRecord = {
+      ...existing,
+      status: "active",
+      startedAt: existing.startedAt ?? startedAt,
+      updatedAt: new Date(),
+    };
+    this.items.set(id, updated);
+    return updated;
+  }
+
+  async end(id: string, status: "ended" | "expired" | "revoked", endedAt: Date): Promise<SupportImpersonationRecord> {
+    const existing = this.items.get(id);
+    if (!existing) {
+      throw notFound("Support impersonation session not found");
+    }
+    const updated: SupportImpersonationRecord = {
+      ...existing,
+      status,
+      endedAt: existing.endedAt ?? endedAt,
+      updatedAt: new Date(),
+    };
+    this.items.set(id, updated);
     return updated;
   }
 }

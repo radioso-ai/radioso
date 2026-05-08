@@ -16,6 +16,7 @@ export function CopyValueField({
   className = '',
   compact = false,
   wrap = false,
+  truncate = false,
   fitContent = false,
   inlineLabel = false,
 }: {
@@ -27,6 +28,7 @@ export function CopyValueField({
   className?: string
   compact?: boolean
   wrap?: boolean
+  truncate?: boolean
   fitContent?: boolean
   inlineLabel?: boolean
 }) {
@@ -76,7 +78,9 @@ export function CopyValueField({
             className={cn(
               'block font-mono text-sm',
               fitContent ? 'max-w-full' : 'w-full',
-              wrap
+              truncate
+                ? 'overflow-hidden text-ellipsis whitespace-nowrap'
+                : wrap
                 ? 'overflow-hidden whitespace-pre-wrap break-all leading-7'
                 : 'overflow-x-auto whitespace-nowrap scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent',
               compact ? 'text-base md:text-sm' : '',

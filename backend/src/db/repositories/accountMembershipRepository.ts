@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Database } from "../../shared/infra/database.js";
 
-export type AccountMembershipRole = "owner" | "member";
+export type AccountMembershipRole = "owner" | "admin" | "member";
 export type AccountMembershipStatus = "active";
 
 export interface AccountMembershipRecord {
@@ -59,6 +59,7 @@ export interface AccountMembershipRepositoryPort {
   findById(id: string): Promise<AccountMembershipRecord | null>;
   listActiveByAccount(accountId: string): Promise<AccountMembershipUserRecord[]>;
   listActiveByUser(userId: string): Promise<AccountMembershipRecord[]>;
+  updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipRecord>;
   deleteById(id: string): Promise<boolean>;
 }
 
@@ -132,6 +133,18 @@ export class AccountMembershipRepository implements AccountMembershipRepositoryP
     );
 
     return rows.map(mapMembership);
+  }
+
+  async updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipRecord> {
+    const [row] = await this.database.query<AccountMembershipRow>(
+      `UPDATE account_memberships
+       SET role = $2, updated_at = NOW()
+       WHERE id = $1
+       RETURNING id, account_id, user_id, role, status, created_at, updated_at`,
+      [id, role],
+    );
+
+    return mapMembership(row);
   }
 
   async deleteById(id: string): Promise<boolean> {

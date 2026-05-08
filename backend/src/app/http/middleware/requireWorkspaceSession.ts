@@ -4,11 +4,12 @@ import { AppError, unauthorized } from "../../../shared/domain/errors.js";
 import type { AppDependencies } from "../../server/types.js";
 
 const WORKSPACE_HEADER = "x-workspace-id";
+const SUPPORT_IMPERSONATION_HEADER = "x-support-impersonation-id";
 const BEARER_PREFIX = "Bearer ";
 
 export type WorkspaceSessionDependencies = Pick<
   AppDependencies,
-  "env" | "authService" | "accountAccessService" | "workspaceSessionService"
+  "env" | "authService" | "accountAccessService" | "workspaceSessionService" | "supportImpersonationService"
 >;
 
 export const requireWorkspaceSession = (dependencies: WorkspaceSessionDependencies): RequestHandler => {
@@ -18,6 +19,25 @@ export const requireWorkspaceSession = (dependencies: WorkspaceSessionDependenci
       if (sessionToken) {
         try {
           const session = await dependencies.authService.authenticateSession(sessionToken);
+          const supportImpersonationId = req.header(SUPPORT_IMPERSONATION_HEADER);
+          if (supportImpersonationId) {
+            const support = await dependencies.supportImpersonationService.authenticateActive({
+              id: supportImpersonationId,
+              staffUserId: session.userId,
+            });
+            const resolved = await dependencies.workspaceSessionService.resolve({
+              accountId: support.accountId,
+              workspaceId: req.header(WORKSPACE_HEADER),
+            });
+            res.locals.userId = session.userId;
+            res.locals.accountId = resolved.accountId;
+            res.locals.workspaceId = resolved.workspaceId;
+            res.locals.sessionId = session.sessionId;
+            res.locals.authMode = "support";
+            res.locals.supportImpersonationId = support.id;
+            next();
+            return;
+          }
           await dependencies.accountAccessService.requireActiveMembership(session.accountId, session.userId);
           const resolved = await dependencies.workspaceSessionService.resolve({
             accountId: session.accountId,

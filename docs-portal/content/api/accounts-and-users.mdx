@@ -1,6 +1,6 @@
 ---
 title: Accounts and users
-description: List accounts, invite users, switch account context, and remove account access.
+description: List accounts, invite users, manage organization roles, switch account context, and review support access.
 ---
 
 # Accounts and users
@@ -14,6 +14,9 @@ GET    /api/v1/account/users
 GET    /api/v1/account/accounts
 POST   /api/v1/account/invitations
 POST   /api/v1/account/switch
+PATCH  /api/v1/account/users/{membershipId}
+PUT    /api/v1/account/workspaces/{workspaceId}/grants/{userId}
+DELETE /api/v1/account/workspaces/{workspaceId}/grants/{userId}
 DELETE /api/v1/account/users/{membershipId}
 ```
 
@@ -23,8 +26,16 @@ Use these routes after a session has already been established.
 
 1. List accessible accounts if the user belongs to more than one account.
 2. Switch the active account if needed.
-3. List current users and invitations for that account.
-4. Create invitations or remove access.
+3. List current users, invitations, workspace grants, and recent support access for that account.
+4. Create invitations, update roles, assign workspace grants, or remove access.
+
+Organization roles are scoped to one account:
+
+- `owner` is the top authority for that organization.
+- `admin` can manage users, workspaces, settings, documents, ingestion, and tokens, but cannot remove or demote owners.
+- `member` can use workspaces broadly and reveal workspace tokens, but cannot manage users, rename the organization, create or delete workspaces, or rotate workspace tokens.
+
+When a signed-in user creates a new organization, that user becomes the `owner` of the new organization.
 
 ## Invite a user
 
@@ -35,6 +46,27 @@ POST /api/v1/account/invitations
 ```
 
 The request body is defined by the OpenAPI schema. Use the [API Reference](/api-reference) for the exact payload.
+
+The invite request includes a `role` field. Use `member` by default. Use `admin` only for trusted teammates who should manage the organization.
+
+## Workspace grants
+
+Workspace grants are optional. If no grant exists, the user inherits their organization role for the workspace.
+
+Use workspace grants to give a user `admin` or `member` access for a workspace. Grants do not remove inherited access in this release.
+
+```text
+PUT /api/v1/account/workspaces/{workspaceId}/grants/{userId}
+DELETE /api/v1/account/workspaces/{workspaceId}/grants/{userId}
+```
+
+## Support access visibility
+
+`GET /api/v1/account/users` also returns recent Radioso support impersonation sessions for the active account.
+
+Owners can use this data to see whether support access is active, why it was approved, and when it expires.
+
+Support staff access is controlled by the `SUPPORT_STAFF_EMAILS` environment variable. A support session is not an account membership and expires after 24 hours.
 
 ## Switch account context
 

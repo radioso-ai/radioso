@@ -452,10 +452,70 @@
           "email": {
             "type": "string",
             "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "default": "member"
           }
         },
         "required": [
           "email"
+        ]
+      },
+      "AccountMembershipRoleUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          }
+        },
+        "required": [
+          "role"
+        ]
+      },
+      "WorkspaceGrantRequest": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          }
+        },
+        "required": [
+          "role"
+        ]
+      },
+      "SupportImpersonationApproveRequest": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "staffUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "accountId",
+          "reason"
         ]
       },
       "WorkspaceCreateRequest": {
@@ -503,6 +563,7 @@
             "type": "string",
             "enum": [
               "owner",
+              "admin",
               "member"
             ]
           },
@@ -546,6 +607,13 @@
               "expired"
             ]
           },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          },
           "expiresAt": {
             "type": "string",
             "format": "date-time"
@@ -566,9 +634,117 @@
           "id",
           "email",
           "status",
+          "role",
           "expiresAt",
           "acceptedAt",
           "createdAt"
+        ]
+      },
+      "WorkspaceGrant": {
+        "type": "object",
+        "properties": {
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "workspaceId",
+          "userId",
+          "role",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "SupportImpersonation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "staffUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approverUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "active",
+              "ended",
+              "expired",
+              "revoked"
+            ]
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "staffUserId",
+          "approverUserId",
+          "reason",
+          "status",
+          "approvedAt",
+          "startedAt",
+          "expiresAt",
+          "endedAt",
+          "active"
         ]
       },
       "AccountUsersResponse": {
@@ -593,13 +769,27 @@
             "items": {
               "$ref": "#/components/schemas/AccountInvitation"
             }
+          },
+          "workspaceGrants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceGrant"
+            }
+          },
+          "supportImpersonations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupportImpersonation"
+            }
           }
         },
         "required": [
           "accountId",
           "currentUserId",
           "users",
-          "invitations"
+          "invitations",
+          "workspaceGrants",
+          "supportImpersonations"
         ]
       },
       "AccessibleAccount": {
@@ -616,6 +806,7 @@
             "type": "string",
             "enum": [
               "owner",
+              "admin",
               "member"
             ]
           },
@@ -6058,16 +6249,27 @@
         }
       }
     },
-    "/api/v1/account/switch": {
-      "post": {
+    "/api/v1/account/users/{membershipId}": {
+      "patch": {
         "tags": [
           "Account"
         ],
-        "summary": "Switch the current session to another accessible account",
-        "operationId": "switchAccount",
+        "summary": "Update an account user's role",
+        "operationId": "updateAccountUserRole",
         "security": [
           {
             "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "membershipId",
+            "in": "path"
           }
         ],
         "requestBody": {
@@ -6075,37 +6277,24 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "accountId": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "preferredWorkspaceId": {
-                    "type": "string",
-                    "format": "uuid"
-                  }
-                },
-                "required": [
-                  "accountId"
-                ]
+                "$ref": "#/components/schemas/AccountMembershipRoleUpdateRequest"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Account switched",
+            "description": "Membership role updated",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LoginResponse"
+                  "$ref": "#/components/schemas/AccountUser"
                 }
               }
             }
           },
-          "401": {
-            "description": "Authentication required",
+          "403": {
+            "description": "Role management is not allowed for the caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -6115,9 +6304,7 @@
             }
           }
         }
-      }
-    },
-    "/api/v1/account/users/{membershipId}": {
+      },
       "delete": {
         "tags": [
           "Account"
@@ -6176,6 +6363,268 @@
           },
           "409": {
             "description": "Membership cannot be removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/workspaces/{workspaceId}/grants/{userId}": {
+      "put": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Set a workspace role grant",
+        "operationId": "setWorkspaceGrant",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceGrantRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace grant updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceGrant"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Remove a workspace role grant",
+        "operationId": "removeWorkspaceGrant",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Workspace grant removed"
+          }
+        }
+      }
+    },
+    "/api/v1/support/impersonations": {
+      "post": {
+        "tags": [
+          "Support"
+        ],
+        "summary": "Approve a support impersonation session",
+        "operationId": "approveSupportImpersonation",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupportImpersonationApproveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Support impersonation approved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportImpersonation"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/support/impersonations/{id}/start": {
+      "post": {
+        "tags": [
+          "Support"
+        ],
+        "summary": "Start an approved support impersonation session",
+        "operationId": "startSupportImpersonation",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Support impersonation started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportImpersonation"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/support/impersonations/{id}/end": {
+      "post": {
+        "tags": [
+          "Support"
+        ],
+        "summary": "End a support impersonation session",
+        "operationId": "endSupportImpersonation",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Support impersonation ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportImpersonation"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/switch": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Switch the current session to another accessible account",
+        "operationId": "switchAccount",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accountId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "preferredWorkspaceId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "accountId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account switched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
             "content": {
               "application/json": {
                 "schema": {

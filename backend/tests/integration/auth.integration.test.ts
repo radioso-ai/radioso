@@ -133,6 +133,23 @@ describe("auth integration", () => {
     expect(rotated.body.token).not.toBe(revealed.body.token);
   });
 
+  it("returns 400 for malformed workspace token route ids", async () => {
+    const { app } = createTestApp();
+    const registration = await issueTestSession(app, "malformed-workspace-token-id@example.com");
+
+    const reveal = await request(app)
+      .get("/api/v1/account/workspaces/not-a-uuid/token")
+      .set("Cookie", registration.cookie);
+    const rotate = await request(app)
+      .post("/api/v1/account/workspaces/not-a-uuid/token/rotate")
+      .set("Cookie", registration.cookie);
+
+    expect(reveal.status).toBe(400);
+    expect(reveal.body.error.message).toBe("Invalid workspace id");
+    expect(rotate.status).toBe(400);
+    expect(rotate.body.error.message).toBe("Invalid workspace id");
+  });
+
   it("returns 503 for workspace token operations when the token secret is unset", async () => {
     const { app } = createTestApp({
       envOverrides: {

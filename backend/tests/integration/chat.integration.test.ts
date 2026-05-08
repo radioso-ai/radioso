@@ -570,14 +570,19 @@ describe("chat integration", () => {
     expect(second.body.suggestions.some((suggestion: { kind: string }) => suggestion.kind === "broader")).toBe(true);
   });
 
-  it("suppresses exploratory suggestions when the user explicitly asks for just the answer", async () => {
+  it("does not suppress exploratory suggestions from language-specific directness wording", async () => {
     let suggestionCallCount = 0;
     const deterministicGateway: ChatGateway = {
       async answer({ prompt }) {
         if (prompt.includes("Generate grounded follow-up suggestions")) {
           suggestionCallCount += 1;
           return JSON.stringify({
-            suggestions: [{ text: "What parser rules apply?", kind: "deeper", contextIndex: 1 }],
+            suggestions: [
+              { text: "How should teams apply these rules?", kind: "deeper", contextIndex: 1 },
+              { text: "What setup examples are available?", kind: "deeper", contextIndex: 1 },
+              { text: "Which workflow risks should I compare?", kind: "broader", contextIndex: 1 },
+              { text: "What rollout steps come next?", kind: "broader", contextIndex: 1 },
+            ],
           });
         }
         return "The testing guide explains testing and parsing content for users[[1]].";
@@ -619,13 +624,13 @@ describe("chat integration", () => {
       .send({ message: "Just the answer: what do the testing docs cover?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(suggestionCallCount).toBe(0);
-    expect(response.body.suggestions).toBeUndefined();
+    expect(suggestionCallCount).toBe(1);
+    expect(response.body.suggestions).toHaveLength(4);
     expect(response.body.conversationModeMetadata).toMatchObject({
       conversationMode: "exploratory",
-      brevityOverrideApplied: true,
-      expansionApplied: false,
-      suggestionCount: 0,
+      brevityOverrideApplied: false,
+      expansionApplied: true,
+      suggestionCount: 4,
     });
   });
 

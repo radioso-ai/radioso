@@ -26,7 +26,7 @@ const isSafeHref = (href?: string) => {
 }
 
 const UNORDERED_LIST_MARKER_PATTERN = /(^|\s)([-+*•])\s+/g
-const BLOCK_UNORDERED_LIST_MARKER_PATTERN = /^\s*[-+*•]\s+/
+const BLOCK_UNORDERED_LIST_MARKER_PATTERN = /^\s{0,3}[-+*•]\s+/
 
 const INLINE_LIST_ITEM_LETTER_PATTERN = /[\p{L}]/u
 

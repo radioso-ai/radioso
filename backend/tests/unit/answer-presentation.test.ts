@@ -78,6 +78,43 @@ describe("answer presentation service", () => {
     });
   });
 
+  it("removes spaces left between stripped citation anchors and punctuation", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer: "Ananda Yoga can lead naturally into meditation[[1]] . It also supports inner silence[[1]] .",
+      citationDisplayEnabled: false,
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Ananda Yoga",
+          content: "Ananda Yoga can lead naturally into meditation and supports inner silence.",
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      answer: "Ananda Yoga can lead naturally into meditation. It also supports inner silence.",
+    });
+  });
+
+  it("adds punctuation when a terminal markdown link is followed by a new sentence", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer:
+        "You can explore the main overview here: [Meditation and Kriya Yoga](https://anandaeurope.org/meditation-and-kriya-yoga) \nIf you want to look at course options, here are the residential pages: [Il sentiero del Kriya Yoga 4 giorni](https://corsi.ananda.it/corso/0007963-corso-residenziale-il-sentiero-del-kriya-yoga-4-giorni) and [Il sentiero del Kriya Yoga 5 giorni](https://corsi.ananda.it/en/course/0007995-corso-residenziale-il-sentiero-del-kriya-yoga-5-days) ",
+      citationDisplayEnabled: false,
+      citations: [],
+    });
+
+    expect(result).toEqual({
+      answer:
+        "You can explore the main overview here: [Meditation and Kriya Yoga](https://anandaeurope.org/meditation-and-kriya-yoga).\nIf you want to look at course options, here are the residential pages: [Il sentiero del Kriya Yoga 4 giorni](https://corsi.ananda.it/corso/0007963-corso-residenziale-il-sentiero-del-kriya-yoga-4-giorni) and [Il sentiero del Kriya Yoga 5 giorni](https://corsi.ananda.it/en/course/0007995-corso-residenziale-il-sentiero-del-kriya-yoga-5-days)",
+    });
+  });
+
   it("strips unsupported notice markers while preserving the notice text", () => {
     const service = new AnswerPresentationService();
 

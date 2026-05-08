@@ -20,6 +20,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
         customInstruction: includeResponseBehavior ? customInstruction : undefined,
         conversationMode: includeResponseBehavior ? conversationMode : undefined,
         responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
+        responseLanguage: input.rewrittenQuery.structuredResult?.responseLanguage,
       },
       intentTopic: input.rewrittenQuery.structuredResult?.intentTopic,
       inScopeRequest: input.rewrittenQuery.structuredResult?.inScopeRequest,

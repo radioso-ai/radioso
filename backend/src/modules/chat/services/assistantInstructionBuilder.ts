@@ -2,6 +2,7 @@ import {
   buildResponseIdentityLines,
   type ResponseIdentity,
 } from "../../../shared/domain/responseIdentity.js";
+import { normalizeLlmClassifierLanguageLabel } from "../../../shared/domain/llmClassifierFields.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { ConversationModeInstructionBuilder, type ResponseLanguagePolicy } from "../../retrieval/public.js";
 import type { ConversationMode } from "../../settings/contracts/retrieval.js";
@@ -11,6 +12,7 @@ export interface AssistantInstructionInput {
   customInstruction?: string;
   conversationMode?: ConversationMode;
   responseLanguagePolicy?: ResponseLanguagePolicy;
+  responseLanguage?: string;
 }
 
 export class AssistantInstructionBuilder {
@@ -24,7 +26,7 @@ export class AssistantInstructionBuilder {
       this.conversationModeInstructionBuilder.build({
         conversationMode: input.conversationMode ?? "guided",
       }),
-      this.renderResponseLanguageInstruction(input.responseLanguagePolicy ?? "match_user_question"),
+      this.renderResponseLanguageInstruction(input.responseLanguagePolicy ?? "match_user_question", input.responseLanguage),
     ]
       .filter((block): block is string => Boolean(block))
       .join("\n\n");
@@ -61,15 +63,25 @@ export class AssistantInstructionBuilder {
     return guidelines.trim() ? `Response formatting guidance:\n${guidelines}` : null;
   }
 
-  private renderResponseLanguageInstruction(responseLanguagePolicy: ResponseLanguagePolicy): string {
+  private renderResponseLanguageInstruction(
+    responseLanguagePolicy: ResponseLanguagePolicy,
+    responseLanguage?: string,
+  ): string {
+    const safeResponseLanguage = normalizeLlmClassifierLanguageLabel(responseLanguage);
     switch (responseLanguagePolicy) {
       case "match_user_question":
       default:
-        return [
-          "Respond in the same language as the current user question.",
-          "If the current user question is too short or language-neutral, preserve the most recent explicit user language preference from the conversation.",
-          "Do not switch to the language of the retrieved context or sources.",
-        ].join(" ");
+        return safeResponseLanguage
+          ? [
+              `Respond in ${safeResponseLanguage}.`,
+              `Translate source facts into ${safeResponseLanguage} when retrieved context or sources use another language.`,
+              "Keep names, product labels, UI labels, URLs, and quoted source terms in their original language only when they are useful as labels or references.",
+            ].join(" ")
+          : [
+              "Respond in the same language as the current user question.",
+              "If the current user question is too short or language-neutral, preserve the most recent explicit user language preference from the conversation.",
+              "Do not switch to the language of the retrieved context or sources.",
+            ].join(" ");
     }
   }
 }

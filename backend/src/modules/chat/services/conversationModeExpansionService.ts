@@ -25,7 +25,6 @@ export interface ConversationModeExpansionInput {
   citations?: Array<{ documentId: string }>;
   history: MessageRecord[];
   conversationIntentSnapshot: ConversationIntentSnapshot;
-  suppressOptionalSuggestions?: boolean;
 }
 
 export interface ConversationModeExpansionResult {
@@ -193,7 +192,6 @@ export class ConversationModeExpansionService {
       !input.groundedAnswerSupported ||
       input.conversationMode === "factual" ||
       !input.suggestedQuestionsEnabled ||
-      input.suppressOptionalSuggestions ||
       input.contexts.length === 0
     ) {
       return {};

@@ -66,6 +66,7 @@ export interface StructuredRewriteResult {
   inScopeRequest?: string;
   outsideScopeRequest?: string;
   responseLanguagePolicy?: ResponseLanguagePolicy;
+  responseLanguage?: string;
   queryShape?: RetrievalQueryShape;
   retrievalSubqueries?: RetrievalSubquery[];
   turnKind: RewriteTurnKind;

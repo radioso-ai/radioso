@@ -29,7 +29,7 @@ export class AssistantHistoryService {
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ) {
-    return this.chatHistoryService.getConversation(workspaceId, conversationId, input);
+    return this.chatHistoryService.getConversation(workspaceId, conversationId, input, { includeAnswerFeedback: true });
   }
 
   getContactRequest(

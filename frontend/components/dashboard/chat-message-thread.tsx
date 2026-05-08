@@ -1,15 +1,19 @@
 'use client'
 
-import type { CSSProperties, KeyboardEvent } from 'react'
+import { useState, type CSSProperties, type KeyboardEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Sparkles, UserRound } from 'lucide-react'
+import { Sparkles, ThumbsDown, ThumbsUp, UserRound } from 'lucide-react'
 import type { WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { editionController } from '@/lib/edition-controller'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
 import type {
+  AnswerFeedbackEntry,
+  AnswerFeedbackState,
+  AnswerFeedbackValue,
   AnswerSegment,
   ChatSuggestion,
   ChatUserInputMetadata,
@@ -37,8 +41,17 @@ export interface ChatThreadMessage {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
+  answerFeedback?: AnswerFeedbackState
+  answerFeedbackEntries?: AnswerFeedbackEntry[]
+  persistedAssistantMessageId?: string
   status?: 'streaming' | 'done' | 'complete' | 'error'
 }
+
+type FeedbackHandler = (input: {
+  assistantMessageId: string
+  value: AnswerFeedbackValue
+  comment?: string | null
+}) => Promise<AnswerFeedbackState | void> | AnswerFeedbackState | void
 
 export function ChatMessageThread({
   messages,
@@ -51,11 +64,15 @@ export function ChatMessageThread({
   hideAssistantAvatar = false,
   theme,
   themedSuggestionButtons = false,
+  onAnswerFeedback,
+  onClearAnswerFeedback,
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
   onSuggestionSelect?: (suggestion: ChatSuggestion, messageId: string) => void
   onMessageSelect?: (messageId: string) => void
+  onAnswerFeedback?: FeedbackHandler
+  onClearAnswerFeedback?: (assistantMessageId: string) => Promise<void> | void
   selectedMessageId?: string
   assistantAvatarUrl?: string | null
   assistantAvatarLabel?: string
@@ -63,6 +80,14 @@ export function ChatMessageThread({
   theme?: WebsiteEmbedTheme | null
   themedSuggestionButtons?: boolean
 }) {
+  const [localFeedback, setLocalFeedback] = useState<Record<string, AnswerFeedbackState | null | undefined>>({})
+  const [pendingFeedbackId, setPendingFeedbackId] = useState<string | null>(null)
+  const [feedbackError, setFeedbackError] = useState<Record<string, string | undefined>>({})
+  const [downvoteComposer, setDownvoteComposer] = useState<{
+    assistantMessageId: string
+    comment: string
+  } | null>(null)
+
   const handleSelectMessage = (messageId: string) => {
     const selection = typeof window !== 'undefined' ? window.getSelection()?.toString().trim() : ''
     if (selection) {
@@ -70,6 +95,93 @@ export function ChatMessageThread({
     }
 
     onMessageSelect?.(messageId)
+  }
+
+  const getFeedbackState = (message: ChatThreadMessage, assistantMessageId: string) =>
+    Object.prototype.hasOwnProperty.call(localFeedback, assistantMessageId)
+      ? localFeedback[assistantMessageId] ?? undefined
+      : message.answerFeedback
+
+  const submitFeedback = async (input: {
+    assistantMessageId: string
+    value: AnswerFeedbackValue
+    comment?: string | null
+  }) => {
+    if (!onAnswerFeedback || pendingFeedbackId) {
+      return
+    }
+
+    const nextState: AnswerFeedbackState = {
+      value: input.value,
+      comment: input.value === 'down' ? input.comment?.trim() || null : null,
+    }
+    const previousState = localFeedback[input.assistantMessageId]
+    setPendingFeedbackId(input.assistantMessageId)
+    setFeedbackError((current) => ({ ...current, [input.assistantMessageId]: undefined }))
+    setLocalFeedback((current) => ({ ...current, [input.assistantMessageId]: nextState }))
+    setDownvoteComposer(null)
+
+    try {
+      const saved = await onAnswerFeedback(input)
+      if (saved) {
+        setLocalFeedback((current) => ({ ...current, [input.assistantMessageId]: saved }))
+      }
+    } catch {
+      setLocalFeedback((current) => ({ ...current, [input.assistantMessageId]: previousState }))
+      setFeedbackError((current) => ({
+        ...current,
+        [input.assistantMessageId]: 'Unable to save feedback.',
+      }))
+    } finally {
+      setPendingFeedbackId(null)
+    }
+  }
+
+  const clearFeedback = async (assistantMessageId: string) => {
+    if (!onClearAnswerFeedback || pendingFeedbackId) {
+      return
+    }
+
+    const previousState = localFeedback[assistantMessageId]
+    setPendingFeedbackId(assistantMessageId)
+    setFeedbackError((current) => ({ ...current, [assistantMessageId]: undefined }))
+    setLocalFeedback((current) => ({ ...current, [assistantMessageId]: null }))
+    setDownvoteComposer(null)
+
+    try {
+      await onClearAnswerFeedback(assistantMessageId)
+    } catch {
+      setLocalFeedback((current) => ({ ...current, [assistantMessageId]: previousState }))
+      setFeedbackError((current) => ({
+        ...current,
+        [assistantMessageId]: 'Unable to clear feedback.',
+      }))
+    } finally {
+      setPendingFeedbackId(null)
+    }
+  }
+
+  const handleFeedbackClick = async (
+    message: ChatThreadMessage,
+    assistantMessageId: string,
+    value: AnswerFeedbackValue,
+  ) => {
+    const current = getFeedbackState(message, assistantMessageId)
+    if (current?.value === value) {
+      await clearFeedback(assistantMessageId)
+      return
+    }
+
+    if (value === 'down') {
+      setFeedbackError((currentErrors) => ({ ...currentErrors, [assistantMessageId]: undefined }))
+      setDownvoteComposer({
+        assistantMessageId,
+        comment: current?.value === 'down' ? current.comment ?? '' : '',
+      })
+      return
+    }
+
+    await submitFeedback({ assistantMessageId, value })
   }
 
   const getSelectableMessageProps = (messageId: string) => {
@@ -108,6 +220,15 @@ export function ChatMessageThread({
         const previousDay =
           index > 0 ? dayFormatter.format(new Date(messages[index - 1].createdAt)) : null
         const showDayDivider = currentDay !== previousDay
+        const assistantMessageId = message.role === 'assistant'
+          ? message.persistedAssistantMessageId ?? null
+          : null
+        const feedbackState = assistantMessageId ? getFeedbackState(message, assistantMessageId) : undefined
+        const feedbackEntries = message.answerFeedbackEntries ?? []
+        const canSubmitFeedback =
+          Boolean(onAnswerFeedback && onClearAnswerFeedback && assistantMessageId) &&
+          message.role === 'assistant' &&
+          message.status !== 'streaming'
 
         return (
           <div key={message.id} className="space-y-2">
@@ -279,12 +400,110 @@ export function ChatMessageThread({
                           </div>
                         ) : null
                       })()}
-                      <p
-                        className="px-1 text-xs text-muted-foreground"
-                        style={theme ? { color: theme.mutedForeground } : undefined}
-                      >
-                        {timeFormatter.format(new Date(message.createdAt))}
-                      </p>
+                      <div className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+                        <p style={theme ? { color: theme.mutedForeground } : undefined}>
+                          {timeFormatter.format(new Date(message.createdAt))}
+                        </p>
+                        {canSubmitFeedback && assistantMessageId ? (
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              className="group inline-flex size-5 items-center justify-center text-muted-foreground transition-colors disabled:pointer-events-none disabled:opacity-50"
+                              style={theme ? { color: theme.mutedForeground } : undefined}
+                              disabled={pendingFeedbackId === assistantMessageId}
+                              aria-pressed={feedbackState?.value === 'up'}
+                              aria-label="Thumbs up"
+                              onClick={() => void handleFeedbackClick(message, assistantMessageId, 'up')}
+                            >
+                              <ThumbsUp
+                                className={`size-3.5 fill-transparent group-hover:stroke-[#ffc720] ${feedbackState?.value === 'up' ? 'stroke-[#ffc720]' : ''}`}
+                              />
+                            </button>
+                            <button
+                              type="button"
+                              className="group inline-flex size-5 items-center justify-center text-muted-foreground transition-colors disabled:pointer-events-none disabled:opacity-50"
+                              style={theme ? { color: theme.mutedForeground } : undefined}
+                              disabled={pendingFeedbackId === assistantMessageId}
+                              aria-pressed={feedbackState?.value === 'down'}
+                              aria-label="Thumbs down"
+                              onClick={() => void handleFeedbackClick(message, assistantMessageId, 'down')}
+                            >
+                              <ThumbsDown
+                                className={`size-3.5 fill-transparent group-hover:stroke-[#ffc720] ${feedbackState?.value === 'down' ? 'stroke-[#ffc720]' : ''}`}
+                              />
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                      {canSubmitFeedback && assistantMessageId ? (
+                        <div className="flex flex-col gap-2 px-1">
+                          {downvoteComposer?.assistantMessageId === assistantMessageId ? (
+                            <div className="w-full max-w-md space-y-2 rounded-lg border border-border bg-background p-3">
+                              <Textarea
+                                value={downvoteComposer.comment}
+                                maxLength={2000}
+                                placeholder="Optional feedback"
+                                className="min-h-20 resize-none text-sm"
+                                onChange={(event) => {
+                                  setDownvoteComposer({
+                                    assistantMessageId,
+                                    comment: event.target.value,
+                                  })
+                                }}
+                              />
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setDownvoteComposer(null)}
+                                >
+                                  Cancel
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={pendingFeedbackId === assistantMessageId}
+                                  onClick={() => void submitFeedback({
+                                    assistantMessageId,
+                                    value: 'down',
+                                    comment: downvoteComposer.comment,
+                                  })}
+                                >
+                                  Save feedback
+                                </Button>
+                              </div>
+                            </div>
+                          ) : null}
+                          {feedbackError[assistantMessageId] ? (
+                            <p className="text-xs text-destructive">{feedbackError[assistantMessageId]}</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {feedbackEntries.length > 0 ? (
+                        <div className="space-y-2 px-1">
+                          {feedbackEntries.map((entry) => (
+                            <div
+                              key={entry.id}
+                              className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+                            >
+                              <div className="flex items-center gap-2 text-foreground">
+                                {entry.value === 'up' ? <ThumbsUp className="size-3.5" /> : <ThumbsDown className="size-3.5" />}
+                                <span>{entry.value === 'up' ? 'Thumbs up' : 'Thumbs down'}</span>
+                                <span className="text-muted-foreground">
+                                  {entry.actorType === 'anonymous_user' ? 'Anonymous session' : entry.actorType === 'api_token' ? 'API token' : 'Signed-in user'}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {timeFormatter.format(new Date(entry.updatedAt))}
+                                </span>
+                              </div>
+                              {entry.comment ? (
+                                <p className="mt-1 whitespace-pre-wrap text-foreground">{entry.comment}</p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 )}

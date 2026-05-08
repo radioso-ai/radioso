@@ -68,6 +68,7 @@ import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capability
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import { NoopChatActionProvider } from "../../src/modules/chat/services/chatActionProvider.js";
 import { NoopContactHistoryProvider } from "../../src/modules/chat/services/contactHistoryProvider.js";
+import type { AnswerFeedbackHistoryProviderPort } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
 import {
   createDefaultSkillCatalogRegistry,
   SkillCatalogService,
@@ -196,6 +197,7 @@ export const createTestDependencies = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   groundedMissResponseComposer?: GroundedMissResponseComposer;
   usageLimitPolicy?: UsageLimitPolicy;
+  answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   applicationRouteMounts?: ApplicationRouteMount[];
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = {
@@ -554,6 +556,8 @@ export const createTestDependencies = (overrides: {
     messageRepository,
     auditEventRepository,
     new InMemoryHistoryItemsRepository(conversationRepository, auditEventRepository),
+    new NoopContactHistoryProvider(),
+    overrides.answerFeedbackHistoryProvider,
   );
   const chatService = new ChatService(
     conversationRepository,
@@ -687,6 +691,7 @@ export const createTestApp = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   groundedMissResponseComposer?: GroundedMissResponseComposer;
   usageLimitPolicy?: UsageLimitPolicy;
+  answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   applicationRouteMounts?: ApplicationRouteMount[];
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);

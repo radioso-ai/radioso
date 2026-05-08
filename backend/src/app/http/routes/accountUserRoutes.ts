@@ -5,6 +5,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { requireSession, type SessionDependencies } from "../middleware/requireSession.js";
 import { requireAccountPermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
+import { badRequest } from "../../../shared/domain/errors.js";
 
 export const createAccountInvitationSchema = z.object({
   email: z.string().email(),
@@ -41,6 +42,15 @@ export const workspaceGrantSchema = z.object({
   role: z.enum(["admin", "member"]),
 });
 
+const requireWorkspaceGrantParams = (params: unknown): z.infer<typeof workspaceGrantParamsSchema> => {
+  const parsedParams = workspaceGrantParamsSchema.safeParse(params);
+  if (!parsedParams.success) {
+    throw badRequest("Invalid workspace grant parameters", parsedParams.error.flatten());
+  }
+
+  return parsedParams.data;
+};
+
 type AccountUserRouteDependencies = SessionDependencies & Pick<
   AppDependencies,
   "accountInvitationService" | "supportImpersonationService"
@@ -51,7 +61,7 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
   const authenticatedSession = requireSession(dependencies);
   const authenticatedUserSession = requireSession(dependencies, { requireActiveMembership: false });
 
-  router.get("/users", authenticatedSession, async (_req, res, next) => {
+  router.get("/users", authenticatedSession, requireAccountPermission(dependencies, "account.users.manage"), async (_req, res, next) => {
     try {
       const { accountId, userId } = res.locals as { accountId: string; userId: string };
       const [users, invitations] = await Promise.all([
@@ -212,12 +222,12 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
   router.put(
     "/workspaces/:workspaceId/grants/:userId",
     authenticatedSession,
-    requireWorkspacePermission(dependencies, "account.membership.role.update", (req) => String(req.params.workspaceId)),
+    requireWorkspacePermission(dependencies, "account.membership.role.update", (req) => requireWorkspaceGrantParams(req.params).workspaceId),
     validateBody(workspaceGrantSchema),
     async (req, res, next) => {
       try {
         const { accountId, userId: actorUserId } = res.locals as { accountId: string; userId: string };
-        const { workspaceId, userId } = workspaceGrantParamsSchema.parse(req.params);
+        const { workspaceId, userId } = requireWorkspaceGrantParams(req.params);
         const grant = await dependencies.accountAccessService.setWorkspaceGrant({
           accountId,
           actorUserId,
@@ -241,11 +251,11 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
   router.delete(
     "/workspaces/:workspaceId/grants/:userId",
     authenticatedSession,
-    requireWorkspacePermission(dependencies, "account.membership.role.update", (req) => String(req.params.workspaceId)),
+    requireWorkspacePermission(dependencies, "account.membership.role.update", (req) => requireWorkspaceGrantParams(req.params).workspaceId),
     async (req, res, next) => {
       try {
         const { accountId, userId: actorUserId } = res.locals as { accountId: string; userId: string };
-        const { workspaceId, userId } = workspaceGrantParamsSchema.parse(req.params);
+        const { workspaceId, userId } = requireWorkspaceGrantParams(req.params);
         await dependencies.accountAccessService.removeWorkspaceGrant({
           accountId,
           actorUserId,

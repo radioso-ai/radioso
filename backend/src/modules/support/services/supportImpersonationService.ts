@@ -53,6 +53,9 @@ export class SupportImpersonationService {
   }): Promise<SupportImpersonationSummary> {
     await this.requireSupportStaff(input.approverUserId);
     await this.requireSupportStaff(input.staffUserId);
+    if (input.approverUserId === input.staffUserId) {
+      throw forbidden("Support impersonation requires approval from another support staff user");
+    }
     const reason = input.reason.trim();
     if (!reason) {
       throw forbidden("Support impersonation requires a reason");

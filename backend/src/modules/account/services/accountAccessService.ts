@@ -192,6 +192,9 @@ export class AccountAccessService {
       throw conflict("Owner access cannot be removed");
     }
 
+    if (this.workspaceGrantRepository) {
+      await this.workspaceGrantRepository.deleteByAccountAndUser(input.accountId, targetMembership.userId);
+    }
     await this.membershipRepository.deleteById(targetMembership.id);
     await this.auditService.record({
       accountId: input.accountId,
@@ -419,7 +422,6 @@ export class AccountAccessService {
     }
 
     return [
-      "workspace.rename",
       "workspace.settings.manage",
       "workspace.documents.manage",
       "workspace.token.read",
@@ -427,6 +429,10 @@ export class AccountAccessService {
   }
 
   private supportRoleAllows(permission: AccountPermission): boolean {
-    return permission !== "account.membership.remove";
+    return [
+      "workspace.create",
+      "workspace.settings.manage",
+      "workspace.documents.manage",
+    ].includes(permission);
   }
 }

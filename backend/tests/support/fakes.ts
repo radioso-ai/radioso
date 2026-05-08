@@ -463,6 +463,14 @@ export class InMemoryWorkspaceGrantRepository implements WorkspaceGrantRepositor
     return [...this.items.values()].filter((item) => item.workspaceId === workspaceId);
   }
 
+  async deleteByAccountAndUser(accountId: string, userId: string): Promise<number> {
+    const matches = [...this.items.values()].filter((item) => item.accountId === accountId && item.userId === userId);
+    for (const match of matches) {
+      this.items.delete(match.id);
+    }
+    return matches.length;
+  }
+
   async deleteByWorkspaceAndUser(workspaceId: string, accountId: string, userId: string): Promise<boolean> {
     const existing = [...this.items.values()].find(
       (item) => item.workspaceId === workspaceId && item.accountId === accountId && item.userId === userId,

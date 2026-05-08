@@ -64,6 +64,12 @@ describe("organization roles", () => {
     ).resolves.toMatchObject({ status: 403 });
 
     await expect(request(app)
+      .patch(`/api/v1/workspace/${member.workspaceId}`)
+      .set("Cookie", member.cookie)
+      .send({ name: "Member Workspace Rename" })
+    ).resolves.toMatchObject({ status: 403 });
+
+    await expect(request(app)
       .patch("/api/v1/account")
       .set("Cookie", member.cookie)
       .send({ organizationName: "Member Rename" })
@@ -118,6 +124,38 @@ describe("organization roles", () => {
     expect(selfWorkspaceGrant.body.error.message).toBe("Users cannot change their own workspace access");
   });
 
+  it("removes workspace grants when account access is removed", async () => {
+    const { app } = createTestApp();
+    const owner = await issueTestSession(app, `owner-${Date.now()}@example.com`);
+    const member = await acceptInvite(app, owner.cookie, `member-${Date.now()}@example.com`, "member");
+
+    const grant = await request(app)
+      .put(`/api/v1/account/workspaces/${owner.workspaceId}/grants/${member.userId}`)
+      .set("Cookie", owner.cookie)
+      .send({ role: "admin" });
+    expect(grant.status).toBe(200);
+
+    const usersBeforeRemove = await request(app).get("/api/v1/account/users").set("Cookie", owner.cookie);
+    const memberRecord = usersBeforeRemove.body.users.find((user: { userId: string }) => user.userId === member.userId);
+    expect(memberRecord).toBeDefined();
+    expect(usersBeforeRemove.body.workspaceGrants).toContainEqual(expect.objectContaining({
+      workspaceId: owner.workspaceId,
+      userId: member.userId,
+      role: "admin",
+    }));
+
+    const removed = await request(app)
+      .delete(`/api/v1/account/users/${memberRecord.membershipId}`)
+      .set("Cookie", owner.cookie);
+    expect(removed.status).toBe(204);
+
+    const usersAfterRemove = await request(app).get("/api/v1/account/users").set("Cookie", owner.cookie);
+    expect(usersAfterRemove.body.workspaceGrants).not.toContainEqual(expect.objectContaining({
+      workspaceId: owner.workspaceId,
+      userId: member.userId,
+    }));
+  });
+
   it("rejects workspace grant updates for workspaces outside the current organization", async () => {
     const { app } = createTestApp();
     const accountA = await issueTestSession(app, `owner-a-${Date.now()}@example.com`);
@@ -130,6 +168,24 @@ describe("organization roles", () => {
 
     expect(response.status).toBe(404);
     expect(response.body.error.message).toBe("Workspace not found");
+  });
+
+  it("returns 400 for malformed workspace grant route ids", async () => {
+    const { app } = createTestApp();
+    const owner = await issueTestSession(app, `owner-${Date.now()}@example.com`);
+
+    const update = await request(app)
+      .put(`/api/v1/account/workspaces/not-a-uuid/grants/${owner.userId}`)
+      .set("Cookie", owner.cookie)
+      .send({ role: "admin" });
+    const remove = await request(app)
+      .delete(`/api/v1/account/workspaces/not-a-uuid/grants/${owner.userId}`)
+      .set("Cookie", owner.cookie);
+
+    expect(update.status).toBe(400);
+    expect(update.body.error.message).toBe("Invalid workspace grant parameters");
+    expect(remove.status).toBe(400);
+    expect(remove.body.error.message).toBe("Invalid workspace grant parameters");
   });
 
   it("does not remove workspace grants across organizations", async () => {

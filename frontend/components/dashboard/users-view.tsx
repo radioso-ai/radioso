@@ -48,6 +48,7 @@ export function UsersPanel() {
   const [error, setError] = useState<string | null>(null)
   const currentUser = users.find((user) => user.userId === currentUserId)
   const canManageUsers = currentUser?.role === 'owner' || currentUser?.role === 'admin'
+  const canRemoveUsers = currentUser?.role === 'owner'
   const nonOwnerUsers = users.filter((user) => user.role !== 'owner')
   const ownerUsers = users.filter((user) => user.role === 'owner')
   const activeUserEmails = new Set(users.map((user) => user.email.toLowerCase()))
@@ -397,6 +398,7 @@ export function UsersPanel() {
                 <DashboardTableBody>
                   {users.map((user) => {
                     const canManageTargetUser = canManageUsers && user.userId !== currentUserId && user.role !== 'owner'
+                    const canRemoveTargetUser = canRemoveUsers && user.userId !== currentUserId && user.role !== 'owner'
                     return (
                       <DashboardTableRow key={user.membershipId}>
                         <DashboardTableCell>
@@ -437,7 +439,7 @@ export function UsersPanel() {
                           )}
                         </DashboardTableCell>
                         <DashboardTableCell>
-                          {canManageTargetUser ? (
+                          {canRemoveTargetUser ? (
                             <Button
                               type="button"
                               variant="outline"

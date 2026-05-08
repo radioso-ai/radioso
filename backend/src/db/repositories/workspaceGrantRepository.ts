@@ -45,6 +45,7 @@ export interface WorkspaceGrantRepositoryPort {
   findByWorkspaceAndUser(workspaceId: string, userId: string): Promise<WorkspaceGrantRecord | null>;
   listByAccount(accountId: string): Promise<WorkspaceGrantRecord[]>;
   listByWorkspace(workspaceId: string): Promise<WorkspaceGrantRecord[]>;
+  deleteByAccountAndUser(accountId: string, userId: string): Promise<number>;
   deleteByWorkspaceAndUser(workspaceId: string, accountId: string, userId: string): Promise<boolean>;
 }
 
@@ -108,6 +109,18 @@ export class WorkspaceGrantRepository implements WorkspaceGrantRepositoryPort {
     );
 
     return rows.map(mapGrant);
+  }
+
+  async deleteByAccountAndUser(accountId: string, userId: string): Promise<number> {
+    const rows = await this.database.query<{ id: string }>(
+      `DELETE FROM workspace_grants
+       WHERE account_id = $1
+         AND user_id = $2
+       RETURNING id`,
+      [accountId, userId],
+    );
+
+    return rows.length;
   }
 
   async deleteByWorkspaceAndUser(workspaceId: string, accountId: string, userId: string): Promise<boolean> {

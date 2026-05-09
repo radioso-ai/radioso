@@ -31,7 +31,7 @@ For the fastest first run, use the built-in sample docs, wait for them to finish
     slug: 'architecture',
     content: `# Radioso Architecture
 
-Radioso uses a retrieval-augmented generation pipeline. Documents are normalized, chunked, embedded, and indexed for later retrieval.
+Radioso turns workspace documents into context for conversational agents. Documents are normalized, chunked, embedded, and indexed for later retrieval.
 
 At query time, the system can rewrite the question, run semantic and lexical retrieval, merge candidates, apply structured constraints, rerank results, and assemble grounded context for the final answer.
 
@@ -52,7 +52,7 @@ Workspace settings control retrieval behavior such as rewrite, rerank, chunking,
 
 export const SAMPLE_QUESTIONS = [
   'How do I get started with Radioso locally?',
-  'Explain the Radioso retrieval pipeline in plain language.',
+  'How does Radioso use my documents as context?',
   'Which environment variables matter most for local setup?',
 ] as const
 

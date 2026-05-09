@@ -461,3 +461,51 @@ export const withDashboardWorkspace = (
   ...(workspaceId ? { workspaceId } : {}),
   ...(workspacePublicRouteKey ? { workspacePublicRouteKey } : {}),
 })
+
+export const retargetDashboardRouteToWorkspace = (
+  state: DashboardRouteState,
+  workspaceId: string,
+  workspacePublicRouteKey?: string | null,
+): DashboardRouteState => {
+  const workspaceState = {
+    workspaceId,
+    ...(workspacePublicRouteKey ? { workspacePublicRouteKey } : {}),
+  }
+
+  if (state.section === 'agents') {
+    return normalizeState({
+      section: 'agents',
+      agentTab: state.agentTab,
+      ...workspaceState,
+    })
+  }
+
+  if (state.section === 'knowledge') {
+    return normalizeState({
+      section: 'knowledge',
+      knowledgeTab: state.knowledgeTab,
+      ...workspaceState,
+    })
+  }
+
+  if (state.section === 'activity') {
+    return normalizeState({
+      section: 'activity',
+      historyFilter: state.historyFilter,
+      ...workspaceState,
+    })
+  }
+
+  if (state.section === 'settings') {
+    return normalizeState({
+      section: 'settings',
+      settingsTab: state.settingsTab,
+      ...workspaceState,
+    })
+  }
+
+  return normalizeState({
+    section: state.section,
+    ...workspaceState,
+  })
+}

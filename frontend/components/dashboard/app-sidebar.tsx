@@ -86,10 +86,10 @@ const agentsByWorkspace = new Map<string, AgentSettings[]>()
 
 const resolvePreferredAgent = (agents: AgentSettings[], preferredAgentId?: string | null) => {
   if (preferredAgentId) {
-    return agents.find((agent) => agent.id === preferredAgentId) ?? null
+    return agents.find((agent) => agent.id === preferredAgentId) ?? agents[0] ?? null
   }
 
-  return agents.find((agent) => agent.isDefault) ?? agents[0] ?? null
+  return agents[0] ?? null
 }
 
 export function AppSidebar({ accountId, currentView, routeState }: AppSidebarProps) {
@@ -199,7 +199,7 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
     section: 'agents',
     workspaceId: activeWorkspaceId ?? undefined,
     workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-    agentId: currentView === 'agents' ? routeState.agentId ?? selectedAgentId ?? undefined : selectedAgentId ?? undefined,
+    agentId: selectedAgentId ?? (currentView === 'agents' ? routeState.agentId ?? undefined : undefined),
     agentTab: currentView === 'agents' ? routeState.agentTab : undefined,
   })
 
@@ -277,7 +277,7 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
         </SidebarHeader>
 
         <div className="px-2">
-          <WorkspaceSwitcher accountId={accountId} currentView={currentView} />
+          <WorkspaceSwitcher accountId={accountId} currentView={currentView} routeState={routeState} />
         </div>
 
         <SidebarContent>
@@ -319,7 +319,7 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
                                 href={buildAgentHref(agent.id)}
                                 onClick={() => setLastSelectedAgentId(activeWorkspaceId, agent.id)}
                               >
-                                <span>{agent.name || 'Agent'}{agent.isDefault ? ' (default)' : ''}</span>
+                                <span>{agent.name || 'Agent'}</span>
                               </Link>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>

@@ -87,16 +87,18 @@ export function AgentView({
     }
   }, [loadAgents])
 
-  const defaultAgent = useMemo(() => agents.find((agent) => agent.isDefault) ?? agents[0] ?? null, [agents])
+  const fallbackAgent = useMemo(() => agents[0] ?? null, [agents])
   const rememberedAgentId = getLastSelectedAgentId(activeWorkspaceId)
   const selectedAgent = useMemo(
     () => {
       if (routeState.agentId) {
-        return agents.find((agent) => agent.id === routeState.agentId) ?? null
+        return agents.find((agent) => agent.id === routeState.agentId)
+          ?? agents.find((agent) => agent.id === rememberedAgentId)
+          ?? fallbackAgent
       }
-      return agents.find((agent) => agent.id === rememberedAgentId) ?? defaultAgent
+      return agents.find((agent) => agent.id === rememberedAgentId) ?? fallbackAgent
     },
-    [agents, defaultAgent, rememberedAgentId, routeState.agentId],
+    [agents, fallbackAgent, rememberedAgentId, routeState.agentId],
   )
   const selectedAgentId = selectedAgent?.id
   const agentSelectionPending = isAgentsLoading
@@ -109,7 +111,7 @@ export function AgentView({
   }, [activeWorkspaceId, selectedAgentId])
 
   useEffect(() => {
-    if (isAgentsLoading || agentsError || routeState.agentId || !selectedAgentId) {
+    if (isAgentsLoading || agentsError || !selectedAgentId || routeState.agentId === selectedAgentId) {
       return
     }
 
@@ -184,7 +186,7 @@ export function AgentView({
           anchor: undefined,
         }))}
       >
-        Open default agent
+        Open an agent
       </Button>
     </div>
   )

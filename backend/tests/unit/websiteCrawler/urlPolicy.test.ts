@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { assertPublicWebsiteUrl } from "./urlPolicy.js";
-import { WebsiteCrawlerBadRequestError } from "./errors.js";
+import { assertPublicWebsiteUrl } from "../../../src/modules/websiteCrawler/urlPolicy.js";
+import { WebsiteCrawlerBadRequestError } from "../../../src/modules/websiteCrawler/errors.js";
 
-describe("enterprise website crawler URL policy", () => {
+describe("website crawler URL policy", () => {
   it("blocks localhost and private IP crawl targets", async () => {
     await expect(assertPublicWebsiteUrl("http://localhost:3000")).rejects.toThrow(WebsiteCrawlerBadRequestError);
     await expect(assertPublicWebsiteUrl("http://127.0.0.1")).rejects.toThrow(WebsiteCrawlerBadRequestError);

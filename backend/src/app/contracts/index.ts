@@ -8,3 +8,4 @@ export type {
   ApplicationRouteMount,
   ApplicationUsageLimitPolicyRegistration,
 } from "../composition/applicationModule.js";
+export type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";

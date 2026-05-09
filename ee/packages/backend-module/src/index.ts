@@ -4,13 +4,7 @@ import { createAnswerFeedbackApplicationModule } from "./answerFeedback/applicat
 import { createHumanContactApplicationModule } from "./humanContact/applicationModule.js";
 import { createEnterpriseAuthApplicationModule } from "./mail/applicationModule.js";
 import { createUsageLimitsApplicationModule } from "./usageLimits/applicationModule.js";
-import { createWebsiteCrawlerApplicationModule } from "./websiteCrawler/applicationModule.js";
-import type { WebsiteCrawlerProvider } from "./websiteCrawler/provider.js";
 import { createWebsiteEmbedApplicationModule } from "./websiteEmbedApplicationModule.js";
-
-export interface EnterpriseBackendModuleOptions {
-  websiteCrawlerProvider?: WebsiteCrawlerProvider;
-}
 
 export {
   EmailService,
@@ -24,17 +18,6 @@ export {
   type EnterpriseEmailEnv,
   type PasswordResetEmailInput,
 } from "./mail/emailService.js";
-export type {
-  WebsiteCrawlPage,
-  WebsiteCrawlRequest,
-  WebsiteCrawlResult,
-  WebsiteCrawlerProvider,
-} from "./websiteCrawler/provider.js";
-export {
-  WebsiteCrawlerBadRequestError,
-  WebsiteCrawlerProviderError,
-  WebsiteCrawlerUnavailableError,
-} from "./websiteCrawler/errors.js";
 export {
   collectFrontendRouteContributions,
   validateFeatureManifests,
@@ -45,20 +28,14 @@ export { createUsageLimitsApplicationModule } from "./usageLimits/applicationMod
 export { createAnswerFeedbackApplicationModule } from "./answerFeedback/applicationModule.js";
 export { createEnterpriseAuthApplicationModule } from "./mail/applicationModule.js";
 export { createHumanContactApplicationModule } from "./humanContact/applicationModule.js";
-export { createWebsiteCrawlerApplicationModule } from "./websiteCrawler/applicationModule.js";
 export { createWebsiteEmbedApplicationModule } from "./websiteEmbedApplicationModule.js";
 
-export const createEnterpriseBackendModule = (
-  options: EnterpriseBackendModuleOptions = {},
-): ApplicationModule => {
+export const createEnterpriseBackendModule = (): ApplicationModule => {
   const featureModules = [
     createUsageLimitsApplicationModule(),
     createEnterpriseAuthApplicationModule(),
     createHumanContactApplicationModule(),
     createAnswerFeedbackApplicationModule(),
-    createWebsiteCrawlerApplicationModule({
-      websiteCrawlerProvider: options.websiteCrawlerProvider,
-    }),
     createWebsiteEmbedApplicationModule(),
   ];
 

@@ -42,6 +42,7 @@ import {
   documentSearchHistoryParamsSchema,
   documentSearchSchema,
 } from "../routes/documentRoutes.js";
+import { crawlBodySchema } from "../../../modules/websiteCrawler/routes.js";
 import { assistantChatSchema } from "../schemas/assistantChatSchemas.js";
 import { conversationParamsSchema } from "../routes/conversationRouteSchemas.js";
 import { retrievalAnswerSchema, retrievalSearchSchema } from "../routes/retrievalRoutes.js";
@@ -826,6 +827,29 @@ const DocumentSearchHistoryListResponseSchema = registry.register(
   }),
 );
 const DocumentSearchRequestSchema = registry.register("DocumentSearchRequest", documentSearchSchema);
+const WebsiteCrawlRequestSchema = registry.register("WebsiteCrawlRequest", crawlBodySchema);
+const WebsiteCrawlPublicationResponseSchema = registry.register(
+  "WebsiteCrawlPublicationResponse",
+  z.object({
+    provider: z.string(),
+    runId: z.string().nullable(),
+    status: z.string().nullable(),
+    requestedUrl: z.string(),
+    accepted: z.number().int().min(0),
+    failed: z.number().int().min(0),
+    documents: z.array(z.object({
+      externalDocumentId: z.string(),
+      documentId: z.string(),
+      status: z.string(),
+      sourceUrl: z.string(),
+      canonicalUrl: z.string().nullable(),
+    })),
+    failures: z.array(z.object({
+      sourceUrl: z.string(),
+      reason: z.string(),
+    })),
+  }),
+);
 
 const CitationSchema = registry.register(
   "Citation",
@@ -3349,6 +3373,67 @@ registry.registerPath({
     },
     429: {
       description: "Upload rate limit exceeded",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/document/crawl",
+  tags: ["Documents"],
+  summary: "Crawl a website through a configured crawler provider",
+  operationId: "crawlWebsiteDocuments",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: WebsiteCrawlRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    202: {
+      description: "Crawled pages accepted for document processing",
+      content: {
+        "application/json": {
+          schema: WebsiteCrawlPublicationResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    429: {
+      description: "Rate limit exceeded",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    503: {
+      description: "Website crawler provider is not configured",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,

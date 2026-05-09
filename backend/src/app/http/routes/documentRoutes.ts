@@ -8,6 +8,7 @@ import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
+import { createWebsiteCrawlerRoutes } from "../../../modules/websiteCrawler/routes.js";
 
 const MAX_DOCUMENT_LIST_LIMIT = 100;
 
@@ -50,6 +51,7 @@ type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "documentIngestionService"
   | "documentSearchHistoryService"
   | "documentSearchService"
+  | "websiteCrawlerProvider"
   | "usageLimitPolicy"
 >;
 
@@ -197,6 +199,8 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       next(error);
     }
   });
+
+  router.use("/crawl", createWebsiteCrawlerRoutes(dependencies));
 
   router.get("/:documentId", workspaceSession, async (req, res, next) => {
     try {

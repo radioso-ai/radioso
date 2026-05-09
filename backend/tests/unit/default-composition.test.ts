@@ -42,6 +42,7 @@ describe("default application composition", () => {
       name: "retrieval.answer",
     });
     expect(composition.connectors).toEqual([]);
+    expect(composition.websiteCrawlerProvider).toBeUndefined();
     expect(composition.modules).toEqual([]);
   });
 
@@ -178,6 +179,10 @@ describe("default application composition", () => {
       dispatch: vi.fn(),
       dispatchMany: vi.fn(),
     };
+    const websiteCrawlerProvider = {
+      name: "test-crawler",
+      crawl: vi.fn(),
+    };
 
     const composition = createDefaultApplicationComposition({
       logger: createLogger(),
@@ -190,6 +195,7 @@ describe("default application composition", () => {
             context.registerIncidentSink(incidentSink);
             context.registerDocumentStorage(documentStorage);
             context.registerDocumentJobDispatcher(documentJobDispatcher);
+            context.registerWebsiteCrawlerProvider(websiteCrawlerProvider);
             context.registerWebsiteEmbedIntegration(websiteEmbedIntegration);
           },
         },
@@ -201,6 +207,7 @@ describe("default application composition", () => {
     expect(composition.incidentSinks).toEqual([incidentSink]);
     expect(composition.documentStorage).toBe(documentStorage);
     expect(composition.documentJobDispatcher).toBe(documentJobDispatcher);
+    expect(composition.websiteCrawlerProvider).toBe(websiteCrawlerProvider);
     expect(composition.websiteEmbedIntegration).toBe(websiteEmbedIntegration);
   });
 

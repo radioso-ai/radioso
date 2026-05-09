@@ -25,6 +25,7 @@ import type { AuditService } from "../../modules/audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { SkillCatalogEntryDefinition, SkillDefinition } from "../../modules/skills/public.js";
+import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 
 export interface ApplicationDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
@@ -92,6 +93,7 @@ export interface ApplicationExtensionRegistry {
   documentStorage?: DocumentStoragePort;
   documentJobDispatcher?: DocumentJobDispatcherPort;
   documentJobConsumer?: DocumentJobConsumerPort;
+  websiteCrawlerProvider?: WebsiteCrawlerProvider;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
   chatActionProviderRegistration?: ApplicationChatActionProviderRegistration;
   contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
@@ -113,6 +115,7 @@ export interface ApplicationModuleRegistrationContext {
   registerDocumentStorage(storage: DocumentStoragePort): void;
   registerDocumentJobDispatcher(dispatcher: DocumentJobDispatcherPort): void;
   registerDocumentJobConsumer(consumer: DocumentJobConsumerPort): void;
+  registerWebsiteCrawlerProvider(provider: WebsiteCrawlerProvider): void;
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
   registerChatActionProvider(provider: ApplicationChatActionProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
@@ -177,6 +180,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerDocumentJobConsumer(consumer) {
     registry.documentJobConsumer = consumer;
+  },
+  registerWebsiteCrawlerProvider(provider) {
+    registry.websiteCrawlerProvider = provider;
   },
   registerWebsiteEmbedIntegration(provider) {
     registry.websiteEmbedIntegration = provider;

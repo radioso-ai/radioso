@@ -7,7 +7,6 @@ import { answerFeedbackFeatureManifest } from "../answerFeedback/featureManifest
 import { humanContactFeatureManifest } from "../humanContact/featureManifest.js";
 import { enterpriseAuthFeatureManifest } from "../mail/featureManifest.js";
 import { usageLimitsFeatureManifest } from "../usageLimits/featureManifest.js";
-import { websiteCrawlerFeatureManifest } from "../websiteCrawler/featureManifest.js";
 import { websiteEmbedFeatureManifest } from "../websiteEmbedFeatureManifest.js";
 
 export const enterpriseFeatureManifests: FeatureManifest[] = [
@@ -15,7 +14,6 @@ export const enterpriseFeatureManifests: FeatureManifest[] = [
   enterpriseAuthFeatureManifest,
   humanContactFeatureManifest,
   answerFeedbackFeatureManifest,
-  websiteCrawlerFeatureManifest,
   websiteEmbedFeatureManifest,
 ];
 

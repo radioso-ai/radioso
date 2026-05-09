@@ -15,7 +15,7 @@ export class WebsiteCrawlerUnavailableError extends Error {
   readonly code = "service_unavailable";
   readonly details?: Record<string, unknown>;
 
-  constructor(message = "Enterprise website crawler is not configured", details?: Record<string, unknown>) {
+  constructor(message = "Website crawler is not configured", details?: Record<string, unknown>) {
     super(message);
     this.name = "WebsiteCrawlerUnavailableError";
     this.details = details ? redactSensitiveDetails(details) : undefined;

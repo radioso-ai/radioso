@@ -2,13 +2,11 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ApplicationRouteMount } from "../radiosoModuleTypes.js";
-import { createWebsiteCrawlerRoutes } from "./routes.js";
-import type { WebsiteCrawlerProvider } from "./provider.js";
+import { createWebsiteCrawlerRoutes } from "../../../src/modules/websiteCrawler/routes.js";
+import type { WebsiteCrawlerProvider } from "../../../src/modules/websiteCrawler/provider.js";
+import { unauthorized } from "../../../src/shared/domain/errors.js";
 
-type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0] & {
-  websiteCrawlerProvider?: WebsiteCrawlerProvider;
-};
+type RouteDependencies = Parameters<typeof createWebsiteCrawlerRoutes>[0];
 
 const createProvider = (): WebsiteCrawlerProvider => ({
   name: "fake",
@@ -25,7 +23,7 @@ const createProvider = (): WebsiteCrawlerProvider => ({
   }),
 });
 
-const createApp = (dependencies: Partial<RouteDependencies> = {}) => {
+const createApp = (dependencies: Partial<Record<keyof RouteDependencies, unknown>> = {}) => {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -38,14 +36,19 @@ const createApp = (dependencies: Partial<RouteDependencies> = {}) => {
     );
     next();
   });
-  app.use("/api/v1/ee/website-crawler", createWebsiteCrawlerRoutes({
+  app.use("/api/v1/document/crawl", createWebsiteCrawlerRoutes({
     env: {
       SESSION_COOKIE_NAME: "radioso_session",
+    },
+    supportImpersonationService: {
+      async authenticateActive() {
+        throw unauthorized();
+      },
     },
     authService: {
       async authenticateSession(token: string) {
         if (token !== "valid-session") {
-          throw { statusCode: 401, code: "unauthorized", message: "Unauthorized" };
+          throw unauthorized();
         }
         return {
           accountId: "account-1",
@@ -99,10 +102,10 @@ const createApp = (dependencies: Partial<RouteDependencies> = {}) => {
   return app;
 };
 
-describe("enterprise website crawler routes", () => {
+describe("website crawler routes", () => {
   it("returns unavailable when crawler provider is not configured", async () => {
     const response = await request(createApp())
-      .post("/api/v1/ee/website-crawler/crawl")
+      .post("/api/v1/document/crawl")
       .set("Cookie", "radioso_session=valid-session")
       .set("x-workspace-id", "workspace-1")
       .send({ url: "https://example.com" })
@@ -110,17 +113,17 @@ describe("enterprise website crawler routes", () => {
 
     expect(response.body.error).toEqual({
       code: "service_unavailable",
-      message: "Enterprise website crawler is not configured",
+      message: "Website crawler is not configured",
     });
   });
 
   it("keeps crawler limit configuration failures scoped to crawler requests", async () => {
-    const originalMaxLimit = process.env.EE_WEBSITE_CRAWLER_MAX_LIMIT;
-    process.env.EE_WEBSITE_CRAWLER_MAX_LIMIT = "nope";
+    const originalMaxLimit = process.env.WEBSITE_CRAWLER_MAX_LIMIT;
+    process.env.WEBSITE_CRAWLER_MAX_LIMIT = "nope";
     try {
       const app = createApp({ websiteCrawlerProvider: createProvider() });
       const response = await request(app)
-        .post("/api/v1/ee/website-crawler/crawl")
+        .post("/api/v1/document/crawl")
         .set("Cookie", "radioso_session=valid-session")
         .set("x-workspace-id", "workspace-1")
         .send({ url: "https://example.com" })
@@ -128,30 +131,30 @@ describe("enterprise website crawler routes", () => {
 
       expect(response.body.error).toEqual({
         code: "service_unavailable",
-        message: "EE_WEBSITE_CRAWLER_MAX_LIMIT must be a positive integer",
+        message: "WEBSITE_CRAWLER_MAX_LIMIT must be a positive integer",
         details: {
-          invalidEnv: "EE_WEBSITE_CRAWLER_MAX_LIMIT",
+          invalidEnv: "WEBSITE_CRAWLER_MAX_LIMIT",
         },
       });
     } finally {
       if (originalMaxLimit === undefined) {
-        delete process.env.EE_WEBSITE_CRAWLER_MAX_LIMIT;
+        delete process.env.WEBSITE_CRAWLER_MAX_LIMIT;
       } else {
-        process.env.EE_WEBSITE_CRAWLER_MAX_LIMIT = originalMaxLimit;
+        process.env.WEBSITE_CRAWLER_MAX_LIMIT = originalMaxLimit;
       }
     }
   });
 
   it("requires a signed-in account session", async () => {
     await request(createApp())
-      .post("/api/v1/ee/website-crawler/crawl")
+      .post("/api/v1/document/crawl")
       .send({ url: "https://example.com" })
       .expect(401);
   });
 
   it("validates crawl requests", async () => {
     const response = await request(createApp())
-      .post("/api/v1/ee/website-crawler/crawl")
+      .post("/api/v1/document/crawl")
       .set("Cookie", "radioso_session=valid-session")
       .set("x-workspace-id", "workspace-1")
       .send({ url: "file:///etc/passwd" })
@@ -165,7 +168,7 @@ describe("enterprise website crawler routes", () => {
     const response = await request(createApp({
       websiteCrawlerProvider: provider,
     }))
-      .post("/api/v1/ee/website-crawler/crawl")
+      .post("/api/v1/document/crawl")
       .set("Cookie", "radioso_session=valid-session")
       .set("x-workspace-id", "workspace-1")
       .send({ url: "https://example.com", limit: 1 })
@@ -194,14 +197,14 @@ describe("enterprise website crawler routes", () => {
       websiteCrawlerProvider: provider,
       abuseControlService,
     }))
-      .post("/api/v1/ee/website-crawler/crawl")
+      .post("/api/v1/document/crawl")
       .set("Cookie", "radioso_session=valid-session")
       .set("x-workspace-id", "workspace-1")
       .send({ url: "https://example.com", limit: 1 })
       .expect(429);
 
     expect(abuseControlService.enforce).toHaveBeenCalledWith({
-      scope: "ee.website_crawler.crawl",
+      scope: "document.crawl",
       subjectKey: "workspace-1:user:user-1",
       limit: 10,
       windowMs: 60000,
@@ -218,7 +221,7 @@ describe("enterprise website crawler routes", () => {
       websiteCrawlerProvider: provider,
       documentIngestionService: { ingest },
     }))
-      .post("/api/v1/ee/website-crawler/crawl")
+      .post("/api/v1/document/crawl")
       .set("Cookie", "radioso_session=valid-session")
       .set("x-workspace-id", "workspace-2")
       .send({ url: "https://example.com", limit: 1 })
@@ -235,7 +238,7 @@ describe("enterprise website crawler routes", () => {
       websiteCrawlerProvider: provider,
       documentIngestionService: { ingest },
     }))
-      .post("/api/v1/ee/website-crawler/crawl")
+      .post("/api/v1/document/crawl")
       .set("Authorization", "Bearer api-token")
       .send({ url: "https://example.com", limit: 1 })
       .expect(202);
@@ -254,7 +257,7 @@ describe("enterprise website crawler routes", () => {
       websiteCrawlerProvider: provider,
       documentIngestionService: { ingest },
     }))
-      .post("/api/v1/ee/website-crawler/crawl")
+      .post("/api/v1/document/crawl")
       .set("Cookie", "radioso_session=stale-session")
       .set("Authorization", "Bearer api-token")
       .send({ url: "https://example.com", limit: 1 })

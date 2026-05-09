@@ -2,15 +2,15 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { AgentService } from "../../agents/public.js";
+import { isAgentBootstrapActive } from "../../agents/public.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
-import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatBootstrapResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import {
   buildPublicAssistantIdentityLines,
-  isAssistantBootstrapActive,
 } from "../../settings/contracts/assistantBootstrap.js";
 import { DEFAULT_CONVERSATION_MODE } from "../../settings/contracts/retrieval.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
@@ -71,13 +71,14 @@ export class ChatBootstrapService {
     private readonly bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort,
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
-    private readonly retrievalSettingsService: Pick<RetrievalSettingsService, "getForWorkspace">,
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
+    private readonly agentService: Pick<AgentService, "resolve">,
   ) {}
 
   async startConversation(input: {
     workspaceId: string;
+    agentId?: string | null;
     accountId?: string;
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
@@ -87,10 +88,16 @@ export class ChatBootstrapService {
   }): Promise<ChatBootstrapResponse | null> {
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.bootstrap");
     const workspace = await this.workspaceRepository.findById(input.workspaceId);
-    if (!workspace || !isAssistantBootstrapActive(workspace)) {
+    if (!workspace) {
       return null;
     }
-    const retrievalSettings = await this.retrievalSettingsService.getForWorkspace(input.workspaceId);
+    const agent = await this.agentService.resolve(input.workspaceId, input.agentId);
+    if (!isAgentBootstrapActive({
+      name: agent.name,
+      proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
+    })) {
+      return null;
+    }
 
     const requestedLocale =
       isValidLocaleHint(input.userExpectedLocale)
@@ -100,19 +107,20 @@ export class ChatBootstrapService {
           : input.pageContext?.browserLocale;
     const localeUsed = resolveChatLocale({
       userExpectedLocale: requestedLocale,
-      assistantDefaultLocale: workspace.assistantDefaultLocale,
+      assistantDefaultLocale: agent.assistantDefaultLocale,
     });
     const fingerprint = createBootstrapFingerprint({
-      assistantName: workspace.assistantName,
-      customInstruction: retrievalSettings.customInstruction,
-      assistantDefaultLocale: workspace.assistantDefaultLocale,
+      assistantName: agent.name,
+      customInstruction: agent.customInstruction,
+      assistantDefaultLocale: agent.assistantDefaultLocale,
       localeUsed,
     });
 
     let usageReservation: Awaited<ReturnType<UsageLimitPolicy["reserveAnswer"]>> | null = null;
     try {
-      const cachedGreeting = await this.bootstrapGreetingCacheRepository.findByWorkspaceAndFingerprint(
+      const cachedGreeting = await this.bootstrapGreetingCacheRepository.findByWorkspaceAgentAndFingerprint(
         input.workspaceId,
+        agent.id,
         fingerprint,
       );
       usageReservation = cachedGreeting
@@ -124,13 +132,13 @@ export class ChatBootstrapService {
           });
       const normalizedAnswer = cachedGreeting?.greetingText
         ?? (await this.chatGateway.answer({
-          query: "",
-          history: [],
-          prompt: buildBootstrapPrompt({
-            assistantName: workspace.assistantName,
-            customInstruction: retrievalSettings.customInstruction,
-            localeUsed,
-          }),
+            query: "",
+            history: [],
+            prompt: buildBootstrapPrompt({
+              assistantName: agent.name,
+              customInstruction: agent.customInstruction,
+              localeUsed,
+            }),
         })).trim();
       if (!normalizedAnswer) {
         await usageReservation?.release();
@@ -140,6 +148,7 @@ export class ChatBootstrapService {
       if (!cachedGreeting) {
         await this.bootstrapGreetingCacheRepository.save({
           workspaceId: input.workspaceId,
+          agentId: agent.id,
           fingerprint,
           localeUsed,
           greetingText: normalizedAnswer,
@@ -184,7 +193,10 @@ export class ChatBootstrapService {
       }
       await usageReservation?.commit();
 
-      return emptyChatResponse(normalizedAnswer);
+      return {
+        ...emptyChatResponse(normalizedAnswer),
+        ...(agent ? { agentId: agent.id, agentName: agent.name } : {}),
+      };
     } catch (error) {
       await usageReservation?.release();
       if (

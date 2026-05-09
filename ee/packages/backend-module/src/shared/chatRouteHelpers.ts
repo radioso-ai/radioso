@@ -11,6 +11,8 @@ const WORKSPACE_HEADER = "x-workspace-id";
 const PUBLIC_CHAT_SESSION_HEADER = "x-radioso-public-session";
 const BEARER_PREFIX = "Bearer ";
 
+type PublicChatAgent = NonNullable<Awaited<ReturnType<NonNullable<RouteDependencies["agentRepository"]>["findByAnonymousChatToken"]>>>;
+
 export const parseBody = <T>(schema: z.ZodType<T>, value: unknown): T => {
   const parsed = schema.safeParse(value);
   if (parsed.success) {
@@ -117,6 +119,7 @@ export const verifyPublicChatSession = (token: string | undefined, secret: strin
   try {
     const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as {
       workspaceId?: unknown;
+      agentId?: unknown;
       publicChatToken?: unknown;
       publicSessionId?: unknown;
       sourceChannel?: unknown;
@@ -134,6 +137,7 @@ export const verifyPublicChatSession = (token: string | undefined, secret: strin
     }
     return {
       workspaceId: payload.workspaceId,
+      agentId: typeof payload.agentId === "string" ? payload.agentId : null,
       publicChatToken: payload.publicChatToken,
       publicSessionId: payload.publicSessionId,
       sourceChannel: typeof payload.sourceChannel === "string" ? payload.sourceChannel : null,
@@ -144,19 +148,68 @@ export const verifyPublicChatSession = (token: string | undefined, secret: strin
   }
 };
 
+const findPublicAgentByToken = async (
+  dependencies: RouteDependencies,
+  token: string,
+  sourceChannel?: string | null,
+): Promise<PublicChatAgent | null> => {
+  if (!dependencies.agentRepository) {
+    return null;
+  }
+
+  if (sourceChannel === "website_embed") {
+    return await dependencies.agentRepository.findByWebsiteEmbedToken(token)
+      ?? await dependencies.agentRepository.findByAnonymousChatToken(token);
+  }
+
+  return await dependencies.agentRepository.findByAnonymousChatToken(token)
+    ?? await dependencies.agentRepository.findByWebsiteEmbedToken(token);
+};
+
+const publicSessionMatchesAgentSurface = (
+  agent: PublicChatAgent,
+  token: string,
+  sourceChannel?: string | null,
+) => {
+  if (sourceChannel === "website_embed") {
+    return agent.surfaceSettings.websiteEmbed.enabled && (
+      agent.surfaceSettings.websiteEmbed.token === token ||
+      agent.surfaceSettings.anonymousChat.token === token
+    );
+  }
+
+  return agent.surfaceSettings.anonymousChat.enabled && agent.surfaceSettings.anonymousChat.token === token;
+};
+
 export const requirePublicChatSession = (dependencies: RouteDependencies): RequestHandler => async (req, res, next) => {
   try {
     const token = String(req.params.token ?? "");
-    const workspace = await dependencies.workspaceRepository.findByAnonymousChatToken(token);
     const publicSession = verifyPublicChatSession(
       req.header(PUBLIC_CHAT_SESSION_HEADER),
       dependencies.env.PUBLIC_CHAT_SESSION_SECRET,
     );
-    if (!workspace || !publicSession || publicSession.workspaceId !== workspace.id || publicSession.publicChatToken !== token) {
+    const agent = publicSession ? await findPublicAgentByToken(dependencies, token, publicSession.sourceChannel) : null;
+    const workspace = agent
+      ? { id: agent.workspaceId }
+      : await dependencies.workspaceRepository.findByAnonymousChatToken(token)
+        ?? await dependencies.workspaceRepository.findByWebsiteEmbedToken?.(token)
+        ?? null;
+    const tokenMatchesActiveSurface = agent
+      ? publicSessionMatchesAgentSurface(agent, token, publicSession?.sourceChannel)
+      : true;
+
+    if (
+      !workspace ||
+      !publicSession ||
+      publicSession.workspaceId !== workspace.id ||
+      publicSession.publicChatToken !== token ||
+      !tokenMatchesActiveSurface
+    ) {
       throw notFound();
     }
 
     res.locals.workspaceId = workspace.id;
+    res.locals.agentId = agent?.id ?? publicSession.agentId ?? null;
     res.locals.anonymousSessionId = publicSession.publicSessionId;
     res.locals.sourceChannel = publicSession.sourceChannel ?? "anonymous";
     res.locals.sourceOrigin = publicSession.sourceOrigin;

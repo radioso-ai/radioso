@@ -1,6 +1,7 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { RetrievalSettingsRecord } from "../../settings/contracts/retrieval.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
+import type { RetrievalResponseBehavior } from "../public.js";
 import type {
   ConversationContextWindow,
   ResponseIntent,
@@ -22,6 +23,7 @@ export interface RetrievalPipelineRequest {
   history: MessageRecord[];
   responseIdentity?: ResponseIdentity | null;
   responseBehaviorEnabled?: boolean;
+  responseBehavior?: RetrievalResponseBehavior;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   metadataFilter?: Record<string, unknown>;
   execution?: RetrievalExecutionMetadata;

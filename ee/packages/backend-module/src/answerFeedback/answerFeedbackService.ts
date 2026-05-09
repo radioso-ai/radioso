@@ -81,6 +81,7 @@ export class EnterpriseAnswerFeedbackService implements AnswerFeedbackHistoryPro
 
   async upsert(input: {
     workspaceId: string;
+    agentId?: string | null;
     assistantMessageId: string;
     value: AnswerFeedbackValue;
     comment?: string | null;
@@ -88,6 +89,7 @@ export class EnterpriseAnswerFeedbackService implements AnswerFeedbackHistoryPro
   }): Promise<AnswerFeedbackHistoryEntry> {
     const target = await this.findAssistantMessage({
       workspaceId: input.workspaceId,
+      agentId: input.agentId,
       assistantMessageId: input.assistantMessageId,
       anonymousSessionId: input.actor.type === "anonymous_user" ? input.actor.anonymousSessionId : null,
     });
@@ -146,11 +148,13 @@ export class EnterpriseAnswerFeedbackService implements AnswerFeedbackHistoryPro
 
   async clear(input: {
     workspaceId: string;
+    agentId?: string | null;
     assistantMessageId: string;
     actor: AnswerFeedbackActor;
   }): Promise<{ cleared: boolean }> {
     const target = await this.findAssistantMessage({
       workspaceId: input.workspaceId,
+      agentId: input.agentId,
       assistantMessageId: input.assistantMessageId,
       anonymousSessionId: input.actor.type === "anonymous_user" ? input.actor.anonymousSessionId : null,
     });
@@ -207,15 +211,23 @@ export class EnterpriseAnswerFeedbackService implements AnswerFeedbackHistoryPro
 
   private async findAssistantMessage(input: {
     workspaceId: string;
+    agentId?: string | null;
     assistantMessageId: string;
     anonymousSessionId?: string | null;
   }): Promise<{ conversationId: string } | null> {
     const params: unknown[] = [input.workspaceId, input.assistantMessageId];
+    let nextParamIndex = 3;
     const anonymousSessionClause = input.anonymousSessionId
-      ? "AND c.anonymous_session_id = $3"
+      ? `AND c.anonymous_session_id = $${nextParamIndex++}`
       : "";
     if (input.anonymousSessionId) {
       params.push(input.anonymousSessionId);
+    }
+    const agentClause = input.agentId
+      ? `AND c.agent_id = $${nextParamIndex++}`
+      : "";
+    if (input.agentId) {
+      params.push(input.agentId);
     }
 
     const rows = await queryRows<{ conversation_id: string }>(
@@ -228,6 +240,7 @@ export class EnterpriseAnswerFeedbackService implements AnswerFeedbackHistoryPro
          AND m.role = 'assistant'
          AND c.workspace_id = $1
          ${anonymousSessionClause}
+         ${agentClause}
        LIMIT 1`,
       params,
     );

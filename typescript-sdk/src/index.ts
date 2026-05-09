@@ -17,6 +17,12 @@ export type {
   ChatStreamRequest,
   ChatRequest,
   ChatResponse,
+  Agent,
+  ConversationAgent,
+  ConversationAgentRequest,
+  AgentListResponse,
+  AgentSettings,
+  AgentSettingsRequest,
   ChatConversationDetail,
   ChatHistoryListResponse,
   HistoryItemsResponse,
@@ -104,6 +110,14 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
     skills: {
       list: () => generated.listSkills(),
       get: (skillName: string) => generated.getSkill(skillName),
+    },
+    agents: {
+      list: () => generated.listAgents(),
+      create: (body: Parameters<GeneratedRadiosoClient["createAgent"]>[0]) => generated.createAgent(body),
+      get: (agentId: string) => generated.getAgent(agentId),
+      update: (agentId: string, body: Parameters<GeneratedRadiosoClient["updateAgent"]>[1]) =>
+        generated.updateAgent(agentId, body),
+      setDefault: (agentId: string) => generated.setDefaultAgent(agentId),
     },
     documents: {
       list: (query?: Parameters<GeneratedRadiosoClient["listDocuments"]>[0]) => generated.listDocuments(query),

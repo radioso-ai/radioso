@@ -471,6 +471,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspace agents */
+        get: operations["listAgents"];
+        put?: never;
+        /** Create a workspace agent */
+        post: operations["createAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a workspace agent */
+        get: operations["getAgent"];
+        /** Update a workspace agent */
+        put: operations["updateAgent"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set the default workspace agent */
+        post: operations["setDefaultAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/retrieval/search": {
         parameters: {
             query?: never;
@@ -1505,7 +1558,90 @@ export interface components {
                 websiteEmbedLauncherPosition?: "bottom-right" | "bottom-left";
             };
         };
+        Agent: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workspaceId: string;
+            name: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ConversationAgentSurfaceSettings: {
+            authenticatedChat: {
+                enabled: boolean;
+            };
+            anonymousChat: {
+                enabled: boolean;
+                token: string | null;
+                messagesPerMinute: number;
+            };
+            websiteEmbed: {
+                enabled: boolean;
+                token: string | null;
+                allowedOrigins: string[];
+                launcherLabel: string;
+                /** @enum {string} */
+                icon: "chat" | "sparkles" | "message";
+                /** @enum {string} */
+                launcherPosition: "bottom-right" | "bottom-left";
+            };
+        };
+        ConversationAgent: components["schemas"]["Agent"] & {
+            isDefault: boolean;
+            customInstruction: string;
+            /** @enum {string} */
+            conversationMode: "factual" | "guided" | "exploratory";
+            suggestedQuestionsEnabled: boolean;
+            suggestedQuestionsCount: number;
+            retrievalEnabled: boolean;
+            greetingInstruction: string;
+            assistantDefaultLocale: string | null;
+            proactiveGreetingEnabled: boolean;
+            assistantBootstrapActive: boolean;
+            surfaceSettings: components["schemas"]["ConversationAgentSurfaceSettings"];
+        };
+        AgentListResponse: {
+            agents: components["schemas"]["ConversationAgent"][];
+        };
+        ConversationAgentRequest: {
+            name?: string;
+            customInstruction?: string;
+            /** @enum {string} */
+            conversationMode?: "factual" | "guided" | "exploratory";
+            suggestedQuestionsEnabled?: boolean;
+            suggestedQuestionsCount?: number;
+            retrievalEnabled?: boolean;
+            greetingInstruction?: string;
+            assistantDefaultLocale?: string | null;
+            proactiveGreetingEnabled?: boolean;
+            surfaceSettings?: {
+                authenticatedChat?: {
+                    enabled?: boolean;
+                };
+                anonymousChat?: {
+                    enabled?: boolean;
+                    messagesPerMinute?: number;
+                };
+                websiteEmbed?: {
+                    enabled?: boolean;
+                    allowedOrigins?: string[];
+                    launcherLabel?: string;
+                    /** @enum {string} */
+                    icon?: "chat" | "sparkles" | "message";
+                    /** @enum {string} */
+                    launcherPosition?: "bottom-right" | "bottom-left";
+                };
+            };
+            rotateAnonymousChatToken?: boolean;
+            rotateWebsiteEmbedToken?: boolean;
+        };
         PublicChatSessionResponse: {
+            /** Format: uuid */
+            agentId?: string;
+            agentName?: string;
             workspaceName: string;
             publicChatToken: string;
             /** Format: uuid */
@@ -1521,6 +1657,8 @@ export interface components {
         PublicChatSessionRequest: {
             /** @enum {string} */
             channel: "anonymous_link" | "website_embed";
+            /** Format: uuid */
+            agentId?: string;
             /** Format: uuid */
             anonymousSessionId?: string;
             pageContext?: {
@@ -2051,6 +2189,9 @@ export interface components {
             conversationId: string;
             /** Format: uuid */
             assistantMessageId: string;
+            /** Format: uuid */
+            agentId?: string;
+            agentName?: string;
             answer: string;
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
@@ -2075,6 +2216,9 @@ export interface components {
         ChatBootstrapResponse: {
             /** Format: uuid */
             conversationId?: string;
+            /** Format: uuid */
+            agentId?: string;
+            agentName?: string;
             answer: string;
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
@@ -2097,6 +2241,8 @@ export interface components {
         };
         AssistantChatResponse: components["schemas"]["ChatResponse"] | components["schemas"]["ChatBootstrapResponse"];
         AssistantChatRequest: {
+            /** Format: uuid */
+            agentId?: string;
             /** Format: uuid */
             conversationId?: string;
             message: string;
@@ -2123,6 +2269,8 @@ export interface components {
                 [key: string]: unknown;
             };
         } | {
+            /** Format: uuid */
+            agentId?: string;
             /** @enum {boolean} */
             startConversation: true;
             /**
@@ -2149,6 +2297,8 @@ export interface components {
         };
         PublicChatRequest: {
             /** Format: uuid */
+            agentId?: string;
+            /** Format: uuid */
             conversationId?: string;
             message: string;
             /**
@@ -2173,6 +2323,8 @@ export interface components {
                 suggestionSourceMessageId?: string;
             };
         } | {
+            /** Format: uuid */
+            agentId?: string;
             /** @enum {boolean} */
             startConversation: true;
             /**
@@ -2199,6 +2351,9 @@ export interface components {
         ChatConversationSummary: {
             /** Format: uuid */
             id: string;
+            /** Format: uuid */
+            agentId: string | null;
+            agentName: string | null;
             sourceChannel: string | null;
             sourceOrigin: string | null;
             anonymousSessionId: string | null;
@@ -2312,6 +2467,8 @@ export interface components {
             conversationId: string;
             /** Format: uuid */
             workspaceId: string;
+            /** Format: uuid */
+            agentId: string | null;
             sourceChannel: string | null;
             sourceOrigin: string | null;
             /** Format: date-time */
@@ -3765,6 +3922,210 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FlatErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agents returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConversationAgentRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConversationAgentRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setDefaultAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default agent updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

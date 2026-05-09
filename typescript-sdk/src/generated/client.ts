@@ -8,6 +8,12 @@ export type IngestionSettings = components["schemas"]["IngestionSettings"];
 export type UpdateIngestionSettingsRequest = components["schemas"]["UpdateIngestionSettingsRequest"];
 export type GeneralSettingsResponse = components["schemas"]["GeneralSettingsResponse"];
 export type UpdateGeneralSettingsRequest = components["schemas"]["UpdateGeneralSettingsRequest"];
+export type Agent = components["schemas"]["Agent"];
+export type ConversationAgent = components["schemas"]["ConversationAgent"];
+export type AgentSettings = ConversationAgent;
+export type AgentListResponse = components["schemas"]["AgentListResponse"];
+export type ConversationAgentRequest = components["schemas"]["ConversationAgentRequest"];
+export type AgentSettingsRequest = ConversationAgentRequest;
 export type WorkspaceSummaryResponse = components["schemas"]["WorkspaceSummaryResponse"];
 export type WorkspaceIngestionReprocessResponse = components["schemas"]["WorkspaceIngestionReprocessResponse"];
 export type SkillCatalogEntry = components["schemas"]["SkillCatalogEntry"];
@@ -101,6 +107,43 @@ export class GeneratedRadiosoClient {
       method: "PUT",
       path: "/api/v1/settings/general",
       body,
+    });
+  }
+
+  listAgents(): Promise<AgentListResponse> {
+    return requestJson(this.config, {
+      method: "GET",
+      path: "/api/v1/agents",
+    });
+  }
+
+  createAgent(body: AgentSettingsRequest): Promise<AgentSettings> {
+    return requestJson(this.config, {
+      method: "POST",
+      path: "/api/v1/agents",
+      body,
+    });
+  }
+
+  getAgent(agentId: string): Promise<AgentSettings> {
+    return requestJson(this.config, {
+      method: "GET",
+      path: `/api/v1/agents/${encodeURIComponent(agentId)}`,
+    });
+  }
+
+  updateAgent(agentId: string, body: AgentSettingsRequest): Promise<AgentSettings> {
+    return requestJson(this.config, {
+      method: "PUT",
+      path: `/api/v1/agents/${encodeURIComponent(agentId)}`,
+      body,
+    });
+  }
+
+  setDefaultAgent(agentId: string): Promise<AgentSettings> {
+    return requestJson(this.config, {
+      method: "POST",
+      path: `/api/v1/agents/${encodeURIComponent(agentId)}/default`,
     });
   }
 

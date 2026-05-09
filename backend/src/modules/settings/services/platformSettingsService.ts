@@ -1,12 +1,8 @@
-import { randomBytes } from "node:crypto";
-
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { AgentRecord, AgentService } from "../../agents/public.js";
+import { isAgentBootstrapActive } from "../../agents/public.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import { buildAssistantSettingsSection } from "../domain/assistantSettings.js";
-import {
-  validateAssistantBootstrapSettings,
-} from "../domain/assistantBootstrapSettings.js";
 import type { RetrievalSettingsRecord } from "../domain/retrievalSettings.js";
 import { validateRetrievalSettings } from "../domain/retrievalSettings.js";
 import { validateWebsiteEmbedSettings } from "../domain/websiteEmbedSettings.js";
@@ -23,7 +19,8 @@ import type {
 import type { RetrievalSettingsService } from "../contracts/services.js";
 
 export interface PlatformSettingsServiceDependencies {
-  workspaceRepository: Pick<WorkspaceRepositoryPort, "findById" | "updateGeneralSettings">;
+  workspaceRepository: Pick<WorkspaceRepositoryPort, "findById">;
+  agentService: Pick<AgentService, "resolve" | "update" | "withRotatedTokens">;
   retrievalSettingsService: Pick<
     RetrievalSettingsService,
     "getForWorkspace" | "listMetadataFieldSuggestions" | "updateForWorkspace"
@@ -55,11 +52,12 @@ export class PlatformSettingsService {
     if (!workspace) {
       throw notFound("Workspace not found");
     }
+    const agent = await this.dependencies.agentService.resolve(workspaceId);
 
     return {
-      assistant: buildAssistantSettingsSection(workspace, retrievalSettings),
+      assistant: this.buildAssistantSection(agent),
       retrieval: this.buildRetrievalSection(retrievalSettings, metadataFieldSuggestions),
-      channels: this.buildChannelsSection(workspace),
+      channels: this.buildChannelsSection(agent, workspace),
     };
   }
 
@@ -77,11 +75,11 @@ export class PlatformSettingsService {
       throw notFound("Workspace not found");
     }
 
-    let currentWorkspace = workspace;
+    let currentAgent = await this.dependencies.agentService.resolve(workspaceId);
     let currentRetrievalSettings = retrievalSettings;
 
     if (patch.assistant || patch.channels) {
-      currentWorkspace = await this.updateWorkspaceSections(workspaceId, currentWorkspace, patch, context);
+      currentAgent = await this.updateAgentSections(workspaceId, currentAgent, workspace, patch, context);
     }
 
     if (this.hasRetrievalSettingsPatch(patch)) {
@@ -95,44 +93,35 @@ export class PlatformSettingsService {
     const metadataFieldSuggestions = await this.dependencies.retrievalSettingsService.listMetadataFieldSuggestions(workspaceId);
 
     return {
-      assistant: buildAssistantSettingsSection(currentWorkspace, currentRetrievalSettings),
+      assistant: this.buildAssistantSection(currentAgent),
       retrieval: this.buildRetrievalSection(currentRetrievalSettings, metadataFieldSuggestions),
-      channels: this.buildChannelsSection(currentWorkspace),
+      channels: this.buildChannelsSection(currentAgent, workspace),
     };
   }
 
-  private async updateWorkspaceSections(
+  private async updateAgentSections(
     workspaceId: string,
-    workspace: WorkspaceRecord,
+    agent: AgentRecord,
+    _workspace: WorkspaceRecord,
     patch: PlatformSettingsPatch,
     context: PlatformSettingsUpdateContext,
-  ): Promise<WorkspaceRecord> {
+  ): Promise<AgentRecord> {
     const channels = patch.channels ?? {};
     const assistant = patch.assistant ?? {};
-    const anonymousChatEnabled = channels.anonymousChatEnabled ?? workspace.anonymousChatEnabled;
-    const anonymousRateLimit = channels.anonymousRateLimit ?? workspace.anonymousRateLimit;
-
-    let anonymousChatToken = workspace.anonymousChatToken;
-    if (channels.rotateAnonymousChatToken) {
-      anonymousChatToken = randomBytes(16).toString("base64url");
-    } else if (anonymousChatEnabled && !anonymousChatToken) {
-      anonymousChatToken = randomBytes(16).toString("base64url");
-    }
-
-    let websiteEmbedToken = workspace.websiteEmbedToken;
-    if (channels.rotateWebsiteEmbedToken) {
-      websiteEmbedToken = randomBytes(16).toString("base64url");
-    }
+    const anonymousChat = agent.surfaceSettings.anonymousChat;
+    const websiteEmbed = agent.surfaceSettings.websiteEmbed;
+    const anonymousChatEnabled = channels.anonymousChatEnabled ?? anonymousChat.enabled;
+    const messagesPerMinute = channels.anonymousRateLimit ?? anonymousChat.messagesPerMinute;
 
     let normalizedWebsiteEmbed;
     try {
       normalizedWebsiteEmbed = validateWebsiteEmbedSettings({
-        websiteEmbedEnabled: channels.websiteEmbedEnabled ?? workspace.websiteEmbedEnabled,
-        websiteEmbedToken,
-        websiteEmbedAllowedOrigins: channels.websiteEmbedAllowedOrigins ?? workspace.websiteEmbedAllowedOrigins,
-        websiteEmbedLauncherLabel: channels.websiteEmbedLauncherLabel ?? workspace.websiteEmbedLauncherLabel,
-        websiteEmbedLauncherIcon: channels.websiteEmbedLauncherIcon ?? workspace.websiteEmbedLauncherIcon,
-        websiteEmbedLauncherPosition: channels.websiteEmbedLauncherPosition ?? workspace.websiteEmbedLauncherPosition,
+        websiteEmbedEnabled: channels.websiteEmbedEnabled ?? websiteEmbed.enabled,
+        websiteEmbedToken: websiteEmbed.token,
+        websiteEmbedAllowedOrigins: channels.websiteEmbedAllowedOrigins ?? websiteEmbed.allowedOrigins,
+        websiteEmbedLauncherLabel: channels.websiteEmbedLauncherLabel ?? websiteEmbed.launcherLabel,
+        websiteEmbedLauncherIcon: channels.websiteEmbedLauncherIcon ?? websiteEmbed.icon,
+        websiteEmbedLauncherPosition: channels.websiteEmbedLauncherPosition ?? websiteEmbed.launcherPosition,
       });
     } catch (error) {
       if (error instanceof Error) {
@@ -141,42 +130,41 @@ export class PlatformSettingsService {
       throw error;
     }
 
-    if (normalizedWebsiteEmbed.websiteEmbedEnabled && !websiteEmbedToken) {
-      websiteEmbedToken = randomBytes(16).toString("base64url");
-    }
-    if (normalizedWebsiteEmbed.websiteEmbedEnabled && !anonymousChatToken) {
-      anonymousChatToken = randomBytes(16).toString("base64url");
-    }
-
-    const normalizedBootstrap = validateAssistantBootstrapSettings({
-      assistantName: assistant.assistantName ?? workspace.assistantName,
-      greetingInstruction: assistant.greetingInstruction ?? workspace.greetingInstruction,
+    const updated = await this.dependencies.agentService.update(workspaceId, agent.id, this.dependencies.agentService.withRotatedTokens(agent, {
+      surfaceSettings: {
+        anonymousChat: {
+          enabled: anonymousChatEnabled,
+          messagesPerMinute,
+        },
+        websiteEmbed: {
+          enabled: normalizedWebsiteEmbed.websiteEmbedEnabled,
+          allowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
+          launcherLabel: normalizedWebsiteEmbed.websiteEmbedLauncherLabel,
+          icon: normalizedWebsiteEmbed.websiteEmbedLauncherIcon,
+          launcherPosition: normalizedWebsiteEmbed.websiteEmbedLauncherPosition,
+        },
+      },
+      rotateAnonymousChatToken: channels.rotateAnonymousChatToken,
+      name: assistant.assistantName ?? agent.name,
+      greetingInstruction: assistant.greetingInstruction ?? agent.greetingInstruction,
       assistantDefaultLocale:
         assistant.assistantDefaultLocale === undefined
-          ? workspace.assistantDefaultLocale
+          ? agent.assistantDefaultLocale
           : assistant.assistantDefaultLocale,
-      proactiveGreetingEnabled: assistant.proactiveGreetingEnabled ?? workspace.proactiveGreetingEnabled,
-    });
-
-    const updated = await this.dependencies.workspaceRepository.updateGeneralSettings(workspaceId, {
-      anonymousChatEnabled,
-      anonymousChatToken,
-      anonymousRateLimit,
-      ...normalizedBootstrap,
-      websiteEmbedEnabled: normalizedWebsiteEmbed.websiteEmbedEnabled,
-      websiteEmbedToken,
-      websiteEmbedAllowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
-      websiteEmbedLauncherLabel: normalizedWebsiteEmbed.websiteEmbedLauncherLabel,
-      websiteEmbedLauncherIcon: normalizedWebsiteEmbed.websiteEmbedLauncherIcon,
-      websiteEmbedLauncherPosition: normalizedWebsiteEmbed.websiteEmbedLauncherPosition,
-    });
+      proactiveGreetingEnabled: assistant.proactiveGreetingEnabled ?? agent.proactiveGreetingEnabled,
+      conversationMode: assistant.conversationMode ?? agent.conversationMode,
+      suggestedQuestionsEnabled: assistant.suggestedQuestionsEnabled ?? agent.suggestedQuestionsEnabled,
+      suggestedQuestionsCount: assistant.suggestedQuestionsCount ?? agent.suggestedQuestionsCount,
+      customInstruction: assistant.customInstruction ?? agent.customInstruction,
+      rotateWebsiteEmbedToken: channels.rotateWebsiteEmbedToken,
+    }));
 
     await this.recordChannelAuditEvents({
       accountId: context.accountId,
       workspaceId,
-      previousWorkspace: workspace,
+      previousAgent: agent,
       anonymousChatEnabled,
-      anonymousRateLimit,
+      anonymousRateLimit: messagesPerMinute,
       rotateAnonymousChatToken: channels.rotateAnonymousChatToken ?? false,
       websiteEmbedEnabled: normalizedWebsiteEmbed.websiteEmbedEnabled,
       websiteEmbedAllowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
@@ -190,13 +178,13 @@ export class PlatformSettingsService {
   private async recordChannelAuditEvents(input: {
     accountId?: string | null;
     workspaceId: string;
-    previousWorkspace: WorkspaceRecord;
+    previousAgent: AgentRecord;
     anonymousChatEnabled: boolean;
     anonymousRateLimit: number;
     rotateAnonymousChatToken: boolean;
     websiteEmbedEnabled: boolean;
     websiteEmbedAllowedOrigins: string[];
-    websiteEmbedLauncherPosition: WorkspaceRecord["websiteEmbedLauncherPosition"];
+    websiteEmbedLauncherPosition: AgentRecord["surfaceSettings"]["websiteEmbed"]["launcherPosition"];
     rotateWebsiteEmbedToken: boolean;
   }): Promise<void> {
     const auditService = this.dependencies.auditService;
@@ -204,7 +192,7 @@ export class PlatformSettingsService {
       return;
     }
 
-    if (input.anonymousChatEnabled !== input.previousWorkspace.anonymousChatEnabled) {
+    if (input.anonymousChatEnabled !== input.previousAgent.surfaceSettings.anonymousChat.enabled) {
       await auditService.record({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
@@ -224,7 +212,7 @@ export class PlatformSettingsService {
       });
     }
 
-    if (input.websiteEmbedEnabled !== input.previousWorkspace.websiteEmbedEnabled) {
+    if (input.websiteEmbedEnabled !== input.previousAgent.surfaceSettings.websiteEmbed.enabled) {
       await auditService.record({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
@@ -256,16 +244,15 @@ export class PlatformSettingsService {
     existing: RetrievalSettingsRecord,
     patch: PlatformSettingsPatch,
   ): Promise<RetrievalSettingsRecord> {
-    const assistant = patch.assistant ?? {};
     const retrieval = patch.retrieval ?? {};
     const next = validateRetrievalSettings({
       ...existing,
       queryRewriteEnabled: retrieval.queryRewriteEnabled ?? existing.queryRewriteEnabled,
       semanticRewriteInstructions: retrieval.semanticRewriteInstructions ?? existing.semanticRewriteInstructions,
       lexicalRewriteInstructions: retrieval.lexicalRewriteInstructions ?? existing.lexicalRewriteInstructions,
-      conversationMode: assistant.conversationMode ?? existing.conversationMode,
-      suggestedQuestionsEnabled: assistant.suggestedQuestionsEnabled ?? existing.suggestedQuestionsEnabled,
-      suggestedQuestionsCount: assistant.suggestedQuestionsCount ?? existing.suggestedQuestionsCount,
+      conversationMode: existing.conversationMode,
+      suggestedQuestionsEnabled: existing.suggestedQuestionsEnabled,
+      suggestedQuestionsCount: existing.suggestedQuestionsCount,
       rerankEnabled: retrieval.rerankEnabled ?? existing.rerankEnabled,
       vectorTopK: retrieval.vectorTopK ?? existing.vectorTopK,
       similarityThreshold: retrieval.similarityThreshold ?? existing.similarityThreshold,
@@ -274,7 +261,7 @@ export class PlatformSettingsService {
       answerSupportValidationEnabled:
         retrieval.answerSupportValidationEnabled ?? existing.answerSupportValidationEnabled,
       metadataRules: retrieval.metadataRules ?? existing.metadataRules,
-      customInstruction: assistant.customInstruction ?? existing.customInstruction,
+      customInstruction: existing.customInstruction,
     });
 
     return (await this.dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, next)) ?? {
@@ -284,14 +271,21 @@ export class PlatformSettingsService {
   }
 
   private hasRetrievalSettingsPatch(patch: PlatformSettingsPatch): boolean {
-    const assistant = patch.assistant;
-    return Boolean(
-      patch.retrieval ||
-      assistant?.conversationMode !== undefined ||
-      assistant?.suggestedQuestionsEnabled !== undefined ||
-      assistant?.suggestedQuestionsCount !== undefined ||
-      assistant?.customInstruction !== undefined,
-    );
+    return Boolean(patch.retrieval);
+  }
+
+  private buildAssistantSection(agent: AgentRecord) {
+    return {
+      assistantName: agent.name,
+      greetingInstruction: agent.greetingInstruction,
+      assistantDefaultLocale: agent.assistantDefaultLocale,
+      proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
+      assistantBootstrapActive: isAgentBootstrapActive(agent),
+      conversationMode: agent.conversationMode,
+      suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
+      suggestedQuestionsCount: agent.suggestedQuestionsCount,
+      customInstruction: agent.customInstruction,
+    };
   }
 
   private buildRetrievalSection(
@@ -313,19 +307,30 @@ export class PlatformSettingsService {
     };
   }
 
-  private buildChannelsSection(workspace: WorkspaceRecord): PlatformChannelsSettingsSection {
+  private buildChannelsSection(agent: AgentRecord, workspace: WorkspaceRecord): PlatformChannelsSettingsSection {
+    const anonymousChat = agent.surfaceSettings.anonymousChat;
+    const websiteEmbed = agent.surfaceSettings.websiteEmbed;
     return {
-      anonymousChatEnabled: workspace.anonymousChatEnabled,
-      anonymousChatUrl: this.buildAnonymousChatUrl(workspace.anonymousChatToken, workspace.anonymousChatEnabled),
-      anonymousRateLimit: workspace.anonymousRateLimit,
-      websiteEmbedEnabled: workspace.websiteEmbedEnabled,
-      websiteEmbedToken: workspace.websiteEmbedToken,
-      websiteEmbedAllowedOrigins: workspace.websiteEmbedAllowedOrigins,
-      websiteEmbedLauncherLabel: workspace.websiteEmbedLauncherLabel,
-      websiteEmbedLauncherIcon: workspace.websiteEmbedLauncherIcon,
-      websiteEmbedLauncherPosition: workspace.websiteEmbedLauncherPosition,
+      anonymousChatEnabled: anonymousChat.enabled,
+      anonymousChatUrl: this.buildAnonymousChatUrl(anonymousChat.token, anonymousChat.enabled),
+      anonymousRateLimit: anonymousChat.messagesPerMinute,
+      websiteEmbedEnabled: websiteEmbed.enabled,
+      websiteEmbedToken: websiteEmbed.token,
+      websiteEmbedAllowedOrigins: websiteEmbed.allowedOrigins,
+      websiteEmbedLauncherLabel: websiteEmbed.launcherLabel,
+      websiteEmbedLauncherIcon: websiteEmbed.icon,
+      websiteEmbedLauncherPosition: websiteEmbed.launcherPosition,
       websiteEmbedScriptUrl: this.websiteEmbedIntegration.buildScriptUrl(),
-      websiteEmbedSnippet: this.websiteEmbedIntegration.buildSnippet(workspace),
+      websiteEmbedSnippet: this.websiteEmbedIntegration.buildSnippet({
+        name: workspace.name,
+        assistantName: agent.name,
+        websiteEmbedEnabled: websiteEmbed.enabled,
+        websiteEmbedToken: websiteEmbed.token,
+        websiteEmbedAllowedOrigins: websiteEmbed.allowedOrigins,
+        websiteEmbedLauncherLabel: websiteEmbed.launcherLabel,
+        websiteEmbedLauncherIcon: websiteEmbed.icon,
+        websiteEmbedLauncherPosition: websiteEmbed.launcherPosition,
+      }),
     };
   }
 

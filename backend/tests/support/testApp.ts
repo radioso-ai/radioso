@@ -13,6 +13,7 @@ import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootst
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
+import { AgentService } from "../../src/modules/agents/public.js";
 import {
   type GroundedMissResponseComposer,
 } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
@@ -98,6 +99,7 @@ import {
   InMemoryRetrievalSettingsRepository,
   InMemorySessionRepository,
   InMemoryWorkspaceRepository,
+  InMemoryAgentRepository,
   InMemoryConnectorDatabase,
   InMemoryAbuseControlRepository,
 } from "./fakes.js";
@@ -166,6 +168,7 @@ interface TestRepositories {
   chunkRepository: InMemoryChunkRepository;
   documentProcessingJobRepository: InMemoryDocumentProcessingJobRepository;
   conversationRepository: InMemoryConversationRepository;
+  agentRepository: InMemoryAgentRepository;
 }
 
 const appDependencyMap = new WeakMap<object, AppDependencies>();
@@ -566,6 +569,8 @@ export const createTestDependencies = (overrides: {
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
+  const agentRepository = new InMemoryAgentRepository();
+  const agentService = new AgentService(agentRepository, workspaceRepository, retrievalSettingsService);
 
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
@@ -585,15 +590,17 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     workspaceRepository,
     usageLimitPolicy,
+    new NoopChatActionProvider(),
+    agentService,
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
     bootstrapGreetingCacheRepository,
     chatGateway,
     auditService,
-    retrievalSettingsService,
     usageLimitPolicy,
     productAnalyticsService,
+    agentService,
   );
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
@@ -612,6 +619,7 @@ export const createTestDependencies = (overrides: {
     workspaceRepository,
     retrievalSettingsService,
     auditService,
+    agentService,
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
   });
   const dependencies: AppDependencies = {
@@ -666,10 +674,12 @@ export const createTestDependencies = (overrides: {
     retrievalSearchService,
     retrievalAnswerService,
     platformSettingsService,
+    agentService,
     skillCatalogService,
     accountRepository,
     userRepository,
     workspaceRepository,
+    agentRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,
     messageRepository,
@@ -693,6 +703,7 @@ export const createTestDependencies = (overrides: {
       chunkRepository,
       documentProcessingJobRepository,
       conversationRepository,
+      agentRepository,
     },
   };
 };

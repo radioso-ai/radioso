@@ -30,6 +30,8 @@ interface HistoryItemsRow {
   sort_at: Date | null;
   conversation_id: string | null;
   conversation_workspace_id: string | null;
+  conversation_agent_id: string | null;
+  conversation_agent_name: string | null;
   source_channel: string | null;
   source_origin: string | null;
   anonymous_session_id: string | null;
@@ -63,6 +65,8 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            c.id::text AS stable_id,
            c.id AS conversation_id,
            c.workspace_id AS conversation_workspace_id,
+           c.agent_id AS conversation_agent_id,
+           ag.name AS conversation_agent_name,
            c.source_channel,
            c.source_origin,
            c.anonymous_session_id,
@@ -76,6 +80,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            NULL::jsonb AS metadata_json,
            NULL::timestamptz AS audit_created_at
          FROM conversations c
+         LEFT JOIN agents ag ON ag.id = c.agent_id AND ag.workspace_id = c.workspace_id
          WHERE c.workspace_id = $1
          ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC
          LIMIT $3
@@ -89,6 +94,8 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            a.id::text AS stable_id,
            NULL::uuid AS conversation_id,
            NULL::uuid AS conversation_workspace_id,
+           NULL::uuid AS conversation_agent_id,
+           NULL::text AS conversation_agent_name,
            NULL::text AS source_channel,
            NULL::text AS source_origin,
            NULL::text AS anonymous_session_id,
@@ -141,6 +148,8 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
           conversation: {
             id: row.conversation_id,
             workspaceId: row.conversation_workspace_id,
+            agentId: row.conversation_agent_id ?? null,
+            agentName: row.conversation_agent_name ?? null,
             sourceChannel: row.source_channel,
             sourceOrigin: row.source_origin,
             anonymousSessionId: row.anonymous_session_id,

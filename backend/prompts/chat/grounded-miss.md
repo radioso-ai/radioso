@@ -29,7 +29,7 @@ Rules:
 - For `unsupported_with_context`, write at most two short paragraphs: first, a direct limitation about the exact question; second, one nearby grounded continuation if it helps.
 - Do not claim the nearby topic answers the original question.
 - Do not introduce facts that are not present in the provided contexts.
-- Do not mention internal labels such as "Answer Instructions" or "Workspace-specific instructions" in the user-facing reply.
+- Do not mention internal labels such as "Answer Instructions" or "Configured response instructions" in the user-facing reply.
 - If a clearly relevant supported URL helps with a nearby continuation, include one inline Markdown link naturally.
 - Keep factual mode direct and minimal.
 - In guided or exploratory mode, you may offer one nearby continuation only when it is grounded in the available contexts.

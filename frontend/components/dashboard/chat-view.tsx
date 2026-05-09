@@ -39,16 +39,27 @@ import { ChatMessageThread, type ChatThreadMessage } from './chat-message-thread
 
 interface ChatViewProps {
   accountId: string
+  agentId?: string
   onOpenDocument: (documentId: string) => void
   onboarding: WorkspaceOnboardingState
   navigation?: ReactNode
 }
 
-export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: ChatViewProps) {
+export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navigation }: ChatViewProps) {
   const router = useRouter()
   const [input, setInput] = useState('')
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
-  const { conversationId, messages, isLoading, isInitialized, isBootstrapping, initializeSession, sendMessage, startNewChat } = useChatSession(activeWorkspaceId ?? accountId)
+  const chatSessionKey = `agent-chat:v3:${activeWorkspaceId ?? accountId}:${agentId ?? 'default-agent'}`
+  const {
+    conversationId,
+    messages,
+    isLoading,
+    isInitialized,
+    isBootstrapping,
+    initializeSession,
+    sendMessage,
+    startNewChat,
+  } = useChatSession(chatSessionKey, agentId)
   const [contactAvailable, setContactAvailable] = useState(false)
   const [contactRequest, setContactRequest] = useState<HumanContactInlineRequest | null>(null)
   const [contactConfirmation, setContactConfirmation] = useState<ChatThreadMessage | null>(null)

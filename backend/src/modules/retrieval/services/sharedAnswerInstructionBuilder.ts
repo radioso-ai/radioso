@@ -62,7 +62,7 @@ export class SharedAnswerInstructionBuilder {
       return null;
     }
 
-    return `Workspace-specific instructions:\n${sanitized}`;
+    return `Configured response instructions:\n${sanitized}`;
   }
 
   private renderResponseIdentity(responseIdentity?: ResponseIdentity | null): string | null {

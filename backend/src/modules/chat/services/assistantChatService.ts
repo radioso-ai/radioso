@@ -19,6 +19,7 @@ export class AssistantChatService {
     if (input.startConversation) {
       const response = await this.chatBootstrapService.startConversation({
         workspaceId: input.workspaceId,
+        agentId: input.agentId,
         accountId: input.accountId,
         sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
         anonymousSessionId: input.anonymousSessionId,
@@ -41,6 +42,7 @@ export class AssistantChatService {
 
     const response = await this.chatService.answer({
       workspaceId: input.workspaceId,
+      agentId: input.agentId,
       accountId: input.accountId,
       conversationId: input.conversationId,
       query,
@@ -65,6 +67,7 @@ export class AssistantChatService {
 
     return this.chatService.streamAnswer({
       workspaceId: input.workspaceId,
+      agentId: input.agentId,
       accountId: input.accountId,
       conversationId: input.conversationId,
       query,

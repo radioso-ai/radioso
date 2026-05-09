@@ -1,33 +1,14 @@
 'use client'
 
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 
 import { ChatView } from '@/components/dashboard/chat-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
 import {
   buildDashboardHref,
   type AgentTab,
@@ -61,16 +42,12 @@ export function AgentView({
   const [agents, setAgents] = useState<AgentSettings[]>([])
   const [agentsError, setAgentsError] = useState<string | null>(null)
   const [isAgentsLoading, setIsAgentsLoading] = useState(true)
-  const [createDialogOpen, setCreateDialogOpen] = useState(false)
-  const [newAgentName, setNewAgentName] = useState('')
-  const [newAgentInstructions, setNewAgentInstructions] = useState('')
-  const [isCreatingAgent, setIsCreatingAgent] = useState(false)
   const [saveState, setSaveState] = useState<{
     state: 'idle' | 'saved' | 'saving' | 'error'
     message?: string | null
   }>({ state: 'idle' })
 
-  const loadAgents = async () => {
+  const loadAgents = useCallback(async () => {
     if (!activeWorkspaceId) {
       setAgents([])
       setIsAgentsLoading(false)
@@ -87,11 +64,28 @@ export function AgentView({
     } finally {
       setIsAgentsLoading(false)
     }
-  }
+  }, [activeWorkspaceId])
 
   useEffect(() => {
-    void loadAgents()
-  }, [activeWorkspaceId])
+    const timeout = window.setTimeout(() => {
+      void loadAgents()
+    }, 0)
+
+    return () => window.clearTimeout(timeout)
+  }, [loadAgents, routeState.agentId])
+
+  useEffect(() => {
+    const handleAgentsUpdated = () => {
+      void loadAgents()
+    }
+
+    window.addEventListener('radioso:agents-updated', handleAgentsUpdated)
+    window.addEventListener('radioso:assistant-name-updated', handleAgentsUpdated)
+    return () => {
+      window.removeEventListener('radioso:agents-updated', handleAgentsUpdated)
+      window.removeEventListener('radioso:assistant-name-updated', handleAgentsUpdated)
+    }
+  }, [loadAgents])
 
   const defaultAgent = useMemo(() => agents.find((agent) => agent.isDefault) ?? agents[0] ?? null, [agents])
   const rememberedAgentId = getLastSelectedAgentId(activeWorkspaceId)
@@ -131,97 +125,8 @@ export function AgentView({
     return () => window.clearTimeout(timeout)
   }, [accountId, agentsError, isAgentsLoading, routeState, router, selectedAgentId])
 
-  const handleAgentSelect = (agentId: string) => {
-    router.push(buildDashboardHref(accountId, {
-      ...routeState,
-      section: 'agents',
-      agentId,
-      anchor: undefined,
-    }))
-  }
-
-  const handleCreateAgent = async (event: FormEvent) => {
-    event.preventDefault()
-    const name = newAgentName.trim()
-    if (!name || isCreatingAgent) {
-      return
-    }
-    setIsCreatingAgent(true)
-    try {
-      const created = await agentsApi.createAgent({
-        name,
-        customInstruction: newAgentInstructions.trim(),
-      })
-      await loadAgents()
-      setCreateDialogOpen(false)
-      setNewAgentName('')
-      setNewAgentInstructions('')
-      router.push(buildDashboardHref(accountId, {
-        ...routeState,
-        section: 'agents',
-        agentId: created.id,
-        agentTab: 'behavior',
-        anchor: undefined,
-      }))
-    } finally {
-      setIsCreatingAgent(false)
-    }
-  }
-
   const tabNavigation = (
     <div className="flex flex-wrap items-center gap-2">
-      <Select value={selectedAgentId ?? ''} onValueChange={handleAgentSelect} disabled={isAgentsLoading || agents.length === 0}>
-        <SelectTrigger className="min-w-44">
-          <SelectValue placeholder={isAgentsLoading ? 'Loading agents' : 'Select agent'} />
-        </SelectTrigger>
-        <SelectContent>
-          {agents.map((agent) => (
-            <SelectItem key={agent.id} value={agent.id}>
-              {agent.name || 'Agent'}{agent.isDefault ? ' (default)' : ''}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogTrigger asChild>
-          <Button size="sm" variant="outline">
-            <Plus className="h-4 w-4" />
-            New agent
-          </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <form onSubmit={handleCreateAgent} className="space-y-4">
-            <DialogHeader>
-              <DialogTitle>Create agent</DialogTitle>
-              <DialogDescription>
-                Add a workspace agent with its own identity, instructions, and channel settings.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2">
-              <Label htmlFor="newAgentName">Name</Label>
-              <Input id="newAgentName" value={newAgentName} onChange={(event) => setNewAgentName(event.target.value)} maxLength={200} autoFocus />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="newAgentInstructions">Instructions</Label>
-              <Textarea
-                id="newAgentInstructions"
-                value={newAgentInstructions}
-                onChange={(event) => setNewAgentInstructions(event.target.value.slice(0, 2000))}
-                rows={4}
-              />
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={isCreatingAgent}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={!newAgentName.trim() || isCreatingAgent}>
-                {isCreatingAgent ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
-                Create
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
       <TabsList>
         <TabsTrigger value="chat">Chat</TabsTrigger>
         <TabsTrigger value="behavior">Behavior</TabsTrigger>

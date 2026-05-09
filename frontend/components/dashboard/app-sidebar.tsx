@@ -110,7 +110,7 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
     agents: cachedAgents,
     isLoading: Boolean(workspaceCacheKey && cachedAgents.length === 0),
   }))
-  const [agentsMenuOpen, setAgentsMenuOpen] = useState(currentView === 'agents')
+  const [agentsMenuOpen, setAgentsMenuOpen] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [newAgentName, setNewAgentName] = useState('')
   const [newAgentInstructions, setNewAgentInstructions] = useState('')
@@ -124,18 +124,6 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
   const selectedAgentName = selectedAgent?.name ?? null
   const agentName = selectedAgentName?.trim() || activeWorkspace?.name || 'Agent'
   const agentLabel = `Agent: ${agentName}`
-
-  useEffect(() => {
-    if (currentView !== 'agents') {
-      return
-    }
-
-    const timeout = window.setTimeout(() => {
-      setAgentsMenuOpen(true)
-    }, 0)
-
-    return () => window.clearTimeout(timeout)
-  }, [currentView])
 
   useEffect(() => {
     let active = true

@@ -2353,6 +2353,7 @@ export interface components {
             id: string;
             /** Format: uuid */
             agentId: string | null;
+            agentName: string | null;
             sourceChannel: string | null;
             sourceOrigin: string | null;
             anonymousSessionId: string | null;

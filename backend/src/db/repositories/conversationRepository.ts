@@ -8,6 +8,7 @@ export interface ConversationRecord {
   id: string;
   workspaceId: string;
   agentId: string | null;
+  agentName: string | null;
   sourceChannel: string | null;
   sourceOrigin: string | null;
   anonymousSessionId: string | null;
@@ -56,6 +57,7 @@ interface ConversationRow {
   id: string;
   workspace_id: string;
   agent_id: string | null;
+  agent_name?: string | null;
   source_channel: string | null;
   source_origin: string | null;
   anonymous_session_id: string | null;
@@ -76,6 +78,7 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   id: row.id,
   workspaceId: row.workspace_id,
   agentId: row.agent_id ?? null,
+  agentName: row.agent_name ?? null,
   sourceChannel: row.source_channel,
   sourceOrigin: row.source_origin ?? null,
   anonymousSessionId: row.anonymous_session_id ?? null,
@@ -161,12 +164,12 @@ export class ConversationRepository implements ConversationRepositoryPort {
       params.push(cursor.keys.updatedAt, cursor.keys.createdAt, cursor.keys.id);
       cursorClause = `
          AND (
-           updated_at < $2::timestamptz
+           c.updated_at < $2::timestamptz
            OR (
-             updated_at = $2::timestamptz
+             c.updated_at = $2::timestamptz
              AND (
-               created_at < $3::timestamptz
-               OR (created_at = $3::timestamptz AND id < $4::uuid)
+               c.created_at < $3::timestamptz
+               OR (c.created_at = $3::timestamptz AND c.id < $4::uuid)
              )
            )
          )`;
@@ -182,11 +185,12 @@ export class ConversationRepository implements ConversationRepositoryPort {
     }
 
     const rows = await this.database.query<ConversationRow>(
-      `SELECT id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, created_at, updated_at
-       FROM conversations
-       WHERE workspace_id = $1
+      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.anonymous_session_id, c.created_at, c.updated_at
+       FROM conversations c
+       LEFT JOIN agents a ON a.id = c.agent_id AND a.workspace_id = c.workspace_id
+       WHERE c.workspace_id = $1
        ${cursorClause}
-       ORDER BY updated_at DESC, created_at DESC, id DESC
+       ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC
        LIMIT $${limitParam}
        ${offsetClause}`,
       params,
@@ -223,9 +227,10 @@ export class ConversationRepository implements ConversationRepositoryPort {
 
   async findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null> {
     const [row] = await this.database.query<ConversationRow>(
-      `SELECT id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, created_at, updated_at
-       FROM conversations
-       WHERE id = $1 AND workspace_id = $2`,
+      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.anonymous_session_id, c.created_at, c.updated_at
+       FROM conversations c
+       LEFT JOIN agents a ON a.id = c.agent_id AND a.workspace_id = c.workspace_id
+       WHERE c.id = $1 AND c.workspace_id = $2`,
       [conversationId, workspaceId],
     );
 
@@ -240,14 +245,14 @@ export class ConversationRepository implements ConversationRepositoryPort {
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
     const params: Array<string | number> = [workspaceId, anonymousSessionId];
     const agentClause = input.agentId
-      ? ` AND agent_id = $${params.push(input.agentId)}`
+      ? ` AND c.agent_id = $${params.push(input.agentId)}`
       : "";
     const total = cursor?.totalSnapshot !== undefined
       ? Number(cursor.totalSnapshot)
       : Number((await this.database.query<{ count: string }>(
           `SELECT COUNT(*)::text AS count
-           FROM conversations
-           WHERE workspace_id = $1 AND anonymous_session_id = $2${agentClause}`,
+           FROM conversations c
+           WHERE c.workspace_id = $1 AND c.anonymous_session_id = $2${agentClause}`,
           params,
         ))[0]?.count ?? "0");
     let cursorClause = "";
@@ -258,12 +263,12 @@ export class ConversationRepository implements ConversationRepositoryPort {
       const idParam = params.push(cursor.keys.id);
       cursorClause = `
          AND (
-           updated_at < $${updatedAtParam}::timestamptz
+           c.updated_at < $${updatedAtParam}::timestamptz
            OR (
-             updated_at = $${updatedAtParam}::timestamptz
+             c.updated_at = $${updatedAtParam}::timestamptz
              AND (
-               created_at < $${createdAtParam}::timestamptz
-               OR (created_at = $${createdAtParam}::timestamptz AND id < $${idParam}::uuid)
+               c.created_at < $${createdAtParam}::timestamptz
+               OR (c.created_at = $${createdAtParam}::timestamptz AND c.id < $${idParam}::uuid)
              )
            )
          )`;
@@ -279,11 +284,12 @@ export class ConversationRepository implements ConversationRepositoryPort {
     }
 
     const rows = await this.database.query<ConversationRow>(
-      `SELECT id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, created_at, updated_at
-       FROM conversations
-       WHERE workspace_id = $1 AND anonymous_session_id = $2${agentClause}
+      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.anonymous_session_id, c.created_at, c.updated_at
+       FROM conversations c
+       LEFT JOIN agents a ON a.id = c.agent_id AND a.workspace_id = c.workspace_id
+       WHERE c.workspace_id = $1 AND c.anonymous_session_id = $2${agentClause}
        ${cursorClause}
-       ORDER BY updated_at DESC, created_at DESC, id DESC
+       ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC
        LIMIT $${limitParam}
        ${offsetClause}`,
       params,
@@ -314,11 +320,12 @@ export class ConversationRepository implements ConversationRepositoryPort {
     agentId?: string | null,
   ): Promise<ConversationRecord | null> {
     const params = [conversationId, workspaceId, anonymousSessionId];
-    const agentClause = agentId ? ` AND agent_id = $${params.push(agentId)}` : "";
+    const agentClause = agentId ? ` AND c.agent_id = $${params.push(agentId)}` : "";
     const [row] = await this.database.query<ConversationRow>(
-      `SELECT id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, created_at, updated_at
-       FROM conversations
-       WHERE id = $1 AND workspace_id = $2 AND anonymous_session_id = $3${agentClause}`,
+      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.anonymous_session_id, c.created_at, c.updated_at
+       FROM conversations c
+       LEFT JOIN agents a ON a.id = c.agent_id AND a.workspace_id = c.workspace_id
+       WHERE c.id = $1 AND c.workspace_id = $2 AND c.anonymous_session_id = $3${agentClause}`,
       params,
     );
 

@@ -90,13 +90,16 @@ const getConversationSourceLabel = (conversation: Pick<ChatConversationSummary, 
 const formatMessageCount = (messageCount: number) =>
   `${messageCount} message${messageCount === 1 ? '' : 's'}`
 
-function HistoryBadge({ children }: { children: string }) {
-  return (
-    <span className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-      {children}
-    </span>
-  )
+const getConversationAgentLabel = (conversation: Pick<ChatConversationSummary, 'agentName' | 'agentId'>) => {
+  const name = conversation.agentName?.trim()
+  if (name) {
+    return name
+  }
+
+  return conversation.agentId ? 'Unknown agent' : 'No agent'
 }
+
+const emptyAgentLabel = '—'
 
 const formatPageSummary = ({
   currentPage,
@@ -182,9 +185,7 @@ function ConversationRow({
   return (
     <DashboardTableRow>
       <DashboardTableCell className="w-36">
-        <div className="flex flex-wrap gap-1.5">
-          <HistoryBadge>Chat</HistoryBadge>
-        </div>
+        <span className="block truncate text-sm text-muted-foreground">{getConversationAgentLabel(conversation)}</span>
       </DashboardTableCell>
       <DashboardTableCell>
         <button
@@ -222,9 +223,7 @@ function SearchRow({
   return (
     <DashboardTableRow>
       <DashboardTableCell className="w-36">
-        <div className="flex flex-wrap gap-1.5">
-          <HistoryBadge>Search</HistoryBadge>
-        </div>
+        <span className="block truncate text-sm text-muted-foreground">{emptyAgentLabel}</span>
       </DashboardTableCell>
       <DashboardTableCell>
         <button
@@ -264,9 +263,7 @@ function ContactRow({
   return (
     <DashboardTableRow>
       <DashboardTableCell className="w-36">
-        <div className="flex flex-wrap gap-1.5">
-          <HistoryBadge>Human</HistoryBadge>
-        </div>
+        <span className="block truncate text-sm text-muted-foreground">{emptyAgentLabel}</span>
       </DashboardTableCell>
       <DashboardTableCell>
         <button
@@ -311,7 +308,7 @@ function HistoryTable({
   return (
     <DashboardTable aria-label="Activity" minWidth="min-w-[880px]">
       <DashboardTableHead>
-        <DashboardTableHeader className="w-36">Type</DashboardTableHeader>
+        <DashboardTableHeader className="w-36">Agent</DashboardTableHeader>
         <DashboardTableHeader>Title</DashboardTableHeader>
         <DashboardTableHeader className="w-44">Source</DashboardTableHeader>
         <DashboardTableHeader className="w-48">Details</DashboardTableHeader>

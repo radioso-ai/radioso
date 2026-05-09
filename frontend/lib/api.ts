@@ -649,6 +649,8 @@ export interface ChatStreamCompletion {
 
 export interface ChatConversationSummary {
   id: string
+  agentId: string | null
+  agentName: string | null
   sourceChannel: string | null
   sourceOrigin: string | null
   anonymousSessionId: string | null

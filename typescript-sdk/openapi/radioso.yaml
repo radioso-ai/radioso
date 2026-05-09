@@ -3560,6 +3560,10 @@ components:
             - string
             - "null"
           format: uuid
+        agentName:
+          type:
+            - string
+            - "null"
         sourceChannel:
           type:
             - string
@@ -3594,6 +3598,7 @@ components:
       required:
         - id
         - agentId
+        - agentName
         - sourceChannel
         - sourceOrigin
         - anonymousSessionId

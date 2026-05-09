@@ -1874,6 +1874,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       id: randomUUID(),
       workspaceId,
       agentId,
+      agentName: null,
       sourceChannel,
       sourceOrigin,
       anonymousSessionId,

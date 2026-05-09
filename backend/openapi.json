@@ -5302,6 +5302,12 @@
             ],
             "format": "uuid"
           },
+          "agentName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sourceChannel": {
             "type": [
               "string",
@@ -5350,6 +5356,7 @@
         "required": [
           "id",
           "agentId",
+          "agentName",
           "sourceChannel",
           "sourceOrigin",
           "anonymousSessionId",

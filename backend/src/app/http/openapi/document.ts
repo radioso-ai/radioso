@@ -1270,6 +1270,7 @@ const ChatConversationSummarySchema = registry.register(
   z.object({
     id: z.string().uuid(),
     agentId: z.string().uuid().nullable(),
+    agentName: z.string().nullable(),
     sourceChannel: z.string().nullable(),
     sourceOrigin: z.string().nullable(),
     anonymousSessionId: z.string().nullable(),

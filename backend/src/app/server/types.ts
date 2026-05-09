@@ -46,6 +46,8 @@ import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../com
 import type { ChatActionProviderPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillCatalogService } from "../../modules/skills/public.js";
+import type { AgentService } from "../../modules/agents/public.js";
+import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type { SupportImpersonationService } from "../../modules/support/services/supportImpersonationService.js";
 
 export interface AppDependencies {
@@ -89,7 +91,9 @@ export interface AppDependencies {
   retrievalAnswerService: RetrievalAnswerService;
   platformSettingsService: PlatformSettingsService;
   skillCatalogService: SkillCatalogService;
+  agentService: AgentService;
   workspaceRepository: WorkspaceRepositoryPort;
+  agentRepository: AgentRepositoryPort;
   userRepository: UserRepositoryPort;
   accountRepository: AccountRepositoryPort;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort;

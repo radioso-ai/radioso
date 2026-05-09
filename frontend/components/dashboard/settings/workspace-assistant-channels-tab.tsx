@@ -27,9 +27,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   accountApi,
+  agentsApi,
   generalSettingsApi,
   humanContactApi,
-  settingsApi,
+  type AssistantBehaviorSettings,
   type AccountMembershipRole,
   type GeneralSettings,
   type HumanContactAvailability,
@@ -141,10 +142,12 @@ const assistantConversationModeLabels: Record<
 export function WorkspaceAssistantChannelsTab({
   accountId,
   mode,
+  agentId,
   onSaveStateChange,
 }: {
   accountId: string
   mode: 'workspace' | 'assistant' | 'channels'
+  agentId?: string
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
   const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
@@ -176,8 +179,8 @@ export function WorkspaceAssistantChannelsTab({
   const [isHumanContactLoading, setIsHumanContactLoading] = useState(false)
   const [isHumanContactSaving, setIsHumanContactSaving] = useState(false)
   const [humanContactError, setHumanContactError] = useState<string | null>(null)
-  const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<RetrievalSettings | null>(null)
-  const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<RetrievalSettings | null>(null)
+  const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
+  const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [isAssistantBehaviorLoading, setIsAssistantBehaviorLoading] = useState(mode === 'assistant')
   const { setSaveState, setSaveError, saveSequenceRef } = useSettingsSaveStatus(onSaveStateChange)
   const [assistantSettingsError, setAssistantSettingsError] = useState<string | null>(null)
@@ -193,6 +196,18 @@ export function WorkspaceAssistantChannelsTab({
   const canManageWorkspaceLifecycle = currentAccountRole === 'owner' || currentAccountRole === 'admin'
   const canReadWorkspaceTokens = Boolean(currentAccountRole)
   const canRotateWorkspaceTokens = currentAccountRole === 'owner' || currentAccountRole === 'admin'
+
+  const loadGeneralSettings = async () =>
+    agentId ? agentsApi.getGeneralSettings(agentId) : generalSettingsApi.getGeneralSettings({ auth: 'session' })
+
+  const updateGeneralSettings = async (data: Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]) =>
+    agentId ? agentsApi.updateGeneralSettings(agentId, data) : generalSettingsApi.updateGeneralSettings(data, { auth: 'session' })
+
+  const loadAssistantBehaviorSettings = async () =>
+    agentId ? agentsApi.getBehaviorSettings(agentId) : agentsApi.getWorkspaceBehaviorSettings({ auth: 'session' })
+
+  const updateAssistantBehaviorSettings = async (data: AssistantBehaviorSettings) =>
+    agentId ? agentsApi.updateBehaviorSettings(agentId, data) : agentsApi.updateWorkspaceBehaviorSettings(data, { auth: 'session' })
 
   useEffect(() => {
     let active = true
@@ -247,7 +262,7 @@ export function WorkspaceAssistantChannelsTab({
     setIsAnonLoading(true)
     const loadAnonSettings = async () => {
       try {
-        const data = await generalSettingsApi.getGeneralSettings({ auth: 'session' })
+        const data = await loadGeneralSettings()
         if (!active) return
         setAnonSettings(data)
         setSavedAnonSettings(data)
@@ -266,7 +281,7 @@ export function WorkspaceAssistantChannelsTab({
     return () => {
       active = false
     }
-  }, [activeWorkspaceId, isWorkspaceLoading])
+  }, [activeWorkspaceId, agentId, isWorkspaceLoading])
 
   useEffect(() => {
     if (mode !== 'assistant') {
@@ -284,9 +299,9 @@ export function WorkspaceAssistantChannelsTab({
 
     let active = true
     setIsAssistantBehaviorLoading(true)
-    const loadAssistantBehaviorSettings = async () => {
+    const loadAssistantBehaviorSettingsEffect = async () => {
       try {
-        const data = await settingsApi.getRetrievalSettings({ auth: 'session' })
+        const data = await loadAssistantBehaviorSettings()
         if (!active) return
         setAssistantBehaviorSettings(data)
         setSavedAssistantBehaviorSettings(data)
@@ -302,11 +317,11 @@ export function WorkspaceAssistantChannelsTab({
       }
     }
 
-    void loadAssistantBehaviorSettings()
+    void loadAssistantBehaviorSettingsEffect()
     return () => {
       active = false
     }
-  }, [activeWorkspaceId, isWorkspaceLoading, mode])
+  }, [activeWorkspaceId, agentId, isWorkspaceLoading, mode])
 
   useEffect(() => {
     if (!editionController.shouldLoadHumanContactSettings(mode)) {
@@ -355,10 +370,10 @@ export function WorkspaceAssistantChannelsTab({
   const handleAnonToggle = async (enabled: boolean) => {
     setIsAnonSaving(true)
     try {
-      const updated = await generalSettingsApi.updateGeneralSettings({
+      const updated = await updateGeneralSettings({
         anonymousChatEnabled: enabled,
         anonymousRateLimit: anonSettings?.anonymousRateLimit ?? 10,
-      }, { auth: 'session' })
+      })
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
     } catch (error) {
@@ -376,10 +391,10 @@ export function WorkspaceAssistantChannelsTab({
   const handleAnonRateLimitCommit = async (value: number) => {
     setIsAnonSaving(true)
     try {
-      const updated = await generalSettingsApi.updateGeneralSettings({
+      const updated = await updateGeneralSettings({
         anonymousChatEnabled: anonSettings?.anonymousChatEnabled ?? false,
         anonymousRateLimit: value,
-      }, { auth: 'session' })
+      })
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
     } catch (error) {
@@ -455,7 +470,7 @@ export function WorkspaceAssistantChannelsTab({
     }
   }
 
-  const updateAssistantBehaviorDraft = (updater: (current: RetrievalSettings) => RetrievalSettings) => {
+  const updateAssistantBehaviorDraft = (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => {
     assistantBehaviorDraftVersionRef.current += 1
     setAssistantBehaviorSettings((current) => (current ? updater(current) : current))
   }
@@ -609,11 +624,11 @@ export function WorkspaceAssistantChannelsTab({
       setSaveState('saving')
       setSaveError(null)
       try {
-        const updated = await generalSettingsApi.updateGeneralSettings({
+        const updated = await updateGeneralSettings({
           assistantName: anonSettings.assistantName,
           assistantDefaultLocale: anonSettings.assistantDefaultLocale,
           proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
-        }, { auth: 'session' })
+        })
         if (saveSequenceRef.current !== saveId) return
         setSavedAnonSettings(updated)
         setAssistantSettingsError(null)
@@ -651,7 +666,7 @@ export function WorkspaceAssistantChannelsTab({
       setSaveState('saving')
       setSaveError(null)
       try {
-        const updated = await settingsApi.updateRetrievalSettings(assistantBehaviorSettings, { auth: 'session' })
+        const updated = await updateAssistantBehaviorSettings(assistantBehaviorSettings)
         if (saveSequenceRef.current !== saveId) return
         setSavedAssistantBehaviorSettings(updated)
         setAssistantSettingsError(null)
@@ -675,9 +690,9 @@ export function WorkspaceAssistantChannelsTab({
     if (!anonSettings) return
     setIsAnonSaving(true)
     try {
-      const updated = await generalSettingsApi.updateGeneralSettings({
+      const updated = await updateGeneralSettings({
         rotateAnonymousChatToken: true,
-      }, { auth: 'session' })
+      })
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
     } catch (error) {
@@ -1342,6 +1357,7 @@ export function WorkspaceAssistantChannelsTab({
             setSavedAnonSettings={setSavedAnonSettings}
             isAnonSaving={isAnonSaving}
             setIsAnonSaving={setIsAnonSaving}
+            updateGeneralSettings={updateGeneralSettings}
             anonDraftVersionRef={anonDraftVersionRef}
             saveSequenceRef={saveSequenceRef}
             setSaveState={setSaveState}

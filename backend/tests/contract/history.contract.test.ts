@@ -39,6 +39,8 @@ describe("history contract", () => {
       conversations: [
         expect.objectContaining({
           id: chat.body.conversationId,
+          agentId: chat.body.agentId,
+          agentName: null,
           messageCount: 2,
           userMessageCount: 1,
           assistantMessageCount: 1,
@@ -55,6 +57,8 @@ describe("history contract", () => {
           id: chat.body.conversationId,
           conversation: expect.objectContaining({
             id: chat.body.conversationId,
+            agentId: chat.body.agentId,
+            agentName: null,
             messageCount: 2,
           }),
         }),

@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "if [ \"${RADIOSO_EDITION:-oss}\" = \"enterprise\" ]; then :; else node ../scripts/sync-ee-frontend-routes.mjs disable; fi",
     "dev": "next dev --webpack --port 3000",
+    "prebuild": "if [ \"${RADIOSO_EDITION:-oss}\" = \"enterprise\" ]; then :; else node ../scripts/sync-ee-frontend-routes.mjs disable; fi",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",

@@ -5,7 +5,7 @@ import {
   ModelRerankGateway,
   ModelTriggerAnalysisGateway,
   OpenAISemanticRerankGateway,
-} from "../../../modules/retrieval/llmAdapters.js";
+} from "../../../modules/retrieval/public.js";
 import { ClaudeTextGenerationClient } from "./claudeProvider.js";
 import { GeminiTextGenerationClient } from "./geminiProvider.js";
 import { createOpenAIClient, OpenAIEmbeddingClient, OpenAITextGenerationClient } from "./openaiProvider.js";

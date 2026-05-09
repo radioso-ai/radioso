@@ -5,6 +5,7 @@ import type { Database } from "../../shared/infra/database.js";
 export interface BootstrapGreetingCacheRecord {
   id: string;
   workspaceId: string;
+  agentId: string;
   fingerprint: string;
   localeUsed: string | null;
   greetingText: string;
@@ -13,8 +14,10 @@ export interface BootstrapGreetingCacheRecord {
 }
 
 interface BootstrapGreetingCacheRow {
+  // SQL rows keep database column names; repository records are the camelCase boundary type.
   id: string;
   workspace_id: string;
+  agent_id: string;
   fingerprint: string;
   locale_used: string | null;
   greeting_text: string;
@@ -25,6 +28,7 @@ interface BootstrapGreetingCacheRow {
 const mapRecord = (row: BootstrapGreetingCacheRow): BootstrapGreetingCacheRecord => ({
   id: row.id,
   workspaceId: row.workspace_id,
+  agentId: row.agent_id,
   fingerprint: row.fingerprint,
   localeUsed: row.locale_used,
   greetingText: row.greeting_text,
@@ -33,9 +37,10 @@ const mapRecord = (row: BootstrapGreetingCacheRow): BootstrapGreetingCacheRecord
 });
 
 export interface BootstrapGreetingCacheRepositoryPort {
-  findByWorkspaceAndFingerprint(workspaceId: string, fingerprint: string): Promise<BootstrapGreetingCacheRecord | null>;
+  findByWorkspaceAgentAndFingerprint(workspaceId: string, agentId: string, fingerprint: string): Promise<BootstrapGreetingCacheRecord | null>;
   save(input: {
     workspaceId: string;
+    agentId: string;
     fingerprint: string;
     localeUsed: string | null;
     greetingText: string;
@@ -45,12 +50,16 @@ export interface BootstrapGreetingCacheRepositoryPort {
 export class BootstrapGreetingCacheRepository implements BootstrapGreetingCacheRepositoryPort {
   constructor(private readonly database: Database) {}
 
-  async findByWorkspaceAndFingerprint(workspaceId: string, fingerprint: string): Promise<BootstrapGreetingCacheRecord | null> {
+  async findByWorkspaceAgentAndFingerprint(
+    workspaceId: string,
+    agentId: string,
+    fingerprint: string,
+  ): Promise<BootstrapGreetingCacheRecord | null> {
     const row = await this.database.queryOptional<BootstrapGreetingCacheRow>(
-      `SELECT id, workspace_id, fingerprint, locale_used, greeting_text, created_at, updated_at
+      `SELECT id, workspace_id, agent_id, fingerprint, locale_used, greeting_text, created_at, updated_at
        FROM bootstrap_greeting_cache
-       WHERE workspace_id = $1 AND fingerprint = $2`,
-      [workspaceId, fingerprint],
+       WHERE workspace_id = $1 AND agent_id = $2 AND fingerprint = $3`,
+      [workspaceId, agentId, fingerprint],
     );
 
     return row ? mapRecord(row) : null;
@@ -58,19 +67,20 @@ export class BootstrapGreetingCacheRepository implements BootstrapGreetingCacheR
 
   async save(input: {
     workspaceId: string;
+    agentId: string;
     fingerprint: string;
     localeUsed: string | null;
     greetingText: string;
   }): Promise<BootstrapGreetingCacheRecord> {
     const row = await this.database.queryOne<BootstrapGreetingCacheRow>(
-      `INSERT INTO bootstrap_greeting_cache (id, workspace_id, fingerprint, locale_used, greeting_text)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (workspace_id, fingerprint)
+      `INSERT INTO bootstrap_greeting_cache (id, workspace_id, agent_id, fingerprint, locale_used, greeting_text)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (workspace_id, agent_id, fingerprint)
        DO UPDATE SET locale_used = EXCLUDED.locale_used,
                      greeting_text = EXCLUDED.greeting_text,
                      updated_at = NOW()
-       RETURNING id, workspace_id, fingerprint, locale_used, greeting_text, created_at, updated_at`,
-      [randomUUID(), input.workspaceId, input.fingerprint, input.localeUsed, input.greetingText],
+      RETURNING id, workspace_id, agent_id, fingerprint, locale_used, greeting_text, created_at, updated_at`,
+      [randomUUID(), input.workspaceId, input.agentId, input.fingerprint, input.localeUsed, input.greetingText],
     );
 
     return mapRecord(row);

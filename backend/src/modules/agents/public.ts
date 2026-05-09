@@ -1,0 +1,28 @@
+export {
+  agentConversationModes,
+  agentSurfaceIcons,
+  agentSurfacePositions,
+  isAgentBootstrapActive,
+  isAgentRetrievalEnabled,
+  resolveAgentDisplayName,
+  validateAgentInput,
+  type AgentBehaviorSettings,
+  type Agent,
+  type AgentConversationMode,
+  type AgentInput,
+  mergeAgentSurfaceSettings,
+  type AgentRecord,
+  type AgentSurfaceSettings,
+  type AgentSurfaceIcon,
+  type AgentSurfacePosition,
+  type AnonymousChatSurfaceSettings,
+  type AuthenticatedChatSurfaceSettings,
+  type ConversationAgent,
+  type ConversationAgentSurfaceSettings,
+  type NormalizedAgentInput,
+  type WebsiteEmbedSurfaceSettings,
+} from "./domain.js";
+export {
+  AgentService,
+  type AgentSettingsResource,
+} from "./services/agentService.js";

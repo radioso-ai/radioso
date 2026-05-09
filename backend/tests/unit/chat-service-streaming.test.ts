@@ -824,7 +824,7 @@ describe("chat service streaming", () => {
     expect(response.answer).toBe("I can't tell from that. I can help you choose and book Ananda courses.");
     expect(observedNoContextInstruction).toContain("Stable assistant identity:");
     expect(observedNoContextInstruction).toContain("Vikram");
-    expect(observedNoContextInstruction).toContain("Workspace-specific instructions:");
+    expect(observedNoContextInstruction).toContain("Configured response instructions:");
     expect(observedNoContextInstruction).toContain("Help visitors choose and book Ananda courses.");
     expect(observedNoContextInstruction).toContain("Conversation mode: exploratory.");
   });

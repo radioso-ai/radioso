@@ -15,6 +15,8 @@ export type ChatStreamEvent =
   | {
       type: "done";
       conversationId: string;
+      agentId?: string;
+      agentName?: string;
       assistantMessageId: string;
       answer: string;
       citations?: ChatCitation[];

@@ -122,14 +122,16 @@ export const createHumanContactRoutes = (
   router.post("/public/chat/:token/draft", publicChatSession, async (req, res, next) => {
     try {
       const body = parseBody(contactDraftSchema, req.body);
-      const { workspaceId, anonymousSessionId, sourceChannel, sourceOrigin } = res.locals as {
+      const { workspaceId, agentId, anonymousSessionId, sourceChannel, sourceOrigin } = res.locals as {
         workspaceId: string;
+        agentId?: string | null;
         anonymousSessionId: string;
         sourceChannel: string | null;
         sourceOrigin: string | null;
       };
       res.status(200).json(await service.draft({
         workspaceId,
+        agentId,
         conversationId: body.conversationId,
         assistantMessageId: body.assistantMessageId,
         anonymousSessionId,
@@ -144,14 +146,16 @@ export const createHumanContactRoutes = (
   router.post("/public/chat/:token/submit", publicChatSession, async (req, res, next) => {
     try {
       const body = parseBody(contactSubmitSchema, req.body);
-      const { workspaceId, anonymousSessionId, sourceChannel, sourceOrigin } = res.locals as {
+      const { workspaceId, agentId, anonymousSessionId, sourceChannel, sourceOrigin } = res.locals as {
         workspaceId: string;
+        agentId?: string | null;
         anonymousSessionId: string;
         sourceChannel: string | null;
         sourceOrigin: string | null;
       };
       res.status(202).json(await service.submit({
         workspaceId,
+        agentId,
         conversationId: body.conversationId,
         assistantMessageId: body.assistantMessageId,
         anonymousSessionId,

@@ -3,6 +3,7 @@ import type { Page, Route } from "@playwright/test";
 export const workspaceId = "workspace-1";
 export const workspaceKey = "workspace-key";
 export const accountId = "account-1";
+export const defaultAgentId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
 
 export const nowIso = "2026-04-26T12:00:00.000Z";
 
@@ -47,6 +48,42 @@ export const basePlatformSettings = () => ({
 });
 
 export type PlatformSettingsFixture = ReturnType<typeof basePlatformSettings>;
+
+const buildDefaultAgentSettings = (settings: PlatformSettingsFixture) => ({
+  id: defaultAgentId,
+  workspaceId,
+  name: settings.assistant.assistantName,
+  isDefault: true,
+  customInstruction: settings.assistant.customInstruction,
+  conversationMode: settings.assistant.conversationMode,
+  suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
+  suggestedQuestionsCount: settings.assistant.suggestedQuestionsCount,
+  greetingInstruction: settings.assistant.greetingInstruction,
+  assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
+  proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
+  assistantBootstrapActive: settings.assistant.assistantBootstrapActive,
+  retrievalEnabled: true,
+  surfaceSettings: {
+    authenticatedChat: {
+      enabled: true,
+    },
+    anonymousChat: {
+      enabled: settings.channels.anonymousChatEnabled,
+      token: "public-token",
+      messagesPerMinute: settings.channels.anonymousRateLimit,
+    },
+    websiteEmbed: {
+      enabled: settings.channels.websiteEmbedEnabled,
+      token: settings.channels.websiteEmbedToken,
+      allowedOrigins: settings.channels.websiteEmbedAllowedOrigins,
+      launcherLabel: settings.channels.websiteEmbedLauncherLabel,
+      icon: settings.channels.websiteEmbedLauncherIcon,
+      launcherPosition: settings.channels.websiteEmbedLauncherPosition,
+    },
+  },
+  createdAt: nowIso,
+  updatedAt: nowIso,
+});
 
 export const seedDashboardStorage = async (page: Page) => {
   await page.addInitScript(({ accountIdValue, workspaceIdValue, workspaceKeyValue }) => {
@@ -148,12 +185,15 @@ export const installDashboardApiMocks = async (
     historyItems?: unknown;
     searchHistory?: unknown;
     conversationDetail?: unknown;
+    agentUpdates?: unknown[];
     requestLog?: string[];
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
+  let agentSettings = buildDefaultAgentSettings(platformSettings);
   const documents = options.documentList ?? documentListResponse;
   const settingsUpdates = options.settingsUpdates;
+  const agentUpdates = options.agentUpdates;
   const historyList = options.historyList ?? {
     conversations: [],
     total: 0,
@@ -273,6 +313,50 @@ export const installDashboardApiMocks = async (
     if (request.method() === "GET" && path.startsWith("/history/chat/") && options.conversationDetail) {
       await json(route, options.conversationDetail);
       return;
+    }
+
+    if (request.method() === "GET" && path === "/agents") {
+      await json(route, { agents: [agentSettings] });
+      return;
+    }
+
+    if (path === `/agents/${defaultAgentId}`) {
+      if (request.method() === "GET") {
+        await json(route, agentSettings);
+        return;
+      }
+
+      if (request.method() === "PUT") {
+        const body = request.postDataJSON() as Partial<typeof agentSettings> & {
+          surfaceSettings?: {
+            authenticatedChat?: Partial<typeof agentSettings.surfaceSettings.authenticatedChat>;
+            anonymousChat?: Partial<typeof agentSettings.surfaceSettings.anonymousChat>;
+            websiteEmbed?: Partial<typeof agentSettings.surfaceSettings.websiteEmbed>;
+          };
+        };
+        agentUpdates?.push(body);
+        agentSettings = {
+          ...agentSettings,
+          ...body,
+          surfaceSettings: {
+            authenticatedChat: {
+              ...agentSettings.surfaceSettings.authenticatedChat,
+              ...(body.surfaceSettings?.authenticatedChat ?? {}),
+            },
+            anonymousChat: {
+              ...agentSettings.surfaceSettings.anonymousChat,
+              ...(body.surfaceSettings?.anonymousChat ?? {}),
+            },
+            websiteEmbed: {
+              ...agentSettings.surfaceSettings.websiteEmbed,
+              ...(body.surfaceSettings?.websiteEmbed ?? {}),
+            },
+          },
+          updatedAt: nowIso,
+        };
+        await json(route, agentSettings);
+        return;
+      }
     }
 
     if (request.method() === "GET" && path === "/settings") {

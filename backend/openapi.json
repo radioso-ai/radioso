@@ -2931,6 +2931,114 @@
           "query"
         ]
       },
+      "WebsiteCrawlRequest": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "WebsiteCrawlPublicationResponse": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "runId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestedUrl": {
+            "type": "string"
+          },
+          "accepted": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "externalDocumentId": {
+                  "type": "string"
+                },
+                "documentId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "sourceUrl": {
+                  "type": "string"
+                },
+                "canonicalUrl": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "externalDocumentId",
+                "documentId",
+                "status",
+                "sourceUrl",
+                "canonicalUrl"
+              ]
+            }
+          },
+          "failures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sourceUrl": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sourceUrl",
+                "reason"
+              ]
+            }
+          }
+        },
+        "required": [
+          "provider",
+          "runId",
+          "status",
+          "requestedUrl",
+          "accepted",
+          "failed",
+          "documents",
+          "failures"
+        ]
+      },
       "Citation": {
         "type": "object",
         "properties": {
@@ -8179,6 +8287,82 @@
           },
           "429": {
             "description": "Upload rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/document/crawl": {
+      "post": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Crawl a website through a configured crawler provider",
+        "operationId": "crawlWebsiteDocuments",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebsiteCrawlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Crawled pages accepted for document processing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebsiteCrawlPublicationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Website crawler provider is not configured",
             "content": {
               "application/json": {
                 "schema": {

@@ -47,6 +47,7 @@ import type { ChatActionProviderPort, ContactHistoryProviderPort } from "../../m
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillCatalogService } from "../../modules/skills/public.js";
 import type { SupportImpersonationService } from "../../modules/support/services/supportImpersonationService.js";
+import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 
 export interface AppDependencies {
   env: Env;
@@ -79,6 +80,7 @@ export interface AppDependencies {
   workspaceIngestionReprocessService: WorkspaceIngestionReprocessService;
   documentProcessingWorker: DocumentProcessingWorker;
   documentJobConsumer?: DocumentJobConsumerPort;
+  websiteCrawlerProvider?: WebsiteCrawlerProvider;
   documentDeletionService: DocumentDeletionService;
   chatService: ChatService;
   chatBootstrapService: ChatBootstrapService;

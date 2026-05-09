@@ -8,7 +8,7 @@ export type WebsiteCrawlerConfig = {
 };
 
 export type WebsiteCrawlerEnv = Partial<Record<
-  "EE_WEBSITE_CRAWLER_DEFAULT_LIMIT" | "EE_WEBSITE_CRAWLER_MAX_LIMIT",
+  "WEBSITE_CRAWLER_DEFAULT_LIMIT" | "WEBSITE_CRAWLER_MAX_LIMIT",
   string | undefined
 >>;
 
@@ -35,9 +35,9 @@ const readInteger = (
 export const resolveWebsiteCrawlerConfig = (
   env: WebsiteCrawlerEnv = process.env,
 ): WebsiteCrawlerConfig => {
-  const maxLimit = readInteger(env.EE_WEBSITE_CRAWLER_MAX_LIMIT, DEFAULT_MAX_LIMIT, "EE_WEBSITE_CRAWLER_MAX_LIMIT");
+  const maxLimit = readInteger(env.WEBSITE_CRAWLER_MAX_LIMIT, DEFAULT_MAX_LIMIT, "WEBSITE_CRAWLER_MAX_LIMIT");
   const defaultLimit = Math.min(
-    readInteger(env.EE_WEBSITE_CRAWLER_DEFAULT_LIMIT, DEFAULT_LIMIT, "EE_WEBSITE_CRAWLER_DEFAULT_LIMIT"),
+    readInteger(env.WEBSITE_CRAWLER_DEFAULT_LIMIT, DEFAULT_LIMIT, "WEBSITE_CRAWLER_DEFAULT_LIMIT"),
     maxLimit,
   );
   return {

@@ -51,6 +51,7 @@ export interface ApplicationComposition {
   documentStorage?: ReturnType<typeof createApplicationExtensionRegistry>["documentStorage"];
   documentJobDispatcher?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobDispatcher"];
   documentJobConsumer?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobConsumer"];
+  websiteCrawlerProvider?: ReturnType<typeof createApplicationExtensionRegistry>["websiteCrawlerProvider"];
   websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
   chatActionProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["chatActionProviderRegistration"];
@@ -83,16 +84,17 @@ export const createDefaultApplicationComposition = (options: {
     accountCreatedHooks: registry.accountCreatedHooks,
     documentJobDispatcher: registry.documentJobDispatcher,
     documentJobConsumer: registry.documentJobConsumer,
-  websiteEmbedIntegration: registry.websiteEmbedIntegration,
-  usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
-  chatActionProviderRegistration: registry.chatActionProviderRegistration,
-  contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
-  answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,
-  skillCatalogRegistry: createDefaultSkillCatalogRegistry([
-    ...registry.skillCatalogEntries,
-    ...registry.skillDefinitions,
-  ]),
-  lifecycle: coordinator,
+    websiteCrawlerProvider: registry.websiteCrawlerProvider,
+    websiteEmbedIntegration: registry.websiteEmbedIntegration,
+    usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
+    chatActionProviderRegistration: registry.chatActionProviderRegistration,
+    contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
+    answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,
+    skillCatalogRegistry: createDefaultSkillCatalogRegistry([
+      ...registry.skillCatalogEntries,
+      ...registry.skillDefinitions,
+    ]),
+    lifecycle: coordinator,
     modules: coordinator.registeredModules,
   };
 };

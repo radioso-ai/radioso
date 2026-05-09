@@ -52,7 +52,7 @@ export interface WebsiteCrawlPublicationResult {
   }>;
 }
 
-export class EnterpriseWebsiteCrawlerService {
+export class WebsiteCrawlerService {
   constructor(private readonly dependencies: {
     provider: WebsiteCrawlerProvider;
     documentIngestionService: WebsiteCrawlerDocumentIngestionPort;
@@ -210,7 +210,7 @@ export class EnterpriseWebsiteCrawlerService {
     await this.dependencies.auditService.record({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
-      eventType: "ee.website_crawler.crawl",
+        eventType: "document.website_crawler.crawl",
       eventStatus: "failure",
       metadata: {
         provider: redactSensitiveText(this.dependencies.provider.name),
@@ -233,7 +233,7 @@ export class EnterpriseWebsiteCrawlerService {
     await this.dependencies.auditService.record({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
-      eventType: "ee.website_crawler.crawl",
+        eventType: "document.website_crawler.crawl",
       eventStatus: result.failed > 0 ? "failure" : "success",
       metadata: {
         provider: result.provider,

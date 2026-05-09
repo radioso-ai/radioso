@@ -49,6 +49,7 @@ import type { SkillCatalogService } from "../../modules/skills/public.js";
 import type { AgentService } from "../../modules/agents/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type { SupportImpersonationService } from "../../modules/support/services/supportImpersonationService.js";
+import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 
 export interface AppDependencies {
   env: Env;
@@ -81,6 +82,7 @@ export interface AppDependencies {
   workspaceIngestionReprocessService: WorkspaceIngestionReprocessService;
   documentProcessingWorker: DocumentProcessingWorker;
   documentJobConsumer?: DocumentJobConsumerPort;
+  websiteCrawlerProvider?: WebsiteCrawlerProvider;
   documentDeletionService: DocumentDeletionService;
   chatService: ChatService;
   chatBootstrapService: ChatBootstrapService;

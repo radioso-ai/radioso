@@ -425,6 +425,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceIngestionReprocessService,
     documentProcessingWorker,
     documentJobConsumer,
+    websiteCrawlerProvider: composition.websiteCrawlerProvider,
     documentDeletionService,
     chatService,
     chatBootstrapService,

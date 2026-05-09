@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { EnterpriseWebsiteCrawlerService } from "./service.js";
-import type { WebsiteCrawlerProvider } from "./provider.js";
-import { WebsiteCrawlerBadRequestError, WebsiteCrawlerProviderError } from "./errors.js";
+import { WebsiteCrawlerService } from "../../../src/modules/websiteCrawler/service.js";
+import type { WebsiteCrawlerProvider } from "../../../src/modules/websiteCrawler/provider.js";
+import { WebsiteCrawlerBadRequestError, WebsiteCrawlerProviderError } from "../../../src/modules/websiteCrawler/errors.js";
 
 const createProvider = (pages: Awaited<ReturnType<WebsiteCrawlerProvider["crawl"]>>["pages"]): WebsiteCrawlerProvider => ({
   name: "fake",
@@ -16,12 +16,12 @@ const createProvider = (pages: Awaited<ReturnType<WebsiteCrawlerProvider["crawl"
   },
 });
 
-describe("enterprise website crawler service", () => {
+describe("website crawler service", () => {
   it("publishes unique provider pages through document ingestion", async () => {
     const ingest = vi.fn()
       .mockResolvedValueOnce({ documentId: "doc-1", status: "queued" })
       .mockResolvedValueOnce({ documentId: "doc-2", status: "queued" });
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: createProvider([
         {
           sourceUrl: "https://example.com/about?utm_source=x",
@@ -82,7 +82,7 @@ describe("enterprise website crawler service", () => {
 
   it("uses stable external document IDs for repeated crawls", async () => {
     const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: createProvider([
         {
           sourceUrl: "https://example.com/about?utm_source=x",
@@ -107,7 +107,7 @@ describe("enterprise website crawler service", () => {
     const ingest = vi.fn()
       .mockResolvedValueOnce({ documentId: "doc-1", status: "queued" })
       .mockRejectedValueOnce(new Error("database unavailable"));
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: createProvider([
         { sourceUrl: "https://example.com/a", title: "A", content: "A", metadata: { token: "crawler-secret" } },
         { sourceUrl: "https://example.com/b", title: "B", content: "B", metadata: { token: "crawler-secret" } },
@@ -134,7 +134,7 @@ describe("enterprise website crawler service", () => {
 
   it("normalizes provider failures before they cross the crawler boundary", async () => {
     const auditService = { record: vi.fn() };
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: {
         name: "Bearer sk_live_providersecret",
         async crawl() {
@@ -161,7 +161,7 @@ describe("enterprise website crawler service", () => {
       },
     });
     expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
-      eventType: "ee.website_crawler.crawl",
+      eventType: "document.website_crawler.crawl",
       eventStatus: "failure",
       metadata: expect.objectContaining({
         provider: "Bearer [redacted]",
@@ -174,7 +174,7 @@ describe("enterprise website crawler service", () => {
     const auditService = { record: vi.fn() };
     const provider = createProvider([]);
     const crawl = vi.spyOn(provider, "crawl");
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider,
       documentIngestionService: { ingest: vi.fn() },
       auditService,
@@ -194,7 +194,7 @@ describe("enterprise website crawler service", () => {
 
     expect(crawl).not.toHaveBeenCalled();
     expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
-      eventType: "ee.website_crawler.crawl",
+      eventType: "document.website_crawler.crawl",
       eventStatus: "failure",
       metadata: expect.objectContaining({
         failureCode: "bad_request",
@@ -207,7 +207,7 @@ describe("enterprise website crawler service", () => {
     const provider = createProvider([]);
     const crawl = vi.spyOn(provider, "crawl");
     const ingest = vi.fn();
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider,
       documentIngestionService: { ingest },
       auditService: { record: vi.fn() },
@@ -225,7 +225,7 @@ describe("enterprise website crawler service", () => {
 
   it("does not return or persist provider source URLs with credentials", async () => {
     const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: createProvider([
         {
           sourceUrl: "https://user:crawler-secret@example.com/a",
@@ -256,7 +256,7 @@ describe("enterprise website crawler service", () => {
 
   it("keeps trusted website metadata from being overridden by provider metadata", async () => {
     const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: createProvider([
         {
           sourceUrl: "https://example.com/a",
@@ -309,7 +309,7 @@ describe("enterprise website crawler service", () => {
   it("redacts provider-controlled identifiers in responses, audits, and metadata", async () => {
     const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
     const auditService = { record: vi.fn() };
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: {
         name: "custom-crawler",
         async crawl() {
@@ -345,7 +345,7 @@ describe("enterprise website crawler service", () => {
   it("redacts secret URL query values before publication and audit output", async () => {
     const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
     const auditService = { record: vi.fn() };
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: {
         name: "custom-crawler",
         async crawl() {
@@ -397,7 +397,7 @@ describe("enterprise website crawler service", () => {
       provider: "custom-crawler",
       pages: [],
     });
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: {
         name: "custom-crawler",
         crawl,
@@ -426,7 +426,7 @@ describe("enterprise website crawler service", () => {
       provider: "custom-crawler",
       pages: [],
     });
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: {
         name: "custom-crawler",
         crawl,
@@ -454,7 +454,7 @@ describe("enterprise website crawler service", () => {
     const controller = new AbortController();
     controller.abort();
     const crawl = vi.fn();
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: {
         name: "custom-crawler",
         crawl,
@@ -474,7 +474,7 @@ describe("enterprise website crawler service", () => {
   });
 
   it("normalizes invalid abstract provider results into provider errors", async () => {
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: {
         name: "custom-crawler",
         async crawl() {
@@ -498,7 +498,7 @@ describe("enterprise website crawler service", () => {
 
   it("counts invalid provider page entries before publication", async () => {
     const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: {
         name: "custom-crawler",
         async crawl() {
@@ -540,7 +540,7 @@ describe("enterprise website crawler service", () => {
 
   it("enforces local page limits and accounts for malformed provider page URLs", async () => {
     const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
-    const service = new EnterpriseWebsiteCrawlerService({
+    const service = new WebsiteCrawlerService({
       provider: createProvider([
         { sourceUrl: "https://example.com/a", title: "A", content: "A", metadata: {} },
         { sourceUrl: "not a url", title: "Bad", content: "Bad", metadata: {} },

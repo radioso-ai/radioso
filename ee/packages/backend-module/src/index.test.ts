@@ -92,7 +92,6 @@ describe("Enterprise backend module aggregation", () => {
       "/api/v1/ee/auth",
       "/api/v1/ee/contact",
       "/api/v1/ee/usage-limits",
-      "/api/v1/ee/website-crawler",
     ]);
     expect(capture.accountCreatedHandlers).toHaveLength(1);
     expect(capture.usageLimitPolicy).toBeTypeOf("function");

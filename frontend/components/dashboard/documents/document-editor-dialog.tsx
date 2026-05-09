@@ -51,7 +51,7 @@ export function DocumentEditorDialog({
           </DialogTitle>
           <DialogDescription>
             {mode === 'edit'
-              ? 'Update the document and re-run it through the RAG ingestion pipeline.'
+              ? 'Update the document and re-run it through the document ingestion pipeline.'
               : mode === 'view'
                 ? 'Review the extracted contents of an imported document.'
                 : 'Add a new document to your knowledge base for retrieval.'}

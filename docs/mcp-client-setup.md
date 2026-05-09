@@ -28,7 +28,7 @@ MCP is retrieval-first by default. Tools such as `search_documents` and `answer_
 
 In practice:
 
-- Use MCP `answer_grounded` when a client wants a grounded RAG answer from workspace documents.
+- Use MCP `answer_grounded` when a client wants a grounded answer from workspace documents.
 - Use MCP document tools when a client wants document capability access.
 - Use `POST /api/v1/assistant/chat` only when the integration explicitly wants the customer-facing assistant chat product.
 

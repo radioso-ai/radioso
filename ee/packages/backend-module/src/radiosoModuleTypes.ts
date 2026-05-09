@@ -158,16 +158,6 @@ export interface ApplicationRouteMount {
         };
       } | null>;
     };
-    documentIngestionService?: {
-      ingest(input: {
-        accountId?: string | null;
-        workspaceId: string;
-        title: string;
-        content: string;
-        metadata?: Record<string, unknown>;
-        externalDocumentId?: string | null;
-      }): Promise<{ documentId: string; status: string }>;
-    };
   }): Router;
 }
 

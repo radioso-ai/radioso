@@ -171,6 +171,12 @@ Assistant conversations are listed from `GET /api/v1/history` and fetched from `
 
 Assistant and retrieval responses include diagnostic metadata that identifies whether the work ran as assistant direct, assistant retrieval-backed, retrieval-only, or MCP capability traffic.
 
+### Website crawler provider
+
+Radioso exposes an OSS website crawler provider port at `POST /api/v1/document/crawl`. The route accepts a website URL, calls a registered crawler provider, and publishes returned pages through the normal document ingestion pipeline.
+
+The core app does not include a concrete crawler provider. Until one is registered through application composition, the route returns `503 service_unavailable`. Crawl limits are controlled with `WEBSITE_CRAWLER_DEFAULT_LIMIT` and `WEBSITE_CRAWLER_MAX_LIMIT`.
+
 ### TypeScript SDK
 
 The SDK chat facade is for assistant chat. Use the REST retrieval endpoints above for retrieval-only search or grounded answers when you do not want assistant behavior.

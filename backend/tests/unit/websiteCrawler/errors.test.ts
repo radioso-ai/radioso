@@ -4,11 +4,11 @@ import {
   WebsiteCrawlerProviderError,
   WebsiteCrawlerUnavailableError,
   toSafeWebsiteCrawlerError,
-} from "./errors.js";
+} from "../../../src/modules/websiteCrawler/errors.js";
 
-describe("enterprise website crawler errors", () => {
+describe("website crawler errors", () => {
   it("returns unavailable errors without provider secrets", () => {
-    const error = new WebsiteCrawlerUnavailableError("Enterprise website crawler is not configured", {
+    const error = new WebsiteCrawlerUnavailableError("Website crawler is not configured", {
       secret: "crawler-secret",
     });
 
@@ -16,7 +16,7 @@ describe("enterprise website crawler errors", () => {
     expect(error.code).toBe("service_unavailable");
     expect(toSafeWebsiteCrawlerError(error)).toEqual({
       code: "service_unavailable",
-      message: "Enterprise website crawler is not configured",
+      message: "Website crawler is not configured",
     });
   });
 

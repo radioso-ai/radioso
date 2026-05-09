@@ -1,6 +1,6 @@
 # <img src="./frontend/public/radioso-logo.png" alt="Radioso logo" width="44" align="center" /> Radioso
 
-**The opinionated context platform for delightful assistants.**
+**Self-hosted AI agents grounded in your knowledge.**
 
 You can wire up LangChain and build a rocketship. You can get a PhD in dragging nodes around a low-code agent canvas. 
 Or you can run Radioso, upload your documents, and have an assistant that knows what it's talking about — self-hosted, multi-provider, API-first, today. That is why we built Radioso. 
@@ -13,7 +13,7 @@ Or you can run Radioso, upload your documents, and have an assistant that knows 
 ./run-dev.sh
 ```
 
-The bootstrap prompts for your AI provider credentials, generates secrets, and starts the full stack. Register, upload a document, ask a question. Working grounded assistant in under five minutes.
+The bootstrap prompts for your AI provider credentials, generates secrets, and starts the full stack. Register, upload a document, ask a question. Working conversational assistant with context in under five minutes.
 
 In the Docker development stack, frontend and backend source changes are bind-mounted into the containers. TypeScript backend changes restart automatically, and backend prompt markdown under `backend/prompts/` is re-read on each request in development without a container restart.
 
@@ -151,7 +151,7 @@ curl -sS \
   http://localhost:8080/api/v1/assistant/chat
 ```
 
-Use retrieval APIs when you want grounded RAG capabilities without assistant persona or chat routing.
+Use retrieval APIs when you want grounded search or answer generation over workspace context without assistant persona or chat routing.
 
 ```bash
 curl -sS \

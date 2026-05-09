@@ -212,7 +212,7 @@ The site should include explicit acquisition-oriented pages for search and evalu
 
 - Embedded AI support widget
 - Grounded chat for product documentation
-- Self-hosted RAG support assistant
+- Self-hosted support agent with workspace context
 - AI answers with citations
 - Workspace-based team knowledge assistant
 - Radioso vs generic chat-over-files tools

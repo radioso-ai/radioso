@@ -146,8 +146,18 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         const workspace = agentByToken
           ? await dependencies.workspaceRepository.findById(agentByToken.workspaceId)
           : await dependencies.workspaceRepository.findByAnonymousChatToken(launchToken);
-        const agent = agentByToken ?? (workspace ? await dependencies.agentService.resolve(workspace.id, req.body.agentId) : null);
+        const agent = agentByToken ?? (workspace ? await dependencies.agentService.resolve(workspace.id) : null);
         if (!workspace || !agent || !agent.surfaceSettings.anonymousChat.enabled) {
+          res.status(404).json({
+            error: {
+              code: "not_found",
+              message: "Public chat not found",
+            },
+          });
+          return;
+        }
+        const publicChatToken = agent.surfaceSettings.anonymousChat.token;
+        if (!publicChatToken) {
           res.status(404).json({
             error: {
               code: "not_found",
@@ -160,7 +170,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         const session = issuePublicChatSession(sessionSecret, {
           workspaceId: workspace.id,
           agentId: agent.id,
-          publicChatToken: launchToken,
+          publicChatToken,
           publicSessionId: requestedSessionId,
           sourceChannel: "anonymous",
           sourceOrigin: null,
@@ -173,7 +183,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           }),
           agentId: agent.id,
           agentName: agent.name,
-          publicChatToken: launchToken,
+          publicChatToken,
           publicSessionId: session.publicSessionId,
           publicSessionToken: session.token,
           assistantBootstrapActive: isAgentBootstrapActive(agent),
@@ -210,7 +220,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       let agent = agentByToken;
       if (!agent) {
         try {
-          agent = await dependencies.agentService.resolve(workspace.id, req.body.agentId);
+          agent = await dependencies.agentService.resolve(workspace.id);
         } catch (error) {
           if (error instanceof AppError && error.statusCode === 404) {
             res.status(404).json({
@@ -282,10 +292,21 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         metadata: { origin },
       });
 
+      const publicChatToken = agent.surfaceSettings.websiteEmbed.token;
+      if (!publicChatToken) {
+        res.status(404).json({
+          error: {
+            code: "not_found",
+            message: "Public chat not found",
+          },
+        });
+        return;
+      }
+
       const session = issuePublicChatSession(sessionSecret, {
         workspaceId: workspace.id,
         agentId: agent.id,
-        publicChatToken: launchToken,
+        publicChatToken,
         publicSessionId: requestedSessionId,
         sourceChannel: "website_embed",
         sourceOrigin: origin,
@@ -298,7 +319,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         }),
         agentId: agent.id,
         agentName: agent.name,
-        publicChatToken: launchToken,
+        publicChatToken,
         publicSessionId: session.publicSessionId,
         publicSessionToken: session.token,
         assistantBootstrapActive: isAgentBootstrapActive(agent),

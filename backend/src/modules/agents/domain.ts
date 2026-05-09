@@ -174,6 +174,26 @@ const normalizeStringArray = (value: unknown, fieldName: string, maxItemLength: 
     });
 };
 
+const normalizeWebsiteEmbedOrigin = (origin: string): string | null => {
+  const trimmed = origin.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return new URL(trimmed).origin;
+  } catch {
+    return null;
+  }
+};
+
+const normalizeWebsiteEmbedAllowedOrigins = (value: unknown): string[] =>
+  [...new Set(
+    normalizeStringArray(value, "websiteEmbedAllowedOrigins", 200)
+      .map(normalizeWebsiteEmbedOrigin)
+      .filter((origin): origin is string => Boolean(origin)),
+  )];
+
 const normalizeSurfaceIcon = (value: unknown): AgentSurfaceIcon => {
   if (value === undefined || value === null || value === "") {
     return DEFAULT_AGENT_SURFACE_ICON;
@@ -194,35 +214,43 @@ const normalizeSurfacePosition = (value: unknown): AgentSurfacePosition => {
   throw badRequest("websiteEmbedLauncherPosition is invalid");
 };
 
-export const validateAgentInput = (input: AgentInput = {}): NormalizedAgentInput => ({
-  name: normalizeText(input.name ?? "Agent", "name", 200),
-  customInstruction: normalizeLongText(input.customInstruction, "customInstruction", 2000),
-  conversationMode: normalizeConversationMode(input.conversationMode),
-  suggestedQuestionsEnabled: input.suggestedQuestionsEnabled ?? DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
-  suggestedQuestionsCount: normalizeSuggestedQuestionsCount(input.suggestedQuestionsCount),
-  retrievalEnabled: input.retrievalEnabled ?? true,
-  greetingInstruction: normalizeText(input.greetingInstruction, "greetingInstruction", 200),
-  assistantDefaultLocale: normalizeLocaleTag(input.assistantDefaultLocale),
-  proactiveGreetingEnabled: Boolean(input.proactiveGreetingEnabled),
-  surfaceSettings: {
-    authenticatedChat: {
-      enabled: input.surfaceSettings?.authenticatedChat?.enabled ?? true,
+export const validateAgentInput = (input: AgentInput = {}): NormalizedAgentInput => {
+  const websiteEmbedEnabled = Boolean(input.surfaceSettings?.websiteEmbed?.enabled);
+  const websiteEmbedAllowedOrigins = normalizeWebsiteEmbedAllowedOrigins(input.surfaceSettings?.websiteEmbed?.allowedOrigins);
+  if (websiteEmbedEnabled && websiteEmbedAllowedOrigins.length === 0) {
+    throw badRequest("At least one allowed origin is required when website embed is enabled");
+  }
+
+  return {
+    name: normalizeText(input.name ?? "Agent", "name", 200),
+    customInstruction: normalizeLongText(input.customInstruction, "customInstruction", 2000),
+    conversationMode: normalizeConversationMode(input.conversationMode),
+    suggestedQuestionsEnabled: input.suggestedQuestionsEnabled ?? DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
+    suggestedQuestionsCount: normalizeSuggestedQuestionsCount(input.suggestedQuestionsCount),
+    retrievalEnabled: input.retrievalEnabled ?? true,
+    greetingInstruction: normalizeText(input.greetingInstruction, "greetingInstruction", 200),
+    assistantDefaultLocale: normalizeLocaleTag(input.assistantDefaultLocale),
+    proactiveGreetingEnabled: Boolean(input.proactiveGreetingEnabled),
+    surfaceSettings: {
+      authenticatedChat: {
+        enabled: input.surfaceSettings?.authenticatedChat?.enabled ?? true,
+      },
+      anonymousChat: {
+        enabled: Boolean(input.surfaceSettings?.anonymousChat?.enabled),
+        token: input.surfaceSettings?.anonymousChat?.token ?? null,
+        messagesPerMinute: normalizeMessagesPerMinute(input.surfaceSettings?.anonymousChat?.messagesPerMinute),
+      },
+      websiteEmbed: {
+        enabled: websiteEmbedEnabled,
+        token: input.surfaceSettings?.websiteEmbed?.token ?? null,
+        allowedOrigins: websiteEmbedAllowedOrigins,
+        launcherLabel: normalizeText(input.surfaceSettings?.websiteEmbed?.launcherLabel ?? "Chat with us", "websiteEmbedLauncherLabel", 80),
+        icon: normalizeSurfaceIcon(input.surfaceSettings?.websiteEmbed?.icon),
+        launcherPosition: normalizeSurfacePosition(input.surfaceSettings?.websiteEmbed?.launcherPosition),
+      },
     },
-    anonymousChat: {
-      enabled: Boolean(input.surfaceSettings?.anonymousChat?.enabled),
-      token: input.surfaceSettings?.anonymousChat?.token ?? null,
-      messagesPerMinute: normalizeMessagesPerMinute(input.surfaceSettings?.anonymousChat?.messagesPerMinute),
-    },
-    websiteEmbed: {
-      enabled: Boolean(input.surfaceSettings?.websiteEmbed?.enabled),
-      token: input.surfaceSettings?.websiteEmbed?.token ?? null,
-      allowedOrigins: normalizeStringArray(input.surfaceSettings?.websiteEmbed?.allowedOrigins, "websiteEmbedAllowedOrigins", 200),
-      launcherLabel: normalizeText(input.surfaceSettings?.websiteEmbed?.launcherLabel ?? "Chat with us", "websiteEmbedLauncherLabel", 80),
-      icon: normalizeSurfaceIcon(input.surfaceSettings?.websiteEmbed?.icon),
-      launcherPosition: normalizeSurfacePosition(input.surfaceSettings?.websiteEmbed?.launcherPosition),
-    },
-  },
-});
+  };
+};
 
 export const mergeAgentSurfaceSettings = (
   current: ConversationAgentSurfaceSettings,

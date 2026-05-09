@@ -54,12 +54,29 @@ SELECT
     ),
     'anonymousChat', jsonb_build_object(
       'enabled', COALESCE(w.anonymous_chat_enabled, false),
-      'token', w.anonymous_chat_token,
+      'token', COALESCE(
+        unique_anonymous_chat_tokens.token,
+        CASE
+          WHEN COALESCE(w.anonymous_chat_enabled, false) AND w.anonymous_chat_token IS NOT NULL
+          THEN replace(gen_random_uuid()::text, '-', '')
+          ELSE NULL
+        END
+      ),
       'messagesPerMinute', COALESCE(w.anonymous_rate_limit, 10)
     ),
     'websiteEmbed', jsonb_build_object(
-      'enabled', COALESCE(w.website_embed_enabled, false),
-      'token', w.website_embed_token,
+      'enabled', COALESCE(w.website_embed_enabled, false)
+        AND COALESCE(cardinality(w.website_embed_allowed_origins), 0) > 0,
+      'token', COALESCE(
+        unique_website_embed_tokens.token,
+        CASE
+          WHEN COALESCE(w.website_embed_enabled, false)
+            AND COALESCE(cardinality(w.website_embed_allowed_origins), 0) > 0
+            AND w.website_embed_token IS NOT NULL
+          THEN replace(gen_random_uuid()::text, '-', '')
+          ELSE NULL
+        END
+      ),
       'allowedOrigins', COALESCE(to_jsonb(w.website_embed_allowed_origins), '[]'::jsonb),
       'launcherLabel', COALESCE(w.website_embed_launcher_label, 'Chat with us'),
       'icon', COALESCE(w.website_embed_launcher_icon, 'chat'),
@@ -70,6 +87,20 @@ SELECT
   w.updated_at
 FROM workspaces w
 LEFT JOIN retrieval_settings rs ON rs.workspace_id = w.id
+LEFT JOIN (
+  SELECT anonymous_chat_token AS token
+  FROM workspaces
+  WHERE anonymous_chat_token IS NOT NULL
+  GROUP BY anonymous_chat_token
+  HAVING COUNT(*) = 1
+) unique_anonymous_chat_tokens ON unique_anonymous_chat_tokens.token = w.anonymous_chat_token
+LEFT JOIN (
+  SELECT website_embed_token AS token
+  FROM workspaces
+  WHERE website_embed_token IS NOT NULL
+  GROUP BY website_embed_token
+  HAVING COUNT(*) = 1
+) unique_website_embed_tokens ON unique_website_embed_tokens.token = w.website_embed_token
 WHERE NOT EXISTS (
   SELECT 1 FROM agents a WHERE a.workspace_id = w.id
 );

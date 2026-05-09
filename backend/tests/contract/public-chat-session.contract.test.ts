@@ -156,6 +156,51 @@ describe("public chat session contract", () => {
     });
   });
 
+  it("returns the current agent token when a legacy workspace public token resolves the launch", async () => {
+    const { app, dependencies, repositories } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-legacy-token@example.com");
+    const legacyToken = "legacy-duplicate-token";
+    const currentToken = "current-agent-token";
+
+    await dependencies.workspaceRepository.updateAnonymousChatSettings(session.workspaceId, true, legacyToken, 10);
+    const agents = await dependencies.agentService.list(session.workspaceId);
+    const sideAgent = await repositories.agentRepository.create(session.workspaceId, {
+      name: "Side public agent",
+      surfaceSettings: {
+        anonymousChat: {
+          enabled: true,
+          token: "side-agent-token",
+        },
+      },
+    });
+    await repositories.agentRepository.update(agents[0].id, session.workspaceId, {
+      surfaceSettings: {
+        anonymousChat: {
+          enabled: true,
+          token: currentToken,
+        },
+      },
+    });
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${legacyToken}/sessions`)
+      .send({ channel: "anonymous_link", agentId: sideAgent.id });
+
+    expect(response.status).toBe(200);
+    expect(response.body.agentId).toBe(agents[0].id);
+    expect(response.body.publicChatToken).toBe(currentToken);
+
+    const chatResponse = await request(app)
+      .post(`/api/v1/public/chat/${response.body.publicChatToken}`)
+      .set("x-radioso-public-session", response.body.publicSessionToken)
+      .send({
+        message: "What can you do?",
+        stream: false,
+      });
+
+    expect(chatResponse.status).toBe(200);
+  });
+
   it("falls back to the current default agent when a signed session carries a stale agent id", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-chat-stale-agent@example.com");

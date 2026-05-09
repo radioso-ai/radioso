@@ -326,4 +326,29 @@ describe("agents contract", () => {
       .send({ message: "hello side agent", stream: false })
       .expect(200);
   });
+
+  it("rejects enabled website embed settings without an allowed origin", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-embed-validation@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({ name: "Embed validation agent" })
+      .expect(201);
+
+    await request(app)
+      .put(`/api/v1/agents/${agent.body.id}`)
+      .set("Authorization", authorization)
+      .send({
+        surfaceSettings: {
+          websiteEmbed: {
+            enabled: true,
+            allowedOrigins: [],
+          },
+        },
+      })
+      .expect(400);
+  });
 });

@@ -99,12 +99,14 @@ export const createAnswerFeedbackRoutes = (
     try {
       const params = parseParams(publicFeedbackParamsSchema, req.params);
       const body = parseBody(feedbackBodySchema, req.body);
-      const { workspaceId, anonymousSessionId } = res.locals as {
+      const { workspaceId, agentId, anonymousSessionId } = res.locals as {
         workspaceId: string;
+        agentId?: string | null;
         anonymousSessionId: string;
       };
       const feedback = await service.upsert({
         workspaceId,
+        agentId,
         assistantMessageId: params.assistantMessageId,
         value: body.value,
         comment: body.comment,
@@ -119,12 +121,14 @@ export const createAnswerFeedbackRoutes = (
   router.delete("/public/chat/:token/messages/:assistantMessageId", publicChatSession, async (req, res, next) => {
     try {
       const params = parseParams(publicFeedbackParamsSchema, req.params);
-      const { workspaceId, anonymousSessionId } = res.locals as {
+      const { workspaceId, agentId, anonymousSessionId } = res.locals as {
         workspaceId: string;
+        agentId?: string | null;
         anonymousSessionId: string;
       };
       res.status(200).json(await service.clear({
         workspaceId,
+        agentId,
         assistantMessageId: params.assistantMessageId,
         actor: getPublicFeedbackActor(anonymousSessionId),
       }));

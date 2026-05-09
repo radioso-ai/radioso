@@ -10,6 +10,7 @@ import {
   request,
   requestLongRunning,
   requireWorkspaceApiToken,
+  storeEffectivePublicChatToken,
   storePublicSessionToken,
   storeWorkspaceToken,
 } from './api-client'
@@ -26,11 +27,13 @@ export {
   getStoredActiveWorkspacePublicRouteKey,
   readStoredAnonymousSessionId,
   readStoredEmbedBootstrapSession,
+  readStoredEffectivePublicChatToken,
   readStoredPublicSessionToken,
   removeWorkspaceToken,
   seedWorkspaceSession,
   setPendingAccountSwitchId,
   storeEmbedBootstrapSession,
+  storeEffectivePublicChatToken,
   storePublicSessionToken,
 } from './api-client'
 
@@ -1953,6 +1956,7 @@ export const publicChatApi = {
 
     const session = await response.json() as PublicChatSessionResponse
     storePublicSessionToken(session.publicChatToken, session.publicSessionToken, session.expiresAt)
+    storeEffectivePublicChatToken(token, session.publicChatToken)
     return session
   },
 

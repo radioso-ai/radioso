@@ -21,6 +21,7 @@ export interface WorkspaceRecord extends AssistantBootstrapSettingsRecord, Websi
   accountId: string;
   name: string;
   publicRouteKey: string;
+  defaultAgentId: string | null;
   anonymousChatEnabled: boolean;
   anonymousChatToken: string | null;
   anonymousRateLimit: number;
@@ -33,6 +34,7 @@ interface WorkspaceRow {
   account_id: string;
   name: string;
   public_route_key: string;
+  default_agent_id: string | null;
   assistant_name: string | null;
   greeting_instruction: string | null;
   assistant_default_locale: string | null;
@@ -74,6 +76,7 @@ const mapWorkspace = (row: WorkspaceRow): WorkspaceRecord => {
     accountId: row.account_id,
     name: row.name,
     publicRouteKey: row.public_route_key,
+    defaultAgentId: row.default_agent_id ?? null,
     ...bootstrap,
     ...websiteEmbed,
     anonymousChatEnabled: row.anonymous_chat_enabled ?? false,
@@ -89,6 +92,7 @@ const workspaceColumns = `
   account_id,
   name,
   public_route_key,
+  default_agent_id,
   assistant_name,
   greeting_instruction,
   assistant_default_locale,

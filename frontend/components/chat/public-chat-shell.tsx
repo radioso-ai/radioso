@@ -317,7 +317,6 @@ function PublicChatContent({
   copyOverrides,
   themeOverrides,
   surface,
-  publicChatToken,
 }: {
   initialWorkspaceName?: string | null
   localeOverride?: string | null
@@ -327,7 +326,6 @@ function PublicChatContent({
   copyOverrides?: WebsiteEmbedCopyOverrides | null
   themeOverrides?: WebsiteEmbedThemeOverrides | null
   surface: PublicChatSurface
-  publicChatToken: string
 }) {
   const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
   const theme = getWebsiteEmbedTheme(themeOverrides)
@@ -336,6 +334,7 @@ function PublicChatContent({
   const [contactConfirmation, setContactConfirmation] = useState<ChatThreadMessage | null>(null)
   const { isCompactKeyboardLayout, isNarrowLayout } = useWebsiteEmbedViewportLayout(surface === 'embed')
   const {
+    publicChatToken,
     conversationId,
     messages,
     workspaceName,
@@ -817,6 +816,7 @@ export function PublicChatShell({
 
   return (
     <AnonymousChatProvider
+      key={token}
       token={token}
       sessionChannel={surface === 'public' ? 'anonymous_link' : null}
       initialActions={initialActions}
@@ -840,7 +840,6 @@ export function PublicChatShell({
           copyOverrides={copyOverrides}
           themeOverrides={themeOverrides}
           surface={surface}
-          publicChatToken={token}
         />
       </div>
     </AnonymousChatProvider>

@@ -35,6 +35,7 @@ export interface AssistantPageContext {
 
 export interface AssistantChatRequest {
   workspaceId: string;
+  agentId?: string | null;
   accountId?: string;
   conversationId?: string;
   message?: string;

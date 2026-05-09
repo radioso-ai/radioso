@@ -5,6 +5,7 @@ const PUBLIC_CHAT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 const publicChatSessionPayloadSchema = z.object({
   workspaceId: z.string().uuid(),
+  agentId: z.string().uuid().optional(),
   publicChatToken: z.string().min(1),
   publicSessionId: z.string().uuid(),
   sourceChannel: z.enum(["anonymous", "website_embed"]),

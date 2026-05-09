@@ -11,6 +11,7 @@ import {
 
 import {
   chatApi,
+  agentsApi,
   generalSettingsApi,
   type AnswerFeedbackState,
   type AnswerSegment,
@@ -40,6 +41,7 @@ export interface ChatMessage {
 }
 
 interface ChatSession {
+  agentId?: string
   conversationId?: string
   messages: ChatMessage[]
   isLoading: boolean
@@ -48,10 +50,10 @@ interface ChatSession {
 }
 
 interface ChatContextValue {
-  getSession: (workspaceId: string) => ChatSession
-  initializeSession: (workspaceId: string, userExpectedLocale?: string) => Promise<void>
-  sendMessage: (workspaceId: string, content: string, inputMetadata?: ChatUserInputMetadata) => Promise<boolean>
-  startNewChat: (workspaceId: string, userExpectedLocale?: string) => Promise<void>
+  getSession: (workspaceId: string, agentId?: string) => ChatSession
+  initializeSession: (workspaceId: string, userExpectedLocale?: string, agentId?: string) => Promise<void>
+  sendMessage: (workspaceId: string, content: string, inputMetadata?: ChatUserInputMetadata, agentId?: string) => Promise<boolean>
+  startNewChat: (workspaceId: string, userExpectedLocale?: string, agentId?: string) => Promise<void>
 }
 
 const EMPTY_SESSION: ChatSession = {
@@ -86,7 +88,17 @@ const getErrorMessage = (error: unknown) => {
 const ensureSession = (
   sessions: Record<string, ChatSession>,
   accountId: string,
-): ChatSession => sessions[accountId] ?? EMPTY_SESSION
+  agentId?: string,
+): ChatSession => {
+  const session = sessions[accountId]
+  if (!session) {
+    return EMPTY_SESSION
+  }
+  if (agentId && session.agentId !== agentId) {
+    return EMPTY_SESSION
+  }
+  return session
+}
 
 const clearMessageSuggestions = (messages: ChatMessage[]): ChatMessage[] =>
   messages.map((message) =>
@@ -121,24 +133,48 @@ const restoreMessageSuggestions = (
 const resolveBrowserLocale = (): string | undefined =>
   typeof navigator !== 'undefined' ? navigator.languages?.[0] ?? navigator.language : undefined
 
+const getAssistantBootstrapActive = async (agentId?: string) => {
+  if (agentId) {
+    return (await agentsApi.getAgent(agentId)).assistantBootstrapActive
+  }
+  return (await generalSettingsApi.getGeneralSettings()).assistantBootstrapActive
+}
+
+class AgentMismatchError extends Error {}
+
+const assertSelectedAgentCompletion = (
+  selectedAgentId: string | undefined,
+  completionAgentId: string | undefined,
+) => {
+  if (selectedAgentId && completionAgentId && selectedAgentId !== completionAgentId) {
+    throw new AgentMismatchError(
+      'The response came from a different agent. Please start a new chat for the selected agent.',
+    )
+  }
+}
+
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<Record<string, ChatSession>>({})
 
   const getSession = useCallback(
-    (accountId: string) => ensureSession(sessions, accountId),
+    (accountId: string, agentId?: string) => ensureSession(sessions, accountId, agentId),
     [sessions],
   )
 
   const updateSession = useCallback(
     (
       accountId: string,
+      agentId: string | undefined,
       updater: (session: ChatSession) => ChatSession,
     ) => {
       setSessions((currentSessions) => {
-        const currentSession = ensureSession(currentSessions, accountId)
+        const currentSession = ensureSession(currentSessions, accountId, agentId)
         return {
           ...currentSessions,
-          [accountId]: updater(currentSession),
+          [accountId]: {
+            ...updater(currentSession),
+            ...(agentId ? { agentId } : {}),
+          },
         }
       })
     },
@@ -146,8 +182,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   )
 
   const applyCompletion = useCallback(
-    (accountId: string, assistantMessageId: string, completion: ChatStreamCompletion) => {
-      updateSession(accountId, (session) => ({
+    (accountId: string, agentId: string | undefined, assistantMessageId: string, completion: ChatStreamCompletion) => {
+      updateSession(accountId, agentId, (session) => ({
         ...session,
         conversationId: completion.conversationId ?? session.conversationId,
         isLoading: false,
@@ -172,14 +208,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   )
 
   const sendMessage = useCallback(
-    async (accountId: string, content: string, inputMetadata?: ChatUserInputMetadata) => {
+    async (accountId: string, content: string, inputMetadata?: ChatUserInputMetadata, agentId?: string) => {
       const query = content.trim()
 
       if (!query) {
         return false
       }
 
-      const currentSession = ensureSession(sessions, accountId)
+      const currentSession = ensureSession(sessions, accountId, agentId)
       const previousMessages = currentSession.messages
 
       if (currentSession.isLoading || currentSession.isBootstrapping) {
@@ -198,7 +234,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const assistantMessageId = createClientId('chat-assistant')
       const assistantCreatedAt = new Date().toISOString()
 
-      updateSession(accountId, (session) => ({
+      updateSession(accountId, agentId, (session) => ({
         ...session,
         isLoading: true,
         messages: [
@@ -220,6 +256,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const completion = await chatApi.streamChatResponse(
           {
             query,
+            agentId,
             stream: true,
             conversationId: currentSession.conversationId,
             inputMetadata,
@@ -227,13 +264,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           },
           {
             onConversation: ({ conversationId }) => {
-              updateSession(accountId, (session) => ({
+              updateSession(accountId, agentId, (session) => ({
                 ...session,
                 conversationId,
               }))
             },
             onChunk: ({ text }) => {
-              updateSession(accountId, (session) => ({
+              updateSession(accountId, agentId, (session) => ({
                 ...session,
                 messages: session.messages.map((message) =>
                   message.id === assistantMessageId
@@ -246,11 +283,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               }))
             },
             onDone: (completion) => {
+              assertSelectedAgentCompletion(agentId, completion.agentId)
               didComplete = true
-              applyCompletion(accountId, assistantMessageId, completion)
+              applyCompletion(accountId, agentId, assistantMessageId, completion)
             },
             onSuggestions: ({ suggestions }) => {
-              updateSession(accountId, (session) => ({
+              updateSession(accountId, agentId, (session) => ({
                 ...session,
                 messages: session.messages.map((message) =>
                   message.id === assistantMessageId
@@ -266,8 +304,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         )
 
         if (!didComplete) {
-          applyCompletion(accountId, assistantMessageId, {
+          assertSelectedAgentCompletion(agentId, completion.agentId)
+          applyCompletion(accountId, agentId, assistantMessageId, {
             conversationId: completion.conversationId,
+            agentId: completion.agentId,
+            agentName: completion.agentName,
+            route: completion.route,
             answer: completion.answer,
             citations: completion.citations,
             answerSegments: completion.answerSegments,
@@ -280,8 +322,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         return true
       } catch (error) {
         const errorMessage = getErrorMessage(error)
+        const replaceAssistantContent = error instanceof AgentMismatchError
 
-        updateSession(accountId, (session) => {
+        updateSession(accountId, agentId, (session) => {
           const nextMessages = restoreMessageSuggestions(
             session.messages.map((message) => {
               if (message.id !== assistantMessageId) {
@@ -290,7 +333,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
               return {
                 ...message,
-                content: message.content || errorMessage,
+                content: replaceAssistantContent ? errorMessage : message.content || errorMessage,
                 status: 'error' as const,
                 citations: [] as Citation[],
                 answerSegments: undefined,
@@ -314,8 +357,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   )
 
   const initializeSession = useCallback(
-    async (accountId: string, userExpectedLocale?: string) => {
-      const currentSession = ensureSession(sessions, accountId)
+    async (accountId: string, userExpectedLocale?: string, agentId?: string) => {
+      const currentSession = ensureSession(sessions, accountId, agentId)
       if (
         currentSession.isInitialized ||
         currentSession.isLoading ||
@@ -325,15 +368,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      updateSession(accountId, (session) => ({
+      updateSession(accountId, agentId, (session) => ({
         ...session,
         isBootstrapping: true,
       }))
 
       try {
-        const settings = await generalSettingsApi.getGeneralSettings()
-        if (!settings.assistantBootstrapActive) {
-          updateSession(accountId, (session) => ({
+        if (!await getAssistantBootstrapActive(agentId)) {
+          updateSession(accountId, agentId, (session) => ({
             ...session,
             isInitialized: true,
           }))
@@ -342,19 +384,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
         const bootstrap = await chatApi.bootstrapConversation({
           stream: false,
+          agentId,
           bootstrapGreeting: true,
           userExpectedLocale,
         })
 
         if (!bootstrap?.answer) {
-          updateSession(accountId, (session) => ({
+          updateSession(accountId, agentId, (session) => ({
             ...session,
             isInitialized: true,
           }))
           return
         }
 
-        updateSession(accountId, (session) => ({
+        updateSession(accountId, agentId, (session) => ({
           ...(session.messages.length > 0 || session.conversationId
             ? {
                 ...session,
@@ -383,12 +426,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }))
       } catch {
         // Silent-start fallback is intentional when bootstrap startup fails.
-        updateSession(accountId, (session) => ({
+        updateSession(accountId, agentId, (session) => ({
           ...session,
           isInitialized: false,
         }))
       } finally {
-        updateSession(accountId, (session) => ({
+        updateSession(accountId, agentId, (session) => ({
           ...session,
           isBootstrapping: false,
         }))
@@ -398,21 +441,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   )
 
   const startNewChat = useCallback(
-    async (accountId: string, userExpectedLocale?: string) => {
-      const currentSession = ensureSession(sessions, accountId)
+    async (accountId: string, userExpectedLocale?: string, agentId?: string) => {
+      const currentSession = ensureSession(sessions, accountId, agentId)
       if (currentSession.isLoading || currentSession.isBootstrapping) {
         return
       }
 
-      updateSession(accountId, () => ({
+      updateSession(accountId, agentId, () => ({
         ...EMPTY_SESSION,
         isBootstrapping: true,
       }))
 
       try {
-        const settings = await generalSettingsApi.getGeneralSettings()
-        if (!settings.assistantBootstrapActive) {
-          updateSession(accountId, () => ({
+        if (!await getAssistantBootstrapActive(agentId)) {
+          updateSession(accountId, agentId, () => ({
             ...EMPTY_SESSION,
             isInitialized: true,
           }))
@@ -421,19 +463,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
         const bootstrap = await chatApi.bootstrapConversation({
           stream: false,
+          agentId,
           bootstrapGreeting: true,
           userExpectedLocale,
         })
 
         if (!bootstrap?.answer) {
-          updateSession(accountId, () => ({
+          updateSession(accountId, agentId, () => ({
             ...EMPTY_SESSION,
             isInitialized: true,
           }))
           return
         }
 
-        updateSession(accountId, () => ({
+        updateSession(accountId, agentId, () => ({
           ...(bootstrap.conversationId ? { conversationId: bootstrap.conversationId } : {}),
           messages: [
             {
@@ -454,11 +497,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           isBootstrapping: false,
         }))
       } catch {
-        updateSession(accountId, () => ({
+        updateSession(accountId, agentId, () => ({
           ...EMPTY_SESSION,
         }))
       } finally {
-        updateSession(accountId, (session) => ({
+        updateSession(accountId, agentId, (session) => ({
           ...session,
           isBootstrapping: false,
         }))
@@ -480,7 +523,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
 }
 
-export const useChatSession = (workspaceId: string) => {
+export const useChatSession = (workspaceId: string, agentId?: string) => {
   const context = useContext(ChatContext)
 
   if (!context) {
@@ -488,11 +531,11 @@ export const useChatSession = (workspaceId: string) => {
   }
 
   return {
-    ...context.getSession(workspaceId),
+    ...context.getSession(workspaceId, agentId),
     initializeSession: (userExpectedLocale?: string) =>
-      context.initializeSession(workspaceId, userExpectedLocale),
-    sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata) => context.sendMessage(workspaceId, content, inputMetadata),
+      context.initializeSession(workspaceId, userExpectedLocale, agentId),
+    sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata) => context.sendMessage(workspaceId, content, inputMetadata, agentId),
     startNewChat: (userExpectedLocale?: string) =>
-      context.startNewChat(workspaceId, userExpectedLocale),
+      context.startNewChat(workspaceId, userExpectedLocale, agentId),
   }
 }

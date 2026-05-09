@@ -2,10 +2,12 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { z } from "zod";
 
-import { notFound } from "../../../shared/domain/errors.js";
-import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import { AppError, notFound } from "../../../shared/domain/errors.js";
+import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
+import type { AgentRecord, AgentService } from "../../../modules/agents/public.js";
+import { isAgentBootstrapActive } from "../../../modules/agents/public.js";
 import {
-  isAssistantBootstrapActive,
   resolveAssistantDisplayName,
 } from "../../../modules/settings/contracts/assistantBootstrap.js";
 import { verifyPublicChatSession } from "../../../modules/settings/contracts/publicChatSession.js";
@@ -18,6 +20,8 @@ const ANONYMOUS_RATE_LIMIT_COOKIE_PREFIX = "anon_rate_limit_";
 const anonymousTokenParamsSchema = z.object({
   token: z.string().min(1),
 });
+
+type PublicSessionAgent = Pick<AgentRecord, "id" | "workspaceId" | "name" | "proactiveGreetingEnabled" | "surfaceSettings">;
 
 const isLoopbackHost = (host: string | undefined) => {
   if (!host) {
@@ -73,10 +77,58 @@ const verifyAnonymousRateLimitCookie = (value: string | undefined, secret: strin
   return id;
 };
 
+const publicSessionMatchesAgentSurface = (
+  agent: PublicSessionAgent,
+  token: string,
+  sourceChannel: "anonymous" | "website_embed",
+) => {
+  if (sourceChannel === "website_embed") {
+    return agent.surfaceSettings.websiteEmbed.enabled && (
+      agent.surfaceSettings.websiteEmbed.token === token ||
+      agent.surfaceSettings.anonymousChat.token === token
+    );
+  }
+
+  return agent.surfaceSettings.anonymousChat.enabled && agent.surfaceSettings.anonymousChat.token === token;
+};
+
+const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionAgent | null => {
+  if (!workspace) {
+    return null;
+  }
+
+  return {
+    id: workspace.defaultAgentId ?? workspace.id,
+    workspaceId: workspace.id,
+    name: workspace.assistantName,
+    proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
+    surfaceSettings: {
+      authenticatedChat: {
+        enabled: true,
+      },
+      anonymousChat: {
+        enabled: workspace.anonymousChatEnabled,
+        token: workspace.anonymousChatToken,
+        messagesPerMinute: workspace.anonymousRateLimit,
+      },
+      websiteEmbed: {
+        enabled: workspace.websiteEmbedEnabled,
+        token: workspace.websiteEmbedToken,
+        allowedOrigins: workspace.websiteEmbedAllowedOrigins,
+        launcherLabel: workspace.websiteEmbedLauncherLabel,
+        icon: workspace.websiteEmbedLauncherIcon,
+        launcherPosition: workspace.websiteEmbedLauncherPosition,
+      },
+    },
+  };
+};
+
 export const resolveAnonymousSession = (
   workspaceRepository: WorkspaceRepositoryPort,
   publicChatSessionSecret: string | undefined,
   anonymousRateLimitCookieSecret: string | undefined = publicChatSessionSecret,
+  agentRepository?: Pick<AgentRepositoryPort, "findByAnonymousChatToken" | "findByWebsiteEmbedToken">,
+  agentService?: Pick<AgentService, "resolve">,
 ): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -88,14 +140,50 @@ export const resolveAnonymousSession = (
       }
 
       const { token } = parsedParams.data;
-      const workspace = await workspaceRepository.findByAnonymousChatToken(token);
       const publicSession = verifyPublicChatSession(req.get(PUBLIC_CHAT_SESSION_HEADER), publicChatSessionSecret);
-      const hasValidPublicSession =
-        Boolean(publicSession) &&
-        publicSession?.workspaceId === workspace?.id &&
-        publicSession?.publicChatToken === token;
+      const firstAgentByToken = async () => {
+        if (!agentRepository) {
+          return null;
+        }
 
-      if (!workspace || !hasValidPublicSession) {
+        if (publicSession?.sourceChannel === "website_embed") {
+          return await agentRepository.findByWebsiteEmbedToken(token)
+            ?? await agentRepository.findByAnonymousChatToken(token);
+        }
+
+        return await agentRepository.findByAnonymousChatToken(token)
+          ?? await agentRepository.findByWebsiteEmbedToken(token);
+      };
+      const agentByToken = await firstAgentByToken();
+      const workspace = publicSession
+        ? await workspaceRepository.findById(publicSession.workspaceId)
+        : agentByToken
+          ? await workspaceRepository.findById(agentByToken.workspaceId)
+          : await workspaceRepository.findByAnonymousChatToken(token)
+            ?? await workspaceRepository.findByWebsiteEmbedToken(token);
+      let agent: PublicSessionAgent | null = null;
+      if (workspace && agentService && publicSession?.agentId) {
+        try {
+          agent = await agentService.resolve(workspace.id, publicSession?.agentId);
+        } catch (error) {
+          if (!(error instanceof AppError && error.statusCode === 404) || !publicSession?.agentId) {
+            throw error;
+          }
+          agent = await agentService.resolve(workspace.id);
+        }
+      }
+      agent = agent ?? agentByToken ?? (!agentService ? legacyWorkspaceAgent(workspace) : null);
+      const hasValidPublicSession = Boolean(
+        publicSession &&
+        workspace &&
+        agent &&
+        publicSession.workspaceId === workspace.id &&
+        agent.workspaceId === workspace.id &&
+        publicSession.publicChatToken === token &&
+        publicSessionMatchesAgentSurface(agent, token, publicSession.sourceChannel),
+      );
+
+      if (!workspace || !agent || !publicSession || !hasValidPublicSession) {
         next(notFound("Not found"));
         return;
       }
@@ -127,17 +215,18 @@ export const resolveAnonymousSession = (
       res.setHeader(PUBLIC_CHAT_SESSION_ID_HEADER, sessionId);
 
       res.locals.workspaceId = workspace.id;
+      res.locals.agentId = agent.id;
       res.locals.workspaceName = resolveAssistantDisplayName({
-        assistantName: workspace.assistantName,
+        assistantName: agent.name,
         workspaceName: workspace.name,
       });
       res.locals.anonymousSessionId = sessionId;
       res.locals.anonymousRateLimitId = rateLimitId;
       res.locals.anonymousRateLimitIdFromCookie = Boolean(rateLimitIdFromCookie);
-      res.locals.anonymousRateLimit = workspace.anonymousRateLimit;
+      res.locals.anonymousRateLimit = agent.surfaceSettings.anonymousChat.messagesPerMinute;
       res.locals.sourceChannel = publicSession?.sourceChannel ?? "anonymous";
       res.locals.sourceOrigin = publicSession?.sourceOrigin ?? null;
-      res.locals.assistantBootstrapActive = isAssistantBootstrapActive(workspace);
+      res.locals.assistantBootstrapActive = isAgentBootstrapActive(agent);
       next();
     } catch (error) {
       next(error);

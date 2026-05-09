@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Database } from "../../shared/infra/database.js";
+import { stringifyJsonb } from "../../shared/infra/jsonb.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 
 export interface AuditEventRecord {
@@ -80,7 +81,7 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
       `INSERT INTO audit_events (id, account_id, workspace_id, event_type, event_status, metadata_json)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
        RETURNING id, account_id, workspace_id, event_type, event_status, metadata_json, created_at`,
-      [randomUUID(), input.accountId ?? null, input.workspaceId ?? null, input.eventType, input.eventStatus, JSON.stringify(input.metadata ?? {})],
+      [randomUUID(), input.accountId ?? null, input.workspaceId ?? null, input.eventType, input.eventStatus, stringifyJsonb(input.metadata ?? {})],
     );
 
     return mapAuditEvent(row);
@@ -186,8 +187,8 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
         input.workspaceId,
         input.conversationId,
         input.assistantMessageId,
-        JSON.stringify(input.suggestions),
-        JSON.stringify(input.conversationModeMetadata),
+        stringifyJsonb(input.suggestions),
+        stringifyJsonb(input.conversationModeMetadata),
       ],
     );
 

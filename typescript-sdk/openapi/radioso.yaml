@@ -1595,9 +1595,228 @@ components:
             websiteEmbedLauncherPosition:
               type: string
               enum: *a8
+    Agent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - workspaceId
+        - name
+        - createdAt
+        - updatedAt
+    ConversationAgentSurfaceSettings:
+      type: object
+      properties:
+        authenticatedChat:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+          required:
+            - enabled
+        anonymousChat:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            token:
+              type:
+                - string
+                - "null"
+            messagesPerMinute:
+              type: integer
+              minimum: 1
+              maximum: 60
+          required:
+            - enabled
+            - token
+            - messagesPerMinute
+        websiteEmbed:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            token:
+              type:
+                - string
+                - "null"
+            allowedOrigins:
+              type: array
+              items:
+                type: string
+            launcherLabel:
+              type: string
+            icon:
+              type: string
+              enum: &a11
+                - chat
+                - sparkles
+                - message
+            launcherPosition:
+              type: string
+              enum: &a12
+                - bottom-right
+                - bottom-left
+          required:
+            - enabled
+            - token
+            - allowedOrigins
+            - launcherLabel
+            - icon
+            - launcherPosition
+      required:
+        - authenticatedChat
+        - anonymousChat
+        - websiteEmbed
+    ConversationAgent:
+      allOf:
+        - $ref: "#/components/schemas/Agent"
+        - type: object
+          properties:
+            isDefault:
+              type: boolean
+            customInstruction:
+              type: string
+            conversationMode:
+              type: string
+              enum: &a10
+                - factual
+                - guided
+                - exploratory
+            suggestedQuestionsEnabled:
+              type: boolean
+            suggestedQuestionsCount:
+              type: integer
+              minimum: 1
+              maximum: 4
+            retrievalEnabled:
+              type: boolean
+            greetingInstruction:
+              type: string
+            assistantDefaultLocale:
+              type:
+                - string
+                - "null"
+            proactiveGreetingEnabled:
+              type: boolean
+            assistantBootstrapActive:
+              type: boolean
+            surfaceSettings:
+              $ref: "#/components/schemas/ConversationAgentSurfaceSettings"
+          required:
+            - isDefault
+            - customInstruction
+            - conversationMode
+            - suggestedQuestionsEnabled
+            - suggestedQuestionsCount
+            - retrievalEnabled
+            - greetingInstruction
+            - assistantDefaultLocale
+            - proactiveGreetingEnabled
+            - assistantBootstrapActive
+            - surfaceSettings
+    AgentListResponse:
+      type: object
+      properties:
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationAgent"
+      required:
+        - agents
+    ConversationAgentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        customInstruction:
+          type: string
+          maxLength: 2000
+        conversationMode:
+          type: string
+          enum: *a10
+        suggestedQuestionsEnabled:
+          type: boolean
+        suggestedQuestionsCount:
+          type: integer
+          minimum: 1
+          maximum: 4
+        retrievalEnabled:
+          type: boolean
+        greetingInstruction:
+          type: string
+          maxLength: 200
+        assistantDefaultLocale:
+          type:
+            - string
+            - "null"
+          maxLength: 35
+        proactiveGreetingEnabled:
+          type: boolean
+        surfaceSettings:
+          type: object
+          properties:
+            authenticatedChat:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+            anonymousChat:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                messagesPerMinute:
+                  type: integer
+                  minimum: 1
+                  maximum: 60
+            websiteEmbed:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                allowedOrigins:
+                  type: array
+                  items:
+                    type: string
+                    maxLength: 200
+                  maxItems: 20
+                launcherLabel:
+                  type: string
+                  maxLength: 80
+                icon:
+                  type: string
+                  enum: *a11
+                launcherPosition:
+                  type: string
+                  enum: *a12
+        rotateAnonymousChatToken:
+          type: boolean
+        rotateWebsiteEmbedToken:
+          type: boolean
     PublicChatSessionResponse:
       type: object
       properties:
+        agentId:
+          type: string
+          format: uuid
+        agentName:
+          type: string
         workspaceName:
           type: string
         publicChatToken:
@@ -1630,6 +1849,9 @@ components:
           enum:
             - anonymous_link
             - website_embed
+        agentId:
+          type: string
+          format: uuid
         anonymousSessionId:
           type: string
           format: uuid
@@ -2181,7 +2403,7 @@ components:
               type: string
             selectionMode:
               type: string
-              enum: &a12
+              enum: &a15
                 - deterministic
                 - probabilistic
             selectionReason:
@@ -2192,7 +2414,7 @@ components:
               maximum: 1
             callerSurface:
               type: string
-              enum: &a13
+              enum: &a16
                 - assistant
                 - retrieval_api
                 - sdk
@@ -2229,7 +2451,7 @@ components:
                 - used
             outcome:
               type: string
-              enum: &a14
+              enum: &a17
                 - success
                 - unsupported
                 - forbidden
@@ -2266,14 +2488,14 @@ components:
                     additionalProperties: {}
                 evidenceStatus:
                   type: string
-                  enum: &a10
+                  enum: &a13
                     - found
                     - missing
                     - partial
                     - not_applicable
                 supportStatus:
                   type: string
-                  enum: &a11
+                  enum: &a14
                     - supported
                     - unsupported
                     - not_checked
@@ -2673,10 +2895,10 @@ components:
             additionalProperties: {}
         evidenceStatus:
           type: string
-          enum: *a10
+          enum: *a13
         supportStatus:
           type: string
-          enum: *a11
+          enum: *a14
         groundingOutcome:
           type: string
     SkillDiagnosticDefinition:
@@ -2690,7 +2912,7 @@ components:
           type: string
         selectionMode:
           type: string
-          enum: *a12
+          enum: *a15
         selectionReason:
           type: string
         selectionConfidence:
@@ -2699,7 +2921,7 @@ components:
           maximum: 1
         callerSurface:
           type: string
-          enum: *a13
+          enum: *a16
         capabilityChecks:
           type: array
           items:
@@ -2730,7 +2952,7 @@ components:
             - used
         outcome:
           type: string
-          enum: *a14
+          enum: *a17
         error:
           type: object
           properties:
@@ -2762,10 +2984,10 @@ components:
                 additionalProperties: {}
             evidenceStatus:
               type: string
-              enum: *a10
+              enum: *a13
             supportStatus:
               type: string
-              enum: *a11
+              enum: *a14
             groundingOutcome:
               type: string
       required:
@@ -2805,7 +3027,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a13
+            enum: *a16
         requiredCapabilities:
           type: array
           items:
@@ -2947,6 +3169,11 @@ components:
         assistantMessageId:
           type: string
           format: uuid
+        agentId:
+          type: string
+          format: uuid
+        agentName:
+          type: string
         answer:
           type: string
         citations:
@@ -2976,7 +3203,7 @@ components:
               type: boolean
             expansionKind:
               type: string
-              enum: &a15
+              enum: &a18
                 - none
                 - focused
                 - expansive
@@ -3013,6 +3240,11 @@ components:
         conversationId:
           type: string
           format: uuid
+        agentId:
+          type: string
+          format: uuid
+        agentName:
+          type: string
         answer:
           type: string
         citations:
@@ -3042,7 +3274,7 @@ components:
               type: boolean
             expansionKind:
               type: string
-              enum: *a15
+              enum: *a18
             suggestionCount:
               type: integer
               minimum: 0
@@ -3077,6 +3309,9 @@ components:
       anyOf:
         - type: object
           properties:
+            agentId:
+              type: string
+              format: uuid
             conversationId:
               type: string
               format: uuid
@@ -3129,6 +3364,9 @@ components:
           description: Standard assistant turn. `message` is required for non-bootstrap requests.
         - type: object
           properties:
+            agentId:
+              type: string
+              format: uuid
             startConversation:
               type: boolean
               enum:
@@ -3182,6 +3420,9 @@ components:
       anyOf:
         - type: object
           properties:
+            agentId:
+              type: string
+              format: uuid
             conversationId:
               type: string
               format: uuid
@@ -3245,6 +3486,9 @@ components:
           description: Standard public chat turn. `message` is required for non-bootstrap requests.
         - type: object
           properties:
+            agentId:
+              type: string
+              format: uuid
             startConversation:
               type: boolean
               enum:
@@ -3311,6 +3555,15 @@ components:
         id:
           type: string
           format: uuid
+        agentId:
+          type:
+            - string
+            - "null"
+          format: uuid
+        agentName:
+          type:
+            - string
+            - "null"
         sourceChannel:
           type:
             - string
@@ -3344,6 +3597,8 @@ components:
             - "null"
       required:
         - id
+        - agentId
+        - agentName
         - sourceChannel
         - sourceOrigin
         - anonymousSessionId
@@ -3631,6 +3886,11 @@ components:
         workspaceId:
           type: string
           format: uuid
+        agentId:
+          type:
+            - string
+            - "null"
+          format: uuid
         sourceChannel:
           type:
             - string
@@ -3676,6 +3936,7 @@ components:
       required:
         - conversationId
         - workspaceId
+        - agentId
         - sourceChannel
         - sourceOrigin
         - createdAt
@@ -4979,6 +5240,172 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FlatErrorResponse"
+  /api/v1/agents:
+    get:
+      tags:
+        - Agents
+      summary: List workspace agents
+      operationId: listAgents
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Agents returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentListResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Agents
+      summary: Create a workspace agent
+      operationId: createAgent
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationAgentRequest"
+      responses:
+        "201":
+          description: Agent created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationAgent"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}:
+    get:
+      tags:
+        - Agents
+      summary: Get a workspace agent
+      operationId: getAgent
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: Agent returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationAgent"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      tags:
+        - Agents
+      summary: Update a workspace agent
+      operationId: updateAgent
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationAgentRequest"
+      responses:
+        "200":
+          description: Agent updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationAgent"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/default:
+    post:
+      tags:
+        - Agents
+      summary: Set the default workspace agent
+      operationId: setDefaultAgent
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: Default agent updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationAgent"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/retrieval/search:
     post:
       tags:
@@ -5020,7 +5447,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - &a16
+        - &a19
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -5044,7 +5471,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a16
+        - *a19
       parameters:
         - schema:
             type: string

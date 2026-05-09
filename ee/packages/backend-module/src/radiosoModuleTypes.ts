@@ -138,6 +138,25 @@ export interface ApplicationRouteMount {
     };
     workspaceRepository: {
       findByAnonymousChatToken(token: string): Promise<{ id: string } | null>;
+      findByWebsiteEmbedToken?(token: string): Promise<{ id: string } | null>;
+    };
+    agentRepository?: {
+      findByAnonymousChatToken(token: string): Promise<{
+        id: string;
+        workspaceId: string;
+        surfaceSettings: {
+          anonymousChat: { enabled: boolean; token: string | null };
+          websiteEmbed: { enabled: boolean; token: string | null };
+        };
+      } | null>;
+      findByWebsiteEmbedToken(token: string): Promise<{
+        id: string;
+        workspaceId: string;
+        surfaceSettings: {
+          anonymousChat: { enabled: boolean; token: string | null };
+          websiteEmbed: { enabled: boolean; token: string | null };
+        };
+      } | null>;
     };
     documentIngestionService?: {
       ingest(input: {

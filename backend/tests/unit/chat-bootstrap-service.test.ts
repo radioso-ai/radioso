@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
+import { AgentService } from "../../src/modules/agents/public.js";
 import { defaultRetrievalSettings } from "../../src/modules/settings/domain/retrievalSettings.js";
 import {
+  InMemoryAgentRepository,
   InMemoryBootstrapGreetingCacheRepository,
   InMemoryWorkspaceRepository,
   createAuditService,
@@ -18,6 +20,11 @@ const createRetrievalSettingsService = (customInstruction = "") => ({
 const createProductAnalyticsService = () => ({
   track: vi.fn(async () => null),
 });
+
+const createAgentService = (
+  workspaceRepository: InMemoryWorkspaceRepository,
+  retrievalSettingsService: ReturnType<typeof createRetrievalSettingsService>,
+) => new AgentService(new InMemoryAgentRepository(), workspaceRepository, retrievalSettingsService);
 
 describe("chat bootstrap service", () => {
   it("returns an ephemeral first assistant turn and records chat started analytics", async () => {
@@ -38,14 +45,15 @@ describe("chat bootstrap service", () => {
     const auditService = createAuditService();
     const retrievalSettingsService = createRetrievalSettingsService();
     const productAnalyticsService = createProductAnalyticsService();
+    const agentService = createAgentService(workspaceRepository, retrievalSettingsService);
     const service = new ChatBootstrapService(
       workspaceRepository,
       bootstrapGreetingCacheRepository,
       chatGateway as never,
       auditService,
-      retrievalSettingsService,
       undefined,
       productAnalyticsService,
+      agentService,
     );
 
     const result = await service.startConversation({
@@ -99,14 +107,15 @@ describe("chat bootstrap service", () => {
     };
     const retrievalSettingsService = createRetrievalSettingsService();
     const productAnalyticsService = createProductAnalyticsService();
+    const agentService = createAgentService(workspaceRepository, retrievalSettingsService);
     const service = new ChatBootstrapService(
       workspaceRepository,
       new InMemoryBootstrapGreetingCacheRepository(),
       chatGateway as never,
       createAuditService(),
-      retrievalSettingsService,
       undefined,
       productAnalyticsService,
+      agentService,
     );
 
     const firstItalian = await service.startConversation({
@@ -146,7 +155,9 @@ describe("chat bootstrap service", () => {
         streamAnswer: vi.fn(),
       } as never,
       createAuditService(),
-      createRetrievalSettingsService(),
+      undefined,
+      undefined,
+      createAgentService(workspaceRepository, createRetrievalSettingsService()),
     );
 
     await expect(service.startConversation({ workspaceId: workspace.id })).resolves.toBeNull();
@@ -170,12 +181,15 @@ describe("chat bootstrap service", () => {
       streamAnswer: vi.fn(),
     };
     const retrievalSettingsService = createRetrievalSettingsService("Help visitors choose courses.");
+    const agentService = createAgentService(workspaceRepository, retrievalSettingsService);
     const service = new ChatBootstrapService(
       workspaceRepository,
       new InMemoryBootstrapGreetingCacheRepository(),
       chatGateway as never,
       createAuditService(),
-      retrievalSettingsService,
+      undefined,
+      undefined,
+      agentService,
     );
 
     await service.startConversation({ workspaceId: workspace.id, userExpectedLocale: "en" });
@@ -183,8 +197,8 @@ describe("chat bootstrap service", () => {
       prompt: expect.stringContaining("Answer instruction: Help visitors choose courses."),
     }));
 
-    retrievalSettingsService.getForWorkspace.mockResolvedValue({
-      ...defaultRetrievalSettings(workspace.id),
+    const defaultAgent = await agentService.resolve(workspace.id);
+    await agentService.update(workspace.id, defaultAgent.id, {
       customInstruction: "Help visitors book retreats.",
     });
     await service.startConversation({ workspaceId: workspace.id, userExpectedLocale: "en" });

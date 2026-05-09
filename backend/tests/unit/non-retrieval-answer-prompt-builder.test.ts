@@ -24,7 +24,7 @@ describe("non-retrieval answer prompt builder", () => {
       answerInstructionBlock: [
         "Stable assistant identity:",
         "Name: Vikram",
-        "Workspace-specific instructions:",
+        "Configured response instructions:",
         "Help visitors choose retreats and courses.",
       ].join("\n"),
       history: [
@@ -51,7 +51,7 @@ describe("non-retrieval answer prompt builder", () => {
       responseIdentity: {
         name: "Vikram",
       },
-      answerInstructionBlock: "Workspace-specific instructions:\nHelp visitors choose retreats and courses.",
+      answerInstructionBlock: "Configured response instructions:\nHelp visitors choose retreats and courses.",
       history: [],
       query: "sqrt(5)",
       intentTopic: "math problem",
@@ -76,7 +76,7 @@ describe("non-retrieval answer prompt builder", () => {
       responseIdentity: {
         name: "Vikram",
       },
-      answerInstructionBlock: "Workspace-specific instructions:\nHelp visitors choose retreats and courses.",
+      answerInstructionBlock: "Configured response instructions:\nHelp visitors choose retreats and courses.",
       history: [],
       query: "What can you do?",
     });

@@ -123,6 +123,7 @@ describe('backend proxy route', () => {
         Authorization: 'Bearer radioso_workspace_token',
       },
       body: JSON.stringify({
+        agentId: '0f0ad444-31c6-48f2-ac31-eb2d2e46226d',
         query: 'Hello',
         stream: true,
       }),
@@ -142,6 +143,7 @@ describe('backend proxy route', () => {
     const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
     expect(upstreamInit.headers.Authorization).toBe('Bearer radioso_workspace_token')
     expect(JSON.parse(upstreamInit.body as string)).toMatchObject({
+      agentId: '0f0ad444-31c6-48f2-ac31-eb2d2e46226d',
       message: 'Hello',
       stream: true,
       sourceContext: {

@@ -24,6 +24,7 @@ export const createAssistantRoutes = (dependencies: AssistantRouteDependencies):
           res,
           dependencies.assistantChatService.streamAnswer({
             workspaceId,
+            agentId: req.body.agentId,
             accountId,
             conversationId: req.body.conversationId,
             message: req.body.message,
@@ -42,6 +43,7 @@ export const createAssistantRoutes = (dependencies: AssistantRouteDependencies):
 
       const response = await dependencies.assistantChatService.answer({
         workspaceId,
+        agentId: req.body.agentId,
         accountId,
         conversationId: req.body.conversationId,
         message: req.body.message,

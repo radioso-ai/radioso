@@ -180,13 +180,14 @@ export class RetrievalPipelineService {
   }
 
   async runWithoutRetrieval(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult> {
+    const responseBehavior = input.request.responseBehavior;
     const responseSettings = {
       citationDisplayEnabled: input.context.result.settings.citationDisplayEnabled,
       answerSupportValidationEnabled: input.context.result.settings.answerSupportValidationEnabled ?? true,
-      conversationMode: input.context.result.settings.conversationMode,
-      suggestedQuestionsEnabled: input.context.result.settings.suggestedQuestionsEnabled,
-      suggestedQuestionsCount: input.context.result.settings.suggestedQuestionsCount,
-      customInstruction: input.context.result.settings.customInstruction,
+      conversationMode: responseBehavior?.conversationMode ?? input.context.result.settings.conversationMode,
+      suggestedQuestionsEnabled: responseBehavior?.suggestedQuestionsEnabled ?? input.context.result.settings.suggestedQuestionsEnabled,
+      suggestedQuestionsCount: responseBehavior?.suggestedQuestionsCount ?? input.context.result.settings.suggestedQuestionsCount,
+      customInstruction: responseBehavior?.customInstruction ?? input.context.result.settings.customInstruction,
       responseLanguagePolicy: input.interpretation.result.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
     };
     const diagnostics: RetrievalExecutionDiagnostics = {

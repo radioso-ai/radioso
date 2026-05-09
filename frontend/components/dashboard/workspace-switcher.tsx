@@ -22,15 +22,21 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui
 import { useWorkspace } from '@/lib/workspace-context'
 import { accountApi, seedWorkspaceSession, setPendingAccountSwitchId, type AccountMembershipRole } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
-import { buildDashboardHref, type DashboardSection } from '@/lib/dashboard-routes'
+import {
+  buildDashboardHref,
+  retargetDashboardRouteToWorkspace,
+  type DashboardRouteState,
+  type DashboardSection,
+} from '@/lib/dashboard-routes'
 import { Building2, ChevronsUpDown, Check, Plus, Layers } from 'lucide-react'
 
 interface WorkspaceSwitcherProps {
   accountId: string
   currentView: DashboardSection
+  routeState: DashboardRouteState
 }
 
-export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherProps) {
+export function WorkspaceSwitcher({ accountId, currentView, routeState }: WorkspaceSwitcherProps) {
   const router = useRouter()
   const { user, login } = useAuth()
   const { workspaces, activeWorkspace, switchWorkspace, createWorkspace } = useWorkspace()
@@ -100,12 +106,25 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
 
     setIsCreating(true)
     try {
-      await createWorkspace(trimmed)
+      const workspace = await createWorkspace(trimmed)
+      router.push(buildWorkspaceSwitchHref(workspace))
       setNewName('')
       setIsCreateOpen(false)
     } finally {
       setIsCreating(false)
     }
+  }
+
+  const buildWorkspaceSwitchHref = (workspace: { id: string; publicRouteKey?: string | null }) => {
+    return buildDashboardHref(
+      accountId,
+      retargetDashboardRouteToWorkspace(routeState, workspace.id, workspace.publicRouteKey),
+    )
+  }
+
+  const handleWorkspaceSwitch = async (workspace: { id: string; publicRouteKey?: string | null }) => {
+    router.push(buildWorkspaceSwitchHref(workspace))
+    await switchWorkspace(workspace.id)
   }
 
   const handleAccountSwitch = async (targetAccountId: string, preferredWorkspaceId: string) => {
@@ -201,7 +220,7 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
                           {workspaces.map((workspace) => (
                             <DropdownMenuItem
                               key={workspace.id}
-                              onClick={() => switchWorkspace(workspace.id)}
+                              onClick={() => void handleWorkspaceSwitch(workspace)}
                               className="ml-5"
                             >
                               <div className="mr-2 flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground">

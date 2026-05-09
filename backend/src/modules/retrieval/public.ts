@@ -68,6 +68,10 @@ export type {
   RetrievedChunk,
   VectorSearchPort,
 } from "./infra/vectorSearch.js";
+export {
+  ModelEmbeddingGateway,
+  OpenAIEmbeddingGateway,
+} from "./services/embeddingService.js";
 export { ConversationModeInstructionBuilder } from "./services/conversationModeInstructionBuilder.js";
 export { resolveContextSourceUrl } from "./services/contextSourceUrl.js";
 export type { EmbeddingGateway, EmbeddingService } from "./services/embeddingService.js";
@@ -79,7 +83,16 @@ export type {
   TriggerAnalysisGateway,
   TriggerAnalysisGatewayInput,
 } from "./services/queryRewriteService.js";
+export {
+  ModelQueryRewriteGateway,
+  ModelTriggerAnalysisGateway,
+  OpenAIQueryRewriteGateway,
+} from "./services/queryRewriteService.js";
 export type { RerankGateway } from "./services/rerankService.js";
+export {
+  ModelRerankGateway,
+  OpenAISemanticRerankGateway,
+} from "./services/rerankService.js";
 export {
   RetrievalInfoPresenter,
   type RetrievalInfo,
@@ -100,12 +113,20 @@ export {
 
 type RetrievalConversationMode = "factual" | "exploratory" | "guided";
 
+export interface RetrievalResponseBehavior {
+  customInstruction?: string;
+  conversationMode: RetrievalConversationMode;
+  suggestedQuestionsEnabled: boolean;
+  suggestedQuestionsCount: number;
+}
+
 export interface RetrievalPipelineRequest {
   workspaceId: string;
   query: string;
   history: MessageRecord[];
   responseIdentity?: ResponseIdentity | null;
   responseBehaviorEnabled?: boolean;
+  responseBehavior?: RetrievalResponseBehavior;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   metadataFilter?: Record<string, unknown>;
 }

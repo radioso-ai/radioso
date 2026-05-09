@@ -10,6 +10,7 @@ const ANONYMOUS_SESSION_HEADER = 'X-Radioso-Anonymous-Session'
 const ANONYMOUS_SESSION_STORAGE_PREFIX = 'radioso.anonymousSession.'
 const PUBLIC_SESSION_HEADER = 'X-Radioso-Public-Session'
 const PUBLIC_SESSION_STORAGE_PREFIX = 'radioso.publicSession.'
+const PUBLIC_SESSION_EFFECTIVE_TOKEN_STORAGE_PREFIX = 'radioso.publicSessionEffectiveToken.'
 const EMBED_BOOTSTRAP_STORAGE_PREFIX = 'radioso.embedBootstrap.'
 
 export interface StoredEmbedBootstrapSession {
@@ -194,6 +195,7 @@ export const removeWorkspaceToken = (workspaceId: string) => {
 
 const getAnonymousSessionStorageKey = (token: string) => `${ANONYMOUS_SESSION_STORAGE_PREFIX}${token}`
 const getPublicSessionStorageKey = (token: string) => `${PUBLIC_SESSION_STORAGE_PREFIX}${token}`
+const getPublicSessionEffectiveTokenStorageKey = (token: string) => `${PUBLIC_SESSION_EFFECTIVE_TOKEN_STORAGE_PREFIX}${token}`
 const getEmbedBootstrapStorageKey = (token: string) => `${EMBED_BOOTSTRAP_STORAGE_PREFIX}${token}`
 
 const readAnonymousSessionId = (token: string) => {
@@ -236,6 +238,24 @@ const readPublicSessionToken = (token: string) => {
 }
 
 export const readStoredPublicSessionToken = (token: string) => readPublicSessionToken(token)
+
+export const readStoredEffectivePublicChatToken = (launchToken: string): string | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const effectiveToken = window.sessionStorage.getItem(getPublicSessionEffectiveTokenStorageKey(launchToken))
+  if (!effectiveToken) {
+    return null
+  }
+
+  if (!readPublicSessionToken(effectiveToken)) {
+    window.sessionStorage.removeItem(getPublicSessionEffectiveTokenStorageKey(launchToken))
+    return null
+  }
+
+  return effectiveToken
+}
 
 export const readStoredEmbedBootstrapSession = (token: string): StoredEmbedBootstrapSession | null => {
   if (typeof window === 'undefined') {
@@ -290,8 +310,16 @@ export const readStoredEmbedBootstrapSession = (token: string): StoredEmbedBoots
 }
 
 export const clearStoredAnonymousSession = (token: string) => {
+  const effectiveToken = readStoredEffectivePublicChatToken(token)
+  if (effectiveToken && effectiveToken !== token) {
+    writeAnonymousSessionId(effectiveToken, null)
+    storePublicSessionToken(effectiveToken, null)
+  }
   writeAnonymousSessionId(token, null)
   storePublicSessionToken(token, null)
+  if (typeof window !== 'undefined') {
+    window.sessionStorage.removeItem(getPublicSessionEffectiveTokenStorageKey(token))
+  }
 }
 
 export const clearStoredEmbedBootstrapSession = (token: string) => {
@@ -319,6 +347,20 @@ export const storePublicSessionToken = (
   }
 
   window.sessionStorage.setItem(storageKey, JSON.stringify({ token: sessionToken, expiresAt }))
+}
+
+export const storeEffectivePublicChatToken = (launchToken: string, effectiveToken: string | null) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const storageKey = getPublicSessionEffectiveTokenStorageKey(launchToken)
+  if (!effectiveToken || effectiveToken === launchToken) {
+    window.sessionStorage.removeItem(storageKey)
+    return
+  }
+
+  window.sessionStorage.setItem(storageKey, effectiveToken)
 }
 
 export const storeEmbedBootstrapSession = (token: string, session: StoredEmbedBootstrapSession | null) => {

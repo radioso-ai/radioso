@@ -7,7 +7,7 @@ import {
   shouldUseSecureAnonymousCookie,
 } from "../../src/app/http/middleware/resolveAnonymousSession.js";
 import { issuePublicChatSession } from "../../src/modules/settings/domain/publicChatSession.js";
-import { InMemoryWorkspaceRepository } from "../support/fakes.js";
+import { InMemoryAgentRepository, InMemoryWorkspaceRepository } from "../support/fakes.js";
 
 const originalNodeEnv = process.env.NODE_ENV;
 const SESSION_SECRET = "0123456789abcdef0123456789abcdef";
@@ -344,7 +344,7 @@ describe("resolveAnonymousSession", () => {
 
     const embedSession = issuePublicChatSession(SESSION_SECRET, {
       workspaceId: workspace.id,
-      publicChatToken: "test-token-1234567890",
+      publicChatToken: "embed-token-123",
       publicSessionId: "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
       sourceChannel: "website_embed",
       sourceOrigin: "https://example.com",
@@ -352,7 +352,7 @@ describe("resolveAnonymousSession", () => {
 
     const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     const { req, res, next, getError } = createMockReqRes(
-      { token: "test-token-1234567890" },
+      { token: "embed-token-123" },
       {},
       {
         [PUBLIC_CHAT_SESSION_HEADER]: embedSession.token,
@@ -365,6 +365,115 @@ describe("resolveAnonymousSession", () => {
     expect(res.locals.anonymousSessionId).toBe("67acb0c8-caad-4a1b-9fef-70cbca3f7d12");
     expect(res.locals.sourceChannel).toBe("website_embed");
     expect(res.locals.sourceOrigin).toBe("https://example.com");
+  });
+
+  it("accepts a legacy website embed public session that carries the anonymous chat token", async () => {
+    const workspace = await workspaceRepository.create("account-1", "Test");
+    await workspaceRepository.updateGeneralSettings(workspace.id, {
+      anonymousChatEnabled: false,
+      anonymousChatToken: "legacy-anonymous-token",
+      anonymousRateLimit: 10,
+      assistantName: "",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      websiteEmbedEnabled: true,
+      websiteEmbedToken: "embed-token-123",
+      websiteEmbedAllowedOrigins: ["https://example.com"],
+      websiteEmbedLauncherLabel: "Chat with us",
+      websiteEmbedLauncherIcon: "chat",
+      websiteEmbedLauncherPosition: "bottom-right",
+    });
+
+    const embedSession = issuePublicChatSession(SESSION_SECRET, {
+      workspaceId: workspace.id,
+      publicChatToken: "legacy-anonymous-token",
+      publicSessionId: "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
+      sourceChannel: "website_embed",
+      sourceOrigin: "https://example.com",
+    });
+
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
+    const { req, res, next, getError } = createMockReqRes(
+      { token: "legacy-anonymous-token" },
+      {},
+      {
+        [PUBLIC_CHAT_SESSION_HEADER]: embedSession.token,
+      },
+    );
+
+    await middleware(req, res, next);
+
+    expect(getError()).toBeUndefined();
+    expect(res.locals.anonymousSessionId).toBe("67acb0c8-caad-4a1b-9fef-70cbca3f7d12");
+    expect(res.locals.sourceChannel).toBe("website_embed");
+  });
+
+  it("uses the signed public session agent when the route token exists on another public surface", async () => {
+    const workspace = await workspaceRepository.create("account-1", "Test");
+    const agentRepository = new InMemoryAgentRepository();
+    await agentRepository.create(workspace.id, {
+      name: "Anonymous agent",
+      surfaceSettings: {
+        anonymousChat: {
+          enabled: true,
+          token: "shared-token-123",
+          messagesPerMinute: 11,
+        },
+      },
+    });
+    const embedAgent = await agentRepository.create(workspace.id, {
+      name: "Embed agent",
+      surfaceSettings: {
+        websiteEmbed: {
+          enabled: true,
+          token: "shared-token-123",
+          allowedOrigins: ["https://example.com"],
+        },
+      },
+    });
+
+    const embedSession = issuePublicChatSession(SESSION_SECRET, {
+      workspaceId: workspace.id,
+      agentId: embedAgent.id,
+      publicChatToken: "shared-token-123",
+      publicSessionId: "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
+      sourceChannel: "website_embed",
+      sourceOrigin: "https://example.com",
+    });
+    const agentService = {
+      async resolve(workspaceId: string, agentId?: string | null) {
+        const agent = agentId
+          ? await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId)
+          : await agentRepository.findDefaultByWorkspaceId(workspaceId);
+        if (!agent) {
+          throw new Error("Agent not found");
+        }
+        return agent;
+      },
+    };
+
+    const middleware = resolveAnonymousSession(
+      workspaceRepository,
+      SESSION_SECRET,
+      undefined,
+      agentRepository,
+      agentService,
+    );
+    const { req, res, next, getError } = createMockReqRes(
+      { token: "shared-token-123" },
+      {},
+      {
+        [PUBLIC_CHAT_SESSION_HEADER]: embedSession.token,
+      },
+    );
+
+    await middleware(req, res, next);
+
+    expect(getError()).toBeUndefined();
+    expect(res.locals.agentId).toBe(embedAgent.id);
+    expect(res.locals.workspaceId).toBe(workspace.id);
+    expect(res.locals.sourceChannel).toBe("website_embed");
   });
 
   it("rejects an invalid public session when anonymous chat is disabled", async () => {
@@ -387,7 +496,7 @@ describe("resolveAnonymousSession", () => {
 
     const embedSession = issuePublicChatSession(SESSION_SECRET, {
       workspaceId: workspace.id,
-      publicChatToken: "test-token-1234567890",
+      publicChatToken: "embed-token-123",
       publicSessionId: "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
       sourceChannel: "website_embed",
       sourceOrigin: "https://example.com",
@@ -395,7 +504,7 @@ describe("resolveAnonymousSession", () => {
 
     const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     const { req, res, next, getError } = createMockReqRes(
-      { token: "test-token-1234567890" },
+      { token: "embed-token-123" },
       {},
       {
         [PUBLIC_CHAT_SESSION_HEADER]: `${embedSession.token}tampered`,

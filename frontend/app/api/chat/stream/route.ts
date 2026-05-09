@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 const BACKEND_BASE = process.env.BACKEND_INTERNAL_URL ?? 'http://localhost:8080'
 
 interface ChatStreamProxyRequestBody {
+  agentId?: string
   query?: string
   message?: string
   conversationId?: string
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
   const rawBody = await request.text()
   const parsedBody = rawBody ? JSON.parse(rawBody) as ChatStreamProxyRequestBody : {}
   const body = JSON.stringify({
+    agentId: parsedBody.agentId,
     conversationId: parsedBody.conversationId,
     message: parsedBody.message ?? parsedBody.query,
     startConversation: parsedBody.startConversation ?? parsedBody.bootstrapGreeting,

@@ -21,6 +21,7 @@ const sourceContextSchema = z.object({
 }).optional();
 
 export const assistantChatSchema = z.object({
+  agentId: z.string().uuid().optional(),
   conversationId: z.string().uuid().optional(),
   message: z.string().min(1).optional(),
   startConversation: z.boolean().optional().default(false),

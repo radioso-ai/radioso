@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -16,6 +17,7 @@ import {
   clearStoredAnonymousSession,
   publicChatApi,
   readStoredAnonymousSessionId,
+  readStoredEffectivePublicChatToken,
   readStoredPublicSessionToken,
   type AnswerFeedbackEntry,
   type AnswerFeedbackState,
@@ -49,6 +51,7 @@ export interface ChatMessage {
 }
 
 interface AnonymousChatContextValue {
+  publicChatToken: string
   messages: ChatMessage[]
   conversationId?: string
   workspaceName: string | null
@@ -233,6 +236,8 @@ export function AnonymousChatProvider({
   pageContext?: WebsiteEmbedPageContext | null
   children: ReactNode
 }) {
+  const [effectivePublicChatToken, setEffectivePublicChatToken] = useState(() => readStoredEffectivePublicChatToken(token) ?? token)
+  const publicChatTokenRef = useRef(effectivePublicChatToken)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [workspaceName, setWorkspaceName] = useState<string | null>(null)
   const [publicSessionActions, setPublicSessionActions] = useState<Record<string, unknown>>(
@@ -254,42 +259,47 @@ export function AnonymousChatProvider({
         return null
       }
 
-      const session = await publicChatApi.createSession(token, {
+      const activeToken = publicChatTokenRef.current
+      const session = await publicChatApi.createSession(activeToken, {
         channel: sessionChannel,
-        anonymousSessionId: input?.resetSession ? null : readStoredAnonymousSessionId(token),
+        anonymousSessionId: input?.resetSession ? null : readStoredAnonymousSessionId(activeToken),
         pageContext,
       })
+      publicChatTokenRef.current = session.publicChatToken
+      setEffectivePublicChatToken(session.publicChatToken)
       setPublicSessionActions(session.actions ?? {})
       return session
     },
-    [pageContext, sessionChannel, token],
+    [pageContext, sessionChannel],
   )
 
-  const ensurePublicLaunchSession = useCallback(async () => {
-    if (!sessionChannel || readStoredPublicSessionToken(token)) {
-      return
+  const ensurePublicLaunchSession = useCallback(async (): Promise<string> => {
+    const activeToken = publicChatTokenRef.current
+    if (!sessionChannel || readStoredPublicSessionToken(activeToken)) {
+      return activeToken
     }
 
-    await createPublicLaunchSession()
-  }, [createPublicLaunchSession, sessionChannel, token])
+    const session = await createPublicLaunchSession()
+    return session?.publicChatToken ?? activeToken
+  }, [createPublicLaunchSession, sessionChannel])
 
   const withPublicSessionRetry = useCallback(
-    async <T,>(operation: () => Promise<T>): Promise<T> => {
-      await ensurePublicLaunchSession()
+    async <T,>(operation: (activeToken: string) => Promise<T>): Promise<T> => {
+      const activeToken = await ensurePublicLaunchSession()
 
       try {
-        return await operation()
+        return await operation(activeToken)
       } catch (error) {
         if (sessionChannel && getErrorResponse(error)?.code === 'not_found') {
-          clearStoredAnonymousSession(token)
-          await createPublicLaunchSession({ resetSession: true })
-          return operation()
+          clearStoredAnonymousSession(activeToken)
+          const session = await createPublicLaunchSession({ resetSession: true })
+          return operation(session?.publicChatToken ?? activeToken)
         }
 
         throw error
       }
     },
-    [createPublicLaunchSession, ensurePublicLaunchSession, sessionChannel, token],
+    [createPublicLaunchSession, ensurePublicLaunchSession, sessionChannel],
   )
 
   const hydrateConversation = useCallback(async () => {
@@ -307,15 +317,13 @@ export function AnonymousChatProvider({
     setRetryAfterSeconds(null)
 
     try {
-      await createPublicLaunchSession()
-
-      const response = await withPublicSessionRetry(() => publicChatApi.listConversations(token, { limit: 1 }))
+      const response = await withPublicSessionRetry((activeToken) => publicChatApi.listConversations(activeToken, { limit: 1 }))
       setWorkspaceName(response.workspaceName ?? null)
 
       if (response.conversations.length === 0) {
         if (response.assistantBootstrapActive) {
-          const bootstrap = await withPublicSessionRetry(() =>
-            publicChatApi.bootstrapConversation(token, {
+          const bootstrap = await withPublicSessionRetry((activeToken) =>
+            publicChatApi.bootstrapConversation(activeToken, {
               stream: false,
               startConversation: true,
               userExpectedLocale: resolveAnonymousChatBootstrapLocale({
@@ -353,14 +361,16 @@ export function AnonymousChatProvider({
         return
       }
 
-      const detail = await withPublicSessionRetry(() =>
-        publicChatApi.getConversationDetail(token, response.conversations[0].id, {
+      let detailToken = publicChatTokenRef.current
+      const detail = await withPublicSessionRetry((activeToken) => {
+        detailToken = activeToken
+        return publicChatApi.getConversationDetail(activeToken, response.conversations[0].id, {
           limit: INITIAL_MESSAGE_WINDOW_SIZE,
-        }),
-      )
+        })
+      })
 
       setConversationId(detail.conversationId)
-      setMessages(toChatMessages(detail, readStoredAnonymousSessionId(token)))
+      setMessages(toChatMessages(detail, readStoredAnonymousSessionId(detailToken)))
       setHasOlderMessages(detail.hasOlderMessages)
       setNextMessageCursor(detail.nextCursor)
     } catch (error) {
@@ -371,7 +381,7 @@ export function AnonymousChatProvider({
     } finally {
       setIsHydrating(false)
     }
-  }, [createPublicLaunchSession, initialActions, localeOverride, pageContext, token, withPublicSessionRetry])
+  }, [initialActions, localeOverride, pageContext, withPublicSessionRetry])
 
   useEffect(() => {
     let cancelled = false
@@ -414,15 +424,15 @@ export function AnonymousChatProvider({
   )
 
   const recoverAssistantMessage = useCallback(
-    async (nextConversationId: string | undefined, assistantMessageId: string) => {
+    async (nextConversationId: string | undefined, assistantMessageId: string, activeToken: string) => {
       if (!nextConversationId) {
         return false
       }
 
-      const detail = await publicChatApi.getConversationDetail(token, nextConversationId, {
+      const detail = await publicChatApi.getConversationDetail(activeToken, nextConversationId, {
         limit: MESSAGE_WINDOW_SIZE,
       })
-      const assistantMessage = getLatestAssistantMessage(detail, readStoredAnonymousSessionId(token))
+      const assistantMessage = getLatestAssistantMessage(detail, readStoredAnonymousSessionId(activeToken))
       if (!assistantMessage) {
         return false
       }
@@ -452,7 +462,7 @@ export function AnonymousChatProvider({
       setIsLoading(false)
       return true
     },
-    [token],
+    [],
   )
 
   const sendMessage = useCallback(
@@ -491,10 +501,12 @@ export function AnonymousChatProvider({
 
       try {
         let didComplete = false
+        let activeRequestToken = publicChatTokenRef.current
 
-        const completion = await withPublicSessionRetry(() =>
-          publicChatApi.streamMessage(
-            token,
+        const completion = await withPublicSessionRetry((activeToken) => {
+          activeRequestToken = activeToken
+          return publicChatApi.streamMessage(
+            activeToken,
             {
               message: query,
               stream: true,
@@ -536,14 +548,14 @@ export function AnonymousChatProvider({
                 )
               },
             },
-          ),
-        )
+          )
+        })
 
         const nextConversationId = completion.conversationId ?? conversationId
         const needsRecovery = !completion.answer?.trim()
 
         if (needsRecovery) {
-          const recovered = await recoverAssistantMessage(nextConversationId, assistantMessageId)
+          const recovered = await recoverAssistantMessage(nextConversationId, assistantMessageId, activeRequestToken)
           if (recovered) {
             return
           }
@@ -601,7 +613,7 @@ export function AnonymousChatProvider({
         setIsLoading(false)
       }
     },
-    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, pageContext, recoverAssistantMessage, token, withPublicSessionRetry],
+    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, pageContext, recoverAssistantMessage, withPublicSessionRetry],
   )
 
   const loadOlderMessages = useCallback(async () => {
@@ -612,11 +624,12 @@ export function AnonymousChatProvider({
     setIsLoadingOlderMessages(true)
 
     try {
-      const detail = await publicChatApi.getConversationDetail(token, conversationId, {
+      const activeToken = publicChatTokenRef.current
+      const detail = await publicChatApi.getConversationDetail(activeToken, conversationId, {
         limit: MESSAGE_WINDOW_SIZE,
         cursor: nextMessageCursor,
       })
-      const olderMessages = toChatMessages(detail, readStoredAnonymousSessionId(token))
+      const olderMessages = toChatMessages(detail, readStoredAnonymousSessionId(activeToken))
       setMessages((current) => {
         const seen = new Set(current.map((message) => message.id))
         const nextOlder = olderMessages.filter((message) => !seen.has(message.id))
@@ -627,19 +640,20 @@ export function AnonymousChatProvider({
     } finally {
       setIsLoadingOlderMessages(false)
     }
-  }, [conversationId, hasOlderMessages, isLoadingOlderMessages, nextMessageCursor, token])
+  }, [conversationId, hasOlderMessages, isLoadingOlderMessages, nextMessageCursor])
 
   const startNewChat = useCallback(async () => {
     if (isLoading || isHydrating || isLoadingOlderMessages) {
       return
     }
 
-    clearStoredAnonymousSession(token)
+    clearStoredAnonymousSession(publicChatTokenRef.current)
     await hydrateConversation()
-  }, [hydrateConversation, isHydrating, isLoading, isLoadingOlderMessages, token])
+  }, [hydrateConversation, isHydrating, isLoading, isLoadingOlderMessages])
 
   const value = useMemo<AnonymousChatContextValue>(
     () => ({
+      publicChatToken: effectivePublicChatToken,
       messages,
       conversationId,
       workspaceName,
@@ -656,6 +670,7 @@ export function AnonymousChatProvider({
       startNewChat,
     }),
     [
+      effectivePublicChatToken,
       messages,
       conversationId,
       workspaceName,

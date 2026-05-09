@@ -160,6 +160,39 @@ console.log(retrievalAnswer.contractReferences);
 
 When you call retrieval answer through the REST contract, the response `retrievalTrace` includes shape diagnostics. The existing trace graph is the debug surface. Check `retrievalTrace.summary.shapeName`, `retrievalTrace.summary.queryShape`, `retrievalTrace.summary.resolvedSteps`, and the `shape_selection` stage to see how the answer was retrieved.
 
+## Agents
+
+Each workspace has a default agent. Chat calls use that agent when `agentId` is omitted.
+
+List agents:
+
+```ts
+const agents = await client.agents.list();
+const defaultAgent = agents.agents.find((agent) => agent.isDefault);
+```
+
+Create a direct-only agent:
+
+```ts
+const direct = await client.agents.create({
+  name: "Direct support",
+  customInstruction: "Answer from the configured instructions. Do not cite documents.",
+  retrievalEnabled: false,
+});
+```
+
+Use a specific agent in chat:
+
+```ts
+const response = await client.chat.create({
+  agentId: direct.id,
+  message: "How should I answer a general support question?",
+  stream: false,
+});
+```
+
+Agents with `retrievalEnabled: true` can use the workspace retrieval pipeline. Direct-only agents answer from their own instructions and return retrieval diagnostics with `retrievalInvoked: false`.
+
 ## Non-Streaming Chat
 
 SDK chat methods target the assistant chat surface. Use them for human-facing assistant conversations that should keep history and may answer directly or with retrieval-backed evidence.

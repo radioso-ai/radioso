@@ -15,6 +15,7 @@ class FakeAnswerFeedbackRouteDatabase implements UsageLimitDatabasePort {
     workspaceId: string;
     conversationId: string;
     anonymousSessionId: string | null;
+    agentId: string | null;
     role: "assistant" | "user";
   }>();
   readonly feedback = new Map<string, unknown>();
@@ -23,13 +24,20 @@ class FakeAnswerFeedbackRouteDatabase implements UsageLimitDatabasePort {
     if (text.includes("SELECT m.conversation_id")) {
       const workspaceId = String(params[0]);
       const messageId = String(params[1]);
-      const anonymousSessionId = params[2] === undefined ? undefined : String(params[2]);
+      let nextParamIndex = 2;
+      const anonymousSessionId = text.includes("c.anonymous_session_id")
+        ? String(params[nextParamIndex++])
+        : undefined;
+      const agentId = text.includes("c.agent_id")
+        ? String(params[nextParamIndex++])
+        : undefined;
       const message = this.assistantMessages.get(messageId);
       if (
         !message ||
         message.workspaceId !== workspaceId ||
         message.role !== "assistant" ||
-        (anonymousSessionId !== undefined && message.anonymousSessionId !== anonymousSessionId)
+        (anonymousSessionId !== undefined && message.anonymousSessionId !== anonymousSessionId) ||
+        (agentId !== undefined && message.agentId !== agentId)
       ) {
         return [] as T[];
       }
@@ -73,21 +81,29 @@ const USER_ID = "33333333-3333-3333-3333-333333333333";
 const MESSAGE_ID = "44444444-4444-4444-4444-444444444444";
 const CONVERSATION_ID = "55555555-5555-5555-5555-555555555555";
 const PUBLIC_SESSION_ID = "66666666-6666-6666-6666-666666666666";
+const AGENT_ID = "77777777-7777-7777-7777-777777777777";
 const PUBLIC_TOKEN = "public-token";
 const PUBLIC_SECRET = "public-secret";
 
-const issuePublicSession = () => {
+const issuePublicSession = (
+  publicChatToken = PUBLIC_TOKEN,
+  sourceChannel: "anonymous" | "website_embed" = "anonymous",
+) => {
   const payload = Buffer.from(JSON.stringify({
     workspaceId: WORKSPACE_ID,
-    publicChatToken: PUBLIC_TOKEN,
+    publicChatToken,
     publicSessionId: PUBLIC_SESSION_ID,
+    sourceChannel,
     expiresAt: "2099-01-01T00:00:00.000Z",
   })).toString("base64url");
   const signature = createHmac("sha256", PUBLIC_SECRET).update(payload).digest("base64url");
   return `${payload}.${signature}`;
 };
 
-const createDependencies = (database: FakeAnswerFeedbackRouteDatabase): RouteDependencies => ({
+const createDependencies = (
+  database: FakeAnswerFeedbackRouteDatabase,
+  overrides: Partial<RouteDependencies> = {},
+): RouteDependencies => ({
   connectorDb: database,
   env: {
     SESSION_COOKIE_NAME: "radioso_session",
@@ -131,9 +147,10 @@ const createDependencies = (database: FakeAnswerFeedbackRouteDatabase): RouteDep
       return token === PUBLIC_TOKEN ? { id: WORKSPACE_ID } : null;
     },
   },
+  ...overrides,
 });
 
-const createApp = (database: FakeAnswerFeedbackRouteDatabase) => {
+const createApp = (database: FakeAnswerFeedbackRouteDatabase, overrides: Partial<RouteDependencies> = {}) => {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -148,7 +165,7 @@ const createApp = (database: FakeAnswerFeedbackRouteDatabase) => {
   });
   app.use(
     "/api/v1/ee/answer-feedback",
-    createAnswerFeedbackRoutes(createDependencies(database), new EnterpriseAnswerFeedbackService(database)),
+    createAnswerFeedbackRoutes(createDependencies(database, overrides), new EnterpriseAnswerFeedbackService(database)),
   );
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const payload = error as { statusCode?: number; code?: string; message?: string };
@@ -162,11 +179,16 @@ const createApp = (database: FakeAnswerFeedbackRouteDatabase) => {
   return app;
 };
 
-const seedMessage = (database: FakeAnswerFeedbackRouteDatabase, anonymousSessionId: string | null = null) => {
+const seedMessage = (
+  database: FakeAnswerFeedbackRouteDatabase,
+  anonymousSessionId: string | null = null,
+  agentId: string | null = null,
+) => {
   database.assistantMessages.set(MESSAGE_ID, {
     workspaceId: WORKSPACE_ID,
     conversationId: CONVERSATION_ID,
     anonymousSessionId,
+    agentId,
     role: "assistant",
   });
 };
@@ -232,6 +254,52 @@ describe("enterprise answer feedback routes", () => {
       .expect(({ body }) => {
         expect(body).toEqual({ cleared: true });
       });
+  });
+
+  it("accepts public chat session feedback for agent-owned website embed tokens", async () => {
+    const database = new FakeAnswerFeedbackRouteDatabase();
+    seedMessage(database, PUBLIC_SESSION_ID, AGENT_ID);
+    const embedToken = "agent-embed-token";
+    const agentOverrides: Partial<RouteDependencies> = {
+      agentRepository: {
+        async findByAnonymousChatToken() {
+          return null;
+        },
+        async findByWebsiteEmbedToken(token) {
+          return token === embedToken
+            ? {
+                id: AGENT_ID,
+                workspaceId: WORKSPACE_ID,
+                surfaceSettings: {
+                  anonymousChat: { enabled: false, token: null },
+                  websiteEmbed: { enabled: true, token: embedToken },
+                },
+              }
+            : null;
+        },
+      },
+    };
+    const app = createApp(database, agentOverrides);
+
+    const response = await request(app)
+      .put(`/api/v1/ee/answer-feedback/public/chat/${embedToken}/messages/${MESSAGE_ID}`)
+      .set("X-Radioso-Public-Session", issuePublicSession(embedToken, "website_embed"))
+      .send({ value: "down" })
+      .expect(200);
+
+    expect(response.body).toEqual(expect.objectContaining({
+      value: "down",
+      actorType: "anonymous_user",
+      anonymousSessionId: PUBLIC_SESSION_ID,
+    }));
+
+    const crossAgentDatabase = new FakeAnswerFeedbackRouteDatabase();
+    seedMessage(crossAgentDatabase, PUBLIC_SESSION_ID, "88888888-8888-8888-8888-888888888888");
+    await request(createApp(crossAgentDatabase, agentOverrides))
+      .put(`/api/v1/ee/answer-feedback/public/chat/${embedToken}/messages/${MESSAGE_ID}`)
+      .set("X-Radioso-Public-Session", issuePublicSession(embedToken, "website_embed"))
+      .send({ value: "down" })
+      .expect(404);
   });
 
   it("rejects invalid public sessions and cross-session messages", async () => {

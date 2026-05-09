@@ -30,6 +30,8 @@ export interface ChatRoute {
 
 export interface ChatResponse {
   conversationId: string;
+  agentId?: string;
+  agentName?: string;
   assistantMessageId: string;
   route: ChatRoute;
   answer: string;

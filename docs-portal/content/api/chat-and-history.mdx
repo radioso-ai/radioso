@@ -10,6 +10,8 @@ This is the main grounded-answer workflow for authenticated API clients.
 ## Relevant endpoints
 
 ```text
+GET  /api/v1/agents
+POST /api/v1/agents
 POST /api/v1/assistant/chat
 GET  /api/v1/history
 GET  /api/v1/history/{conversationId}
@@ -18,9 +20,12 @@ GET  /api/v1/history/{conversationId}
 ## How it works
 
 1. Send a chat request with a workspace token.
-2. Choose whether the response should stream.
-3. Reuse `conversationId` when you want continuity across turns.
-4. Inspect saved conversations later through the history routes.
+2. Optionally set `agentId`. When omitted, Radioso uses the workspace default agent.
+3. Choose whether the response should stream.
+4. Reuse `conversationId` when you want continuity across turns.
+5. Inspect saved conversations later through the history routes.
+
+Agents own assistant identity, instructions, greeting settings, retrieval participation, and surface settings for authenticated chat, anonymous chat, and website embed. Retrieval settings stay workspace-level. If an agent has retrieval enabled, assistant chat may use workspace retrieval and return citations. Direct-only agents use the direct assistant path and return retrieval diagnostics with `retrievalInvoked: false`.
 
 ## Ask a grounded question
 
@@ -34,6 +39,7 @@ curl -sS -X POST http://localhost:8080/api/v1/assistant/chat \
 The chat request schema also supports:
 
 - `conversationId` for follow-up turns
+- `agentId` for selecting a non-default workspace agent
 - `startConversation: true` for bootstrap flows
 - `userExpectedLocale` when the caller knows the user's locale
 - `inputMetadata` and `metadataFilter` for richer routing and filtering

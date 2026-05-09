@@ -11,7 +11,11 @@ import { KnowledgeView } from './knowledge-view'
 import { SettingsView } from './settings-view'
 import { UsageView } from './usage-view'
 import { FirstRunExperience } from './first-run-experience'
-import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import {
+  buildDashboardHref,
+  retargetDashboardRouteToWorkspace,
+  type DashboardRouteState,
+} from '@/lib/dashboard-routes'
 import {
   shouldRewriteToActiveWorkspace,
   shouldWaitForRouteWorkspace,
@@ -88,11 +92,10 @@ export function DashboardShell({
       return
     }
 
-    router.replace(buildDashboardHref(accountId, {
-      ...routeState,
-      workspaceId: activeWorkspaceId,
-      workspacePublicRouteKey: activeWorkspacePublicRouteKey,
-    }))
+    router.replace(buildDashboardHref(
+      accountId,
+      retargetDashboardRouteToWorkspace(routeState, activeWorkspaceId, activeWorkspacePublicRouteKey),
+    ))
   }, [
     accountId,
     activeWorkspaceId,
@@ -109,6 +112,7 @@ export function DashboardShell({
       section: 'knowledge',
       knowledgeTab: 'documents',
       documentId: documentId ?? undefined,
+      workspaceId: activeWorkspaceId ?? undefined,
       workspacePublicRouteKey: activeWorkspacePublicRouteKey,
     }))
   }
@@ -124,7 +128,7 @@ export function DashboardShell({
   ) {
     return (
       <SidebarProvider className="h-svh min-h-0 overflow-hidden">
-        <AppSidebar accountId={accountId} currentView={currentView} />
+        <AppSidebar accountId={accountId} currentView={currentView} routeState={routeState} />
         <SidebarInset className="min-h-0 overflow-hidden">
           <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
             <SidebarTrigger />
@@ -139,7 +143,7 @@ export function DashboardShell({
 
   return (
     <SidebarProvider className="h-svh min-h-0 overflow-hidden">
-      <AppSidebar accountId={accountId} currentView={currentView} />
+      <AppSidebar accountId={accountId} currentView={currentView} routeState={routeState} />
       <SidebarInset className="min-h-0 overflow-hidden">
         <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
           <SidebarTrigger />

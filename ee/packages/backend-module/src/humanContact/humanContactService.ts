@@ -447,6 +447,7 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
 
   async draft(input: {
     workspaceId: string;
+    agentId?: string | null;
     accountId?: string | null;
     conversationId: string;
     assistantMessageId?: string | null;
@@ -463,6 +464,7 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
 
   async submit(input: {
     workspaceId: string;
+    agentId?: string | null;
     accountId?: string | null;
     conversationId: string;
     assistantMessageId?: string | null;
@@ -645,9 +647,32 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
 
   private async ensureConversationAccess(input: {
     workspaceId: string;
+    agentId?: string | null;
     conversationId: string;
     anonymousSessionId?: string | null;
   }) {
+    if (input.agentId && input.anonymousSessionId) {
+      const [conversation] = await queryRows<{ id: string }>(
+        this.input.database,
+        `SELECT id
+         FROM conversations
+         WHERE id = $1
+           AND workspace_id = $2
+           AND anonymous_session_id = $3
+           AND agent_id = $4
+         LIMIT 1`,
+        [input.conversationId, input.workspaceId, input.anonymousSessionId, input.agentId],
+      );
+      if (!conversation) {
+        throw {
+          statusCode: 404,
+          code: "not_found",
+          message: "Conversation not found",
+        };
+      }
+      return;
+    }
+
     const conversation = input.anonymousSessionId
       ? await this.input.conversationRepository.findByIdAndAnonymousSession(
           input.conversationId,

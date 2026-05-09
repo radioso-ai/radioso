@@ -32,6 +32,13 @@ import type {
 } from "../../src/modules/auth/services/authService.js";
 import type { UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
+import type { AgentRepositoryPort } from "../../src/db/repositories/agentRepository.js";
+import {
+  mergeAgentSurfaceSettings,
+  validateAgentInput,
+  type AgentInput,
+  type AgentRecord,
+} from "../../src/modules/agents/public.js";
 import type {
   BootstrapGreetingCacheRecord,
   BootstrapGreetingCacheRepositoryPort,
@@ -602,6 +609,7 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       accountId,
       name,
       publicRouteKey: publicRouteKey ?? createWorkspacePublicRouteKey(name, randomUUID),
+      defaultAgentId: null,
       assistantName: "",
       greetingInstruction: "",
       assistantDefaultLocale: null,
@@ -756,24 +764,106 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
   }
 }
 
+export class InMemoryAgentRepository implements AgentRepositoryPort {
+  readonly items = new Map<string, AgentRecord>();
+  private defaultAgentIds = new Map<string, string>();
+
+  async create(workspaceId: string, input: AgentInput): Promise<AgentRecord> {
+    const normalized = validateAgentInput(input);
+    const record: AgentRecord = {
+      id: randomUUID(),
+      workspaceId,
+      ...normalized,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    if (!this.defaultAgentIds.has(workspaceId)) {
+      this.defaultAgentIds.set(workspaceId, record.id);
+    }
+    return record;
+  }
+
+  async findById(agentId: string): Promise<AgentRecord | null> {
+    return this.items.get(agentId) ?? null;
+  }
+
+  async findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<AgentRecord | null> {
+    const item = this.items.get(agentId);
+    return item && item.workspaceId === workspaceId ? item : null;
+  }
+
+  async findDefaultByWorkspaceId(workspaceId: string): Promise<AgentRecord | null> {
+    const agentId = this.defaultAgentIds.get(workspaceId);
+    return agentId ? this.findByIdAndWorkspaceId(agentId, workspaceId) : null;
+  }
+
+  async findByAnonymousChatToken(token: string): Promise<AgentRecord | null> {
+    return [...this.items.values()].find((item) => item.surfaceSettings.anonymousChat.token === token) ?? null;
+  }
+
+  async findByWebsiteEmbedToken(token: string): Promise<AgentRecord | null> {
+    return [...this.items.values()].find((item) => item.surfaceSettings.websiteEmbed.token === token) ?? null;
+  }
+
+  async listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]> {
+    return [...this.items.values()]
+      .filter((item) => item.workspaceId === workspaceId)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id));
+  }
+
+  async update(agentId: string, workspaceId: string, input: AgentInput): Promise<AgentRecord> {
+    const current = await this.findByIdAndWorkspaceId(agentId, workspaceId);
+    if (!current) {
+      throw new Error(`Agent ${agentId} not found`);
+    }
+    const normalized = validateAgentInput({
+      ...current,
+      ...input,
+      surfaceSettings: mergeAgentSurfaceSettings(current.surfaceSettings, input.surfaceSettings),
+    });
+    const updated: AgentRecord = {
+      ...current,
+      ...normalized,
+      updatedAt: new Date(),
+    };
+    this.items.set(agentId, updated);
+    return updated;
+  }
+
+  async setDefault(workspaceId: string, agentId: string): Promise<void> {
+    const agent = await this.findByIdAndWorkspaceId(agentId, workspaceId);
+    if (!agent) {
+      throw new Error(`Agent ${agentId} not found`);
+    }
+    this.defaultAgentIds.set(workspaceId, agentId);
+  }
+}
+
 export class InMemoryBootstrapGreetingCacheRepository implements BootstrapGreetingCacheRepositoryPort {
   readonly items = new Map<string, BootstrapGreetingCacheRecord>();
 
-  async findByWorkspaceAndFingerprint(workspaceId: string, fingerprint: string): Promise<BootstrapGreetingCacheRecord | null> {
-    return this.items.get(`${workspaceId}:${fingerprint}`) ?? null;
+  async findByWorkspaceAgentAndFingerprint(
+    workspaceId: string,
+    agentId: string,
+    fingerprint: string,
+  ): Promise<BootstrapGreetingCacheRecord | null> {
+    return this.items.get(`${workspaceId}:${agentId}:${fingerprint}`) ?? null;
   }
 
   async save(input: {
     workspaceId: string;
+    agentId: string;
     fingerprint: string;
     localeUsed: string | null;
     greetingText: string;
   }): Promise<BootstrapGreetingCacheRecord> {
-    const key = `${input.workspaceId}:${input.fingerprint}`;
+    const key = `${input.workspaceId}:${input.agentId}:${input.fingerprint}`;
     const existing = this.items.get(key);
     const record: BootstrapGreetingCacheRecord = {
       id: existing?.id ?? randomUUID(),
       workspaceId: input.workspaceId,
+      agentId: input.agentId,
       fingerprint: input.fingerprint,
       localeUsed: input.localeUsed,
       greetingText: input.greetingText,
@@ -1775,6 +1865,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
 
   async create(
     workspaceId: string,
+    agentId: string | null = null,
     sourceChannel: string | null = null,
     anonymousSessionId: string | null = null,
     sourceOrigin: string | null = null,
@@ -1782,6 +1873,8 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     const record: ConversationRecord = {
       id: randomUUID(),
       workspaceId,
+      agentId,
+      agentName: null,
       sourceChannel,
       sourceOrigin,
       anonymousSessionId,
@@ -1794,6 +1887,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
 
   async createWithInitialAssistantMessage(input: {
     workspaceId: string;
+    agentId?: string | null;
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
@@ -1801,6 +1895,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
     const conversation = await this.create(
       input.workspaceId,
+      input.agentId ?? null,
       input.sourceChannel ?? null,
       input.anonymousSessionId ?? null,
       input.sourceOrigin ?? null,
@@ -1881,10 +1976,14 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
   async listPageByAnonymousSession(
     workspaceId: string,
     anonymousSessionId: string,
-    input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; cursor?: string; agentId?: string | null } = { limit: 50, offset: 0 },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const conversations = [...this.items.values()]
-      .filter((item) => item.workspaceId === workspaceId && item.anonymousSessionId === anonymousSessionId)
+      .filter((item) =>
+        item.workspaceId === workspaceId &&
+        item.anonymousSessionId === anonymousSessionId &&
+        (!input.agentId || item.agentId === input.agentId)
+      )
       .sort((left, right) => {
         const timeDiff = right.updatedAt.getTime() - left.updatedAt.getTime();
         return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
@@ -1918,9 +2017,15 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     conversationId: string,
     workspaceId: string,
     anonymousSessionId: string,
+    agentId?: string | null,
   ): Promise<ConversationRecord | null> {
     const item = this.items.get(conversationId);
-    return item && item.workspaceId === workspaceId && item.anonymousSessionId === anonymousSessionId ? item : null;
+    return item &&
+      item.workspaceId === workspaceId &&
+      item.anonymousSessionId === anonymousSessionId &&
+      (!agentId || item.agentId === agentId)
+      ? item
+      : null;
   }
 
   async touch(conversationId: string, workspaceId: string): Promise<void> {

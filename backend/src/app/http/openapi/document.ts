@@ -725,6 +725,15 @@ const WorkspaceIngestionReprocessResponseSchema = registry.register(
 const DocumentStatusSchema = z.string().openapi("DocumentStatus");
 const RagStatusSchema = z.string().openapi("RagStatus");
 const DocumentCreateRequestSchema = registry.register("DocumentCreateRequest", documentSchema);
+const DocumentSourceSummarySchema = registry.register(
+  "DocumentSourceSummary",
+  z.object({
+    id: z.string().uuid(),
+    kind: z.enum(["website", "api", "connector", "upload"]),
+    name: z.string(),
+    externalId: z.string().nullable(),
+  }),
+);
 const DocumentImportRequestSchema = registry.register(
   "DocumentImportRequest",
   z.object({
@@ -758,7 +767,12 @@ const DocumentSummarySchema = registry.register(
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     metadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),
+    sourceId: z.string().uuid().nullable().optional(),
+    source: DocumentSourceSummarySchema.nullable().optional(),
     externalDocumentId: z.string().nullable().optional(),
+    sourceKind: z.enum(["inline_text", "uploaded_file"]),
+    sourceFilename: z.string().nullable().optional(),
+    sourceMimeType: z.string().nullable().optional(),
   }),
 );
 

@@ -103,6 +103,48 @@ describe("website crawler service", () => {
     expect(ingest.mock.calls[0][0].externalDocumentId).toBe(ingest.mock.calls[1][0].externalDocumentId);
   });
 
+  it("resolves one website source and publishes pages under it across repeated crawls", async () => {
+    const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
+    const resolveSource = vi.fn().mockResolvedValue({ id: "source-1" });
+    const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([
+        {
+          sourceUrl: "https://example.com/about",
+          title: "About",
+          content: "# About",
+          metadata: {},
+        },
+      ]),
+      documentIngestionService: { ingest, resolveSource, updateSourceSyncState },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com/docs/", limit: 1 });
+    await service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com/docs", limit: 1 });
+
+    expect(resolveSource).toHaveBeenCalledTimes(2);
+    expect(resolveSource.mock.calls[0][0]).toMatchObject({
+      workspaceId: "workspace-1",
+      source: {
+        kind: "website",
+        url: "https://example.com/docs",
+        config: {
+          url: "https://example.com/docs",
+          limit: 1,
+        },
+      },
+    });
+    expect(ingest.mock.calls.every((call) => call[0].source.id === "source-1")).toBe(true);
+    expect(updateSourceSyncState).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+      status: "success",
+      syncedAt: expect.any(Date),
+    }));
+  });
+
   it("reports page publication failures without leaking provider metadata", async () => {
     const ingest = vi.fn()
       .mockResolvedValueOnce({ documentId: "doc-1", status: "queued" })

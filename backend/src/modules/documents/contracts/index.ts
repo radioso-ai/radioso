@@ -1,3 +1,5 @@
+import type { DocumentSourceResolverInput } from "../services/documentIngestionService.js";
+
 export type {
   ChunkRecord,
   ChunkRepositoryPort,
@@ -11,6 +13,7 @@ export type {
   DocumentSourceInput,
   DocumentSourceKind,
   DocumentSourceRecord,
+  DocumentSourceResolverInput,
   DocumentSummary,
   DocumentSummaryRecord,
   DocumentUpdateInput,
@@ -35,5 +38,6 @@ export interface DocumentIngestionPort {
     content: string;
     metadata?: Record<string, unknown>;
     externalDocumentId?: string | null;
+    source?: DocumentSourceResolverInput;
   }): Promise<{ documentId: string; status: string }>;
 }

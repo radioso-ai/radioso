@@ -14,6 +14,8 @@ Document upload is the start of grounded answer quality. If the wrong content en
 - Inline text ingestion: create a document from title, content, optional metadata, and optional external id.
 - File import: upload a file and let Radioso extract source content before chunking.
 
+Inline documents can also include a `source`. For website-backed content, pass `source: { kind: "website", url: "https://example.com/docs" }`. Radioso creates or reuses a source inside the current workspace and links the document to it.
+
 ## What happens after upload
 
 <Steps>
@@ -49,7 +51,7 @@ Only after processing completes should you expect grounded answers to cite that 
 
 If you plan to filter or bias retrieval later, add metadata at ingestion time. Metadata becomes part of document and chunk search behavior and can be used by metadata rules and direct metadata filters.
 
-`externalDocumentId` is useful when Radioso mirrors documents that already exist in another system and you need a stable workspace-scoped reference for sync or reconciliation.
+`externalDocumentId` is useful when Radioso mirrors documents that already exist in another system and you need a stable reference for sync or reconciliation. When a document has a source, the external id is scoped to that workspace source.
 
 ## Common failure pattern
 

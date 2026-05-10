@@ -5,7 +5,13 @@ import type {
   DocumentProcessingQueueSnapshot,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { normalizeMarkdown } from "../../retrieval/public.js";
-import { conflict, notFound } from "../../../shared/domain/errors.js";
+import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
+import {
+  toDocumentSourceSummary,
+  type DocumentSourceRecord as DocumentOriginRecord,
+  type DocumentSourceRepositoryPort,
+  type DocumentSourceSummary,
+} from "../../../db/repositories/documentSourceRepository.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -15,6 +21,14 @@ import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./doc
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 
 export type DocumentSourceKind = "inline_text" | "uploaded_file";
+export type DocumentSourceResolverInput =
+  | { id: string }
+  | {
+      kind: "website";
+      url: string;
+      config?: Record<string, unknown>;
+      metadata?: Record<string, unknown>;
+    };
 
 export interface DocumentSourceRecord {
   sourceKind: DocumentSourceKind;
@@ -42,6 +56,8 @@ export interface DocumentRecord extends DocumentSourceRecord {
   title: string;
   sourceContent: string;
   markdownContent: string;
+  sourceId?: string | null;
+  source?: DocumentSourceSummary | null;
   externalDocumentId?: string | null;
   status: string;
   revision: number;
@@ -56,6 +72,8 @@ export interface DocumentCreateInput extends DocumentSourceInput {
   title: string;
   sourceContent: string;
   markdownContent: string;
+  sourceId?: string | null;
+  source?: DocumentSourceSummary | null;
   metadata?: Record<string, unknown>;
   externalDocumentId?: string | null;
 }
@@ -67,6 +85,8 @@ export interface DocumentUpdateInput extends DocumentSourceInput {
   sourceContent: string;
   markdownContent: string;
   status: string;
+  sourceId?: string | null;
+  source?: DocumentSourceSummary | null;
   metadata?: Record<string, unknown>;
   externalDocumentId?: string | null;
 }
@@ -77,6 +97,8 @@ export interface DocumentQueueUpdateInput extends DocumentSourceInput {
   title: string;
   sourceContent: string;
   markdownContent: string;
+  sourceId?: string | null;
+  source?: DocumentSourceSummary | null;
   metadata?: Record<string, unknown>;
   externalDocumentId?: string | null;
 }
@@ -166,6 +188,8 @@ export interface DocumentSummary {
   createdAt: Date;
   updatedAt: Date;
   metadata: Record<string, unknown>;
+  sourceId?: string | null;
+  source?: DocumentSourceSummary | null;
   externalDocumentId?: string | null;
   sourceKind: DocumentSourceKind;
   sourceFilename?: string | null;
@@ -192,6 +216,8 @@ export interface DocumentSummaryRecord extends DocumentSourceRecord {
   createdAt: Date;
   updatedAt: Date;
   metadata: Record<string, unknown>;
+  sourceId?: string | null;
+  source?: DocumentSourceSummary | null;
   externalDocumentId?: string | null;
 }
 
@@ -204,6 +230,7 @@ export class DocumentIngestionService {
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
+    private readonly documentSourceRepository?: DocumentSourceRepositoryPort,
   ) {}
 
   async ingest(input: {
@@ -213,6 +240,7 @@ export class DocumentIngestionService {
     content: string;
     metadata?: Record<string, unknown>;
     externalDocumentId?: string | null;
+    source?: DocumentSourceResolverInput;
   }): Promise<{ documentId: string; status: string }> {
     const sanitizedContent = sanitizeInlineDocumentContent({
       title: input.title,
@@ -222,6 +250,7 @@ export class DocumentIngestionService {
     let document:
       | {
           id: string;
+          sourceId?: string | null;
           externalDocumentId?: string | null;
           revision: number;
           status: string;
@@ -240,6 +269,7 @@ export class DocumentIngestionService {
         title: input.title,
         sourceContent: sanitizedContent.sourceContent,
         markdownContent: normalizeMarkdown(sanitizedContent.markdownContent),
+        ...(await this.resolveSourceForInput(input.workspaceId, input.source)),
         metadata: input.metadata,
         externalDocumentId: input.externalDocumentId,
         sourceKind: "inline_text",
@@ -285,6 +315,7 @@ export class DocumentIngestionService {
       eventStatus: "success",
       metadata: {
         documentId: document.id,
+        sourceId: document.sourceId ?? null,
         externalDocumentId: document.externalDocumentId ?? null,
         revision: document.revision,
         status: document.status,
@@ -326,6 +357,7 @@ export class DocumentIngestionService {
     content: string;
     metadata?: Record<string, unknown>;
     externalDocumentId?: string | null;
+    source?: DocumentSourceResolverInput;
   }): Promise<{ documentId: string; status: string }> {
     const sanitizedContent = sanitizeInlineDocumentContent({
       title: input.title,
@@ -335,6 +367,7 @@ export class DocumentIngestionService {
     let document:
       | {
           id: string;
+          sourceId?: string | null;
           externalDocumentId?: string | null;
           revision: number;
           status: string;
@@ -360,6 +393,7 @@ export class DocumentIngestionService {
         title: input.title,
         sourceContent: sanitizedContent.sourceContent,
         markdownContent: normalizeMarkdown(sanitizedContent.markdownContent),
+        ...(await this.resolveSourceForInput(input.workspaceId, input.source)),
         metadata: input.metadata,
         externalDocumentId: input.externalDocumentId,
         sourceKind: "inline_text",
@@ -391,6 +425,7 @@ export class DocumentIngestionService {
       eventStatus: "success",
       metadata: {
         documentId: document.id,
+        sourceId: document.sourceId ?? null,
         externalDocumentId: document.externalDocumentId ?? null,
         revision: document.revision,
         status: document.status,
@@ -493,6 +528,8 @@ export class DocumentIngestionService {
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
       metadata: document.metadata,
+      sourceId: document.sourceId ?? null,
+      source: document.source ?? null,
       externalDocumentId: document.externalDocumentId ?? null,
       sourceKind: document.sourceKind,
       sourceFilename: document.sourceFilename ?? null,
@@ -505,6 +542,66 @@ export class DocumentIngestionService {
       ...this.toSummary(document),
       content: document.sourceContent,
     };
+  }
+
+  async resolveSource(input: {
+    workspaceId: string;
+    source: DocumentSourceResolverInput;
+  }): Promise<DocumentOriginRecord> {
+    return this.requireDocumentSource(input.workspaceId, input.source);
+  }
+
+  async updateSourceSyncState(input: {
+    workspaceId: string;
+    sourceId: string;
+    status: string;
+    syncedAt?: Date | null;
+  }): Promise<void> {
+    await this.documentSourceRepository?.updateSyncState(input);
+  }
+
+  private async resolveSourceForInput(
+    workspaceId: string,
+    source: DocumentSourceResolverInput | undefined,
+  ): Promise<{ sourceId?: string | null; source?: DocumentSourceSummary | null }> {
+    if (!source) {
+      return {};
+    }
+    const record = await this.requireDocumentSource(workspaceId, source);
+    return {
+      sourceId: record.id,
+      source: toDocumentSourceSummary(record),
+    };
+  }
+
+  private async requireDocumentSource(
+    workspaceId: string,
+    source: DocumentSourceResolverInput,
+  ): Promise<DocumentOriginRecord> {
+    if (!this.documentSourceRepository) {
+      throw badRequest("Document sources are not configured");
+    }
+
+    if ("id" in source) {
+      const existing = await this.documentSourceRepository.findByIdAndWorkspaceId(source.id, workspaceId);
+      if (!existing) {
+        throw notFound("Document source not found");
+      }
+      return existing;
+    }
+
+    const url = normalizeWebsiteSourceUrl(source.url);
+    return this.documentSourceRepository.upsertByExternalId({
+      workspaceId,
+      kind: "website",
+      name: deriveWebsiteSourceName(url),
+      externalId: url,
+      config: {
+        url,
+        ...(source.config ?? {}),
+      },
+      metadata: source.metadata ?? {},
+    });
   }
 
   private async queueSnapshotMetadata(): Promise<{
@@ -569,3 +666,31 @@ export class DocumentIngestionService {
     };
   }
 }
+
+const normalizeWebsiteSourceUrl = (value: string): string => {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw badRequest("source.url must be a valid URL");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw badRequest("source.url must use http or https");
+  }
+  if (url.username || url.password) {
+    throw badRequest("source.url must not include credentials");
+  }
+  url.hash = "";
+  if (url.pathname === "/") {
+    url.pathname = "";
+  } else {
+    url.pathname = url.pathname.replace(/\/+$/, "");
+  }
+  return url.toString().replace(/\/$/, "");
+};
+
+const deriveWebsiteSourceName = (url: string): string => {
+  const parsed = new URL(url);
+  const path = parsed.pathname.replace(/^\/+/, "");
+  return path ? `${parsed.hostname}/${path}` : parsed.hostname;
+};

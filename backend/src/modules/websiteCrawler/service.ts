@@ -19,7 +19,18 @@ export interface WebsiteCrawlerDocumentIngestionPort {
     content: string;
     metadata?: Record<string, unknown>;
     externalDocumentId?: string | null;
+    source?: { id: string } | { kind: "website"; url: string; config?: Record<string, unknown>; metadata?: Record<string, unknown> };
   }): Promise<{ documentId: string; status: string }>;
+  resolveSource?(input: {
+    workspaceId: string;
+    source: { kind: "website"; url: string; config?: Record<string, unknown>; metadata?: Record<string, unknown> };
+  }): Promise<{ id: string }>;
+  updateSourceSyncState?(input: {
+    workspaceId: string;
+    sourceId: string;
+    status: string;
+    syncedAt?: Date | null;
+  }): Promise<void>;
 }
 
 export interface WebsiteCrawlerAuditPort {
@@ -69,10 +80,33 @@ export class WebsiteCrawlerService {
   }): Promise<WebsiteCrawlPublicationResult> {
     const websiteBaseUrl = normalizeBaseUrl(input.url);
     const safeWebsiteBaseUrl = redactWebsiteCrawlerUrl(websiteBaseUrl);
+    let documentSource: { id: string } | null = null;
     try {
       await (this.dependencies.assertCrawlUrlAllowed ?? assertPublicWebsiteUrl)(websiteBaseUrl);
+      documentSource = await this.dependencies.documentIngestionService.resolveSource?.({
+        workspaceId: input.workspaceId,
+        source: {
+          kind: "website",
+          url: safeWebsiteBaseUrl,
+          config: {
+            url: safeWebsiteBaseUrl,
+            limit: input.limit,
+          },
+          metadata: {
+            requestedUrl: safeWebsiteBaseUrl,
+            provider: redactSensitiveText(this.dependencies.provider.name),
+          },
+        },
+      }) ?? null;
     } catch (error) {
       await this.auditCrawlFailure(input, safeWebsiteBaseUrl, error);
+      if (documentSource) {
+        await this.safeUpdateSourceSyncState({
+          workspaceId: input.workspaceId,
+          sourceId: documentSource.id,
+          status: "failure",
+        });
+      }
       throw error;
     }
     let providerResult: WebsiteCrawlResult;
@@ -86,6 +120,13 @@ export class WebsiteCrawlerService {
       this.throwIfAborted(input.signal);
     } catch (error) {
       await this.auditCrawlFailure(input, safeWebsiteBaseUrl, error);
+      if (documentSource) {
+        await this.safeUpdateSourceSyncState({
+          workspaceId: input.workspaceId,
+          sourceId: documentSource.id,
+          status: "failure",
+        });
+      }
       throw error;
     }
 
@@ -140,6 +181,18 @@ export class WebsiteCrawlerService {
           title: page.title?.trim() || safeSourceUrl,
           content,
           externalDocumentId,
+          source: documentSource ? { id: documentSource.id } : {
+            kind: "website",
+            url: safeWebsiteBaseUrl,
+            config: {
+              url: safeWebsiteBaseUrl,
+              limit: input.limit,
+            },
+            metadata: {
+              requestedUrl: safeWebsiteBaseUrl,
+              provider: providerResult.provider,
+            },
+          },
           metadata: buildDocumentMetadata({
             page,
             sourceUrl: safeSourceUrl,
@@ -167,6 +220,14 @@ export class WebsiteCrawlerService {
     }
 
     await this.auditResult(input, result);
+    if (documentSource) {
+      await this.safeUpdateSourceSyncState({
+        workspaceId: input.workspaceId,
+        sourceId: documentSource.id,
+        status: result.failed > 0 ? "failure" : "success",
+        syncedAt: new Date(),
+      });
+    }
     return result;
   }
 
@@ -243,6 +304,14 @@ export class WebsiteCrawlerService {
         failed: result.failed,
       },
     });
+  }
+
+  private async safeUpdateSourceSyncState(input: { workspaceId: string; sourceId: string; status: string; syncedAt?: Date | null }): Promise<void> {
+    try {
+      await this.dependencies.documentIngestionService.updateSourceSyncState?.(input);
+    } catch {
+      // Best-effort sync metadata updates should not affect crawl success/failure outcomes.
+    }
   }
 }
 

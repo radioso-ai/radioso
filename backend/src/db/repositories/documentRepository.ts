@@ -91,6 +91,9 @@ export class DocumentRepository implements DocumentRepositoryPort {
   async createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord> {
     return this.database.withTransaction(async (client) => {
       const documentId = randomUUID();
+      const conflictTarget = input.sourceId
+        ? "(workspace_id, source_id, external_document_id) WHERE source_id IS NOT NULL AND external_document_id IS NOT NULL"
+        : "(workspace_id, external_document_id) WHERE source_id IS NULL AND external_document_id IS NOT NULL";
       const [documentRow] = (
         await client.query<DocumentRow>(
           `INSERT INTO documents (
@@ -99,6 +102,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
              title,
              source_content,
              markdown_content,
+             source_id,
              external_document_id,
              status,
              revision,
@@ -111,12 +115,13 @@ export class DocumentRepository implements DocumentRepositoryPort {
              source_storage_generation,
              source_size_bytes
            )
-           VALUES ($1, $2, $3, $4, $5, $6, 'queued', 1, $7::jsonb, $8, $9, $10, $11, $12, $13, $14)
-           ON CONFLICT (workspace_id, external_document_id) WHERE external_document_id IS NOT NULL
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', 1, $8::jsonb, $9, $10, $11, $12, $13, $14, $15)
+           ON CONFLICT ${conflictTarget}
            DO UPDATE
              SET title = EXCLUDED.title,
                  source_content = EXCLUDED.source_content,
                  markdown_content = EXCLUDED.markdown_content,
+                 source_id = EXCLUDED.source_id,
                  status = 'queued',
                  revision = documents.revision + 1,
                  failed_at = NULL,
@@ -138,6 +143,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
             input.title,
             input.sourceContent,
             input.markdownContent,
+            input.sourceId ?? null,
             input.externalDocumentId ?? null,
             JSON.stringify(input.metadata ?? {}),
             input.sourceKind ?? "inline_text",
@@ -173,6 +179,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
          title,
          source_content,
          markdown_content,
+         source_id,
          external_document_id,
          status,
          revision,
@@ -185,7 +192,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
          source_storage_generation,
          source_size_bytes
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8::jsonb, $9, $10, $11, $12, $13, $14, $15)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9::jsonb, $10, $11, $12, $13, $14, $15, $16)
        RETURNING ${documentSelect}`,
       [
         randomUUID(),
@@ -193,6 +200,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         input.title,
         input.sourceContent,
         input.markdownContent,
+        input.sourceId ?? null,
         input.externalDocumentId ?? null,
         input.status,
         JSON.stringify(input.metadata ?? {}),
@@ -223,13 +231,14 @@ export class DocumentRepository implements DocumentRepositoryPort {
              updated_at = NOW(),
              metadata = COALESCE($6::jsonb, metadata),
              external_document_id = COALESCE($7, external_document_id),
-             source_kind = COALESCE($8, source_kind),
-             source_filename = COALESCE($9, source_filename),
-             source_mime_type = COALESCE($10, source_mime_type),
-             source_storage_bucket = COALESCE($11, source_storage_bucket),
-             source_storage_object = COALESCE($12, source_storage_object),
-             source_storage_generation = COALESCE($13, source_storage_generation),
-             source_size_bytes = COALESCE($14, source_size_bytes)
+             source_id = COALESCE($8, source_id),
+             source_kind = COALESCE($9, source_kind),
+             source_filename = COALESCE($10, source_filename),
+             source_mime_type = COALESCE($11, source_mime_type),
+             source_storage_bucket = COALESCE($12, source_storage_bucket),
+             source_storage_object = COALESCE($13, source_storage_object),
+             source_storage_generation = COALESCE($14, source_storage_generation),
+             source_size_bytes = COALESCE($15, source_size_bytes)
          WHERE id = $1 AND workspace_id = $2
          RETURNING ${documentSelect}`,
         [
@@ -240,6 +249,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
           input.markdownContent,
           input.metadata !== undefined ? JSON.stringify(input.metadata) : null,
           input.externalDocumentId ?? null,
+          input.sourceId ?? null,
           input.sourceKind ?? null,
           input.sourceFilename ?? null,
           input.sourceMimeType ?? null,
@@ -381,13 +391,14 @@ export class DocumentRepository implements DocumentRepositoryPort {
            updated_at = NOW(),
            metadata = COALESCE($7::jsonb, metadata),
            external_document_id = COALESCE($8, external_document_id),
-           source_kind = COALESCE($9, source_kind),
-           source_filename = COALESCE($10, source_filename),
-           source_mime_type = COALESCE($11, source_mime_type),
-           source_storage_bucket = COALESCE($12, source_storage_bucket),
-           source_storage_object = COALESCE($13, source_storage_object),
-           source_storage_generation = COALESCE($14, source_storage_generation),
-           source_size_bytes = COALESCE($15, source_size_bytes)
+           source_id = COALESCE($9, source_id),
+           source_kind = COALESCE($10, source_kind),
+           source_filename = COALESCE($11, source_filename),
+           source_mime_type = COALESCE($12, source_mime_type),
+           source_storage_bucket = COALESCE($13, source_storage_bucket),
+           source_storage_object = COALESCE($14, source_storage_object),
+           source_storage_generation = COALESCE($15, source_storage_generation),
+           source_size_bytes = COALESCE($16, source_size_bytes)
        WHERE id = $1 AND workspace_id = $2
        RETURNING ${documentSelect}`,
       [
@@ -399,6 +410,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         input.status,
         input.metadata !== undefined ? JSON.stringify(input.metadata) : null,
         input.externalDocumentId ?? null,
+        input.sourceId ?? null,
         input.sourceKind ?? null,
         input.sourceFilename ?? null,
         input.sourceMimeType ?? null,
@@ -588,7 +600,8 @@ export class DocumentRepository implements DocumentRepositoryPort {
       "code" in error &&
       (error as { code?: string }).code === "23505" &&
       "constraint" in error &&
-      (error as { constraint?: string }).constraint === "idx_documents_workspace_external_document_id_unique"
+      ((error as { constraint?: string }).constraint === "idx_documents_workspace_external_document_id_unique" ||
+        (error as { constraint?: string }).constraint === "idx_documents_workspace_source_external_document_id_unique")
     ) {
       return conflict("externalDocumentId is already used by another document in this workspace");
     }

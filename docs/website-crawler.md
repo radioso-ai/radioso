@@ -28,7 +28,7 @@ WEBSITE_CRAWLER_MAX_LIMIT=100
 
 Cookie-session requests select the workspace with `x-workspace-id`. Bearer-token requests use the workspace already bound to the API token.
 
-Accepted pages are published as documents with stable external document IDs and website source metadata. Chunking, embeddings, retrieval, and citations remain owned by the standard document worker.
+Accepted pages are published as documents with stable external document IDs and a workspace-local website source. Repeated crawls of the same normalized URL reuse that source, so recrawl logic can find the related documents through `sourceId`. Chunking, embeddings, retrieval, and citations remain owned by the standard document worker.
 
 ## Provider Contract
 

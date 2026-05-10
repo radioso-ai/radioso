@@ -33,6 +33,11 @@ import type {
 import type { UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
 import type { AgentRepositoryPort } from "../../src/db/repositories/agentRepository.js";
+import type {
+  DocumentOriginKind,
+  DocumentSourceRecord,
+  DocumentSourceRepositoryPort,
+} from "../../src/db/repositories/documentSourceRepository.js";
 import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
@@ -1095,6 +1100,79 @@ export class InMemoryConnectorDatabase {
   }
 }
 
+export class InMemoryDocumentSourceRepository implements DocumentSourceRepositoryPort {
+  readonly items = new Map<string, DocumentSourceRecord>();
+
+  async findByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<DocumentSourceRecord | null> {
+    const source = this.items.get(sourceId);
+    return source && source.workspaceId === workspaceId ? source : null;
+  }
+
+  async upsertByExternalId(input: {
+    workspaceId: string;
+    kind: DocumentOriginKind;
+    name: string;
+    externalId: string;
+    config?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+  }): Promise<DocumentSourceRecord> {
+    const existing = [...this.items.values()].find(
+      (item) =>
+        item.workspaceId === input.workspaceId &&
+        item.kind === input.kind &&
+        item.externalId === input.externalId,
+    );
+    if (existing) {
+      const updated: DocumentSourceRecord = {
+        ...existing,
+        name: input.name,
+        config: input.config ?? {},
+        metadata: {
+          ...existing.metadata,
+          ...(input.metadata ?? {}),
+        },
+        updatedAt: new Date(),
+      };
+      this.items.set(updated.id, updated);
+      return updated;
+    }
+
+    const source: DocumentSourceRecord = {
+      id: randomUUID(),
+      workspaceId: input.workspaceId,
+      kind: input.kind,
+      name: input.name,
+      externalId: input.externalId,
+      config: input.config ?? {},
+      metadata: input.metadata ?? {},
+      lastSyncStatus: null,
+      lastSyncedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(source.id, source);
+    return source;
+  }
+
+  async updateSyncState(input: {
+    workspaceId: string;
+    sourceId: string;
+    status: string;
+    syncedAt?: Date | null;
+  }): Promise<void> {
+    const source = await this.findByIdAndWorkspaceId(input.sourceId, input.workspaceId);
+    if (!source) {
+      return;
+    }
+    this.items.set(source.id, {
+      ...source,
+      lastSyncStatus: input.status,
+      lastSyncedAt: input.syncedAt ?? source.lastSyncedAt,
+      updatedAt: new Date(),
+    });
+  }
+}
+
 export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   readonly items = new Map<string, DocumentRecord>();
 
@@ -1127,6 +1205,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       metadata: input.metadata ?? {},
+      sourceId: input.sourceId ?? null,
+      source: input.source ?? null,
       externalDocumentId: input.externalDocumentId ?? null,
       sourceKind: input.sourceKind ?? "inline_text",
       sourceFilename: input.sourceFilename ?? null,
@@ -1144,7 +1224,12 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
 
     if (record.externalDocumentId) {
       const existing = [...this.items.values()].find(
-        (item) => item.workspaceId === record.workspaceId && item.externalDocumentId === record.externalDocumentId,
+        (item) =>
+          item.workspaceId === record.workspaceId &&
+          item.externalDocumentId === record.externalDocumentId &&
+          (record.sourceId
+            ? item.sourceId === record.sourceId
+            : !item.sourceId),
       );
 
       if (existing) {
@@ -1158,6 +1243,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
           sourceContent: record.sourceContent,
           markdownContent: record.markdownContent,
           metadata: record.metadata,
+          sourceId: record.sourceId,
+          source: record.source,
           status: "queued",
           revision: existing.revision + 1,
           failureReason: null,
@@ -1191,6 +1278,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       metadata: input.metadata ?? {},
+      sourceId: input.sourceId ?? null,
+      source: input.source ?? null,
       externalDocumentId: input.externalDocumentId ?? null,
       sourceKind: input.sourceKind ?? "inline_text",
       sourceFilename: input.sourceFilename ?? null,
@@ -1247,6 +1336,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         metadata: item.metadata,
+        sourceId: item.sourceId ?? null,
+        source: item.source ?? null,
         externalDocumentId: item.externalDocumentId ?? null,
         sourceKind: item.sourceKind,
         sourceFilename: item.sourceFilename,
@@ -1354,6 +1445,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       metadata: input.metadata ?? existing.metadata ?? {},
+      sourceId: input.sourceId ?? existing.sourceId ?? null,
+      source: input.source ?? existing.source ?? null,
       externalDocumentId: input.externalDocumentId ?? existing.externalDocumentId ?? null,
       sourceKind: input.sourceKind ?? existing.sourceKind,
       sourceFilename: input.sourceFilename ?? existing.sourceFilename ?? null,
@@ -1382,7 +1475,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         (item) =>
           item.workspaceId === input.workspaceId &&
           item.id !== input.documentId &&
-          item.externalDocumentId === input.externalDocumentId,
+          item.externalDocumentId === input.externalDocumentId &&
+          (input.sourceId ? item.sourceId === input.sourceId : !item.sourceId),
       );
       if (claimedByOther) {
         throw conflict("externalDocumentId is already used by another document in this workspace");
@@ -1395,6 +1489,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       metadata: input.metadata ?? existing.metadata ?? {},
+      sourceId: input.sourceId ?? existing.sourceId ?? null,
+      source: input.source ?? existing.source ?? null,
       externalDocumentId: input.externalDocumentId ?? existing.externalDocumentId ?? null,
       sourceKind: input.sourceKind ?? existing.sourceKind,
       sourceFilename: input.sourceFilename ?? existing.sourceFilename ?? null,

@@ -12,6 +12,23 @@ import { createWebsiteCrawlerRoutes } from "../../../modules/websiteCrawler/rout
 
 const MAX_DOCUMENT_LIST_LIMIT = 100;
 
+const documentSourceSchema = z.union([
+  z.object({
+    id: z.string().uuid(),
+  }).strict(),
+  z.object({
+    kind: z.literal("website"),
+    url: z.string().trim().url().refine((value) => {
+      try {
+        const parsed = new URL(value);
+        return parsed.protocol === "http:" || parsed.protocol === "https:";
+      } catch {
+        return false;
+      }
+    }, "source.url must use http or https"),
+  }).strict(),
+]);
+
 export const documentSchema = z.object({
   title: z.string().min(1),
   content: z.string().min(1),
@@ -20,6 +37,7 @@ export const documentSchema = z.object({
     { message: "Metadata must be 16 KB or less" },
   ),
   externalDocumentId: z.string().trim().min(1).optional(),
+  source: documentSourceSchema.optional(),
 });
 
 export const documentParamsSchema = z.object({
@@ -159,6 +177,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         content: req.body.content,
         metadata: req.body.metadata,
         externalDocumentId: req.body.externalDocumentId,
+        source: req.body.source,
       });
       res.status(202).json(result);
     } catch (error) {
@@ -224,6 +243,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         content: req.body.content,
         metadata: req.body.metadata,
         externalDocumentId: req.body.externalDocumentId,
+        source: req.body.source,
       });
       res.status(202).json(result);
     } catch (error) {

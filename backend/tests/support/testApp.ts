@@ -91,6 +91,7 @@ import {
   InMemoryChunkRepository,
   InMemoryConversationRepository,
   InMemoryDocumentRepository,
+  InMemoryDocumentSourceRepository,
   InMemoryDocumentStorage,
   InMemoryDocumentProcessingJobRepository,
   InMemoryIngestionSettingsRepository,
@@ -165,6 +166,7 @@ interface TestRepositories {
   ingestionSettingsRepository: InMemoryIngestionSettingsRepository;
   retrievalSettingsRepository: InMemoryRetrievalSettingsRepository;
   documentRepository: InMemoryDocumentRepository;
+  documentSourceRepository: InMemoryDocumentSourceRepository;
   chunkRepository: InMemoryChunkRepository;
   documentProcessingJobRepository: InMemoryDocumentProcessingJobRepository;
   conversationRepository: InMemoryConversationRepository;
@@ -274,6 +276,7 @@ export const createTestDependencies = (overrides: {
   const ingestionSettingsRepository = new InMemoryIngestionSettingsRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
   const documentRepository = new InMemoryDocumentRepository();
+  const documentSourceRepository = new InMemoryDocumentSourceRepository();
   const documentProcessingJobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
   documentRepository.setJobRepository(documentProcessingJobRepository);
   const chunkRepository = new InMemoryChunkRepository(documentRepository);
@@ -468,6 +471,7 @@ export const createTestDependencies = (overrides: {
     undefined,
     productAnalyticsService,
     usageLimitPolicy,
+    documentSourceRepository,
   );
   const documentImportService = new DocumentImportService(
     documentRepository,
@@ -700,6 +704,7 @@ export const createTestDependencies = (overrides: {
       ingestionSettingsRepository,
       retrievalSettingsRepository,
       documentRepository,
+      documentSourceRepository,
       chunkRepository,
       documentProcessingJobRepository,
       conversationRepository,

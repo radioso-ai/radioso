@@ -108,6 +108,7 @@ const client = createRadiosoClient({
 await client.documents.create({
   title: 'Refund policy',
   content: 'Refunds are available within 14 days of purchase with proof of payment.',
+  source: { kind: 'website', url: 'https://example.com/docs' },
 })
 ```
 

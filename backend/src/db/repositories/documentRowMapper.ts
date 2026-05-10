@@ -2,6 +2,7 @@ import type {
   DocumentRecord,
   DocumentSummaryRecord,
 } from "../../modules/documents/contracts/index.js";
+import type { DocumentOriginKind, DocumentSourceSummary } from "./documentSourceRepository.js";
 import {
   inferMetadataValueType,
   type MetadataValueType,
@@ -13,6 +14,8 @@ export interface DocumentRow {
   title: string;
   source_content: string;
   markdown_content: string;
+  source_id: string | null;
+  source: DocumentSourceSummary | null;
   external_document_id: string | null;
   status: string;
   revision: number;
@@ -35,6 +38,17 @@ export const documentSelect = `
   title,
   source_content,
   markdown_content,
+  source_id,
+  (
+    SELECT jsonb_build_object(
+      'id', s.id,
+      'kind', s.kind,
+      'name', s.name,
+      'externalId', s.external_id
+    )
+    FROM document_sources s
+    WHERE s.id = documents.source_id
+  ) AS source,
   external_document_id,
   status,
   revision,
@@ -60,6 +74,17 @@ export const documentSummarySelect = `
   created_at,
   updated_at,
   metadata,
+  source_id,
+  (
+    SELECT jsonb_build_object(
+      'id', s.id,
+      'kind', s.kind,
+      'name', s.name,
+      'externalId', s.external_id
+    )
+    FROM document_sources s
+    WHERE s.id = documents.source_id
+  ) AS source,
   external_document_id,
   source_kind,
   source_filename,
@@ -76,6 +101,8 @@ export const mapDocument = (row: DocumentRow): DocumentRecord => ({
   title: row.title,
   sourceContent: row.source_content,
   markdownContent: row.markdown_content,
+  sourceId: row.source_id,
+  source: mapDocumentSourceSummary(row.source),
   externalDocumentId: row.external_document_id,
   status: row.status,
   revision: row.revision,
@@ -101,6 +128,8 @@ export const mapDocumentSummary = (row: DocumentRow): DocumentSummaryRecord => (
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
   metadata: row.metadata ?? {},
+  sourceId: row.source_id,
+  source: mapDocumentSourceSummary(row.source),
   externalDocumentId: row.external_document_id,
   sourceKind: row.source_kind,
   sourceFilename: row.source_filename,
@@ -110,6 +139,27 @@ export const mapDocumentSummary = (row: DocumentRow): DocumentSummaryRecord => (
   sourceStorageGeneration: row.source_storage_generation,
   sourceSizeBytes: row.source_size_bytes,
 });
+
+const mapDocumentSourceSummary = (value: DocumentSourceSummary | null): DocumentSourceSummary | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const source = value as {
+    id?: unknown;
+    kind?: unknown;
+    name?: unknown;
+    externalId?: unknown;
+  };
+  if (typeof source.id !== "string" || typeof source.kind !== "string" || typeof source.name !== "string") {
+    return null;
+  }
+  return {
+    id: source.id,
+    kind: source.kind as DocumentOriginKind,
+    name: source.name,
+    externalId: typeof source.externalId === "string" ? source.externalId : null,
+  };
+};
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

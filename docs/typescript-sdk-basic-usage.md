@@ -27,6 +27,10 @@ Create a document:
 const queued = await client.documents.create({
   title: "FAQ",
   content: "Radioso can answer questions about uploaded content.",
+  source: {
+    kind: "website",
+    url: "https://example.com/docs",
+  },
   metadata: {
     category: "support",
     published: true,

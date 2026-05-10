@@ -18,6 +18,7 @@ COPY backend/package*.json ./
 COPY packages/connector-api/package.json ../packages/connector-api/
 COPY packages/connector-api/*.d.ts ../packages/connector-api/
 COPY packages/crawler/package.json ../packages/crawler/
+COPY packages/crawler/package-lock.json ../packages/crawler/
 COPY packages/document-parser/package.json ../packages/document-parser/
 COPY packages/document-parser/*.d.ts ../packages/document-parser/
 COPY packages/document-parser/*.js ../packages/document-parser/
@@ -50,12 +51,14 @@ COPY backend/package*.json ./
 COPY packages/connector-api/package.json ../packages/connector-api/
 COPY packages/connector-api/*.d.ts ../packages/connector-api/
 COPY packages/crawler/package.json ../packages/crawler/
+COPY packages/crawler/package-lock.json ../packages/crawler/
 COPY packages/document-parser/package.json ../packages/document-parser/
 COPY packages/document-parser/*.d.ts ../packages/document-parser/
 COPY packages/document-parser/*.js ../packages/document-parser/
 COPY packages/document-parser/parsers ../packages/document-parser/parsers
 COPY --from=ee-backend-build /app/ee/packages/backend-module ../ee/packages/backend-module
 RUN npm ci --omit=dev && \
+    npm --prefix ../packages/crawler ci --omit=dev && \
     if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
       npm install --install-links=true --omit=dev --no-save --package-lock=false --no-audit --no-fund ../ee/packages/backend-module; \
     fi

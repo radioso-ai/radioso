@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "npm run build:crawler && npm run generate:openapi && tsc -p tsconfig.json && node ./scripts/copyNonTsAssets.mjs",
-    "build:crawler": "tsc -p ../packages/crawler/tsconfig.json",
+    "build:crawler": "npm --prefix ../packages/crawler ci && npm --prefix ../packages/crawler run build",
     "dev": "npm run dev:http",
     "predev:http": "npm run build:crawler",
     "dev:http": "tsx watch ./src/httpServer.ts",

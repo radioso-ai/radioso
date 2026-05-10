@@ -101,7 +101,7 @@ export class WebsiteCrawlerService {
     } catch (error) {
       await this.auditCrawlFailure(input, safeWebsiteBaseUrl, error);
       if (documentSource) {
-        await this.dependencies.documentIngestionService.updateSourceSyncState?.({
+        await this.safeUpdateSourceSyncState({
           workspaceId: input.workspaceId,
           sourceId: documentSource.id,
           status: "failure",
@@ -121,7 +121,7 @@ export class WebsiteCrawlerService {
     } catch (error) {
       await this.auditCrawlFailure(input, safeWebsiteBaseUrl, error);
       if (documentSource) {
-        await this.dependencies.documentIngestionService.updateSourceSyncState?.({
+        await this.safeUpdateSourceSyncState({
           workspaceId: input.workspaceId,
           sourceId: documentSource.id,
           status: "failure",
@@ -221,7 +221,7 @@ export class WebsiteCrawlerService {
 
     await this.auditResult(input, result);
     if (documentSource) {
-      await this.dependencies.documentIngestionService.updateSourceSyncState?.({
+      await this.safeUpdateSourceSyncState({
         workspaceId: input.workspaceId,
         sourceId: documentSource.id,
         status: result.failed > 0 ? "failure" : "success",
@@ -304,6 +304,14 @@ export class WebsiteCrawlerService {
         failed: result.failed,
       },
     });
+  }
+
+  private async safeUpdateSourceSyncState(input: { workspaceId: string; sourceId: string; status: string; syncedAt?: Date | null }): Promise<void> {
+    try {
+      await this.dependencies.documentIngestionService.updateSourceSyncState?.(input);
+    } catch {
+      // Best-effort sync metadata updates should not affect crawl success/failure outcomes.
+    }
   }
 }
 

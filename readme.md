@@ -190,7 +190,11 @@ const client = createRadiosoClient({
   apiToken: process.env.RADIOSO_API_TOKEN!,
 });
 
-await client.documents.create({ title: "Support FAQ", content: "..." });
+await client.documents.create({
+  title: "Support FAQ",
+  content: "...",
+  source: { kind: "website", url: "https://example.com/docs" },
+});
 
 const file = await readFile("./handbook.pdf");
 await client.documents.importFile({

@@ -558,7 +558,155 @@ describe("document contract", () => {
     expect(getResponse.body).toMatchObject({
       id: createResponse.body.documentId,
       metadata: {},
+      sourceId: null,
+      source: null,
     });
+  });
+
+  it("creates and reuses workspace-local website sources from document requests", async () => {
+    const { app, repositories } = createTestApp();
+
+    const session = await issueTestSession(app, "document-source-website@example.com");
+
+    const firstResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Pricing",
+        content: "Pricing content",
+        externalDocumentId: "https://example.com/docs/pricing",
+        source: {
+          kind: "website",
+          url: "https://example.com/docs/",
+        },
+        metadata: {
+          sourceUrl: "https://example.com/docs/pricing",
+        },
+      });
+
+    const secondResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Contact",
+        content: "Contact content",
+        externalDocumentId: "https://example.com/docs/contact",
+        source: {
+          kind: "website",
+          url: "https://example.com/docs",
+        },
+      });
+
+    expect(firstResponse.status).toBe(202);
+    expect(secondResponse.status).toBe(202);
+    expect(repositories.documentSourceRepository.items.size).toBe(1);
+
+    const firstDocument = await request(app)
+      .get(`/api/v1/document/${firstResponse.body.documentId}`)
+      .set(adminSessionHeaders(session));
+    const secondDocument = await request(app)
+      .get(`/api/v1/document/${secondResponse.body.documentId}`)
+      .set(adminSessionHeaders(session));
+
+    expect(firstDocument.status).toBe(200);
+    expect(secondDocument.status).toBe(200);
+    expect(firstDocument.body.sourceId).toBe(secondDocument.body.sourceId);
+    expect(firstDocument.body.source).toMatchObject({
+      id: firstDocument.body.sourceId,
+      kind: "website",
+      name: "example.com/docs",
+      externalId: "https://example.com/docs",
+    });
+
+    const linkedResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "FAQ",
+        content: "FAQ content",
+        externalDocumentId: "https://example.com/docs/faq",
+        source: {
+          id: firstDocument.body.sourceId,
+        },
+      });
+    const linkedDocument = await request(app)
+      .get(`/api/v1/document/${linkedResponse.body.documentId}`)
+      .set(adminSessionHeaders(session));
+
+    expect(linkedResponse.status).toBe(202);
+    expect(linkedDocument.body.sourceId).toBe(firstDocument.body.sourceId);
+
+    const listResponse = await request(app)
+      .get("/api/v1/document/")
+      .set(adminSessionHeaders(session));
+
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body.documents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: firstResponse.body.documentId,
+        sourceId: firstDocument.body.sourceId,
+        source: expect.objectContaining({ kind: "website" }),
+      }),
+    ]));
+  });
+
+  it("keeps document sources bounded to each workspace", async () => {
+    const { app, repositories } = createTestApp();
+
+    const firstSession = await issueTestSession(app, "document-source-first@example.com");
+    const secondSession = await issueTestSession(app, "document-source-second@example.com");
+
+    const firstResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(firstSession))
+      .send({
+        title: "First workspace",
+        content: "First content",
+        externalDocumentId: "https://example.com/docs/a",
+        source: {
+          kind: "website",
+          url: "https://example.com/docs",
+        },
+      });
+    const firstDocument = await request(app)
+      .get(`/api/v1/document/${firstResponse.body.documentId}`)
+      .set(adminSessionHeaders(firstSession));
+
+    const crossWorkspaceResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(secondSession))
+      .send({
+        title: "Cross workspace",
+        content: "Cross workspace content",
+        source: {
+          id: firstDocument.body.sourceId,
+        },
+      });
+
+    const secondResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(secondSession))
+      .send({
+        title: "Second workspace",
+        content: "Second content",
+        externalDocumentId: "https://example.com/docs/a",
+        source: {
+          kind: "website",
+          url: "https://example.com/docs",
+        },
+      });
+    const secondDocument = await request(app)
+      .get(`/api/v1/document/${secondResponse.body.documentId}`)
+      .set(adminSessionHeaders(secondSession));
+
+    expect(crossWorkspaceResponse.status).toBe(404);
+    expect(crossWorkspaceResponse.body.error).toMatchObject({
+      code: "not_found",
+      message: "Document source not found",
+    });
+    expect(secondDocument.status).toBe(200);
+    expect(secondDocument.body.sourceId).not.toBe(firstDocument.body.sourceId);
+    expect(repositories.documentSourceRepository.items.size).toBe(2);
   });
 
   it("preserves metadata on PUT without metadata and replaces on PUT with metadata", async () => {

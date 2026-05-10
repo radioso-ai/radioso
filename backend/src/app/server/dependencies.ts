@@ -23,6 +23,7 @@ import { AuditEventRepository } from "../../db/repositories/auditEventRepository
 import { ChunkRepository } from "../../db/repositories/chunkRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
 import { DocumentRepository } from "../../db/repositories/documentRepository.js";
+import { DocumentSourceRepository } from "../../db/repositories/documentSourceRepository.js";
 import { HistoryItemsRepository } from "../../db/repositories/historyItemsRepository.js";
 import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
@@ -189,6 +190,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const ingestionSettingsService = new IngestionSettingsService(new IngestionSettingsRepository(database), auditService);
   const embeddingService = new EmbeddingService(llmRegistry.createEmbeddingGateway());
   const documentRepository = new DocumentRepository(database);
+  const documentSourceRepository = new DocumentSourceRepository(database);
   const retrievalSettingsService = new RetrievalSettingsService(
     new RetrievalSettingsRepository(database),
     auditService,
@@ -219,6 +221,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentJobDispatcher,
     productAnalyticsService,
     usageLimitPolicy,
+    documentSourceRepository,
   );
   const documentImportService = new DocumentImportService(
     documentRepository,

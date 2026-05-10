@@ -2898,11 +2898,81 @@
           "externalDocumentId": {
             "type": "string",
             "minLength": 1
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "website"
+                    ]
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "url"
+                ],
+                "additionalProperties": false
+              }
+            ]
           }
         },
         "required": [
           "title",
           "content"
+        ]
+      },
+      "DocumentSourceSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "website",
+              "api",
+              "connector",
+              "upload"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "externalId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "externalId"
         ]
       },
       "DocumentImportRequest": {
@@ -2997,7 +3067,46 @@
             },
             "default": {}
           },
+          "sourceId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DocumentSourceSummary"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
           "externalDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceKind": {
+            "type": "string",
+            "enum": [
+              "inline_text",
+              "uploaded_file"
+            ]
+          },
+          "sourceFilename": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceMimeType": {
             "type": [
               "string",
               "null"
@@ -3010,7 +3119,8 @@
           "status",
           "ragStatus",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "sourceKind"
         ]
       },
       "DocumentDetails": {
@@ -3257,6 +3367,114 @@
         },
         "required": [
           "query"
+        ]
+      },
+      "WebsiteCrawlRequest": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "WebsiteCrawlPublicationResponse": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "runId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestedUrl": {
+            "type": "string"
+          },
+          "accepted": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "externalDocumentId": {
+                  "type": "string"
+                },
+                "documentId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "sourceUrl": {
+                  "type": "string"
+                },
+                "canonicalUrl": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "externalDocumentId",
+                "documentId",
+                "status",
+                "sourceUrl",
+                "canonicalUrl"
+              ]
+            }
+          },
+          "failures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sourceUrl": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sourceUrl",
+                "reason"
+              ]
+            }
+          }
+        },
+        "required": [
+          "provider",
+          "runId",
+          "status",
+          "requestedUrl",
+          "accepted",
+          "failed",
+          "documents",
+          "failures"
         ]
       },
       "Citation": {
@@ -8850,6 +9068,82 @@
         }
       }
     },
+    "/api/v1/document/crawl": {
+      "post": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Crawl a website through a configured crawler provider",
+        "operationId": "crawlWebsiteDocuments",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebsiteCrawlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Crawled pages accepted for document processing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebsiteCrawlPublicationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Website crawler provider is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/document/{documentId}": {
       "get": {
         "tags": [
@@ -8968,6 +9262,43 @@
                   "externalDocumentId": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "source": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "website"
+                            ]
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "url"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
                   }
                 },
                 "required": [

@@ -678,6 +678,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/document/crawl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Crawl a website through a configured crawler provider */
+        post: operations["crawlWebsiteDocuments"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/document/{documentId}": {
         parameters: {
             query?: never;
@@ -1684,6 +1701,23 @@ export interface components {
                 [key: string]: string | number | boolean | null;
             };
             externalDocumentId?: string;
+            source?: {
+                /** Format: uuid */
+                id: string;
+            } | {
+                /** @enum {string} */
+                kind: "website";
+                /** Format: uri */
+                url: string;
+            };
+        };
+        DocumentSourceSummary: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "website" | "api" | "connector" | "upload";
+            name: string;
+            externalId: string | null;
         };
         DocumentImportRequest: {
             /**
@@ -1716,7 +1750,14 @@ export interface components {
             metadata: {
                 [key: string]: string | number | boolean | null;
             };
+            /** Format: uuid */
+            sourceId?: string | null;
+            source?: components["schemas"]["DocumentSourceSummary"] & (Record<string, never> | null);
             externalDocumentId?: string | null;
+            /** @enum {string} */
+            sourceKind: "inline_text" | "uploaded_file";
+            sourceFilename?: string | null;
+            sourceMimeType?: string | null;
         };
         DocumentDetails: components["schemas"]["DocumentSummary"] & {
             content: string;
@@ -1772,6 +1813,30 @@ export interface components {
             metadataFilter?: {
                 [key: string]: string | number | boolean | null;
             };
+        };
+        WebsiteCrawlRequest: {
+            /** Format: uri */
+            url: string;
+            limit?: number;
+        };
+        WebsiteCrawlPublicationResponse: {
+            provider: string;
+            runId: string | null;
+            status: string | null;
+            requestedUrl: string;
+            accepted: number;
+            failed: number;
+            documents: {
+                externalDocumentId: string;
+                documentId: string;
+                status: string;
+                sourceUrl: string;
+                canonicalUrl: string | null;
+            }[];
+            failures: {
+                sourceUrl: string;
+                reason: string;
+            }[];
         };
         Citation: {
             /** Format: uuid */
@@ -4533,6 +4598,66 @@ export interface operations {
             };
         };
     };
+    crawlWebsiteDocuments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebsiteCrawlRequest"];
+            };
+        };
+        responses: {
+            /** @description Crawled pages accepted for document processing */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebsiteCrawlPublicationResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Website crawler provider is not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getDocument: {
         parameters: {
             query?: never;
@@ -4591,6 +4716,15 @@ export interface operations {
                         [key: string]: string | number | boolean | null;
                     };
                     externalDocumentId?: string;
+                    source?: {
+                        /** Format: uuid */
+                        id: string;
+                    } | {
+                        /** @enum {string} */
+                        kind: "website";
+                        /** Format: uri */
+                        url: string;
+                    };
                 };
             };
         };

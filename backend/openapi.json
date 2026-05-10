@@ -2898,11 +2898,81 @@
           "externalDocumentId": {
             "type": "string",
             "minLength": 1
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "website"
+                    ]
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "url"
+                ],
+                "additionalProperties": false
+              }
+            ]
           }
         },
         "required": [
           "title",
           "content"
+        ]
+      },
+      "DocumentSourceSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "website",
+              "api",
+              "connector",
+              "upload"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "externalId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "externalId"
         ]
       },
       "DocumentImportRequest": {
@@ -2997,7 +3067,46 @@
             },
             "default": {}
           },
+          "sourceId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DocumentSourceSummary"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
           "externalDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceKind": {
+            "type": "string",
+            "enum": [
+              "inline_text",
+              "uploaded_file"
+            ]
+          },
+          "sourceFilename": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceMimeType": {
             "type": [
               "string",
               "null"
@@ -3010,7 +3119,8 @@
           "status",
           "ragStatus",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "sourceKind"
         ]
       },
       "DocumentDetails": {
@@ -9152,6 +9262,43 @@
                   "externalDocumentId": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "source": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "website"
+                            ]
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "url"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
                   }
                 },
                 "required": [

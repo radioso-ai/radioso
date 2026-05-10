@@ -7,10 +7,14 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "npm run generate:openapi && tsc -p tsconfig.json && node ./scripts/copyNonTsAssets.mjs",
+    "build": "npm run build:crawler && npm run generate:openapi && tsc -p tsconfig.json && node ./scripts/copyNonTsAssets.mjs",
+    "build:crawler": "tsc -p ../packages/crawler/tsconfig.json",
     "dev": "npm run dev:http",
+    "predev:http": "npm run build:crawler",
     "dev:http": "tsx watch ./src/httpServer.ts",
+    "predev:worker": "npm run build:crawler",
     "dev:worker": "tsx watch ./src/documentWorker.ts",
+    "predev:worker-server": "npm run build:crawler",
     "dev:worker-server": "tsx watch ./src/documentWorkerServer.ts",
     "generate:openapi": "tsx ./scripts/generateOpenApi.ts",
     "lint": "npm run lint:boundaries",
@@ -32,6 +36,7 @@
     "@google-cloud/storage": "^7.17.2",
     "@google-cloud/tasks": "^5.5.0",
     "@radioso/connector-api": "file:../packages/connector-api",
+    "@radioso/crawler": "file:../packages/crawler",
     "@radioso/document-parser": "file:../packages/document-parser",
     "@types/swagger-ui-express": "^4.1.8",
     "amqplib": "^1.0.3",

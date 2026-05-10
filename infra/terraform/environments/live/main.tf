@@ -51,9 +51,11 @@ module "radioso" {
   db_deletion_protection = true
 
   worker_task_queue_name                = "radioso-live-document-processing"
+  worker_crawl_task_queue_name          = "radioso-live-website-crawls"
   worker_task_max_dispatches_per_second = var.worker_task_max_dispatches_per_second
   worker_task_max_concurrent_dispatches = var.worker_task_max_concurrent_dispatches
   document_processing_job_lease_ms      = var.document_processing_job_lease_ms
+  website_crawl_job_lease_ms            = var.website_crawl_job_lease_ms
   document_storage_bucket_name          = var.document_storage_bucket_name
   document_upload_max_bytes             = var.document_upload_max_bytes
   openai_api_key                        = var.openai_api_key

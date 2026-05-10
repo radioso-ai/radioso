@@ -129,6 +129,10 @@ resource "google_cloud_run_v2_service" "backend" {
         value = google_cloud_tasks_queue.document_processing[0].name
       }
       env {
+        name  = "WORKER_TASKS_CRAWL_QUEUE_NAME"
+        value = google_cloud_tasks_queue.website_crawls[0].name
+      }
+      env {
         name  = "WORKER_TASKS_SERVICE_URL"
         value = local.worker_tasks_service_url
       }
@@ -139,6 +143,10 @@ resource "google_cloud_run_v2_service" "backend" {
       env {
         name  = "DOCUMENT_PROCESSING_JOB_LEASE_MS"
         value = tostring(var.document_processing_job_lease_ms)
+      }
+      env {
+        name  = "WEBSITE_CRAWL_JOB_LEASE_MS"
+        value = tostring(var.website_crawl_job_lease_ms)
       }
       dynamic "env" {
         for_each = var.connector_public_base_url == null ? [] : [var.connector_public_base_url]
@@ -431,6 +439,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
         value = google_cloud_tasks_queue.document_processing[0].name
       }
       env {
+        name  = "WORKER_TASKS_CRAWL_QUEUE_NAME"
+        value = google_cloud_tasks_queue.website_crawls[0].name
+      }
+      env {
         name  = "WORKER_TASKS_SERVICE_URL"
         value = local.worker_tasks_service_url
       }
@@ -441,6 +453,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
       env {
         name  = "DOCUMENT_PROCESSING_JOB_LEASE_MS"
         value = tostring(var.document_processing_job_lease_ms)
+      }
+      env {
+        name  = "WEBSITE_CRAWL_JOB_LEASE_MS"
+        value = tostring(var.website_crawl_job_lease_ms)
       }
       dynamic "env" {
         for_each = var.connector_public_base_url == null ? [] : [var.connector_public_base_url]

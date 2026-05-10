@@ -64,6 +64,12 @@ variable "worker_task_max_concurrent_dispatches" {
   default     = 20
 }
 
+variable "website_crawl_job_lease_ms" {
+  description = "Lease duration for in-flight website crawl jobs."
+  type        = number
+  default     = 900000
+}
+
 variable "document_processing_job_lease_ms" {
   description = "Lease duration for in-flight document jobs."
   type        = number

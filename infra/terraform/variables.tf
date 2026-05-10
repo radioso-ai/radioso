@@ -123,6 +123,12 @@ variable "worker_task_queue_name" {
   default     = "radioso-document-processing"
 }
 
+variable "worker_crawl_task_queue_name" {
+  description = "Cloud Tasks queue name used to dispatch website crawl jobs."
+  type        = string
+  default     = "radioso-website-crawls"
+}
+
 variable "worker_task_max_dispatches_per_second" {
   description = "Cloud Tasks dispatch rate for document worker jobs."
   type        = number
@@ -135,10 +141,28 @@ variable "worker_task_max_concurrent_dispatches" {
   default     = 20
 }
 
+variable "worker_crawl_task_max_dispatches_per_second" {
+  description = "Cloud Tasks dispatch rate for website crawl jobs."
+  type        = number
+  default     = 1
+}
+
+variable "worker_crawl_task_max_concurrent_dispatches" {
+  description = "Maximum concurrent Cloud Tasks dispatches for website crawl jobs."
+  type        = number
+  default     = 5
+}
+
 variable "document_processing_job_lease_ms" {
   description = "Lease duration for an in-flight document-processing job before a later delivery may reclaim it."
   type        = number
   default     = 300000
+}
+
+variable "website_crawl_job_lease_ms" {
+  description = "Lease duration for an in-flight website crawl job before a later delivery may reclaim it."
+  type        = number
+  default     = 900000
 }
 
 # --- Document storage ---

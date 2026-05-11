@@ -146,13 +146,6 @@ describe("runtime configuration", () => {
       WORKER_DISPATCH_DRIVER: "amqp",
       WORKER_AMQP_URL: "amqp://localhost:5672",
     })).toThrow(/WORKER_AMQP_QUEUE_NAME/);
-
-    expect(() => getEnv({
-      ...baseEnv,
-      WORKER_DISPATCH_DRIVER: "amqp",
-      WORKER_AMQP_URL: "amqp://localhost:5672",
-      WORKER_AMQP_QUEUE_NAME: "radioso-document-jobs",
-    })).toThrow(/WORKER_AMQP_CRAWL_QUEUE_NAME/);
   });
 
   it("accepts AMQP worker dispatch settings", () => {
@@ -170,6 +163,20 @@ describe("runtime configuration", () => {
     expect(env.WORKER_AMQP_QUEUE_NAME).toBe("radioso-document-jobs");
     expect(env.WORKER_AMQP_CRAWL_QUEUE_NAME).toBe("radioso-website-crawls");
     expect(env.WORKER_AMQP_PREFETCH).toBe(3);
+  });
+
+  it("accepts AMQP settings without a dedicated crawl queue via fallback to document queue", () => {
+    const env = getEnv({
+      ...baseEnv,
+      WORKER_DISPATCH_DRIVER: "amqp",
+      WORKER_AMQP_URL: "amqp://localhost:5672",
+      WORKER_AMQP_QUEUE_NAME: "radioso-document-jobs",
+      WORKER_AMQP_PREFETCH: "2",
+    });
+
+    expect(env.WORKER_AMQP_QUEUE_NAME).toBe("radioso-document-jobs");
+    expect(env.WORKER_AMQP_CRAWL_QUEUE_NAME).toBeUndefined();
+    expect(env.WORKER_AMQP_PREFETCH).toBe(2);
   });
 
   it("documents AMQP worker dispatch settings in the example environment", async () => {

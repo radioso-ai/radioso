@@ -4,9 +4,13 @@ import {
   createDefaultApplicationComposition,
   createDefaultDocumentJobConsumer,
   createDefaultDocumentJobDispatcher,
+  createDefaultWebsiteCrawlJobConsumer,
+  createDefaultWebsiteCrawlJobDispatcher,
 } from "../../src/app/composition/defaultComposition.js";
 import { AmqpDocumentJobConsumer, AmqpDocumentJobDispatcher } from "../../src/modules/documents/infra/amqpDocumentJobQueue.js";
 import { NoopDocumentJobDispatcher } from "../../src/modules/documents/services/documentJobDispatcher.js";
+import { CloudTasksWebsiteCrawlJobDispatcher, AmqpWebsiteCrawlJobDispatcher } from "../../src/modules/websiteCrawler/jobQueue.js";
+import { AmqpWebsiteCrawlJobConsumer } from "../../src/modules/websiteCrawler/jobQueue.js";
 import type { ConnectorPlugin } from "@radioso/connector-api";
 
 const createConnector = (id: string): ConnectorPlugin => ({
@@ -248,5 +252,48 @@ describe("default application composition", () => {
 
     expect(dispatcher).toBeInstanceOf(AmqpDocumentJobDispatcher);
     expect(consumer).toBeInstanceOf(AmqpDocumentJobConsumer);
+  });
+
+  it("falls back to the document queue for crawler tasks when crawl queue names are absent (cloud-tasks)", () => {
+    const dispatcher = createDefaultWebsiteCrawlJobDispatcher({
+      WORKER_DISPATCH_DRIVER: "cloud-tasks",
+      GOOGLE_CLOUD_PROJECT: "radioso-test",
+      WORKER_TASKS_QUEUE_LOCATION: "us-central1",
+      WORKER_TASKS_QUEUE_NAME: "radioso-document-jobs",
+      WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
+      WORKER_TASKS_SERVICE_URL: "https://backend.example.com",
+      WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "radioso-invoker@example.com",
+      WORKER_AMQP_URL: undefined,
+      WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
+      WORKER_AMQP_QUEUE_NAME: undefined,
+    }, createLogger() as any);
+
+    expect(dispatcher).toBeInstanceOf(CloudTasksWebsiteCrawlJobDispatcher);
+  });
+
+  it("falls back to the document queue for crawler tasks when crawl AMQP queue is absent", () => {
+    const dispatcher = createDefaultWebsiteCrawlJobDispatcher({
+      WORKER_DISPATCH_DRIVER: "amqp",
+      GOOGLE_CLOUD_PROJECT: undefined,
+      WORKER_TASKS_QUEUE_LOCATION: undefined,
+      WORKER_TASKS_QUEUE_NAME: undefined,
+      WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
+      WORKER_TASKS_SERVICE_URL: undefined,
+      WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
+      WORKER_AMQP_URL: "amqp://localhost:5672",
+      WORKER_AMQP_QUEUE_NAME: "radioso-document-jobs",
+      WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
+    }, createLogger() as any);
+    const consumer = createDefaultWebsiteCrawlJobConsumer({
+      WORKER_DISPATCH_DRIVER: "amqp",
+      WORKER_AMQP_URL: "amqp://localhost:5672",
+      WORKER_AMQP_QUEUE_NAME: "radioso-document-jobs",
+      WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
+    }, createLogger() as any, {
+      runJobById: vi.fn(),
+    });
+
+    expect(dispatcher).toBeInstanceOf(AmqpWebsiteCrawlJobDispatcher);
+    expect(consumer).toBeInstanceOf(AmqpWebsiteCrawlJobConsumer);
   });
 });

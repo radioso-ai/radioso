@@ -159,7 +159,6 @@ const envSchema = z.object({
       ["WORKER_TASKS_QUEUE_LOCATION", "WORKER_TASKS_QUEUE_LOCATION is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
       ["GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_PROJECT is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
       ["WORKER_TASKS_QUEUE_NAME", "WORKER_TASKS_QUEUE_NAME is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
-      ["WORKER_TASKS_CRAWL_QUEUE_NAME", "WORKER_TASKS_CRAWL_QUEUE_NAME is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
       ["WORKER_TASKS_SERVICE_URL", "WORKER_TASKS_SERVICE_URL is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
       [
         "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT",
@@ -180,7 +179,6 @@ const envSchema = z.object({
     for (const [field, message] of [
       ["WORKER_AMQP_URL", "WORKER_AMQP_URL is required when WORKER_DISPATCH_DRIVER is amqp"],
       ["WORKER_AMQP_QUEUE_NAME", "WORKER_AMQP_QUEUE_NAME is required when WORKER_DISPATCH_DRIVER is amqp"],
-      ["WORKER_AMQP_CRAWL_QUEUE_NAME", "WORKER_AMQP_CRAWL_QUEUE_NAME is required when WORKER_DISPATCH_DRIVER is amqp"],
     ] as const) {
       if (!value[field]) {
         ctx.addIssue({

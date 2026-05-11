@@ -120,9 +120,12 @@ test("renderEnvFile preserves autoscaling worker env keys", () => {
     WORKER_DISPATCH_DRIVER: "cloud-tasks",
     WORKER_TASKS_QUEUE_LOCATION: "europe-west1",
     WORKER_TASKS_QUEUE_NAME: "document-jobs",
+    WORKER_TASKS_CRAWL_QUEUE_NAME: "website-crawls",
     WORKER_TASKS_SERVICE_URL: "https://worker.example.com",
     WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "worker@example.iam.gserviceaccount.com",
     DOCUMENT_PROCESSING_JOB_LEASE_MS: "300000",
+    WEBSITE_CRAWL_JOB_LEASE_MS: "900000",
+    WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: "5000",
     PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
   });
 
@@ -130,9 +133,11 @@ test("renderEnvFile preserves autoscaling worker env keys", () => {
   assert.match(content, /WORKER_DISPATCH_DRIVER=cloud-tasks/);
   assert.match(content, /WORKER_TASKS_QUEUE_LOCATION=europe-west1/);
   assert.match(content, /WORKER_TASKS_QUEUE_NAME=document-jobs/);
+  assert.match(content, /WORKER_TASKS_CRAWL_QUEUE_NAME=website-crawls/);
   assert.match(content, /WORKER_TASKS_SERVICE_URL=https:\/\/worker.example.com/);
   assert.match(content, /WORKER_TASKS_INVOKER_SERVICE_ACCOUNT=worker@example.iam.gserviceaccount.com/);
   assert.match(content, /DOCUMENT_PROCESSING_JOB_LEASE_MS=300000/);
+  assert.match(content, /WEBSITE_CRAWL_JOB_LEASE_MS=900000/);
 });
 
 test("listRequiredKeys requires Cloud Tasks settings only when Cloud Tasks dispatch is enabled", () => {
@@ -143,6 +148,7 @@ test("listRequiredKeys requires Cloud Tasks settings only when Cloud Tasks dispa
   });
   assert.ok(!noopRequired.includes("GOOGLE_CLOUD_PROJECT"));
   assert.ok(!noopRequired.includes("WORKER_TASKS_QUEUE_NAME"));
+  assert.ok(!noopRequired.includes("WORKER_TASKS_CRAWL_QUEUE_NAME"));
 
   const cloudTasksRequired = listRequiredKeys({
     LLM_PROVIDER: "openai",
@@ -152,6 +158,7 @@ test("listRequiredKeys requires Cloud Tasks settings only when Cloud Tasks dispa
   assert.ok(cloudTasksRequired.includes("GOOGLE_CLOUD_PROJECT"));
   assert.ok(cloudTasksRequired.includes("WORKER_TASKS_QUEUE_LOCATION"));
   assert.ok(cloudTasksRequired.includes("WORKER_TASKS_QUEUE_NAME"));
+  assert.ok(cloudTasksRequired.includes("WORKER_TASKS_CRAWL_QUEUE_NAME"));
   assert.ok(cloudTasksRequired.includes("WORKER_TASKS_SERVICE_URL"));
   assert.ok(cloudTasksRequired.includes("WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"));
   assert.ok(cloudTasksRequired.includes("DOCUMENT_PROCESSING_JOB_LEASE_MS"));

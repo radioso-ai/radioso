@@ -50,6 +50,8 @@ import type { AgentService } from "../../modules/agents/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type { SupportImpersonationService } from "../../modules/support/services/supportImpersonationService.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
+import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
+import type { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 
 export interface AppDependencies {
   env: Env;
@@ -83,6 +85,9 @@ export interface AppDependencies {
   documentProcessingWorker: DocumentProcessingWorker;
   documentJobConsumer?: DocumentJobConsumerPort;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
+  websiteCrawlJobService: WebsiteCrawlJobService;
+  websiteCrawlWorker: WebsiteCrawlWorker;
+  websiteCrawlJobConsumer?: DocumentJobConsumerPort;
   documentDeletionService: DocumentDeletionService;
   chatService: ChatService;
   chatBootstrapService: ChatBootstrapService;

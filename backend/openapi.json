@@ -3385,6 +3385,38 @@
           "url"
         ]
       },
+      "WebsiteCrawlJobResponse": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "requestedUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued"
+            ]
+          }
+        },
+        "required": [
+          "jobId",
+          "sourceId",
+          "requestedUrl",
+          "status"
+        ]
+      },
       "WebsiteCrawlPublicationResponse": {
         "type": "object",
         "properties": {
@@ -9092,11 +9124,11 @@
         },
         "responses": {
           "202": {
-            "description": "Crawled pages accepted for document processing",
+            "description": "Crawl job accepted for asynchronous processing",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WebsiteCrawlPublicationResponse"
+                  "$ref": "#/components/schemas/WebsiteCrawlJobResponse"
                 }
               }
             }

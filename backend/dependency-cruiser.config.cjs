@@ -1,6 +1,21 @@
 module.exports = {
   forbidden: [
     {
+      name: "no-direct-crawler-package-imports",
+      severity: "error",
+      comment:
+        "Production code must access @radioso/crawler only through the website crawler provider adapter.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/modules/websiteCrawler/radiosoCrawlerProvider\\.ts$",
+        ],
+      },
+      to: {
+        path: "^@radioso/crawler$",
+      },
+    },
+    {
       name: "no-external-agents-nonpublic",
       severity: "error",
       comment:

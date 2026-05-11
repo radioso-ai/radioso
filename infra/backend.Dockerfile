@@ -39,6 +39,9 @@ COPY backend/src ./src
 COPY packages/connector-api ../packages/connector-api
 COPY packages/crawler ../packages/crawler
 COPY packages/document-parser ../packages/document-parser
+RUN rm -rf node_modules/@radioso/crawler && \
+    mkdir -p node_modules/@radioso && \
+    ln -s ../../../packages/crawler node_modules/@radioso/crawler
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime
@@ -67,6 +70,10 @@ COPY --from=build /app/backend/dist ./dist
 COPY --from=build /app/packages/crawler/dist ../packages/crawler/dist
 COPY --from=build /app/backend/openapi.yaml ./openapi.yaml
 COPY --from=build /app/backend/prompts ./prompts
+
+RUN rm -rf node_modules/@radioso/crawler && \
+    mkdir -p node_modules/@radioso && \
+    ln -s ../../../packages/crawler node_modules/@radioso/crawler
 
 RUN mkdir -p /app/.context/document-storage && chown -R node:node /app
 USER node

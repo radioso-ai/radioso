@@ -195,29 +195,31 @@ export const createDefaultWebsiteCrawlJobDispatcher = (
     | "WORKER_DISPATCH_DRIVER"
     | "GOOGLE_CLOUD_PROJECT"
     | "WORKER_TASKS_QUEUE_LOCATION"
+    | "WORKER_TASKS_QUEUE_NAME"
     | "WORKER_TASKS_CRAWL_QUEUE_NAME"
     | "WORKER_TASKS_SERVICE_URL"
     | "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
     | "WORKER_AMQP_URL"
+    | "WORKER_AMQP_QUEUE_NAME"
     | "WORKER_AMQP_CRAWL_QUEUE_NAME"
   >,
   logger: AppLogger,
 ): WebsiteCrawlJobDispatcherPort =>
-  env.WORKER_DISPATCH_DRIVER === "cloud-tasks" && env.WORKER_TASKS_CRAWL_QUEUE_NAME
+  env.WORKER_DISPATCH_DRIVER === "cloud-tasks"
     ? new CloudTasksWebsiteCrawlJobDispatcher({
         projectId: env.GOOGLE_CLOUD_PROJECT!,
         location: env.WORKER_TASKS_QUEUE_LOCATION!,
-        queueName: env.WORKER_TASKS_CRAWL_QUEUE_NAME,
+        queueName: env.WORKER_TASKS_CRAWL_QUEUE_NAME ?? env.WORKER_TASKS_QUEUE_NAME!,
         workerServiceUrl: env.WORKER_TASKS_SERVICE_URL!,
         invokerServiceAccountEmail: env.WORKER_TASKS_INVOKER_SERVICE_ACCOUNT!,
         logger,
       })
-    : env.WORKER_DISPATCH_DRIVER === "amqp" && env.WORKER_AMQP_CRAWL_QUEUE_NAME
+    : env.WORKER_DISPATCH_DRIVER === "amqp"
       ? new AmqpWebsiteCrawlJobDispatcher({
           amqpUrl: env.WORKER_AMQP_URL!,
-          queueName: env.WORKER_AMQP_CRAWL_QUEUE_NAME,
+          queueName: env.WORKER_AMQP_CRAWL_QUEUE_NAME ?? env.WORKER_AMQP_QUEUE_NAME!,
           logger,
-      })
+        })
       : new NoopWebsiteCrawlJobDispatcher();
 
 export const createDefaultWebsiteCrawlJobConsumer = (
@@ -225,6 +227,7 @@ export const createDefaultWebsiteCrawlJobConsumer = (
     | "WORKER_DISPATCH_DRIVER"
     | "WORKER_AMQP_URL"
     | "WORKER_AMQP_CRAWL_QUEUE_NAME"
+    | "WORKER_AMQP_QUEUE_NAME"
   >,
   logger: AppLogger,
   worker: { runJobById(jobId: string): Promise<"processed" | "noop" | "busy"> },
@@ -232,7 +235,7 @@ export const createDefaultWebsiteCrawlJobConsumer = (
   env.WORKER_DISPATCH_DRIVER === "amqp"
     ? new AmqpWebsiteCrawlJobConsumer({
         amqpUrl: env.WORKER_AMQP_URL!,
-        queueName: env.WORKER_AMQP_CRAWL_QUEUE_NAME!,
+        queueName: env.WORKER_AMQP_CRAWL_QUEUE_NAME ?? env.WORKER_AMQP_QUEUE_NAME!,
         logger,
         worker,
       })

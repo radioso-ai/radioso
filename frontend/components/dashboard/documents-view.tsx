@@ -1,9 +1,11 @@
 'use client'
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FileText, Plus } from 'lucide-react'
+import { FileText, Globe, Plus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
+import { DocumentCrawlDialog } from '@/components/dashboard/documents/document-crawl-dialog'
+import { DocumentCrawlJobsBanner } from '@/components/dashboard/documents/document-crawl-jobs-banner'
 import { DocumentDeleteDialog } from '@/components/dashboard/documents/document-delete-dialog'
 import { DocumentEditorDialog } from '@/components/dashboard/documents/document-editor-dialog'
 import {
@@ -19,15 +21,20 @@ import { useDocumentSearch } from '@/components/dashboard/use-document-search'
 import { Button } from '@/components/ui/button'
 import {
   type DocumentSummary,
+  type WebsiteCrawlJobSummary,
   documentsApi,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { mergeCrawlJobs, parseCrawlForm } from '@/lib/crawl-jobs'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getSafeDocumentsPage } from '@/lib/documents-pagination'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 
 const PAGE_SIZE = 100
 const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.docx,.xlsx'
+const CRAWL_DEFAULT_LIMIT = 10
+const CRAWL_MAX_LIMIT = 100
+const CRAWL_JOBS_SINCE_MINUTES = 30
 
 const EMPTY_FORM: DocumentEditorValues = {
   title: '',
@@ -68,6 +75,8 @@ export function DocumentsView({
   const justClosedDocumentIdRef = useRef<string | null>(null)
   const documentWorkspaceKeyRef = useRef(`${accountId}:${routeState.workspaceId ?? ''}`)
   const documentLoadRequestIdRef = useRef(0)
+  const crawlLoadRequestIdRef = useRef(0)
+  const previousCrawlJobsRef = useRef<Map<string, WebsiteCrawlJobSummary['status']>>(new Map())
   const documentSearch = useDocumentSearch()
 
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
@@ -95,6 +104,14 @@ export function DocumentsView({
   const [deleteErrorById, setDeleteErrorById] = useState<Record<string, string>>({})
   const [retryingDocumentId, setRetryingDocumentId] = useState<string | null>(null)
   const [retryErrorById, setRetryErrorById] = useState<Record<string, string>>({})
+  const [isCrawlDialogOpen, setIsCrawlDialogOpen] = useState(false)
+  const [isCrawling, setIsCrawling] = useState(false)
+  const [crawlUrl, setCrawlUrl] = useState('')
+  const [crawlLimit, setCrawlLimit] = useState('')
+  const [crawlError, setCrawlError] = useState<string | null>(null)
+  const [crawlJobs, setCrawlJobs] = useState<WebsiteCrawlJobSummary[]>([])
+  const [dismissedCrawlJobIds, setDismissedCrawlJobIds] = useState<Set<string>>(new Set())
+  const [dismissingCrawlJobIds, setDismissingCrawlJobIds] = useState<Set<string>>(new Set())
 
   const totalPages = Math.max(1, Math.ceil(totalDocuments / PAGE_SIZE))
 
@@ -157,6 +174,71 @@ export function DocumentsView({
     void loadDocuments(currentPage)
   }, [accountId, currentPage, loadDocuments, routeState.workspaceId])
 
+  const loadDocumentsRef = useRef(loadDocuments)
+  useEffect(() => {
+    loadDocumentsRef.current = loadDocuments
+  }, [loadDocuments])
+
+  const currentPageRef = useRef(currentPage)
+  useEffect(() => {
+    currentPageRef.current = currentPage
+  }, [currentPage])
+
+  const loadCrawlJobs = useCallback(async () => {
+    const requestId = crawlLoadRequestIdRef.current + 1
+    crawlLoadRequestIdRef.current = requestId
+    const requestWorkspaceKey = `${accountId}:${routeState.workspaceId ?? ''}`
+
+    try {
+      const response = await documentsApi.listCrawlJobs({ sinceMinutes: CRAWL_JOBS_SINCE_MINUTES })
+
+      if (
+        crawlLoadRequestIdRef.current !== requestId ||
+        documentWorkspaceKeyRef.current !== requestWorkspaceKey
+      ) {
+        return
+      }
+
+      setCrawlJobs((current) => {
+        const merged = mergeCrawlJobs({
+          current,
+          incoming: response.jobs,
+          previousStatuses: previousCrawlJobsRef.current,
+        })
+        previousCrawlJobsRef.current = merged.nextStatuses
+        if (merged.completedJobIds.length > 0) {
+          void loadDocumentsRef.current(currentPageRef.current, { background: true, reset: true })
+        }
+        return merged.jobs
+      })
+    } catch (error) {
+      if (
+        crawlLoadRequestIdRef.current !== requestId ||
+        documentWorkspaceKeyRef.current !== requestWorkspaceKey
+      ) {
+        return
+      }
+      console.error('Failed to load crawl jobs:', {
+        message: getApiErrorMessage(error, 'Failed to load crawl jobs.'),
+        error,
+        workspaceId: routeState.workspaceId ?? null,
+      })
+    }
+  }, [accountId, routeState.workspaceId])
+
+  const websiteCrawlerEnabled = onboarding.websiteCrawlerEnabled
+
+  useEffect(() => {
+    setCrawlJobs([])
+    setDismissedCrawlJobIds(new Set())
+    setDismissingCrawlJobIds(new Set())
+    previousCrawlJobsRef.current = new Map()
+    if (!websiteCrawlerEnabled) {
+      return
+    }
+    void loadCrawlJobs()
+  }, [loadCrawlJobs, websiteCrawlerEnabled])
+
   useEffect(() => {
     setCurrentPage(routeState.documentsPage ?? 1)
   }, [routeState.documentsPage])
@@ -177,6 +259,30 @@ export function DocumentsView({
 
     return () => window.clearTimeout(timeoutId)
   }, [currentPage, documents, loadDocuments])
+
+  const visibleCrawlJobs = useMemo(
+    () => crawlJobs.filter((job) => !dismissedCrawlJobIds.has(job.id)),
+    [crawlJobs, dismissedCrawlJobIds],
+  )
+
+  useEffect(() => {
+    if (!websiteCrawlerEnabled) {
+      return
+    }
+    const hasActiveCrawl = visibleCrawlJobs.some(
+      (job) => job.status === 'queued' || job.status === 'processing',
+    )
+
+    if (!hasActiveCrawl) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadCrawlJobs()
+    }, 2000)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [loadCrawlJobs, visibleCrawlJobs, websiteCrawlerEnabled])
 
   useEffect(() => {
     const nextPage = getSafeDocumentsPage({
@@ -230,6 +336,12 @@ export function DocumentsView({
     setImportError(null)
   }, [])
 
+  const resetCrawlDialog = useCallback(() => {
+    setCrawlUrl('')
+    setCrawlLimit('')
+    setCrawlError(null)
+  }, [])
+
   const openCreateDialog = () => {
     justClosedDocumentIdRef.current = null
     resetCreateDialog()
@@ -239,6 +351,11 @@ export function DocumentsView({
   const openImportDialog = () => {
     resetImportDialog()
     setIsImportDialogOpen(true)
+  }
+
+  const openCrawlDialog = () => {
+    resetCrawlDialog()
+    setIsCrawlDialogOpen(true)
   }
 
   const openDocumentPage = useCallback(async (documentId: string) => {
@@ -309,6 +426,13 @@ export function DocumentsView({
     }
   }
 
+  const handleCrawlDialogChange = (open: boolean) => {
+    setIsCrawlDialogOpen(open)
+    if (!open && !isCrawling) {
+      resetCrawlDialog()
+    }
+  }
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!formValues.title.trim() || !formValues.content.trim()) return
@@ -370,6 +494,103 @@ export function DocumentsView({
       setIsImporting(false)
     }
   }
+
+  const handleCrawlSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const parsed = parseCrawlForm({ url: crawlUrl, limit: crawlLimit, maxLimit: CRAWL_MAX_LIMIT })
+    if (!parsed.ok) {
+      setCrawlError(parsed.error)
+      return
+    }
+
+    setCrawlError(null)
+    setIsCrawling(true)
+
+    try {
+      const response = await documentsApi.crawlWebsite({
+        url: parsed.url,
+        ...(parsed.limit !== undefined ? { limit: parsed.limit } : {}),
+      })
+      const optimisticJob: WebsiteCrawlJobSummary = {
+        id: response.jobId,
+        requestedUrl: response.requestedUrl,
+        status: 'queued',
+        limit: parsed.limit ?? CRAWL_DEFAULT_LIMIT,
+        sourceId: response.sourceId,
+        documentCount: null,
+        lastError: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        completedAt: null,
+      }
+      setCrawlJobs((current) => {
+        if (current.some((job) => job.id === optimisticJob.id)) {
+          return current
+        }
+        return [optimisticJob, ...current]
+      })
+      setDismissedCrawlJobIds((current) => {
+        if (!current.has(optimisticJob.id)) {
+          return current
+        }
+        const next = new Set(current)
+        next.delete(optimisticJob.id)
+        return next
+      })
+      setIsCrawlDialogOpen(false)
+      resetCrawlDialog()
+      void loadCrawlJobs()
+    } catch (error) {
+      setCrawlError(getApiErrorMessage(error, 'Failed to start crawl. Please try again.'))
+    } finally {
+      setIsCrawling(false)
+    }
+  }
+
+  const dismissCrawlJob = useCallback(async (job: WebsiteCrawlJobSummary) => {
+    const isTerminal = job.status === 'completed' || job.status === 'failed'
+    if (!isTerminal) {
+      setDismissedCrawlJobIds((current) => {
+        if (current.has(job.id)) {
+          return current
+        }
+        const next = new Set(current)
+        next.add(job.id)
+        return next
+      })
+      return
+    }
+
+    setDismissingCrawlJobIds((current) => {
+      if (current.has(job.id)) {
+        return current
+      }
+      const next = new Set(current)
+      next.add(job.id)
+      return next
+    })
+
+    try {
+      await documentsApi.deleteCrawlJob(job.id)
+      setCrawlJobs((current) => current.filter((entry) => entry.id !== job.id))
+      previousCrawlJobsRef.current.delete(job.id)
+    } catch (error) {
+      console.error('Failed to delete crawl job:', {
+        message: getApiErrorMessage(error, 'Failed to delete crawl job.'),
+        error,
+        jobId: job.id,
+      })
+    } finally {
+      setDismissingCrawlJobIds((current) => {
+        if (!current.has(job.id)) {
+          return current
+        }
+        const next = new Set(current)
+        next.delete(job.id)
+        return next
+      })
+    }
+  }, [])
 
   const handleDeleteDialogChange = (open: boolean) => {
     if (!open && deletingDocumentId) {
@@ -508,6 +729,28 @@ export function DocumentsView({
         }}
       />
 
+      {websiteCrawlerEnabled ? (
+        <DocumentCrawlDialog
+          open={isCrawlDialogOpen}
+          url={crawlUrl}
+          limit={crawlLimit}
+          crawlError={crawlError}
+          isCrawling={isCrawling}
+          defaultLimit={CRAWL_DEFAULT_LIMIT}
+          maxLimit={CRAWL_MAX_LIMIT}
+          onOpenChange={handleCrawlDialogChange}
+          onSubmit={handleCrawlSubmit}
+          onUrlChange={(value) => {
+            setCrawlUrl(value)
+            setCrawlError(null)
+          }}
+          onLimitChange={(value) => {
+            setCrawlLimit(value)
+            setCrawlError(null)
+          }}
+        />
+      ) : null}
+
       <DocumentDeleteDialog
         candidate={deleteCandidate}
         deletingDocumentId={deletingDocumentId}
@@ -564,6 +807,12 @@ export function DocumentsView({
                 isSearching={documentSearch.isSearching}
               />
               <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                {websiteCrawlerEnabled ? (
+                  <Button size="sm" variant="outline" className="h-10 px-3.5" onClick={openCrawlDialog}>
+                    <Globe className="mr-2 h-4 w-4" />
+                    Crawl Website
+                  </Button>
+                ) : null}
                 <Button size="sm" variant="outline" className="h-10 px-3.5" onClick={openImportDialog}>
                   <FileText className="mr-2 h-4 w-4" />
                   Import File
@@ -590,7 +839,15 @@ export function DocumentsView({
                 }}
               />
             ) : (
-              <DocumentList
+              <div className="space-y-4">
+                {websiteCrawlerEnabled ? (
+                  <DocumentCrawlJobsBanner
+                    jobs={visibleCrawlJobs}
+                    onDismiss={(job) => { void dismissCrawlJob(job) }}
+                    dismissingJobIds={dismissingCrawlJobIds}
+                  />
+                ) : null}
+                <DocumentList
                 isLoading={isLoading}
                 totalDocuments={totalDocuments}
                 documents={documents}
@@ -618,7 +875,8 @@ export function DocumentsView({
                 onOpenCreate={openCreateDialog}
                 onDelete={setDeleteCandidate}
                 onRetry={(documentId) => void handleRetry(documentId)}
-              />
+                />
+              </div>
             )}
         </DashboardPage>
       )}

@@ -192,6 +192,13 @@ export interface DocumentCreateResponse {
   status: 'queued' | 'processing' | 'ready' | 'failed'
 }
 
+export interface DocumentSourceSummary {
+  id: string
+  kind: string
+  name: string
+  externalId?: string | null
+}
+
 export interface DocumentSummary {
   id: string
   title: string
@@ -201,6 +208,8 @@ export interface DocumentSummary {
   createdAt: string
   updatedAt: string
   metadata: Record<string, string | number | boolean | null>
+  sourceId?: string | null
+  source?: DocumentSourceSummary | null
   sourceKind: 'inline_text' | 'uploaded_file'
   sourceFilename?: string | null
   sourceMimeType?: string | null
@@ -260,6 +269,32 @@ export interface DocumentSearchHistoryListResponse {
   total: number
   nextCursor: string | null
   hasMore: boolean
+}
+
+export type WebsiteCrawlJobStatus = 'queued' | 'processing' | 'completed' | 'failed'
+
+export interface WebsiteCrawlJobSummary {
+  id: string
+  requestedUrl: string
+  status: WebsiteCrawlJobStatus
+  limit: number
+  sourceId: string | null
+  documentCount: number | null
+  lastError: string | null
+  createdAt: string
+  updatedAt: string
+  completedAt: string | null
+}
+
+export interface WebsiteCrawlEnqueueResponse {
+  jobId: string
+  sourceId: string | null
+  requestedUrl: string
+  status: 'queued'
+}
+
+export interface WebsiteCrawlJobListResponse {
+  jobs: WebsiteCrawlJobSummary[]
 }
 
 export interface ChatRequest {
@@ -993,6 +1028,7 @@ export interface WorkspaceSummaryResponse {
   hasReadyDocuments: boolean
   hasCompletedChat: boolean
   sampleDocumentsImported: boolean
+  websiteCrawlerEnabled: boolean
 }
 
 // Workspace API
@@ -1193,6 +1229,40 @@ export const documentsApi = {
     return request<DocumentCreateResponse>("/document/import", {
       method: "POST",
       body: formData,
+    }, { withApiToken: true })
+  },
+
+  async crawlWebsite(input: { url: string; limit?: number }): Promise<WebsiteCrawlEnqueueResponse> {
+    return request<WebsiteCrawlEnqueueResponse>("/document/crawl", {
+      method: "POST",
+      body: JSON.stringify({
+        url: input.url,
+        ...(input.limit !== undefined ? { limit: input.limit } : {}),
+      }),
+    }, { withApiToken: true })
+  },
+
+  async listCrawlJobs(input?: { status?: WebsiteCrawlJobStatus; sinceMinutes?: number; limit?: number }): Promise<WebsiteCrawlJobListResponse> {
+    const searchParams = new URLSearchParams()
+    if (input?.status !== undefined) {
+      searchParams.set('status', input.status)
+    }
+    if (input?.sinceMinutes !== undefined) {
+      searchParams.set('sinceMinutes', String(input.sinceMinutes))
+    }
+    if (input?.limit !== undefined) {
+      searchParams.set('limit', String(input.limit))
+    }
+
+    const query = searchParams.toString()
+    return request<WebsiteCrawlJobListResponse>(`/document/crawl/jobs${query ? `?${query}` : ''}`, {
+      method: "GET",
+    }, { withApiToken: true })
+  },
+
+  async deleteCrawlJob(jobId: string): Promise<void> {
+    await request<void>(`/document/crawl/jobs/${encodeURIComponent(jobId)}`, {
+      method: "DELETE",
     }, { withApiToken: true })
   },
 

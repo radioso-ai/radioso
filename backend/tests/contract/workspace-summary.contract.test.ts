@@ -42,7 +42,38 @@ describe("workspace summary contract", () => {
       hasReadyDocuments: true,
       hasCompletedChat: true,
       sampleDocumentsImported: true,
+      websiteCrawlerEnabled: true,
     });
+  });
+
+  it("reports websiteCrawlerEnabled=false when WEBSITE_CRAWLER_ENABLED is false", async () => {
+    const { app } = createTestApp({ envOverrides: { WEBSITE_CRAWLER_ENABLED: false } });
+    const session = await issueTestSession(app, "workspace-summary-crawler-disabled@example.com");
+
+    const response = await request(app)
+      .get("/api/v1/workspace/summary")
+      .set(adminSessionHeaders(session));
+
+    expect(response.status).toBe(200);
+    expect(response.body.websiteCrawlerEnabled).toBe(false);
+  });
+
+  it("returns 404 for crawl routes when WEBSITE_CRAWLER_ENABLED is false", async () => {
+    const { app } = createTestApp({ envOverrides: { WEBSITE_CRAWLER_ENABLED: false } });
+    const session = await issueTestSession(app, "workspace-crawl-disabled@example.com");
+
+    const enqueueResponse = await request(app)
+      .post("/api/v1/document/crawl")
+      .set(adminSessionHeaders(session))
+      .send({ url: "https://example.com" });
+
+    expect(enqueueResponse.status).toBe(404);
+
+    const listResponse = await request(app)
+      .get("/api/v1/document/crawl/jobs")
+      .set(adminSessionHeaders(session));
+
+    expect(listResponse.status).toBe(404);
   });
 
   it("counts queued and processing documents as pending but excludes failed documents", async () => {

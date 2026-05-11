@@ -41,6 +41,16 @@ export const crawlBodySchema = z.object({
   limit: z.number().int().positive().optional(),
 });
 
+const crawlJobsQuerySchema = z.object({
+  status: z.enum(["queued", "processing", "completed", "failed"]).optional(),
+  sinceMinutes: z.coerce.number().int().min(1).max(1440).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+const crawlJobParamsSchema = z.object({
+  jobId: z.string().uuid(),
+});
+
 const parseRequest = <T>(schema: z.ZodType<T>, value: unknown, message: string): T => {
   const parsed = schema.safeParse(value);
   if (parsed.success) {
@@ -71,6 +81,36 @@ export const createWebsiteCrawlerRoutes = (
       accountId: res.locals.accountId as string | undefined,
       workspaceId: res.locals.workspaceId as string | undefined,
     }),
+  });
+
+  router.get("/jobs", workspaceSession, async (req, res, next) => {
+    try {
+      const query = parseRequest(crawlJobsQuerySchema, req.query, "Invalid crawl jobs query");
+      const jobs = await dependencies.websiteCrawlJobService.listForWorkspace(
+        res.locals.workspaceId as string,
+        {
+          status: query.status,
+          sinceMinutes: query.sinceMinutes ?? 30,
+          limit: query.limit,
+        },
+      );
+      res.status(200).json({ jobs });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/jobs/:jobId", workspaceSession, async (req, res, next) => {
+    try {
+      const params = parseRequest(crawlJobParamsSchema, req.params, "Invalid crawl job id");
+      await dependencies.websiteCrawlJobService.deleteJob({
+        workspaceId: res.locals.workspaceId as string,
+        jobId: params.jobId,
+      });
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
   });
 
   router.post("/", workspaceSession, crawlRateLimit, async (req, res, next) => {

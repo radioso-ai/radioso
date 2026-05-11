@@ -220,7 +220,9 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.use("/crawl", createWebsiteCrawlerRoutes(dependencies));
+  if (dependencies.env.WEBSITE_CRAWLER_ENABLED) {
+    router.use("/crawl", createWebsiteCrawlerRoutes(dependencies));
+  }
 
   router.get("/:documentId", workspaceSession, async (req, res, next) => {
     try {

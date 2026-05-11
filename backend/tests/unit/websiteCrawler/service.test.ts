@@ -65,19 +65,26 @@ describe("website crawler service", () => {
       title: "About",
       content: "# About",
       externalDocumentId: "website:https://example.com:https://example.com/about",
-      metadata: expect.objectContaining({
-        sourceKind: "website",
+      metadata: {
         sourceUrl: "https://example.com/about?utm_source=x",
         canonicalUrl: "https://example.com/about",
-        websiteBaseUrl: "https://example.com",
-        websiteCrawlerProvider: "fake",
-        websiteCrawlerRunId: "run-1",
+      },
+    }));
+    expect(ingest.mock.calls[0][0].source).toEqual(expect.objectContaining({
+      kind: "website",
+      url: "https://example.com",
+      metadata: expect.objectContaining({
+        requestedUrl: "https://example.com",
+        provider: "fake",
       }),
     }));
     expect(ingest.mock.calls[1][0]).toEqual(expect.objectContaining({
       title: "https://example.com/contact",
       externalDocumentId: "website:https://example.com:https://example.com/contact",
     }));
+    // canonicalUrl omitted when it equals sourceUrl
+    expect(ingest.mock.calls[1][0].metadata.canonicalUrl).toBeUndefined();
+    expect(ingest.mock.calls[1][0].metadata.sourceUrl).toBe("https://example.com/contact");
   });
 
   it("uses stable external document IDs for repeated crawls", async () => {
@@ -296,7 +303,7 @@ describe("website crawler service", () => {
     }]);
   });
 
-  it("keeps trusted website metadata from being overridden by provider metadata", async () => {
+  it("ignores provider-supplied metadata fields outside the allow-list, including spoofed source identifiers and secrets", async () => {
     const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
     const service = new WebsiteCrawlerService({
       provider: createProvider([
@@ -311,6 +318,9 @@ describe("website crawler service", () => {
             canonicalUrl: "https://attacker.example",
             websiteBaseUrl: "https://attacker.example",
             websiteCrawlerProvider: "attacker",
+            httpStatus: 200,
+            etag: "abc-etag",
+            lastModified: "Mon, 01 Jan 2026 00:00:00 GMT",
             key: "crawler-secret",
             password: "crawler-secret",
             signature: "crawler-secret",
@@ -337,15 +347,20 @@ describe("website crawler service", () => {
       limit: 1,
     });
 
-    expect(ingest.mock.calls[0][0].metadata).toEqual(expect.objectContaining({
-      sourceKind: "website",
+    const metadata = ingest.mock.calls[0][0].metadata as Record<string, unknown>;
+    expect(metadata).toEqual({
       sourceUrl: "https://example.com/a",
-      canonicalUrl: "https://example.com/a",
-      websiteBaseUrl: "https://example.com",
-      websiteCrawlerProvider: "fake",
-      safeField: "safe",
-    }));
-    expect(JSON.stringify(ingest.mock.calls[0][0].metadata)).not.toContain("crawler-secret");
+      httpStatus: 200,
+      etag: "abc-etag",
+      lastModified: "Mon, 01 Jan 2026 00:00:00 GMT",
+    });
+    expect(metadata.sourceKind).toBeUndefined();
+    expect(metadata.websiteBaseUrl).toBeUndefined();
+    expect(metadata.websiteCrawlerProvider).toBeUndefined();
+    expect(metadata.canonicalUrl).toBeUndefined(); // omitted because canonical == source
+    expect(metadata.safeField).toBeUndefined();
+    expect(JSON.stringify(metadata)).not.toContain("crawler-secret");
+    expect(JSON.stringify(metadata)).not.toContain("attacker.example");
   });
 
   it("redacts provider-controlled identifiers in responses, audits, and metadata", async () => {
@@ -427,10 +442,13 @@ describe("website crawler service", () => {
     expect(result.documents[0]?.sourceUrl).toContain("topic=docs");
     expect(result.documents[0]?.externalDocumentId).not.toContain("crawler-secret");
     expect(result.documents[0]?.externalDocumentId).not.toContain("signed-secret");
-    expect(ingest.mock.calls[0][0].metadata).toEqual(expect.objectContaining({
+    expect(ingest.mock.calls[0][0].metadata).toEqual({
       sourceUrl: "https://example.com/page?token=%5Bredacted%5D&signature=%5Bredacted%5D&topic=docs",
       canonicalUrl: "https://example.com/page?apiKey=%5Bredacted%5D&sig=%5Bredacted%5D&topic=docs",
-      websiteBaseUrl: "https://example.com/search?apiKey=%5Bredacted%5D&q=docs",
+    });
+    // Source-level identifiers (websiteBaseUrl, provider) live on the source row, not per-document.
+    expect(ingest.mock.calls[0][0].source.metadata).toEqual(expect.objectContaining({
+      requestedUrl: "https://example.com/search?apiKey=%5Bredacted%5D&q=docs",
     }));
   });
 

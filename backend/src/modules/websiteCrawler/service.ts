@@ -1,7 +1,6 @@
 import {
   WebsiteCrawlerBadRequestError,
   WebsiteCrawlerProviderError,
-  redactSensitiveDetails,
   redactSensitiveText,
 } from "./errors.js";
 import type {
@@ -196,10 +195,7 @@ export class WebsiteCrawlerService {
           metadata: buildDocumentMetadata({
             page,
             sourceUrl: safeSourceUrl,
-            websiteBaseUrl: safeWebsiteBaseUrl,
             canonicalUrl: safeCanonicalUrl,
-            provider: providerResult.provider,
-            runId: providerResult.runId ?? null,
           }),
         });
         result.accepted += 1;
@@ -320,22 +316,41 @@ export const buildWebsiteExternalDocumentId = (input: {
   pageUrl: string;
 }): string => `website:${redactWebsiteCrawlerUrl(normalizeBaseUrl(input.websiteBaseUrl))}:${redactWebsiteCrawlerUrl(normalizePageUrl(input.pageUrl))}`;
 
+// Per-document metadata is intentionally narrow. Run-level and source-level
+// fields (websiteBaseUrl, provider, runId) live on document_sources.metadata
+// to avoid duplicating run/origin context across every page. Provider-supplied
+// fields are taken from a fixed allow-list so untrusted providers cannot
+// poison user-facing metadata or smuggle secrets through.
+const PROVIDER_DOCUMENT_METADATA_ALLOWLIST = ["httpStatus", "etag", "lastModified"] as const;
+
+const isMeaningfulMetadataValue = (value: unknown): boolean =>
+  value !== null && value !== undefined && value !== "";
+
+const pickAllowedProviderMetadata = (raw: Record<string, unknown>): Record<string, unknown> => {
+  const out: Record<string, unknown> = {};
+  for (const key of PROVIDER_DOCUMENT_METADATA_ALLOWLIST) {
+    const value = raw[key];
+    if (isMeaningfulMetadataValue(value)) {
+      out[key] = value;
+    }
+  }
+  return out;
+};
+
 const buildDocumentMetadata = (input: {
   page: WebsiteCrawlPage;
   sourceUrl: string;
-  websiteBaseUrl: string;
   canonicalUrl: string;
-  provider: string;
-  runId: string | null;
-}): Record<string, unknown> => ({
-  ...sanitizeProviderMetadata(input.page.metadata ?? {}),
-  sourceKind: "website",
-  sourceUrl: input.sourceUrl,
-  canonicalUrl: input.canonicalUrl,
-  websiteBaseUrl: input.websiteBaseUrl,
-  websiteCrawlerProvider: input.provider,
-  websiteCrawlerRunId: input.runId,
-});
+}): Record<string, unknown> => {
+  const result: Record<string, unknown> = {
+    sourceUrl: input.sourceUrl,
+    ...pickAllowedProviderMetadata(input.page.metadata ?? {}),
+  };
+  if (input.canonicalUrl && input.canonicalUrl !== input.sourceUrl) {
+    result.canonicalUrl = input.canonicalUrl;
+  }
+  return result;
+};
 
 const preparePages = (
   pages: WebsiteCrawlPage[],
@@ -373,9 +388,6 @@ const preparePages = (
   }
   return result;
 };
-
-const sanitizeProviderMetadata = (metadata: Record<string, unknown>): Record<string, unknown> =>
-  redactSensitiveDetails(metadata);
 
 const SENSITIVE_QUERY_PARAM_PATTERNS = [
   /secret/i,

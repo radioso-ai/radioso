@@ -3,7 +3,7 @@ import type { Server } from "node:http";
 
 import type { Env } from "../app/config/env.js";
 import type { AppDependencies } from "../app/server/types.js";
-import { createWorkerTaskApp } from "../app/worker/createWorkerTaskApp.js";
+import { createCrawlerWorkerTaskApp } from "../app/worker/createCrawlerWorkerTaskApp.js";
 import { buildDependencies } from "../app/server/dependencies.js";
 import { ensureNoPendingMigrations } from "../db/runMigrations.js";
 import { createLogger, type AppLogger } from "../shared/observability/logger.js";
@@ -13,7 +13,7 @@ interface ServerLike {
   close(callback?: (error?: Error) => void): void;
 }
 
-export interface StartWorkerTaskRuntimeOptions {
+export interface StartCrawlerWorkerTaskRuntimeOptions {
   env: Env;
   logger?: AppLogger;
   ensureNoPendingMigrations?: (connectionString: string) => Promise<void>;
@@ -25,18 +25,23 @@ export interface StartWorkerTaskRuntimeOptions {
 const defaultListen = (app: Express, port: number, onListening: () => void): Server =>
   app.listen(port, onListening);
 
-export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOptions): Promise<RuntimeHandle> => {
+export const startCrawlerWorkerTaskRuntime = async (
+  options: StartCrawlerWorkerTaskRuntimeOptions,
+): Promise<RuntimeHandle> => {
   const logger = options.logger ?? createLogger();
   await (options.ensureNoPendingMigrations ?? ensureNoPendingMigrations)(options.env.DATABASE_URL);
 
   const dependencies = (options.buildDependencies ?? buildDependencies)(options.env);
-  dependencies.logger.info({ role: "worker-task" }, "Radioso worker task runtime starting");
+  dependencies.logger.info({ role: "crawler-worker-task" }, "Radioso crawler worker task runtime starting");
   await dependencies.applicationModules.initializeAll();
-  await dependencies.documentProcessingWorker.start();
-  await dependencies.documentJobConsumer?.start();
-  const app = (options.createApp ?? createWorkerTaskApp)(dependencies);
+  await dependencies.websiteCrawlWorker.start();
+  await dependencies.websiteCrawlJobConsumer?.start();
+  const app = (options.createApp ?? createCrawlerWorkerTaskApp)(dependencies);
   const server = (options.listen ?? defaultListen)(app, options.env.PORT, () => {
-    dependencies.logger.info({ role: "worker-task", port: options.env.PORT }, "Radioso worker task runtime listening");
+    dependencies.logger.info(
+      { role: "crawler-worker-task", port: options.env.PORT },
+      "Radioso crawler worker task runtime listening",
+    );
   });
 
   let shuttingDown = false;
@@ -48,7 +53,7 @@ export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOpti
         return;
       }
       shuttingDown = true;
-      dependencies.logger.info({ role: "worker-task", signal }, "Radioso worker task runtime shutting down");
+      dependencies.logger.info({ role: "crawler-worker-task", signal }, "Radioso crawler worker task runtime shutting down");
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
           if (error) {
@@ -58,8 +63,8 @@ export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOpti
           resolve();
         });
       });
-      await dependencies.documentJobConsumer?.stop();
-      await dependencies.documentProcessingWorker.stop();
+      await dependencies.websiteCrawlJobConsumer?.stop();
+      await dependencies.websiteCrawlWorker.stop();
       await dependencies.applicationModules.shutdownAll();
     },
   };

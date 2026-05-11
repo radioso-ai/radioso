@@ -26,6 +26,7 @@ import { DocumentRepository } from "../../db/repositories/documentRepository.js"
 import { DocumentSourceRepository } from "../../db/repositories/documentSourceRepository.js";
 import { HistoryItemsRepository } from "../../db/repositories/historyItemsRepository.js";
 import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
+import { WebsiteCrawlJobRepository } from "../../db/repositories/websiteCrawlJobRepository.js";
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import { IngestionSettingsRepository } from "../../db/repositories/ingestionSettingsRepository.js";
 import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSettingsRepository.js";
@@ -83,6 +84,8 @@ import {
   createDefaultDocumentJobConsumer,
   createDefaultConnectorRegistry,
   createDefaultDocumentJobDispatcher,
+  createDefaultWebsiteCrawlJobConsumer,
+  createDefaultWebsiteCrawlJobDispatcher,
   createDefaultDocumentStorage,
   createDefaultIncidentSinks,
   createDefaultTelemetrySinks,
@@ -92,6 +95,9 @@ import type { AppDependencies } from "./types.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import { SkillCatalogService } from "../../modules/skills/public.js";
 import { AgentService } from "../../modules/agents/public.js";
+import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
+import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
+import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -201,6 +207,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingJobRepository = new DocumentProcessingJobRepository(database);
   const documentJobDispatcher = composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
+  const websiteCrawlJobRepository = new WebsiteCrawlJobRepository(database);
+  const websiteCrawlJobDispatcher = createDefaultWebsiteCrawlJobDispatcher(env, logger);
+  const websiteCrawlerProvider = composition.websiteCrawlerProvider ?? new RadiosoCrawlerProvider();
   const chunkRepository = new ChunkRepository(database);
   const chunkingStrategyRegistry = createDefaultChunkingStrategyRegistry(embeddingService);
   const documentProcessingService = new DocumentProcessingService(
@@ -223,6 +232,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     usageLimitPolicy,
     documentSourceRepository,
   );
+  const websiteCrawlJobService = new WebsiteCrawlJobService({
+    repository: websiteCrawlJobRepository,
+    dispatcher: websiteCrawlJobDispatcher,
+    documentIngestionService,
+    logger,
+  });
   const documentImportService = new DocumentImportService(
     documentRepository,
     auditService,
@@ -248,6 +263,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     documentProcessingWorker,
   );
+  const websiteCrawlWorker = new WebsiteCrawlWorker({
+    repository: websiteCrawlJobRepository,
+    provider: websiteCrawlerProvider,
+    documentIngestionService,
+    auditService,
+    logger,
+    pollIntervalMs: env.WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS,
+    jobLeaseMs: env.WEBSITE_CRAWL_JOB_LEASE_MS,
+  });
+  const websiteCrawlJobConsumer = createDefaultWebsiteCrawlJobConsumer(env, logger, websiteCrawlWorker);
   const documentDeletionService = new DocumentDeletionService(
     documentRepository,
     documentStorage,
@@ -428,7 +453,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceIngestionReprocessService,
     documentProcessingWorker,
     documentJobConsumer,
-    websiteCrawlerProvider: composition.websiteCrawlerProvider,
+    websiteCrawlerProvider,
+    websiteCrawlJobService,
+    websiteCrawlWorker,
+    websiteCrawlJobConsumer,
     documentDeletionService,
     chatService,
     chatBootstrapService,

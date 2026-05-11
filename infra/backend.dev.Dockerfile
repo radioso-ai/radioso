@@ -5,6 +5,8 @@ WORKDIR /app/backend
 COPY backend/package*.json ./
 COPY packages/connector-api/package.json ../packages/connector-api/
 COPY packages/connector-api/*.d.ts ../packages/connector-api/
+COPY packages/crawler/package.json ../packages/crawler/
+COPY packages/crawler/package-lock.json ../packages/crawler/
 COPY packages/document-parser/package.json ../packages/document-parser/
 COPY packages/document-parser/*.d.ts ../packages/document-parser/
 COPY packages/document-parser/*.js ../packages/document-parser/
@@ -20,6 +22,7 @@ COPY backend/prompts ./prompts
 COPY backend/scripts ./scripts
 COPY backend/src ./src
 COPY packages/connector-api ../packages/connector-api
+COPY packages/crawler ../packages/crawler
 COPY packages/document-parser ../packages/document-parser
 
 EXPOSE 8080

@@ -54,12 +54,16 @@ const createEnv = (): Env => ({
   WORKER_DISPATCH_DRIVER: "noop",
   WORKER_TASKS_QUEUE_LOCATION: undefined,
   WORKER_TASKS_QUEUE_NAME: undefined,
+  WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
   WORKER_TASKS_SERVICE_URL: undefined,
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
   WORKER_AMQP_URL: undefined,
   WORKER_AMQP_QUEUE_NAME: undefined,
+  WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
   WORKER_AMQP_PREFETCH: 1,
   DOCUMENT_PROCESSING_JOB_LEASE_MS: 300_000,
+  WEBSITE_CRAWL_JOB_LEASE_MS: 900_000,
+  WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
   SUPPORT_STAFF_EMAILS: "",
 });
@@ -88,6 +92,10 @@ const createDependencies = () =>
     metricsRegistry: null,
     logger: createLogger().logger,
     documentProcessingWorker: {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+    },
+    websiteCrawlWorker: {
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
     },
@@ -175,11 +183,13 @@ describe("runtime startup", () => {
     expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.websiteCrawlWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.connectorRegistry.runMigrations).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.initializeAll).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.websiteCrawlWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
   });
 
@@ -208,9 +218,11 @@ describe("runtime startup", () => {
     expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.websiteCrawlWorker.start).toHaveBeenCalledOnce();
 
     await runtime.shutdown("test");
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.websiteCrawlWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
   });
 

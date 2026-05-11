@@ -81,12 +81,16 @@ const envSchema = z.object({
   WORKER_DISPATCH_DRIVER: z.enum(["noop", "cloud-tasks", "amqp"]).default("noop"),
   WORKER_TASKS_QUEUE_LOCATION: emptyStringToUndefined(z.string().min(1)),
   WORKER_TASKS_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
+  WORKER_TASKS_CRAWL_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
   WORKER_TASKS_SERVICE_URL: emptyStringToUndefined(z.string().url()),
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: emptyStringToUndefined(z.string().email()),
   WORKER_AMQP_URL: emptyStringToUndefined(z.string().url()),
   WORKER_AMQP_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
+  WORKER_AMQP_CRAWL_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
   WORKER_AMQP_PREFETCH: z.coerce.number().int().positive().default(1),
   DOCUMENT_PROCESSING_JOB_LEASE_MS: z.coerce.number().int().positive().default(300_000),
+  WEBSITE_CRAWL_JOB_LEASE_MS: z.coerce.number().int().positive().default(900_000),
+  WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
   PUBLIC_CHAT_BASE_URL: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_APPLICATION_MODULES: emptyStringToUndefined(z.string().min(1)),
   SUPPORT_STAFF_EMAILS: z.string().default(""),
@@ -155,6 +159,7 @@ const envSchema = z.object({
       ["WORKER_TASKS_QUEUE_LOCATION", "WORKER_TASKS_QUEUE_LOCATION is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
       ["GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_PROJECT is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
       ["WORKER_TASKS_QUEUE_NAME", "WORKER_TASKS_QUEUE_NAME is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
+      ["WORKER_TASKS_CRAWL_QUEUE_NAME", "WORKER_TASKS_CRAWL_QUEUE_NAME is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
       ["WORKER_TASKS_SERVICE_URL", "WORKER_TASKS_SERVICE_URL is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
       [
         "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT",
@@ -175,6 +180,7 @@ const envSchema = z.object({
     for (const [field, message] of [
       ["WORKER_AMQP_URL", "WORKER_AMQP_URL is required when WORKER_DISPATCH_DRIVER is amqp"],
       ["WORKER_AMQP_QUEUE_NAME", "WORKER_AMQP_QUEUE_NAME is required when WORKER_DISPATCH_DRIVER is amqp"],
+      ["WORKER_AMQP_CRAWL_QUEUE_NAME", "WORKER_AMQP_CRAWL_QUEUE_NAME is required when WORKER_DISPATCH_DRIVER is amqp"],
     ] as const) {
       if (!value[field]) {
         ctx.addIssue({

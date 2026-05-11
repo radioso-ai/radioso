@@ -842,6 +842,15 @@ const DocumentSearchHistoryListResponseSchema = registry.register(
 );
 const DocumentSearchRequestSchema = registry.register("DocumentSearchRequest", documentSearchSchema);
 const WebsiteCrawlRequestSchema = registry.register("WebsiteCrawlRequest", crawlBodySchema);
+const WebsiteCrawlJobResponseSchema = registry.register(
+  "WebsiteCrawlJobResponse",
+  z.object({
+    jobId: z.string().uuid(),
+    sourceId: z.string().uuid().nullable(),
+    requestedUrl: z.string().url(),
+    status: z.literal("queued"),
+  }),
+);
 const WebsiteCrawlPublicationResponseSchema = registry.register(
   "WebsiteCrawlPublicationResponse",
   z.object({
@@ -3415,10 +3424,10 @@ registry.registerPath({
   },
   responses: {
     202: {
-      description: "Crawled pages accepted for document processing",
+      description: "Crawl job accepted for asynchronous processing",
       content: {
         "application/json": {
-          schema: WebsiteCrawlPublicationResponseSchema,
+          schema: WebsiteCrawlJobResponseSchema,
         },
       },
     },

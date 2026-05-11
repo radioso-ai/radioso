@@ -10,7 +10,12 @@ const documentProcessingTaskSchema = z.object({
   revision: z.number().int().positive().optional(),
 });
 
-type WorkerTaskRouteDependencies = Pick<AppDependencies, "documentProcessingWorker">;
+const websiteCrawlTaskSchema = z.object({
+  jobId: z.string().uuid(),
+  workspaceId: z.string().uuid().optional(),
+});
+
+type WorkerTaskRouteDependencies = Pick<AppDependencies, "documentProcessingWorker" | "websiteCrawlWorker">;
 
 export const createWorkerTaskRoutes = (dependencies: WorkerTaskRouteDependencies): Router => {
   const router = Router();
@@ -30,6 +35,28 @@ export const createWorkerTaskRoutes = (dependencies: WorkerTaskRouteDependencies
 
     try {
       const result = await dependencies.documentProcessingWorker.runJobById(parsed.data.jobId);
+      if (result === "busy") {
+        res.status(429).json({ status: "busy" });
+        return;
+      }
+
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/internal/tasks/website-crawl", async (req, res, next) => {
+    const parsed = websiteCrawlTaskSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_task_payload",
+      });
+      return;
+    }
+
+    try {
+      const result = await dependencies.websiteCrawlWorker.runJobById(parsed.data.jobId);
       if (result === "busy") {
         res.status(429).json({ status: "busy" });
         return;

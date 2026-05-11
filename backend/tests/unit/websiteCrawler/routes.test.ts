@@ -86,6 +86,14 @@ const createApp = (dependencies: Partial<Record<keyof RouteDependencies, unknown
     documentIngestionService: {
       ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
     },
+    websiteCrawlJobService: {
+      enqueue: vi.fn().mockResolvedValue({
+        jobId: "11111111-1111-4111-8111-111111111111",
+        sourceId: "22222222-2222-4222-8222-222222222222",
+        requestedUrl: "https://example.com",
+        status: "queued",
+      }),
+    },
     assertCrawlUrlAllowed: async () => undefined,
     ...dependencies,
   } as RouteDependencies));
@@ -163,10 +171,17 @@ describe("website crawler routes", () => {
     expect(response.body.error.code).toBe("bad_request");
   });
 
-  it("publishes configured provider results", async () => {
+  it("enqueues configured provider crawls", async () => {
     const provider = createProvider();
+    const enqueue = vi.fn().mockResolvedValue({
+      jobId: "11111111-1111-4111-8111-111111111111",
+      sourceId: "22222222-2222-4222-8222-222222222222",
+      requestedUrl: "https://example.com",
+      status: "queued",
+    });
     const response = await request(createApp({
       websiteCrawlerProvider: provider,
+      websiteCrawlJobService: { enqueue },
     }))
       .post("/api/v1/document/crawl")
       .set("Cookie", "radioso_session=valid-session")
@@ -175,12 +190,17 @@ describe("website crawler routes", () => {
       .expect(202);
 
     expect(response.body).toEqual(expect.objectContaining({
-      provider: "fake",
-      runId: "run-1",
+      jobId: "11111111-1111-4111-8111-111111111111",
       requestedUrl: "https://example.com",
-      accepted: 1,
-      failed: 0,
+      status: "queued",
     }));
+    expect(enqueue).toHaveBeenCalledWith({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 1,
+    });
+    expect(provider.crawl).not.toHaveBeenCalled();
   });
 
   it("rate limits crawl requests before calling the provider", async () => {
@@ -215,11 +235,16 @@ describe("website crawler routes", () => {
 
   it("passes requested workspace selection into the workspace resolver", async () => {
     const provider = createProvider();
-    const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
+    const enqueue = vi.fn().mockResolvedValue({
+      jobId: "11111111-1111-4111-8111-111111111111",
+      sourceId: null,
+      requestedUrl: "https://example.com",
+      status: "queued",
+    });
 
     await request(createApp({
       websiteCrawlerProvider: provider,
-      documentIngestionService: { ingest },
+      websiteCrawlJobService: { enqueue },
     }))
       .post("/api/v1/document/crawl")
       .set("Cookie", "radioso_session=valid-session")
@@ -227,23 +252,28 @@ describe("website crawler routes", () => {
       .send({ url: "https://example.com", limit: 1 })
       .expect(202);
 
-    expect(ingest.mock.calls[0][0].workspaceId).toBe("workspace-2");
+    expect(enqueue.mock.calls[0][0].workspaceId).toBe("workspace-2");
   });
 
   it("supports bearer token workspace authentication", async () => {
     const provider = createProvider();
-    const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
+    const enqueue = vi.fn().mockResolvedValue({
+      jobId: "11111111-1111-4111-8111-111111111111",
+      sourceId: null,
+      requestedUrl: "https://example.com",
+      status: "queued",
+    });
 
     await request(createApp({
       websiteCrawlerProvider: provider,
-      documentIngestionService: { ingest },
+      websiteCrawlJobService: { enqueue },
     }))
       .post("/api/v1/document/crawl")
       .set("Authorization", "Bearer api-token")
       .send({ url: "https://example.com", limit: 1 })
       .expect(202);
 
-    expect(ingest.mock.calls[0][0]).toEqual(expect.objectContaining({
+    expect(enqueue.mock.calls[0][0]).toEqual(expect.objectContaining({
       accountId: "account-1",
       workspaceId: "workspace-token",
     }));
@@ -251,11 +281,16 @@ describe("website crawler routes", () => {
 
   it("falls back to bearer token auth when a stale session cookie is present", async () => {
     const provider = createProvider();
-    const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
+    const enqueue = vi.fn().mockResolvedValue({
+      jobId: "11111111-1111-4111-8111-111111111111",
+      sourceId: null,
+      requestedUrl: "https://example.com",
+      status: "queued",
+    });
 
     await request(createApp({
       websiteCrawlerProvider: provider,
-      documentIngestionService: { ingest },
+      websiteCrawlJobService: { enqueue },
     }))
       .post("/api/v1/document/crawl")
       .set("Cookie", "radioso_session=stale-session")
@@ -263,7 +298,7 @@ describe("website crawler routes", () => {
       .send({ url: "https://example.com", limit: 1 })
       .expect(202);
 
-    expect(ingest.mock.calls[0][0]).toEqual(expect.objectContaining({
+    expect(enqueue.mock.calls[0][0]).toEqual(expect.objectContaining({
       accountId: "account-1",
       workspaceId: "workspace-token",
     }));

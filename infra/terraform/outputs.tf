@@ -63,6 +63,11 @@ output "worker_task_queue_name" {
   value       = try(google_cloud_tasks_queue.document_processing[0].name, null)
 }
 
+output "worker_crawl_task_queue_name" {
+  description = "Cloud Tasks queue name used for website crawl dispatch"
+  value       = try(google_cloud_tasks_queue.website_crawls[0].name, null)
+}
+
 output "github_actions_workload_identity_provider" {
   description = "Fully qualified Workload Identity Provider resource name for GitHub Actions OIDC."
   value       = google_iam_workload_identity_pool_provider.github_actions.name

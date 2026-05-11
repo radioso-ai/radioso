@@ -131,6 +131,7 @@ describe("runtime configuration", () => {
     expect(env.WORKER_DISPATCH_DRIVER).toBe("noop");
     expect(env.WORKER_AMQP_URL).toBeUndefined();
     expect(env.WORKER_AMQP_QUEUE_NAME).toBeUndefined();
+    expect(env.WORKER_AMQP_CRAWL_QUEUE_NAME).toBeUndefined();
     expect(env.WORKER_AMQP_PREFETCH).toBe(1);
   });
 
@@ -145,6 +146,13 @@ describe("runtime configuration", () => {
       WORKER_DISPATCH_DRIVER: "amqp",
       WORKER_AMQP_URL: "amqp://localhost:5672",
     })).toThrow(/WORKER_AMQP_QUEUE_NAME/);
+
+    expect(() => getEnv({
+      ...baseEnv,
+      WORKER_DISPATCH_DRIVER: "amqp",
+      WORKER_AMQP_URL: "amqp://localhost:5672",
+      WORKER_AMQP_QUEUE_NAME: "radioso-document-jobs",
+    })).toThrow(/WORKER_AMQP_CRAWL_QUEUE_NAME/);
   });
 
   it("accepts AMQP worker dispatch settings", () => {
@@ -153,12 +161,14 @@ describe("runtime configuration", () => {
       WORKER_DISPATCH_DRIVER: "amqp",
       WORKER_AMQP_URL: "amqp://localhost:5672",
       WORKER_AMQP_QUEUE_NAME: "radioso-document-jobs",
+      WORKER_AMQP_CRAWL_QUEUE_NAME: "radioso-website-crawls",
       WORKER_AMQP_PREFETCH: "3",
     });
 
     expect(env.WORKER_DISPATCH_DRIVER).toBe("amqp");
     expect(env.WORKER_AMQP_URL).toBe("amqp://localhost:5672");
     expect(env.WORKER_AMQP_QUEUE_NAME).toBe("radioso-document-jobs");
+    expect(env.WORKER_AMQP_CRAWL_QUEUE_NAME).toBe("radioso-website-crawls");
     expect(env.WORKER_AMQP_PREFETCH).toBe(3);
   });
 
@@ -168,6 +178,7 @@ describe("runtime configuration", () => {
     expect(example).toContain("WORKER_DISPATCH_DRIVER=noop");
     expect(example).toContain("WORKER_AMQP_URL=");
     expect(example).toContain("WORKER_AMQP_QUEUE_NAME=");
+    expect(example).toContain("WORKER_AMQP_CRAWL_QUEUE_NAME=");
     expect(example).toContain("WORKER_AMQP_PREFETCH=1");
     expect(example).not.toContain("MAIL_DRIVER=");
     expect(example).not.toContain("RESEND_MAIL_API_KEY=");

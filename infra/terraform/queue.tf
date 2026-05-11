@@ -20,6 +20,23 @@ resource "google_cloud_tasks_queue" "document_processing" {
   depends_on = [google_project_service.apis]
 }
 
+resource "google_cloud_tasks_queue" "website_crawls" {
+  count    = var.deploy_services ? 1 : 0
+  name     = var.worker_crawl_task_queue_name
+  location = var.region
+
+  rate_limits {
+    max_dispatches_per_second = var.worker_crawl_task_max_dispatches_per_second
+    max_concurrent_dispatches = var.worker_crawl_task_max_concurrent_dispatches
+  }
+
+  retry_config {
+    max_attempts = 10
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
 resource "google_project_iam_member" "backend_cloud_tasks_enqueuer" {
   project = var.project_id
   role    = "roles/cloudtasks.enqueuer"

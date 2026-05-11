@@ -69,6 +69,7 @@ type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "documentIngestionService"
   | "documentSearchHistoryService"
   | "documentSearchService"
+  | "websiteCrawlJobService"
   | "websiteCrawlerProvider"
   | "usageLimitPolicy"
 >;

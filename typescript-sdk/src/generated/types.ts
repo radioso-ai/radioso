@@ -1819,6 +1819,16 @@ export interface components {
             url: string;
             limit?: number;
         };
+        WebsiteCrawlJobResponse: {
+            /** Format: uuid */
+            jobId: string;
+            /** Format: uuid */
+            sourceId: string | null;
+            /** Format: uri */
+            requestedUrl: string;
+            /** @enum {string} */
+            status: "queued";
+        };
         WebsiteCrawlPublicationResponse: {
             provider: string;
             runId: string | null;
@@ -4611,13 +4621,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Crawled pages accepted for document processing */
+            /** @description Crawl job accepted for asynchronous processing */
             202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WebsiteCrawlPublicationResponse"];
+                    "application/json": components["schemas"]["WebsiteCrawlJobResponse"];
                 };
             };
             /** @description Request validation failed */

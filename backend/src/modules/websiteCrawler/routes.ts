@@ -9,15 +9,13 @@ import {
   WebsiteCrawlerBadRequestError,
   WebsiteCrawlerUnavailableError,
 } from "./errors.js";
-import { WebsiteCrawlerService } from "./service.js";
 import type { WebsiteCrawlerProvider } from "./provider.js";
-import type { WebsiteCrawlerDocumentIngestionPort } from "./service.js";
 
 type RouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
   | "abuseControlService"
   | "auditService"
-  | "documentIngestionService"
+  | "websiteCrawlJobService"
   | "websiteCrawlerProvider"
 > & {
   assertCrawlUrlAllowed?: (url: string) => Promise<void>;
@@ -57,9 +55,6 @@ export const createWebsiteCrawlerRoutes = (
 ): Router => {
   const router = Router();
   const configuredProvider = options.provider ?? dependencies.websiteCrawlerProvider ?? null;
-  const documentIngestionService = dependencies.documentIngestionService as
-    | WebsiteCrawlerDocumentIngestionPort
-    | undefined;
 
   const workspaceSession = requireWorkspaceSession(dependencies);
   const crawlRateLimit: RequestHandler = createRateLimitMiddleware({
@@ -94,23 +89,13 @@ export const createWebsiteCrawlerRoutes = (
       if (!configuredProvider) {
         throw new WebsiteCrawlerUnavailableError();
       }
-      if (!documentIngestionService) {
-        throw new WebsiteCrawlerUnavailableError("Website crawler cannot access document ingestion");
-      }
 
       const limit = Math.min(body.limit ?? config.defaultLimit, config.maxLimit);
-      const service = new WebsiteCrawlerService({
-        provider: configuredProvider,
-        documentIngestionService,
-        auditService: dependencies.auditService,
-        assertCrawlUrlAllowed: dependencies.assertCrawlUrlAllowed,
-      });
-      const result = await service.crawlAndPublish({
+      const result = await dependencies.websiteCrawlJobService.enqueue({
         accountId: res.locals.accountId as string,
         workspaceId: res.locals.workspaceId as string,
         url: body.url,
         limit,
-        signal: abortController.signal,
       });
       res.status(202).json(result);
     } catch (error) {

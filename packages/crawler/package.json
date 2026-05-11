@@ -1,0 +1,22 @@
+{
+  "name": "@radioso/crawler",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "src/index.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.10",
+    "typescript": "^5.8.2",
+    "vitest": "^2.1.5"
+  },
+  "dependencies": {
+    "crawlee": "^3.16.0"
+  }
+}

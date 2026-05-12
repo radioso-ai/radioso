@@ -119,6 +119,31 @@ describe("agents contract", () => {
       .expect(404);
   });
 
+  it("rejects website embed copy packs above the locale cap", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-copy-locale-cap@example.com");
+    const authorization = `Bearer ${token}`;
+    const copy = Object.fromEntries(
+      ["en-US", "fr-FR", "de-DE", "es-ES", "it-IT", "pt-BR", "nl-NL", "sv-SE", "da-DK", "fi-FI", "pl-PL"]
+        .map((locale) => [locale, { startPrompt: "Hello" }]),
+    );
+
+    const response = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({
+        name: "Locale-heavy agent",
+        surfaceSettings: {
+          websiteEmbed: {
+            copy,
+          },
+        },
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.message).toContain("websiteEmbedCopy must not exceed 10 locales");
+  });
+
   it("streams explicit agent identity and keeps the selected agent in the SSE done event", async () => {
     let observedPrompt = "";
     const { app } = createTestApp({

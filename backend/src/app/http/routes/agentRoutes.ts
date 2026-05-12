@@ -10,13 +10,11 @@ import { badRequest } from "../../../shared/domain/errors.js";
 import {
   agentSurfacePositions,
 } from "../../../modules/agents/public.js";
-
-const assistantThemeSchema = z.object({
-  brand: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
-  brandText: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
-  surface: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
-  text: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
-});
+import {
+  ASSISTANT_LOGO_MAX_BYTES,
+  ASSISTANT_LOGO_MIME_TYPES,
+  assistantThemeSchema,
+} from "../shared/assistantIdentity.js";
 
 const agentParamsSchema = z.object({
   agentId: z.string().uuid(),
@@ -52,10 +50,7 @@ const agentBodySchema = z.object({
   surfaceSettings: surfaceSettingsSchema,
 });
 
-const ASSISTANT_LOGO_MAX_BYTES = 1024 * 1024;
-const ASSISTANT_LOGO_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-
-type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "agentService" | "documentStorage">;
+type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "agentService" | "documentStorage" | "logger">;
 
 export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router => {
   const router = Router();
@@ -148,15 +143,25 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         mimeType: req.file.mimetype,
         buffer: req.file.buffer,
       });
+      const uploadedLogo = {
+        bucket: stored.bucket,
+        objectPath: stored.objectPath,
+        generation: stored.generation ?? null,
+        mimeType: req.file.mimetype,
+        filename: req.file.originalname || "assistant-logo",
+        sizeBytes: stored.sizeBytes,
+      };
       const agent = await dependencies.agentService.update(workspaceId, parsed.agentId, {
-        logo: {
-          bucket: stored.bucket,
-          objectPath: stored.objectPath,
-          generation: stored.generation ?? null,
-          mimeType: req.file.mimetype,
-          filename: req.file.originalname || "assistant-logo",
-          sizeBytes: stored.sizeBytes,
-        },
+        logo: uploadedLogo,
+      }).catch(async (error: unknown) => {
+        await dependencies.documentStorage.delete({
+          bucket: uploadedLogo.bucket,
+          objectPath: uploadedLogo.objectPath,
+          generation: uploadedLogo.generation,
+        }).catch((cleanupError: unknown) => {
+          dependencies.logger.warn({ err: cleanupError, workspaceId, agentId: parsed.agentId }, "Failed to clean up orphaned assistant logo upload");
+        });
+        throw error;
       });
       const previousLogo = current.logo;
       if (previousLogo) {
@@ -164,7 +169,9 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
           bucket: previousLogo.bucket,
           objectPath: previousLogo.objectPath,
           generation: previousLogo.generation ?? null,
-        }).catch(() => undefined);
+        }).catch((error: unknown) => {
+          dependencies.logger.warn({ err: error, workspaceId, agentId: parsed.agentId }, "Failed to delete replaced assistant logo");
+        });
       }
       res.status(200).json(agent);
     } catch (error) {
@@ -186,7 +193,9 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
           bucket: previousLogo.bucket,
           objectPath: previousLogo.objectPath,
           generation: previousLogo.generation ?? null,
-        }).catch(() => undefined);
+        }).catch((error: unknown) => {
+          dependencies.logger.warn({ err: error, workspaceId, agentId: parsed.agentId }, "Failed to delete removed assistant logo");
+        });
       }
       res.status(200).json(agent);
     } catch (error) {

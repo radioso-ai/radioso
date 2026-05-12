@@ -1,6 +1,7 @@
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { isAgentBootstrapActive } from "../../agents/public.js";
+import { buildPublicAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { RetrievalSettingsRecord } from "../domain/retrievalSettings.js";
@@ -332,13 +333,12 @@ export class PlatformSettingsService {
   }
 
   private buildAssistantLogoUrl(agent: AgentRecord): string | null {
-    const baseUrl = this.dependencies.publicChatBaseUrl;
     const token = agent.surfaceSettings.anonymousChat.token ?? agent.surfaceSettings.websiteEmbed.token;
-    if (!baseUrl || !token || !agent.logo) {
-      return null;
-    }
-    const appBaseUrl = baseUrl.replace(/\/chat(?:\/.*)?$/, "");
-    return `${appBaseUrl}/api/v1/public/chat/${token}/assistant-logo`;
+    return buildPublicAssistantLogoUrl({
+      token,
+      hasLogo: Boolean(agent.logo),
+      publicChatBaseUrl: this.dependencies.publicChatBaseUrl,
+    });
   }
 
   private buildAnonymousChatUrl(token: string | null, enabled: boolean): string | null {

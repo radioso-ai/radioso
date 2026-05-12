@@ -30,5 +30,6 @@ export const buildAssistantSettingsSection = (
   assistantBootstrapActive: isAssistantBootstrapActive(workspace),
   suggestedQuestionsEnabled: retrievalSettings.suggestedQuestionsEnabled,
   customInstruction: retrievalSettings.customInstruction,
+  // The platform settings service derives the public logo URL from the active agent and public chat base URL.
   assistantLogoUrl: null,
 });

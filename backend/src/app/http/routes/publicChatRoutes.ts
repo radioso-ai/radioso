@@ -12,6 +12,7 @@ import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conv
 import { isAllowedWebsiteEmbedOrigin } from "../../../modules/settings/contracts/websiteEmbed.js";
 import { isAgentBootstrapActive, resolveAgentDisplayName } from "../../../modules/agents/public.js";
 import { issuePublicChatSession } from "../../../modules/settings/contracts/publicChatSession.js";
+import { buildPublicAssistantLogoUrl } from "../shared/assistantLogoUrl.js";
 
 const localeHintSchema = z.string().trim().max(35);
 const pageContextSchema = z.object({
@@ -127,15 +128,13 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     const actions = await dependencies.chatActionProvider.getPublicSessionActions?.({ workspaceId });
     return actions && Object.keys(actions).length > 0 ? actions : undefined;
   };
-  const buildAssistantLogoUrl = (req: { get(name: string): string | undefined }, token: string, hasLogo: boolean) => {
-    if (!hasLogo) {
-      return null;
-    }
-    const configuredBaseUrl = dependencies.env.PUBLIC_CHAT_BASE_URL;
-    const appBaseUrl = configuredBaseUrl?.replace(/\/chat(?:\/.*)?$/, "");
-    const forwardedPrefix = req.get("x-forwarded-prefix")?.trim().replace(/\/$/, "") ?? "";
-    return `${forwardedPrefix || appBaseUrl || ""}/api/v1/public/chat/${encodeURIComponent(token)}/assistant-logo`;
-  };
+  const buildAssistantLogoUrl = (req: { get(name: string): string | undefined }, token: string, hasLogo: boolean) =>
+    buildPublicAssistantLogoUrl({
+      token,
+      hasLogo,
+      publicChatBaseUrl: dependencies.env.PUBLIC_CHAT_BASE_URL,
+      forwardedPrefix: req.get("x-forwarded-prefix"),
+    });
   const resolveAgentForPublicLogo = async (launchToken: string) => {
     const anonymousAgent = await dependencies.agentRepository.findByAnonymousChatToken(launchToken);
     if (anonymousAgent?.surfaceSettings.anonymousChat.enabled) {
@@ -161,6 +160,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         throw badRequest("This website is not approved to host the embedded assistant.");
       }
 
+      // Server-side config probes may not send Origin; browser session creation still enforces origins.
       const websiteEmbed = agent.surfaceSettings.websiteEmbed;
       res.status(200).json({
         launcherLabel: websiteEmbed.launcherLabel,

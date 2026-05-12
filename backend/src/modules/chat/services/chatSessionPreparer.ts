@@ -14,6 +14,8 @@ import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./ch
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
 
 type ChatIntentCapableRetrievalPipeline = Pick<RetrievalPipelineService, "run" | "interpret" | "runInterpreted" | "runWithoutRetrieval">;
+const FALLBACK_CONVERSATION_MODE = "exploratory" as const;
+const FALLBACK_SUGGESTED_QUESTIONS_COUNT = 3;
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -83,9 +85,9 @@ export class ChatSessionPreparer {
       responseIdentity,
       responseBehavior: {
         customInstruction: agent.customInstruction,
-        conversationMode: "exploratory" as const,
+        conversationMode: FALLBACK_CONVERSATION_MODE,
         suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-        suggestedQuestionsCount: 3,
+        suggestedQuestionsCount: FALLBACK_SUGGESTED_QUESTIONS_COUNT,
       },
       responseBehaviorEnabled: true,
       metadataFilter: input.metadataFilter,
@@ -167,9 +169,9 @@ export class ChatSessionPreparer {
         responseSettings: {
           citationDisplayEnabled: false,
           answerSupportValidationEnabled: false,
-          conversationMode: "exploratory" as const,
+          conversationMode: FALLBACK_CONVERSATION_MODE,
           suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-          suggestedQuestionsCount: 3,
+          suggestedQuestionsCount: FALLBACK_SUGGESTED_QUESTIONS_COUNT,
           customInstruction: agent.customInstruction,
           responseLanguagePolicy: "match_user_question" as const,
         },
@@ -234,6 +236,7 @@ export class ChatSessionPreparer {
         suggestedQuestionsEnabled: true,
         retrievalEnabled: true,
         logo: null,
+        // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
         theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
         greetingInstruction: "",
         assistantDefaultLocale: null,
@@ -252,6 +255,7 @@ export class ChatSessionPreparer {
             allowedOrigins: [],
             launcherLabel: "Chat with us",
             launcherPosition: "bottom-right",
+            // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
             theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
             copy: {},
             expertOverrides: {},
@@ -274,6 +278,7 @@ export class ChatSessionPreparer {
       suggestedQuestionsEnabled: true,
       retrievalEnabled: true,
       logo: null,
+      // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
       theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
       greetingInstruction: workspace.greetingInstruction,
       assistantDefaultLocale: workspace.assistantDefaultLocale,
@@ -292,6 +297,7 @@ export class ChatSessionPreparer {
           allowedOrigins: workspace.websiteEmbedAllowedOrigins,
           launcherLabel: workspace.websiteEmbedLauncherLabel,
           launcherPosition: workspace.websiteEmbedLauncherPosition,
+          // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
           theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
           copy: {},
           expertOverrides: {},

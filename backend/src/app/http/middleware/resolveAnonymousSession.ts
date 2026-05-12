@@ -103,6 +103,7 @@ const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionA
     workspaceId: workspace.id,
     name: workspace.assistantName,
     logo: null,
+    // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
     theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
     proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
     surfaceSettings: {
@@ -119,6 +120,7 @@ const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionA
         allowedOrigins: workspace.websiteEmbedAllowedOrigins,
         launcherLabel: workspace.websiteEmbedLauncherLabel,
         launcherPosition: workspace.websiteEmbedLauncherPosition,
+        // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
         theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
         copy: {},
         expertOverrides: {},

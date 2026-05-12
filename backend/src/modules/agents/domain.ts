@@ -1,5 +1,9 @@
 import { badRequest } from "../../shared/domain/errors.js";
 import { normalizeLocaleTag } from "../settings/contracts/assistantBootstrap.js";
+import {
+  defaultWebsiteEmbedTheme,
+  type WebsiteEmbedThemeSettings,
+} from "../settings/domain/websiteEmbedSettings.js";
 
 export const agentConversationModes = ["factual", "guided", "exploratory"] as const;
 export type AgentConversationMode = (typeof agentConversationModes)[number];
@@ -9,6 +13,7 @@ export type AgentSurfacePosition = (typeof agentSurfacePositions)[number];
 
 const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
 const DEFAULT_AGENT_SURFACE_POSITION: AgentSurfacePosition = "bottom-right";
+const MAX_EMBED_COPY_LOCALES = 10;
 
 export interface AgentBehaviorSettings {
   customInstruction: string;
@@ -37,12 +42,7 @@ export interface AuthenticatedChatSurfaceSettings extends AgentSurfaceSettings {
 export interface AnonymousChatSurfaceSettings extends PublicAgentSurfaceSettings {
 }
 
-export interface AgentEmbedTheme {
-  brand: string;
-  brandText: string;
-  surface: string;
-  text: string;
-}
+export type AgentEmbedTheme = WebsiteEmbedThemeSettings;
 
 export type AgentEmbedCopyPacks = Record<string, Record<string, string>>;
 export type AgentEmbedExpertOverrides = Record<string, string>;
@@ -181,12 +181,7 @@ const normalizeSurfacePosition = (value: unknown): AgentSurfacePosition => {
   throw badRequest("websiteEmbedLauncherPosition is invalid");
 };
 
-export const defaultAgentEmbedTheme = (): AgentEmbedTheme => ({
-  brand: "#0f172a",
-  brandText: "#f8fafc",
-  surface: "#ffffff",
-  text: "#0f172a",
-});
+export const defaultAgentEmbedTheme = (): AgentEmbedTheme => defaultWebsiteEmbedTheme();
 
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
@@ -262,6 +257,9 @@ const normalizeEmbedCopy = (value: unknown): AgentEmbedCopyPacks => {
     const normalizedLocale = normalizeLocaleTag(locale);
     if (!normalizedLocale) {
       throw badRequest("websiteEmbedCopy locale keys must be valid locale tags");
+    }
+    if (!Object.prototype.hasOwnProperty.call(output, normalizedLocale) && Object.keys(output).length >= MAX_EMBED_COPY_LOCALES) {
+      throw badRequest(`websiteEmbedCopy must not exceed ${MAX_EMBED_COPY_LOCALES} locales`);
     }
     output[normalizedLocale] = normalizeStringRecord(rawPack, `websiteEmbedCopy.${normalizedLocale}`, {
       maxKeys: 30,

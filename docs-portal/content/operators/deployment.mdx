@@ -62,6 +62,8 @@ Public chat and website embed rate limits are operator tuning knobs, not workspa
 
 The session limit applies to a visitor session. The global limit applies across public chat traffic for the process.
 
+Older workspace-level public chat limits, including `anonymousRateLimit` and `messagesPerMinute`, are no longer read. If an existing workspace depended on a custom value, set the equivalent operator-level environment variables during the rollout.
+
 ## Runtime separation
 
 The backend owns migrations, auth, retrieval, chat, and API routes. The worker owns queued document processing. Keep those services independently deployable and independently scalable.

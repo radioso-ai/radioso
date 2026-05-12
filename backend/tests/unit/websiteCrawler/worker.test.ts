@@ -122,6 +122,57 @@ describe("website crawl worker", () => {
     expect(stopResolved).toBe(true);
   });
 
+  it("stop() waits for a job claimed mid-tick so the row is not stranded in processing", async () => {
+    const job = createJob();
+    const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
+    const markCompleted = vi.fn().mockResolvedValue(undefined);
+
+    let resolveClaim!: (value: typeof job | null) => void;
+    const claimNext = vi.fn().mockImplementation(() => new Promise((resolve) => {
+      resolveClaim = resolve;
+    }));
+
+    const worker = new WebsiteCrawlWorker({
+      repository: { claimNext, markCompleted, markFailed: vi.fn() } as never,
+      provider: {
+        name: "test-crawler",
+        crawl: vi.fn().mockResolvedValue({
+          provider: "test-crawler",
+          runId: "run-1",
+          pages: [{ sourceUrl: "https://example.com/a", title: "A", content: "Alpha" }],
+        }),
+      },
+      documentIngestionService: { ingest } as never,
+      logger: { info: vi.fn(), error: vi.fn() } as never,
+      pollIntervalMs: 10_000,
+    });
+
+    // The polling-loop race: a tick is mid-flight in claimNext when stop()
+    // arrives. Tracking only the post-claim work would let stop() return
+    // before the just-claimed row finishes processing, leaving it in
+    // `processing` until the lease expires. Wrapping the full tick in
+    // runTracked closes the window — stop() must drain the entire claim +
+    // process sequence.
+    await worker.start();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(claimNext).toHaveBeenCalledOnce();
+
+    const stopPromise = worker.stop();
+    let stopResolved = false;
+    void stopPromise.then(() => { stopResolved = true; });
+
+    // Stop must not have resolved yet — the tick is still mid-claim.
+    await Promise.resolve();
+    expect(stopResolved).toBe(false);
+
+    // Now resolve the claim with a job. Stop must wait for the full
+    // claim → process → markCompleted sequence before returning.
+    resolveClaim(job);
+    await stopPromise;
+    expect(stopResolved).toBe(true);
+    expect(markCompleted).toHaveBeenCalledOnce();
+  });
+
   it("returns busy when another worker owns a fresh claim", async () => {
     const job = {
       ...createJob(),

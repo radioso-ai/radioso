@@ -6,11 +6,12 @@ import { WebsiteCrawlerService, type WebsiteCrawlerDocumentIngestionPort, type W
 export class WebsiteCrawlWorker {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
-  // Tracks the currently in-flight processClaimedJob promise so that stop()
-  // can drain it. Without this a SIGTERM during an active crawl leaves the
-  // job row in `processing` until the lease window expires (default 15 min),
-  // delaying recovery for that crawl.
-  private activeJob: Promise<void> | null = null;
+  // Tracks the currently in-flight tick (claim + process) so that stop() can
+  // drain it. Wrapping the entire tick — not just processClaimedJob — closes
+  // the race where SIGTERM lands between claimNext returning and processing
+  // starting; without that, the just-claimed row would be stranded in
+  // `processing` until the lease window expires (default 15 min).
+  private activeJob: Promise<unknown> | null = null;
 
   constructor(private readonly dependencies: {
     repository: WebsiteCrawlJobRepositoryPort;
@@ -48,12 +49,19 @@ export class WebsiteCrawlWorker {
   }
 
   async runOnce(now: Date = new Date()): Promise<boolean> {
-    const job = await this.dependencies.repository.claimNext(now);
-    if (!job) {
-      return false;
-    }
-    await this.runTracked(() => this.processClaimedJob(job));
-    return true;
+    // The whole claim+process tick is tracked so stop() can await it. Tracking
+    // only the process half would leave a window where claimNext just returned
+    // a job but processing has not yet started — stop() would not see anything
+    // to drain, return immediately, and the just-claimed row would be stranded
+    // in `processing` for the full lease window.
+    return this.runTracked(async () => {
+      const job = await this.dependencies.repository.claimNext(now);
+      if (!job) {
+        return false;
+      }
+      await this.processClaimedJob(job);
+      return true;
+    });
   }
 
   async runJobById(jobId: string, now: Date = new Date()): Promise<"processed" | "noop" | "busy"> {
@@ -83,18 +91,20 @@ export class WebsiteCrawlWorker {
       }
       return "noop";
     }
-    await this.runTracked(() => this.processClaimedJob(claimed));
+    await this.runTracked(async () => {
+      await this.processClaimedJob(claimed);
+    });
     return "processed";
   }
 
-  private async runTracked(work: () => Promise<void>): Promise<void> {
+  private async runTracked<T>(work: () => Promise<T>): Promise<T> {
     const promise = work();
     this.activeJob = promise.finally(() => {
       if (this.activeJob === promise) {
         this.activeJob = null;
       }
     });
-    await promise;
+    return promise;
   }
 
   private scheduleNextTick(delayMs = this.dependencies.pollIntervalMs ?? 5_000): void {

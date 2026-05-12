@@ -28,10 +28,12 @@ export interface WebsiteCrawlerRouteOptions {
 const CRAWL_RATE_LIMIT = 10;
 const CRAWL_RATE_LIMIT_WINDOW_MS = 60_000;
 const CRAWL_RATE_LIMIT_BLOCK_MS = 60_000;
-// The dashboard polls GET /jobs every 2s while jobs are non-terminal, so a
-// generous limit is needed for the happy path. The cap exists to bound the
-// cost of a runaway client or a compromised workspace token.
-const CRAWL_JOB_READ_RATE_LIMIT = 120;
+// The dashboard polls GET /jobs every 2s while jobs are non-terminal — about
+// 30/min per tab. The bucket is keyed by workspace + actor, so multiple tabs
+// (and admin/preview tabs) share it; 300/min comfortably accommodates a few
+// concurrent tabs while still bounding the cost of a runaway client or a
+// compromised workspace token.
+const CRAWL_JOB_READ_RATE_LIMIT = 300;
 const CRAWL_JOB_READ_RATE_LIMIT_WINDOW_MS = 60_000;
 
 export const crawlBodySchema = z.object({

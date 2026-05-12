@@ -4,6 +4,7 @@ import type { FormEvent } from 'react'
 import { ArrowLeft, FileText, PanelRight, Pencil, Save, Trash2, X } from 'lucide-react'
 
 import { DocumentStatus } from '@/components/dashboard/document-status'
+import { MarkdownContent } from '@/components/markdown/markdown-content'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
@@ -153,14 +154,26 @@ export function DocumentEditorPage({
           <div className="flex h-full min-h-0">
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
               <div className="w-full">
-                <Textarea
-                  id="document-content"
-                  value={values.content}
-                  onChange={(event) => onChange('content', event.target.value)}
-                  readOnly={!isEditing}
-                  disabled={isSaving}
-                  className={`min-h-[65vh] resize-none overflow-y-auto [field-sizing:fixed] ${!isEditing ? 'border-transparent bg-muted/30 shadow-none' : ''}`}
-                />
+                {isEditing ? (
+                  <Textarea
+                    id="document-content"
+                    value={values.content}
+                    onChange={(event) => onChange('content', event.target.value)}
+                    disabled={isSaving}
+                    className="min-h-[65vh] resize-none overflow-y-auto [field-sizing:fixed]"
+                  />
+                ) : (
+                  <div
+                    id="document-content"
+                    className="min-h-[65vh] rounded-md bg-muted/30 px-4 py-3 text-sm leading-7 text-foreground [overflow-wrap:anywhere]"
+                  >
+                    {values.content.trim().length > 0 ? (
+                      <MarkdownContent content={values.content} variant="document" />
+                    ) : (
+                      <p className="text-muted-foreground">This document has no content.</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

@@ -10,6 +10,7 @@ import { createEnterpriseEmailService } from "./emailService.js";
 interface EnterpriseAuthRouteDependencies {
   connectorDb: UsageLimitDatabasePort;
   env: {
+    APP_BASE_URL?: string;
     AUTH_RATE_LIMIT_WINDOW_MS?: number;
     AUTH_RATE_LIMIT_MAX_ATTEMPTS?: number;
   };
@@ -198,7 +199,8 @@ const createEnterpriseRateLimitMiddleware = (
   };
 };
 
-const getAppBaseUrl = (): string =>
+const getAppBaseUrl = (env: EnterpriseAuthRouteDependencies["env"]): string =>
+  env.APP_BASE_URL ??
   process.env.APP_BASE_URL ??
   process.env.RADIOSO_ENTERPRISE_WIDGET_ORIGIN ??
   "http://localhost:3000";
@@ -296,6 +298,7 @@ const issueVerificationEmail = async (
     requestIp?: string | null;
     requestUserAgent?: string | null;
     emailService: ReturnType<typeof createEnterpriseEmailService>;
+    env: EnterpriseAuthRouteDependencies["env"];
   },
 ): Promise<void> => {
   const now = new Date();
@@ -316,7 +319,7 @@ const issueVerificationEmail = async (
     [id, input.userId, sha256(token), expiresAt, input.requestIp ?? null, input.requestUserAgent ?? null],
   );
 
-  const verificationUrl = new URL("/verify-email", getAppBaseUrl());
+  const verificationUrl = new URL("/verify-email", getAppBaseUrl(input.env));
   verificationUrl.searchParams.set("token", token);
 
   try {
@@ -567,6 +570,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
           requestIp: req.ip ?? null,
           requestUserAgent: req.get("user-agent") ?? null,
           emailService,
+          env: dependencies.env,
         });
         await database.query(
           `INSERT INTO audit_events (id, account_id, workspace_id, event_type, event_status, metadata_json)
@@ -658,7 +662,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
         [id, user.id, sha256(token), expiresAt, req.ip ?? null, req.get("user-agent") ?? null],
       );
 
-      const resetUrl = new URL("/reset-password", getAppBaseUrl());
+      const resetUrl = new URL("/reset-password", getAppBaseUrl(dependencies.env));
       resetUrl.searchParams.set("token", token);
 
       try {
@@ -795,6 +799,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
         requestIp: req.ip ?? null,
         requestUserAgent: req.get("user-agent") ?? null,
         emailService,
+        env: dependencies.env,
       });
 
       res.status(202).json({ accepted: true });

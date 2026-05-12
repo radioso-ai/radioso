@@ -6,7 +6,7 @@ import { createLogger, type AppLogger } from "../shared/observability/logger.js"
 import type { AppDependencies } from "../app/server/types.js";
 import type { RuntimeHandle } from "./types.js";
 
-export interface StartWorkerRuntimeOptions {
+export interface StartCrawlerWorkerRuntimeOptions {
   env: Env;
   logger?: AppLogger;
   ensureNoPendingMigrations?: (connectionString: string) => Promise<void>;
@@ -14,17 +14,19 @@ export interface StartWorkerRuntimeOptions {
   applicationModules?: ApplicationModule[];
 }
 
-export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Promise<RuntimeHandle> => {
+export const startCrawlerWorkerRuntime = async (
+  options: StartCrawlerWorkerRuntimeOptions,
+): Promise<RuntimeHandle> => {
   const logger = options.logger ?? createLogger();
   await (options.ensureNoPendingMigrations ?? ensureNoPendingMigrations)(options.env.DATABASE_URL);
 
   const dependencies = options.buildDependencies
     ? options.buildDependencies(options.env)
     : buildDependencies(options.env, { modules: options.applicationModules });
-  dependencies.logger.info({ role: "worker" }, "Radioso document worker starting");
+  dependencies.logger.info({ role: "crawler-worker" }, "Radioso crawler worker starting");
   await dependencies.applicationModules.initializeAll();
-  await dependencies.documentProcessingWorker.start();
-  await dependencies.documentJobConsumer?.start();
+  await dependencies.websiteCrawlWorker.start();
+  await dependencies.websiteCrawlJobConsumer?.start();
 
   let shuttingDown = false;
 
@@ -34,9 +36,9 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
         return;
       }
       shuttingDown = true;
-      dependencies.logger.info({ role: "worker", signal }, "Radioso document worker shutting down");
-      await dependencies.documentJobConsumer?.stop();
-      await dependencies.documentProcessingWorker.stop();
+      dependencies.logger.info({ role: "crawler-worker", signal }, "Radioso crawler worker shutting down");
+      await dependencies.websiteCrawlJobConsumer?.stop();
+      await dependencies.websiteCrawlWorker.stop();
       await dependencies.applicationModules.shutdownAll();
     },
   };

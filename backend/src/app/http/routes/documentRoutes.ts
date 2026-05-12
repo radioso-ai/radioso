@@ -7,7 +7,7 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { validateBody } from "../middleware/validate.js";
-import { badRequest } from "../../../shared/domain/errors.js";
+import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { createWebsiteCrawlerRoutes } from "../../../modules/websiteCrawler/routes.js";
 
 const MAX_DOCUMENT_LIST_LIMIT = 100;
@@ -220,7 +220,16 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.use("/crawl", createWebsiteCrawlerRoutes(dependencies));
+  if (dependencies.env.WEBSITE_CRAWLER_ENABLED) {
+    router.use("/crawl", createWebsiteCrawlerRoutes(dependencies));
+  } else {
+    // Stub the crawl namespace so requests get the project's JSON ErrorResponse
+    // shape (not Express's default text 404), which matches what every other
+    // route returns and what generated SDK clients expect to parse.
+    router.use("/crawl", (_req, _res, next) => {
+      next(notFound("Website crawler is disabled for this deployment"));
+    });
+  }
 
   router.get("/:documentId", workspaceSession, async (req, res, next) => {
     try {

@@ -396,7 +396,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     registry: composition.skillCatalogRegistry,
   });
   const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
-  const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository);
+  const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, {
+    websiteCrawlerEnabled: env.WEBSITE_CRAWLER_ENABLED,
+  });
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const connectorRegistry = createDefaultConnectorRegistry(composition.connectors);
   if (env.CONNECTOR_ENCRYPTION_KEY) {

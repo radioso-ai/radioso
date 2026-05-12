@@ -4,10 +4,13 @@ import request from "supertest";
 
 import { createApp } from "../../src/app/server/createApp.js";
 import { createWorkerTaskApp } from "../../src/app/worker/createWorkerTaskApp.js";
+import { createCrawlerWorkerTaskApp } from "../../src/app/worker/createCrawlerWorkerTaskApp.js";
 import type { Env } from "../../src/app/config/env.js";
 import { startApiRuntime } from "../../src/runtime/startApiRuntime.js";
 import { startWorkerTaskRuntime } from "../../src/runtime/startWorkerTaskRuntime.js";
 import { startWorkerRuntime } from "../../src/runtime/startWorkerRuntime.js";
+import { startCrawlerWorkerRuntime } from "../../src/runtime/startCrawlerWorkerRuntime.js";
+import { startCrawlerWorkerTaskRuntime } from "../../src/runtime/startCrawlerWorkerTaskRuntime.js";
 import { createTestDependencies } from "../support/testApp.js";
 
 const createEnv = (port: number): Env => ({
@@ -57,6 +60,7 @@ const createEnv = (port: number): Env => ({
   WORKER_TASKS_QUEUE_NAME: undefined,
   WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
   WORKER_TASKS_SERVICE_URL: undefined,
+  WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
   WORKER_AMQP_URL: undefined,
   WORKER_AMQP_QUEUE_NAME: undefined,
@@ -65,6 +69,7 @@ const createEnv = (port: number): Env => ({
   DOCUMENT_PROCESSING_JOB_LEASE_MS: 300_000,
   WEBSITE_CRAWL_JOB_LEASE_MS: 900_000,
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
+  WEBSITE_CRAWLER_ENABLED: true,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
   SUPPORT_STAFF_EMAILS: "",
 });
@@ -96,9 +101,10 @@ describe("runtime entrypoints", () => {
     expect(workerStartSpy).not.toHaveBeenCalled();
   });
 
-  it("starts the worker runtime without starting an HTTP server", async () => {
+  it("starts the worker runtime without starting an HTTP server, and without the crawler worker", async () => {
     const { dependencies } = createTestDependencies();
     const workerStartSpy = vi.spyOn(dependencies.documentProcessingWorker, "start");
+    const crawlerStartSpy = vi.spyOn(dependencies.websiteCrawlWorker, "start");
 
     const runtime = await startWorkerRuntime({
       env: createEnv(8092),
@@ -109,7 +115,100 @@ describe("runtime entrypoints", () => {
     runtimes.push(runtime);
 
     expect(workerStartSpy).toHaveBeenCalledOnce();
+    expect(crawlerStartSpy).not.toHaveBeenCalled();
     expect(runtime.server).toBeUndefined();
+  });
+
+  it("starts the crawler worker runtime without starting the document processing worker", async () => {
+    const { dependencies } = createTestDependencies();
+    const documentStartSpy = vi.spyOn(dependencies.documentProcessingWorker, "start");
+    const crawlerStartSpy = vi.spyOn(dependencies.websiteCrawlWorker, "start");
+    const crawlerStopSpy = vi.spyOn(dependencies.websiteCrawlWorker, "stop");
+
+    const runtime = await startCrawlerWorkerRuntime({
+      env: createEnv(8097),
+      logger: dependencies.logger,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => dependencies,
+    });
+    runtimes.push(runtime);
+
+    expect(crawlerStartSpy).toHaveBeenCalledOnce();
+    expect(documentStartSpy).not.toHaveBeenCalled();
+    expect(runtime.server).toBeUndefined();
+
+    await runtime.shutdown("test");
+    runtimes.pop();
+    expect(crawlerStopSpy).toHaveBeenCalledOnce();
+  });
+
+  it("worker task runtime returns 410 Gone for website-crawl pushes so Cloud Tasks stops retrying", async () => {
+    const { dependencies } = createTestDependencies();
+    const crawlWorkerSpy = vi.spyOn(dependencies.websiteCrawlWorker, "runJobById");
+
+    const runtime = await startWorkerTaskRuntime({
+      env: createEnv(8098),
+      logger: dependencies.logger,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => dependencies,
+      createApp: createWorkerTaskApp,
+    });
+    runtimes.push(runtime);
+
+    const response = await request(runtime.server!)
+      .post("/internal/tasks/website-crawl")
+      .send({ jobId: randomUUID() });
+
+    expect(response.status).toBe(410);
+    expect(response.body).toMatchObject({ error: "moved" });
+    expect(crawlWorkerSpy).not.toHaveBeenCalled();
+  });
+
+  it("crawler worker task runtime serves the website-crawl route", async () => {
+    const { dependencies } = createTestDependencies();
+    const crawlerWorkerStartSpy = vi.spyOn(dependencies.websiteCrawlWorker, "start");
+    const documentWorkerStartSpy = vi.spyOn(dependencies.documentProcessingWorker, "start");
+    const runJobByIdSpy = vi
+      .spyOn(dependencies.websiteCrawlWorker, "runJobById")
+      .mockResolvedValue("processed");
+
+    const runtime = await startCrawlerWorkerTaskRuntime({
+      env: createEnv(8099),
+      logger: dependencies.logger,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => dependencies,
+      createApp: createCrawlerWorkerTaskApp,
+    });
+    runtimes.push(runtime);
+
+    const jobId = randomUUID();
+    const response = await request(runtime.server!)
+      .post("/internal/tasks/website-crawl")
+      .send({ jobId });
+
+    expect(response.status).toBe(204);
+    expect(runJobByIdSpy).toHaveBeenCalledWith(jobId);
+    expect(crawlerWorkerStartSpy).toHaveBeenCalledOnce();
+    expect(documentWorkerStartSpy).not.toHaveBeenCalled();
+  });
+
+  it("crawler worker task runtime does not expose the document-processing route", async () => {
+    const { dependencies } = createTestDependencies();
+
+    const runtime = await startCrawlerWorkerTaskRuntime({
+      env: createEnv(8100),
+      logger: dependencies.logger,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => dependencies,
+      createApp: createCrawlerWorkerTaskApp,
+    });
+    runtimes.push(runtime);
+
+    const response = await request(runtime.server!)
+      .post("/internal/tasks/document-processing")
+      .send({ jobId: randomUUID() });
+
+    expect(response.status).toBe(404);
   });
 
   it("starts the worker task runtime and serves internal task routes", async () => {

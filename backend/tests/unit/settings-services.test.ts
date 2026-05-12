@@ -102,7 +102,7 @@ describe("settings services", () => {
       websiteEmbedAllowedOrigins: [],
       websiteEmbedLauncherLabel: "Chat with us",
       websiteEmbedLauncherIcon: "chat" as const,
-      websiteEmbedLauncherPosition: "bottom-right",
+      websiteEmbedLauncherPosition: "bottom-right" as const,
     };
     const agentService = createAgentService(createAgent(workspace, {
       conversationMode: "exploratory",
@@ -165,7 +165,7 @@ describe("settings services", () => {
       websiteEmbedAllowedOrigins: [],
       websiteEmbedLauncherLabel: "Chat with us",
       websiteEmbedLauncherIcon: "chat" as const,
-      websiteEmbedLauncherPosition: "bottom-right",
+      websiteEmbedLauncherPosition: "bottom-right" as const,
     };
     const retrieval = defaultRetrievalSettings("workspace-1");
     const agentService = createAgentService(createAgent(workspace));
@@ -221,7 +221,7 @@ describe("settings services", () => {
       websiteEmbedAllowedOrigins: ["https://example.com"],
       websiteEmbedLauncherLabel: "Ask Nora",
       websiteEmbedLauncherIcon: "sparkles" as const,
-      websiteEmbedLauncherPosition: "bottom-left",
+      websiteEmbedLauncherPosition: "bottom-left" as const,
     };
     const retrieval = defaultRetrievalSettings("workspace-1");
     const agentService = createAgentService(createAgent(workspace));
@@ -270,7 +270,7 @@ describe("settings services", () => {
       websiteEmbedAllowedOrigins: [],
       websiteEmbedLauncherLabel: "Chat with us",
       websiteEmbedLauncherIcon: "chat" as const,
-      websiteEmbedLauncherPosition: "bottom-right",
+      websiteEmbedLauncherPosition: "bottom-right" as const,
     };
     const retrieval = defaultRetrievalSettings("workspace-1");
     const agentService = createAgentService(createAgent(workspace));

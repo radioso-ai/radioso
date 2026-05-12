@@ -32,6 +32,21 @@ describe("runtime configuration", () => {
     expect(packageJson.scripts["start:crawler-worker-server"]).toBeTruthy();
   });
 
+  it("keeps crawler dependency installation out of normal backend build and dev scripts", async () => {
+    const packageJson = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+
+    const normalScripts = Object.entries(packageJson.scripts).filter(([name]) =>
+      name === "build" || name === "build:crawler" || name.startsWith("predev:"),
+    );
+
+    expect(packageJson.scripts["install:crawler"]).toContain("npm --prefix ../packages/crawler ci");
+    for (const [name, script] of normalScripts) {
+      expect(script, `${name} should not install crawler dependencies`).not.toContain("npm --prefix ../packages/crawler ci");
+    }
+  });
+
   it("defines a dedicated backend-worker service in local and compose orchestration", async () => {
     const devCompose = YAML.parse(await readFile(new URL("../../../docker-compose.dev.yml", import.meta.url), "utf8")) as {
       services?: Record<string, unknown>;

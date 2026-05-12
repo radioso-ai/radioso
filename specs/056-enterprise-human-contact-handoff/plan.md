@@ -9,7 +9,7 @@ Add an Enterprise-only human-contact handoff flow with a no-op OSS chat-action e
 
 ## Technical Context
 
-**Language/Version**: TypeScript on Node.js 22, React 19 with Next.js 16 App Router  
+**Language/Version**: TypeScript on Node.js 24, React 19 with Next.js 16 App Router
 **Primary Dependencies**: Express, Zod, Pino, OpenAI SDK/provider adapters, Radix/shadcn UI, Lucide icons  
 **Storage**: PostgreSQL 16 with existing migration/repository conventions  
 **Testing**: Vitest, Supertest, Playwright where practical  

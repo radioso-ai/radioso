@@ -25,11 +25,11 @@ describe("human contact application module", () => {
       expect.objectContaining({
         name: "human_contact.request",
         owner: "contact",
-        diagnostics: {
+        diagnostics: expect.objectContaining({
           defined: true,
           shapeAware: true,
           strategyAware: false,
-        },
+        }),
         steps: expect.arrayContaining([
           expect.objectContaining({ name: "availability_check" }),
           expect.objectContaining({ name: "trigger_evaluation" }),

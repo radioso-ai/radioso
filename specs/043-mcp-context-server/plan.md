@@ -9,11 +9,11 @@ Evolve the existing standalone MCP package into a more hostable remote product s
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.9 on Node.js 22
+**Language/Version**: TypeScript 5.9 on Node.js 24
 **Primary Dependencies**: `@modelcontextprotocol/server`, Zod v4, Vitest, tsx, Node built-ins (`crypto`, `fs`, `http`), a Redis client for optional shared-store mode
 **Storage**: Existing Radioso PostgreSQL state remains behind HTTP APIs; package-owned MCP session and approval state must support both in-memory local mode and shared-store mode for multi-instance hosting
 **Testing**: Vitest backend and package tests for the new backend context contract, workspace-aware policy resolution, shared-store session/approval behavior, and stateless remote HTTP transport; remote JSON-RPC smoke validation across at least two server instances when shared store is enabled
-**Target Platform**: Node.js 22 on macOS/Linux/Windows-compatible server environments
+**Target Platform**: Node.js 24 on macOS/Linux/Windows-compatible server environments
 **Project Type**: Monorepo web application with an extractable standalone package-owned server
 **Performance Goals**: Exchange and policy checks add negligible overhead relative to upstream Radioso calls; remote tool execution should add no more than one extra in-process policy/auth check and zero extra upstream round-trips beyond what each tool requires
 **Constraints**: No code-level mutual dependencies between backend app modules and MCP server code; no direct database access from the MCP package; backend TDD remains mandatory; secrets stay in env/config only; package-local state must remain replaceable; sticky-session-only deployment is not an acceptable end state for this slice

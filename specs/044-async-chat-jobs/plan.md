@@ -9,7 +9,7 @@ Codify Radioso's assistant execution model as two explicit classes while shippin
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)
 **Primary Dependencies**: Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing dashboard settings docs pipeline  
 **Storage**: PostgreSQL 16 with `pgvector`; existing conversations, messages, audit events, and document-processing jobs; no new persistence required in this feature  
 **Testing**: Vitest unit and integration coverage in `backend/tests`, plus targeted frontend or documentation verification where the settings/docs surface is touched  

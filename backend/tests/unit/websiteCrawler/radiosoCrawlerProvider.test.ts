@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RadiosoCrawlerProvider } from "../../../src/modules/websiteCrawler/radiosoCrawlerProvider.js";
 
@@ -13,6 +13,11 @@ vi.mock("@radioso/crawler", () => ({
 describe("RadiosoCrawlerProvider", () => {
   beforeEach(() => {
     mocks.crawlSite.mockReset();
+    delete process.env.WEBSITE_CRAWLER_USER_AGENT;
+  });
+
+  afterEach(() => {
+    delete process.env.WEBSITE_CRAWLER_USER_AGENT;
   });
 
   it("maps crawled pages into the website crawler provider contract", async () => {
@@ -44,6 +49,7 @@ describe("RadiosoCrawlerProvider", () => {
       baseUrl: "https://example.com",
       pageLimit: 5,
       pageConcurrency: 1,
+      userAgent: "RadiosoCrawler/1.0",
       signal: undefined,
     });
     expect(result).toEqual({
@@ -69,5 +75,20 @@ describe("RadiosoCrawlerProvider", () => {
         },
       }],
     });
+  });
+
+  it("passes the configured crawler user agent to the crawler package", async () => {
+    process.env.WEBSITE_CRAWLER_USER_AGENT = "ExampleDocsCrawler/1.0 (+https://example.com/crawler)";
+    mocks.crawlSite.mockResolvedValue([]);
+
+    const provider = new RadiosoCrawlerProvider();
+    await provider.crawl({
+      url: "https://example.com",
+      limit: 5,
+    });
+
+    expect(mocks.crawlSite).toHaveBeenCalledWith(expect.objectContaining({
+      userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)",
+    }));
   });
 });

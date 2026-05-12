@@ -9,7 +9,7 @@ Move document create and update flows from synchronous ingestion to a durable Po
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)
 **Primary Dependencies**: Express, pg, OpenAI SDK, Zod, Vitest, Supertest, Next.js App Router  
 **Storage**: PostgreSQL 16+ with `pgvector`; additive job/revision columns and processing-job table  
 **Testing**: Vitest unit, contract, integration, and persistence tests; frontend lint validation  

@@ -2,43 +2,266 @@ name: CI
 
 on:
   pull_request:
-    paths:
-      - backend/**
-      - packages/**
-      - .github/workflows/ci.yml
   push:
     branches:
       - main
-    paths:
-      - backend/**
-      - packages/**
-      - .github/workflows/ci.yml
 
 jobs:
-  backend-default-composition:
-    name: Backend Default Composition
+  backend:
+    name: Backend
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: radioso_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d radioso_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      INTEGRATION_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/radioso_test
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: |
+            backend/package-lock.json
+            packages/crawler/package-lock.json
 
       - name: Install backend dependencies
         working-directory: backend
+        run: npm ci
+
+      - name: Install crawler dependencies
+        working-directory: packages/crawler
         run: npm ci
 
       - name: Lint backend module boundaries
         working-directory: backend
         run: npm run lint:boundaries
 
-      - name: Build backend default composition
+      - name: Build backend
         working-directory: backend
         run: npm run build
 
-      - name: Test backend composition seams
+      - name: Test backend unit suite
         working-directory: backend
-        run: npm run test:composition
+        run: npm run test:unit
+
+      - name: Test backend integration suite
+        working-directory: backend
+        run: npm run test:integration
+
+      - name: Test backend contracts
+        working-directory: backend
+        run: npm run test:contract
+
+      - name: Upload backend OpenAPI artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: backend-openapi
+          path: |
+            backend/openapi.json
+            backend/openapi.yaml
+          if-no-files-found: error
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Test frontend unit suite
+        working-directory: frontend
+        run: npm test
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Test frontend end-to-end suite
+        working-directory: frontend
+        run: npm run test:e2e
+
+  docs-portal:
+    name: Docs Portal
+    runs-on: ubuntu-latest
+    needs: backend
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: docs-portal/package-lock.json
+
+      - name: Download backend OpenAPI artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: backend-openapi
+          path: backend
+
+      - name: Install docs portal dependencies
+        working-directory: docs-portal
+        run: npm ci
+
+      - name: Lint docs portal
+        working-directory: docs-portal
+        run: npm run lint
+
+      - name: Build docs portal
+        working-directory: docs-portal
+        run: npm run build
+
+  typescript-sdk:
+    name: TypeScript SDK
+    runs-on: ubuntu-latest
+    needs: backend
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: typescript-sdk/package-lock.json
+
+      - name: Download backend OpenAPI artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: backend-openapi
+          path: backend
+
+      - name: Install TypeScript SDK dependencies
+        working-directory: typescript-sdk
+        run: npm ci
+
+      - name: Build TypeScript SDK
+        working-directory: typescript-sdk
+        run: npm run build
+
+      - name: Test TypeScript SDK
+        working-directory: typescript-sdk
+        run: npm test
+
+  mcp-server:
+    name: MCP Server
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      RADIOSO_MCP_SMOKE_REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            packages/radioso-mcp-server/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Install MCP server dependencies
+        working-directory: packages/radioso-mcp-server
+        run: npm ci
+
+      - name: Build MCP server
+        working-directory: packages/radioso-mcp-server
+        run: npm run build
+
+      - name: Test MCP server
+        working-directory: packages/radioso-mcp-server
+        run: npm test
+
+      - name: Smoke test MCP server
+        working-directory: packages/radioso-mcp-server
+        run: npm run smoke:all
+
+  crawler:
+    name: Crawler Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/crawler/package-lock.json
+
+      - name: Install crawler dependencies
+        working-directory: packages/crawler
+        run: npm ci
+
+      - name: Build crawler
+        working-directory: packages/crawler
+        run: npm run build
+
+      - name: Test crawler
+        working-directory: packages/crawler
+        run: npm test
+
+  ee:
+    name: Enterprise Edition
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ee/package-lock.json
+
+      - name: Install Enterprise Edition dependencies
+        working-directory: ee
+        run: npm ci
+
+      - name: Build Enterprise Edition packages
+        working-directory: ee
+        run: npm run build
+
+      - name: Test Enterprise Edition packages
+        working-directory: ee
+        run: npm test

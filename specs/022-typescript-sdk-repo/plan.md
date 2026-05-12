@@ -9,7 +9,7 @@ Create an in-repo `typescript-sdk/` package for token-based external integration
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 for the SDK package and backend contract tooling  
+**Language/Version**: TypeScript 5.x on Node.js 24 for the SDK package and backend contract tooling
 **Primary Dependencies**: Existing backend code-first OpenAPI registry, npm package scripts, TypeScript build tooling, Vitest, and an OpenAPI-to-TypeScript client generation toolchain for contract-derived models and operations  
 **Storage**: Filesystem only for generated contract snapshots and package artifacts under `typescript-sdk/`; PostgreSQL unchanged  
 **Testing**: Vitest contract and integration validation in `backend/tests` and `typescript-sdk/tests`; quickstart verification against a running Radioso backend  

@@ -42,6 +42,7 @@ COPY packages/document-parser ../packages/document-parser
 RUN rm -rf node_modules/@radioso/crawler && \
     mkdir -p node_modules/@radioso && \
     ln -s ../../../packages/crawler node_modules/@radioso/crawler
+RUN npm run install:crawler
 RUN npm run build
 
 FROM node:24-bookworm-slim AS runtime

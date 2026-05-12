@@ -9,7 +9,7 @@ Refactor Radioso's Enterprise Edition structure so existing Enterprise capabilit
 
 ## Technical Context
 
-**Language/Version**: TypeScript on Node.js 22 for backend/packages/scripts, React 19 and Next.js 16 for frontend packages
+**Language/Version**: TypeScript on Node.js 24 for backend/packages/scripts, React 19 and Next.js 16 for frontend packages
 **Primary Dependencies**: Existing Express application module system, Vitest, npm workspaces, local Node scripts
 **Storage**: PostgreSQL remains unchanged; no schema or data migration changes
 **Testing**: Vitest for backend, Enterprise package, and script validation; existing build scripts for backend, frontend, and EE packages

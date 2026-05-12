@@ -9,7 +9,7 @@ Add backend-only post-generation answer support validation that treats citation 
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22  
+**Language/Version**: TypeScript 5.x on Node.js 24
 **Primary Dependencies**: Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest  
 **Storage**: PostgreSQL 16 with `pgvector` unchanged; additive audit-event metadata only, no schema change planned  
 **Testing**: Vitest unit, integration, and contract suites under `backend/tests` with backend TDD first  

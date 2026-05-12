@@ -2,6 +2,9 @@
   "name": "radioso-frontend",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "predev": "if [ \"${RADIOSO_EDITION:-oss}\" = \"enterprise\" ]; then :; else node ../scripts/sync-ee-frontend-routes.mjs disable; fi",
     "dev": "next dev --webpack --port 3000",
@@ -43,7 +46,7 @@
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.2.0",
-    "@types/node": "^22",
+    "@types/node": "^24",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "eslint": "^9.22.0",

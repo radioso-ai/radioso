@@ -72,6 +72,13 @@ resource "google_cloud_run_v2_service" "backend" {
           value = env.value
         }
       }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? [local.app_base_url] : []
+        content {
+          name  = "APP_BASE_URL"
+          value = env.value
+        }
+      }
       env {
         name  = "GOOGLE_CLOUD_PROJECT"
         value = var.project_id

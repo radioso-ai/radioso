@@ -9,7 +9,7 @@ Add workspace-scoped assistant bootstrap settings to General Settings, extend au
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend)
 **Primary Dependencies**: Express, `pg`, Zod, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router  
 **Storage**: PostgreSQL 16 with additive workspace-scoped columns on `workspaces`; existing conversations/messages tables  
 **Testing**: Vitest unit/contract/integration tests for backend; targeted frontend verification through existing component behavior  

@@ -9,7 +9,7 @@ Add optional JSONB metadata to documents and chunks. Metadata is accepted at doc
 
 ## Technical Context
 
-**Language/Version**: TypeScript / Node.js 22
+**Language/Version**: TypeScript / Node.js 24
 **Primary Dependencies**: Express, Zod, pg (node-postgres)
 **Storage**: PostgreSQL 16 with pgvector — JSONB columns with GIN indexes
 **Testing**: Vitest (unit, integration, contract)

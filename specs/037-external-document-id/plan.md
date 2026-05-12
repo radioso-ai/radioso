@@ -9,7 +9,7 @@ Add an optional immutable `externalDocumentId` to the existing inline document w
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend  
+**Language/Version**: TypeScript 5.x on Node.js 24 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend
 **Primary Dependencies**: Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router  
 **Storage**: PostgreSQL 16 with `pgvector`; additive `documents.external_document_id` persistence with workspace-scoped uniqueness  
 **Testing**: Vitest unit, integration, and contract tests in `backend/tests`; OpenAPI contract verification through existing contract coverage  

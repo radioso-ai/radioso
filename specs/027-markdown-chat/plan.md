@@ -9,7 +9,7 @@ Add a safe markdown renderer for assistant chat answers so structured responses 
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.7 on Node.js 22, React 19, Next.js 16  
+**Language/Version**: TypeScript 5.7 on Node.js 24, React 19, Next.js 16
 **Primary Dependencies**: `react-markdown`, `remark-breaks`, existing Radix UI primitives, Lucide icons  
 **Storage**: N/A; presentation-only feature with no new persistence  
 **Testing**: Vitest with static React rendering assertions against assistant message content  

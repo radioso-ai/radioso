@@ -9,7 +9,7 @@ Add optional free-form trigger instructions to retrieval metadata rules so retri
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)
 **Primary Dependencies**: Express, Zod, `pg`, Pino, OpenAI SDK, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives  
 **Storage**: PostgreSQL 16 with existing `retrieval_settings.attribute_controls` JSON payloads plus existing `audit_events.metadata_json` diagnostics surfaces  
 **Testing**: Vitest and Supertest for backend TDD; Vitest for targeted frontend coverage where the feature changes client-side rule editing behavior  

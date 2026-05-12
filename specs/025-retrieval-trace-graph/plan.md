@@ -9,7 +9,7 @@ Add an operator-facing retrieval trace for each retrieval-backed assistant answe
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend  
+**Language/Version**: TypeScript 5.x on Node.js 24 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend
 **Primary Dependencies**: Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives, React Flow for the trace graph UI  
 **Storage**: PostgreSQL 16 with `pgvector`; reuse existing audit-event metadata for persisted trace replay, no new storage system planned  
 **Testing**: Vitest unit, contract, and integration tests under `backend/tests`; frontend component/state verification in existing frontend test approach plus manual operator-flow verification  

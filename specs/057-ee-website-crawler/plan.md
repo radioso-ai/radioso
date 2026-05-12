@@ -9,7 +9,7 @@ Build the first Enterprise-only website crawler provider seam. The implementatio
 
 ## Technical Context
 
-**Language/Version**: TypeScript on Node.js 22
+**Language/Version**: TypeScript on Node.js 24
 **Primary Dependencies**: Existing Enterprise backend module, Express, Zod, existing Radioso document ingestion service
 **Storage**: Existing PostgreSQL-backed Radioso documents and document processing jobs only; no new crawler tables in this slice
 **Testing**: Vitest and Supertest in `ee/packages/backend-module`, plus existing backend composition tests

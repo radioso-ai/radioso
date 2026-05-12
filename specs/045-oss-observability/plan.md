@@ -16,7 +16,7 @@ and optional sink fan-out can be verified independently.
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend for later analytics emitters only)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend for later analytics emitters only)
 **Primary Dependencies**: Express, `pg`, Pino, Zod, OpenAI SDK, Vitest, Supertest, existing audit and retrieval modules; planned vendor-neutral telemetry and metrics libraries only when implementation begins  
 **Storage**: PostgreSQL 16 with `pgvector`; existing `audit_events` as the initial durable event sink; no new external storage required for the planning phase  
 **Testing**: Vitest unit and integration tests in `backend/tests`, runtime configuration regression coverage, and targeted route/runtime verification for metrics and incident capture paths  

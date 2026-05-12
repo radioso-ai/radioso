@@ -11,7 +11,7 @@ The highest-risk area is `backend/src/app/server/dependencies.ts`, which current
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 for backend packages; TypeScript 5.7 with React 19 and Next.js 16 for frontend if UI visibility is needed
+**Language/Version**: TypeScript 5.x on Node.js 24 for backend packages; TypeScript 5.7 with React 19 and Next.js 16 for frontend if UI visibility is needed
 **Primary Dependencies**: Express, pg, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing local packages under `packages/`
 **Storage**: PostgreSQL 16 with `pgvector`; no new persisted data is planned for this feature
 **Testing**: Vitest for backend unit/integration tests; existing backend build scripts; Playwright only if planning discovers user-visible frontend behavior

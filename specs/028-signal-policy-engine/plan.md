@@ -9,7 +9,7 @@ Replace the legacy retrieval `attributeControls` enum model with generic `signal
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend  
+**Language/Version**: TypeScript 5.x on Node.js 24 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend
 **Primary Dependencies**: Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, Radix UI primitives  
 **Storage**: PostgreSQL 16 with `pgvector`; additive retrieval-settings migration for `signal_policies` plus compatibility reads from legacy `attribute_controls`  
 **Testing**: Vitest unit, integration, and contract tests in `backend/tests`; frontend validation through existing settings UI flows and feature quickstart  

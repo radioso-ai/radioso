@@ -7,7 +7,7 @@ Or you can run Radioso, upload your documents, and have an assistant that knows 
 
 ## Quick Start
 
-**Prerequisites:** Node.js 22+, Docker Desktop, and at least one of `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `ANTHROPIC_API_KEY`.
+**Prerequisites:** Node.js 24+, Docker Desktop, and at least one of `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `ANTHROPIC_API_KEY`.
 
 ```bash
 ./run-dev.sh

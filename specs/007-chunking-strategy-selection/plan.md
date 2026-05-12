@@ -9,7 +9,7 @@ Add an account-scoped chunking strategy selector to retrieval settings, keep fix
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)
 **Primary Dependencies**: Express, pg, OpenAI SDK, Zod, Pino, Next.js App Router, Radix UI primitives, existing embedding service and test support utilities  
 **Storage**: PostgreSQL `retrieval_settings` plus existing `documents` and `chunks` tables; no new top-level storage system  
 **Testing**: Vitest + Supertest for backend TDD; existing contract, integration, and unit test suites plus targeted frontend settings verification  

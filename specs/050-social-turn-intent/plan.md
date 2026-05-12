@@ -17,7 +17,7 @@ answer-instruction docs.
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)
 **Primary Dependencies**: Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing prompt-loader and retrieval/chat service seams  
 **Storage**: PostgreSQL 16 with existing conversations, messages, retrieval settings, and additive assistant-turn audit metadata only
 **Testing**: Vitest unit and integration tests in `backend/tests`; targeted frontend copy/doc verification for settings surfaces

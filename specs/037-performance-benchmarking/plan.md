@@ -9,7 +9,7 @@ Add a repo-owned performance benchmarking harness that defines repeatable worklo
 
 ## Technical Context
 
-**Language/Version**: Node.js 22 ESM scripts for the benchmark harness, plus existing TypeScript 5.x backend and TypeScript 5.7 frontend  
+**Language/Version**: Node.js 24 ESM scripts for the benchmark harness, plus existing TypeScript 5.x backend and TypeScript 5.7 frontend
 **Primary Dependencies**: existing Node.js toolchain, `pg`, Docker Compose, benchmark-harness dependencies for HTTP load generation and result formatting, existing backend/frontend package scripts  
 **Storage**: PostgreSQL 16 for app state under test; filesystem-backed benchmark definitions in the repo and gitignored run artifacts under `.context/performance-runs/`  
 **Testing**: Node test runner or Vitest for profile/schema/result-comparison logic, integration smoke runs against local Compose stack, targeted regression tests for budget evaluation and collector safety  

@@ -9,7 +9,7 @@ Add skill shape resolution for `retrieval.answer` and expose the result through 
 
 ## Technical Context
 
-**Language/Version**: TypeScript on Node.js 22
+**Language/Version**: TypeScript on Node.js 24
 **Primary Dependencies**: Express, Zod, OpenAPI registry, existing retrieval services
 **Storage**: Existing PostgreSQL audit metadata only; no new schema
 **Testing**: Vitest, Supertest, backend contract/integration tests

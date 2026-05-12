@@ -9,7 +9,7 @@ Extend retrieval settings with separate semantic and lexical rewrite instruction
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend  
+**Language/Version**: TypeScript 5.x on Node.js 24 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend
 **Primary Dependencies**: Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, Radix UI primitives  
 **Storage**: PostgreSQL 16 with `pgvector`; additive retrieval-settings persistence for semantic and lexical rewrite instruction fields  
 **Testing**: Vitest unit, integration, and contract tests in `backend/tests`; frontend verification through the existing retrieval settings flow and retrieval trace UI  

@@ -9,7 +9,7 @@ Replace Hivec's heuristic post-processing citation placement with explicit backe
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)
 **Primary Dependencies**: Express, OpenAI SDK, pg, Zod, Pino, Vitest, Supertest, Next.js App Router, existing chat streaming route  
 **Storage**: PostgreSQL unchanged; no new persisted data for this feature  
 **Testing**: Vitest + Supertest with backend TDD first; targeted frontend build verification  

@@ -9,7 +9,7 @@ Split the backend into explicit API and document-worker runtimes while preservin
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22  
+**Language/Version**: TypeScript 5.x on Node.js 24
 **Primary Dependencies**: Express, `pg`, Zod, Pino, Vitest, Supertest, local connector packages  
 **Storage**: PostgreSQL 16 with `pgvector`, existing `document_processing_jobs`, existing connector config persistence  
 **Testing**: Vitest unit, integration, and contract tests  

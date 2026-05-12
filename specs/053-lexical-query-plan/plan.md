@@ -9,7 +9,7 @@ Radioso will stop treating LLM lexical alternatives as one plain-text query. The
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22
+**Language/Version**: TypeScript 5.x on Node.js 24
 **Primary Dependencies**: Express, pg, OpenAI SDK, Zod, Pino, Vitest, Supertest
 **Storage**: PostgreSQL 16 with `pgvector`; no schema change planned
 **Testing**: Vitest unit tests and focused integration coverage where needed

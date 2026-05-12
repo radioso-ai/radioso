@@ -4,7 +4,7 @@ This guide shows how to install the SDK, configure a client, and make your first
 
 ## What You Need
 
-- Node.js 22+
+- Node.js 24+
 - A Radioso base URL
 - An API token
 

@@ -9,7 +9,7 @@ Introduce a retrieval module public surface and enforce it as the only productio
 
 ## Technical Context
 
-**Language/Version**: TypeScript on Node.js 22
+**Language/Version**: TypeScript on Node.js 24
 **Primary Dependencies**: Express backend, Vitest/Supertest, TypeScript compiler, dependency-cruiser for source boundary validation
 **Storage**: PostgreSQL with `pgvector` remains unchanged; no schema or persistence change
 **Testing**: Vitest unit/composition tests, `npm run build`, dependency-cruiser boundary lint

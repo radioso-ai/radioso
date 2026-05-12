@@ -9,7 +9,7 @@ Replace the fake SSE replay path with a real streaming orchestration flow. The r
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22  
+**Language/Version**: TypeScript 5.x on Node.js 24
 **Primary Dependencies**: Express, OpenAI SDK 5.x, Zod, Vitest, Supertest  
 **Storage**: PostgreSQL repositories in production, in-memory fakes in tests  
 **Testing**: Backend unit and contract tests with TDD, plus targeted TypeScript build validation via `npm test` in `backend/`  

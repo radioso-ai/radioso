@@ -9,7 +9,7 @@ Replace direct OpenAI-only dependency wiring with a provider-neutral capability 
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22  
+**Language/Version**: TypeScript 5.x on Node.js 24
 **Primary Dependencies**: Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, native `fetch` for non-OpenAI REST integrations  
 **Storage**: PostgreSQL 16 with `pgvector` (unchanged)  
 **Testing**: Vitest unit, contract, and integration tests under `backend/tests`  

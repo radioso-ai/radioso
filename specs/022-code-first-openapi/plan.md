@@ -9,7 +9,7 @@ Replace the backend’s hand-maintained OpenAPI draft with a code-first document
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22  
+**Language/Version**: TypeScript 5.x on Node.js 24
 **Primary Dependencies**: Express, Zod, `@asteasolutions/zod-to-openapi`, `swagger-ui-express`, `yaml`, Vitest, Supertest  
 **Storage**: PostgreSQL 16 with `pgvector` (unchanged)  
 **Testing**: Vitest contract tests and TypeScript build validation under `backend/`  

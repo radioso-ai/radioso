@@ -9,7 +9,7 @@ Deliver the approved website-embed follow-up scope for script-level overrides on
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)
 **Primary Dependencies**: Express, Zod, `pg`, Pino, Next.js App Router, existing Radix/shadcn UI primitives, existing chat/public-chat frontend utilities  
 **Storage**: PostgreSQL 16 unchanged for this scope; existing conversations/messages/audit events reused with no new persisted override fields  
 **Testing**: Vitest, existing backend/frontend focused unit or contract suites as applicable  

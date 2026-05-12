@@ -9,7 +9,7 @@ Remediate the confirmed repo security findings as one coordinated release: remov
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend)
 **Primary Dependencies**: Express, pg, Zod, OpenAI SDK, Next.js App Router, Radix/shadcn UI, existing local parser package under `/packages`  
 **Storage**: PostgreSQL 16 with `pgvector`; additive durable abuse-control persistence; existing sessions, workspace tokens, and connector config records  
 **Testing**: Vitest unit/integration/contract suites, Supertest for backend HTTP contracts, targeted frontend unit coverage for session/bootstrap changes  

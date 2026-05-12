@@ -9,7 +9,7 @@ Add a self-serve password reset flow for login users with uniform request respon
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)
 **Primary Dependencies**: Express, Zod, `pg`, Pino, Vitest, Supertest, Next.js App Router, shadcn/Radix UI primitives  
 **Storage**: PostgreSQL 16 with existing `sessions`, `users`, `account_memberships`, `audit_events`; additive `password_reset_tokens` table  
 **Testing**: Vitest, Supertest, frontend unit tests where UI behavior warrants coverage  

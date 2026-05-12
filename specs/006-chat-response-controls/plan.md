@@ -9,7 +9,7 @@ Add account-scoped chat response controls for warmth and closing-question behavi
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)
 **Primary Dependencies**: Express, pg, OpenAI SDK, Zod, Pino, Next.js App Router, Radix UI Slider/Hover Card  
 **Storage**: PostgreSQL account-scoped settings in `retrieval_settings`; existing chat response payloads and SSE events  
 **Testing**: Vitest + Supertest for backend TDD; frontend lint plus targeted UI verification for settings and citation rendering flows  

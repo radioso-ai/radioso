@@ -9,7 +9,7 @@ Replace the current workstation-specific `run-dev.sh` behavior with a real defau
 
 ## Technical Context
 
-**Language/Version**: Node.js 22 ESM script for the default bootstrap entry point, plus existing Bash wrapper compatibility; existing TypeScript backend/frontend remain unchanged  
+**Language/Version**: Node.js 24 ESM script for the default bootstrap entry point, plus existing Bash wrapper compatibility; existing TypeScript backend/frontend remain unchanged
 **Primary Dependencies**: Node built-ins (`fs`, `path`, `child_process`, `readline`, `crypto`), Docker CLI with `docker compose`, existing Compose files under `infra/`, backend `.env.example` contract, Node test runner for bootstrap coverage  
 **Storage**: Local filesystem for `backend/.env`; existing Docker-managed PostgreSQL volume via Compose  
 **Testing**: `node:test` coverage for bootstrap modules plus targeted shell/integration verification of the default command path  

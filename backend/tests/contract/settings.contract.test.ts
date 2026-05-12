@@ -425,7 +425,7 @@ describe("settings contract", () => {
   it("documents the retrieval and ingestion settings split in the generated schema", () => {
     const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
     const retrievalSettingsSchema = spec.match(/RetrievalSettings:\n([\s\S]*?)\n    UpdateRetrievalSettingsRequest:/)?.[1] ?? "";
-    const retrievalUpdateSchema = spec.match(/UpdateRetrievalSettingsRequest:\n([\s\S]*?)\n    IngestionSettings:/)?.[1] ?? "";
+    const retrievalUpdateSchema = spec.match(/UpdateRetrievalSettingsRequest:\n([\s\S]*?)\n    RetrievalSettingsOverride:/)?.[1] ?? "";
     const ingestionSettingsSchema = spec.match(/IngestionSettings:\n([\s\S]*?)\n    UpdateIngestionSettingsRequest:/)?.[1] ?? "";
     const ingestionUpdateSchema = spec.match(/UpdateIngestionSettingsRequest:\n([\s\S]*?)\n    RetrievalMetadataRule:/)?.[1] ?? "";
 

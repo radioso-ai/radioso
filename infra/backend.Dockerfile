@@ -25,6 +25,7 @@ COPY packages/document-parser/*.js ../packages/document-parser/
 COPY packages/document-parser/parsers ../packages/document-parser/parsers
 COPY --from=ee-backend-build /app/ee/packages/backend-module ../ee/packages/backend-module
 RUN npm ci && \
+    npm --prefix ../packages/crawler ci && \
     if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
       npm install --install-links=true --no-save --package-lock=false --no-audit --no-fund ../ee/packages/backend-module; \
     fi
@@ -73,16 +74,16 @@ RUN npm ci --omit=dev && \
       npm install --install-links=true --omit=dev --no-save --package-lock=false --no-audit --no-fund ../ee/packages/backend-module; \
     fi
 
-COPY --from=build /app/backend/dist ./dist
-COPY --from=build /app/packages/crawler/dist ../packages/crawler/dist
-COPY --from=build /app/backend/openapi.yaml ./openapi.yaml
-COPY --from=build /app/backend/prompts ./prompts
+COPY --chown=node:node --from=build /app/backend/dist ./dist
+COPY --chown=node:node --from=build /app/packages/crawler/dist ../packages/crawler/dist
+COPY --chown=node:node --from=build /app/backend/openapi.yaml ./openapi.yaml
+COPY --chown=node:node --from=build /app/backend/prompts ./prompts
 
 RUN rm -rf node_modules/@radioso/crawler && \
     mkdir -p node_modules/@radioso && \
     ln -s ../../../packages/crawler node_modules/@radioso/crawler
 
-RUN mkdir -p /app/.context/document-storage && chown -R node:node /app
+RUN mkdir -p /app/.context/document-storage && chown -R node:node /app/.context
 USER node
 
 EXPOSE 8080

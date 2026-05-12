@@ -46,6 +46,12 @@ export type {
   UpdateRetrievalSettingsRequest,
   WorkspaceSummaryResponse,
   WorkspaceIngestionReprocessResponse,
+  WebsiteCrawlRequest,
+  WebsiteCrawlJobResponse,
+  WebsiteCrawlJobStatus,
+  WebsiteCrawlJobSummary,
+  WebsiteCrawlJobListResponse,
+  WebsiteCrawlJobListQuery,
 } from "./generated/client.js";
 export type { RadiosoClientOptions } from "./core/config.js";
 export type { RadiosoChatStreamEvent } from "./streaming/chatStream.js";

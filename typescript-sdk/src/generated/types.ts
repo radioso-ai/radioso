@@ -695,6 +695,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/document/crawl/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List recent website crawl jobs for the workspace */
+        get: operations["listWebsiteCrawlJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/crawl/jobs/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a completed or failed website crawl job */
+        delete: operations["deleteWebsiteCrawlJob"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/document/{documentId}": {
         parameters: {
             query?: never;
@@ -1050,6 +1084,7 @@ export interface components {
             hasReadyDocuments: boolean;
             hasCompletedChat: boolean;
             sampleDocumentsImported: boolean;
+            websiteCrawlerEnabled: boolean;
         };
         WorkspaceTokenResponse: {
             token: string;
@@ -1847,6 +1882,29 @@ export interface components {
                 sourceUrl: string;
                 reason: string;
             }[];
+        };
+        /** @enum {string} */
+        WebsiteCrawlJobStatus: "queued" | "processing" | "completed" | "failed";
+        WebsiteCrawlJobSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uri */
+            requestedUrl: string;
+            status: components["schemas"]["WebsiteCrawlJobStatus"];
+            limit: number;
+            /** Format: uuid */
+            sourceId: string | null;
+            documentCount: number | null;
+            lastError: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            completedAt: string | null;
+        };
+        WebsiteCrawlJobListResponse: {
+            jobs: components["schemas"]["WebsiteCrawlJobSummary"][];
         };
         Citation: {
             /** Format: uuid */
@@ -4648,6 +4706,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Website crawler is disabled for this deployment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Rate limit exceeded */
             429: {
                 headers: {
@@ -4659,6 +4726,131 @@ export interface operations {
             };
             /** @description Website crawler provider is not configured */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWebsiteCrawlJobs: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["WebsiteCrawlJobStatus"];
+                sinceMinutes?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recent crawl jobs returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebsiteCrawlJobListResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Website crawler is disabled for this deployment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteWebsiteCrawlJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Crawl job deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Crawl job not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Crawl job is still in progress and cannot be deleted */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate limit exceeded */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

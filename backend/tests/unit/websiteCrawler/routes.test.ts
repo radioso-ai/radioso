@@ -93,6 +93,8 @@ const createApp = (dependencies: Partial<Record<keyof RouteDependencies, unknown
         requestedUrl: "https://example.com",
         status: "queued",
       }),
+      listForWorkspace: vi.fn().mockResolvedValue([]),
+      deleteJob: vi.fn().mockResolvedValue(undefined),
     },
     assertCrawlUrlAllowed: async () => undefined,
     ...dependencies,
@@ -277,6 +279,189 @@ describe("website crawler routes", () => {
       accountId: "account-1",
       workspaceId: "workspace-token",
     }));
+  });
+
+  it("returns recent crawl jobs scoped to the workspace", async () => {
+    const job = {
+      id: "11111111-1111-4111-8111-111111111111",
+      requestedUrl: "https://example.com",
+      status: "completed" as const,
+      limit: 5,
+      sourceId: "22222222-2222-4222-8222-222222222222",
+      documentCount: 3,
+      lastError: null,
+      createdAt: "2026-05-11T10:00:00.000Z",
+      updatedAt: "2026-05-11T10:05:00.000Z",
+      completedAt: "2026-05-11T10:05:00.000Z",
+    };
+    const listForWorkspace = vi.fn().mockResolvedValue([job]);
+
+    const response = await request(createApp({
+      websiteCrawlJobService: { enqueue: vi.fn(), listForWorkspace },
+    }))
+      .get("/api/v1/document/crawl/jobs")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("x-workspace-id", "workspace-1")
+      .expect(200);
+
+    expect(response.body).toEqual({ jobs: [job] });
+    expect(listForWorkspace).toHaveBeenCalledWith("workspace-1", expect.objectContaining({
+      sinceMinutes: 30,
+    }));
+  });
+
+  it("forwards crawl job list query parameters", async () => {
+    const listForWorkspace = vi.fn().mockResolvedValue([]);
+
+    await request(createApp({
+      websiteCrawlJobService: { enqueue: vi.fn(), listForWorkspace },
+    }))
+      .get("/api/v1/document/crawl/jobs?status=processing&sinceMinutes=15&limit=10")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("x-workspace-id", "workspace-1")
+      .expect(200);
+
+    expect(listForWorkspace).toHaveBeenCalledWith("workspace-1", {
+      status: "processing",
+      sinceMinutes: 15,
+      limit: 10,
+    });
+  });
+
+  it("rejects invalid crawl job list queries", async () => {
+    const listForWorkspace = vi.fn().mockResolvedValue([]);
+
+    const response = await request(createApp({
+      websiteCrawlJobService: { enqueue: vi.fn(), listForWorkspace },
+    }))
+      .get("/api/v1/document/crawl/jobs?status=bogus")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("x-workspace-id", "workspace-1")
+      .expect(400);
+
+    expect(response.body.error.code).toBe("bad_request");
+    expect(listForWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("requires a signed-in account session for listing jobs", async () => {
+    await request(createApp())
+      .get("/api/v1/document/crawl/jobs")
+      .expect(401);
+  });
+
+  it("deletes a terminal crawl job through the workspace-scoped DELETE endpoint", async () => {
+    const deleteJob = vi.fn().mockResolvedValue(undefined);
+    await request(createApp({
+      websiteCrawlJobService: { enqueue: vi.fn(), listForWorkspace: vi.fn(), deleteJob },
+    }))
+      .delete("/api/v1/document/crawl/jobs/11111111-1111-4111-8111-111111111111")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("x-workspace-id", "workspace-1")
+      .expect(204);
+
+    expect(deleteJob).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      jobId: "11111111-1111-4111-8111-111111111111",
+    });
+  });
+
+  it("returns 409 when DELETE targets an in-flight job", async () => {
+    const deleteJob = vi.fn().mockRejectedValue({
+      statusCode: 409,
+      code: "conflict",
+      message: "Crawl job is still in progress and cannot be deleted",
+    });
+
+    const response = await request(createApp({
+      websiteCrawlJobService: { enqueue: vi.fn(), listForWorkspace: vi.fn(), deleteJob },
+    }))
+      .delete("/api/v1/document/crawl/jobs/11111111-1111-4111-8111-111111111111")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("x-workspace-id", "workspace-1")
+      .expect(409);
+
+    expect(response.body.error.code).toBe("conflict");
+  });
+
+  it("returns 404 when DELETE targets a missing job", async () => {
+    const deleteJob = vi.fn().mockRejectedValue({
+      statusCode: 404,
+      code: "not_found",
+      message: "Crawl job not found",
+    });
+
+    await request(createApp({
+      websiteCrawlJobService: { enqueue: vi.fn(), listForWorkspace: vi.fn(), deleteJob },
+    }))
+      .delete("/api/v1/document/crawl/jobs/11111111-1111-4111-8111-111111111111")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("x-workspace-id", "workspace-1")
+      .expect(404);
+  });
+
+  it("rejects DELETE without a session", async () => {
+    await request(createApp())
+      .delete("/api/v1/document/crawl/jobs/11111111-1111-4111-8111-111111111111")
+      .expect(401);
+  });
+
+  it("rate-limits the GET /jobs endpoint via abuse control", async () => {
+    const enforce = vi.fn().mockRejectedValue({
+      statusCode: 429,
+      code: "rate_limited",
+      message: "Too many requests",
+    });
+    const listForWorkspace = vi.fn().mockResolvedValue([]);
+
+    await request(createApp({
+      abuseControlService: { enforce },
+      websiteCrawlJobService: { enqueue: vi.fn(), listForWorkspace, deleteJob: vi.fn() },
+    }))
+      .get("/api/v1/document/crawl/jobs")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("x-workspace-id", "workspace-1")
+      .expect(429);
+
+    expect(enforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "document.crawl.jobs.read",
+    }));
+    expect(listForWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits the DELETE /jobs/:jobId endpoint via abuse control", async () => {
+    const enforce = vi.fn().mockRejectedValue({
+      statusCode: 429,
+      code: "rate_limited",
+      message: "Too many requests",
+    });
+    const deleteJob = vi.fn();
+
+    await request(createApp({
+      abuseControlService: { enforce },
+      websiteCrawlJobService: { enqueue: vi.fn(), listForWorkspace: vi.fn(), deleteJob },
+    }))
+      .delete("/api/v1/document/crawl/jobs/11111111-1111-4111-8111-111111111111")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("x-workspace-id", "workspace-1")
+      .expect(429);
+
+    expect(enforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "document.crawl.jobs.read",
+    }));
+    expect(deleteJob).not.toHaveBeenCalled();
+  });
+
+  it("rejects DELETE with an invalid job id", async () => {
+    const deleteJob = vi.fn();
+    await request(createApp({
+      websiteCrawlJobService: { enqueue: vi.fn(), listForWorkspace: vi.fn(), deleteJob },
+    }))
+      .delete("/api/v1/document/crawl/jobs/not-a-uuid")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("x-workspace-id", "workspace-1")
+      .expect(400);
+
+    expect(deleteJob).not.toHaveBeenCalled();
   });
 
   it("falls back to bearer token auth when a stale session cookie is present", async () => {

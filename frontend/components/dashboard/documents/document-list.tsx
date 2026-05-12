@@ -1,6 +1,6 @@
 'use client'
 
-import { FileText, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { FileText, Globe, Plus, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
@@ -87,13 +87,19 @@ function DocumentRow({
 }) {
   const isFailed = document.status.toLowerCase() === 'failed'
   const isImported = document.sourceKind === 'uploaded_file'
+  const isWebsite = document.source?.kind === 'website'
+  const websiteSourceLabel = isWebsite ? document.source?.externalId ?? document.source?.name ?? null : null
   const hasError = Boolean((isFailed && document.failureReason) || deleteError || retryError)
 
   return (
     <DashboardTableRow>
       <DashboardTableCell className="w-12 pr-0">
         <div className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-muted/60">
-          <FileText className="h-4 w-4 text-muted-foreground" />
+          {isWebsite ? (
+            <Globe className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          )}
         </div>
       </DashboardTableCell>
       <DashboardTableCell>
@@ -106,6 +112,9 @@ function DocumentRow({
         </button>
         {isImported && document.sourceFilename ? (
           <p className="mt-1 truncate text-xs text-muted-foreground">Imported from {document.sourceFilename}</p>
+        ) : null}
+        {isWebsite && websiteSourceLabel ? (
+          <p className="mt-1 truncate text-xs text-muted-foreground">Crawled from {websiteSourceLabel}</p>
         ) : null}
         {hasError ? (
           <div className="mt-1 space-y-0.5">

@@ -201,6 +201,7 @@ const WorkspaceSummaryResponseSchema = registry.register(
     hasReadyDocuments: z.boolean(),
     hasCompletedChat: z.boolean(),
     sampleDocumentsImported: z.boolean(),
+    websiteCrawlerEnabled: z.boolean(),
   }),
 );
 
@@ -873,6 +874,40 @@ const WebsiteCrawlPublicationResponseSchema = registry.register(
     })),
   }),
 );
+
+const WebsiteCrawlJobStatusSchema = registry.register(
+  "WebsiteCrawlJobStatus",
+  z.enum(["queued", "processing", "completed", "failed"]),
+);
+
+const WebsiteCrawlJobSummarySchema = registry.register(
+  "WebsiteCrawlJobSummary",
+  z.object({
+    id: z.string().uuid(),
+    requestedUrl: z.string().url(),
+    status: WebsiteCrawlJobStatusSchema,
+    limit: z.number().int().min(1),
+    sourceId: z.string().uuid().nullable(),
+    documentCount: z.number().int().min(0).nullable(),
+    lastError: z.string().nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    completedAt: z.string().datetime().nullable(),
+  }),
+);
+
+const WebsiteCrawlJobListResponseSchema = registry.register(
+  "WebsiteCrawlJobListResponse",
+  z.object({
+    jobs: z.array(WebsiteCrawlJobSummarySchema),
+  }),
+);
+
+const WebsiteCrawlJobListQuerySchema = z.object({
+  status: WebsiteCrawlJobStatusSchema.optional(),
+  sinceMinutes: z.coerce.number().int().min(1).max(1440).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
 
 const CitationSchema = registry.register(
   "Citation",
@@ -3455,8 +3490,127 @@ registry.registerPath({
         },
       },
     },
+    404: {
+      description: "Website crawler is disabled for this deployment",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
     503: {
       description: "Website crawler provider is not configured",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/document/crawl/jobs",
+  tags: ["Documents"],
+  summary: "List recent website crawl jobs for the workspace",
+  operationId: "listWebsiteCrawlJobs",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    query: WebsiteCrawlJobListQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Recent crawl jobs returned",
+      content: {
+        "application/json": {
+          schema: WebsiteCrawlJobListResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Website crawler is disabled for this deployment",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    429: {
+      description: "Rate limit exceeded",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/document/crawl/jobs/{jobId}",
+  tags: ["Documents"],
+  summary: "Delete a completed or failed website crawl job",
+  operationId: "deleteWebsiteCrawlJob",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    params: z.object({ jobId: z.string().uuid() }),
+  },
+  responses: {
+    204: {
+      description: "Crawl job deleted",
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Crawl job not found in this workspace",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: "Crawl job is still in progress and cannot be deleted",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    429: {
+      description: "Rate limit exceeded",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,

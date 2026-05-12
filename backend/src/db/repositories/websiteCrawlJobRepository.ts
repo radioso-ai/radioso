@@ -40,23 +40,28 @@ interface WebsiteCrawlJobRow {
   updated_at: Date;
 }
 
-const selectWebsiteCrawlJob = `
-  id,
-  account_id,
-  workspace_id,
-  source_id,
-  requested_url,
-  crawl_limit,
-  status,
-  attempt_count,
-  result_json,
-  last_error,
-  available_at,
-  claimed_at,
-  completed_at,
-  created_at,
-  updated_at
-`;
+const websiteCrawlJobColumns = [
+  "id",
+  "account_id",
+  "workspace_id",
+  "source_id",
+  "requested_url",
+  "crawl_limit",
+  "status",
+  "attempt_count",
+  "result_json",
+  "last_error",
+  "available_at",
+  "claimed_at",
+  "completed_at",
+  "created_at",
+  "updated_at",
+] as const;
+
+const selectWebsiteCrawlJob = websiteCrawlJobColumns.join(", ");
+
+const selectWebsiteCrawlJobAs = (alias: string): string =>
+  websiteCrawlJobColumns.map((column) => `${alias}.${column}`).join(", ");
 
 const mapWebsiteCrawlJob = (row: WebsiteCrawlJobRow): WebsiteCrawlJobRecord => ({
   id: row.id,
@@ -76,6 +81,12 @@ const mapWebsiteCrawlJob = (row: WebsiteCrawlJobRow): WebsiteCrawlJobRecord => (
   updatedAt: new Date(row.updated_at),
 });
 
+export interface WebsiteCrawlJobListOptions {
+  status?: WebsiteCrawlJobStatus;
+  since?: Date;
+  limit?: number;
+}
+
 export interface WebsiteCrawlJobRepositoryPort {
   create(input: {
     accountId?: string | null;
@@ -85,6 +96,8 @@ export interface WebsiteCrawlJobRepositoryPort {
     limit: number;
   }): Promise<WebsiteCrawlJobRecord>;
   findById(jobId: string): Promise<WebsiteCrawlJobRecord | null>;
+  listForWorkspace(workspaceId: string, options?: WebsiteCrawlJobListOptions): Promise<WebsiteCrawlJobRecord[]>;
+  deleteById(jobId: string, workspaceId: string): Promise<boolean>;
   claimNext(now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   claimById(jobId: string, now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean>;
@@ -138,6 +151,38 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     return row ? mapWebsiteCrawlJob(row) : null;
   }
 
+  async deleteById(jobId: string, workspaceId: string): Promise<boolean> {
+    const rowCount = await this.database.execute(
+      `DELETE FROM website_crawl_jobs
+       WHERE id = $1
+         AND workspace_id = $2
+         AND status IN ('completed', 'failed')`,
+      [jobId, workspaceId],
+    );
+    return rowCount > 0;
+  }
+
+  async listForWorkspace(
+    workspaceId: string,
+    options: WebsiteCrawlJobListOptions = {},
+  ): Promise<WebsiteCrawlJobRecord[]> {
+    const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+    const status = options.status ?? null;
+    const since = options.since ?? null;
+    const rows = await this.database.query<WebsiteCrawlJobRow>(
+      `SELECT ${selectWebsiteCrawlJob}
+       FROM website_crawl_jobs
+       WHERE workspace_id = $1
+         AND ($2::text IS NULL OR status = $2)
+         AND ($3::timestamptz IS NULL OR created_at >= $3)
+       ORDER BY created_at DESC
+       LIMIT $4`,
+      [workspaceId, status, since, limit],
+    );
+
+    return rows.map(mapWebsiteCrawlJob);
+  }
+
   async claimNext(now: Date = new Date()): Promise<WebsiteCrawlJobRecord | null> {
     return this.database.withTransaction(async (client) => {
       const rows = await client.query<WebsiteCrawlJobRow>(
@@ -157,7 +202,7 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
              updated_at = $1
          FROM next_job
          WHERE jobs.id = next_job.id
-         RETURNING ${selectWebsiteCrawlJob}`,
+         RETURNING ${selectWebsiteCrawlJobAs("jobs")}`,
         [now],
       );
 

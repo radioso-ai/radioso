@@ -1,3 +1,4 @@
+import { delimiter as pathDelimiter } from "node:path";
 import {
   BasicCrawler,
   CheerioCrawler,
@@ -255,7 +256,20 @@ const createStorageConfig = () =>
     storageClient: new MemoryStorage({ persistStorage: false })
   });
 
+const REQUIRED_SYSTEM_BINARY_PATHS = process.platform === "win32" ? [] : ["/bin", "/usr/bin"];
+
+const ensureSystemBinaryPaths = () => {
+  const currentPath = process.env.PATH ?? "";
+  const pathEntries = currentPath.split(pathDelimiter).filter(Boolean);
+  const missingEntries = REQUIRED_SYSTEM_BINARY_PATHS.filter((entry) => !pathEntries.includes(entry));
+  if (missingEntries.length === 0) {
+    return;
+  }
+  process.env.PATH = [...pathEntries, ...missingEntries].join(pathDelimiter);
+};
+
 const fetchPageWithCrawlee: FetchPage = async (url, options) => {
+  ensureSystemBinaryPaths();
   let result: FetchedPage | null = null;
   let failure: unknown = null;
   const assertInScope = (candidateUrl: string) => {
@@ -369,6 +383,7 @@ type CrawlSiteParams = {
 };
 
 const crawlSiteInternal = async (params: CrawlSiteParams) => {
+  ensureSystemBinaryPaths();
   const {
     baseUrl,
     pageLimit,

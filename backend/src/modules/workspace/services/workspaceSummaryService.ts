@@ -13,12 +13,14 @@ export interface WorkspaceSummary {
   hasReadyDocuments: boolean;
   hasCompletedChat: boolean;
   sampleDocumentsImported: boolean;
+  websiteCrawlerEnabled: boolean;
 }
 
 export class WorkspaceSummaryService {
   constructor(
     private readonly documentRepository: DocumentRepositoryPort,
     private readonly conversationRepository: ConversationRepositoryPort,
+    private readonly featureFlags: { websiteCrawlerEnabled: boolean } = { websiteCrawlerEnabled: true },
   ) {}
 
   async getSummary(workspaceId: string): Promise<WorkspaceSummary> {
@@ -35,6 +37,7 @@ export class WorkspaceSummaryService {
       hasReadyDocuments: documentSummary.readyDocumentCount > 0,
       hasCompletedChat: conversationCount > 0,
       sampleDocumentsImported: documentSummary.sampleDocumentCount > 0,
+      websiteCrawlerEnabled: this.featureFlags.websiteCrawlerEnabled,
     };
   }
 }

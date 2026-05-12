@@ -5,9 +5,9 @@ import { createRequestTelemetryMiddleware } from "../../shared/observability/tel
 import { badRequest } from "../../shared/domain/errors.js";
 import { createErrorHandler } from "../http/middleware/errorHandler.js";
 import type { AppDependencies } from "../server/types.js";
-import { createDocumentWorkerTaskRoutes } from "./documentWorkerTaskRoutes.js";
+import { createCrawlerWorkerTaskRoutes } from "./crawlerWorkerTaskRoutes.js";
 
-export const createWorkerTaskApp = (dependencies: AppDependencies) => {
+export const createCrawlerWorkerTaskApp = (dependencies: AppDependencies) => {
   const app = express();
 
   app.disable("x-powered-by");
@@ -25,7 +25,7 @@ export const createWorkerTaskApp = (dependencies: AppDependencies) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     next();
   });
-  app.use(createDocumentWorkerTaskRoutes(dependencies));
+  app.use(createCrawlerWorkerTaskRoutes(dependencies));
   app.use(createErrorHandler(dependencies.incidentReportingService));
 
   return app;

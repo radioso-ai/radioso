@@ -46,6 +46,13 @@ RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime
 
+# procps provides `ps`, which crawlee (used by @radioso/crawler) shells out to
+# for child-process resource monitoring. Without it the crawler worker fails
+# every job with `spawn ps ENOENT`.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends procps \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app/backend
 ENV NODE_ENV=production
 ARG RADIOSO_EDITION=oss

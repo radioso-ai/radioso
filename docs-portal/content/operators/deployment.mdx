@@ -62,6 +62,8 @@ That separation matters because worker traffic behaves differently from chat tra
 - chat is synchronous and user-visible
 - worker resource pressure should not degrade app responsiveness
 
+In the hosted Cloud Run environments, the backend and frontend scale to zero when idle. The document worker also defaults to `worker_min_instances = 0` and is invoked by Cloud Tasks when document work is queued. Raise `worker_min_instances` only when an environment needs a continuously warm polling fallback for queue recovery.
+
 ## Docs portal deployment
 
 The docs portal is its own Next.js app under `docs-portal/`. It syncs the backend OpenAPI document during build and should be deployed as a separate public service instead of being mounted into the product frontend.

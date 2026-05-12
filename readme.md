@@ -140,6 +140,8 @@ Each workspace payload includes both `id` and `publicRouteKey`. Use `id` for API
 
 If a workspace token or public embed link is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
 
+Public chat and website embed rate limits are configured by operators, not workspace users. The optional `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS`, `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS`, and `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` environment variables tune those limits; backend defaults apply when they are unset.
+
 ### Assistant and retrieval APIs
 
 Use the assistant API for human-facing chat. It owns conversation history, source-channel context, assistant identity, direct social replies, and the decision to call retrieval when evidence is needed.

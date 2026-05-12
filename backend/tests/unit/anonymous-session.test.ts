@@ -115,7 +115,6 @@ describe("resolveAnonymousSession", () => {
     expect(getError()).toBeUndefined();
     expect(res.locals.workspaceId).toBe(workspace.id);
     expect(res.locals.anonymousSessionId).toBeDefined();
-    expect(res.locals.anonymousRateLimit).toBe(15);
   });
 
   it("reuses existing cookie session id", async () => {
@@ -329,7 +328,6 @@ describe("resolveAnonymousSession", () => {
     await workspaceRepository.updateGeneralSettings(workspace.id, {
       anonymousChatEnabled: false,
       anonymousChatToken: "test-token-1234567890",
-      anonymousRateLimit: 10,
       assistantName: "",
       greetingInstruction: "",
       assistantDefaultLocale: null,
@@ -338,8 +336,15 @@ describe("resolveAnonymousSession", () => {
       websiteEmbedToken: "embed-token-123",
       websiteEmbedAllowedOrigins: ["https://example.com"],
       websiteEmbedLauncherLabel: "Chat with us",
-      websiteEmbedLauncherIcon: "chat",
       websiteEmbedLauncherPosition: "bottom-right",
+      websiteEmbedTheme: {
+        brand: "#0f172a",
+        brandText: "#f8fafc",
+        surface: "#ffffff",
+        text: "#0f172a",
+      },
+      websiteEmbedCopy: {},
+      websiteEmbedExpertOverrides: {},
     });
 
     const embedSession = issuePublicChatSession(SESSION_SECRET, {
@@ -372,7 +377,6 @@ describe("resolveAnonymousSession", () => {
     await workspaceRepository.updateGeneralSettings(workspace.id, {
       anonymousChatEnabled: false,
       anonymousChatToken: "legacy-anonymous-token",
-      anonymousRateLimit: 10,
       assistantName: "",
       greetingInstruction: "",
       assistantDefaultLocale: null,
@@ -381,7 +385,6 @@ describe("resolveAnonymousSession", () => {
       websiteEmbedToken: "embed-token-123",
       websiteEmbedAllowedOrigins: ["https://example.com"],
       websiteEmbedLauncherLabel: "Chat with us",
-      websiteEmbedLauncherIcon: "chat",
       websiteEmbedLauncherPosition: "bottom-right",
     });
 
@@ -418,7 +421,6 @@ describe("resolveAnonymousSession", () => {
         anonymousChat: {
           enabled: true,
           token: "shared-token-123",
-          messagesPerMinute: 11,
         },
       },
     });
@@ -481,7 +483,6 @@ describe("resolveAnonymousSession", () => {
     await workspaceRepository.updateGeneralSettings(workspace.id, {
       anonymousChatEnabled: false,
       anonymousChatToken: "test-token-1234567890",
-      anonymousRateLimit: 10,
       assistantName: "",
       greetingInstruction: "",
       assistantDefaultLocale: null,
@@ -490,7 +491,6 @@ describe("resolveAnonymousSession", () => {
       websiteEmbedToken: "embed-token-123",
       websiteEmbedAllowedOrigins: ["https://example.com"],
       websiteEmbedLauncherLabel: "Chat with us",
-      websiteEmbedLauncherIcon: "chat",
       websiteEmbedLauncherPosition: "bottom-right",
     });
 

@@ -30,6 +30,14 @@ export const enterpriseEmbedWidgetFeatureManifest = {
       dynamic: "force-dynamic",
     },
     {
+      relativePath: "app/api/embed/config/[token]/route.ts",
+      packageName: "@radioso/enterprise-embed-widget",
+      exportPath: "routes/embed-config",
+      exports: ["OPTIONS", "GET"],
+      runtime: "nodejs",
+      dynamic: "force-dynamic",
+    },
+    {
       relativePath: "app/radioso-embed.js/route.ts",
       packageName: "@radioso/enterprise-embed-widget",
       exportPath: "routes/radioso-embed-script",

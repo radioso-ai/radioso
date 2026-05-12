@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Building2, ExternalLink, FolderOpen, KeyRound, Mail, MessageSquare, RefreshCw, ShieldAlert, Sparkles, Trash2, UserRound, Webhook } from 'lucide-react'
+import { Building2, ExternalLink, FolderOpen, KeyRound, Mail, MessageSquare, RefreshCw, ShieldAlert, Sparkles, Trash2, Upload, UserRound, Webhook } from 'lucide-react'
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
@@ -20,7 +20,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Slider } from '@/components/ui/slider'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
@@ -34,7 +33,7 @@ import {
   type AccountMembershipRole,
   type GeneralSettings,
   type HumanContactAvailability,
-  type RetrievalSettings,
+  type WebsiteEmbedThemeSettings,
 } from '@/lib/api'
 import { editionController } from '@/lib/edition-controller'
 import { normalizeLocaleTag } from '@/lib/locale'
@@ -62,6 +61,13 @@ export const ASSISTANT_GREETING_LOCALE_OPTIONS = [
 ] as const
 
 export const NO_GREETING_LOCALE_LABEL = 'No fallback'
+
+const DEFAULT_ASSISTANT_THEME: WebsiteEmbedThemeSettings = {
+  brand: '#0f172a',
+  brandText: '#f8fafc',
+  surface: '#ffffff',
+  text: '#0f172a',
+}
 
 export const getAssistantLocaleLabel = (tag: string | null) => {
   if (!tag) {
@@ -121,24 +127,6 @@ const isValidHumanContactWebhookUrl = (value: string) => {
 
 const isValidHumanContactEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
 
-const assistantConversationModeLabels: Record<
-  RetrievalSettings['conversationMode'],
-  { label: string; description: string }
-> = {
-  factual: {
-    label: 'Factual',
-    description: 'Answer the current question directly and stop unless clarification is required.',
-  },
-  guided: {
-    label: 'Guided',
-    description: 'Answer directly, then suggest one or two grounded nearby directions when useful.',
-  },
-  exploratory: {
-    label: 'Exploratory',
-    description: 'Answer directly, then surface more of what the workspace covers and invite grounded follow-up.',
-  },
-}
-
 export function WorkspaceAssistantChannelsTab({
   accountId,
   mode,
@@ -182,6 +170,7 @@ export function WorkspaceAssistantChannelsTab({
   const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [isAssistantBehaviorLoading, setIsAssistantBehaviorLoading] = useState(mode === 'assistant')
+  const [isAssistantLogoSaving, setIsAssistantLogoSaving] = useState(false)
   const { setSaveState, setSaveError, saveSequenceRef } = useSettingsSaveStatus(onSaveStateChange)
   const [assistantSettingsError, setAssistantSettingsError] = useState<string | null>(null)
   const [assistantLocaleInput, setAssistantLocaleInput] = useState(NO_GREETING_LOCALE_LABEL)
@@ -202,6 +191,15 @@ export function WorkspaceAssistantChannelsTab({
 
   const updateGeneralSettings = async (data: Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]) =>
     agentId ? agentsApi.updateGeneralSettings(agentId, data) : generalSettingsApi.updateGeneralSettings(data, { auth: 'session' })
+
+  const rotateWebsiteEmbedToken = async () =>
+    agentId ? agentsApi.rotateWebsiteEmbedToken(agentId) : generalSettingsApi.rotateWebsiteEmbedToken({ auth: 'session' })
+
+  const uploadAssistantLogo = async (file: File) =>
+    agentId ? agentsApi.uploadAssistantLogo(agentId, file) : generalSettingsApi.uploadAssistantLogo(file, { auth: 'session' })
+
+  const deleteAssistantLogo = async () =>
+    agentId ? agentsApi.deleteAssistantLogo(agentId) : generalSettingsApi.deleteAssistantLogo({ auth: 'session' })
 
   const loadAssistantBehaviorSettings = async () =>
     agentId ? agentsApi.getBehaviorSettings(agentId) : agentsApi.getWorkspaceBehaviorSettings({ auth: 'session' })
@@ -372,33 +370,11 @@ export function WorkspaceAssistantChannelsTab({
     try {
       const updated = await updateGeneralSettings({
         anonymousChatEnabled: enabled,
-        anonymousRateLimit: anonSettings?.anonymousRateLimit ?? 10,
       })
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
     } catch (error) {
       console.error('Failed to update anonymous chat settings:', error)
-    } finally {
-      setIsAnonSaving(false)
-    }
-  }
-
-  const handleAnonRateLimitChange = (value: number) => {
-    if (!anonSettings) return
-    setAnonSettings({ ...anonSettings, anonymousRateLimit: value })
-  }
-
-  const handleAnonRateLimitCommit = async (value: number) => {
-    setIsAnonSaving(true)
-    try {
-      const updated = await updateGeneralSettings({
-        anonymousChatEnabled: anonSettings?.anonymousChatEnabled ?? false,
-        anonymousRateLimit: value,
-      })
-      setAnonSettings(updated)
-      setSavedAnonSettings(updated)
-    } catch (error) {
-      console.error('Failed to update rate limit:', error)
     } finally {
       setIsAnonSaving(false)
     }
@@ -475,6 +451,45 @@ export function WorkspaceAssistantChannelsTab({
     setAssistantBehaviorSettings((current) => (current ? updater(current) : current))
   }
 
+  const handleAssistantLogoUpload = async (file: File | null) => {
+    if (!file) return
+    setIsAssistantLogoSaving(true)
+    setSaveState('saving')
+    setSaveError(null)
+    try {
+      const updated = await uploadAssistantLogo(file)
+      setAnonSettings(updated)
+      setSavedAnonSettings(updated)
+      setSaveState('saved')
+    } catch (error) {
+      const message = getApiErrorMessage(error, 'Failed to upload assistant logo')
+      console.error('Failed to upload assistant logo:', error)
+      setSaveState('error')
+      setSaveError(message)
+    } finally {
+      setIsAssistantLogoSaving(false)
+    }
+  }
+
+  const handleAssistantLogoDelete = async () => {
+    setIsAssistantLogoSaving(true)
+    setSaveState('saving')
+    setSaveError(null)
+    try {
+      const updated = await deleteAssistantLogo()
+      setAnonSettings(updated)
+      setSavedAnonSettings(updated)
+      setSaveState('saved')
+    } catch (error) {
+      const message = getApiErrorMessage(error, 'Failed to remove assistant logo')
+      console.error('Failed to remove assistant logo:', error)
+      setSaveState('error')
+      setSaveError(message)
+    } finally {
+      setIsAssistantLogoSaving(false)
+    }
+  }
+
   const hasAssistantChanges =
     anonSettings && savedAnonSettings
       ? (
@@ -487,10 +502,10 @@ export function WorkspaceAssistantChannelsTab({
   const hasAssistantBehaviorChanges =
     assistantBehaviorSettings && savedAssistantBehaviorSettings
       ? (
-	          assistantBehaviorSettings.conversationMode !== savedAssistantBehaviorSettings.conversationMode ||
 	          assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction ||
 	          assistantBehaviorSettings.suggestedQuestionsEnabled !== savedAssistantBehaviorSettings.suggestedQuestionsEnabled ||
-	          assistantBehaviorSettings.suggestedQuestionsCount !== savedAssistantBehaviorSettings.suggestedQuestionsCount
+            JSON.stringify(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) !==
+              JSON.stringify(savedAssistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME)
 	        )
 	      : false
 
@@ -690,9 +705,9 @@ export function WorkspaceAssistantChannelsTab({
     if (!anonSettings) return
     setIsAnonSaving(true)
     try {
-      const updated = await updateGeneralSettings({
-        rotateAnonymousChatToken: true,
-      })
+      const updated = agentId
+        ? await agentsApi.rotateAnonymousChatToken(agentId)
+        : await generalSettingsApi.rotateAnonymousChatToken({ auth: 'session' })
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
     } catch (error) {
@@ -938,6 +953,82 @@ export function WorkspaceAssistantChannelsTab({
                   </div>
                 </div>
 
+                <div className="flex flex-col gap-3 rounded bg-muted/50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded border border-border bg-background">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={anonSettings.assistantLogoUrl ?? '/radioso-logo.png'} alt="" className="h-8 w-8 object-contain" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Assistant logo</p>
+                      <p className="text-xs text-muted-foreground">
+                        Used by anonymous chat and the hosted website widget. Uses the Radioso logo by default.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button asChild variant="outline" disabled={isAnonSaving || isAssistantLogoSaving}>
+                      <label>
+                        {isAssistantLogoSaving ? <Spinner className="mr-2 h-4 w-4" /> : <Upload className="mr-2 h-4 w-4" />}
+                        Upload
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          className="sr-only"
+                          onChange={(event) => {
+                            void handleAssistantLogoUpload(event.target.files?.[0] ?? null)
+                            event.currentTarget.value = ''
+                          }}
+                        />
+                      </label>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleAssistantLogoDelete}
+                      disabled={isAnonSaving || isAssistantLogoSaving || !anonSettings.assistantLogoUrl}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="rounded bg-muted/50 p-3 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Assistant theme</p>
+                    <p className="text-xs text-muted-foreground">
+                      Set the identity colors used by anonymous chat and the hosted website widget.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-4">
+                    {([
+                      ['brand', 'Brand'],
+                      ['brandText', 'Brand text'],
+                      ['surface', 'Surface'],
+                      ['text', 'Text'],
+                    ] as const).map(([key, label]) => (
+                      <div key={key} className="space-y-2">
+                        <Label htmlFor={`assistantTheme-${key}`} className="text-foreground">{label}</Label>
+                        <Input
+                          id={`assistantTheme-${key}`}
+                          type="color"
+                          value={(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME)[key]}
+                          onChange={(event) =>
+                            updateAssistantBehaviorDraft((current) => ({
+                              ...current,
+                              theme: {
+                                ...(current.theme ?? DEFAULT_ASSISTANT_THEME),
+                                [key]: event.target.value,
+                              },
+                            }))
+                          }
+                          className="h-10 p-1"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="assistantAnswerInstruction" className="text-foreground">Answer instruction</Label>
                   <Textarea
@@ -958,30 +1049,6 @@ export function WorkspaceAssistantChannelsTab({
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="assistantConversationMode" className="text-foreground">Conversation mode</Label>
-                  <select
-                    id="assistantConversationMode"
-                    value={assistantBehaviorSettings.conversationMode}
-                    onChange={(event) =>
-                      updateAssistantBehaviorDraft((current) => ({
-                        ...current,
-                        conversationMode: event.target.value as RetrievalSettings['conversationMode'],
-                      }))
-                    }
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
-                  >
-                    {Object.entries(assistantConversationModeLabels).map(([value, meta]) => (
-                      <option key={value} value={value}>
-                        {meta.label}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-sm text-muted-foreground">
-                    {assistantConversationModeLabels[assistantBehaviorSettings.conversationMode].description}
-                  </p>
-                </div>
-
 	                <div className="flex flex-col gap-4 rounded bg-muted/50 p-3 sm:flex-row sm:items-start sm:justify-between">
 	                  <div className="min-w-0">
 	                    <Label htmlFor="assistantSuggestedQuestionsEnabled" className="text-foreground">Suggested follow-up questions</Label>
@@ -1000,33 +1067,6 @@ export function WorkspaceAssistantChannelsTab({
 	                    }
 	                  />
 	                </div>
-
-	                {assistantBehaviorSettings.suggestedQuestionsEnabled ? (
-	                  <div className="space-y-3 rounded bg-muted/50 p-3">
-	                    <div className="flex items-center justify-between gap-4">
-	                      <div>
-	                        <Label htmlFor="assistantSuggestedQuestionsCount" className="text-foreground">Maximum follow-up questions</Label>
-	                        <p className="text-sm text-muted-foreground mt-0.5">
-	                          This is a cap. The assistant can return fewer when the evidence supports fewer useful continuations.
-	                        </p>
-	                      </div>
-	                      <span className="text-sm font-mono text-muted-foreground">{assistantBehaviorSettings.suggestedQuestionsCount}</span>
-	                    </div>
-	                    <Slider
-	                      id="assistantSuggestedQuestionsCount"
-	                      min={1}
-	                      max={4}
-	                      step={1}
-	                      value={[assistantBehaviorSettings.suggestedQuestionsCount]}
-	                      onValueChange={(value) =>
-	                        updateAssistantBehaviorDraft((current) => ({
-	                          ...current,
-	                          suggestedQuestionsCount: value[0] ?? 1,
-	                        }))
-	                      }
-	                    />
-	                  </div>
-	                ) : null}
 
 	                <div className="flex flex-col gap-4 rounded bg-muted/50 p-3 sm:flex-row sm:items-start sm:justify-between">
 	                  <div className="min-w-0">
@@ -1104,31 +1144,9 @@ export function WorkspaceAssistantChannelsTab({
                       <div className="flex justify-end">
                         <Button variant="outline" onClick={handleAnonymousChatTokenRotate} disabled={isAnonSaving}>
                           {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                          Rotate public link
+                          Reset public link
                         </Button>
                       </div>
-                    </div>
-
-                    <div className="rounded bg-muted/50 p-3 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="anonRateLimit" className="text-foreground">Rate Limit</Label>
-                        <span className="text-sm font-mono text-muted-foreground">
-                          {anonSettings.anonymousRateLimit} msg/min
-                        </span>
-                      </div>
-                      <Slider
-                        id="anonRateLimit"
-                        min={1}
-                        max={60}
-                        step={1}
-                        value={[anonSettings.anonymousRateLimit]}
-                        onValueChange={([value]) => handleAnonRateLimitChange(value)}
-                        onValueCommit={([value]) => handleAnonRateLimitCommit(value)}
-                        disabled={isAnonSaving}
-                      />
-                      <p className="text-sm text-muted-foreground">
-                        Maximum messages per minute for each anonymous user session.
-                      </p>
                     </div>
                   </div>
                 ) : null}
@@ -1350,7 +1368,6 @@ export function WorkspaceAssistantChannelsTab({
 
           <WebsiteEmbedSettingsController
             mode={mode}
-            activeWorkspaceName={activeWorkspace?.name}
             anonSettings={anonSettings}
             savedAnonSettings={savedAnonSettings}
             setAnonSettings={setAnonSettings}
@@ -1358,6 +1375,7 @@ export function WorkspaceAssistantChannelsTab({
             isAnonSaving={isAnonSaving}
             setIsAnonSaving={setIsAnonSaving}
             updateGeneralSettings={updateGeneralSettings}
+            rotateWebsiteEmbedToken={rotateWebsiteEmbedToken}
             anonDraftVersionRef={anonDraftVersionRef}
             saveSequenceRef={saveSequenceRef}
             setSaveState={setSaveState}

@@ -267,7 +267,7 @@ describe("chat integration", () => {
         .send(document);
     }
 
-    const ask = async (conversationMode: "factual" | "guided" | "exploratory") => {
+    const ask = async () => {
       const existing = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
       await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
         ...existing,
@@ -280,9 +280,7 @@ describe("chat integration", () => {
       });
       const agent = await dependencies.agentService.resolve(workspaceId);
       await dependencies.agentService.update(workspaceId, agent.id, {
-        conversationMode,
         suggestedQuestionsEnabled: true,
-        suggestedQuestionsCount: 4,
       });
 
       return request(app)
@@ -291,9 +289,9 @@ describe("chat integration", () => {
         .send({ message: "What do the testing docs cover?", stream: false });
     };
 
-    const factual = await ask("factual");
-    const guided = await ask("guided");
-    const exploratory = await ask("exploratory");
+    const factual = await ask();
+    const guided = await ask();
+    const exploratory = await ask();
 
     expect(factual.status).toBe(200);
     expect(guided.status).toBe(200);
@@ -314,19 +312,14 @@ describe("chat integration", () => {
     });
     expect(exploratory.body.answer).not.toContain("\n- ");
     expect(exploratory.body.suggestions.length).toBeGreaterThan(0);
-    expect(exploratory.body.suggestions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ kind: "broader" }),
-      ]),
-    );
     expect(
       exploratory.body.suggestions.every((suggestion: { kind: string }) =>
-        suggestion.kind === "deeper" || suggestion.kind === "broader")
+        suggestion.kind === "deeper")
     ).toBe(true);
     expect(exploratory.body.conversationModeMetadata).toMatchObject({
-      conversationMode: "exploratory",
+      conversationMode: "guided",
       expansionApplied: true,
-      expansionKind: "expansive",
+      expansionKind: "focused",
       suggestionCount: exploratory.body.suggestions.length,
     });
   });

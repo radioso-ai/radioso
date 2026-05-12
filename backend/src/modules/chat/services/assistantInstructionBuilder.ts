@@ -24,7 +24,7 @@ export class AssistantInstructionBuilder {
       this.renderCustomInstruction(input.customInstruction),
       this.renderResponseFormattingGuidelines(),
       this.conversationModeInstructionBuilder.build({
-        conversationMode: input.conversationMode ?? "guided",
+        conversationMode: input.conversationMode ?? "exploratory",
       }),
       this.renderResponseLanguageInstruction(input.responseLanguagePolicy ?? "match_user_question", input.responseLanguage),
     ]

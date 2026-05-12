@@ -7,7 +7,6 @@ import {
 import {
   defaultWebsiteEmbedSettings,
   validateWebsiteEmbedSettings,
-  type WebsiteEmbedLauncherIcon,
   type WebsiteEmbedLauncherPosition,
   type WebsiteEmbedSettingsRecord,
 } from "../../modules/settings/contracts/websiteEmbed.js";
@@ -64,8 +63,6 @@ const mapWorkspace = (row: WorkspaceRow): WorkspaceRecord => {
     websiteEmbedToken: row.website_embed_token ?? null,
     websiteEmbedAllowedOrigins: row.website_embed_allowed_origins ?? [],
     websiteEmbedLauncherLabel: row.website_embed_launcher_label ?? defaultWebsiteEmbedSettings().websiteEmbedLauncherLabel,
-    websiteEmbedLauncherIcon:
-      (row.website_embed_launcher_icon as WebsiteEmbedLauncherIcon | null) ?? defaultWebsiteEmbedSettings().websiteEmbedLauncherIcon,
     websiteEmbedLauncherPosition:
       (row.website_embed_launcher_position as WebsiteEmbedLauncherPosition | null) ??
       defaultWebsiteEmbedSettings().websiteEmbedLauncherPosition,
@@ -131,7 +128,6 @@ export interface WorkspaceRepositoryPort {
     input: {
       anonymousChatEnabled: boolean;
       anonymousChatToken: string | null;
-      anonymousRateLimit: number;
       assistantName: string;
       greetingInstruction: string;
       assistantDefaultLocale: string | null;
@@ -140,7 +136,6 @@ export interface WorkspaceRepositoryPort {
       websiteEmbedToken: string | null;
       websiteEmbedAllowedOrigins: string[];
       websiteEmbedLauncherLabel: string;
-      websiteEmbedLauncherIcon: WebsiteEmbedLauncherIcon;
       websiteEmbedLauncherPosition: WebsiteEmbedLauncherPosition;
     },
   ): Promise<WorkspaceRecord>;
@@ -315,7 +310,6 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
     input: {
       anonymousChatEnabled: boolean;
       anonymousChatToken: string | null;
-      anonymousRateLimit: number;
       assistantName: string;
       greetingInstruction: string;
       assistantDefaultLocale: string | null;
@@ -324,7 +318,6 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       websiteEmbedToken: string | null;
       websiteEmbedAllowedOrigins: string[];
       websiteEmbedLauncherLabel: string;
-      websiteEmbedLauncherIcon: WebsiteEmbedLauncherIcon;
       websiteEmbedLauncherPosition: WebsiteEmbedLauncherPosition;
     },
   ): Promise<WorkspaceRecord> {
@@ -332,24 +325,21 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       `UPDATE workspaces
        SET anonymous_chat_enabled = $1,
            anonymous_chat_token = $2,
-           anonymous_rate_limit = $3,
-           assistant_name = $4,
-           greeting_instruction = $5,
-           assistant_default_locale = $6,
-           proactive_greeting_enabled = $7,
-           website_embed_enabled = $8,
-           website_embed_token = $9,
-           website_embed_allowed_origins = $10,
-           website_embed_launcher_label = $11,
-           website_embed_launcher_icon = $12,
-           website_embed_launcher_position = $13,
+           assistant_name = $3,
+           greeting_instruction = $4,
+           assistant_default_locale = $5,
+           proactive_greeting_enabled = $6,
+           website_embed_enabled = $7,
+           website_embed_token = $8,
+           website_embed_allowed_origins = $9,
+           website_embed_launcher_label = $10,
+           website_embed_launcher_position = $11,
            updated_at = NOW()
-       WHERE id = $14
+       WHERE id = $12
        RETURNING ${workspaceColumns}`,
       [
         input.anonymousChatEnabled,
         input.anonymousChatToken,
-        input.anonymousRateLimit,
         input.assistantName,
         input.greetingInstruction,
         input.assistantDefaultLocale,
@@ -358,7 +348,6 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
         input.websiteEmbedToken,
         input.websiteEmbedAllowedOrigins,
         input.websiteEmbedLauncherLabel,
-        input.websiteEmbedLauncherIcon,
         input.websiteEmbedLauncherPosition,
         workspaceId,
       ],

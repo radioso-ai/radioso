@@ -111,7 +111,6 @@ export class PlatformSettingsService {
     const anonymousChat = agent.surfaceSettings.anonymousChat;
     const websiteEmbed = agent.surfaceSettings.websiteEmbed;
     const anonymousChatEnabled = channels.anonymousChatEnabled ?? anonymousChat.enabled;
-    const messagesPerMinute = channels.anonymousRateLimit ?? anonymousChat.messagesPerMinute;
 
     let normalizedWebsiteEmbed;
     try {
@@ -120,8 +119,10 @@ export class PlatformSettingsService {
         websiteEmbedToken: websiteEmbed.token,
         websiteEmbedAllowedOrigins: channels.websiteEmbedAllowedOrigins ?? websiteEmbed.allowedOrigins,
         websiteEmbedLauncherLabel: channels.websiteEmbedLauncherLabel ?? websiteEmbed.launcherLabel,
-        websiteEmbedLauncherIcon: channels.websiteEmbedLauncherIcon ?? websiteEmbed.icon,
         websiteEmbedLauncherPosition: channels.websiteEmbedLauncherPosition ?? websiteEmbed.launcherPosition,
+        websiteEmbedTheme: channels.websiteEmbedTheme ?? websiteEmbed.theme,
+        websiteEmbedCopy: channels.websiteEmbedCopy ?? websiteEmbed.copy,
+        websiteEmbedExpertOverrides: channels.websiteEmbedExpertOverrides ?? websiteEmbed.expertOverrides,
       });
     } catch (error) {
       if (error instanceof Error) {
@@ -134,14 +135,15 @@ export class PlatformSettingsService {
       surfaceSettings: {
         anonymousChat: {
           enabled: anonymousChatEnabled,
-          messagesPerMinute,
         },
         websiteEmbed: {
           enabled: normalizedWebsiteEmbed.websiteEmbedEnabled,
           allowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
           launcherLabel: normalizedWebsiteEmbed.websiteEmbedLauncherLabel,
-          icon: normalizedWebsiteEmbed.websiteEmbedLauncherIcon,
           launcherPosition: normalizedWebsiteEmbed.websiteEmbedLauncherPosition,
+          theme: normalizedWebsiteEmbed.websiteEmbedTheme,
+          copy: normalizedWebsiteEmbed.websiteEmbedCopy,
+          expertOverrides: normalizedWebsiteEmbed.websiteEmbedExpertOverrides,
         },
       },
       rotateAnonymousChatToken: channels.rotateAnonymousChatToken,
@@ -152,9 +154,7 @@ export class PlatformSettingsService {
           ? agent.assistantDefaultLocale
           : assistant.assistantDefaultLocale,
       proactiveGreetingEnabled: assistant.proactiveGreetingEnabled ?? agent.proactiveGreetingEnabled,
-      conversationMode: assistant.conversationMode ?? agent.conversationMode,
       suggestedQuestionsEnabled: assistant.suggestedQuestionsEnabled ?? agent.suggestedQuestionsEnabled,
-      suggestedQuestionsCount: assistant.suggestedQuestionsCount ?? agent.suggestedQuestionsCount,
       customInstruction: assistant.customInstruction ?? agent.customInstruction,
       rotateWebsiteEmbedToken: channels.rotateWebsiteEmbedToken,
     }));
@@ -164,7 +164,6 @@ export class PlatformSettingsService {
       workspaceId,
       previousAgent: agent,
       anonymousChatEnabled,
-      anonymousRateLimit: messagesPerMinute,
       rotateAnonymousChatToken: channels.rotateAnonymousChatToken ?? false,
       websiteEmbedEnabled: normalizedWebsiteEmbed.websiteEmbedEnabled,
       websiteEmbedAllowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
@@ -180,7 +179,6 @@ export class PlatformSettingsService {
     workspaceId: string;
     previousAgent: AgentRecord;
     anonymousChatEnabled: boolean;
-    anonymousRateLimit: number;
     rotateAnonymousChatToken: boolean;
     websiteEmbedEnabled: boolean;
     websiteEmbedAllowedOrigins: string[];
@@ -198,7 +196,7 @@ export class PlatformSettingsService {
         workspaceId: input.workspaceId,
         eventType: input.anonymousChatEnabled ? "anonymous_chat.enabled" : "anonymous_chat.disabled",
         eventStatus: "success",
-        metadata: { anonymousRateLimit: input.anonymousRateLimit },
+        metadata: {},
       });
     }
 
@@ -281,10 +279,9 @@ export class PlatformSettingsService {
       assistantDefaultLocale: agent.assistantDefaultLocale,
       proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
       assistantBootstrapActive: isAgentBootstrapActive(agent),
-      conversationMode: agent.conversationMode,
       suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-      suggestedQuestionsCount: agent.suggestedQuestionsCount,
       customInstruction: agent.customInstruction,
+      assistantLogoUrl: this.buildAssistantLogoUrl(agent),
     };
   }
 
@@ -313,13 +310,14 @@ export class PlatformSettingsService {
     return {
       anonymousChatEnabled: anonymousChat.enabled,
       anonymousChatUrl: this.buildAnonymousChatUrl(anonymousChat.token, anonymousChat.enabled),
-      anonymousRateLimit: anonymousChat.messagesPerMinute,
       websiteEmbedEnabled: websiteEmbed.enabled,
       websiteEmbedToken: websiteEmbed.token,
       websiteEmbedAllowedOrigins: websiteEmbed.allowedOrigins,
       websiteEmbedLauncherLabel: websiteEmbed.launcherLabel,
-      websiteEmbedLauncherIcon: websiteEmbed.icon,
       websiteEmbedLauncherPosition: websiteEmbed.launcherPosition,
+      websiteEmbedTheme: websiteEmbed.theme,
+      websiteEmbedCopy: websiteEmbed.copy,
+      websiteEmbedExpertOverrides: websiteEmbed.expertOverrides,
       websiteEmbedScriptUrl: this.websiteEmbedIntegration.buildScriptUrl(),
       websiteEmbedSnippet: this.websiteEmbedIntegration.buildSnippet({
         name: workspace.name,
@@ -328,10 +326,19 @@ export class PlatformSettingsService {
         websiteEmbedToken: websiteEmbed.token,
         websiteEmbedAllowedOrigins: websiteEmbed.allowedOrigins,
         websiteEmbedLauncherLabel: websiteEmbed.launcherLabel,
-        websiteEmbedLauncherIcon: websiteEmbed.icon,
         websiteEmbedLauncherPosition: websiteEmbed.launcherPosition,
       }),
     };
+  }
+
+  private buildAssistantLogoUrl(agent: AgentRecord): string | null {
+    const baseUrl = this.dependencies.publicChatBaseUrl;
+    const token = agent.surfaceSettings.anonymousChat.token ?? agent.surfaceSettings.websiteEmbed.token;
+    if (!baseUrl || !token || !agent.logo) {
+      return null;
+    }
+    const appBaseUrl = baseUrl.replace(/\/chat(?:\/.*)?$/, "");
+    return `${appBaseUrl}/api/v1/public/chat/${token}/assistant-logo`;
   }
 
   private buildAnonymousChatUrl(token: string | null, enabled: boolean): string | null {

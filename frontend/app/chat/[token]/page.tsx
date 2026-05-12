@@ -1,14 +1,11 @@
 import {
   buildWebsiteEmbedSurfaceCssVars,
   getWebsiteEmbedTheme,
-  normalizeWebsiteEmbedAvatarUrl,
   parseWebsiteEmbedCopyOverridesParam,
   parseWebsiteEmbedThemeOverridesParam,
 } from '@/lib/embed-widget'
 import { resolveEmbedLocaleSearchParam } from '@/lib/embed-locale'
 import { PublicChatShell } from '@/components/chat/public-chat-shell'
-
-const firstSearchValue = (value?: string | string[]) => (Array.isArray(value) ? value[0] : value)
 
 export default async function PublicChatPage({
   params,
@@ -17,16 +14,13 @@ export default async function PublicChatPage({
   params: Promise<{ token: string }>
   searchParams: Promise<{
     locale?: string | string[]
-    avatar?: string | string[]
-    avatarUrl?: string | string[]
     copy?: string | string[]
     theme?: string | string[]
   }>
 }) {
   const { token } = await params
-  const { locale, avatar, avatarUrl, copy, theme } = await searchParams
+  const { locale, copy, theme } = await searchParams
   const localeOverride = resolveEmbedLocaleSearchParam(locale)
-  const resolvedAvatarUrl = normalizeWebsiteEmbedAvatarUrl(firstSearchValue(avatarUrl) ?? firstSearchValue(avatar))
   const themeOverrides = parseWebsiteEmbedThemeOverridesParam(theme)
   const resolvedTheme = getWebsiteEmbedTheme(themeOverrides)
 
@@ -43,7 +37,6 @@ export default async function PublicChatPage({
         <PublicChatShell
           token={token}
           localeOverride={localeOverride}
-          avatarUrl={resolvedAvatarUrl}
           copyOverrides={parseWebsiteEmbedCopyOverridesParam(copy)}
           themeOverrides={themeOverrides}
         />

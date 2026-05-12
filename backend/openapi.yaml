@@ -653,18 +653,8 @@ components:
         lexicalRewriteInstructions:
           type: string
           maxLength: 2000
-        conversationMode:
-          type: string
-          enum: &a3
-            - factual
-            - guided
-            - exploratory
         suggestedQuestionsEnabled:
           type: boolean
-        suggestedQuestionsCount:
-          type: integer
-          minimum: 1
-          maximum: 4
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -757,14 +747,14 @@ components:
                 default: []
               effect:
                 type: string
-                enum: &a4
+                enum: &a3
                   - boost
                   - filter
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: &a5
+                enum: &a4
                   - always_on
                   - match_turn
               triggerInstruction:
@@ -793,9 +783,7 @@ components:
         - queryRewriteEnabled
         - semanticRewriteInstructions
         - lexicalRewriteInstructions
-        - conversationMode
         - suggestedQuestionsEnabled
-        - suggestedQuestionsCount
         - rerankEnabled
         - vectorTopK
         - similarityThreshold
@@ -816,15 +804,8 @@ components:
         lexicalRewriteInstructions:
           type: string
           maxLength: 2000
-        conversationMode:
-          type: string
-          enum: *a3
         suggestedQuestionsEnabled:
           type: boolean
-        suggestedQuestionsCount:
-          type: integer
-          minimum: 1
-          maximum: 4
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -860,7 +841,7 @@ components:
                 type: string
               combinator:
                 type: string
-                enum: &a6
+                enum: &a5
                   - and
                   - or
               conditions:
@@ -890,12 +871,12 @@ components:
                     - value
               effect:
                 type: string
-                enum: *a4
+                enum: *a3
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: *a5
+                enum: *a4
               triggerInstruction:
                 type: string
                 maxLength: 500
@@ -924,15 +905,8 @@ components:
         lexicalRewriteInstructions:
           type: string
           maxLength: 2000
-        conversationMode:
-          type: string
-          enum: *a3
         suggestedQuestionsEnabled:
           type: boolean
-        suggestedQuestionsCount:
-          type: integer
-          minimum: 1
-          maximum: 4
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -968,7 +942,7 @@ components:
                 type: string
               combinator:
                 type: string
-                enum: *a6
+                enum: *a5
               conditions:
                 type: array
                 items:
@@ -996,12 +970,12 @@ components:
                     - value
               effect:
                 type: string
-                enum: *a4
+                enum: *a3
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: *a5
+                enum: *a4
               triggerInstruction:
                 type: string
                 maxLength: 500
@@ -1020,7 +994,7 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a7
+          enum: &a6
             - fixed_window
             - structured_semantic
         fixedWindowChunkSize:
@@ -1051,7 +1025,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a7
+          enum: *a6
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -1121,12 +1095,12 @@ components:
           default: []
         effect:
           type: string
-          enum: *a4
+          enum: *a3
         enabled:
           type: boolean
         triggerMode:
           type: string
-          enum: *a5
+          enum: *a4
         triggerInstruction:
           type: string
       required:
@@ -1220,12 +1194,6 @@ components:
       properties:
         anonymousChatEnabled:
           type: boolean
-        anonymousRateLimit:
-          type: integer
-          minimum: 1
-          maximum: 60
-        rotateAnonymousChatToken:
-          type: boolean
         assistantName:
           type: string
           maxLength: 200
@@ -1241,8 +1209,6 @@ components:
           type: boolean
         websiteEmbedEnabled:
           type: boolean
-        rotateWebsiteEmbedToken:
-          type: boolean
         websiteEmbedAllowedOrigins:
           type: array
           items:
@@ -1252,17 +1218,38 @@ components:
         websiteEmbedLauncherLabel:
           type: string
           maxLength: 80
-        websiteEmbedLauncherIcon:
-          type: string
-          enum: &a8
-            - chat
-            - sparkles
-            - message
         websiteEmbedLauncherPosition:
           type: string
-          enum: &a9
+          enum: &a7
             - bottom-right
             - bottom-left
+        websiteEmbedTheme:
+          type: object
+          properties:
+            brand:
+              type: string
+              pattern: ^#[0-9a-fA-F]{6}$
+            brandText:
+              type: string
+              pattern: ^#[0-9a-fA-F]{6}$
+            surface:
+              type: string
+              pattern: ^#[0-9a-fA-F]{6}$
+            text:
+              type: string
+              pattern: ^#[0-9a-fA-F]{6}$
+        websiteEmbedCopy:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
+              maxLength: 500
+        websiteEmbedExpertOverrides:
+          type: object
+          additionalProperties:
+            type: string
+            maxLength: 500
     GeneralSettingsResponse:
       type: object
       properties:
@@ -1272,10 +1259,6 @@ components:
           type:
             - string
             - "null"
-        anonymousRateLimit:
-          type: integer
-          minimum: 1
-          maximum: 60
         assistantName:
           type: string
         greetingInstruction:
@@ -1288,6 +1271,10 @@ components:
           type: boolean
         assistantBootstrapActive:
           type: boolean
+        assistantLogoUrl:
+          type:
+            - string
+            - "null"
         websiteEmbedEnabled:
           type: boolean
         websiteEmbedToken:
@@ -1308,29 +1295,62 @@ components:
             type: string
         websiteEmbedLauncherLabel:
           type: string
-        websiteEmbedLauncherIcon:
-          type: string
-          enum: *a8
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a9
+          enum: *a7
+        websiteEmbedTheme:
+          type: object
+          properties:
+            brand:
+              type: string
+            brandText:
+              type: string
+            surface:
+              type: string
+            text:
+              type: string
+          required:
+            - brand
+            - brandText
+            - surface
+            - text
+        websiteEmbedCopy:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
+        websiteEmbedExpertOverrides:
+          type: object
+          additionalProperties:
+            type: string
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
-        - anonymousRateLimit
         - assistantName
         - greetingInstruction
         - assistantDefaultLocale
         - proactiveGreetingEnabled
         - assistantBootstrapActive
+        - assistantLogoUrl
         - websiteEmbedEnabled
         - websiteEmbedToken
         - websiteEmbedScriptUrl
         - websiteEmbedSnippet
         - websiteEmbedAllowedOrigins
         - websiteEmbedLauncherLabel
-        - websiteEmbedLauncherIcon
         - websiteEmbedLauncherPosition
+        - websiteEmbedTheme
+        - websiteEmbedCopy
+        - websiteEmbedExpertOverrides
+    AssistantLogoUploadRequest:
+      type: object
+      properties:
+        logo:
+          type: string
+          format: binary
+      required:
+        - logo
     AssistantSettingsSection:
       type: object
       properties:
@@ -1348,27 +1368,23 @@ components:
           type: boolean
           description: Server-managed bootstrap readiness derived from the current assistant configuration.
           readOnly: true
-        conversationMode:
-          type: string
-          enum: *a3
         suggestedQuestionsEnabled:
           type: boolean
-        suggestedQuestionsCount:
-          type: integer
-          minimum: 1
-          maximum: 4
         customInstruction:
           type: string
+        assistantLogoUrl:
+          type:
+            - string
+            - "null"
       required:
         - assistantName
         - greetingInstruction
         - assistantDefaultLocale
         - proactiveGreetingEnabled
         - assistantBootstrapActive
-        - conversationMode
         - suggestedQuestionsEnabled
-        - suggestedQuestionsCount
         - customInstruction
+        - assistantLogoUrl
     PlatformRetrievalSettingsSection:
       type: object
       properties:
@@ -1446,12 +1462,12 @@ components:
                 default: []
               effect:
                 type: string
-                enum: *a4
+                enum: *a3
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: *a5
+                enum: *a4
               triggerInstruction:
                 type: string
             required:
@@ -1497,10 +1513,6 @@ components:
           type:
             - string
             - "null"
-        anonymousRateLimit:
-          type: integer
-          minimum: 1
-          maximum: 60
         websiteEmbedEnabled:
           type: boolean
         websiteEmbedToken:
@@ -1513,12 +1525,9 @@ components:
             type: string
         websiteEmbedLauncherLabel:
           type: string
-        websiteEmbedLauncherIcon:
-          type: string
-          enum: *a8
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a9
+          enum: *a7
         websiteEmbedScriptUrl:
           type:
             - string
@@ -1527,18 +1536,45 @@ components:
           type:
             - string
             - "null"
+        websiteEmbedTheme:
+          type: object
+          properties:
+            brand:
+              type: string
+            brandText:
+              type: string
+            surface:
+              type: string
+            text:
+              type: string
+          required:
+            - brand
+            - brandText
+            - surface
+            - text
+        websiteEmbedCopy:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
+        websiteEmbedExpertOverrides:
+          type: object
+          additionalProperties:
+            type: string
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
-        - anonymousRateLimit
         - websiteEmbedEnabled
         - websiteEmbedToken
         - websiteEmbedAllowedOrigins
         - websiteEmbedLauncherLabel
-        - websiteEmbedLauncherIcon
         - websiteEmbedLauncherPosition
         - websiteEmbedScriptUrl
         - websiteEmbedSnippet
+        - websiteEmbedTheme
+        - websiteEmbedCopy
+        - websiteEmbedExpertOverrides
     PlatformSettingsResponse:
       type: object
       properties:
@@ -1571,15 +1607,8 @@ components:
               maxLength: 35
             proactiveGreetingEnabled:
               type: boolean
-            conversationMode:
-              type: string
-              enum: *a3
             suggestedQuestionsEnabled:
               type: boolean
-            suggestedQuestionsCount:
-              type: integer
-              minimum: 1
-              maximum: 4
             customInstruction:
               type: string
               maxLength: 2000
@@ -1627,7 +1656,7 @@ components:
                     type: string
                   combinator:
                     type: string
-                    enum: *a6
+                    enum: *a5
                   conditions:
                     type: array
                     items:
@@ -1655,12 +1684,12 @@ components:
                         - value
                   effect:
                     type: string
-                    enum: *a4
+                    enum: *a3
                   enabled:
                     type: boolean
                   triggerMode:
                     type: string
-                    enum: *a5
+                    enum: *a4
                   triggerInstruction:
                     type: string
                     maxLength: 500
@@ -1673,15 +1702,7 @@ components:
           properties:
             anonymousChatEnabled:
               type: boolean
-            anonymousRateLimit:
-              type: integer
-              minimum: 1
-              maximum: 60
-            rotateAnonymousChatToken:
-              type: boolean
             websiteEmbedEnabled:
-              type: boolean
-            rotateWebsiteEmbedToken:
               type: boolean
             websiteEmbedAllowedOrigins:
               type: array
@@ -1692,12 +1713,36 @@ components:
             websiteEmbedLauncherLabel:
               type: string
               maxLength: 80
-            websiteEmbedLauncherIcon:
-              type: string
-              enum: *a8
             websiteEmbedLauncherPosition:
               type: string
-              enum: *a9
+              enum: *a7
+            websiteEmbedTheme:
+              type: object
+              properties:
+                brand:
+                  type: string
+                  pattern: ^#[0-9a-fA-F]{6}$
+                brandText:
+                  type: string
+                  pattern: ^#[0-9a-fA-F]{6}$
+                surface:
+                  type: string
+                  pattern: ^#[0-9a-fA-F]{6}$
+                text:
+                  type: string
+                  pattern: ^#[0-9a-fA-F]{6}$
+            websiteEmbedCopy:
+              type: object
+              additionalProperties:
+                type: object
+                additionalProperties:
+                  type: string
+                  maxLength: 500
+            websiteEmbedExpertOverrides:
+              type: object
+              additionalProperties:
+                type: string
+                maxLength: 500
     Agent:
       type: object
       properties:
@@ -1740,14 +1785,9 @@ components:
               type:
                 - string
                 - "null"
-            messagesPerMinute:
-              type: integer
-              minimum: 1
-              maximum: 60
           required:
             - enabled
             - token
-            - messagesPerMinute
         websiteEmbed:
           type: object
           properties:
@@ -1763,24 +1803,46 @@ components:
                 type: string
             launcherLabel:
               type: string
-            icon:
-              type: string
-              enum: &a11
-                - chat
-                - sparkles
-                - message
             launcherPosition:
               type: string
-              enum: &a12
+              enum: &a8
                 - bottom-right
                 - bottom-left
+            theme:
+              type: object
+              properties:
+                brand:
+                  type: string
+                brandText:
+                  type: string
+                surface:
+                  type: string
+                text:
+                  type: string
+              required:
+                - brand
+                - brandText
+                - surface
+                - text
+            copy:
+              type: object
+              additionalProperties:
+                type: object
+                additionalProperties:
+                  type: string
+            expertOverrides:
+              type: object
+              additionalProperties:
+                type: string
           required:
             - enabled
             - token
             - allowedOrigins
             - launcherLabel
-            - icon
             - launcherPosition
+            - theme
+            - copy
+            - expertOverrides
       required:
         - authenticatedChat
         - anonymousChat
@@ -1794,20 +1856,35 @@ components:
               type: boolean
             customInstruction:
               type: string
-            conversationMode:
-              type: string
-              enum: &a10
-                - factual
-                - guided
-                - exploratory
             suggestedQuestionsEnabled:
               type: boolean
-            suggestedQuestionsCount:
-              type: integer
-              minimum: 1
-              maximum: 4
             retrievalEnabled:
               type: boolean
+            logo:
+              type:
+                - object
+                - "null"
+              properties:
+                bucket:
+                  type: string
+                objectPath:
+                  type: string
+                generation:
+                  type:
+                    - string
+                    - "null"
+                mimeType:
+                  type: string
+                filename:
+                  type: string
+                sizeBytes:
+                  type: number
+              required:
+                - bucket
+                - objectPath
+                - mimeType
+                - filename
+                - sizeBytes
             greetingInstruction:
               type: string
             assistantDefaultLocale:
@@ -1823,10 +1900,9 @@ components:
           required:
             - isDefault
             - customInstruction
-            - conversationMode
             - suggestedQuestionsEnabled
-            - suggestedQuestionsCount
             - retrievalEnabled
+            - logo
             - greetingInstruction
             - assistantDefaultLocale
             - proactiveGreetingEnabled
@@ -1850,15 +1926,8 @@ components:
         customInstruction:
           type: string
           maxLength: 2000
-        conversationMode:
-          type: string
-          enum: *a10
         suggestedQuestionsEnabled:
           type: boolean
-        suggestedQuestionsCount:
-          type: integer
-          minimum: 1
-          maximum: 4
         retrievalEnabled:
           type: boolean
         greetingInstruction:
@@ -1884,10 +1953,6 @@ components:
               properties:
                 enabled:
                   type: boolean
-                messagesPerMinute:
-                  type: integer
-                  minimum: 1
-                  maximum: 60
             websiteEmbed:
               type: object
               properties:
@@ -1902,16 +1967,30 @@ components:
                 launcherLabel:
                   type: string
                   maxLength: 80
-                icon:
-                  type: string
-                  enum: *a11
                 launcherPosition:
                   type: string
-                  enum: *a12
-        rotateAnonymousChatToken:
-          type: boolean
-        rotateWebsiteEmbedToken:
-          type: boolean
+                  enum: *a8
+                theme:
+                  type: object
+                  properties:
+                    brand:
+                      type: string
+                    brandText:
+                      type: string
+                    surface:
+                      type: string
+                    text:
+                      type: string
+                copy:
+                  type: object
+                  additionalProperties:
+                    type: object
+                    additionalProperties:
+                      type: string
+                expertOverrides:
+                  type: object
+                  additionalProperties:
+                    type: string
     PublicChatSessionResponse:
       type: object
       properties:
@@ -1931,6 +2010,10 @@ components:
           type: string
         assistantBootstrapActive:
           type: boolean
+        assistantAvatarUrl:
+          type:
+            - string
+            - "null"
         actions:
           type: object
           additionalProperties: {}
@@ -2743,7 +2826,7 @@ components:
               type: string
             selectionMode:
               type: string
-              enum: &a15
+              enum: &a11
                 - deterministic
                 - probabilistic
             selectionReason:
@@ -2754,7 +2837,7 @@ components:
               maximum: 1
             callerSurface:
               type: string
-              enum: &a16
+              enum: &a12
                 - assistant
                 - retrieval_api
                 - sdk
@@ -2791,7 +2874,7 @@ components:
                 - used
             outcome:
               type: string
-              enum: &a17
+              enum: &a13
                 - success
                 - unsupported
                 - forbidden
@@ -2828,14 +2911,14 @@ components:
                     additionalProperties: {}
                 evidenceStatus:
                   type: string
-                  enum: &a13
+                  enum: &a9
                     - found
                     - missing
                     - partial
                     - not_applicable
                 supportStatus:
                   type: string
-                  enum: &a14
+                  enum: &a10
                     - supported
                     - unsupported
                     - not_checked
@@ -3235,10 +3318,10 @@ components:
             additionalProperties: {}
         evidenceStatus:
           type: string
-          enum: *a13
+          enum: *a9
         supportStatus:
           type: string
-          enum: *a14
+          enum: *a10
         groundingOutcome:
           type: string
     SkillDiagnosticDefinition:
@@ -3252,7 +3335,7 @@ components:
           type: string
         selectionMode:
           type: string
-          enum: *a15
+          enum: *a11
         selectionReason:
           type: string
         selectionConfidence:
@@ -3261,7 +3344,7 @@ components:
           maximum: 1
         callerSurface:
           type: string
-          enum: *a16
+          enum: *a12
         capabilityChecks:
           type: array
           items:
@@ -3292,7 +3375,7 @@ components:
             - used
         outcome:
           type: string
-          enum: *a17
+          enum: *a13
         error:
           type: object
           properties:
@@ -3324,10 +3407,10 @@ components:
                 additionalProperties: {}
             evidenceStatus:
               type: string
-              enum: *a13
+              enum: *a9
             supportStatus:
               type: string
-              enum: *a14
+              enum: *a10
             groundingOutcome:
               type: string
       required:
@@ -3367,7 +3450,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a16
+            enum: *a12
         requiredCapabilities:
           type: array
           items:
@@ -3539,20 +3622,23 @@ components:
             $ref: "#/components/schemas/ChatSuggestion"
         conversationMode:
           type: string
-          enum: *a3
+          enum: &a14
+            - factual
+            - guided
+            - exploratory
         conversationModeMetadata:
           type: object
           properties:
             conversationMode:
               type: string
-              enum: *a3
+              enum: *a14
             brevityOverrideApplied:
               type: boolean
             expansionApplied:
               type: boolean
             expansionKind:
               type: string
-              enum: &a18
+              enum: &a15
                 - none
                 - focused
                 - expansive
@@ -3610,20 +3696,20 @@ components:
             $ref: "#/components/schemas/ChatSuggestion"
         conversationMode:
           type: string
-          enum: *a3
+          enum: *a14
         conversationModeMetadata:
           type: object
           properties:
             conversationMode:
               type: string
-              enum: *a3
+              enum: *a14
             brevityOverrideApplied:
               type: boolean
             expansionApplied:
               type: boolean
             expansionKind:
               type: string
-              enum: *a18
+              enum: *a15
             suggestionCount:
               type: integer
               minimum: 0
@@ -3964,6 +4050,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatConversationSummary"
+        assistantAvatarUrl:
+          type:
+            - string
+            - "null"
         total:
           type: integer
           minimum: 0
@@ -4131,7 +4221,7 @@ components:
             - non_retrieval_response
         conversationMode:
           type: string
-          enum: *a3
+          enum: *a14
         route:
           $ref: "#/components/schemas/AssistantRouteDiagnostics"
         conversationModeMetadata:
@@ -4139,7 +4229,7 @@ components:
           properties:
             conversationMode:
               type: string
-              enum: *a3
+              enum: *a14
             brevityOverrideApplied:
               type: boolean
             expansionApplied:
@@ -5589,6 +5679,101 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FlatErrorResponse"
+  /api/v1/settings/general/anonymous-chat-token/rotate:
+    post:
+      tags:
+        - Settings
+      summary: Reset the anonymous chat public link
+      operationId: rotateAnonymousChatToken
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated general settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneralSettingsResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/general/website-embed-token/rotate:
+    post:
+      tags:
+        - Settings
+      summary: Reset the website embed token
+      operationId: rotateWebsiteEmbedToken
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated general settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneralSettingsResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/general/assistant-logo:
+    post:
+      tags:
+        - Settings
+      summary: Upload the default assistant logo
+      operationId: uploadAssistantLogo
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/AssistantLogoUploadRequest"
+      responses:
+        "200":
+          description: Updated general settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneralSettingsResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - Settings
+      summary: Remove the default assistant logo
+      operationId: deleteAssistantLogo
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated general settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneralSettingsResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents:
     get:
       tags:
@@ -5721,6 +5906,85 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/assistant-logo:
+    post:
+      tags:
+        - Agents
+      summary: Upload an assistant logo
+      operationId: uploadAgentAssistantLogo
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/AssistantLogoUploadRequest"
+      responses:
+        "200":
+          description: Agent updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationAgent"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - Agents
+      summary: Remove an assistant logo
+      operationId: deleteAgentAssistantLogo
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: Agent updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationAgent"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/default:
     post:
       tags:
@@ -5796,7 +6060,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - &a19
+        - &a16
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -5820,7 +6084,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a19
+        - *a16
       parameters:
         - schema:
             type: string

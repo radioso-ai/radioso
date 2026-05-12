@@ -316,9 +316,9 @@ describe("chat service streaming", () => {
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer", citationIndices: [0] }],
       suggestions: undefined,
-      conversationMode: "guided",
+      conversationMode: "exploratory",
       conversationModeMetadata: {
-        conversationMode: "guided",
+        conversationMode: "exploratory",
         brevityOverrideApplied: false,
         expansionApplied: false,
         expansionKind: "none",
@@ -1082,9 +1082,9 @@ describe("chat service streaming", () => {
       answer: "full answer  marker",
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer  marker", citationIndices: [0] }],
-      conversationMode: "guided",
+      conversationMode: "exploratory",
       conversationModeMetadata: {
-        conversationMode: "guided",
+        conversationMode: "exploratory",
         brevityOverrideApplied: false,
         expansionApplied: false,
         expansionKind: "none",
@@ -1206,9 +1206,9 @@ describe("chat service streaming", () => {
         { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
       ],
       suggestions: undefined,
-      conversationMode: "guided",
+      conversationMode: "exploratory",
       conversationModeMetadata: {
-        conversationMode: "guided",
+        conversationMode: "exploratory",
         brevityOverrideApplied: false,
         expansionApplied: false,
         expansionKind: "none",
@@ -3478,7 +3478,7 @@ describe("chat service streaming", () => {
     expect(observedPrompt).toContain("Keep the tone calm and welcoming.");
     expect(observedPrompt).toContain("Stable assistant identity:");
     expect(observedPrompt).toContain("Vikram");
-    expect(observedPrompt).toContain("Conversation mode: guided.");
+    expect(observedPrompt).toContain("Conversation mode: exploratory.");
     expect(groundedMissCalls).toBe(0);
     expect(runWithoutRetrievalCalls).toBe(1);
     expect(runInterpretedCalls).toBe(0);

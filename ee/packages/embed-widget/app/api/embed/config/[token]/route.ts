@@ -1,5 +1,3 @@
-import { z } from 'zod'
-
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
@@ -8,7 +6,7 @@ const BACKEND_BASE =
   process.env.BACKEND_INTERNAL_URL ??
   'http://localhost:8080'
 const CORS_HEADERS = {
-  'Access-Control-Allow-Methods': 'OPTIONS, POST',
+  'Access-Control-Allow-Methods': 'OPTIONS, GET',
   'Access-Control-Allow-Headers': 'Content-Type',
   Vary: 'Origin',
 }
@@ -34,10 +32,6 @@ const resolveOrigin = (value: string | null) => {
   }
 }
 
-const embedBootstrapRequestSchema = z.object({
-  anonymousSessionId: z.string().uuid().optional(),
-})
-
 export async function OPTIONS(request: Request) {
   const origin = resolveOrigin(request.headers.get('origin'))
   return new Response(null, {
@@ -46,55 +40,22 @@ export async function OPTIONS(request: Request) {
   })
 }
 
-export async function POST(
+export async function GET(
   request: Request,
   context: { params: Promise<{ token: string }> },
 ) {
   const { token } = await context.params
   const requestOrigin = resolveOrigin(request.headers.get('origin'))
-  const parsedBody = embedBootstrapRequestSchema.safeParse(
-    await request.json().catch(() => ({})),
-  )
-
-  if (!requestOrigin) {
-    return Response.json(
-      {
-        error: {
-          code: 'bad_request',
-          message: 'Invalid embed session request',
-        },
-      },
-      { status: 400, headers: withCorsHeaders(requestOrigin) },
-    )
-  }
-
-  if (!parsedBody.success) {
-    return Response.json(
-      {
-        error: {
-          code: 'bad_request',
-          message: 'Invalid embed session request',
-        },
-      },
-      { status: 400, headers: withCorsHeaders(requestOrigin) },
-    )
-  }
 
   try {
-    const upstream = await fetch(`${BACKEND_BASE}/api/v1/public/chat/${encodeURIComponent(token)}/sessions`, {
-      method: 'POST',
+    const upstream = await fetch(`${BACKEND_BASE}/api/v1/public/chat/${encodeURIComponent(token)}/embed-config`, {
+      method: 'GET',
       cache: 'no-store',
       headers: {
-        'Content-Type': 'application/json',
         'X-Forwarded-Prefix': '/backend',
-        Origin: requestOrigin,
+        ...(requestOrigin ? { Origin: requestOrigin } : {}),
       },
-      body: JSON.stringify({
-        channel: 'website_embed',
-        anonymousSessionId: parsedBody.data.anonymousSessionId,
-      }),
     })
-
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
 
     return new Response(upstream.body, {

@@ -52,6 +52,16 @@ The Terraform workflow expects these GitHub environment secrets for each deploye
 
 `PUBLIC_CHAT_SESSION_SECRET` signs public chat session tokens for anonymous chat links and website embeds. In Terraform this maps to `public_chat_session_secret`, which is stored in Secret Manager and injected into the backend as `PUBLIC_CHAT_SESSION_SECRET`.
 
+## Optional public chat limits
+
+Public chat and website embed rate limits are operator tuning knobs, not workspace settings. When unset, the backend uses built-in defaults.
+
+- `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS`
+- `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS`
+- `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS`
+
+The session limit applies to a visitor session. The global limit applies across public chat traffic for the process.
+
 ## Runtime separation
 
 The backend owns migrations, auth, retrieval, chat, and API routes. The worker owns queued document processing. Keep those services independently deployable and independently scalable.

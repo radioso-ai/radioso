@@ -43,7 +43,7 @@ describe("agents contract", () => {
       retrievalEnabled: true,
       surfaceSettings: {
         authenticatedChat: { enabled: true },
-        anonymousChat: { messagesPerMinute: 10 },
+        anonymousChat: { enabled: false },
       },
     });
 
@@ -80,11 +80,6 @@ describe("agents contract", () => {
         name: "Direct agent",
         customInstruction: "Answer without retrieval.",
         retrievalEnabled: false,
-        surfaceSettings: {
-          anonymousChat: {
-            messagesPerMinute: 12,
-          },
-        },
       })
       .expect(201);
 
@@ -92,7 +87,7 @@ describe("agents contract", () => {
       retrievalEnabled: false,
       surfaceSettings: {
         anonymousChat: {
-          messagesPerMinute: 12,
+          enabled: false,
         },
       },
     });
@@ -209,11 +204,6 @@ describe("agents contract", () => {
       .set("Authorization", authorization)
       .send({
         name: "Side agent",
-        surfaceSettings: {
-          anonymousChat: {
-            messagesPerMinute: 7,
-          },
-        },
       })
       .expect(201);
 
@@ -223,7 +213,6 @@ describe("agents contract", () => {
       .send({
         assistantName: "Default support",
         anonymousChatEnabled: true,
-        anonymousRateLimit: 22,
       })
       .expect(200);
 
@@ -241,7 +230,6 @@ describe("agents contract", () => {
       surfaceSettings: {
         anonymousChat: {
           enabled: true,
-          messagesPerMinute: 22,
         },
       },
     });
@@ -250,7 +238,6 @@ describe("agents contract", () => {
       surfaceSettings: {
         anonymousChat: {
           enabled: false,
-          messagesPerMinute: 7,
           token: null,
         },
       },
@@ -268,7 +255,7 @@ describe("agents contract", () => {
       .expect(200);
     const defaultAgentId = list.body.agents[0].id as string;
 
-    const defaultAgent = await request(app)
+    await request(app)
       .put(`/api/v1/agents/${defaultAgentId}`)
       .set("Authorization", authorization)
       .send({
@@ -279,9 +266,15 @@ describe("agents contract", () => {
             allowedOrigins: ["https://default.example.com"],
           },
         },
-        rotateAnonymousChatToken: true,
-        rotateWebsiteEmbedToken: true,
       })
+      .expect(200);
+    const defaultAnonymousToken = await request(app)
+      .post(`/api/v1/agents/${defaultAgentId}/anonymous-chat-token/rotate`)
+      .set("Authorization", authorization)
+      .expect(200);
+    const defaultEmbedToken = await request(app)
+      .post(`/api/v1/agents/${defaultAgentId}/website-embed-token/rotate`)
+      .set("Authorization", authorization)
       .expect(200);
 
     const sideAgent = await request(app)
@@ -300,15 +293,21 @@ describe("agents contract", () => {
             allowedOrigins: ["https://side.example.com"],
           },
         },
-        rotateAnonymousChatToken: true,
-        rotateWebsiteEmbedToken: true,
       })
       .expect(200);
+    const sideAnonymousToken = await request(app)
+      .post(`/api/v1/agents/${sideAgent.body.id}/anonymous-chat-token/rotate`)
+      .set("Authorization", authorization)
+      .expect(200);
+    const sideEmbedToken = await request(app)
+      .post(`/api/v1/agents/${sideAgent.body.id}/website-embed-token/rotate`)
+      .set("Authorization", authorization)
+      .expect(200);
 
-    expect(updatedSideAgent.body.surfaceSettings.anonymousChat.token).not.toBe(defaultAgent.body.surfaceSettings.anonymousChat.token);
-    expect(updatedSideAgent.body.surfaceSettings.websiteEmbed.token).not.toBe(defaultAgent.body.surfaceSettings.websiteEmbed.token);
+    expect(sideAnonymousToken.body.surfaceSettings.anonymousChat.token).not.toBe(defaultAnonymousToken.body.surfaceSettings.anonymousChat.token);
+    expect(sideEmbedToken.body.surfaceSettings.websiteEmbed.token).not.toBe(defaultEmbedToken.body.surfaceSettings.websiteEmbed.token);
 
-    const embedToken = updatedSideAgent.body.surfaceSettings.websiteEmbed.token as string;
+    const embedToken = sideEmbedToken.body.surfaceSettings.websiteEmbed.token as string;
     const publicSession = await request(app)
       .post(`/api/v1/public/chat/${embedToken}/sessions`)
       .set("Origin", "https://side.example.com")

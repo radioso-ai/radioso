@@ -4,9 +4,9 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { sendChatSse } from "../presenters/chatPresenter.js";
-import { AppError, badRequest, serviceUnavailable } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
-import { anonymousRateLimiter, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
+import { anonymousRateLimiters, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../modules/settings/contracts/websiteEmbed.js";
@@ -97,6 +97,7 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "chatActionProvider"
   | "chatHistoryService"
   | "conversationRepository"
+  | "documentStorage"
   | "workspaceRepository"
 >;
 
@@ -110,7 +111,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     dependencies.agentRepository,
     dependencies.agentService,
   );
-  const rateLimitAnonymousChat = anonymousRateLimiter(dependencies);
+  const rateLimitAnonymousChat = anonymousRateLimiters(dependencies);
   const resolveOrigin = (value: string | undefined) => {
     if (!value) {
       return null;
@@ -126,6 +127,75 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     const actions = await dependencies.chatActionProvider.getPublicSessionActions?.({ workspaceId });
     return actions && Object.keys(actions).length > 0 ? actions : undefined;
   };
+  const buildAssistantLogoUrl = (req: { get(name: string): string | undefined }, token: string, hasLogo: boolean) => {
+    if (!hasLogo) {
+      return null;
+    }
+    const configuredBaseUrl = dependencies.env.PUBLIC_CHAT_BASE_URL;
+    const appBaseUrl = configuredBaseUrl?.replace(/\/chat(?:\/.*)?$/, "");
+    const forwardedPrefix = req.get("x-forwarded-prefix")?.trim().replace(/\/$/, "") ?? "";
+    return `${forwardedPrefix || appBaseUrl || ""}/api/v1/public/chat/${encodeURIComponent(token)}/assistant-logo`;
+  };
+  const resolveAgentForPublicLogo = async (launchToken: string) => {
+    const anonymousAgent = await dependencies.agentRepository.findByAnonymousChatToken(launchToken);
+    if (anonymousAgent?.surfaceSettings.anonymousChat.enabled) {
+      return anonymousAgent;
+    }
+    const embedAgent = await dependencies.agentRepository.findByWebsiteEmbedToken(launchToken);
+    if (embedAgent?.surfaceSettings.websiteEmbed.enabled) {
+      return embedAgent;
+    }
+    return null;
+  };
+
+  router.get("/:token/embed-config", async (req, res, next) => {
+    try {
+      const launchToken = String(req.params.token);
+      const origin = resolveOrigin(req.header("origin"));
+      const agent = await dependencies.agentRepository.findByWebsiteEmbedToken(launchToken);
+      if (!agent || !agent.surfaceSettings.websiteEmbed.enabled) {
+        next(notFound("Not found"));
+        return;
+      }
+      if (origin && !isAllowedWebsiteEmbedOrigin(agent.surfaceSettings.websiteEmbed.allowedOrigins, origin)) {
+        throw badRequest("This website is not approved to host the embedded assistant.");
+      }
+
+      const websiteEmbed = agent.surfaceSettings.websiteEmbed;
+      res.status(200).json({
+        launcherLabel: websiteEmbed.launcherLabel,
+        launcherPosition: websiteEmbed.launcherPosition,
+        theme: agent.theme,
+        copy: websiteEmbed.copy,
+        expertOverrides: websiteEmbed.expertOverrides,
+        assistantLogoUrl: buildAssistantLogoUrl(req, launchToken, Boolean(agent.logo)),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:token/assistant-logo", async (req, res, next) => {
+    try {
+      const launchToken = String(req.params.token);
+      const agent = await resolveAgentForPublicLogo(launchToken);
+      const logo = agent?.logo;
+      if (!agent || !logo) {
+        next(notFound("Not found"));
+        return;
+      }
+      const buffer = await dependencies.documentStorage.read({
+        bucket: logo.bucket,
+        objectPath: logo.objectPath,
+        generation: logo.generation ?? null,
+      });
+      res.setHeader("Content-Type", logo.mimeType);
+      res.setHeader("Cache-Control", "public, max-age=300");
+      res.status(200).send(buffer);
+    } catch (error) {
+      next(error);
+    }
+  });
 
   // POST /api/v1/public/chat/:token/sessions — exchange a public launch token for a chat session
   router.post("/:token/sessions", validateBody(publicChatSessionSchema), async (req, res, next) => {
@@ -187,6 +257,8 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           publicSessionId: session.publicSessionId,
           publicSessionToken: session.token,
           assistantBootstrapActive: isAgentBootstrapActive(agent),
+          assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
+          theme: agent.theme,
           actions: await resolvePublicSessionActions(workspace.id),
           expiresAt: session.expiresAt,
         });
@@ -323,6 +395,8 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         publicSessionId: session.publicSessionId,
         publicSessionToken: session.token,
         assistantBootstrapActive: isAgentBootstrapActive(agent),
+        assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
+        theme: agent.theme,
         actions: await resolvePublicSessionActions(workspace.id),
         expiresAt: session.expiresAt,
       });
@@ -335,7 +409,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   router.post(
     "/:token",
     sessionMiddleware,
-    rateLimitAnonymousChat,
+    ...rateLimitAnonymousChat,
     validateBody(anonymousChatSchema),
     async (req, res, next) => {
       try {
@@ -418,6 +492,8 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
 
       res.status(200).json({
         workspaceName,
+        assistantAvatarUrl: buildAssistantLogoUrl(req, String(req.params.token), Boolean((res.locals as { assistantLogoAvailable?: boolean }).assistantLogoAvailable)),
+        theme: (res.locals as { assistantTheme?: unknown }).assistantTheme,
         assistantBootstrapActive: Boolean((res.locals as { assistantBootstrapActive?: boolean }).assistantBootstrapActive),
         ...page,
       });

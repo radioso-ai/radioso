@@ -22,6 +22,10 @@
       "types": "./dist/src/routes/embed-session.d.ts",
       "default": "./dist/src/routes/embed-session.js"
     },
+    "./routes/embed-config": {
+      "types": "./dist/src/routes/embed-config.d.ts",
+      "default": "./dist/src/routes/embed-config.js"
+    },
     "./routes/radioso-embed-script": {
       "types": "./dist/src/routes/radioso-embed-script.d.ts",
       "default": "./dist/src/routes/radioso-embed-script.js"

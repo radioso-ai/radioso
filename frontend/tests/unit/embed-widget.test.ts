@@ -5,7 +5,6 @@ import {
   buildWebsiteEmbedSnippet,
   formatWebsiteEmbedOrigins,
   LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL,
-  normalizeWebsiteEmbedAvatarUrl,
   normalizeWebsiteEmbedDisplayMode,
   normalizeWebsiteEmbedInitialState,
   normalizeWebsiteEmbedLocale,
@@ -34,15 +33,13 @@ describe('embed widget helpers', () => {
       websiteEmbedEnabled: true,
       websiteEmbedToken: 'embed-token',
       websiteEmbedScriptUrl: 'https://app.example.com/radioso-embed.js',
-      websiteEmbedAllowedOrigins: ['https://example.com'],
-      websiteEmbedLauncherLabel: 'Talk to us',
-      websiteEmbedLauncherIcon: 'sparkles',
-      websiteEmbedLauncherPosition: 'bottom-left',
     })
 
     expect(snippet).toContain('src="https://app.example.com/radioso-embed.js"')
     expect(snippet).toContain('data-radioso-token="embed-token"')
-    expect(snippet).toContain('data-radioso-launcher-position="bottom-left"')
+    expect(snippet).not.toContain('data-radioso-launcher-position')
+    expect(snippet).not.toContain('data-radioso-theme')
+    expect(snippet).not.toContain('data-radioso-copy')
   })
 
   it('escapes quote-bearing values in the generated snippet', () => {
@@ -50,15 +47,11 @@ describe('embed widget helpers', () => {
       websiteEmbedEnabled: true,
       websiteEmbedToken: 'embed-"token"',
       websiteEmbedScriptUrl: 'https://app.example.com/radioso-embed.js?x="1"',
-      websiteEmbedAllowedOrigins: ['https://example.com'],
-      websiteEmbedLauncherLabel: 'Chat "now"',
-      websiteEmbedLauncherIcon: 'sparkles',
-      websiteEmbedLauncherPosition: 'bottom-left',
     })
 
     expect(snippet).toContain('src="https://app.example.com/radioso-embed.js?x=&quot;1&quot;"')
     expect(snippet).toContain('data-radioso-token="embed-&quot;token&quot;"')
-    expect(snippet).toContain('data-radioso-launcher-label="Chat &quot;now&quot;"')
+    expect(snippet).not.toContain('data-radioso-launcher-label')
   })
 
   it('resolves the script URL from a provided base URL', () => {
@@ -67,34 +60,19 @@ describe('embed widget helpers', () => {
     )
   })
 
-  it('adds optional script-level override attributes to the snippet', () => {
+  it('keeps optional overrides out of the install snippet', () => {
     const snippet = buildWebsiteEmbedSnippet(
       {
         websiteEmbedEnabled: true,
         websiteEmbedToken: 'embed-token',
         websiteEmbedScriptUrl: 'https://app.example.com/radioso-embed.js',
-        websiteEmbedAllowedOrigins: ['https://example.com'],
-        websiteEmbedLauncherLabel: 'Chat with us',
-        websiteEmbedLauncherIcon: 'chat',
-        websiteEmbedLauncherPosition: 'bottom-right',
-      },
-      undefined,
-      {
-        displayMode: 'panel',
-        initialState: 'open',
-        avatarUrl: 'https://cdn.example.com/avatar.gif',
-        pageContext: 'content',
-        copy: {
-          publicChatEmptyTitle: 'Ask us anything',
-        },
-        theme: { accent: '#112233', panelBackground: '#f5f5f5' },
       },
     )
 
-    expect(snippet).toContain('data-radioso-display-mode="panel"')
-    expect(snippet).toContain('data-radioso-initial-state="open"')
-    expect(snippet).toContain('data-radioso-avatar-url="https://cdn.example.com/avatar.gif"')
-    expect(snippet).toContain('data-radioso-page-context="content"')
+    expect(snippet).not.toContain('data-radioso-display-mode')
+    expect(snippet).not.toContain('data-radioso-initial-state')
+    expect(snippet).not.toContain('data-radioso-avatar-url')
+    expect(snippet).not.toContain('data-radioso-page-context')
   })
 
   it('builds a local harness URL from the current embed settings and overrides', () => {
@@ -103,14 +81,12 @@ describe('embed widget helpers', () => {
         websiteEmbedToken: 'embed-token',
         websiteEmbedScriptUrl: 'https://app.example.com/radioso-embed.js',
         websiteEmbedLauncherLabel: 'Talk to us',
-        websiteEmbedLauncherIcon: 'message',
         websiteEmbedLauncherPosition: 'bottom-left',
       },
       undefined,
       {
         displayMode: 'panel',
         initialState: 'open',
-        avatarUrl: 'https://cdn.example.com/avatar.gif',
         copy: { publicChatEmptyTitle: 'Bonjour' },
         theme: { accent: '#123456' },
       },
@@ -121,11 +97,10 @@ describe('embed widget helpers', () => {
     expect(url.searchParams.get('appOrigin')).toBe('https://app.example.com')
     expect(url.searchParams.get('token')).toBe('embed-token')
     expect(url.searchParams.get('label')).toBe('Talk to us')
-    expect(url.searchParams.get('icon')).toBe('message')
     expect(url.searchParams.get('position')).toBe('bottom-left')
     expect(url.searchParams.get('displayMode')).toBe('panel')
     expect(url.searchParams.get('initialState')).toBe('open')
-    expect(url.searchParams.get('avatarUrl')).toBe('https://cdn.example.com/avatar.gif')
+    expect(url.searchParams.get('avatarUrl')).toBeNull()
   })
 
   it('builds a hosted harness URL when an app base URL is available', () => {
@@ -134,7 +109,6 @@ describe('embed widget helpers', () => {
         websiteEmbedToken: 'embed-token',
         websiteEmbedScriptUrl: 'https://app.example.com/radioso-embed.js',
         websiteEmbedLauncherLabel: 'Talk to us',
-        websiteEmbedLauncherIcon: 'message',
         websiteEmbedLauncherPosition: 'bottom-left',
       },
       'https://app.example.com/settings',
@@ -147,21 +121,32 @@ describe('embed widget helpers', () => {
     expect(url.searchParams.get('token')).toBe('embed-token')
   })
 
-  it('normalizes locale, display-mode, initial-state, and avatar overrides', () => {
+  it('preserves an explicitly empty launcher label in the test harness URL', () => {
+    const harnessUrl = buildWebsiteEmbedTestHarnessUrl(
+      {
+        websiteEmbedToken: 'embed-token',
+        websiteEmbedScriptUrl: 'https://app.example.com/radioso-embed.js',
+        websiteEmbedLauncherLabel: '',
+        websiteEmbedLauncherPosition: 'bottom-right',
+      },
+      'https://app.example.com/settings',
+    )
+
+    const url = new URL(harnessUrl ?? '')
+    expect(url.searchParams.has('label')).toBe(true)
+    expect(url.searchParams.get('label')).toBe('')
+  })
+
+  it('normalizes locale, display-mode, and initial-state overrides', () => {
     expect(normalizeWebsiteEmbedLocale(' it-IT ')).toBe('it-IT')
     expect(normalizeWebsiteEmbedDisplayMode(' PANEL ')).toBe('panel')
     expect(normalizeWebsiteEmbedInitialState('OPEN')).toBe('open')
-    expect(normalizeWebsiteEmbedAvatarUrl('https://cdn.example.com/avatar.gif')).toBe(
-      'https://cdn.example.com/avatar.gif',
-    )
-    expect(normalizeWebsiteEmbedAvatarUrl('/images/support.gif')).toBe('/images/support.gif')
   })
 
   it('drops unsupported override values', () => {
     expect(normalizeWebsiteEmbedLocale('not_a_locale')).toBeNull()
     expect(normalizeWebsiteEmbedDisplayMode('drawer')).toBeNull()
     expect(normalizeWebsiteEmbedInitialState('sideways')).toBeNull()
-    expect(normalizeWebsiteEmbedAvatarUrl('javascript:alert(1)')).toBeNull()
   })
 
   it('parses copy and theme overrides from serialized params', () => {

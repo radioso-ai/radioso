@@ -921,21 +921,8 @@
             "type": "string",
             "maxLength": 2000
           },
-          "conversationMode": {
-            "type": "string",
-            "enum": [
-              "factual",
-              "guided",
-              "exploratory"
-            ]
-          },
           "suggestedQuestionsEnabled": {
             "type": "boolean"
-          },
-          "suggestedQuestionsCount": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 4
           },
           "rerankEnabled": {
             "type": "boolean"
@@ -1128,9 +1115,7 @@
           "queryRewriteEnabled",
           "semanticRewriteInstructions",
           "lexicalRewriteInstructions",
-          "conversationMode",
           "suggestedQuestionsEnabled",
-          "suggestedQuestionsCount",
           "rerankEnabled",
           "vectorTopK",
           "similarityThreshold",
@@ -1156,21 +1141,8 @@
             "type": "string",
             "maxLength": 2000
           },
-          "conversationMode": {
-            "type": "string",
-            "enum": [
-              "factual",
-              "guided",
-              "exploratory"
-            ]
-          },
           "suggestedQuestionsEnabled": {
             "type": "boolean"
-          },
-          "suggestedQuestionsCount": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 4
           },
           "rerankEnabled": {
             "type": "boolean"
@@ -1342,21 +1314,8 @@
             "type": "string",
             "maxLength": 2000
           },
-          "conversationMode": {
-            "type": "string",
-            "enum": [
-              "factual",
-              "guided",
-              "exploratory"
-            ]
-          },
           "suggestedQuestionsEnabled": {
             "type": "boolean"
-          },
-          "suggestedQuestionsCount": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 4
           },
           "rerankEnabled": {
             "type": "boolean"
@@ -1826,14 +1785,6 @@
           "anonymousChatEnabled": {
             "type": "boolean"
           },
-          "anonymousRateLimit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 60
-          },
-          "rotateAnonymousChatToken": {
-            "type": "boolean"
-          },
           "assistantName": {
             "type": "string",
             "maxLength": 200
@@ -1855,9 +1806,6 @@
           "websiteEmbedEnabled": {
             "type": "boolean"
           },
-          "rotateWebsiteEmbedToken": {
-            "type": "boolean"
-          },
           "websiteEmbedAllowedOrigins": {
             "type": "array",
             "items": {
@@ -1870,20 +1818,50 @@
             "type": "string",
             "maxLength": 80
           },
-          "websiteEmbedLauncherIcon": {
-            "type": "string",
-            "enum": [
-              "chat",
-              "sparkles",
-              "message"
-            ]
-          },
           "websiteEmbedLauncherPosition": {
             "type": "string",
             "enum": [
               "bottom-right",
               "bottom-left"
             ]
+          },
+          "websiteEmbedTheme": {
+            "type": "object",
+            "properties": {
+              "brand": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "brandText": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "surface": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "text": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              }
+            }
+          },
+          "websiteEmbedCopy": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 500
+              }
+            }
+          },
+          "websiteEmbedExpertOverrides": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 500
+            }
           }
         }
       },
@@ -1898,11 +1876,6 @@
               "string",
               "null"
             ]
-          },
-          "anonymousRateLimit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 60
           },
           "assistantName": {
             "type": "string"
@@ -1921,6 +1894,12 @@
           },
           "assistantBootstrapActive": {
             "type": "boolean"
+          },
+          "assistantLogoUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "websiteEmbedEnabled": {
             "type": "boolean"
@@ -1952,39 +1931,83 @@
           "websiteEmbedLauncherLabel": {
             "type": "string"
           },
-          "websiteEmbedLauncherIcon": {
-            "type": "string",
-            "enum": [
-              "chat",
-              "sparkles",
-              "message"
-            ]
-          },
           "websiteEmbedLauncherPosition": {
             "type": "string",
             "enum": [
               "bottom-right",
               "bottom-left"
             ]
+          },
+          "websiteEmbedTheme": {
+            "type": "object",
+            "properties": {
+              "brand": {
+                "type": "string"
+              },
+              "brandText": {
+                "type": "string"
+              },
+              "surface": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "brand",
+              "brandText",
+              "surface",
+              "text"
+            ]
+          },
+          "websiteEmbedCopy": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "websiteEmbedExpertOverrides": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         },
         "required": [
           "anonymousChatEnabled",
           "anonymousChatUrl",
-          "anonymousRateLimit",
           "assistantName",
           "greetingInstruction",
           "assistantDefaultLocale",
           "proactiveGreetingEnabled",
           "assistantBootstrapActive",
+          "assistantLogoUrl",
           "websiteEmbedEnabled",
           "websiteEmbedToken",
           "websiteEmbedScriptUrl",
           "websiteEmbedSnippet",
           "websiteEmbedAllowedOrigins",
           "websiteEmbedLauncherLabel",
-          "websiteEmbedLauncherIcon",
-          "websiteEmbedLauncherPosition"
+          "websiteEmbedLauncherPosition",
+          "websiteEmbedTheme",
+          "websiteEmbedCopy",
+          "websiteEmbedExpertOverrides"
+        ]
+      },
+      "AssistantLogoUploadRequest": {
+        "type": "object",
+        "properties": {
+          "logo": {
+            "type": "string",
+            "format": "binary"
+          }
+        },
+        "required": [
+          "logo"
         ]
       },
       "AssistantSettingsSection": {
@@ -2010,24 +2033,17 @@
             "description": "Server-managed bootstrap readiness derived from the current assistant configuration.",
             "readOnly": true
           },
-          "conversationMode": {
-            "type": "string",
-            "enum": [
-              "factual",
-              "guided",
-              "exploratory"
-            ]
-          },
           "suggestedQuestionsEnabled": {
             "type": "boolean"
           },
-          "suggestedQuestionsCount": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 4
-          },
           "customInstruction": {
             "type": "string"
+          },
+          "assistantLogoUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -2036,10 +2052,9 @@
           "assistantDefaultLocale",
           "proactiveGreetingEnabled",
           "assistantBootstrapActive",
-          "conversationMode",
           "suggestedQuestionsEnabled",
-          "suggestedQuestionsCount",
-          "customInstruction"
+          "customInstruction",
+          "assistantLogoUrl"
         ]
       },
       "PlatformRetrievalSettingsSection": {
@@ -2254,11 +2269,6 @@
               "null"
             ]
           },
-          "anonymousRateLimit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 60
-          },
           "websiteEmbedEnabled": {
             "type": "boolean"
           },
@@ -2276,14 +2286,6 @@
           },
           "websiteEmbedLauncherLabel": {
             "type": "string"
-          },
-          "websiteEmbedLauncherIcon": {
-            "type": "string",
-            "enum": [
-              "chat",
-              "sparkles",
-              "message"
-            ]
           },
           "websiteEmbedLauncherPosition": {
             "type": "string",
@@ -2303,20 +2305,59 @@
               "string",
               "null"
             ]
+          },
+          "websiteEmbedTheme": {
+            "type": "object",
+            "properties": {
+              "brand": {
+                "type": "string"
+              },
+              "brandText": {
+                "type": "string"
+              },
+              "surface": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "brand",
+              "brandText",
+              "surface",
+              "text"
+            ]
+          },
+          "websiteEmbedCopy": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "websiteEmbedExpertOverrides": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         },
         "required": [
           "anonymousChatEnabled",
           "anonymousChatUrl",
-          "anonymousRateLimit",
           "websiteEmbedEnabled",
           "websiteEmbedToken",
           "websiteEmbedAllowedOrigins",
           "websiteEmbedLauncherLabel",
-          "websiteEmbedLauncherIcon",
           "websiteEmbedLauncherPosition",
           "websiteEmbedScriptUrl",
-          "websiteEmbedSnippet"
+          "websiteEmbedSnippet",
+          "websiteEmbedTheme",
+          "websiteEmbedCopy",
+          "websiteEmbedExpertOverrides"
         ]
       },
       "PlatformSettingsResponse": {
@@ -2362,21 +2403,8 @@
               "proactiveGreetingEnabled": {
                 "type": "boolean"
               },
-              "conversationMode": {
-                "type": "string",
-                "enum": [
-                  "factual",
-                  "guided",
-                  "exploratory"
-                ]
-              },
               "suggestedQuestionsEnabled": {
                 "type": "boolean"
-              },
-              "suggestedQuestionsCount": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 4
               },
               "customInstruction": {
                 "type": "string",
@@ -2546,18 +2574,7 @@
               "anonymousChatEnabled": {
                 "type": "boolean"
               },
-              "anonymousRateLimit": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 60
-              },
-              "rotateAnonymousChatToken": {
-                "type": "boolean"
-              },
               "websiteEmbedEnabled": {
-                "type": "boolean"
-              },
-              "rotateWebsiteEmbedToken": {
                 "type": "boolean"
               },
               "websiteEmbedAllowedOrigins": {
@@ -2572,20 +2589,50 @@
                 "type": "string",
                 "maxLength": 80
               },
-              "websiteEmbedLauncherIcon": {
-                "type": "string",
-                "enum": [
-                  "chat",
-                  "sparkles",
-                  "message"
-                ]
-              },
               "websiteEmbedLauncherPosition": {
                 "type": "string",
                 "enum": [
                   "bottom-right",
                   "bottom-left"
                 ]
+              },
+              "websiteEmbedTheme": {
+                "type": "object",
+                "properties": {
+                  "brand": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "brandText": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "surface": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "text": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  }
+                }
+              },
+              "websiteEmbedCopy": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              },
+              "websiteEmbedExpertOverrides": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 500
+                }
               }
             }
           }
@@ -2647,17 +2694,11 @@
                   "string",
                   "null"
                 ]
-              },
-              "messagesPerMinute": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 60
               }
             },
             "required": [
               "enabled",
-              "token",
-              "messagesPerMinute"
+              "token"
             ]
           },
           "websiteEmbed": {
@@ -2681,20 +2722,50 @@
               "launcherLabel": {
                 "type": "string"
               },
-              "icon": {
-                "type": "string",
-                "enum": [
-                  "chat",
-                  "sparkles",
-                  "message"
-                ]
-              },
               "launcherPosition": {
                 "type": "string",
                 "enum": [
                   "bottom-right",
                   "bottom-left"
                 ]
+              },
+              "theme": {
+                "type": "object",
+                "properties": {
+                  "brand": {
+                    "type": "string"
+                  },
+                  "brandText": {
+                    "type": "string"
+                  },
+                  "surface": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "brand",
+                  "brandText",
+                  "surface",
+                  "text"
+                ]
+              },
+              "copy": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              },
+              "expertOverrides": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
               }
             },
             "required": [
@@ -2702,8 +2773,10 @@
               "token",
               "allowedOrigins",
               "launcherLabel",
-              "icon",
-              "launcherPosition"
+              "launcherPosition",
+              "theme",
+              "copy",
+              "expertOverrides"
             ]
           }
         },
@@ -2727,24 +2800,47 @@
               "customInstruction": {
                 "type": "string"
               },
-              "conversationMode": {
-                "type": "string",
-                "enum": [
-                  "factual",
-                  "guided",
-                  "exploratory"
-                ]
-              },
               "suggestedQuestionsEnabled": {
                 "type": "boolean"
               },
-              "suggestedQuestionsCount": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 4
-              },
               "retrievalEnabled": {
                 "type": "boolean"
+              },
+              "logo": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "bucket": {
+                    "type": "string"
+                  },
+                  "objectPath": {
+                    "type": "string"
+                  },
+                  "generation": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "filename": {
+                    "type": "string"
+                  },
+                  "sizeBytes": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "bucket",
+                  "objectPath",
+                  "mimeType",
+                  "filename",
+                  "sizeBytes"
+                ]
               },
               "greetingInstruction": {
                 "type": "string"
@@ -2768,10 +2864,9 @@
             "required": [
               "isDefault",
               "customInstruction",
-              "conversationMode",
               "suggestedQuestionsEnabled",
-              "suggestedQuestionsCount",
               "retrievalEnabled",
+              "logo",
               "greetingInstruction",
               "assistantDefaultLocale",
               "proactiveGreetingEnabled",
@@ -2806,21 +2901,8 @@
             "type": "string",
             "maxLength": 2000
           },
-          "conversationMode": {
-            "type": "string",
-            "enum": [
-              "factual",
-              "guided",
-              "exploratory"
-            ]
-          },
           "suggestedQuestionsEnabled": {
             "type": "boolean"
-          },
-          "suggestedQuestionsCount": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 4
           },
           "retrievalEnabled": {
             "type": "boolean"
@@ -2855,11 +2937,6 @@
                 "properties": {
                   "enabled": {
                     "type": "boolean"
-                  },
-                  "messagesPerMinute": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 60
                   }
                 }
               },
@@ -2881,30 +2958,48 @@
                     "type": "string",
                     "maxLength": 80
                   },
-                  "icon": {
-                    "type": "string",
-                    "enum": [
-                      "chat",
-                      "sparkles",
-                      "message"
-                    ]
-                  },
                   "launcherPosition": {
                     "type": "string",
                     "enum": [
                       "bottom-right",
                       "bottom-left"
                     ]
+                  },
+                  "theme": {
+                    "type": "object",
+                    "properties": {
+                      "brand": {
+                        "type": "string"
+                      },
+                      "brandText": {
+                        "type": "string"
+                      },
+                      "surface": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "copy": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "expertOverrides": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
                   }
                 }
               }
             }
-          },
-          "rotateAnonymousChatToken": {
-            "type": "boolean"
-          },
-          "rotateWebsiteEmbedToken": {
-            "type": "boolean"
           }
         }
       },
@@ -2933,6 +3028,12 @@
           },
           "assistantBootstrapActive": {
             "type": "boolean"
+          },
+          "assistantAvatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "actions": {
             "type": "object",
@@ -5914,6 +6015,12 @@
               "$ref": "#/components/schemas/ChatConversationSummary"
             }
           },
+          "assistantAvatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "total": {
             "type": "integer",
             "minimum": 0
@@ -8520,6 +8627,168 @@
         }
       }
     },
+    "/api/v1/settings/general/anonymous-chat-token/rotate": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Reset the anonymous chat public link",
+        "operationId": "rotateAnonymousChatToken",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated general settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralSettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/general/website-embed-token/rotate": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Reset the website embed token",
+        "operationId": "rotateWebsiteEmbedToken",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated general settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralSettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/general/assistant-logo": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Upload the default assistant logo",
+        "operationId": "uploadAssistantLogo",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantLogoUploadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated general settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Remove the default assistant logo",
+        "operationId": "deleteAssistantLogo",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated general settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralSettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agents": {
       "get": {
         "tags": [
@@ -8715,6 +8984,138 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/assistant-logo": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Upload an assistant logo",
+        "operationId": "uploadAgentAssistantLogo",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantLogoUploadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationAgent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Remove an assistant logo",
+        "operationId": "deleteAgentAssistantLogo",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationAgent"
                 }
               }
             }

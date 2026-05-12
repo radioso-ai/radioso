@@ -626,8 +626,15 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       websiteEmbedToken: null,
       websiteEmbedAllowedOrigins: [],
       websiteEmbedLauncherLabel: "Chat with us",
-      websiteEmbedLauncherIcon: "chat",
       websiteEmbedLauncherPosition: "bottom-right",
+      websiteEmbedTheme: {
+        brand: "#0f172a",
+        brandText: "#f8fafc",
+        surface: "#ffffff",
+        text: "#0f172a",
+      },
+      websiteEmbedCopy: {},
+      websiteEmbedExpertOverrides: {},
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -726,7 +733,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     input: {
       anonymousChatEnabled: boolean;
       anonymousChatToken: string | null;
-      anonymousRateLimit: number;
       assistantName: string;
       greetingInstruction: string;
       assistantDefaultLocale: string | null;
@@ -735,8 +741,10 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       websiteEmbedToken: string | null;
       websiteEmbedAllowedOrigins: string[];
       websiteEmbedLauncherLabel: string;
-      websiteEmbedLauncherIcon: WorkspaceRecord["websiteEmbedLauncherIcon"];
       websiteEmbedLauncherPosition: WorkspaceRecord["websiteEmbedLauncherPosition"];
+      websiteEmbedTheme?: WorkspaceRecord["websiteEmbedTheme"];
+      websiteEmbedCopy?: WorkspaceRecord["websiteEmbedCopy"];
+      websiteEmbedExpertOverrides?: WorkspaceRecord["websiteEmbedExpertOverrides"];
     },
   ): Promise<WorkspaceRecord> {
     const item = this.items.get(workspaceId);
@@ -747,7 +755,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       ...item,
       anonymousChatEnabled: input.anonymousChatEnabled,
       anonymousChatToken: input.anonymousChatToken,
-      anonymousRateLimit: input.anonymousRateLimit,
       assistantName: input.assistantName,
       greetingInstruction: input.greetingInstruction,
       assistantDefaultLocale: input.assistantDefaultLocale,
@@ -756,8 +763,10 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       websiteEmbedToken: input.websiteEmbedToken,
       websiteEmbedAllowedOrigins: input.websiteEmbedAllowedOrigins,
       websiteEmbedLauncherLabel: input.websiteEmbedLauncherLabel,
-      websiteEmbedLauncherIcon: input.websiteEmbedLauncherIcon,
       websiteEmbedLauncherPosition: input.websiteEmbedLauncherPosition,
+      websiteEmbedTheme: input.websiteEmbedTheme ?? item.websiteEmbedTheme,
+      websiteEmbedCopy: input.websiteEmbedCopy ?? item.websiteEmbedCopy,
+      websiteEmbedExpertOverrides: input.websiteEmbedExpertOverrides ?? item.websiteEmbedExpertOverrides,
       updatedAt: new Date(),
     };
     this.items.set(workspaceId, updated);

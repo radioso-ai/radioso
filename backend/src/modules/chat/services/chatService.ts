@@ -209,7 +209,7 @@ export class ChatService {
   }
 
   private getConversationMode(session: PreparedSession): ConversationMode {
-    return session.retrieval.responseSettings?.conversationMode ?? "guided";
+    return "exploratory";
   }
 
   private getSuggestedQuestionsEnabled(session: PreparedSession): boolean {
@@ -217,7 +217,7 @@ export class ChatService {
   }
 
   private getSuggestedQuestionsCount(session: PreparedSession): number {
-    return session.retrieval.responseSettings?.suggestedQuestionsCount ?? 3;
+    return 3;
   }
 
   private getConversationModeMetadata(session: PreparedSession, input?: Partial<ConversationModeMetadata>): ConversationModeMetadata {
@@ -253,7 +253,7 @@ export class ChatService {
     return this.assistantInstructionBuilder.buildCombinedBlock({
       responseIdentity: session.retrieval.responseIdentity,
       customInstruction: responseSettings?.customInstruction,
-      conversationMode: responseSettings?.conversationMode,
+      conversationMode: this.getConversationMode(session),
       responseLanguagePolicy: responseSettings?.responseLanguagePolicy,
       responseLanguage: session.retrieval.diagnostics.rewriteProposal?.responseLanguage,
     });

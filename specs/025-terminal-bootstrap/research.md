@@ -2,7 +2,7 @@
 
 ## Decision 1: Use a root-level plain Node bootstrap module and keep `run-dev.sh` as a thin wrapper
 
-**Decision**: Implement the default local start flow as a repository-root Node 22 ESM script under `scripts/bootstrap/`, with `run-dev.sh` reduced to a thin compatibility wrapper that executes the Node entry point.
+**Decision**: Implement the default local start flow as a repository-root Node 24 ESM script under `scripts/bootstrap/`, with `run-dev.sh` reduced to a thin compatibility wrapper that executes the Node entry point.
 
 **Rationale**:
 

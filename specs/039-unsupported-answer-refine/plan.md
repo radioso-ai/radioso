@@ -14,7 +14,7 @@ updates operator-facing docs to describe the refined behavior.
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22  
+**Language/Version**: TypeScript 5.x on Node.js 24
 **Primary Dependencies**: Express, Zod, pg, OpenAI SDK, Pino, Vitest, Supertest  
 **Storage**: PostgreSQL 16 with `pgvector`; no schema changes planned  
 **Testing**: Vitest unit, integration, and contract suites  

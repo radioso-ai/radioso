@@ -4,7 +4,7 @@
 
 - A running Radioso backend reachable at `RADIOSO_BASE_URL`
 - A valid Radioso workspace API token for the target workspace
-- Node.js 22+
+- Node.js 24+
 
 ## Install dependencies
 

@@ -9,7 +9,7 @@ Keep PostgreSQL as the durable source of truth for document-processing jobs, but
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22  
+**Language/Version**: TypeScript 5.x on Node.js 24
 **Primary Dependencies**: Express, `pg`, Zod, Pino, Vitest, Supertest, `@google-cloud/tasks`, existing local connector/document packages  
 **Storage**: PostgreSQL 16 with `pgvector`; existing `document_processing_jobs`, `documents`, `chunks`, and audit events; Google Cloud Tasks for delivery only  
 **Testing**: Vitest unit and integration tests, existing persistence/runtime regression coverage  

@@ -4,7 +4,7 @@
 
 Create the backend service under `/Users/dm/code/radioso/backend` with:
 
-- TypeScript on Node.js 22
+- TypeScript on Node.js 24
 - Express HTTP server
 - PostgreSQL connectivity through `pg`
 - OpenAI SDK integration

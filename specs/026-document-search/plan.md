@@ -9,7 +9,7 @@ Add a first-class document discovery flow by introducing a dedicated search API 
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend  
+**Language/Version**: TypeScript 5.x on Node.js 24 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend
 **Primary Dependencies**: Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives  
 **Storage**: PostgreSQL 16 with `pgvector`; reuse `audit_events.metadata_json` for replayable search history snapshots and traces, no new storage system planned  
 **Testing**: Vitest unit, contract, and integration tests under `backend/tests`; frontend state/component verification in the existing frontend approach plus manual dashboard workflow verification  

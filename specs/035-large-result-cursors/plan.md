@@ -14,7 +14,7 @@ becomes durable rather than ad hoc.
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend  
+**Language/Version**: TypeScript 5.x on Node.js 24 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend
 **Primary Dependencies**: Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router  
 **Storage**: PostgreSQL 16 with `pgvector`; existing documents, conversations, messages, audit events, and search history tables  
 **Testing**: Vitest, Supertest, contract and integration coverage in `backend/tests`, frontend unit coverage where view logic changes  

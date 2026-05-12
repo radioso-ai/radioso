@@ -9,7 +9,7 @@ Add a default-on document import flow to the existing Documents UI as a core bac
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend), ESM local package under `/packages`  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend), ESM local package under `/packages`
 **Primary Dependencies**: Express, Zod, `pg`, Vitest, Supertest, `@google-cloud/storage`, route-scoped multipart parsing, and file-format parsers for PDF, DOCX, TXT, and XLSX  
 **Storage**: PostgreSQL 16 for document metadata and extracted text; GCP Cloud Storage bucket for original uploaded files  
 **Testing**: Backend Vitest unit/contract/integration tests, frontend `eslint`, manual upload smoke validation for supported file types  

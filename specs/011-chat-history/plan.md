@@ -9,7 +9,7 @@ Add an account-scoped chat history surface under `Chat > History`, expose conver
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend  
+**Language/Version**: TypeScript 5.x on Node.js 24 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend
 **Primary Dependencies**: Express, pg, OpenAI SDK, Zod, Next.js App Router, Radix/vaul drawer primitives, Lucide icons  
 **Storage**: PostgreSQL tables `conversations`, `messages`, and `audit_events`  
 **Testing**: Vitest, Supertest, TypeScript compiler, Next.js production build  

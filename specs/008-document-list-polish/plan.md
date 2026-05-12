@@ -9,7 +9,7 @@ Polish the documents list row layout and status treatment, add account-scoped pe
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)
 **Primary Dependencies**: Express, pg, OpenAI SDK, Zod, Pino, Next.js App Router, Radix UI primitives, Lucide icons  
 **Storage**: PostgreSQL 16+ (`documents`, `chunks` with `ON DELETE CASCADE`), no new storage systems  
 **Testing**: Backend Vitest + Supertest with backend TDD; frontend lint and targeted manual verification from quickstart  

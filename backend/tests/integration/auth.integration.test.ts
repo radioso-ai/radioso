@@ -597,7 +597,7 @@ describe("auth integration", () => {
     );
     expect(switched.status).toBe(200);
     expect(switched.body.accountId).toBe(secondaryOwner.accountId);
-  }, 10_000);
+  }, 20_000);
 
   it("logs a multi-account user into the invited account when no preferred account is provided", async () => {
     const { app } = createTestApp();

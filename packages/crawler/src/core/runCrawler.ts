@@ -45,6 +45,7 @@ export type RunAttachedCrawlerParams = {
   fetchPage?: FetchPage;
   pageLimit: number;
   pageConcurrency?: number;
+  userAgent?: string;
   publisherKind?: PublicationPublisherKind;
   now?: () => string;
 };
@@ -170,7 +171,7 @@ export const runAttachedCrawler = async (
   const fetchPage = providedFetchPage
     ? async (
         url: string,
-        options?: { etag?: string | null; lastModified?: string | null }
+        options?: { etag?: string | null; lastModified?: string | null; userAgent?: string; signal?: AbortSignal }
       ) => {
         await params.persistence.frontier.markStatus({
           runId: run.id,
@@ -186,6 +187,7 @@ export const runAttachedCrawler = async (
       baseUrl: source.baseUrl,
       pageLimit: params.pageLimit,
       pageConcurrency: params.pageConcurrency,
+      userAgent: params.userAgent,
       seedDiscoveredUrls: execution.seedDiscoveredUrls,
       seedPendingUrls: execution.seedPendingUrls,
       includeBaseUrl: !execution.recovered,

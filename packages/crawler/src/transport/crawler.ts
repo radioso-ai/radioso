@@ -54,16 +54,19 @@ export type FetchPage = (
     etag?: string | null;
     lastModified?: string | null;
     scopeBaseUrl?: string | null;
+    userAgent?: string;
     signal?: AbortSignal;
   }
 ) => Promise<FetchedPage>;
 
+const BLOCKED_HTTP_STATUS_CODES = new Set([401, 403, 429]);
+
 const readErrorMetadata = (
   error: unknown
-): Pick<
+): Partial<Pick<
   FetchedPage,
-  "transportUsed" | "httpAttempted" | "browserAttempted" | "browserFallbackReason" | "httpQualityScore"
-> => {
+  "httpStatus" | "transportUsed" | "httpAttempted" | "browserAttempted" | "browserFallbackReason" | "httpQualityScore"
+>> => {
   if (!error || typeof error !== "object") {
     return {};
   }
@@ -73,6 +76,7 @@ const readErrorMetadata = (
   }
   const typed = metadata as Partial<FetchedPage>;
   return {
+    httpStatus: typed.httpStatus,
     transportUsed: typed.transportUsed,
     httpAttempted: typed.httpAttempted,
     browserAttempted: typed.browserAttempted,
@@ -169,15 +173,24 @@ const parseSitemapUrls = (content: string, contentType: string | null): string[]
     .filter(Boolean);
 };
 
-const fetchText = async (url: string, signal?: AbortSignal): Promise<{
+const fetchText = async (
+  url: string,
+  options?: {
+    signal?: AbortSignal;
+    userAgent?: string;
+  }
+): Promise<{
   ok: boolean;
   status: number;
   contentType: string | null;
   body: string;
 }> => {
   const timeoutSignal = AbortSignal.timeout(15_000);
-  const fetchSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-  const response = await fetch(url, { signal: fetchSignal });
+  const fetchSignal = options?.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
+  const response = await fetch(url, {
+    signal: fetchSignal,
+    ...(options?.userAgent ? { headers: { "User-Agent": options.userAgent } } : {})
+  });
   const bytes = Buffer.from(await response.arrayBuffer());
   const isGzip = bytes[0] === 0x1f && bytes[1] === 0x8b;
   return {
@@ -331,6 +344,23 @@ const ensureSystemBinaryPaths = () => {
   process.env.PATH = [...pathEntries, ...missingEntries].join(pathDelimiter);
 };
 
+const buildBlockedResponseError = (statusCode: number, retryAfter: string | null): Error => {
+  const retryAfterSuffix = retryAfter ? ` (Retry-After: ${retryAfter})` : "";
+  const error = new Error(`Blocked by status code ${statusCode}${retryAfterSuffix}`);
+  Object.defineProperty(error, "crawlMetadata", {
+    value: {
+      httpStatus: statusCode,
+      transportUsed: "http",
+      httpAttempted: true,
+      browserAttempted: false,
+      browserFallbackReason: null,
+      httpQualityScore: null
+    },
+    enumerable: false
+  });
+  return error;
+};
+
 const fetchPageWithCrawlee: FetchPage = async (url, options) => {
   ensureSystemBinaryPaths();
   let result: FetchedPage | null = null;
@@ -348,12 +378,14 @@ const fetchPageWithCrawlee: FetchPage = async (url, options) => {
       maxRequestsPerCrawl: 1,
       maxConcurrency: 1,
       maxRequestRetries: 0,
-      respectRobotsTxtFile: true,
+      useSessionPool: false,
+      respectRobotsTxtFile: options?.userAgent ? { userAgent: options.userAgent } : true,
       preNavigationHooks: [
         async ({ request }, gotOptions) => {
           assertInScope(request.url);
           request.headers = {
             ...request.headers,
+            ...(options?.userAgent ? { "User-Agent": options.userAgent } : {}),
             ...(options?.etag ? { "If-None-Match": options.etag } : {}),
             ...(options?.lastModified ? { "If-Modified-Since": options.lastModified } : {})
           };
@@ -370,6 +402,10 @@ const fetchPageWithCrawlee: FetchPage = async (url, options) => {
       requestHandler: async ({ request, response, $ }) => {
         const loadedUrl = request.loadedUrl ?? request.url;
         assertInScope(loadedUrl);
+        const statusCode = response?.statusCode ?? null;
+        if (statusCode && BLOCKED_HTTP_STATUS_CODES.has(statusCode)) {
+          throw buildBlockedResponseError(statusCode, readHeader(response?.headers, "retry-after"));
+        }
         removePageChrome($);
         const html = $.html();
         result = {
@@ -377,7 +413,7 @@ const fetchPageWithCrawlee: FetchPage = async (url, options) => {
           title: $("title").text() || null,
           text: extractStructuredTextFromHtml(html),
           html,
-          httpStatus: response?.statusCode ?? null,
+          httpStatus: statusCode,
           links: $("a[href]")
             .toArray()
             .map((anchor) => {
@@ -421,6 +457,7 @@ type CrawlSiteParams = {
   baseUrl: string;
   pageLimit: number;
   pageConcurrency?: number;
+  userAgent?: string;
   seedDiscoveredUrls?: string[];
   seedPendingUrls?: string[];
   includeBaseUrl?: boolean;
@@ -451,6 +488,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     baseUrl,
     pageLimit,
     pageConcurrency = 1,
+    userAgent,
     seedDiscoveredUrls,
     seedPendingUrls,
     includeBaseUrl,
@@ -574,7 +612,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
       const robotsUrl = toOriginScopeUrl(baseUrl);
       const parsedRobotsUrl = new URL(robotsUrl);
       parsedRobotsUrl.pathname = "/robots.txt";
-      const robots = await fetchText(parsedRobotsUrl.toString(), signal);
+      const robots = await fetchText(parsedRobotsUrl.toString(), { signal, userAgent });
       if (robots.status === 404 || !robots.ok) {
         return [];
       }
@@ -586,7 +624,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
           continue;
         }
         try {
-          const sitemap = await fetchText(sitemapUrl, signal);
+          const sitemap = await fetchText(sitemapUrl, { signal, userAgent });
           if (!sitemap.ok) {
             continue;
           }
@@ -613,6 +651,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
           const page = await fetchPage(next, {
             ...(metadata ?? {}),
             scopeBaseUrl: baseUrl,
+            userAgent,
             signal
           });
           signal?.throwIfAborted();

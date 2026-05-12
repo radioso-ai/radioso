@@ -5,15 +5,17 @@ export type WebsiteCrawlerConfig = {
   // the provider request, and local page publication for each crawl.
   defaultLimit: number;
   maxLimit: number;
+  userAgent: string;
 };
 
 export type WebsiteCrawlerEnv = Partial<Record<
-  "WEBSITE_CRAWLER_DEFAULT_LIMIT" | "WEBSITE_CRAWLER_MAX_LIMIT",
+  "WEBSITE_CRAWLER_DEFAULT_LIMIT" | "WEBSITE_CRAWLER_MAX_LIMIT" | "WEBSITE_CRAWLER_USER_AGENT",
   string | undefined
 >>;
 
 const DEFAULT_LIMIT = 10;
 const DEFAULT_MAX_LIMIT = 100;
+export const DEFAULT_WEBSITE_CRAWLER_USER_AGENT = "RadiosoCrawler/1.0";
 
 const readInteger = (
   value: string | undefined,
@@ -40,8 +42,10 @@ export const resolveWebsiteCrawlerConfig = (
     readInteger(env.WEBSITE_CRAWLER_DEFAULT_LIMIT, DEFAULT_LIMIT, "WEBSITE_CRAWLER_DEFAULT_LIMIT"),
     maxLimit,
   );
+  const userAgent = env.WEBSITE_CRAWLER_USER_AGENT?.trim() || DEFAULT_WEBSITE_CRAWLER_USER_AGENT;
   return {
     defaultLimit,
     maxLimit,
+    userAgent,
   };
 };

@@ -137,4 +137,63 @@ describe("default Crawlee fetcher", () => {
     expect(pages[0].text).not.toContain("&#xF5;");
     expect(pages[0].text).not.toContain("&auml;");
   });
+
+  it("seeds pages from robots.txt sitemaps when the landing page has no body links", async () => {
+    const hits: string[] = [];
+    const { server, baseUrl } = await listen((req, res) => {
+      hits.push(req.url ?? "");
+      if (req.url === "/robots.txt") {
+        res
+          .writeHead(200, { "content-type": "text/plain; charset=utf-8" })
+          .end(`User-agent: *\nAllow: /\nSitemap: ${baseUrl}/sitemap.xml\n`);
+        return;
+      }
+      if (req.url === "/sitemap.xml") {
+        res
+          .writeHead(200, { "content-type": "application/xml; charset=utf-8" })
+          .end(`<?xml version="1.0" encoding="UTF-8"?>
+            <urlset>
+              <url><loc>${baseUrl}/about</loc></url>
+              <url><loc>${baseUrl}/faq</loc></url>
+              <url><loc>https://other.example/ignored</loc></url>
+            </urlset>
+          `);
+        return;
+      }
+      if (req.url === "/about") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end("<html><head><title>About</title></head><body><main><p>About content.</p></main></body></html>");
+        return;
+      }
+      if (req.url === "/faq") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end("<html><head><title>FAQ</title></head><body><main><p>FAQ content.</p></main></body></html>");
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`<html><head><title>Home</title></head><body>
+          <header><nav><a href="/about">About</a><a href="/faq">FAQ</a></nav></header>
+          <main><p>Home content.</p></main>
+        </body></html>`);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 3
+    });
+
+    expect(hits).toContain("/sitemap.xml");
+    expect(pages.map((page) => page.url).sort()).toEqual([
+      `${baseUrl}/about`,
+      `${baseUrl}/faq`,
+      `${baseUrl}/`,
+    ].sort());
+    expect(pages.map((page) => page.text)).toEqual(
+      expect.arrayContaining(["Home content.", "About content.", "FAQ content."])
+    );
+  });
 });

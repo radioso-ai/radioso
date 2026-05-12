@@ -1,5 +1,6 @@
 'use client'
 
+import { MarkdownContent } from '@/components/markdown/markdown-content'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { LogoSpinner } from '@/components/ui/spinner'
@@ -50,12 +51,16 @@ export function HistoryDocumentDialog({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="historyDocumentContent">Content</Label>
-                <Textarea
+                <div
                   id="historyDocumentContent"
-                  value={document.content}
-                  readOnly
-                  className="min-h-[320px] resize-none overflow-y-auto [field-sizing:fixed]"
-                />
+                  className="min-h-[320px] overflow-y-auto rounded-md border border-input bg-muted/30 px-3 py-2 text-sm leading-7 text-foreground [overflow-wrap:anywhere]"
+                >
+                  {document.content.trim().length > 0 ? (
+                    <MarkdownContent content={document.content} variant="document" />
+                  ) : (
+                    <p className="text-muted-foreground">This document has no content.</p>
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="historyDocumentMetadata">Metadata</Label>

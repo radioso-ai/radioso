@@ -70,7 +70,11 @@ export class SkillCatalogService {
   }
 
   private stripInternalFields(entry: SkillCatalogEntryDefinition): Omit<SkillCatalogEntryDefinition, "availabilityCheck"> {
-    const { availabilityCheck: _availabilityCheck, ...catalogEntry } = entry;
+    const {
+      availabilityCheck: _availabilityCheck,
+      generatedContract: _generatedContract,
+      ...catalogEntry
+    } = entry;
     return {
       ...catalogEntry,
       diagnostics: {

@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "npm run build:crawler && npm run generate:openapi && tsc -p tsconfig.json && node ./scripts/copyNonTsAssets.mjs",
+    "build": "npm run build:crawler && npm run generate:openapi && npm run generate:skills && tsc -p tsconfig.json && node ./scripts/copyNonTsAssets.mjs",
     "build:crawler": "npm --prefix ../packages/crawler ci && npm --prefix ../packages/crawler run build",
     "dev": "npm run dev:http",
     "predev:http": "npm run build:crawler",
@@ -17,6 +17,7 @@
     "predev:worker-server": "npm run build:crawler",
     "dev:worker-server": "tsx watch ./src/documentWorkerServer.ts",
     "generate:openapi": "tsx ./scripts/generateOpenApi.ts",
+    "generate:skills": "tsx ./scripts/generateSkillContracts.ts",
     "lint": "npm run lint:boundaries",
     "lint:boundaries": "depcruise --config dependency-cruiser.config.cjs src",
     "start": "npm run start:http",
@@ -27,7 +28,7 @@
     "test:unit": "vitest run tests/unit",
     "test:composition": "vitest run tests/unit/capability-policy.test.ts tests/unit/application-modules.test.ts tests/unit/default-composition.test.ts tests/unit/document-capability-policy.test.ts",
     "test:integration": "vitest run tests/integration",
-    "test:contract": "npm run generate:openapi && vitest run tests/contract",
+    "test:contract": "npm run generate:openapi && npm run generate:skills -- --check && vitest run tests/contract",
     "test:persistence": "vitest run tests/integration/persistence.integration.test.ts",
     "validate:architecture": "node ../scripts/validate-architecture-boundaries.mjs"
   },

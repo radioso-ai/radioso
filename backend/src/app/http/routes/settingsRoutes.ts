@@ -30,7 +30,7 @@ export const updateSettingsSchema = z.object({
   suggestedQuestionsEnabled: z.boolean().optional(),
   suggestedQuestionsCount: z.number().int().min(MIN_SUGGESTED_QUESTIONS_COUNT).max(MAX_SUGGESTED_QUESTIONS_COUNT).optional(),
   rerankEnabled: z.boolean(),
-  vectorTopK: z.number().int(),
+  vectorTopK: z.number().int().min(1),
   similarityThreshold: z.number(),
   rerankTopK: z.number().int().max(RETRIEVAL_BEHAVIOR.rerank.candidateLimit),
   citationDisplayEnabled: z.boolean(),

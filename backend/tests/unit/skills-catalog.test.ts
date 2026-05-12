@@ -48,6 +48,10 @@ describe("skills catalog", () => {
         shapeAware: true,
         strategyAware: true,
       },
+      schemaReferences: {
+        inputSchemaRef: "RetrievalAnswerRequest",
+        settingsSchemaRef: "RetrievalSettingsOverride",
+      },
       steps: expect.arrayContaining([
         expect.objectContaining({ name: "context_selection", kind: "context_selection" }),
       ]),

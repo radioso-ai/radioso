@@ -826,6 +826,7 @@ components:
           type: boolean
         vectorTopK:
           type: integer
+          minimum: 1
         similarityThreshold:
           type: number
         rerankTopK:
@@ -856,7 +857,7 @@ components:
                 type: string
               combinator:
                 type: string
-                enum: &a9
+                enum: &a6
                   - and
                   - or
               conditions:
@@ -909,6 +910,105 @@ components:
         - similarityThreshold
         - rerankTopK
         - citationDisplayEnabled
+    RetrievalSettingsOverride:
+      type: object
+      properties:
+        queryRewriteEnabled:
+          type: boolean
+        semanticRewriteInstructions:
+          type: string
+          maxLength: 2000
+        lexicalRewriteInstructions:
+          type: string
+          maxLength: 2000
+        conversationMode:
+          type: string
+          enum: *a3
+        suggestedQuestionsEnabled:
+          type: boolean
+        suggestedQuestionsCount:
+          type: integer
+          minimum: 1
+          maximum: 4
+        rerankEnabled:
+          type: boolean
+        vectorTopK:
+          type: integer
+          minimum: 1
+        similarityThreshold:
+          type: number
+        rerankTopK:
+          type: integer
+          maximum: 50
+        citationDisplayEnabled:
+          type: boolean
+        answerSupportValidationEnabled:
+          type: boolean
+        metadataRules:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                minLength: 1
+              field:
+                type: string
+                minLength: 1
+              valueType:
+                type: string
+                enum: *a1
+              operator:
+                type: string
+                enum: *a2
+              value:
+                type: string
+              combinator:
+                type: string
+                enum: *a6
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                    field:
+                      type: string
+                      minLength: 1
+                    valueType:
+                      type: string
+                      enum: *a1
+                    operator:
+                      type: string
+                      enum: *a2
+                    value:
+                      type: string
+                  required:
+                    - id
+                    - field
+                    - valueType
+                    - operator
+                    - value
+              effect:
+                type: string
+                enum: *a4
+              enabled:
+                type: boolean
+              triggerMode:
+                type: string
+                enum: *a5
+              triggerInstruction:
+                type: string
+                maxLength: 500
+            required:
+              - id
+              - effect
+              - enabled
+        customInstruction:
+          type: string
+          maxLength: 2000
     IngestionSettings:
       type: object
       properties:
@@ -917,7 +1017,7 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a6
+          enum: &a7
             - fixed_window
             - structured_semantic
         fixedWindowChunkSize:
@@ -948,7 +1048,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a6
+          enum: *a7
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -1151,13 +1251,13 @@ components:
           maxLength: 80
         websiteEmbedLauncherIcon:
           type: string
-          enum: &a7
+          enum: &a8
             - chat
             - sparkles
             - message
         websiteEmbedLauncherPosition:
           type: string
-          enum: &a8
+          enum: &a9
             - bottom-right
             - bottom-left
     GeneralSettingsResponse:
@@ -1207,10 +1307,10 @@ components:
           type: string
         websiteEmbedLauncherIcon:
           type: string
-          enum: *a7
+          enum: *a8
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a8
+          enum: *a9
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
@@ -1412,10 +1512,10 @@ components:
           type: string
         websiteEmbedLauncherIcon:
           type: string
-          enum: *a7
+          enum: *a8
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a8
+          enum: *a9
         websiteEmbedScriptUrl:
           type:
             - string
@@ -1524,7 +1624,7 @@ components:
                     type: string
                   combinator:
                     type: string
-                    enum: *a9
+                    enum: *a6
                   conditions:
                     type: array
                     items:
@@ -1591,10 +1691,10 @@ components:
               maxLength: 80
             websiteEmbedLauncherIcon:
               type: string
-              enum: *a7
+              enum: *a8
             websiteEmbedLauncherPosition:
               type: string
-              enum: *a8
+              enum: *a9
     Agent:
       type: object
       properties:
@@ -3207,6 +3307,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SkillContractReference"
+        schemaReferences:
+          type: object
+          properties:
+            inputSchemaRef:
+              type: string
+            settingsSchemaRef:
+              type: string
+          required:
+            - inputSchemaRef
         diagnostics:
           $ref: "#/components/schemas/SkillDiagnosticsSummary"
         steps:

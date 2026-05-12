@@ -386,6 +386,10 @@ const UpdateRetrievalSettingsRequestSchema = registry.register(
   "UpdateRetrievalSettingsRequest",
   updateSettingsSchema,
 );
+registry.register(
+  "RetrievalSettingsOverride",
+  updateSettingsSchema.partial(),
+);
 
 const IngestionSettingsSchema = registry.register(
   "IngestionSettings",

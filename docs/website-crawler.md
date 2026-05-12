@@ -158,7 +158,7 @@ The Terraform configuration provisions two Cloud Run services:
 
 The dispatcher reads `WORKER_TASKS_CRAWL_SERVICE_URL` to know where website crawl Cloud Tasks pushes should land. When unset it falls back to `WORKER_TASKS_SERVICE_URL`, so a single-worker deployment still works. Terraform discovers the crawler worker URL automatically by referencing `google_cloud_run_v2_service.crawler_worker.uri` from the backend and document worker — no override variable is needed. The document worker URL still needs `worker_tasks_service_url_override` on the second apply because the document worker self-references its own URI for retry dispatch.
 
-Scaling defaults are independent: `worker_min_instances` / `worker_max_instances` for the document worker, `crawler_worker_min_instances` / `crawler_worker_max_instances` for the crawler. Both stay at `min = 1` so the polling fallback always has a live recovery process.
+Scaling defaults are independent: `worker_min_instances` / `worker_max_instances` for the document worker, `crawler_worker_min_instances` / `crawler_worker_max_instances` for the crawler. The document worker can use `worker_min_instances = 0` in Cloud Tasks driven environments to scale to zero when idle. Set it above zero only when the document queue needs a continuously warm polling fallback. The crawler worker keeps its own minimum instance setting because website crawl recovery is managed separately.
 
 ### Rollout ordering
 

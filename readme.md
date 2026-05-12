@@ -174,9 +174,9 @@ Assistant and retrieval responses include diagnostic metadata that identifies wh
 
 ### Website crawler provider
 
-Radioso exposes an OSS website crawler provider port at `POST /api/v1/document/crawl`. The route accepts a website URL, calls a registered crawler provider, and publishes returned pages through the normal document ingestion pipeline.
+Radioso exposes an OSS website crawler provider port at `POST /api/v1/document/crawl`. The route accepts a website URL, calls the bundled `radioso-crawler` provider by default, and publishes returned pages through the normal document ingestion pipeline.
 
-The core app does not include a concrete crawler provider. Until one is registered through application composition, the route returns `503 service_unavailable`. Crawl limits are controlled with `WEBSITE_CRAWLER_DEFAULT_LIMIT` and `WEBSITE_CRAWLER_MAX_LIMIT`.
+Application composition can register a different crawler provider for custom deployments. Crawl limits are controlled with `WEBSITE_CRAWLER_DEFAULT_LIMIT` and `WEBSITE_CRAWLER_MAX_LIMIT`.
 
 `GET /api/v1/document/crawl/jobs` lists recent crawl jobs for the current workspace with their status, requested URL, page count, and last error. The dashboard Knowledge Base page uses it to display a status banner for in-flight and recently completed crawls. See `docs/website-crawler.md` for the full request and response shape.
 

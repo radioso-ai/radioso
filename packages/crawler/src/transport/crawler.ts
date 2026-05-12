@@ -1,10 +1,12 @@
 import { delimiter as pathDelimiter } from "node:path";
+import { gunzipSync } from "node:zlib";
 import {
   BasicCrawler,
   CheerioCrawler,
   Configuration,
   LogLevel,
   MemoryStorage,
+  RobotsTxtFile,
   log
 } from "crawlee";
 import type { CrawlCandidateDecision } from "./candidateDecision.js";
@@ -124,6 +126,67 @@ const decodeEntities = (text: string): string =>
 
     return HTML_ENTITY_LOOKUP[entity] ?? match;
   });
+
+const unique = <T>(values: T[]): T[] => [...new Set(values)];
+
+const toOriginScopeUrl = (rawUrl: string): string => {
+  const parsed = new URL(rawUrl);
+  parsed.pathname = "/";
+  parsed.search = "";
+  parsed.hash = "";
+  return parsed.toString();
+};
+
+const normalizeSameOriginFetchUrl = (rawUrl: string, baseUrl: string): string | null => {
+  const candidateIdentity = canonicalizeUrlIdentity(rawUrl);
+  const baseIdentity = canonicalizeUrlIdentity(baseUrl);
+  if (!candidateIdentity || !baseIdentity) {
+    return null;
+  }
+  const candidate = new URL(candidateIdentity.canonicalUrl);
+  const base = new URL(baseIdentity.canonicalUrl);
+  if (candidate.protocol !== base.protocol || candidate.host !== base.host) {
+    return null;
+  }
+  candidate.username = "";
+  candidate.password = "";
+  return candidate.toString();
+};
+
+const parseSitemapUrls = (content: string, contentType: string | null): string[] => {
+  const trimmed = content.trim();
+  if (
+    contentType?.includes("text/plain") ||
+    (!trimmed.startsWith("<") && trimmed.length > 0)
+  ) {
+    return trimmed
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+  return [...trimmed.matchAll(/<loc\b[^>]*>([\s\S]*?)<\/loc>/gi)]
+    .map((match) => decodeEntities(match[1].replace(/<[^>]+>/g, "").trim()))
+    .filter(Boolean);
+};
+
+const fetchText = async (url: string, signal?: AbortSignal): Promise<{
+  ok: boolean;
+  status: number;
+  contentType: string | null;
+  body: string;
+}> => {
+  const timeoutSignal = AbortSignal.timeout(15_000);
+  const fetchSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+  const response = await fetch(url, { signal: fetchSignal });
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const isGzip = bytes[0] === 0x1f && bytes[1] === 0x8b;
+  return {
+    ok: response.ok,
+    status: response.status,
+    contentType: response.headers.get("content-type"),
+    body: (isGzip ? gunzipSync(bytes) : bytes).toString("utf8")
+  };
+};
 
 const normalizeText = (value: string): string =>
   decodeEntities(value)
@@ -506,6 +569,38 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     return decision;
   };
 
+  const seedSitemapUrls = async (): Promise<string[]> => {
+    try {
+      const robotsUrl = toOriginScopeUrl(baseUrl);
+      const parsedRobotsUrl = new URL(robotsUrl);
+      parsedRobotsUrl.pathname = "/robots.txt";
+      const robots = await fetchText(parsedRobotsUrl.toString(), signal);
+      if (robots.status === 404 || !robots.ok) {
+        return [];
+      }
+      const robotsFile = RobotsTxtFile.from(parsedRobotsUrl.toString(), robots.body);
+      const sitemapPageUrls: string[] = [];
+      for (const rawSitemapUrl of unique(robotsFile.getSitemaps())) {
+        const sitemapUrl = normalizeSameOriginFetchUrl(rawSitemapUrl, robotsUrl);
+        if (!sitemapUrl) {
+          continue;
+        }
+        try {
+          const sitemap = await fetchText(sitemapUrl, signal);
+          if (!sitemap.ok) {
+            continue;
+          }
+          sitemapPageUrls.push(...parseSitemapUrls(sitemap.body, sitemap.contentType));
+        } catch {
+          continue;
+        }
+      }
+      return sitemapPageUrls;
+    } catch {
+      return [];
+    }
+  };
+
   const crawler = new BasicCrawler(
     {
       maxConcurrency: Math.max(1, pageConcurrency),
@@ -626,6 +721,30 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
   }
   if (includeBaseUrl ?? true) {
     await seedPending(baseUrl);
+  }
+  for (const sitemapUrl of unique(await seedSitemapUrls())) {
+    if (discovered.size >= discoveryLimit) {
+      const canonicalUrl = canonicalize(sitemapUrl);
+      if (onCandidateUrl) {
+        await onCandidateUrl({
+          ...buildRejectedCandidateDecision(sitemapUrl, "page_limit_reached", canonicalUrl),
+          sourcePageUrl: baseUrl
+        });
+      }
+      continue;
+    }
+    const decision = await enqueueCandidate(sitemapUrl, { sourcePageUrl: baseUrl, seed: true });
+    if (onCandidateUrl) {
+      await onCandidateUrl({
+        ...decision,
+        sourcePageUrl: baseUrl
+      });
+    }
+    if (decision.decision !== "accepted" || !decision.canonicalUrl || queued.has(decision.canonicalUrl)) {
+      continue;
+    }
+    queued.add(decision.canonicalUrl);
+    initialUrls.push({ url: decision.canonicalUrl, uniqueKey: decision.canonicalUrl });
   }
 
   await crawler.run(initialUrls);

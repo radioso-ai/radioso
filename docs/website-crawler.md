@@ -1,8 +1,8 @@
 # Website Crawler Provider
 
-Radioso includes an OSS website crawler provider port. The port lets an application module supply crawler results that Radioso can publish through the normal document ingestion pipeline.
+Radioso includes an OSS website crawler provider port and a bundled `radioso-crawler` provider. The provider fetches website pages and publishes them through the normal document ingestion pipeline.
 
-The core backend does not include a concrete crawler provider. In practice, `POST /api/v1/document/crawl` returns `503 service_unavailable` until a provider is registered through application composition.
+Application composition can still register a different crawler provider. If crawler support is disabled or no provider is available in a custom build, `POST /api/v1/document/crawl` returns an error instead of enqueueing a job.
 
 ## API
 
@@ -29,6 +29,8 @@ WEBSITE_CRAWLER_MAX_LIMIT=100
 Cookie-session requests select the workspace with `x-workspace-id`. Bearer-token requests use the workspace already bound to the API token.
 
 Accepted pages are published as documents with stable external document IDs and a workspace-local website source. Repeated crawls of the same normalized URL reuse that source, so recrawl logic can find the related documents through `sourceId`. Chunking, embeddings, retrieval, and citations remain owned by the standard document worker.
+
+The bundled `radioso-crawler` provider seeds its crawl from the requested URL and from same-origin sitemaps listed in `robots.txt`. It still applies the request `limit`, same-origin scope checks, duplicate removal, and asset filtering before fetching pages.
 
 ### Document and source metadata
 

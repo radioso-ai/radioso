@@ -1353,6 +1353,48 @@ export interface components {
             }[];
             customInstruction?: string;
         };
+        RetrievalSettingsOverride: {
+            queryRewriteEnabled?: boolean;
+            semanticRewriteInstructions?: string;
+            lexicalRewriteInstructions?: string;
+            /** @enum {string} */
+            conversationMode?: "factual" | "guided" | "exploratory";
+            suggestedQuestionsEnabled?: boolean;
+            suggestedQuestionsCount?: number;
+            rerankEnabled?: boolean;
+            vectorTopK?: number;
+            similarityThreshold?: number;
+            rerankTopK?: number;
+            citationDisplayEnabled?: boolean;
+            answerSupportValidationEnabled?: boolean;
+            metadataRules?: {
+                id: string;
+                field?: string;
+                /** @enum {string} */
+                valueType?: "string" | "number" | "date" | "boolean";
+                /** @enum {string} */
+                operator?: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                value?: string;
+                /** @enum {string} */
+                combinator?: "and" | "or";
+                conditions?: {
+                    id: string;
+                    field: string;
+                    /** @enum {string} */
+                    valueType: "string" | "number" | "date" | "boolean";
+                    /** @enum {string} */
+                    operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                    value: string;
+                }[];
+                /** @enum {string} */
+                effect: "boost" | "filter";
+                enabled: boolean;
+                /** @enum {string} */
+                triggerMode?: "always_on" | "match_turn";
+                triggerInstruction?: string;
+            }[];
+            customInstruction?: string;
+        };
         IngestionSettings: {
             /** Format: uuid */
             workspaceId: string;
@@ -2265,6 +2307,10 @@ export interface components {
             supportedCallers: ("assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed")[];
             requiredCapabilities: string[];
             contractReferences: components["schemas"]["SkillContractReference"][];
+            schemaReferences?: {
+                inputSchemaRef: string;
+                settingsSchemaRef?: string;
+            };
             diagnostics: components["schemas"]["SkillDiagnosticsSummary"];
             steps?: {
                 name: string;

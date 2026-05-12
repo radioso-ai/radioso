@@ -64,8 +64,7 @@ ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL
 ENV RADIOSO_EDITION=$RADIOSO_EDITION
 ENV NEXT_PUBLIC_RADIOSO_EDITION=$RADIOSO_EDITION
 
-COPY --from=builder /app/frontend ./
-RUN chown -R node:node /app
+COPY --chown=node:node --from=builder /app/frontend ./
 USER node
 EXPOSE 3000
 CMD ["npm", "run", "start", "--", "-H", "0.0.0.0", "-p", "3000"]

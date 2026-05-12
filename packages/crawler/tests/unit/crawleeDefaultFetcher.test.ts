@@ -138,6 +138,30 @@ describe("default Crawlee fetcher", () => {
     expect(pages[0].text).not.toContain("&auml;");
   });
 
+  it("sends the configured user agent when fetching pages", async () => {
+    const userAgents = new Map<string, string | undefined>();
+    const { server, baseUrl } = await listen((req, res) => {
+      userAgents.set(req.url ?? "", req.headers["user-agent"]);
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>Docs</title></head><body><main><p>Docs content.</p></main></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1,
+      userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)"
+    });
+
+    expect(pages[0]).toEqual(expect.objectContaining({ status: "success" }));
+    expect(userAgents.get("/")).toBe("ExampleDocsCrawler/1.0 (+https://example.com/crawler)");
+  });
+
   it("seeds pages from robots.txt sitemaps when the landing page has no body links", async () => {
     const hits: string[] = [];
     const { server, baseUrl } = await listen((req, res) => {
@@ -195,5 +219,98 @@ describe("default Crawlee fetcher", () => {
     expect(pages.map((page) => page.text)).toEqual(
       expect.arrayContaining(["Home content.", "About content.", "FAQ content."])
     );
+  });
+
+  it("sends the configured user agent when fetching robots.txt and sitemaps", async () => {
+    const userAgentsByPath = new Map<string, string[]>();
+    const recordUserAgent = (path: string, userAgent: string | undefined) => {
+      userAgentsByPath.set(path, [...(userAgentsByPath.get(path) ?? []), userAgent ?? ""]);
+    };
+    const { server, baseUrl } = await listen((req, res) => {
+      const path = req.url ?? "";
+      recordUserAgent(path, req.headers["user-agent"]);
+      if (path === "/robots.txt") {
+        res
+          .writeHead(200, { "content-type": "text/plain; charset=utf-8" })
+          .end(`User-agent: ExampleDocsCrawler/1.0\nAllow: /\nSitemap: ${baseUrl}/sitemap.xml\n`);
+        return;
+      }
+      if (path === "/sitemap.xml") {
+        res
+          .writeHead(200, { "content-type": "application/xml; charset=utf-8" })
+          .end(`<?xml version="1.0" encoding="UTF-8"?><urlset><url><loc>${baseUrl}/about</loc></url></urlset>`);
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>About</title></head><body><main><p>About content.</p></main></body></html>");
+    });
+    servers.push(server);
+
+    await crawlSite({
+      baseUrl,
+      pageLimit: 1,
+      userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)"
+    });
+
+    expect(userAgentsByPath.get("/robots.txt")).toContain("ExampleDocsCrawler/1.0 (+https://example.com/crawler)");
+    expect(userAgentsByPath.get("/sitemap.xml")).toContain("ExampleDocsCrawler/1.0 (+https://example.com/crawler)");
+  });
+
+  it("treats a 403 response as a failed blocked page without content", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(403, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><body><main><p>Blocked content must not be ingested.</p></main></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1,
+      userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)"
+    });
+
+    expect(pages[0]).toEqual(expect.objectContaining({
+      status: "failed",
+      text: "",
+      html: "",
+      httpStatus: 403,
+      error: "Blocked by status code 403"
+    }));
+  });
+
+  it("treats a 429 response as blocked and reports Retry-After", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(429, {
+          "content-type": "text/html; charset=utf-8",
+          "retry-after": "120"
+        })
+        .end("<html><body><main><p>Rate limit page must not be ingested.</p></main></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1,
+      userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)"
+    });
+
+    expect(pages[0]).toEqual(expect.objectContaining({
+      status: "failed",
+      text: "",
+      html: "",
+      httpStatus: 429,
+      error: "Blocked by status code 429 (Retry-After: 120)"
+    }));
   });
 });

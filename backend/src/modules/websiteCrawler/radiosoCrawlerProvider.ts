@@ -1,5 +1,6 @@
 import type { CrawledPageResult } from "@radioso/crawler";
 
+import { resolveWebsiteCrawlerConfig } from "./config.js";
 import type { WebsiteCrawlPage, WebsiteCrawlResult, WebsiteCrawlerProvider } from "./provider.js";
 
 const PROVIDER_NAME = "radioso-crawler";
@@ -14,10 +15,12 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
     signal?: AbortSignal;
   }): Promise<WebsiteCrawlResult> {
     const { crawlSite } = await import("@radioso/crawler");
+    const config = resolveWebsiteCrawlerConfig();
     const pages = await crawlSite({
       baseUrl: request.url,
       pageLimit: request.limit,
       pageConcurrency: DEFAULT_PAGE_CONCURRENCY,
+      userAgent: config.userAgent,
       signal: request.signal,
     });
 

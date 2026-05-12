@@ -24,6 +24,7 @@ The request body is:
 ```bash
 WEBSITE_CRAWLER_DEFAULT_LIMIT=10
 WEBSITE_CRAWLER_MAX_LIMIT=100
+WEBSITE_CRAWLER_USER_AGENT=RadiosoCrawler/1.0
 ```
 
 Cookie-session requests select the workspace with `x-workspace-id`. Bearer-token requests use the workspace already bound to the API token.
@@ -31,6 +32,10 @@ Cookie-session requests select the workspace with `x-workspace-id`. Bearer-token
 Accepted pages are published as documents with stable external document IDs and a workspace-local website source. Repeated crawls of the same normalized URL reuse that source, so recrawl logic can find the related documents through `sourceId`. Chunking, embeddings, retrieval, and citations remain owned by the standard document worker.
 
 The bundled `radioso-crawler` provider seeds its crawl from the requested URL and from same-origin sitemaps listed in `robots.txt`. It still applies the request `limit`, same-origin scope checks, duplicate removal, and asset filtering before fetching pages.
+
+By default, outbound crawler requests identify as `RadiosoCrawler/1.0`. Self-hosted operators can set `WEBSITE_CRAWLER_USER_AGENT` to a deployment-specific value, such as `ExampleDocsCrawler/1.0 (+https://example.com/crawler)`. Use this when a site needs to allowlist the crawler or route support requests to the right owner.
+
+Radioso does not rotate user agents or proxies to bypass blocks. If a page returns `401`, `403`, or `429`, the crawler records that page as failed instead of ingesting the block page as content. For `429` responses, `Retry-After` is preserved in the failure message when the site sends it.
 
 ### Document and source metadata
 

@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS ee-frontend-build
+FROM node:24-bookworm-slim AS ee-frontend-build
 
 WORKDIR /app/ee
 
@@ -12,7 +12,7 @@ COPY ee/packages/auth-frontend ./packages/auth-frontend
 RUN npm run build --workspace @radioso/enterprise-embed-widget
 RUN npm run build --workspace @radioso/enterprise-auth-frontend
 
-FROM node:22-bookworm-slim AS deps
+FROM node:24-bookworm-slim AS deps
 
 WORKDIR /app/frontend
 ARG RADIOSO_EDITION=oss
@@ -25,7 +25,7 @@ RUN npm ci && \
       npm install --install-links=true --no-save --package-lock=false --no-audit --no-fund ../ee/packages/embed-widget ../ee/packages/auth-frontend; \
     fi
 
-FROM node:22-bookworm-slim AS builder
+FROM node:24-bookworm-slim AS builder
 
 WORKDIR /app
 ARG BACKEND_INTERNAL_URL=http://backend:8080
@@ -53,7 +53,7 @@ RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
 WORKDIR /app/frontend
 RUN npm run build
 
-FROM node:22-bookworm-slim AS runner
+FROM node:24-bookworm-slim AS runner
 
 WORKDIR /app
 ARG BACKEND_INTERNAL_URL=http://backend:8080
@@ -64,8 +64,7 @@ ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL
 ENV RADIOSO_EDITION=$RADIOSO_EDITION
 ENV NEXT_PUBLIC_RADIOSO_EDITION=$RADIOSO_EDITION
 
-COPY --from=builder /app/frontend ./
-RUN chown -R node:node /app
+COPY --chown=node:node --from=builder /app/frontend ./
 USER node
 EXPOSE 3000
 CMD ["npm", "run", "start", "--", "-H", "0.0.0.0", "-p", "3000"]

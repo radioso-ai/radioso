@@ -9,7 +9,7 @@ Replace local dashboard view state with account-scoped browser routes, keep docu
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 for the backend, TypeScript 5.7 with React 19 and Next.js 16 for the frontend  
+**Language/Version**: TypeScript 5.x on Node.js 24 for the backend, TypeScript 5.7 with React 19 and Next.js 16 for the frontend
 **Primary Dependencies**: Next.js App Router, React 19, Radix UI primitives, Express, Zod, browser Fetch and ReadableStream APIs  
 **Storage**: Browser `localStorage` for authenticated user bootstrap, in-memory client state for active chat session, backend account-scoped document and chat APIs, PostgreSQL unchanged  
 **Testing**: Frontend lint/build validation, manual quickstart verification for routed dashboard flows, existing backend contract tests remain the regression safety net for chat streaming and document loading  

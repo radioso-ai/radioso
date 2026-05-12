@@ -9,6 +9,7 @@ describe("website crawler config", () => {
     expect(resolveWebsiteCrawlerConfig({})).toEqual({
       defaultLimit: 10,
       maxLimit: 100,
+      userAgent: "RadiosoCrawler/1.0",
     });
   });
 
@@ -16,11 +17,13 @@ describe("website crawler config", () => {
     const config = resolveWebsiteCrawlerConfig({
       WEBSITE_CRAWLER_DEFAULT_LIMIT: "7",
       WEBSITE_CRAWLER_MAX_LIMIT: "20",
+      WEBSITE_CRAWLER_USER_AGENT: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)",
     });
 
     expect(config).toEqual({
       defaultLimit: 7,
       maxLimit: 20,
+      userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)",
     });
   });
 
@@ -37,6 +40,14 @@ describe("website crawler config", () => {
     })).toEqual(expect.objectContaining({
       defaultLimit: 25,
       maxLimit: 25,
+    }));
+  });
+
+  it("uses the default user agent when the env value is empty", () => {
+    expect(resolveWebsiteCrawlerConfig({
+      WEBSITE_CRAWLER_USER_AGENT: "   ",
+    })).toEqual(expect.objectContaining({
+      userAgent: "RadiosoCrawler/1.0",
     }));
   });
 });

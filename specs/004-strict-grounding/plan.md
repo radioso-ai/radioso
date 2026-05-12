@@ -13,7 +13,7 @@ document-backed answerability.
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22  
+**Language/Version**: TypeScript 5.x on Node.js 24
 **Primary Dependencies**: Express, pg, OpenAI SDK, Zod, Pino, Vitest, Supertest  
 **Storage**: PostgreSQL 16+ with `pgvector`; filesystem-backed Speckit artifacts  
 **Testing**: Vitest and Supertest  

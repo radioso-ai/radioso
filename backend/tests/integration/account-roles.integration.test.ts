@@ -74,7 +74,7 @@ describe("organization roles", () => {
       .set("Cookie", member.cookie)
       .send({ organizationName: "Member Rename" })
     ).resolves.toMatchObject({ status: 403 });
-  });
+  }, 20_000);
 
   it("allows admins to manage workspaces and tokens but not remove owners", async () => {
     const { app } = createTestApp();

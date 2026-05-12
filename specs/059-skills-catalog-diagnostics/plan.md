@@ -9,7 +9,7 @@ Add a read-only Radioso skills catalog and shared diagnostic definitions without
 
 ## Technical Context
 
-**Language/Version**: TypeScript on Node.js 22  
+**Language/Version**: TypeScript on Node.js 24
 **Primary Dependencies**: Express, Zod, zod-to-openapi, Vitest, Supertest  
 **Storage**: N/A; catalog metadata is static/default composition metadata for this feature  
 **Testing**: Vitest unit and contract tests; generated OpenAPI contract verification  

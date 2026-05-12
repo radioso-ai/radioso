@@ -32,6 +32,21 @@ describe("runtime configuration", () => {
     expect(packageJson.scripts["start:crawler-worker-server"]).toBeTruthy();
   });
 
+  it("keeps crawler dependency installation out of normal backend build and dev scripts", async () => {
+    const packageJson = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+
+    const normalScripts = Object.entries(packageJson.scripts).filter(([name]) =>
+      name === "build" || name === "build:crawler" || name.startsWith("predev:"),
+    );
+
+    expect(packageJson.scripts["install:crawler"]).toContain("npm --prefix ../packages/crawler ci");
+    for (const [name, script] of normalScripts) {
+      expect(script, `${name} should not install crawler dependencies`).not.toContain("npm --prefix ../packages/crawler ci");
+    }
+  });
+
   it("defines a dedicated backend-worker service in local and compose orchestration", async () => {
     const devCompose = YAML.parse(await readFile(new URL("../../../docker-compose.dev.yml", import.meta.url), "utf8")) as {
       services?: Record<string, unknown>;
@@ -224,6 +239,7 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('value = "radioso-api"');
     expect(computeTf).toContain('value = "radioso-worker"');
     expect(computeTf).toContain('name  = "PUBLIC_CHAT_BASE_URL"');
+    expect(computeTf).toContain('name  = "APP_BASE_URL"');
     expect(computeTf).toContain('name  = "WORKER_TASKS_SERVICE_URL"');
     // Split-worker topology: there must be a dedicated Cloud Run service for
     // the crawler that is invokable by the worker_task_invoker SA, and the
@@ -255,6 +271,10 @@ describe("runtime configuration", () => {
     expect(terraformVariables).toContain('app_base_url_override must be set when radioso_edition is enterprise.');
     expect(terraformVariables).toContain('ee_mail_from_email must be set to a verified sender address when radioso_edition is enterprise.');
     expect(terraformWorkflow).toContain("TF_VAR_resend_mail_api_key: ${{ secrets.RESEND_MAIL_API_KEY }}");
+    expect(terraformWorkflow).toContain("APP_BASE_URL: ${{ vars.APP_BASE_URL }}");
+    expect(terraformWorkflow).toContain("PUBLIC_CHAT_BASE_URL: ${{ vars.PUBLIC_CHAT_BASE_URL }}");
+    expect(terraformWorkflow).toContain('APP_BASE_URL_OVERRIDE="${APP_BASE_URL:-$FRONTEND_URL}"');
+    expect(terraformWorkflow).toContain('PUBLIC_CHAT_BASE_URL_OVERRIDE="${PUBLIC_CHAT_BASE_URL:-${APP_BASE_URL_OVERRIDE%/}/chat}"');
     expect(terraformWorkflow).toContain("TF_VAR_ee_mail_from_email: ${{ vars.EE_MAIL_FROM_EMAIL }}");
     expect(terraformWorkflow).toContain("TF_VAR_ee_mail_from_name");
     expect(terraformWorkflow).not.toContain("MAIL_SMTP");

@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim
+FROM node:24-bookworm-slim
 
 # procps provides `ps`, which crawlee (used by @radioso/crawler) shells out to
 # for child-process resource monitoring. Without it the crawler worker fails

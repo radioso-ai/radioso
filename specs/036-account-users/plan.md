@@ -9,7 +9,7 @@ Introduce real user identity and account membership to replace the current singl
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)
 **Primary Dependencies**: Express, Zod, `pg`, Pino, Vitest, Supertest, Next.js App Router, Radix UI primitives, Lucide icons  
 **Storage**: PostgreSQL 16 with additive `users`, `account_memberships`, and `account_invitations` tables; existing `accounts`, `workspaces`, `sessions`, and `workspace_tokens` remain in use  
 **Testing**: Vitest unit, contract, and integration suites for backend; Vitest unit tests for frontend  

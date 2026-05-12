@@ -119,6 +119,9 @@ class FakeEnterpriseAuthDatabase implements UsageLimitDatabasePort {
 const createApp = (
   database: FakeEnterpriseAuthDatabase,
   options: {
+    env?: {
+      APP_BASE_URL?: string;
+    };
     abuseControlService?: {
       enforced: Array<{ scope: string; subjectKey: string }>;
       enforce(input: { scope: string; subjectKey: string }): Promise<unknown>;
@@ -139,6 +142,7 @@ const createApp = (
     env: {
       AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
       AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
+      ...options.env,
     },
     abuseControlService,
     auditService: {
@@ -162,6 +166,8 @@ describe("enterprise auth routes", () => {
     delete process.env.EE_MAIL_DRIVER;
     delete process.env.RESEND_MAIL_API_KEY;
     delete process.env.SESSION_COOKIE_NAME;
+    delete process.env.APP_BASE_URL;
+    delete process.env.RADIOSO_ENTERPRISE_WIDGET_ORIGIN;
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -177,6 +183,29 @@ describe("enterprise auth routes", () => {
     expect(response.status).toBe(202);
     expect(response.body).toEqual({ accepted: true });
     expect(database.queries.some(({ text }) => text.includes("INSERT INTO ee_password_reset_tokens"))).toBe(true);
+  });
+
+  it("uses the configured app base URL for password reset links", async () => {
+    process.env.EE_MAIL_DRIVER = "log";
+    process.env.RADIOSO_ENTERPRISE_WIDGET_ORIGIN = "https://radioso-live-frontend.example.run.app";
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const database = new FakeEnterpriseAuthDatabase();
+
+    const response = await request(createApp(database, {
+      env: {
+        APP_BASE_URL: "https://radioso.dev",
+      },
+    }))
+      .post("/api/v1/ee/auth/password-reset/request")
+      .send({ email: "Ada@Example.com" });
+
+    expect(response.status).toBe(202);
+    expect(log).toHaveBeenCalledWith("email.send", expect.objectContaining({
+      text: expect.stringContaining("https://radioso.dev/reset-password?token="),
+    }));
+    expect(log).not.toHaveBeenCalledWith("email.send", expect.objectContaining({
+      text: expect.stringContaining("radioso-live-frontend.example.run.app"),
+    }));
   });
 
   it("keeps verified Enterprise users able to log in after an unused password reset request", async () => {

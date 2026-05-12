@@ -9,7 +9,7 @@ Replace the authenticated dashboard's account-scoped path with a workspace-first
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)
 **Primary Dependencies**: Express, `pg`, Zod, Pino, React 19, Next.js App Router, existing auth/workspace services  
 **Storage**: PostgreSQL 16 with existing `workspaces`, `sessions`, `account_memberships`, and dashboard URL state in the browser  
 **Testing**: Vitest unit tests, Supertest integration/contract tests, frontend Vitest unit tests, ESLint, Next.js production build  

@@ -341,16 +341,13 @@ const buildDocumentMetadata = (input: {
   page: WebsiteCrawlPage;
   sourceUrl: string;
   canonicalUrl: string;
-}): Record<string, unknown> => {
-  const result: Record<string, unknown> = {
-    sourceUrl: input.sourceUrl,
-    ...pickAllowedProviderMetadata(input.page.metadata ?? {}),
-  };
-  if (input.canonicalUrl && input.canonicalUrl !== input.sourceUrl) {
-    result.canonicalUrl = input.canonicalUrl;
-  }
-  return result;
-};
+}): Record<string, unknown> => ({
+  sourceUrl: input.sourceUrl,
+  // canonicalUrl is always present so downstream consumers can rely on the key;
+  // when the page has no separate canonical it equals sourceUrl by design.
+  canonicalUrl: input.canonicalUrl || input.sourceUrl,
+  ...pickAllowedProviderMetadata(input.page.metadata ?? {}),
+});
 
 const preparePages = (
   pages: WebsiteCrawlPage[],

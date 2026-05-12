@@ -37,7 +37,7 @@ Per-document metadata is intentionally narrow:
 | Field | Notes |
 |-------|-------|
 | `sourceUrl` | Always present. The page URL the crawler fetched. |
-| `canonicalUrl` | Present only when the canonical URL differs from `sourceUrl`. |
+| `canonicalUrl` | Always present. Equals `sourceUrl` when the page has no separate canonical, so consumers can rely on the key. |
 | `httpStatus`, `etag`, `lastModified` | Optional. Pulled from the provider via a fixed allow-list and only when truthy. Useful for incremental re-crawl decisions. |
 
 Provider-supplied metadata fields outside the allow-list are dropped — including any attempt to spoof `sourceUrl`, `websiteBaseUrl`, or to smuggle secrets.

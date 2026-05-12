@@ -82,8 +82,8 @@ describe("website crawler service", () => {
       title: "https://example.com/contact",
       externalDocumentId: "website:https://example.com:https://example.com/contact",
     }));
-    // canonicalUrl omitted when it equals sourceUrl
-    expect(ingest.mock.calls[1][0].metadata.canonicalUrl).toBeUndefined();
+    // canonicalUrl is always present so consumers can rely on the key; falls back to sourceUrl when no separate canonical exists.
+    expect(ingest.mock.calls[1][0].metadata.canonicalUrl).toBe("https://example.com/contact");
     expect(ingest.mock.calls[1][0].metadata.sourceUrl).toBe("https://example.com/contact");
   });
 
@@ -350,6 +350,7 @@ describe("website crawler service", () => {
     const metadata = ingest.mock.calls[0][0].metadata as Record<string, unknown>;
     expect(metadata).toEqual({
       sourceUrl: "https://example.com/a",
+      canonicalUrl: "https://example.com/a", // always present; falls back to sourceUrl when no separate canonical exists.
       httpStatus: 200,
       etag: "abc-etag",
       lastModified: "Mon, 01 Jan 2026 00:00:00 GMT",
@@ -357,7 +358,6 @@ describe("website crawler service", () => {
     expect(metadata.sourceKind).toBeUndefined();
     expect(metadata.websiteBaseUrl).toBeUndefined();
     expect(metadata.websiteCrawlerProvider).toBeUndefined();
-    expect(metadata.canonicalUrl).toBeUndefined(); // omitted because canonical == source
     expect(metadata.safeField).toBeUndefined();
     expect(JSON.stringify(metadata)).not.toContain("crawler-secret");
     expect(JSON.stringify(metadata)).not.toContain("attacker.example");

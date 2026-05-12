@@ -61,13 +61,13 @@ variable "radioso_edition" {
 }
 
 variable "worker_min_instances" {
-  description = "Minimum number of worker Cloud Run instances. Must stay at least 1 so the durable document queue always has a live recovery poller."
+  description = "Minimum number of worker Cloud Run instances (0 = scale to zero). Set above 0 only when the polling fallback must stay warm continuously."
   type        = number
-  default     = 1
+  default     = 0
 
   validation {
-    condition     = var.worker_min_instances >= 1
-    error_message = "worker_min_instances must be at least 1 so the worker service can recover queued jobs when Cloud Tasks dispatch fails."
+    condition     = var.worker_min_instances >= 0
+    error_message = "worker_min_instances must be 0 or greater."
   }
 }
 

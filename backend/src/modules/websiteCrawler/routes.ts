@@ -28,6 +28,11 @@ export interface WebsiteCrawlerRouteOptions {
 const CRAWL_RATE_LIMIT = 10;
 const CRAWL_RATE_LIMIT_WINDOW_MS = 60_000;
 const CRAWL_RATE_LIMIT_BLOCK_MS = 60_000;
+// The dashboard polls GET /jobs every 2s while jobs are non-terminal, so a
+// generous limit is needed for the happy path. The cap exists to bound the
+// cost of a runaway client or a compromised workspace token.
+const CRAWL_JOB_READ_RATE_LIMIT = 120;
+const CRAWL_JOB_READ_RATE_LIMIT_WINDOW_MS = 60_000;
 
 export const crawlBodySchema = z.object({
   url: z.string().trim().url().refine((value) => {
@@ -67,6 +72,14 @@ export const createWebsiteCrawlerRoutes = (
   const configuredProvider = options.provider ?? dependencies.websiteCrawlerProvider ?? null;
 
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const resolveCrawlSubjectKey = (_req: unknown, res: { locals: Record<string, unknown> }) =>
+    res.locals.authMode === "bearer"
+      ? `${res.locals.workspaceId as string}:bearer`
+      : `${res.locals.workspaceId as string}:user:${res.locals.userId as string}`;
+  const resolveCrawlAuditContext = (_req: unknown, res: { locals: Record<string, unknown> }) => ({
+    accountId: res.locals.accountId as string | undefined,
+    workspaceId: res.locals.workspaceId as string | undefined,
+  });
   const crawlRateLimit: RequestHandler = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
@@ -74,16 +87,20 @@ export const createWebsiteCrawlerRoutes = (
     limit: CRAWL_RATE_LIMIT,
     windowMs: CRAWL_RATE_LIMIT_WINDOW_MS,
     blockMs: CRAWL_RATE_LIMIT_BLOCK_MS,
-    resolveSubjectKey: (_req, res) => res.locals.authMode === "bearer"
-      ? `${res.locals.workspaceId as string}:bearer`
-      : `${res.locals.workspaceId as string}:user:${res.locals.userId as string}`,
-    resolveAuditContext: (_req, res) => ({
-      accountId: res.locals.accountId as string | undefined,
-      workspaceId: res.locals.workspaceId as string | undefined,
-    }),
+    resolveSubjectKey: resolveCrawlSubjectKey,
+    resolveAuditContext: resolveCrawlAuditContext,
+  });
+  const crawlJobReadRateLimit: RequestHandler = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "document.crawl.jobs.read",
+    limit: CRAWL_JOB_READ_RATE_LIMIT,
+    windowMs: CRAWL_JOB_READ_RATE_LIMIT_WINDOW_MS,
+    resolveSubjectKey: resolveCrawlSubjectKey,
+    resolveAuditContext: resolveCrawlAuditContext,
   });
 
-  router.get("/jobs", workspaceSession, async (req, res, next) => {
+  router.get("/jobs", workspaceSession, crawlJobReadRateLimit, async (req, res, next) => {
     try {
       const query = parseRequest(crawlJobsQuerySchema, req.query, "Invalid crawl jobs query");
       const jobs = await dependencies.websiteCrawlJobService.listForWorkspace(
@@ -100,7 +117,7 @@ export const createWebsiteCrawlerRoutes = (
     }
   });
 
-  router.delete("/jobs/:jobId", workspaceSession, async (req, res, next) => {
+  router.delete("/jobs/:jobId", workspaceSession, crawlJobReadRateLimit, async (req, res, next) => {
     try {
       const params = parseRequest(crawlJobParamsSchema, req.params, "Invalid crawl job id");
       await dependencies.websiteCrawlJobService.deleteJob({

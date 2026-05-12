@@ -43,5 +43,17 @@ export const createDocumentWorkerTaskRoutes = (
     }
   });
 
+  // Compatibility stub for in-flight Cloud Tasks pushes that were enqueued
+  // before the website-crawl Cloud Run service was split out. We respond 410
+  // (Gone) so Cloud Tasks treats it as a permanent failure and stops retrying;
+  // the polling fallback in the new crawler worker will pick the job up on its
+  // next tick. Safe to remove one full release after the split has shipped.
+  router.post("/internal/tasks/website-crawl", (_req, res) => {
+    res.status(410).json({
+      error: "moved",
+      message: "Website crawl tasks are handled by the dedicated crawler worker. The polling fallback will reclaim this job.",
+    });
+  });
+
   return router;
 };

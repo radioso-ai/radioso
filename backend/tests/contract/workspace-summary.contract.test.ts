@@ -58,7 +58,7 @@ describe("workspace summary contract", () => {
     expect(response.body.websiteCrawlerEnabled).toBe(false);
   });
 
-  it("returns 404 for crawl routes when WEBSITE_CRAWLER_ENABLED is false", async () => {
+  it("returns the project ErrorResponse JSON shape on crawl routes when WEBSITE_CRAWLER_ENABLED is false", async () => {
     const { app } = createTestApp({ envOverrides: { WEBSITE_CRAWLER_ENABLED: false } });
     const session = await issueTestSession(app, "workspace-crawl-disabled@example.com");
 
@@ -68,12 +68,27 @@ describe("workspace summary contract", () => {
       .send({ url: "https://example.com" });
 
     expect(enqueueResponse.status).toBe(404);
+    expect(enqueueResponse.headers["content-type"]).toMatch(/application\/json/);
+    expect(enqueueResponse.body).toMatchObject({
+      error: {
+        code: "not_found",
+        message: expect.stringMatching(/disabled/i),
+      },
+    });
 
     const listResponse = await request(app)
       .get("/api/v1/document/crawl/jobs")
       .set(adminSessionHeaders(session));
 
     expect(listResponse.status).toBe(404);
+    expect(listResponse.body).toMatchObject({ error: { code: "not_found" } });
+
+    const deleteResponse = await request(app)
+      .delete("/api/v1/document/crawl/jobs/11111111-1111-4111-8111-111111111111")
+      .set(adminSessionHeaders(session));
+
+    expect(deleteResponse.status).toBe(404);
+    expect(deleteResponse.body).toMatchObject({ error: { code: "not_found" } });
   });
 
   it("counts queued and processing documents as pending but excludes failed documents", async () => {

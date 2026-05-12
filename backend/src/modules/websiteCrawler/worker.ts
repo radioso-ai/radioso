@@ -6,6 +6,11 @@ import { WebsiteCrawlerService, type WebsiteCrawlerDocumentIngestionPort, type W
 export class WebsiteCrawlWorker {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  // Tracks the currently in-flight processClaimedJob promise so that stop()
+  // can drain it. Without this a SIGTERM during an active crawl leaves the
+  // job row in `processing` until the lease window expires (default 15 min),
+  // delaying recovery for that crawl.
+  private activeJob: Promise<void> | null = null;
 
   constructor(private readonly dependencies: {
     repository: WebsiteCrawlJobRepositoryPort;
@@ -32,6 +37,14 @@ export class WebsiteCrawlWorker {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    if (this.activeJob) {
+      try {
+        await this.activeJob;
+      } catch {
+        // processClaimedJob already logs failures and marks the row failed;
+        // we just need to wait for it before returning from stop().
+      }
+    }
   }
 
   async runOnce(now: Date = new Date()): Promise<boolean> {
@@ -39,7 +52,7 @@ export class WebsiteCrawlWorker {
     if (!job) {
       return false;
     }
-    await this.processClaimedJob(job);
+    await this.runTracked(() => this.processClaimedJob(job));
     return true;
   }
 
@@ -70,8 +83,18 @@ export class WebsiteCrawlWorker {
       }
       return "noop";
     }
-    await this.processClaimedJob(claimed);
+    await this.runTracked(() => this.processClaimedJob(claimed));
     return "processed";
+  }
+
+  private async runTracked(work: () => Promise<void>): Promise<void> {
+    const promise = work();
+    this.activeJob = promise.finally(() => {
+      if (this.activeJob === promise) {
+        this.activeJob = null;
+      }
+    });
+    await promise;
   }
 
   private scheduleNextTick(delayMs = this.dependencies.pollIntervalMs ?? 5_000): void {

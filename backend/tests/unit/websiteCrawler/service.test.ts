@@ -303,6 +303,67 @@ describe("website crawler service", () => {
     }]);
   });
 
+  it("rejects allow-listed metadata values that are not the expected primitive type", async () => {
+    const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([
+        {
+          sourceUrl: "https://example.com/a",
+          canonicalUrl: "https://example.com/a",
+          title: "A",
+          content: "A",
+          metadata: {
+            // Wrong types or hostile shapes for the three allow-listed keys
+            httpStatus: { __proto__: { polluted: true }, nested: "uh oh" },
+            etag: ["array", "instead"],
+            lastModified: { hostile: { deeply: { nested: "value" } } },
+          },
+        },
+      ]),
+      documentIngestionService: { ingest },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 1,
+    });
+
+    expect(ingest.mock.calls[0][0].metadata).toEqual({
+      sourceUrl: "https://example.com/a",
+      canonicalUrl: "https://example.com/a",
+    });
+  });
+
+  it("rejects allow-listed string fields that exceed the safe length cap", async () => {
+    const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
+    const huge = "x".repeat(2048);
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([
+        {
+          sourceUrl: "https://example.com/a",
+          canonicalUrl: "https://example.com/a",
+          title: "A",
+          content: "A",
+          metadata: { etag: huge, lastModified: huge, httpStatus: 200 },
+        },
+      ]),
+      documentIngestionService: { ingest },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 1 });
+
+    expect(ingest.mock.calls[0][0].metadata).toEqual({
+      sourceUrl: "https://example.com/a",
+      canonicalUrl: "https://example.com/a",
+      httpStatus: 200,
+    });
+  });
+
   it("ignores provider-supplied metadata fields outside the allow-list, including spoofed source identifiers and secrets", async () => {
     const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
     const service = new WebsiteCrawlerService({

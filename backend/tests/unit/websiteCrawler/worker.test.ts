@@ -68,6 +68,60 @@ describe("website crawl worker", () => {
     }));
   });
 
+  it("awaits the in-flight crawl when stop() is called mid-job so the row is not left in processing", async () => {
+    const job = createJob();
+    const markCompleted = vi.fn().mockResolvedValue(undefined);
+    const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
+
+    let resolveCrawl!: () => void;
+    const crawlComplete = new Promise<void>((resolve) => {
+      resolveCrawl = resolve;
+    });
+
+    const worker = new WebsiteCrawlWorker({
+      repository: {
+        claimNext: vi.fn().mockResolvedValue(job),
+        markCompleted,
+        markFailed: vi.fn(),
+      } as never,
+      provider: {
+        name: "test-crawler",
+        crawl: vi.fn().mockImplementation(async () => {
+          await crawlComplete;
+          return {
+            provider: "test-crawler",
+            runId: "run-1",
+            pages: [{ sourceUrl: "https://example.com/a", title: "A", content: "Alpha" }],
+          };
+        }),
+      },
+      documentIngestionService: { ingest } as never,
+      logger: { info: vi.fn(), error: vi.fn() } as never,
+      pollIntervalMs: 10_000,
+    });
+
+    const inFlight = worker.runOnce();
+    // Give the event loop a tick so the worker enters provider.crawl().
+    await Promise.resolve();
+
+    // Kick off shutdown while the crawl is still in flight.
+    const stopPromise = worker.stop();
+    let stopResolved = false;
+    void stopPromise.then(() => { stopResolved = true; });
+
+    // The crawl is still pending, so stop() must not have returned yet.
+    await Promise.resolve();
+    expect(stopResolved).toBe(false);
+    expect(markCompleted).not.toHaveBeenCalled();
+
+    // Allow the crawl to finish; stop() should now resolve and the job row
+    // should have been marked completed before the runtime exits.
+    resolveCrawl();
+    await Promise.all([inFlight, stopPromise]);
+    expect(markCompleted).toHaveBeenCalledOnce();
+    expect(stopResolved).toBe(true);
+  });
+
   it("returns busy when another worker owns a fresh claim", async () => {
     const job = {
       ...createJob(),

@@ -142,8 +142,9 @@ describe("runtime entrypoints", () => {
     expect(crawlerStopSpy).toHaveBeenCalledOnce();
   });
 
-  it("worker task runtime no longer exposes the website-crawl route", async () => {
+  it("worker task runtime returns 410 Gone for website-crawl pushes so Cloud Tasks stops retrying", async () => {
     const { dependencies } = createTestDependencies();
+    const crawlWorkerSpy = vi.spyOn(dependencies.websiteCrawlWorker, "runJobById");
 
     const runtime = await startWorkerTaskRuntime({
       env: createEnv(8098),
@@ -158,7 +159,9 @@ describe("runtime entrypoints", () => {
       .post("/internal/tasks/website-crawl")
       .send({ jobId: randomUUID() });
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(410);
+    expect(response.body).toMatchObject({ error: "moved" });
+    expect(crawlWorkerSpy).not.toHaveBeenCalled();
   });
 
   it("crawler worker task runtime serves the website-crawl route", async () => {

@@ -128,6 +128,32 @@ describe('mergeCrawlJobs', () => {
     expect(result.nextStatuses.get('j-1')).toBe('completed')
   })
 
+  it('filters out recently-deleted jobs from the incoming server payload until the server reflects the deletion', () => {
+    const stillReturned = baseJob({ id: 'j-1', status: 'completed' })
+
+    const result = mergeCrawlJobs({
+      current: [],
+      incoming: [stillReturned],
+      previousStatuses: new Map(),
+      recentlyDeletedJobIds: new Set(['j-1']),
+    })
+
+    expect(result.jobs).toEqual([])
+    expect(result.completedJobIds).toEqual([])
+    expect(result.deletedJobIdsToForget).toEqual([])
+  })
+
+  it('signals that recently-deleted ids can be forgotten once the server stops returning them', () => {
+    const result = mergeCrawlJobs({
+      current: [],
+      incoming: [baseJob({ id: 'j-2', status: 'completed' })],
+      previousStatuses: new Map(),
+      recentlyDeletedJobIds: new Set(['j-1']),
+    })
+
+    expect(result.deletedJobIdsToForget).toEqual(['j-1'])
+  })
+
   it('drops optimistic entries once the server returns them by id', () => {
     const optimistic = baseJob({ id: 'j-1', status: 'queued', limit: 5 })
     const real = baseJob({ id: 'j-1', status: 'processing', limit: 5 })

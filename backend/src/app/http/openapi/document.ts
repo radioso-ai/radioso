@@ -3490,6 +3490,14 @@ registry.registerPath({
         },
       },
     },
+    404: {
+      description: "Website crawler is disabled for this deployment",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
     503: {
       description: "Website crawler provider is not configured",
       content: {
@@ -3530,6 +3538,22 @@ registry.registerPath({
     },
     401: {
       description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Website crawler is disabled for this deployment",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    429: {
+      description: "Rate limit exceeded",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
@@ -3579,6 +3603,14 @@ registry.registerPath({
     },
     409: {
       description: "Crawl job is still in progress and cannot be deleted",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    429: {
+      description: "Rate limit exceeded",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,

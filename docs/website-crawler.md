@@ -160,6 +160,16 @@ The dispatcher reads `WORKER_TASKS_CRAWL_SERVICE_URL` to know where website craw
 
 Scaling defaults are independent: `worker_min_instances` / `worker_max_instances` for the document worker, `crawler_worker_min_instances` / `crawler_worker_max_instances` for the crawler. Both stay at `min = 1` so the polling fallback always has a live recovery process.
 
+### Rollout ordering
+
+When upgrading from a single combined worker to the split topology (this PR), the order matters:
+
+1. Deploy the new `crawler_worker` Cloud Run service (or `backend-crawler-worker` container).
+2. Apply Terraform / restart the backend so newly enqueued crawl Cloud Tasks land on the new worker URL via `WORKER_TASKS_CRAWL_SERVICE_URL`.
+3. Roll the document worker last.
+
+In-flight Cloud Tasks pushes that were enqueued against the old combined worker URL will keep arriving at `/internal/tasks/website-crawl` on the **document worker** for a few minutes. The document worker responds `410 Gone` to that path so Cloud Tasks stops retrying immediately. The polling fallback in the new crawler worker then reclaims those jobs on the next 5-second tick. A delay of one polling interval is the worst case; no work is lost. The 410 stub is a one-release compatibility shim and can be removed after the next release.
+
 ## Disabling the crawler
 
 Set `WEBSITE_CRAWLER_ENABLED=false` on the backend (and on the crawler worker, if you keep it deployed). With the flag off:

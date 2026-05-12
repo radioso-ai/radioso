@@ -23,9 +23,13 @@ describe("runtime configuration", () => {
     expect(packageJson.scripts["dev:http"]).toBeTruthy();
     expect(packageJson.scripts["dev:worker"]).toBeTruthy();
     expect(packageJson.scripts["dev:worker-server"]).toBeTruthy();
+    expect(packageJson.scripts["dev:crawler-worker"]).toBeTruthy();
+    expect(packageJson.scripts["dev:crawler-worker-server"]).toBeTruthy();
     expect(packageJson.scripts["start:http"]).toBeTruthy();
     expect(packageJson.scripts["start:worker"]).toBeTruthy();
     expect(packageJson.scripts["start:worker-server"]).toBeTruthy();
+    expect(packageJson.scripts["start:crawler-worker"]).toBeTruthy();
+    expect(packageJson.scripts["start:crawler-worker-server"]).toBeTruthy();
   });
 
   it("defines a dedicated backend-worker service in local and compose orchestration", async () => {
@@ -40,6 +44,20 @@ describe("runtime configuration", () => {
     expect(prodCompose.services?.["backend-worker"]).toBeTruthy();
     expect((devCompose.services?.["backend-worker"] as { depends_on?: Record<string, { condition?: string }> })?.depends_on?.backend?.condition).toBe("service_healthy");
     expect((prodCompose.services?.["backend-worker"] as { depends_on?: Record<string, { condition?: string }> })?.depends_on?.backend?.condition).toBe("service_healthy");
+
+    // Crawler runs in its own process so a long crawl cannot starve embedding
+    // work; both compose files must declare the dedicated service.
+    expect(devCompose.services?.["backend-crawler-worker"]).toBeTruthy();
+    expect(prodCompose.services?.["backend-crawler-worker"]).toBeTruthy();
+    expect((devCompose.services?.["backend-crawler-worker"] as { command?: string[] | string })?.command).toEqual([
+      "backend-dev-entrypoint.sh",
+      "dev:crawler-worker",
+    ]);
+    expect((prodCompose.services?.["backend-crawler-worker"] as { command?: string[] | string })?.command).toEqual([
+      "npm",
+      "run",
+      "start:crawler-worker",
+    ]);
   });
 
   it("uses the watch-oriented backend dev image and bind mounts in docker compose development", async () => {
@@ -207,6 +225,15 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('value = "radioso-worker"');
     expect(computeTf).toContain('name  = "PUBLIC_CHAT_BASE_URL"');
     expect(computeTf).toContain('name  = "WORKER_TASKS_SERVICE_URL"');
+    // Split-worker topology: there must be a dedicated Cloud Run service for
+    // the crawler that is invokable by the worker_task_invoker SA, and the
+    // backend/document worker must read its URL via direct reference (no
+    // operator-supplied override needed).
+    expect(computeTf).toContain('resource "google_cloud_run_v2_service" "crawler_worker"');
+    expect(computeTf).toContain('command = ["npm", "run", "start:crawler-worker-server"]');
+    expect(computeTf).toContain('resource "google_cloud_run_v2_service_iam_member" "crawler_worker_invoker"');
+    expect(computeTf).toContain('value = try(google_cloud_run_v2_service.crawler_worker[0].uri, "")');
+    expect(computeTf).toContain('name  = "WORKER_TASKS_CRAWL_SERVICE_URL"');
     expect(computeTf).not.toContain('name  = "MAIL_DRIVER"');
     expect(computeTf).toContain('for_each = var.radioso_edition == "enterprise" ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []');
     expect(computeTf).toContain('name = "RESEND_MAIL_API_KEY"');

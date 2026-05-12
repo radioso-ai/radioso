@@ -77,6 +77,7 @@ export function DocumentsView({
   const documentLoadRequestIdRef = useRef(0)
   const crawlLoadRequestIdRef = useRef(0)
   const previousCrawlJobsRef = useRef<Map<string, WebsiteCrawlJobSummary['status']>>(new Map())
+  const recentlyDeletedRef = useRef<Set<string>>(new Set())
   const documentSearch = useDocumentSearch()
 
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
@@ -112,6 +113,7 @@ export function DocumentsView({
   const [crawlJobs, setCrawlJobs] = useState<WebsiteCrawlJobSummary[]>([])
   const [dismissedCrawlJobIds, setDismissedCrawlJobIds] = useState<Set<string>>(new Set())
   const [dismissingCrawlJobIds, setDismissingCrawlJobIds] = useState<Set<string>>(new Set())
+  const [recentlyDeletedJobIds, setRecentlyDeletedJobIds] = useState<Set<string>>(new Set())
 
   const totalPages = Math.max(1, Math.ceil(totalDocuments / PAGE_SIZE))
 
@@ -184,6 +186,10 @@ export function DocumentsView({
     currentPageRef.current = currentPage
   }, [currentPage])
 
+  useEffect(() => {
+    recentlyDeletedRef.current = recentlyDeletedJobIds
+  }, [recentlyDeletedJobIds])
+
   const loadCrawlJobs = useCallback(async () => {
     const requestId = crawlLoadRequestIdRef.current + 1
     crawlLoadRequestIdRef.current = requestId
@@ -204,8 +210,18 @@ export function DocumentsView({
           current,
           incoming: response.jobs,
           previousStatuses: previousCrawlJobsRef.current,
+          recentlyDeletedJobIds: recentlyDeletedRef.current,
         })
         previousCrawlJobsRef.current = merged.nextStatuses
+        if (merged.deletedJobIdsToForget.length > 0) {
+          setRecentlyDeletedJobIds((prev) => {
+            const next = new Set(prev)
+            for (const id of merged.deletedJobIdsToForget) {
+              next.delete(id)
+            }
+            return next.size === prev.size ? prev : next
+          })
+        }
         if (merged.completedJobIds.length > 0) {
           void loadDocumentsRef.current(currentPageRef.current, { background: true, reset: true })
         }
@@ -232,7 +248,9 @@ export function DocumentsView({
     setCrawlJobs([])
     setDismissedCrawlJobIds(new Set())
     setDismissingCrawlJobIds(new Set())
+    setRecentlyDeletedJobIds(new Set())
     previousCrawlJobsRef.current = new Map()
+    recentlyDeletedRef.current = new Set()
     if (!websiteCrawlerEnabled) {
       return
     }
@@ -574,6 +592,16 @@ export function DocumentsView({
       await documentsApi.deleteCrawlJob(job.id)
       setCrawlJobs((current) => current.filter((entry) => entry.id !== job.id))
       previousCrawlJobsRef.current.delete(job.id)
+      // Track the id so a poll already in flight when DELETE landed cannot
+      // reinsert the row before the server reflects the deletion.
+      setRecentlyDeletedJobIds((prev) => {
+        if (prev.has(job.id)) {
+          return prev
+        }
+        const next = new Set(prev)
+        next.add(job.id)
+        return next
+      })
     } catch (error) {
       console.error('Failed to delete crawl job:', {
         message: getApiErrorMessage(error, 'Failed to delete crawl job.'),

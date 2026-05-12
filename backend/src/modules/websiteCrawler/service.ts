@@ -319,19 +319,47 @@ export const buildWebsiteExternalDocumentId = (input: {
 // Per-document metadata is intentionally narrow. Run-level and source-level
 // fields (websiteBaseUrl, provider, runId) live on document_sources.metadata
 // to avoid duplicating run/origin context across every page. Provider-supplied
-// fields are taken from a fixed allow-list so untrusted providers cannot
-// poison user-facing metadata or smuggle secrets through.
-const PROVIDER_DOCUMENT_METADATA_ALLOWLIST = ["httpStatus", "etag", "lastModified"] as const;
+// fields are pulled by a fixed allow-list AND validated for primitive shape
+// and bounded length so an untrusted or buggy provider cannot poison
+// user-facing metadata, smuggle secrets, or push hostile nested structures
+// (e.g. prototype-pollution payloads) into the JSONB column.
+const PROVIDER_METADATA_STRING_MAX_LENGTH = 1024;
 
-const isMeaningfulMetadataValue = (value: unknown): boolean =>
-  value !== null && value !== undefined && value !== "";
+type ProviderMetadataKey = "httpStatus" | "etag" | "lastModified";
+type ProviderMetadataValueType = "number" | "string";
+
+const PROVIDER_DOCUMENT_METADATA_ALLOWLIST: ReadonlyArray<{
+  key: ProviderMetadataKey;
+  type: ProviderMetadataValueType;
+}> = [
+  { key: "httpStatus", type: "number" },
+  { key: "etag", type: "string" },
+  { key: "lastModified", type: "string" },
+];
+
+const coerceAllowedValue = (
+  value: unknown,
+  type: ProviderMetadataValueType,
+): number | string | undefined => {
+  if (type === "number") {
+    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > PROVIDER_METADATA_STRING_MAX_LENGTH) {
+    return undefined;
+  }
+  return trimmed;
+};
 
 const pickAllowedProviderMetadata = (raw: Record<string, unknown>): Record<string, unknown> => {
   const out: Record<string, unknown> = {};
-  for (const key of PROVIDER_DOCUMENT_METADATA_ALLOWLIST) {
-    const value = raw[key];
-    if (isMeaningfulMetadataValue(value)) {
-      out[key] = value;
+  for (const { key, type } of PROVIDER_DOCUMENT_METADATA_ALLOWLIST) {
+    const coerced = coerceAllowedValue(raw[key], type);
+    if (coerced !== undefined) {
+      out[key] = coerced;
     }
   }
   return out;

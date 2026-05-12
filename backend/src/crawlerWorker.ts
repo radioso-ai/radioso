@@ -2,6 +2,7 @@ import { getEnv } from "./app/config/env.js";
 import { createLogger } from "./shared/observability/logger.js";
 import { loadEnvFileIfPresent } from "./runtime/loadEnv.js";
 import { loadConfiguredApplicationModules } from "./runtime/loadApplicationModules.js";
+import { shouldRunCrawlerWorker } from "./runtime/crawlerWorkerStartup.js";
 import { startCrawlerWorkerRuntime } from "./runtime/startCrawlerWorkerRuntime.js";
 
 loadEnvFileIfPresent();
@@ -9,11 +10,7 @@ loadEnvFileIfPresent();
 const env = getEnv();
 const logger = createLogger();
 
-if (!env.WEBSITE_CRAWLER_ENABLED) {
-  logger.info(
-    { role: "crawler-worker" },
-    "WEBSITE_CRAWLER_ENABLED=false; crawler worker is disabled. Exiting cleanly so the container can be removed.",
-  );
+if (!shouldRunCrawlerWorker(env, logger, "crawler-worker")) {
   process.exit(0);
 }
 

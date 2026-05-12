@@ -135,6 +135,8 @@ npm test
 - Do not encode product meaning, routing, retrieval strategy, intent classification, or user-facing behavior with English regexes or hard-coded keyword lists in code. Radioso is multilingual; use structured metadata, typed configuration, settings-owned rules, or prompt-returned enum fields instead. Structural regexes for format parsing, identifiers, or protocol syntax are acceptable when they do not encode English product vocabulary.
 - Keep comments for non-obvious constraints, safety decisions, or business rules. Do not narrate straightforward code.
 - Preserve behavior during refactors. Make extraction-only changes separately from behavior changes when practical, and verify with focused tests.
+- Use Test-driven-development TDD approach for backend. First write failing tests, then complete the functionality for the tests to pass.
+- For frontend, choose the most appropriate testing method between TDD for logic, React component tests or Playwright test where appropriate. Never write unit tests for CSS or layout.
 
 ## Frontend Guidance
 

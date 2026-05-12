@@ -65,6 +65,7 @@ export interface WorkspaceOnboardingState {
   hasReadyDocuments: boolean
   hasCompletedChat: boolean
   sampleDocumentsImported: boolean
+  websiteCrawlerEnabled: boolean
   isOnboardingActive: boolean
   isOnboardingCompleted: boolean
   shouldShowFirstRun: boolean
@@ -102,6 +103,7 @@ export const useWorkspaceOnboarding = (
   const [hasReadyDocuments, setHasReadyDocuments] = useState(false)
   const [sampleDocumentsImported, setSampleDocumentsImported] = useState(false)
   const [hasCompletedChat, setHasCompletedChat] = useState(false)
+  const [websiteCrawlerEnabled, setWebsiteCrawlerEnabled] = useState(true)
   const [isOnboardingActive, setIsOnboardingActive] = useState(false)
   const [isOnboardingCompleted, setIsOnboardingCompleted] = useState(false)
   const [isImportingSampleDocs, setIsImportingSampleDocs] = useState(false)
@@ -146,6 +148,7 @@ export const useWorkspaceOnboarding = (
       setHasReadyDocuments(summary.hasReadyDocuments)
       setSampleDocumentsImported(summary.sampleDocumentsImported)
       setHasCompletedChat(summary.hasCompletedChat)
+      setWebsiteCrawlerEnabled(summary.websiteCrawlerEnabled)
       setIsOnboardingCompleted(nextCompleted)
       setIsOnboardingActive(nextActive)
     } finally {
@@ -241,6 +244,7 @@ export const useWorkspaceOnboarding = (
       hasReadyDocuments,
       hasCompletedChat,
       sampleDocumentsImported,
+      websiteCrawlerEnabled,
       isOnboardingActive,
       isOnboardingCompleted,
       shouldShowFirstRun: isOnboardingActive && !isOnboardingCompleted && !hasCompletedChat,
@@ -263,6 +267,7 @@ export const useWorkspaceOnboarding = (
     markCompleted,
     refresh,
     sampleDocumentsImported,
+    websiteCrawlerEnabled,
   ])
 
   return value

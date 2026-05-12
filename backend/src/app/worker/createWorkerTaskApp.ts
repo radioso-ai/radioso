@@ -5,7 +5,7 @@ import { createRequestTelemetryMiddleware } from "../../shared/observability/tel
 import { badRequest } from "../../shared/domain/errors.js";
 import { createErrorHandler } from "../http/middleware/errorHandler.js";
 import type { AppDependencies } from "../server/types.js";
-import { createWorkerTaskRoutes } from "./workerTaskRoutes.js";
+import { createDocumentWorkerTaskRoutes } from "./documentWorkerTaskRoutes.js";
 
 export const createWorkerTaskApp = (dependencies: AppDependencies) => {
   const app = express();
@@ -25,7 +25,7 @@ export const createWorkerTaskApp = (dependencies: AppDependencies) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     next();
   });
-  app.use(createWorkerTaskRoutes(dependencies));
+  app.use(createDocumentWorkerTaskRoutes(dependencies));
   app.use(createErrorHandler(dependencies.incidentReportingService));
 
   return app;

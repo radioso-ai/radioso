@@ -58,6 +58,16 @@ output "worker_service_url" {
   value       = try(google_cloud_run_v2_service.document_worker[0].uri, null)
 }
 
+output "crawler_worker_service_name" {
+  description = "Dedicated Cloud Run service that runs website crawl jobs"
+  value       = try(google_cloud_run_v2_service.crawler_worker[0].name, null)
+}
+
+output "crawler_worker_service_url" {
+  description = "Dedicated Cloud Run service URL for internal website-crawl tasks"
+  value       = try(google_cloud_run_v2_service.crawler_worker[0].uri, null)
+}
+
 output "worker_task_queue_name" {
   description = "Cloud Tasks queue name used for document processing dispatch"
   value       = try(google_cloud_tasks_queue.document_processing[0].name, null)

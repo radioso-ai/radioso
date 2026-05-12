@@ -77,6 +77,23 @@ variable "worker_max_instances" {
   default     = 5
 }
 
+variable "crawler_worker_min_instances" {
+  description = "Minimum number of crawler worker Cloud Run instances. Must stay at least 1 so queued website crawls have a live recovery poller even if Cloud Tasks dispatch fails."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.crawler_worker_min_instances >= 1
+    error_message = "crawler_worker_min_instances must be at least 1 so the crawler worker can recover queued website crawl jobs."
+  }
+}
+
+variable "crawler_worker_max_instances" {
+  description = "Maximum number of crawler worker Cloud Run instances. Crawls are network-bound and can run in parallel without contending with embedding workloads."
+  type        = number
+  default     = 3
+}
+
 # --- Database ---
 
 variable "db_tier" {
@@ -326,7 +343,7 @@ variable "public_chat_base_url_override" {
 }
 
 variable "worker_tasks_service_url_override" {
-  description = "Optional override for the worker Cloud Run public URL. Set this after the first deploy so retry dispatches target the worker run.app URL."
+  description = "Optional override for the document worker Cloud Run public URL. Set this after the first deploy so retry dispatches target the worker run.app URL. The crawler worker URL is discovered automatically and needs no override."
   type        = string
   default     = null
 }

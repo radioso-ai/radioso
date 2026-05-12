@@ -76,6 +76,27 @@ services:
       - radioso_document_storage:/app/.context/document-storage
     command: ["npm", "run", "start:worker"]
 
+  backend-crawler-worker:
+    container_name: radioso-backend-crawler-worker
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: infra/backend.Dockerfile
+    env_file:
+      - .env
+    depends_on:
+      backend:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
+      SESSION_TTL_HOURS: 168
+    volumes:
+      - radioso_document_storage:/app/.context/document-storage
+    command: ["npm", "run", "start:crawler-worker"]
+
   frontend:
     container_name: radioso-frontend
     pull_policy: build

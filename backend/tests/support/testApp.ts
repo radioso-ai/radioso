@@ -153,6 +153,7 @@ export const createTestEnv = (): Env => ({
   WORKER_TASKS_QUEUE_NAME: undefined,
   WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
   WORKER_TASKS_SERVICE_URL: undefined,
+  WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
   WORKER_AMQP_URL: undefined,
   WORKER_AMQP_QUEUE_NAME: undefined,
@@ -161,6 +162,7 @@ export const createTestEnv = (): Env => ({
   DOCUMENT_PROCESSING_JOB_LEASE_MS: 300_000,
   WEBSITE_CRAWL_JOB_LEASE_MS: 900_000,
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
+  WEBSITE_CRAWLER_ENABLED: true,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
   SUPPORT_STAFF_EMAILS: "support@example.com,approver@example.com",
 });
@@ -569,7 +571,9 @@ export const createTestDependencies = (overrides: {
   };
   const chatGateway = overrides.chatGateway ?? defaultChatGateway;
   const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
-  const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository);
+  const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, {
+    websiteCrawlerEnabled: env.WEBSITE_CRAWLER_ENABLED,
+  });
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const abuseControlService = new AbuseControlService(
     overrides.abuseControlRepository ?? new InMemoryAbuseControlRepository(),

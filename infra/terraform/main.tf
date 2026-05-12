@@ -7,8 +7,11 @@ locals {
   # creating a backend<->frontend dependency cycle. Keep a valid placeholder until
   # the wrapper supplies the discovered frontend run.app URL on a later apply.
   app_base_url = coalesce(var.app_base_url_override, "https://example.invalid")
-  # The worker service needs its own public URL for Cloud Tasks retry dispatch, but
-  # Terraform cannot reference that URL from inside the worker resource itself.
+  # The document worker self-references its own public URL for Cloud Tasks
+  # retry dispatch, so Terraform cannot use a direct reference and we keep the
+  # placeholder + override pattern. The crawler worker URL has no such cycle:
+  # the backend and document worker reference google_cloud_run_v2_service.crawler_worker
+  # directly, and the crawler worker itself does not enqueue crawl tasks.
   worker_tasks_service_url = coalesce(var.worker_tasks_service_url_override, "https://example.invalid")
   public_chat_base_url = (
     var.public_chat_base_url_override != null

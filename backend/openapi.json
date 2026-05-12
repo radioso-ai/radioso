@@ -304,6 +304,9 @@
           },
           "sampleDocumentsImported": {
             "type": "boolean"
+          },
+          "websiteCrawlerEnabled": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -317,7 +320,8 @@
           "hasPendingDocuments",
           "hasReadyDocuments",
           "hasCompletedChat",
-          "sampleDocumentsImported"
+          "sampleDocumentsImported",
+          "websiteCrawlerEnabled"
         ]
       },
       "WorkspaceTokenResponse": {
@@ -3507,6 +3511,96 @@
           "failed",
           "documents",
           "failures"
+        ]
+      },
+      "WebsiteCrawlJobStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "processing",
+          "completed",
+          "failed"
+        ]
+      },
+      "WebsiteCrawlJobSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestedUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WebsiteCrawlJobStatus"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sourceId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "documentCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "requestedUrl",
+          "status",
+          "limit",
+          "sourceId",
+          "documentCount",
+          "lastError",
+          "createdAt",
+          "updatedAt",
+          "completedAt"
+        ]
+      },
+      "WebsiteCrawlJobListResponse": {
+        "type": "object",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebsiteCrawlJobSummary"
+            }
+          }
+        },
+        "required": [
+          "jobs"
         ]
       },
       "Citation": {
@@ -9153,6 +9247,16 @@
               }
             }
           },
+          "404": {
+            "description": "Website crawler is disabled for this deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limit exceeded",
             "content": {
@@ -9165,6 +9269,182 @@
           },
           "503": {
             "description": "Website crawler provider is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/document/crawl/jobs": {
+      "get": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "List recent website crawl jobs for the workspace",
+        "operationId": "listWebsiteCrawlJobs",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/WebsiteCrawlJobStatus"
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1440
+            },
+            "required": false,
+            "name": "sinceMinutes",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent crawl jobs returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebsiteCrawlJobListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Website crawler is disabled for this deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/document/crawl/jobs/{jobId}": {
+      "delete": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Delete a completed or failed website crawl job",
+        "operationId": "deleteWebsiteCrawlJob",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "jobId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Crawl job deleted"
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Crawl job not found in this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Crawl job is still in progress and cannot be deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {

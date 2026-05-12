@@ -1,9 +1,54 @@
-import type { WebsiteCrawlJobRepositoryPort } from "../../db/repositories/websiteCrawlJobRepository.js";
+import type {
+  WebsiteCrawlJobRecord,
+  WebsiteCrawlJobRepositoryPort,
+  WebsiteCrawlJobStatus,
+} from "../../db/repositories/websiteCrawlJobRepository.js";
+import { conflict, notFound } from "../../shared/domain/errors.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { WebsiteCrawlJobDispatcherPort } from "./jobDispatcher.js";
 import { normalizeBaseUrl } from "./service.js";
 import { assertPublicWebsiteUrl } from "./urlPolicy.js";
 import type { WebsiteCrawlerDocumentIngestionPort } from "./service.js";
+
+export interface WebsiteCrawlJobSummary {
+  id: string;
+  requestedUrl: string;
+  status: WebsiteCrawlJobStatus;
+  limit: number;
+  sourceId: string | null;
+  documentCount: number | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+const extractDocumentCount = (result: Record<string, unknown> | null): number | null => {
+  if (!result) {
+    return null;
+  }
+  const typed = result as { documentCount?: unknown; accepted?: unknown };
+  if (typeof typed.documentCount === "number" && Number.isFinite(typed.documentCount)) {
+    return typed.documentCount;
+  }
+  if (typeof typed.accepted === "number" && Number.isFinite(typed.accepted)) {
+    return typed.accepted;
+  }
+  return null;
+};
+
+const toJobSummary = (record: WebsiteCrawlJobRecord): WebsiteCrawlJobSummary => ({
+  id: record.id,
+  requestedUrl: record.requestedUrl,
+  status: record.status,
+  limit: record.limit,
+  sourceId: record.sourceId,
+  documentCount: extractDocumentCount(record.result),
+  lastError: record.lastError,
+  createdAt: record.createdAt.toISOString(),
+  updatedAt: record.updatedAt.toISOString(),
+  completedAt: record.completedAt ? record.completedAt.toISOString() : null,
+});
 
 export class WebsiteCrawlJobService {
   constructor(private readonly dependencies: {
@@ -71,5 +116,35 @@ export class WebsiteCrawlJobService {
       requestedUrl: job.requestedUrl,
       status: "queued",
     };
+  }
+
+  async deleteJob(input: { workspaceId: string; jobId: string }): Promise<void> {
+    const job = await this.dependencies.repository.findById(input.jobId);
+    if (!job || job.workspaceId !== input.workspaceId) {
+      throw notFound("Crawl job not found");
+    }
+    if (job.status !== "completed" && job.status !== "failed") {
+      throw conflict("Crawl job is still in progress and cannot be deleted");
+    }
+    const deleted = await this.dependencies.repository.deleteById(input.jobId, input.workspaceId);
+    if (!deleted) {
+      throw notFound("Crawl job not found");
+    }
+  }
+
+  async listForWorkspace(
+    workspaceId: string,
+    options: { status?: WebsiteCrawlJobStatus; sinceMinutes?: number; limit?: number } = {},
+  ): Promise<WebsiteCrawlJobSummary[]> {
+    const sinceMinutes = options.sinceMinutes;
+    const since = typeof sinceMinutes === "number"
+      ? new Date(Date.now() - sinceMinutes * 60_000)
+      : undefined;
+    const records = await this.dependencies.repository.listForWorkspace(workspaceId, {
+      status: options.status,
+      since,
+      limit: options.limit,
+    });
+    return records.map(toJobSummary);
   }
 }

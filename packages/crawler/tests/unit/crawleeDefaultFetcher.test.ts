@@ -23,8 +23,10 @@ const closeServer = async (server: Server) => {
 
 describe("default Crawlee fetcher", () => {
   let servers: Server[] = [];
+  const originalPath = process.env.PATH;
 
   afterEach(async () => {
+    process.env.PATH = originalPath;
     await Promise.all(servers.map(closeServer));
     servers = [];
   });
@@ -57,6 +59,32 @@ describe("default Crawlee fetcher", () => {
       expect.objectContaining({
         status: "failed",
         frontierUrl: url
+      })
+    );
+  });
+
+  it("still crawls when PATH omits standard system binary directories", async () => {
+    process.env.PATH = "/path-without-system-binaries";
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>Minimal</title></head><body><main><p>Reachable content.</p></main></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1
+    });
+
+    expect(pages[0]).toEqual(
+      expect.objectContaining({
+        status: "success",
+        text: "Reachable content."
       })
     );
   });

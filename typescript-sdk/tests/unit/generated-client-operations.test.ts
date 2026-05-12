@@ -41,4 +41,22 @@ describe("generated client operation coverage", () => {
       expect(clientSource).toContain(`${operationId}(`);
     }
   });
+
+  it("exposes website crawler operations through the generated client", () => {
+    const clientSource = readFileSync(new URL("../../src/generated/client.ts", import.meta.url), "utf8");
+    const operationIds = operationIdsForPaths([
+      "/api/v1/document/crawl",
+      "/api/v1/document/crawl/jobs",
+      "/api/v1/document/crawl/jobs/{jobId}",
+    ]);
+
+    expect(operationIds).toEqual([
+      "crawlWebsiteDocuments",
+      "listWebsiteCrawlJobs",
+      "deleteWebsiteCrawlJob",
+    ]);
+    expect(clientSource).toContain("crawlWebsite(");
+    expect(clientSource).toContain("listCrawlJobs(");
+    expect(clientSource).toContain("deleteCrawlJob(");
+  });
 });

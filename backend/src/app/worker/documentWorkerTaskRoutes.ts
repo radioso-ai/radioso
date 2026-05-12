@@ -10,14 +10,11 @@ const documentProcessingTaskSchema = z.object({
   revision: z.number().int().positive().optional(),
 });
 
-const websiteCrawlTaskSchema = z.object({
-  jobId: z.string().uuid(),
-  workspaceId: z.string().uuid().optional(),
-});
+type DocumentWorkerTaskRouteDependencies = Pick<AppDependencies, "documentProcessingWorker">;
 
-type WorkerTaskRouteDependencies = Pick<AppDependencies, "documentProcessingWorker" | "websiteCrawlWorker">;
-
-export const createWorkerTaskRoutes = (dependencies: WorkerTaskRouteDependencies): Router => {
+export const createDocumentWorkerTaskRoutes = (
+  dependencies: DocumentWorkerTaskRouteDependencies,
+): Router => {
   const router = Router();
 
   router.get("/health", (_req, res) => {
@@ -46,26 +43,16 @@ export const createWorkerTaskRoutes = (dependencies: WorkerTaskRouteDependencies
     }
   });
 
-  router.post("/internal/tasks/website-crawl", async (req, res, next) => {
-    const parsed = websiteCrawlTaskSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "invalid_task_payload",
-      });
-      return;
-    }
-
-    try {
-      const result = await dependencies.websiteCrawlWorker.runJobById(parsed.data.jobId);
-      if (result === "busy") {
-        res.status(429).json({ status: "busy" });
-        return;
-      }
-
-      res.status(204).end();
-    } catch (error) {
-      next(error);
-    }
+  // Compatibility stub for in-flight Cloud Tasks pushes that were enqueued
+  // before the website-crawl Cloud Run service was split out. We respond 410
+  // (Gone) so Cloud Tasks treats it as a permanent failure and stops retrying;
+  // the polling fallback in the new crawler worker will pick the job up on its
+  // next tick. Safe to remove one full release after the split has shipped.
+  router.post("/internal/tasks/website-crawl", (_req, res) => {
+    res.status(410).json({
+      error: "moved",
+      message: "Website crawl tasks are handled by the dedicated crawler worker. The polling fallback will reclaim this job.",
+    });
   });
 
   return router;

@@ -1,5 +1,12 @@
 FROM node:22-bookworm-slim
 
+# procps provides `ps`, which crawlee (used by @radioso/crawler) shells out to
+# for child-process resource monitoring. Without it the crawler worker fails
+# every job with `spawn ps ENOENT`.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends procps \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app/backend
 
 COPY backend/package*.json ./

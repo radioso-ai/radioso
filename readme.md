@@ -178,6 +178,12 @@ Radioso exposes an OSS website crawler provider port at `POST /api/v1/document/c
 
 The core app does not include a concrete crawler provider. Until one is registered through application composition, the route returns `503 service_unavailable`. Crawl limits are controlled with `WEBSITE_CRAWLER_DEFAULT_LIMIT` and `WEBSITE_CRAWLER_MAX_LIMIT`.
 
+`GET /api/v1/document/crawl/jobs` lists recent crawl jobs for the current workspace with their status, requested URL, page count, and last error. The dashboard Knowledge Base page uses it to display a status banner for in-flight and recently completed crawls. See `docs/website-crawler.md` for the full request and response shape.
+
+Website crawls run in a separate process from document chunking and embeddings. Locally, `docker-compose.yml` and `docker-compose.dev.yml` add a `backend-crawler-worker` service alongside `backend-worker` (running `npm run start:crawler-worker` or `dev:crawler-worker`). On Cloud Run, Terraform provisions a dedicated `radioso-<env>-crawler-worker` service and wires its run.app URL into the backend's `WORKER_TASKS_CRAWL_SERVICE_URL` automatically — no manual override needed. When the env var is unset (e.g. self-hosted single-process deployments) crawls reuse `WORKER_TASKS_SERVICE_URL`. See `docs/website-crawler.md` for the full deployment topology.
+
+Set `WEBSITE_CRAWLER_ENABLED=false` to disable the crawler entirely. The API hides the crawl routes (404), the dashboard hides the "Crawl Website" button, and the crawler worker entrypoints exit on startup so the container can be removed.
+
 ### TypeScript SDK
 
 The SDK chat facade is for assistant chat. Use the REST retrieval endpoints above for retrieval-only search or grounded answers when you do not want assistant behavior.

@@ -170,6 +170,7 @@ const buildWorkspaceSummary = (input: {
     hasReadyDocuments: readyDocumentCount > 0,
     hasCompletedChat: conversationCount > 0,
     sampleDocumentsImported: sampleDocumentSlugs.length > 0,
+    websiteCrawlerEnabled: true,
   };
 };
 

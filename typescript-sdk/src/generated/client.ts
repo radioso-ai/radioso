@@ -25,6 +25,11 @@ export type DocumentDetails = components["schemas"]["DocumentDetails"];
 export type DocumentSearchRequest = components["schemas"]["DocumentSearchRequest"];
 export type DocumentSearchResponse = components["schemas"]["DocumentSearchResponse"];
 export type DocumentSearchHistoryListResponse = components["schemas"]["DocumentSearchHistoryListResponse"];
+export type WebsiteCrawlRequest = components["schemas"]["WebsiteCrawlRequest"];
+export type WebsiteCrawlJobResponse = components["schemas"]["WebsiteCrawlJobResponse"];
+export type WebsiteCrawlJobStatus = components["schemas"]["WebsiteCrawlJobStatus"];
+export type WebsiteCrawlJobSummary = components["schemas"]["WebsiteCrawlJobSummary"];
+export type WebsiteCrawlJobListResponse = components["schemas"]["WebsiteCrawlJobListResponse"];
 export type AssistantChatRequest = components["schemas"]["AssistantChatRequest"];
 export type ChatRequest = AssistantChatRequest;
 export type AssistantChatResponse = components["schemas"]["AssistantChatResponse"];
@@ -48,6 +53,12 @@ export interface PaginationQuery {
 }
 
 export type DocumentListQuery = PaginationQuery;
+
+export interface WebsiteCrawlJobListQuery {
+  status?: WebsiteCrawlJobStatus;
+  sinceMinutes?: number;
+  limit?: number;
+}
 
 export interface UpdateDocumentRequest {
   title: string;
@@ -233,6 +244,29 @@ export class GeneratedRadiosoClient {
     return requestJson(this.config, {
       method: "POST",
       path: `/api/v1/document/${documentId}/reprocess`,
+    });
+  }
+
+  crawlWebsite(body: WebsiteCrawlRequest): Promise<WebsiteCrawlJobResponse> {
+    return requestJson(this.config, {
+      method: "POST",
+      path: "/api/v1/document/crawl",
+      body,
+    });
+  }
+
+  listCrawlJobs(query?: WebsiteCrawlJobListQuery): Promise<WebsiteCrawlJobListResponse> {
+    return requestJson(this.config, {
+      method: "GET",
+      path: "/api/v1/document/crawl/jobs",
+      query: query as Record<string, string | number | boolean | null | undefined> | undefined,
+    });
+  }
+
+  deleteCrawlJob(jobId: string): Promise<void> {
+    return requestJson(this.config, {
+      method: "DELETE",
+      path: `/api/v1/document/crawl/jobs/${encodeURIComponent(jobId)}`,
     });
   }
 

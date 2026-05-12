@@ -28,6 +28,13 @@ export interface WebsiteCrawlerRouteOptions {
 const CRAWL_RATE_LIMIT = 10;
 const CRAWL_RATE_LIMIT_WINDOW_MS = 60_000;
 const CRAWL_RATE_LIMIT_BLOCK_MS = 60_000;
+// The dashboard polls GET /jobs every 2s while jobs are non-terminal — about
+// 30/min per tab. The bucket is keyed by workspace + actor, so multiple tabs
+// (and admin/preview tabs) share it; 300/min comfortably accommodates a few
+// concurrent tabs while still bounding the cost of a runaway client or a
+// compromised workspace token.
+const CRAWL_JOB_READ_RATE_LIMIT = 300;
+const CRAWL_JOB_READ_RATE_LIMIT_WINDOW_MS = 60_000;
 
 export const crawlBodySchema = z.object({
   url: z.string().trim().url().refine((value) => {
@@ -39,6 +46,16 @@ export const crawlBodySchema = z.object({
     }
   }, "URL must use http or https"),
   limit: z.number().int().positive().optional(),
+});
+
+const crawlJobsQuerySchema = z.object({
+  status: z.enum(["queued", "processing", "completed", "failed"]).optional(),
+  sinceMinutes: z.coerce.number().int().min(1).max(1440).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+const crawlJobParamsSchema = z.object({
+  jobId: z.string().uuid(),
 });
 
 const parseRequest = <T>(schema: z.ZodType<T>, value: unknown, message: string): T => {
@@ -57,6 +74,14 @@ export const createWebsiteCrawlerRoutes = (
   const configuredProvider = options.provider ?? dependencies.websiteCrawlerProvider ?? null;
 
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const resolveCrawlSubjectKey = (_req: unknown, res: { locals: Record<string, unknown> }) =>
+    res.locals.authMode === "bearer"
+      ? `${res.locals.workspaceId as string}:bearer`
+      : `${res.locals.workspaceId as string}:user:${res.locals.userId as string}`;
+  const resolveCrawlAuditContext = (_req: unknown, res: { locals: Record<string, unknown> }) => ({
+    accountId: res.locals.accountId as string | undefined,
+    workspaceId: res.locals.workspaceId as string | undefined,
+  });
   const crawlRateLimit: RequestHandler = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
@@ -64,13 +89,47 @@ export const createWebsiteCrawlerRoutes = (
     limit: CRAWL_RATE_LIMIT,
     windowMs: CRAWL_RATE_LIMIT_WINDOW_MS,
     blockMs: CRAWL_RATE_LIMIT_BLOCK_MS,
-    resolveSubjectKey: (_req, res) => res.locals.authMode === "bearer"
-      ? `${res.locals.workspaceId as string}:bearer`
-      : `${res.locals.workspaceId as string}:user:${res.locals.userId as string}`,
-    resolveAuditContext: (_req, res) => ({
-      accountId: res.locals.accountId as string | undefined,
-      workspaceId: res.locals.workspaceId as string | undefined,
-    }),
+    resolveSubjectKey: resolveCrawlSubjectKey,
+    resolveAuditContext: resolveCrawlAuditContext,
+  });
+  const crawlJobReadRateLimit: RequestHandler = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "document.crawl.jobs.read",
+    limit: CRAWL_JOB_READ_RATE_LIMIT,
+    windowMs: CRAWL_JOB_READ_RATE_LIMIT_WINDOW_MS,
+    resolveSubjectKey: resolveCrawlSubjectKey,
+    resolveAuditContext: resolveCrawlAuditContext,
+  });
+
+  router.get("/jobs", workspaceSession, crawlJobReadRateLimit, async (req, res, next) => {
+    try {
+      const query = parseRequest(crawlJobsQuerySchema, req.query, "Invalid crawl jobs query");
+      const jobs = await dependencies.websiteCrawlJobService.listForWorkspace(
+        res.locals.workspaceId as string,
+        {
+          status: query.status,
+          sinceMinutes: query.sinceMinutes ?? 30,
+          limit: query.limit,
+        },
+      );
+      res.status(200).json({ jobs });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/jobs/:jobId", workspaceSession, crawlJobReadRateLimit, async (req, res, next) => {
+    try {
+      const params = parseRequest(crawlJobParamsSchema, req.params, "Invalid crawl job id");
+      await dependencies.websiteCrawlJobService.deleteJob({
+        workspaceId: res.locals.workspaceId as string,
+        jobId: params.jobId,
+      });
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
   });
 
   router.post("/", workspaceSession, crawlRateLimit, async (req, res, next) => {

@@ -7,6 +7,8 @@ import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { startApiRuntime } from "../../src/runtime/startApiRuntime.js";
 import { startWorkerTaskRuntime } from "../../src/runtime/startWorkerTaskRuntime.js";
 import { startWorkerRuntime } from "../../src/runtime/startWorkerRuntime.js";
+import { startCrawlerWorkerRuntime } from "../../src/runtime/startCrawlerWorkerRuntime.js";
+import { startCrawlerWorkerTaskRuntime } from "../../src/runtime/startCrawlerWorkerTaskRuntime.js";
 import type { ConnectorPlugin } from "@radioso/connector-api";
 
 const createEnv = (): Env => ({
@@ -56,6 +58,7 @@ const createEnv = (): Env => ({
   WORKER_TASKS_QUEUE_NAME: undefined,
   WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
   WORKER_TASKS_SERVICE_URL: undefined,
+  WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
   WORKER_AMQP_URL: undefined,
   WORKER_AMQP_QUEUE_NAME: undefined,
@@ -64,6 +67,7 @@ const createEnv = (): Env => ({
   DOCUMENT_PROCESSING_JOB_LEASE_MS: 300_000,
   WEBSITE_CRAWL_JOB_LEASE_MS: 900_000,
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
+  WEBSITE_CRAWLER_ENABLED: true,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
   SUPPORT_STAFF_EMAILS: "",
 });
@@ -183,17 +187,17 @@ describe("runtime startup", () => {
     expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
-    expect(dependencies.websiteCrawlWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.runMigrations).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.initializeAll).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
-    expect(dependencies.websiteCrawlWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
   });
 
-  it("starts the worker task runtime with the polling worker loop and internal task server", async () => {
+  it("starts the worker task runtime with the document polling worker loop and internal task server", async () => {
     const env = createEnv();
     const dependencies = createDependencies();
     const ensureNoPendingMigrations = vi.fn().mockResolvedValue(undefined);
@@ -218,11 +222,67 @@ describe("runtime startup", () => {
     expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
-    expect(dependencies.websiteCrawlWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
+    expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
+  });
+
+  it("starts the crawler worker runtime independently after migration verification", async () => {
+    const env = createEnv();
+    const dependencies = createDependencies();
+    const ensureNoPendingMigrations = vi.fn().mockResolvedValue(undefined);
+
+    const runtime = await startCrawlerWorkerRuntime({
+      env,
+      logger: createLogger().logger as any,
+      ensureNoPendingMigrations,
+      buildDependencies: () => dependencies,
+    });
+
+    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
+    expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
+    expect(dependencies.websiteCrawlWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
+
+    await runtime.shutdown("test");
     expect(dependencies.websiteCrawlWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.documentProcessingWorker.stop).not.toHaveBeenCalled();
+    expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
+  });
+
+  it("starts the crawler worker task runtime with the polling crawl loop and internal task server", async () => {
+    const env = createEnv();
+    const dependencies = createDependencies();
+    const ensureNoPendingMigrations = vi.fn().mockResolvedValue(undefined);
+    const listen = vi.fn((_app: unknown, _port: number, onListening: () => void) => {
+      onListening();
+      return {
+        close(callback?: () => void) {
+          callback?.();
+        },
+      };
+    });
+
+    const runtime = await startCrawlerWorkerTaskRuntime({
+      env,
+      logger: createLogger().logger as any,
+      ensureNoPendingMigrations,
+      buildDependencies: () => dependencies,
+      createApp: () => ({}) as any,
+      listen,
+    });
+
+    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
+    expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
+    expect(dependencies.websiteCrawlWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
+
+    await runtime.shutdown("test");
+    expect(dependencies.websiteCrawlWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.documentProcessingWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
   });
 

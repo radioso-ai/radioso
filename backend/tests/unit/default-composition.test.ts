@@ -262,6 +262,7 @@ describe("default application composition", () => {
       WORKER_TASKS_QUEUE_NAME: "radioso-document-jobs",
       WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
       WORKER_TASKS_SERVICE_URL: "https://backend.example.com",
+      WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
       WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "radioso-invoker@example.com",
       WORKER_AMQP_URL: undefined,
       WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
@@ -269,6 +270,115 @@ describe("default application composition", () => {
     }, createLogger() as any);
 
     expect(dispatcher).toBeInstanceOf(CloudTasksWebsiteCrawlJobDispatcher);
+  });
+
+  it("uses WORKER_TASKS_CRAWL_SERVICE_URL when set so cloud-tasks reach the dedicated crawler worker", async () => {
+    const createTask = vi.fn().mockResolvedValue([{ name: "task" }]);
+    const fakeClient = {
+      queuePath: (project: string, location: string, queue: string) =>
+        `projects/${project}/locations/${location}/queues/${queue}`,
+      createTask,
+    } as never;
+
+    const dispatcher = new CloudTasksWebsiteCrawlJobDispatcher({
+      client: fakeClient,
+      projectId: "radioso-test",
+      location: "us-central1",
+      queueName: "radioso-website-crawls",
+      workerServiceUrl: "https://crawler-worker.example.com",
+      invokerServiceAccountEmail: "radioso-invoker@example.com",
+      logger: createLogger() as any,
+    });
+
+    await dispatcher.dispatch({
+      jobId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "22222222-2222-4222-8222-222222222222",
+    });
+
+    expect(createTask).toHaveBeenCalledTimes(1);
+    expect(createTask.mock.calls[0][0].task.httpRequest.url).toBe(
+      "https://crawler-worker.example.com/internal/tasks/website-crawl",
+    );
+  });
+
+  it("composition forwards WORKER_TASKS_CRAWL_SERVICE_URL to the crawl dispatcher when defined", async () => {
+    const createTask = vi.fn().mockResolvedValue([{ name: "task" }]);
+    const fakeClient = {
+      queuePath: (project: string, location: string, queue: string) =>
+        `projects/${project}/locations/${location}/queues/${queue}`,
+      createTask,
+    } as never;
+    const originalCloudTasks = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = ""; // not used; just ensure no-op
+
+    try {
+      const dispatcher = createDefaultWebsiteCrawlJobDispatcher({
+        WORKER_DISPATCH_DRIVER: "cloud-tasks",
+        GOOGLE_CLOUD_PROJECT: "radioso-test",
+        WORKER_TASKS_QUEUE_LOCATION: "us-central1",
+        WORKER_TASKS_QUEUE_NAME: "radioso-document-jobs",
+        WORKER_TASKS_CRAWL_QUEUE_NAME: "radioso-website-crawls",
+        WORKER_TASKS_SERVICE_URL: "https://document-worker.example.com",
+        WORKER_TASKS_CRAWL_SERVICE_URL: "https://crawler-worker.example.com",
+        WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "radioso-invoker@example.com",
+        WORKER_AMQP_URL: undefined,
+        WORKER_AMQP_QUEUE_NAME: undefined,
+        WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
+      }, createLogger() as any);
+
+      // The composition factory builds with the GCP client by default; replace
+      // the underlying client by reaching into the dispatcher only for this test.
+      (dispatcher as unknown as { client: typeof fakeClient }).client = fakeClient;
+
+      await dispatcher.dispatch({
+        jobId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "22222222-2222-4222-8222-222222222222",
+      });
+
+      expect(createTask.mock.calls[0][0].task.httpRequest.url).toBe(
+        "https://crawler-worker.example.com/internal/tasks/website-crawl",
+      );
+    } finally {
+      if (originalCloudTasks === undefined) {
+        delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+      } else {
+        process.env.GOOGLE_APPLICATION_CREDENTIALS = originalCloudTasks;
+      }
+    }
+  });
+
+  it("composition falls back to WORKER_TASKS_SERVICE_URL when no crawl-specific URL is set", async () => {
+    const createTask = vi.fn().mockResolvedValue([{ name: "task" }]);
+    const fakeClient = {
+      queuePath: (project: string, location: string, queue: string) =>
+        `projects/${project}/locations/${location}/queues/${queue}`,
+      createTask,
+    } as never;
+
+    const dispatcher = createDefaultWebsiteCrawlJobDispatcher({
+      WORKER_DISPATCH_DRIVER: "cloud-tasks",
+      GOOGLE_CLOUD_PROJECT: "radioso-test",
+      WORKER_TASKS_QUEUE_LOCATION: "us-central1",
+      WORKER_TASKS_QUEUE_NAME: "radioso-document-jobs",
+      WORKER_TASKS_CRAWL_QUEUE_NAME: "radioso-website-crawls",
+      WORKER_TASKS_SERVICE_URL: "https://document-worker.example.com",
+      WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
+      WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "radioso-invoker@example.com",
+      WORKER_AMQP_URL: undefined,
+      WORKER_AMQP_QUEUE_NAME: undefined,
+      WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
+    }, createLogger() as any);
+
+    (dispatcher as unknown as { client: typeof fakeClient }).client = fakeClient;
+
+    await dispatcher.dispatch({
+      jobId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "22222222-2222-4222-8222-222222222222",
+    });
+
+    expect(createTask.mock.calls[0][0].task.httpRequest.url).toBe(
+      "https://document-worker.example.com/internal/tasks/website-crawl",
+    );
   });
 
   it("falls back to the document queue for crawler tasks when crawl AMQP queue is absent", () => {
@@ -279,6 +389,7 @@ describe("default application composition", () => {
       WORKER_TASKS_QUEUE_NAME: undefined,
       WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
       WORKER_TASKS_SERVICE_URL: undefined,
+      WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
       WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
       WORKER_AMQP_URL: "amqp://localhost:5672",
       WORKER_AMQP_QUEUE_NAME: "radioso-document-jobs",

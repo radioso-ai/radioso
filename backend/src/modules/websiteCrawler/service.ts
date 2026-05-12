@@ -1,7 +1,6 @@
 import {
   WebsiteCrawlerBadRequestError,
   WebsiteCrawlerProviderError,
-  redactSensitiveDetails,
   redactSensitiveText,
 } from "./errors.js";
 import type {
@@ -196,10 +195,7 @@ export class WebsiteCrawlerService {
           metadata: buildDocumentMetadata({
             page,
             sourceUrl: safeSourceUrl,
-            websiteBaseUrl: safeWebsiteBaseUrl,
             canonicalUrl: safeCanonicalUrl,
-            provider: providerResult.provider,
-            runId: providerResult.runId ?? null,
           }),
         });
         result.accepted += 1;
@@ -320,21 +316,65 @@ export const buildWebsiteExternalDocumentId = (input: {
   pageUrl: string;
 }): string => `website:${redactWebsiteCrawlerUrl(normalizeBaseUrl(input.websiteBaseUrl))}:${redactWebsiteCrawlerUrl(normalizePageUrl(input.pageUrl))}`;
 
+// Per-document metadata is intentionally narrow. Run-level and source-level
+// fields (websiteBaseUrl, provider, runId) live on document_sources.metadata
+// to avoid duplicating run/origin context across every page. Provider-supplied
+// fields are pulled by a fixed allow-list AND validated for primitive shape
+// and bounded length so an untrusted or buggy provider cannot poison
+// user-facing metadata, smuggle secrets, or push hostile nested structures
+// (e.g. prototype-pollution payloads) into the JSONB column.
+const PROVIDER_METADATA_STRING_MAX_LENGTH = 1024;
+
+type ProviderMetadataKey = "httpStatus" | "etag" | "lastModified";
+type ProviderMetadataValueType = "number" | "string";
+
+const PROVIDER_DOCUMENT_METADATA_ALLOWLIST: ReadonlyArray<{
+  key: ProviderMetadataKey;
+  type: ProviderMetadataValueType;
+}> = [
+  { key: "httpStatus", type: "number" },
+  { key: "etag", type: "string" },
+  { key: "lastModified", type: "string" },
+];
+
+const coerceAllowedValue = (
+  value: unknown,
+  type: ProviderMetadataValueType,
+): number | string | undefined => {
+  if (type === "number") {
+    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > PROVIDER_METADATA_STRING_MAX_LENGTH) {
+    return undefined;
+  }
+  return trimmed;
+};
+
+const pickAllowedProviderMetadata = (raw: Record<string, unknown>): Record<string, unknown> => {
+  const out: Record<string, unknown> = {};
+  for (const { key, type } of PROVIDER_DOCUMENT_METADATA_ALLOWLIST) {
+    const coerced = coerceAllowedValue(raw[key], type);
+    if (coerced !== undefined) {
+      out[key] = coerced;
+    }
+  }
+  return out;
+};
+
 const buildDocumentMetadata = (input: {
   page: WebsiteCrawlPage;
   sourceUrl: string;
-  websiteBaseUrl: string;
   canonicalUrl: string;
-  provider: string;
-  runId: string | null;
 }): Record<string, unknown> => ({
-  ...sanitizeProviderMetadata(input.page.metadata ?? {}),
-  sourceKind: "website",
   sourceUrl: input.sourceUrl,
-  canonicalUrl: input.canonicalUrl,
-  websiteBaseUrl: input.websiteBaseUrl,
-  websiteCrawlerProvider: input.provider,
-  websiteCrawlerRunId: input.runId,
+  // canonicalUrl is always present so downstream consumers can rely on the key;
+  // when the page has no separate canonical it equals sourceUrl by design.
+  canonicalUrl: input.canonicalUrl || input.sourceUrl,
+  ...pickAllowedProviderMetadata(input.page.metadata ?? {}),
 });
 
 const preparePages = (
@@ -373,9 +413,6 @@ const preparePages = (
   }
   return result;
 };
-
-const sanitizeProviderMetadata = (metadata: Record<string, unknown>): Record<string, unknown> =>
-  redactSensitiveDetails(metadata);
 
 const SENSITIVE_QUERY_PARAM_PATTERNS = [
   /secret/i,

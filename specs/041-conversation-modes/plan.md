@@ -15,7 +15,7 @@ updates operator-facing docs.
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
+**Language/Version**: TypeScript 5.x on Node.js 24 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)
 **Primary Dependencies**: Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives  
 **Storage**: PostgreSQL 16 with `pgvector`; additive retrieval-settings persistence inside existing `attribute_controls` JSON plus additive assistant-turn audit metadata  
 **Testing**: Vitest unit, integration, and contract tests in `backend/tests`; frontend verification through existing retrieval settings and history/debug flows  

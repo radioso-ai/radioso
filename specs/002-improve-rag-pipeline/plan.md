@@ -9,7 +9,7 @@ Upgrade the retrieval pipeline so grounded chat remains reliable across strict, 
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22  
+**Language/Version**: TypeScript 5.x on Node.js 24
 **Primary Dependencies**: Express, OpenAI SDK, `pg`, `pgvector`, Zod, Pino  
 **Storage**: PostgreSQL 16+ with `pgvector`; filesystem-backed feature artifacts under `/specs/002-improve-rag-pipeline/`  
 **Testing**: Vitest, Supertest, integration tests against the backend app, persistence validation against PostgreSQL  

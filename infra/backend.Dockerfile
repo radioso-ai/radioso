@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS ee-backend-build
+FROM node:24-bookworm-slim AS ee-backend-build
 
 WORKDIR /app/ee
 
@@ -9,7 +9,7 @@ RUN npm install --package-lock=false --no-audit --no-fund
 COPY ee/packages/backend-module ./packages/backend-module
 RUN npm run build --workspace @radioso/enterprise-backend-module
 
-FROM node:22-bookworm-slim AS deps
+FROM node:24-bookworm-slim AS deps
 
 WORKDIR /app/backend
 ARG RADIOSO_EDITION=oss
@@ -44,7 +44,7 @@ RUN rm -rf node_modules/@radioso/crawler && \
     ln -s ../../../packages/crawler node_modules/@radioso/crawler
 RUN npm run build
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:24-bookworm-slim AS runtime
 
 # procps provides `ps`, which crawlee (used by @radioso/crawler) shells out to
 # for child-process resource monitoring. Without it the crawler worker fails

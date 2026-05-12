@@ -15,7 +15,7 @@ start.
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22  
+**Language/Version**: TypeScript 5.x on Node.js 24
 **Primary Dependencies**: Express, `pg`, OpenAI SDK, Zod, Pino, a recursive text splitter package, cookie parsing/session utilities, password hashing library, Vitest, Supertest  
 **Storage**: PostgreSQL 16+ with `pgvector`; filesystem only for local docs such as OpenAPI YAML  
 **Testing**: Vitest for unit and integration tests, Supertest for HTTP contract tests, Postgres-backed integration tests for repositories and retrieval flows  

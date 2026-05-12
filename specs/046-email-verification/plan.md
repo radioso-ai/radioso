@@ -8,7 +8,7 @@ Add initial email verification to the shared login identity. Registration create
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 backend, TypeScript 5.7 / React 19 / Next.js 16 frontend
+**Language/Version**: TypeScript 5.x on Node.js 24 backend, TypeScript 5.7 / React 19 / Next.js 16 frontend
 **Primary Dependencies**: Express, Zod, pg, Pino, Vitest, Supertest, shared `EmailService`
 **Storage**: PostgreSQL 16 with additive user and verification-token columns/tables
 **Testing**: Vitest unit/integration/contract tests on backend, Vitest frontend unit tests

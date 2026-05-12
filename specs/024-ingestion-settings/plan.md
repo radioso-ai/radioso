@@ -9,7 +9,7 @@ Split document-preparation controls out of Retrieval into a dedicated Ingestion 
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend  
+**Language/Version**: TypeScript 5.x on Node.js 24 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend
 **Primary Dependencies**: Express, Zod, `pg`, OpenAI SDK, Pino, Next.js App Router, Radix UI, Vitest, Supertest  
 **Storage**: PostgreSQL 16 with `pgvector`; additive workspace-scoped ingestion settings storage and existing document-processing tables  
 **Testing**: Vitest unit, integration, and contract tests across `backend/tests`; frontend interaction coverage where existing patterns support it  

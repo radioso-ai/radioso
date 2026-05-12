@@ -9,7 +9,7 @@ Add URL-backed dashboard route state for the revisit-worthy frontend surfaces th
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.7 on Node.js 22 for the frontend application  
+**Language/Version**: TypeScript 5.7 on Node.js 24 for the frontend application
 **Primary Dependencies**: React 19, Next.js 16 App Router, Radix UI primitives, Lucide icons  
 **Storage**: Browser URL state plus existing browser local storage for workspace bootstrap  
 **Testing**: Vitest unit tests, ESLint, Next.js production build  

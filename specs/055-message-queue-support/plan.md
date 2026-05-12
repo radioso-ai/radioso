@@ -9,7 +9,7 @@ Add AMQP 0-9-1 / RabbitMQ-compatible worker dispatch for document processing job
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.9 on Node.js 22
+**Language/Version**: TypeScript 5.9 on Node.js 24
 **Primary Dependencies**: Express, Zod, Pino, PostgreSQL job repository, `amqplib` for AMQP 0-9-1 broker integration
 **Storage**: PostgreSQL remains the durable system of record for jobs; RabbitMQ-compatible queue messages are wake-up notifications
 **Testing**: Vitest unit tests with backend TDD; focused build validation

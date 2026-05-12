@@ -10,7 +10,7 @@ This file is hand-maintained. Do not regenerate it from Speckit plans, append "r
 
 | Concern | Choice |
 |---------|--------|
-| Backend | TypeScript on Node.js 22, Express |
+| Backend | TypeScript on Node.js 24, Express |
 | Frontend | TypeScript 5.7, React 19, Next.js 16 App Router |
 | Database | PostgreSQL 16 with `pgvector` |
 | Validation | Zod |

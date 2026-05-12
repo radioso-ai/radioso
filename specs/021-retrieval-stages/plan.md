@@ -9,7 +9,7 @@ Refactor the backend retrieval pipeline so `RetrievalPipelineService` remains th
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22  
+**Language/Version**: TypeScript 5.x on Node.js 24
 **Primary Dependencies**: Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest  
 **Storage**: PostgreSQL 16 with `pgvector` (unchanged)  
 **Testing**: Vitest unit and integration tests under `backend/tests`  

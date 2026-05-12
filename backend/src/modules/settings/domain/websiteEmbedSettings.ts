@@ -72,6 +72,7 @@ const normalizeLauncherLabel = (value: string | undefined): string => {
   if (value === undefined) {
     return DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL;
   }
+  // Empty strings intentionally hide the launcher label while keeping the icon-only launcher active.
   return value.trim().replace(/\s+/g, " ");
 };
 

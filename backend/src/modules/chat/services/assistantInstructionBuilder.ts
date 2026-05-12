@@ -10,7 +10,7 @@ import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 export interface AssistantInstructionInput {
   responseIdentity?: ResponseIdentity | null;
   customInstruction?: string;
-  conversationMode?: ConversationMode;
+  conversationMode: ConversationMode;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   responseLanguage?: string;
 }
@@ -24,7 +24,7 @@ export class AssistantInstructionBuilder {
       this.renderCustomInstruction(input.customInstruction),
       this.renderResponseFormattingGuidelines(),
       this.conversationModeInstructionBuilder.build({
-        conversationMode: input.conversationMode ?? "exploratory",
+        conversationMode: input.conversationMode,
       }),
       this.renderResponseLanguageInstruction(input.responseLanguagePolicy ?? "match_user_question", input.responseLanguage),
     ]

@@ -118,7 +118,8 @@ export function EmbeddedChatFrame({
       }
     }
 
-    return { status: 'bootstrapping', workspaceName: null }
+    const storedSession = readStoredEmbedBootstrapSession(token)
+    return { status: 'bootstrapping', workspaceName: storedSession?.workspaceName ?? null }
   })
   const isBootstrappedRef = useRef(false)
 

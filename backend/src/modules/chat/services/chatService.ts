@@ -52,6 +52,10 @@ import {
 } from "../../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopChatActionProvider, type ChatActionProviderPort } from "./chatActionProvider.js";
+import {
+  ASSISTANT_CONVERSATION_MODE,
+  ASSISTANT_SUGGESTED_QUESTIONS_COUNT,
+} from "../contracts/assistantBehavior.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import { buildRewriteContinuityState } from "./rewriteContinuityState.js";
 
@@ -209,7 +213,7 @@ export class ChatService {
   }
 
   private getConversationMode(session: PreparedSession): ConversationMode {
-    return "exploratory";
+    return ASSISTANT_CONVERSATION_MODE;
   }
 
   private getSuggestedQuestionsEnabled(session: PreparedSession): boolean {
@@ -217,7 +221,7 @@ export class ChatService {
   }
 
   private getSuggestedQuestionsCount(session: PreparedSession): number {
-    return 3;
+    return ASSISTANT_SUGGESTED_QUESTIONS_COUNT;
   }
 
   private getConversationModeMetadata(session: PreparedSession, input?: Partial<ConversationModeMetadata>): ConversationModeMetadata {

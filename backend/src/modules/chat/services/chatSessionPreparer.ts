@@ -9,13 +9,15 @@ import type { RetrievalPipelineService, RewriteContinuityState } from "../../ret
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { isAgentRetrievalEnabled } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
+import {
+  ASSISTANT_CONVERSATION_MODE,
+  ASSISTANT_SUGGESTED_QUESTIONS_COUNT,
+} from "../contracts/assistantBehavior.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
 
 type ChatIntentCapableRetrievalPipeline = Pick<RetrievalPipelineService, "run" | "interpret" | "runInterpreted" | "runWithoutRetrieval">;
-const FALLBACK_CONVERSATION_MODE = "exploratory" as const;
-const FALLBACK_SUGGESTED_QUESTIONS_COUNT = 3;
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -85,9 +87,9 @@ export class ChatSessionPreparer {
       responseIdentity,
       responseBehavior: {
         customInstruction: agent.customInstruction,
-        conversationMode: FALLBACK_CONVERSATION_MODE,
+        conversationMode: ASSISTANT_CONVERSATION_MODE,
         suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-        suggestedQuestionsCount: FALLBACK_SUGGESTED_QUESTIONS_COUNT,
+        suggestedQuestionsCount: ASSISTANT_SUGGESTED_QUESTIONS_COUNT,
       },
       responseBehaviorEnabled: true,
       metadataFilter: input.metadataFilter,
@@ -169,9 +171,9 @@ export class ChatSessionPreparer {
         responseSettings: {
           citationDisplayEnabled: false,
           answerSupportValidationEnabled: false,
-          conversationMode: FALLBACK_CONVERSATION_MODE,
+          conversationMode: ASSISTANT_CONVERSATION_MODE,
           suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-          suggestedQuestionsCount: FALLBACK_SUGGESTED_QUESTIONS_COUNT,
+          suggestedQuestionsCount: ASSISTANT_SUGGESTED_QUESTIONS_COUNT,
           customInstruction: agent.customInstruction,
           responseLanguagePolicy: "match_user_question" as const,
         },

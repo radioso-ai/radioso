@@ -337,14 +337,6 @@ describe("resolveAnonymousSession", () => {
       websiteEmbedAllowedOrigins: ["https://example.com"],
       websiteEmbedLauncherLabel: "Chat with us",
       websiteEmbedLauncherPosition: "bottom-right",
-      websiteEmbedTheme: {
-        brand: "#0f172a",
-        brandText: "#f8fafc",
-        surface: "#ffffff",
-        text: "#0f172a",
-      },
-      websiteEmbedCopy: {},
-      websiteEmbedExpertOverrides: {},
     });
 
     const embedSession = issuePublicChatSession(SESSION_SECRET, {

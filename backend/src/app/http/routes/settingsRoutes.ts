@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Router, type Request, type Response } from "express";
-import multer from "multer";
+import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
@@ -21,9 +20,9 @@ import {
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import {
-  ASSISTANT_LOGO_MAX_BYTES,
   ASSISTANT_LOGO_MIME_TYPES,
   assistantThemeSchema,
+  createAssistantLogoUploadHandler,
 } from "../shared/assistantIdentity.js";
 
 export const updateSettingsSchema = z.object({
@@ -143,27 +142,7 @@ type SettingsRouteDependencies = WorkspaceSessionDependencies & Pick<
 export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
-  const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: {
-      fileSize: ASSISTANT_LOGO_MAX_BYTES,
-    },
-  });
-
-  const runUploadSingle = (req: Request, res: Response) =>
-    new Promise<void>((resolve, reject) => {
-      upload.single("logo")(req, res, (error) => {
-        if (!error) {
-          resolve();
-          return;
-        }
-        if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
-          reject(badRequest("Uploaded assistant logo exceeds maximum size"));
-          return;
-        }
-        reject(error);
-      });
-    });
+  const runUploadSingle = createAssistantLogoUploadHandler();
 
   router.get("/", workspaceSession, async (_req, res, next) => {
     try {

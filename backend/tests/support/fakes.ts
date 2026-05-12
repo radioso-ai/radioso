@@ -742,9 +742,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       websiteEmbedAllowedOrigins: string[];
       websiteEmbedLauncherLabel: string;
       websiteEmbedLauncherPosition: WorkspaceRecord["websiteEmbedLauncherPosition"];
-      websiteEmbedTheme?: WorkspaceRecord["websiteEmbedTheme"];
-      websiteEmbedCopy?: WorkspaceRecord["websiteEmbedCopy"];
-      websiteEmbedExpertOverrides?: WorkspaceRecord["websiteEmbedExpertOverrides"];
     },
   ): Promise<WorkspaceRecord> {
     const item = this.items.get(workspaceId);
@@ -764,9 +761,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       websiteEmbedAllowedOrigins: input.websiteEmbedAllowedOrigins,
       websiteEmbedLauncherLabel: input.websiteEmbedLauncherLabel,
       websiteEmbedLauncherPosition: input.websiteEmbedLauncherPosition,
-      websiteEmbedTheme: input.websiteEmbedTheme ?? item.websiteEmbedTheme,
-      websiteEmbedCopy: input.websiteEmbedCopy ?? item.websiteEmbedCopy,
-      websiteEmbedExpertOverrides: input.websiteEmbedExpertOverrides ?? item.websiteEmbedExpertOverrides,
       updatedAt: new Date(),
     };
     this.items.set(workspaceId, updated);

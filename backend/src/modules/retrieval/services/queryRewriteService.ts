@@ -601,7 +601,7 @@ export class QueryRewriteService {
 
     const normalized = retrievalSubqueries
       .map((subquery, index) => {
-        const label = this.normalizeClassifierLabel(subquery?.label);
+        const label = this.normalizeRetrievalSubqueryLabel(subquery?.label);
         const semanticQuery = this.normalizeRewrite(subquery?.semanticQuery);
         const lexicalQuery = this.normalizeLexicalRewrite(subquery?.lexicalQuery ?? semanticQuery);
         if (!label || !semanticQuery || !lexicalQuery) {
@@ -626,6 +626,30 @@ export class QueryRewriteService {
   private normalizeOptionalRewrite(rewrittenQuery?: string): string | undefined {
     const normalized = this.normalizeRewrite(rewrittenQuery);
     return normalized.length > 0 ? normalized : undefined;
+  }
+
+  private normalizeRetrievalSubqueryLabel(value?: string): string | undefined {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+
+    const normalized = value
+      .replace(/[\x00-\x1f\x7f]/g, " ")
+      .replace(/https?:\/\/\S+|www\.\S+/gi, " ")
+      .replace(/[`#*_~[\]{}]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (
+      normalized.length === 0 ||
+      normalized.length > 80 ||
+      /\b(?:bypass|developer|ignore|instructions?|jailbreak|override|previous|prompt|raw|reveal|system)\b/i.test(normalized) ||
+      !/^[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N} '&/().,:°-]*$/u.test(normalized)
+    ) {
+      return undefined;
+    }
+
+    return normalized.split(/[\s/-]+/).filter(Boolean).length > 8 ? undefined : normalized;
   }
 
   private normalizeLexicalRewrite(rewrittenQuery?: string): string {

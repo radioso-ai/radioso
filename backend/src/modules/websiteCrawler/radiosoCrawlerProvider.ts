@@ -1,4 +1,4 @@
-import { crawlSite, type CrawledPageResult } from "@radioso/crawler";
+import type { CrawledPageResult } from "@radioso/crawler";
 
 import type { WebsiteCrawlPage, WebsiteCrawlResult, WebsiteCrawlerProvider } from "./provider.js";
 
@@ -13,6 +13,7 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
     limit: number;
     signal?: AbortSignal;
   }): Promise<WebsiteCrawlResult> {
+    const { crawlSite } = await import("@radioso/crawler");
     const pages = await crawlSite({
       baseUrl: request.url,
       pageLimit: request.limit,

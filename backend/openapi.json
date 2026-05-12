@@ -1176,7 +1176,8 @@
             "type": "boolean"
           },
           "vectorTopK": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1
           },
           "similarityThreshold": {
             "type": "number"
@@ -1326,6 +1327,184 @@
           "rerankTopK",
           "citationDisplayEnabled"
         ]
+      },
+      "RetrievalSettingsOverride": {
+        "type": "object",
+        "properties": {
+          "queryRewriteEnabled": {
+            "type": "boolean"
+          },
+          "semanticRewriteInstructions": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "lexicalRewriteInstructions": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "conversationMode": {
+            "type": "string",
+            "enum": [
+              "factual",
+              "guided",
+              "exploratory"
+            ]
+          },
+          "suggestedQuestionsEnabled": {
+            "type": "boolean"
+          },
+          "suggestedQuestionsCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
+          },
+          "rerankEnabled": {
+            "type": "boolean"
+          },
+          "vectorTopK": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "similarityThreshold": {
+            "type": "number"
+          },
+          "rerankTopK": {
+            "type": "integer",
+            "maximum": 50
+          },
+          "citationDisplayEnabled": {
+            "type": "boolean"
+          },
+          "answerSupportValidationEnabled": {
+            "type": "boolean"
+          },
+          "metadataRules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "field": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "valueType": {
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "number",
+                    "date",
+                    "boolean"
+                  ]
+                },
+                "operator": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "not_equals",
+                    "contains",
+                    "not_contains",
+                    "lt",
+                    "lte",
+                    "gt",
+                    "gte"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                },
+                "combinator": {
+                  "type": "string",
+                  "enum": [
+                    "and",
+                    "or"
+                  ]
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "field": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "valueType": {
+                        "type": "string",
+                        "enum": [
+                          "string",
+                          "number",
+                          "date",
+                          "boolean"
+                        ]
+                      },
+                      "operator": {
+                        "type": "string",
+                        "enum": [
+                          "equals",
+                          "not_equals",
+                          "contains",
+                          "not_contains",
+                          "lt",
+                          "lte",
+                          "gt",
+                          "gte"
+                        ]
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "field",
+                      "valueType",
+                      "operator",
+                      "value"
+                    ]
+                  }
+                },
+                "effect": {
+                  "type": "string",
+                  "enum": [
+                    "boost",
+                    "filter"
+                  ]
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "triggerMode": {
+                  "type": "string",
+                  "enum": [
+                    "always_on",
+                    "match_turn"
+                  ]
+                },
+                "triggerInstruction": {
+                  "type": "string",
+                  "maxLength": 500
+                }
+              },
+              "required": [
+                "id",
+                "effect",
+                "enabled"
+              ]
+            }
+          },
+          "customInstruction": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        }
       },
       "IngestionSettings": {
         "type": "object",
@@ -4874,6 +5053,20 @@
             "items": {
               "$ref": "#/components/schemas/SkillContractReference"
             }
+          },
+          "schemaReferences": {
+            "type": "object",
+            "properties": {
+              "inputSchemaRef": {
+                "type": "string"
+              },
+              "settingsSchemaRef": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "inputSchemaRef"
+            ]
           },
           "diagnostics": {
             "$ref": "#/components/schemas/SkillDiagnosticsSummary"

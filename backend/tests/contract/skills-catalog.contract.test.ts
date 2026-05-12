@@ -40,6 +40,10 @@ describe("skills catalog contract", () => {
           shapeAware: true,
           strategyAware: true,
         }),
+        schemaReferences: {
+          inputSchemaRef: "RetrievalAnswerRequest",
+          settingsSchemaRef: "RetrievalSettingsOverride",
+        },
         steps: expect.arrayContaining([
           expect.objectContaining({
             name: "context_selection",
@@ -81,6 +85,8 @@ describe("skills catalog contract", () => {
         strategyAware: true,
       },
     });
+    // The catalog exposes executable schema metadata only; dormant Markdown-style instructions stay private/absent.
+    expect(response.body).not.toHaveProperty("instructions");
   });
 
   it("returns a stable not-found shape for unknown skills", async () => {
@@ -107,5 +113,6 @@ describe("skills catalog contract", () => {
     expect(spec).toContain("/api/v1/skills/{skillName}:");
     expect(spec).toContain("SkillCatalogEntry:");
     expect(spec).toContain("SkillDiagnosticDefinition:");
+    expect(spec).toContain("schemaReferences:");
   });
 });

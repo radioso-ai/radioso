@@ -5,17 +5,19 @@ const ROOT = process.cwd();
 const SRC_ROOT = path.join(ROOT, "src");
 const DIST_ROOT = path.join(ROOT, "dist", "src");
 
-const copySqlFiles = async (directory) => {
+const copiedAssetExtensions = new Set([".json", ".md", ".sql"]);
+
+const copyNonTsAssets = async (directory) => {
   const entries = await readdir(directory, { withFileTypes: true });
 
   for (const entry of entries) {
     const sourcePath = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      await copySqlFiles(sourcePath);
+      await copyNonTsAssets(sourcePath);
       continue;
     }
 
-    if (!entry.isFile() || !entry.name.endsWith(".sql")) {
+    if (!entry.isFile() || !copiedAssetExtensions.has(path.extname(entry.name))) {
       continue;
     }
 
@@ -26,4 +28,4 @@ const copySqlFiles = async (directory) => {
   }
 };
 
-await copySqlFiles(SRC_ROOT);
+await copyNonTsAssets(SRC_ROOT);

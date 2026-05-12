@@ -40,6 +40,17 @@ export const skillDiagnosticsSummarySchema = z.object({
 });
 export type SkillDiagnosticsSummary = z.infer<typeof skillDiagnosticsSummarySchema>;
 
+export const skillSchemaReferencesSchema = z.object({
+  inputSchemaRef: z.string(),
+  settingsSchemaRef: z.string().optional(),
+});
+export type SkillSchemaReferences = z.infer<typeof skillSchemaReferencesSchema>;
+
+export const skillGeneratedContractSchema = z.object({
+  path: z.string(),
+});
+export type SkillGeneratedContract = z.infer<typeof skillGeneratedContractSchema>;
+
 const skillStepSummarySchema = z.object({
   name: z.string(),
   kind: z.string(),
@@ -63,6 +74,7 @@ export const skillCatalogEntrySchema = z.object({
   supportedCallers: z.array(skillCallerSurfaceSchema),
   requiredCapabilities: z.array(z.string()),
   contractReferences: z.array(skillContractReferenceSchema),
+  schemaReferences: skillSchemaReferencesSchema.optional(),
   diagnostics: skillDiagnosticsSummarySchema,
   steps: z.array(skillStepSummarySchema).optional(),
   shapes: z.array(skillShapeSummarySchema).optional(),
@@ -74,6 +86,7 @@ export type SkillCatalogEntry = Omit<z.infer<typeof skillCatalogEntrySchema>, "r
 export type SkillCatalogEntryDefinition = Omit<SkillCatalogEntry, "availability"> & {
   availability?: SkillAvailability;
   availabilityCheck?: "static" | "capability_policy";
+  generatedContract?: SkillGeneratedContract;
 };
 
 export const skillCatalogResponseSchema = z.object({
@@ -194,3 +207,32 @@ export const skillDiagnosticFieldNames = [
 ] as const;
 
 export const validateSkillDiagnostic = (input: unknown) => skillDiagnosticSchema.safeParse(input);
+
+export const skillStepDefinitionSchema = skillStepSummarySchema.extend({
+  displayName: z.string().optional(),
+  clauses: z.record(z.unknown()),
+  trace: z.object({
+    expose: z.boolean(),
+    redact: z.array(z.string()).optional(),
+  }).optional(),
+  telemetry: z.object({
+    eventName: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+  }).optional(),
+});
+
+export const skillShapeDefinitionSchema = skillShapeSummarySchema.extend({
+  stepOverrides: z.record(z.record(z.unknown())),
+});
+
+export const skillDefinitionSchema = skillCatalogEntrySchema.omit({
+  availability: true,
+  steps: true,
+  shapes: true,
+}).extend({
+  availability: skillAvailabilitySchema.optional(),
+  availabilityCheck: z.enum(["static", "capability_policy"]).optional(),
+  generatedContract: skillGeneratedContractSchema.optional(),
+  steps: z.array(skillStepDefinitionSchema),
+  shapes: z.array(skillShapeDefinitionSchema).optional(),
+});

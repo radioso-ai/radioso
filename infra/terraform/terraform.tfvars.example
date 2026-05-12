@@ -39,5 +39,5 @@ project_id = "your-gcp-project-id"
 # session_ttl_hours       = 168
 # metrics_enabled         = false
 # connector_public_base_url = "https://your-backend-url"
-# app_base_url_override   = "https://your-frontend-url.a.run.app"
-# public_chat_base_url_override = "https://your-frontend-url.a.run.app/chat"
+# app_base_url_override   = "https://your-public-app-domain.example"
+# public_chat_base_url_override = "https://your-public-app-domain.example/chat"

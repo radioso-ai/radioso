@@ -101,6 +101,7 @@ export interface ApplicationRouteMount {
     connectorDb: UsageLimitDatabasePort;
     env: {
       SESSION_COOKIE_NAME: string;
+      APP_BASE_URL?: string;
       PUBLIC_CHAT_SESSION_SECRET?: string;
       AUTH_RATE_LIMIT_WINDOW_MS?: number;
       AUTH_RATE_LIMIT_MAX_ATTEMPTS?: number;

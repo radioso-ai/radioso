@@ -35,6 +35,8 @@ jobs:
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       GCP_REGION: ${{ vars.GCP_REGION }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+      PUBLIC_CHAT_BASE_URL: ${{ vars.PUBLIC_CHAT_BASE_URL }}
       TF_IN_AUTOMATION: true
       TF_VAR_connector_encryption_key: ${{ secrets.CONNECTOR_ENCRYPTION_KEY }}
       TF_VAR_ee_mail_from_email: ${{ vars.EE_MAIL_FROM_EMAIL }}
@@ -104,11 +106,13 @@ jobs:
           FRONTEND_IMAGE="$(gcloud run services describe "${SERVICE_PREFIX}-frontend" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(spec.template.spec.containers[0].image)')"
           FRONTEND_URL="$(gcloud run services describe "${SERVICE_PREFIX}-frontend" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
           WORKER_URL="$(gcloud run services describe "${SERVICE_PREFIX}-worker" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
+          APP_BASE_URL_OVERRIDE="${APP_BASE_URL:-$FRONTEND_URL}"
+          PUBLIC_CHAT_BASE_URL_OVERRIDE="${PUBLIC_CHAT_BASE_URL:-${APP_BASE_URL_OVERRIDE%/}/chat}"
 
           echo "TF_VAR_backend_image=${BACKEND_IMAGE}" >> "$GITHUB_ENV"
           echo "TF_VAR_frontend_image=${FRONTEND_IMAGE}" >> "$GITHUB_ENV"
-          echo "TF_VAR_app_base_url_override=${FRONTEND_URL}" >> "$GITHUB_ENV"
-          echo "TF_VAR_public_chat_base_url_override=${FRONTEND_URL}/chat" >> "$GITHUB_ENV"
+          echo "TF_VAR_app_base_url_override=${APP_BASE_URL_OVERRIDE}" >> "$GITHUB_ENV"
+          echo "TF_VAR_public_chat_base_url_override=${PUBLIC_CHAT_BASE_URL_OVERRIDE}" >> "$GITHUB_ENV"
           echo "TF_VAR_worker_tasks_service_url_override=${WORKER_URL}" >> "$GITHUB_ENV"
 
       - name: Terraform init

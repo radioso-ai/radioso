@@ -5,7 +5,7 @@ locals {
   observability_environment    = var.environment
   # Cloud Run does not expose a stable frontend URL Terraform can reuse here without
   # creating a backend<->frontend dependency cycle. Keep a valid placeholder until
-  # the wrapper supplies the discovered frontend run.app URL on a later apply.
+  # the wrapper supplies the public app URL or discovered frontend run.app URL.
   app_base_url = coalesce(var.app_base_url_override, "https://example.invalid")
   # The document worker self-references its own public URL for Cloud Tasks
   # retry dispatch, so Terraform cannot use a direct reference and we keep the

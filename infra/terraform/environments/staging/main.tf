@@ -44,7 +44,7 @@ module "radioso" {
   backend_max_instances  = var.backend_max_instances
   frontend_min_instances = 0
   frontend_max_instances = var.frontend_max_instances
-  worker_min_instances   = 1
+  worker_min_instances   = 0
   worker_max_instances   = var.worker_max_instances
 
   db_tier                = var.db_tier

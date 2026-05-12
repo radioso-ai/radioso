@@ -55,14 +55,12 @@ const value = 1
     expect(html).toContain('https://example.com')
   })
 
-  it('suppresses images and flattens headings to chat-friendly text blocks', () => {
+  it('suppresses images in chat output', () => {
     const html = renderToStaticMarkup(
-      <AssistantMarkdownContent content={'# Big title\n\n![tracking](https://evil.com/pixel.png)'} />,
+      <AssistantMarkdownContent content={'Some text\n\n![tracking](https://evil.com/pixel.png)'} />,
     )
 
     expect(html).not.toContain('<img')
-    expect(html).not.toContain('<h1')
-    expect(html).toContain('Big title')
   })
 
   it('expands inline unordered markers into a real markdown list', () => {

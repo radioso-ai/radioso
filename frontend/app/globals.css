@@ -160,3 +160,9 @@
     @apply text-foreground hover:bg-accent hover:text-secondary-foreground dark:text-foreground dark:hover:bg-accent dark:hover:text-secondary-foreground;
   }
 }
+
+.dark .shiki,
+.dark .shiki span {
+  color: var(--shiki-dark) !important;
+  background-color: var(--shiki-dark-bg) !important;
+}

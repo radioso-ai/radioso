@@ -2,6 +2,7 @@
 
 import type { FormEvent } from 'react'
 
+import { MarkdownContent } from '@/components/markdown/markdown-content'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -80,15 +81,27 @@ export function DocumentEditorDialog({
               </div>
               <div className="space-y-2 flex-shrink-0">
                 <Label htmlFor="content">Content</Label>
-                <Textarea
-                  id="content"
-                  value={values.content}
-                  onChange={(event) => onChange('content', event.target.value)}
-                  placeholder="Paste your document content here..."
-                  className="min-h-[320px] resize-none overflow-y-auto [field-sizing:fixed]"
-                  disabled={isSaving || isReadOnly}
-                  readOnly={isReadOnly}
-                />
+                {isReadOnly ? (
+                  <div
+                    id="content"
+                    className="min-h-[320px] overflow-y-auto rounded-md border border-input bg-muted/30 px-3 py-2 text-sm leading-7 text-foreground [overflow-wrap:anywhere]"
+                  >
+                    {values.content.trim().length > 0 ? (
+                      <MarkdownContent content={values.content} variant="document" />
+                    ) : (
+                      <p className="text-muted-foreground">This document has no content.</p>
+                    )}
+                  </div>
+                ) : (
+                  <Textarea
+                    id="content"
+                    value={values.content}
+                    onChange={(event) => onChange('content', event.target.value)}
+                    placeholder="Paste your document content here..."
+                    className="min-h-[320px] resize-none overflow-y-auto [field-sizing:fixed]"
+                    disabled={isSaving}
+                  />
+                )}
               </div>
               <div className="space-y-2 flex-shrink-0">
                 <Label htmlFor="metadata">Metadata (JSON)</Label>

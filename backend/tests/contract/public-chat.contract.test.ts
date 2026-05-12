@@ -322,8 +322,8 @@ describe("public chat contract", () => {
     expect(response.headers["x-accel-buffering"]).toBe("no");
     expect(response.body).toContain("event: conversation");
     expect(response.body).toContain("event: chunk");
-    expect(response.body).toContain('data: {"text":"Streaming "}');
-    expect(response.body).toContain('data: {"text":"works."}');
+    expect(response.body).toContain('data: {"text":"Streaming"}');
+    expect(response.body).toContain('data: {"text":" works."}');
     expect(response.body).toContain("event: done");
   });
 

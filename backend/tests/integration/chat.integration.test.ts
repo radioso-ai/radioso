@@ -272,14 +272,17 @@ describe("chat integration", () => {
       await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
         ...existing,
         queryRewriteEnabled: false,
-        suggestedQuestionsEnabled: true,
-        suggestedQuestionsCount: 4,
         rerankEnabled: false,
         vectorTopK: 20,
         similarityThreshold: 0.1,
         rerankTopK: 5,
         citationDisplayEnabled: true,
+      });
+      const agent = await dependencies.agentService.resolve(workspaceId);
+      await dependencies.agentService.update(workspaceId, agent.id, {
         conversationMode,
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 4,
       });
 
       return request(app)

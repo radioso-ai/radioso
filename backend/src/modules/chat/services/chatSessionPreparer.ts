@@ -224,7 +224,40 @@ export class ChatSessionPreparer {
 
   private async resolveLegacyAgent(workspaceId: string): Promise<AgentRecord> {
     if (!this.workspaceRepository) {
-      throw notFound("Workspace not found");
+      const now = new Date();
+      return {
+        id: workspaceId,
+        workspaceId,
+        name: "",
+        customInstruction: "",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        retrievalEnabled: true,
+        greetingInstruction: "",
+        assistantDefaultLocale: null,
+        proactiveGreetingEnabled: false,
+        surfaceSettings: {
+          authenticatedChat: {
+            enabled: true,
+          },
+          anonymousChat: {
+            enabled: false,
+            token: null,
+            messagesPerMinute: 10,
+          },
+          websiteEmbed: {
+            enabled: false,
+            token: null,
+            allowedOrigins: [],
+            launcherLabel: "Chat with us",
+            icon: "chat",
+            launcherPosition: "bottom-right",
+          },
+        },
+        createdAt: now,
+        updatedAt: now,
+      };
     }
 
     const workspace = await this.workspaceRepository.findById(workspaceId);

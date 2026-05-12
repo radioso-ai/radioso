@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { defaultAssistantBootstrapSettings, validateAssistantBootstrapSettings } from "../../src/modules/settings/domain/assistantBootstrapSettings.js";
+import type { AgentRecord } from "../../src/modules/agents/public.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 import { defaultRetrievalSettings } from "../../src/modules/settings/domain/retrievalSettings.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
@@ -8,6 +9,83 @@ import { PlatformSettingsService } from "../../src/modules/settings/services/pla
 import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 
 describe("settings services", () => {
+  const createAgent = (
+    workspace: {
+      id: string;
+      assistantName: string;
+      greetingInstruction: string;
+      assistantDefaultLocale: string | null;
+      proactiveGreetingEnabled: boolean;
+      anonymousChatEnabled: boolean;
+      anonymousChatToken: string | null;
+      anonymousRateLimit: number;
+      websiteEmbedEnabled: boolean;
+      websiteEmbedToken: string | null;
+      websiteEmbedAllowedOrigins: string[];
+      websiteEmbedLauncherLabel: string;
+      websiteEmbedLauncherIcon: "chat" | "sparkles" | "message";
+      websiteEmbedLauncherPosition: "bottom-right" | "bottom-left";
+    },
+    overrides: Partial<AgentRecord> = {},
+  ): AgentRecord => ({
+    id: `${workspace.id}-agent`,
+    workspaceId: workspace.id,
+    name: workspace.assistantName,
+    greetingInstruction: workspace.greetingInstruction,
+    assistantDefaultLocale: workspace.assistantDefaultLocale,
+    proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
+    conversationMode: "guided",
+    suggestedQuestionsEnabled: true,
+    suggestedQuestionsCount: 3,
+    customInstruction: "",
+    retrievalEnabled: true,
+    surfaceSettings: {
+      authenticatedChat: {
+        enabled: true,
+      },
+      anonymousChat: {
+        enabled: workspace.anonymousChatEnabled,
+        token: workspace.anonymousChatToken,
+        messagesPerMinute: workspace.anonymousRateLimit,
+      },
+      websiteEmbed: {
+        enabled: workspace.websiteEmbedEnabled,
+        token: workspace.websiteEmbedToken,
+        allowedOrigins: workspace.websiteEmbedAllowedOrigins,
+        launcherLabel: workspace.websiteEmbedLauncherLabel,
+        icon: workspace.websiteEmbedLauncherIcon,
+        launcherPosition: workspace.websiteEmbedLauncherPosition,
+      },
+    },
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    ...overrides,
+  });
+
+  const createAgentService = (agent: AgentRecord) => ({
+    resolve: vi.fn().mockResolvedValue(agent),
+    update: vi.fn(async (_workspaceId: string, _agentId: string, input: Partial<AgentRecord>) => ({
+      ...agent,
+      ...input,
+      surfaceSettings: {
+        authenticatedChat: {
+          ...agent.surfaceSettings.authenticatedChat,
+          ...input.surfaceSettings?.authenticatedChat,
+        },
+        anonymousChat: {
+          ...agent.surfaceSettings.anonymousChat,
+          ...input.surfaceSettings?.anonymousChat,
+        },
+        websiteEmbed: {
+          ...agent.surfaceSettings.websiteEmbed,
+          ...input.surfaceSettings?.websiteEmbed,
+        },
+      },
+      updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    })),
+    withRotatedTokens: vi.fn((_agent: AgentRecord, input: Partial<AgentRecord>) => input),
+  });
+
   it("aggregates assistant-owned behavior separately from retrieval-owned tuning", async () => {
     const workspace = {
       id: "workspace-1",
@@ -23,22 +101,25 @@ describe("settings services", () => {
       websiteEmbedToken: null,
       websiteEmbedAllowedOrigins: [],
       websiteEmbedLauncherLabel: "Chat with us",
-      websiteEmbedLauncherIcon: "chat",
-      websiteEmbedLauncherPosition: "bottom-right",
+      websiteEmbedLauncherIcon: "chat" as const,
+      websiteEmbedLauncherPosition: "bottom-right" as const,
     };
-    const retrieval = {
-      ...defaultRetrievalSettings("workspace-1"),
-      queryRewriteEnabled: true,
-      conversationMode: "exploratory" as const,
+    const agentService = createAgentService(createAgent(workspace, {
+      conversationMode: "exploratory",
       suggestedQuestionsEnabled: false,
       suggestedQuestionsCount: 1,
       customInstruction: "Answer plainly.",
+    }));
+    const retrieval = {
+      ...defaultRetrievalSettings("workspace-1"),
+      queryRewriteEnabled: true,
     };
     const service = new PlatformSettingsService({
       workspaceRepository: {
         findById: vi.fn().mockResolvedValue(workspace),
         updateGeneralSettings: vi.fn(),
       },
+      agentService,
       retrievalSettingsService: {
         getForWorkspace: vi.fn().mockResolvedValue(retrieval),
         listMetadataFieldSuggestions: vi.fn().mockResolvedValue([]),
@@ -83,10 +164,11 @@ describe("settings services", () => {
       websiteEmbedToken: null,
       websiteEmbedAllowedOrigins: [],
       websiteEmbedLauncherLabel: "Chat with us",
-      websiteEmbedLauncherIcon: "chat",
-      websiteEmbedLauncherPosition: "bottom-right",
+      websiteEmbedLauncherIcon: "chat" as const,
+      websiteEmbedLauncherPosition: "bottom-right" as const,
     };
     const retrieval = defaultRetrievalSettings("workspace-1");
+    const agentService = createAgentService(createAgent(workspace));
     const workspaceRepository = {
       findById: vi.fn().mockResolvedValue(workspace),
       updateGeneralSettings: vi.fn().mockResolvedValue({
@@ -101,6 +183,7 @@ describe("settings services", () => {
     };
     const service = new PlatformSettingsService({
       workspaceRepository,
+      agentService,
       retrievalSettingsService,
       publicChatBaseUrl: "http://localhost:3000/chat",
     } as never);
@@ -111,15 +194,14 @@ describe("settings services", () => {
       },
     });
 
-    expect(workspaceRepository.updateGeneralSettings).toHaveBeenCalledWith(
+    expect(agentService.update).toHaveBeenCalledWith(
       "workspace-1",
+      "workspace-1-agent",
       expect.objectContaining({
-        assistantName: "Nora",
-        anonymousChatEnabled: false,
-        anonymousRateLimit: 10,
-        websiteEmbedEnabled: false,
+        name: "Nora",
       }),
     );
+    expect(workspaceRepository.updateGeneralSettings).not.toHaveBeenCalled();
     expect(retrievalSettingsService.updateForWorkspace).not.toHaveBeenCalled();
   });
 
@@ -138,10 +220,11 @@ describe("settings services", () => {
       websiteEmbedToken: "embed-token",
       websiteEmbedAllowedOrigins: ["https://example.com"],
       websiteEmbedLauncherLabel: "Ask Nora",
-      websiteEmbedLauncherIcon: "sparkles",
-      websiteEmbedLauncherPosition: "bottom-left",
+      websiteEmbedLauncherIcon: "sparkles" as const,
+      websiteEmbedLauncherPosition: "bottom-left" as const,
     };
     const retrieval = defaultRetrievalSettings("workspace-1");
+    const agentService = createAgentService(createAgent(workspace));
     const websiteEmbedIntegration = {
       buildScriptUrl: vi.fn().mockReturnValue("https://widget.radioso.example/radioso-embed.js"),
       buildSnippet: vi.fn().mockReturnValue("<script src=\"https://widget.radioso.example/radioso-embed.js\"></script>"),
@@ -151,6 +234,7 @@ describe("settings services", () => {
         findById: vi.fn().mockResolvedValue(workspace),
         updateGeneralSettings: vi.fn(),
       },
+      agentService,
       retrievalSettingsService: {
         getForWorkspace: vi.fn().mockResolvedValue(retrieval),
         listMetadataFieldSuggestions: vi.fn().mockResolvedValue([]),
@@ -185,10 +269,11 @@ describe("settings services", () => {
       websiteEmbedToken: "old-embed-token",
       websiteEmbedAllowedOrigins: [],
       websiteEmbedLauncherLabel: "Chat with us",
-      websiteEmbedLauncherIcon: "chat",
-      websiteEmbedLauncherPosition: "bottom-right",
+      websiteEmbedLauncherIcon: "chat" as const,
+      websiteEmbedLauncherPosition: "bottom-right" as const,
     };
     const retrieval = defaultRetrievalSettings("workspace-1");
+    const agentService = createAgentService(createAgent(workspace));
     const auditService = {
       record: vi.fn().mockResolvedValue(undefined),
     };
@@ -200,6 +285,7 @@ describe("settings services", () => {
           ...input,
         })),
       },
+      agentService,
       retrievalSettingsService: {
         getForWorkspace: vi.fn().mockResolvedValue(retrieval),
         listMetadataFieldSuggestions: vi.fn().mockResolvedValue([]),

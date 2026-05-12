@@ -6,16 +6,16 @@ describe("UserRepository", () => {
   it("selects email_verified_at when loading a user by email", async () => {
     const calls: string[] = [];
     const repository = new UserRepository({
-      query: async (sql: string) => {
+      queryOptional: async (sql: string) => {
         calls.push(sql);
-        return [{
+        return {
           id: "user-1",
           email: "user@example.com",
           password_hash: "hash",
           email_verified_at: new Date("2026-01-01T00:00:00.000Z"),
           created_at: new Date("2026-01-01T00:00:00.000Z"),
           updated_at: new Date("2026-01-01T00:00:00.000Z"),
-        }];
+        };
       },
       pool: {
         query: async () => ({ rowCount: 0 }),

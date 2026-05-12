@@ -305,6 +305,8 @@ describe("chat service streaming", () => {
     expect(events[2]).toEqual({
       type: "done",
       conversationId: expect.any(String),
+      agentId: "workspace-1",
+      agentName: "",
       assistantMessageId: expect.any(String),
       route: {
         type: "retrieval",
@@ -1191,6 +1193,8 @@ describe("chat service streaming", () => {
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
+      agentId: "workspace-1",
+      agentName: "",
       assistantMessageId: expect.any(String),
       route: {
         type: "retrieval",

@@ -25,10 +25,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: |
+            backend/package-lock.json
+            packages/crawler/package-lock.json
 
       - name: Install backend dependencies
         working-directory: backend
+        run: npm ci
+
+      - name: Install crawler dependencies
+        working-directory: packages/crawler
         run: npm ci
 
       - name: Lint backend module boundaries

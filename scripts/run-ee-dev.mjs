@@ -177,6 +177,7 @@ const main = async () => {
   }
 
   const backendDir = path.join(repoRoot, "backend");
+  const crawlerDir = path.join(repoRoot, "packages/crawler");
   const frontendDir = path.join(repoRoot, "frontend");
   const envPath = path.join(repoRoot, ".env");
   const enterpriseAuthFrontendPackage = path.join(eeRoot, "packages/auth-frontend");
@@ -228,6 +229,7 @@ const main = async () => {
 
   console.log("Installing local app dependencies and private packages...");
   await command("npm", ["install", "--no-audit", "--no-fund"], { cwd: backendDir });
+  await command("npm", ["ci", "--no-audit", "--no-fund"], { cwd: crawlerDir });
   await command("npm", ["install", "--no-audit", "--no-fund"], { cwd: frontendDir });
   await command("npm", [
     "install",

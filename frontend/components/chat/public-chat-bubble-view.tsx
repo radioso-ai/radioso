@@ -165,9 +165,9 @@ export function PublicChatBubbleComposerForm({
   readOnly = false,
 }: PublicChatBubbleComposerFormProps) {
   const sendDisabled = readOnly || isLoading || !value.trim()
-  const containerPadding = hero ? 'px-3 py-2' : 'px-2 py-1.5'
+  const containerPadding = hero ? 'px-3 py-3' : 'px-2 py-1.5'
   const textareaSize = hero
-    ? 'min-h-[52px] max-h-48 px-3 py-2.5 text-base'
+    ? 'min-h-[44px] max-h-48 px-3 py-2.5 text-base'
     : compact
       ? 'min-h-9 max-h-24 px-2 py-1.5'
       : 'min-h-[36px] max-h-32 px-2 py-1.5'

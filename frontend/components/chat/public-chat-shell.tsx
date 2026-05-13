@@ -309,7 +309,7 @@ function PublicChatCenteredIntro({
       className="radioso-themed-scrollbar relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-8"
       style={{ background: theme.panelBackground }}
     >
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-6">
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-6 pb-[12vh]">
         <div className="flex flex-col items-center gap-3">
           <AssistantAvatar
             avatarUrl={avatarUrl}
@@ -322,7 +322,7 @@ function PublicChatCenteredIntro({
           </h2>
         </div>
         {hasGreetingContent ? (
-          <div className="w-full text-center text-base leading-relaxed" style={{ color: theme.panelForeground }}>
+          <div className="max-w-xl text-center text-base leading-relaxed" style={{ color: theme.panelForeground }}>
             {showGreetingTyping ? (
               <div className="flex justify-center">
                 <TypingIndicator />
@@ -787,6 +787,7 @@ function PublicChatContent({
               inputRef={inputRef}
               isLoading={isLoading}
               compact={false}
+              hero
             />
           )}
         </PublicChatCenteredIntro>

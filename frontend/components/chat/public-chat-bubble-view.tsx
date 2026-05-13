@@ -147,6 +147,7 @@ export interface PublicChatBubbleComposerFormProps {
   inputRef?: Ref<HTMLTextAreaElement>
   isLoading?: boolean
   compact?: boolean
+  hero?: boolean
   readOnly?: boolean
 }
 
@@ -160,9 +161,18 @@ export function PublicChatBubbleComposerForm({
   inputRef,
   isLoading = false,
   compact = false,
+  hero = false,
   readOnly = false,
 }: PublicChatBubbleComposerFormProps) {
   const sendDisabled = readOnly || isLoading || !value.trim()
+  const containerPadding = hero ? 'px-3 py-2' : 'px-2 py-1.5'
+  const textareaSize = hero
+    ? 'min-h-[52px] max-h-48 px-3 py-2.5 text-base'
+    : compact
+      ? 'min-h-9 max-h-24 px-2 py-1.5'
+      : 'min-h-[36px] max-h-32 px-2 py-1.5'
+  const buttonSize = hero ? 'h-11 w-11' : 'h-9 w-9'
+  const buttonIconSize = hero ? 'h-5 w-5' : 'h-4 w-4'
 
   return (
     <form
@@ -176,7 +186,7 @@ export function PublicChatBubbleComposerForm({
       className="mx-auto max-w-3xl"
     >
       <div
-        className={`flex items-end gap-1 rounded-3xl border px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-offset-0 ${readOnly ? 'pointer-events-none' : ''}`}
+        className={`flex items-end gap-1 rounded-3xl border ${containerPadding} transition-colors focus-within:ring-2 focus-within:ring-offset-0 ${hero ? 'shadow-sm' : ''} ${readOnly ? 'pointer-events-none' : ''}`}
         style={{
           background: theme.inputBackground,
           borderColor: theme.inputBorder,
@@ -191,14 +201,14 @@ export function PublicChatBubbleComposerForm({
           readOnly={readOnly}
           tabIndex={readOnly ? -1 : undefined}
           placeholder={copy.startPrompt}
-          className={`${compact ? 'min-h-9 max-h-24' : 'min-h-[36px] max-h-32'} flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0 placeholder:text-[var(--radioso-input-placeholder)]`}
+          className={`${textareaSize} flex-1 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 placeholder:text-[var(--radioso-input-placeholder)]`}
           style={{ color: theme.inputForeground }}
           aria-hidden={readOnly ? 'true' : undefined}
         />
         <Button
           type="submit"
           size="icon"
-          className="h-9 w-9 shrink-0 rounded-full hover:opacity-90"
+          className={`${buttonSize} shrink-0 rounded-full hover:opacity-90`}
           disabled={sendDisabled}
           tabIndex={readOnly ? -1 : undefined}
           style={{
@@ -207,7 +217,7 @@ export function PublicChatBubbleComposerForm({
           }}
           aria-hidden={readOnly ? 'true' : undefined}
         >
-          <Send className="h-4 w-4" />
+          <Send className={buttonIconSize} />
           <span className="sr-only">{copy.publicChatSendMessageLabel}</span>
         </Button>
       </div>

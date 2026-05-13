@@ -201,7 +201,7 @@ export function PublicChatBubbleComposerForm({
           readOnly={readOnly}
           tabIndex={readOnly ? -1 : undefined}
           placeholder={copy.startPrompt}
-          className={`${textareaSize} flex-1 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 placeholder:text-[var(--radioso-input-placeholder)]`}
+          className={`${textareaSize} flex-1 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 placeholder:text-[var(--radioso-input-placeholder)] dark:bg-transparent`}
           style={{ color: theme.inputForeground }}
           aria-hidden={readOnly ? 'true' : undefined}
         />

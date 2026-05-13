@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Building2, ExternalLink, FolderOpen, KeyRound, Mail, MessageSquare, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook } from 'lucide-react'
+import { Building2, CheckCircle2, CircleAlert, ExternalLink, FolderOpen, KeyRound, Link as LinkIcon, Mail, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook } from 'lucide-react'
 
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
 import {
@@ -82,11 +82,13 @@ export function WorkspaceAssistantChannelsTab({
   accountId,
   mode,
   agentId,
+  channelsTabHref,
   onSaveStateChange,
 }: {
   accountId: string
   mode: 'workspace' | 'assistant' | 'channels'
   agentId?: string
+  channelsTabHref?: string
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
   const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
@@ -132,6 +134,7 @@ export function WorkspaceAssistantChannelsTab({
   const workspaceDraftVersionRef = useRef(0)
   const anonDraftVersionRef = useRef(0)
   const assistantBehaviorDraftVersionRef = useRef(0)
+  const humanContactDraftVersionRef = useRef(0)
   const canManageOrganization = currentAccountRole === 'owner' || currentAccountRole === 'admin'
   const canManageWorkspaceLifecycle = currentAccountRole === 'owner' || currentAccountRole === 'admin'
   const canReadWorkspaceTokens = Boolean(currentAccountRole)
@@ -487,17 +490,8 @@ export function WorkspaceAssistantChannelsTab({
     Boolean(humanContactSettings?.enabled) && humanContactWebhookEnabled && humanContactWebhookUrlTrimmed.length === 0
   const humanContactMissingDelivery =
     Boolean(humanContactSettings?.enabled) && !humanContactEmailEnabled && !humanContactWebhookEnabled
-  const canSaveHumanContact =
-    Boolean(humanContactSettings) &&
-    hasHumanContactChanges &&
-    !isHumanContactSaving &&
-    !humanContactMissingDelivery &&
-    !humanContactMissingEmail &&
-    !humanContactDefaultEmailInvalid &&
-    !humanContactMissingWebhook &&
-    !humanContactWebhookUrlInvalid
-
   const updateHumanContactDraft = (patch: Partial<HumanContactAvailability>) => {
+    humanContactDraftVersionRef.current += 1
     setHumanContactError(null)
     setHumanContactSettings((current) => (current ? { ...current, ...patch } : current))
   }
@@ -671,38 +665,75 @@ export function WorkspaceAssistantChannelsTab({
     }
   }
 
-  const handleSaveHumanContactSettings = async () => {
-    if (!humanContactSettings || !canSaveHumanContact) {
+  useEffect(() => {
+    if (!humanContactSettings || !savedHumanContactSettings || !hasHumanContactChanges) {
+      return
+    }
+    if (
+      humanContactMissingDelivery ||
+      humanContactMissingEmail ||
+      humanContactMissingWebhook ||
+      humanContactDefaultEmailInvalid ||
+      humanContactWebhookUrlInvalid
+    ) {
       return
     }
 
-    setIsHumanContactSaving(true)
-    setHumanContactError(null)
-    setSaveState('saving')
-    setSaveError(null)
-
-    try {
-      const updated = await humanContactApi.updateSettings({
-        enabled: humanContactSettings.enabled,
-        emailEnabled: humanContactEmailEnabled,
-        defaultEmail: humanContactEmailEnabled && humanContactDefaultEmailTrimmed ? humanContactDefaultEmailTrimmed : null,
-        webhookEnabled: humanContactWebhookEnabled,
-        webhookUrl: humanContactWebhookEnabled && humanContactWebhookUrlTrimmed ? humanContactWebhookUrlTrimmed : null,
-      })
-      setHumanContactSettings(updated)
-      setSavedHumanContactSettings(updated)
-      setHumanContactSigningSecret('')
-      setSaveState('saved')
-    } catch (error) {
-      console.error('Failed to update human contact settings:', error)
-      const message = getApiErrorMessage(error, 'Failed to save human contact settings.')
-      setHumanContactError(message)
-      setSaveState('error')
-      setSaveError(message)
-    } finally {
-      setIsHumanContactSaving(false)
-    }
-  }
+    const timeout = window.setTimeout(async () => {
+      const draftVersionAtRequestStart = humanContactDraftVersionRef.current
+      const saveId = saveSequenceRef.current + 1
+      saveSequenceRef.current = saveId
+      setIsHumanContactSaving(true)
+      setHumanContactError(null)
+      setSaveState('saving')
+      setSaveError(null)
+      try {
+        const updated = await humanContactApi.updateSettings({
+          enabled: humanContactSettings.enabled,
+          emailEnabled: humanContactEmailEnabled,
+          defaultEmail: humanContactEmailEnabled && humanContactDefaultEmailTrimmed ? humanContactDefaultEmailTrimmed : null,
+          webhookEnabled: humanContactWebhookEnabled,
+          webhookUrl: humanContactWebhookEnabled && humanContactWebhookUrlTrimmed ? humanContactWebhookUrlTrimmed : null,
+        })
+        if (saveSequenceRef.current !== saveId) return
+        setSavedHumanContactSettings(updated)
+        setHumanContactSigningSecret('')
+        if (humanContactDraftVersionRef.current === draftVersionAtRequestStart) {
+          setHumanContactSettings(updated)
+          setSaveState('saved')
+        }
+      } catch (error) {
+        if (saveSequenceRef.current !== saveId) return
+        console.error('Failed to update human contact settings:', error)
+        const message = getApiErrorMessage(error, 'Failed to save human contact settings.')
+        setHumanContactError(message)
+        setSaveState('error')
+        setSaveError(message)
+      } finally {
+        if (saveSequenceRef.current === saveId) {
+          setIsHumanContactSaving(false)
+        }
+      }
+    }, 700)
+    return () => window.clearTimeout(timeout)
+  }, [
+    hasHumanContactChanges,
+    humanContactDefaultEmailInvalid,
+    humanContactDefaultEmailTrimmed,
+    humanContactEmailEnabled,
+    humanContactMissingDelivery,
+    humanContactMissingEmail,
+    humanContactMissingWebhook,
+    humanContactSettings,
+    humanContactWebhookEnabled,
+    humanContactWebhookUrl,
+    humanContactWebhookUrlInvalid,
+    humanContactWebhookUrlTrimmed,
+    savedHumanContactSettings,
+    saveSequenceRef,
+    setSaveError,
+    setSaveState,
+  ])
 
   const handleRotateHumanContactSecret = async () => {
     if (!humanContactSettings || isHumanContactSaving) {
@@ -875,6 +906,9 @@ export function WorkspaceAssistantChannelsTab({
                 isAnonSaving={isAnonSaving}
                 isAssistantLogoSaving={isAssistantLogoSaving}
                 assistantSettingsError={assistantSettingsError}
+                channelsTabHref={channelsTabHref}
+                websiteEmbedAvailable={editionController.canUseWebsiteEmbed()}
+                humanContactConfigured={Boolean(humanContactSettings?.enabled && humanContactSettings?.configured)}
               />
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load assistant settings.</p>
@@ -882,75 +916,7 @@ export function WorkspaceAssistantChannelsTab({
           </section>
           ) : null}
 
-          {mode === 'channels' && isAnonLoading ? (
-          <section className="flex min-h-[320px] items-center justify-center">
-            <LogoSpinner imageClassName="h-7 w-7" />
-          </section>
-          ) : null}
-
-          {mode === 'channels' && !isAnonLoading ? (
-          <section id="anonymous-chat" className="space-y-6 scroll-mt-24">
-            {anonSettings ? (
-              <section className="scroll-mt-24 rounded-2xl border border-border bg-card/95 p-5 shadow-sm">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
-                      <MessageSquare className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="font-medium text-foreground">Anonymous chat</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Public link access for unauthenticated visitors.
-                      </p>
-                    </div>
-                  </div>
-                  <Switch
-                    id="anonChatToggle"
-                    checked={anonSettings.anonymousChatEnabled}
-                    onCheckedChange={handleAnonToggle}
-                    disabled={isAnonSaving}
-                    className="sm:mt-3"
-                  />
-                </div>
-
-                {anonSettings.anonymousChatEnabled && anonSettings.anonymousChatUrl ? (
-                  <div className="mt-5 space-y-5">
-                    <div className="space-y-2">
-                      <Label htmlFor="anonChatUrl" className="text-foreground">Public Chat URL</Label>
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                        <CopyValueField
-                          value={anonSettings.anonymousChatUrl}
-                          ariaLabel="Copy URL"
-                          className="min-w-0 flex-1"
-                          wrap
-                        />
-                        <Button asChild className="bg-blue-600 text-white hover:bg-blue-500 sm:self-start">
-                          <a href={anonSettings.anonymousChatUrl} target="_blank" rel="noreferrer">
-                            <ExternalLink className="w-4 h-4" />
-                            Try the chat
-                          </a>
-                        </Button>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        Anyone with this link can open the assistant.
-                      </p>
-                      <div className="flex justify-end">
-                        <Button variant="outline" onClick={handleAnonymousChatTokenRotate} disabled={isAnonSaving}>
-                          {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                          Reset public link
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </section>
-            ) : (
-              <p className="text-sm text-muted-foreground">Failed to load anonymous chat settings.</p>
-            )}
-          </section>
-          ) : null}
-
-          {editionController.canUseHumanContact() && mode === 'channels' && !isAnonLoading ? (
+          {editionController.canUseHumanContact() && mode === 'assistant' ? (
           <section id="human-contact" className="space-y-6 scroll-mt-24">
             <section className="scroll-mt-24 rounded-2xl border border-border bg-card/95 p-5 shadow-sm">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -959,9 +925,16 @@ export function WorkspaceAssistantChannelsTab({
                     <UserRound className="h-5 w-5 text-primary" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-medium text-foreground">Talk to a human</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium text-foreground">Talk to a human</h3>
+                      {humanContactSettings?.enabled && humanContactSettings.configured && !hasHumanContactChanges ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                          <CheckCircle2 className="h-3 w-3" /> Ready
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="text-sm text-muted-foreground">
-                      Let visitors ask for a person from chat and public chat.
+                      Handoff when a visitor asks for a person. Active in every channel.
                     </p>
                   </div>
                 </div>
@@ -979,182 +952,209 @@ export function WorkspaceAssistantChannelsTab({
                   <LogoSpinner imageClassName="h-6 w-6" />
                 </div>
               ) : humanContactSettings ? (
-                <div className="mt-5 space-y-5">
-                  <div className="rounded bg-muted/50 p-3 text-sm text-muted-foreground">
-                    Status:{' '}
-                    <span className="font-medium text-foreground">
-                      {!humanContactSettings.enabled
-                        ? 'off'
-                        : humanContactDefaultEmailInvalid || humanContactWebhookUrlInvalid
-                          ? 'fix validation errors'
-                          : humanContactMissingDelivery
-                            ? 'choose email or webhook'
-                            : humanContactMissingEmail
-                              ? 'add an email address'
-                              : humanContactMissingWebhook
-                                ? 'add a webhook URL'
-                                : hasHumanContactChanges
-                                  ? 'ready after saving'
-                            : humanContactSettings.configured
-                              ? 'ready'
-                              : 'not configured'}
-                    </span>
-                  </div>
-
-                  {humanContactSettings.enabled ? (
-                    <>
-                      <div className="space-y-3">
-                        <div className="rounded-lg border border-border bg-background/60 p-4">
-                          <div className="flex items-start gap-3">
-                            <Mail className="mt-0.5 h-5 w-5 text-primary" />
-                            <div className="min-w-0 flex-1 space-y-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <Label htmlFor="humanContactEmailToggle" className="text-sm font-medium text-foreground">
-                                  Email
-                                </Label>
-                                <Switch
-                                  id="humanContactEmailToggle"
-                                  checked={humanContactEmailEnabled}
-                                  onCheckedChange={(checked) => updateHumanContactDraft({ emailEnabled: checked })}
-                                  disabled={isHumanContactSaving}
-                                />
-                              </div>
-                              {humanContactEmailEnabled ? (
-                                <div className="space-y-2">
-                                  <Label htmlFor="humanContactDefaultEmail" className="text-foreground">Default email</Label>
-                                  <Input
-                                    id="humanContactDefaultEmail"
-                                    type="email"
-                                    value={humanContactDefaultEmail}
-                                    onChange={(event) => updateHumanContactDraft({ defaultEmail: event.target.value })}
-                                    placeholder="support@example.com"
-                                    disabled={isHumanContactSaving}
-                                  />
-                                  {humanContactDefaultEmailInvalid ? (
-                                    <p className="text-xs text-destructive">Enter a valid email address.</p>
-                                  ) : (
-                                    <p className="text-xs text-muted-foreground">
-                                      Requests are emailed here after they are saved.
-                                    </p>
-                                  )}
-                                </div>
-                              ) : null}
-                            </div>
+                humanContactSettings.enabled ? (
+                  <div className="mt-5 space-y-4">
+                    <div className="rounded-lg border border-border bg-background/60 p-4">
+                      <div className="flex items-start gap-3">
+                        <Mail className="mt-0.5 h-5 w-5 text-primary" />
+                        <div className="min-w-0 flex-1 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <Label htmlFor="humanContactEmailToggle" className="text-sm font-medium text-foreground">
+                              Email
+                            </Label>
+                            <Switch
+                              id="humanContactEmailToggle"
+                              checked={humanContactEmailEnabled}
+                              onCheckedChange={(checked) => updateHumanContactDraft({ emailEnabled: checked })}
+                              disabled={isHumanContactSaving}
+                            />
                           </div>
-                        </div>
-
-                        <div className="rounded-lg border border-border bg-background/60 p-4">
-                          <div className="flex items-start gap-3">
-                            <Webhook className="mt-0.5 h-5 w-5 text-primary" />
-                            <div className="min-w-0 flex-1 space-y-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <Label htmlFor="humanContactWebhookToggle" className="text-sm font-medium text-foreground">
-                                  Webhook
-                                </Label>
-                                <Switch
-                                  id="humanContactWebhookToggle"
-                                  checked={humanContactWebhookEnabled}
-                                  onCheckedChange={(checked) => updateHumanContactDraft({ webhookEnabled: checked })}
-                                  disabled={isHumanContactSaving}
-                                />
-                              </div>
-                              {humanContactWebhookEnabled ? (
-                                <div className="grid gap-4 md:grid-cols-2">
-                                  <div className="space-y-2">
-                                    <Label htmlFor="humanContactWebhookUrl" className="text-foreground">Webhook URL</Label>
-                                    <Input
-                                      id="humanContactWebhookUrl"
-                                      type="url"
-                                      value={humanContactWebhookUrl}
-                                      onChange={(event) => updateHumanContactDraft({ webhookUrl: event.target.value })}
-                                      placeholder="https://support.example.com/radioso/talk-to-human"
-                                      disabled={isHumanContactSaving}
-                                    />
-                                    {humanContactWebhookUrlInvalid ? (
-                                      <p className="text-xs text-destructive">Enter a valid http(s) webhook URL.</p>
-                                    ) : (
-                                      <p className="text-xs text-muted-foreground">
-                                        Radioso sends each request to this endpoint.
-                                      </p>
-                                    )}
-                                  </div>
-
-                                  <div className="space-y-2">
-                                    <Label className="text-foreground">Signing token</Label>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={handleRevealHumanContactSecret}
-                                        disabled={isHumanContactSaving || isHumanContactSecretLoading || !humanContactSettings.signingSecretConfigured}
-                                      >
-                                        {isHumanContactSecretLoading ? <Spinner className="mr-2 h-4 w-4" /> : null}
-                                        Reveal token
-                                      </Button>
-                                      {humanContactSigningSecret ? (
-                                        <Button size="sm" variant="ghost" onClick={() => setHumanContactSigningSecret('')}>
-                                          Hide token
-                                        </Button>
-                                      ) : null}
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={handleRotateHumanContactSecret}
-                                        disabled={isHumanContactSaving || humanContactWebhookUrlInvalid || !humanContactSettings.signingSecretConfigured}
-                                      >
-                                        {isHumanContactSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                                        Rotate token
-                                      </Button>
-                                    </div>
-                                    {humanContactSigningSecret ? (
-                                      <CopyValueField value={humanContactSigningSecret} ariaLabel="Copy signing token" className="w-full" />
-                                    ) : (
-                                      <p className="text-xs text-muted-foreground">
-                                        {humanContactSettings.signingSecretConfigured
-                                          ? 'Reveal the token only when you need to verify webhook signatures.'
-                                          : 'A signing token will be generated after saving webhook setup.'}
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                              ) : null}
+                          {humanContactEmailEnabled ? (
+                            <div className="space-y-2">
+                              <Label htmlFor="humanContactDefaultEmail" className="text-foreground">Default email</Label>
+                              <Input
+                                id="humanContactDefaultEmail"
+                                type="email"
+                                value={humanContactDefaultEmail}
+                                onChange={(event) => updateHumanContactDraft({ defaultEmail: event.target.value })}
+                                placeholder="support@example.com"
+                                disabled={isHumanContactSaving}
+                              />
+                              {humanContactDefaultEmailInvalid ? (
+                                <p className="text-xs text-destructive">Enter a valid email address.</p>
+                              ) : humanContactMissingEmail ? (
+                                <p className="text-xs text-destructive">Add a default email address.</p>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">Requests are emailed here.</p>
+                              )}
                             </div>
-                          </div>
+                          ) : null}
                         </div>
                       </div>
+                    </div>
 
-                      {humanContactMissingDelivery ? (
-                        <p className="text-sm text-destructive">Choose Email or Webhook before saving.</p>
-                      ) : null}
-                      {humanContactMissingEmail ? (
-                        <p className="text-sm text-destructive">Add a default email address.</p>
-                      ) : null}
-                      {humanContactMissingWebhook ? (
-                        <p className="text-sm text-destructive">Add a webhook URL.</p>
-                      ) : null}
-                    </>
-                  ) : null}
+                    <div className="rounded-lg border border-border bg-background/60 p-4">
+                      <div className="flex items-start gap-3">
+                        <Webhook className="mt-0.5 h-5 w-5 text-primary" />
+                        <div className="min-w-0 flex-1 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <Label htmlFor="humanContactWebhookToggle" className="text-sm font-medium text-foreground">
+                              Webhook
+                            </Label>
+                            <Switch
+                              id="humanContactWebhookToggle"
+                              checked={humanContactWebhookEnabled}
+                              onCheckedChange={(checked) => updateHumanContactDraft({ webhookEnabled: checked })}
+                              disabled={isHumanContactSaving}
+                            />
+                          </div>
+                          {humanContactWebhookEnabled ? (
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <div className="space-y-2">
+                                <Label htmlFor="humanContactWebhookUrl" className="text-foreground">Webhook URL</Label>
+                                <Input
+                                  id="humanContactWebhookUrl"
+                                  type="url"
+                                  value={humanContactWebhookUrl}
+                                  onChange={(event) => updateHumanContactDraft({ webhookUrl: event.target.value })}
+                                  placeholder="https://support.example.com/radioso/talk-to-human"
+                                  disabled={isHumanContactSaving}
+                                />
+                                {humanContactWebhookUrlInvalid ? (
+                                  <p className="text-xs text-destructive">Enter a valid http(s) webhook URL.</p>
+                                ) : humanContactMissingWebhook ? (
+                                  <p className="text-xs text-destructive">Add a webhook URL.</p>
+                                ) : (
+                                  <p className="text-xs text-muted-foreground">Radioso sends each request to this endpoint.</p>
+                                )}
+                              </div>
 
-                  {humanContactError ? (
-                    <p className="text-sm text-destructive" role="alert">{humanContactError}</p>
-                  ) : null}
+                              <div className="space-y-2">
+                                <Label className="text-foreground">Signing token</Label>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleRevealHumanContactSecret}
+                                    disabled={isHumanContactSaving || isHumanContactSecretLoading || !humanContactSettings.signingSecretConfigured}
+                                  >
+                                    {isHumanContactSecretLoading ? <Spinner className="mr-2 h-4 w-4" /> : null}
+                                    Reveal token
+                                  </Button>
+                                  {humanContactSigningSecret ? (
+                                    <Button size="sm" variant="ghost" onClick={() => setHumanContactSigningSecret('')}>
+                                      Hide token
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleRotateHumanContactSecret}
+                                    disabled={isHumanContactSaving || humanContactWebhookUrlInvalid || !humanContactSettings.signingSecretConfigured}
+                                  >
+                                    {isHumanContactSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                                    Rotate token
+                                  </Button>
+                                </div>
+                                {humanContactSigningSecret ? (
+                                  <CopyValueField value={humanContactSigningSecret} ariaLabel="Copy signing token" className="w-full" />
+                                ) : (
+                                  <p className="text-xs text-muted-foreground">
+                                    {humanContactSettings.signingSecretConfigured
+                                      ? 'Reveal the token only when you need to verify webhook signatures.'
+                                      : 'A signing token is generated automatically once webhook setup is saved.'}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
 
-                  <div className="flex justify-end">
-                    <Button onClick={handleSaveHumanContactSettings} disabled={!canSaveHumanContact}>
-                      {isHumanContactSaving ? <Spinner className="mr-2 h-4 w-4" /> : null}
-                      Save
-                    </Button>
+                    {humanContactMissingDelivery ? (
+                      <p className="inline-flex items-center gap-1.5 text-sm text-destructive">
+                        <CircleAlert className="h-4 w-4" />
+                        Pick Email or Webhook so requests have somewhere to go.
+                      </p>
+                    ) : null}
+
+                    {humanContactError ? (
+                      <p className="text-sm text-destructive" role="alert">{humanContactError}</p>
+                    ) : null}
                   </div>
-                </div>
+                ) : null
               ) : (
                 <div className="mt-5 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-                  Talk to a human is available only when the Enterprise module is installed.
+                  Talk to a human is unavailable in this build.
                   {humanContactError ? (
                     <p className="mt-2 text-destructive" role="alert">{humanContactError}</p>
                   ) : null}
                 </div>
               )}
             </section>
+          </section>
+          ) : null}
+
+          {mode === 'channels' && isAnonLoading ? (
+          <section className="flex min-h-[320px] items-center justify-center">
+            <LogoSpinner imageClassName="h-7 w-7" />
+          </section>
+          ) : null}
+
+          {mode === 'channels' && !isAnonLoading ? (
+          <section id="public-chat-link" className="space-y-6 scroll-mt-24">
+            {anonSettings ? (
+              <section className="scroll-mt-24 rounded-2xl border border-border bg-card/95 p-5 shadow-sm">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
+                      <LinkIcon className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-medium text-foreground">Public chat link</h3>
+                      <p className="text-sm text-muted-foreground">
+                        A shareable URL anyone can open without signing in.
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    id="anonChatToggle"
+                    checked={anonSettings.anonymousChatEnabled}
+                    onCheckedChange={handleAnonToggle}
+                    disabled={isAnonSaving}
+                    className="sm:mt-3"
+                  />
+                </div>
+
+                {anonSettings.anonymousChatEnabled && anonSettings.anonymousChatUrl ? (
+                  <div className="mt-5 space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                      <CopyValueField
+                        value={anonSettings.anonymousChatUrl}
+                        ariaLabel="Copy public chat link"
+                        className="min-w-0 flex-1"
+                        wrap
+                      />
+                      <Button asChild className="bg-blue-600 text-white hover:bg-blue-500 sm:self-start">
+                        <a href={anonSettings.anonymousChatUrl} target="_blank" rel="noreferrer">
+                          <ExternalLink className="w-4 h-4" />
+                          Try the chat
+                        </a>
+                      </Button>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button variant="outline" onClick={handleAnonymousChatTokenRotate} disabled={isAnonSaving}>
+                        {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                        Reset link
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            ) : (
+              <p className="text-sm text-muted-foreground">Failed to load public chat link settings.</p>
+            )}
           </section>
           ) : null}
 

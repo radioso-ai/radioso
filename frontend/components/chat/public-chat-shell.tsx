@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
 import { MoreHorizontal, RotateCcw, UserRound, X } from 'lucide-react'
 
@@ -19,7 +19,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { ChatMessageThread, type ChatThreadMessage } from '@/components/dashboard/chat-message-thread'
+import { AssistantMessageContent } from '@/components/dashboard/chat-citations'
 import {
   HumanContactInlineComposer,
   type HumanContactInlineRequest,
@@ -92,15 +94,11 @@ export function readWebsiteEmbedViewportSnapshot() {
   }
 }
 
-function useWebsiteEmbedViewportLayout(enabled: boolean) {
+function useWebsiteEmbedViewportLayout() {
   const [layout, setLayout] = useState({ isCompactKeyboardLayout: false, isNarrowLayout: false })
   const maxLayoutViewportHeightRef = useRef(0)
 
   useEffect(() => {
-    if (!enabled) {
-      return
-    }
-
     const update = () => {
       const snapshot = readWebsiteEmbedViewportSnapshot()
       const isNarrowLayout = shouldUseWebsiteEmbedNarrowLayout(snapshot.viewportWidth)
@@ -142,9 +140,9 @@ function useWebsiteEmbedViewportLayout(enabled: boolean) {
       window.visualViewport?.removeEventListener('resize', update)
       window.visualViewport?.removeEventListener('scroll', update)
     }
-  }, [enabled])
+  }, [])
 
-  return enabled ? layout : { isCompactKeyboardLayout: false, isNarrowLayout: false }
+  return layout
 }
 
 function ChatUnavailable({
@@ -279,6 +277,106 @@ function PublicChatActionsMenu({
   )
 }
 
+function PublicChatCenteredIntro({
+  copy,
+  theme,
+  themeOverrides,
+  workspaceName,
+  avatarUrl,
+  greetingMessage,
+  onSuggestionSelect,
+  isLoading,
+  children,
+}: {
+  copy: ReturnType<typeof getWebsiteEmbedCopy>
+  theme: ReturnType<typeof getWebsiteEmbedTheme>
+  themeOverrides?: WebsiteEmbedThemeOverrides | null
+  workspaceName: string
+  avatarUrl?: string | null
+  greetingMessage: ChatThreadMessage | null
+  onSuggestionSelect: (suggestion: ChatSuggestion, messageId: string) => void
+  isLoading: boolean
+  children: ReactNode
+}) {
+  const visibleSuggestions = greetingMessage
+    ? editionController.filterChatSuggestions(greetingMessage.suggestions)
+    : []
+  const showGreetingTyping = greetingMessage?.status === 'streaming' && !greetingMessage.content
+  const hasGreetingContent = greetingMessage && (showGreetingTyping || greetingMessage.content)
+
+  return (
+    <div
+      className="radioso-themed-scrollbar relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-8"
+      style={{ background: theme.panelBackground }}
+    >
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-6 pb-[12vh]">
+        <div className="flex flex-col items-center gap-3">
+          <AssistantAvatar
+            avatarUrl={avatarUrl}
+            label={workspaceName}
+            themeOverrides={themeOverrides}
+            className="size-20"
+          />
+          <h2 className="text-2xl font-semibold" style={{ color: theme.panelForeground }}>
+            {workspaceName}
+          </h2>
+        </div>
+        {hasGreetingContent ? (
+          <div className="max-w-xl text-center text-base leading-relaxed" style={{ color: theme.panelForeground }}>
+            {showGreetingTyping ? (
+              <div className="flex justify-center">
+                <TypingIndicator />
+              </div>
+            ) : (
+              <AssistantMessageContent
+                content={greetingMessage!.content}
+                citations={greetingMessage!.citations}
+                answerSegments={greetingMessage!.answerSegments}
+                onOpenDocument={async () => 'unavailable'}
+                theme={theme}
+              />
+            )}
+          </div>
+        ) : (
+          <p className="max-w-xl text-center text-sm" style={{ color: theme.mutedForeground }}>
+            {copy.publicChatEmptyMessage}
+          </p>
+        )}
+        {greetingMessage && visibleSuggestions.length > 0 ? (
+          <div className="flex w-full flex-wrap justify-center gap-1.5">
+            {visibleSuggestions
+              .filter((suggestion) => suggestion.text.trim())
+              .map((suggestion, suggestionIndex) => {
+                const isContactAction = suggestion.action?.kind === 'contact_human'
+                return (
+                  <Button
+                    key={`centered-suggestion-${suggestionIndex}`}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isLoading}
+                    className="h-auto max-w-full whitespace-normal rounded-full px-3 py-1 text-left text-sm leading-snug shadow-none transition-colors"
+                    style={{
+                      background: theme.mutedBackground,
+                      borderColor: theme.panelBorder,
+                      color: theme.panelForeground,
+                    }}
+                    onClick={() => onSuggestionSelect(suggestion, greetingMessage.id)}
+                  >
+                    {isContactAction ? <UserRound className="mr-1.5 h-3.5 w-3.5 shrink-0" /> : null}
+                    {suggestion.text}
+                  </Button>
+                )
+              })}
+          </div>
+        ) : null}
+        <div className="w-full pt-2">{children}</div>
+        <PublicChatBubbleDisclaimer theme={theme} copy={copy} workspaceName={workspaceName} />
+      </div>
+    </div>
+  )
+}
+
 function PublicChatContent({
   initialWorkspaceName,
   localeOverride,
@@ -302,7 +400,9 @@ function PublicChatContent({
   const [input, setInput] = useState('')
   const [contactRequest, setContactRequest] = useState<HumanContactInlineRequest | null>(null)
   const [contactConfirmation, setContactConfirmation] = useState<ChatThreadMessage | null>(null)
-  const { isCompactKeyboardLayout, isNarrowLayout } = useWebsiteEmbedViewportLayout(surface === 'embed')
+  const viewportLayout = useWebsiteEmbedViewportLayout()
+  const isCompactKeyboardLayout = surface === 'embed' && viewportLayout.isCompactKeyboardLayout
+  const isNarrowLayout = viewportLayout.isNarrowLayout
   const {
     publicChatToken,
     conversationId,
@@ -340,6 +440,9 @@ function PublicChatContent({
   const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages || !conversationId || !latestAssistantMessage
   const clearDisabled = isLoading || isHydrating || isLoadingOlderMessages
   const visibleMessages = contactConfirmation ? [...messages, contactConfirmation] : messages
+  const hasUserMessage = visibleMessages.some((message) => message.role === 'user')
+  const useCenteredIntro = !hasUserMessage && !isCompactKeyboardLayout && !isNarrowLayout
+  const greetingMessage = visibleMessages.find((message) => message.role === 'assistant') ?? null
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     if (messagesScrollRef.current) {
@@ -589,7 +692,7 @@ function PublicChatContent({
         color: theme.panelForeground,
       }}
     >
-      {isCompactKeyboardLayout && onRequestCollapse ? (
+      {(isCompactKeyboardLayout && onRequestCollapse) || useCenteredIntro ? (
         <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
           <PublicChatActionsMenu
             copy={copy}
@@ -600,21 +703,23 @@ function PublicChatContent({
             onContact={handleManualContact}
             onClear={() => void handleStartNewChat()}
           />
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            onClick={onRequestCollapse}
-            className="h-8 w-8 hover:opacity-90"
-            style={{ color: theme.mutedForeground }}
-          >
-            <X className="h-4 w-4" />
-            <span className="sr-only">{copy.publicChatCollapseLabel}</span>
-          </Button>
+          {onRequestCollapse ? (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              onClick={onRequestCollapse}
+              className="h-8 w-8 hover:opacity-90"
+              style={{ color: theme.mutedForeground }}
+            >
+              <X className="h-4 w-4" />
+              <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
-      {!isCompactKeyboardLayout ? (
+      {!isCompactKeyboardLayout && !useCenteredIntro ? (
         <PublicChatBubbleHeader
           theme={theme}
           themeOverrides={resolvedThemeOverrides}
@@ -651,106 +756,145 @@ function PublicChatContent({
         />
       ) : null}
 
-      <div
-        ref={messagesScrollRef}
-        className={`radioso-themed-scrollbar min-h-0 flex-1 overflow-y-auto ${
-          isCompactKeyboardLayout ? (onRequestCollapse ? 'px-3 pb-3 pt-10' : 'p-3') : 'p-6'
-        }`}
-        style={{ background: theme.panelBackground }}
-      >
-        {visibleMessages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center text-center">
-            <div className="mb-4">
-              <AssistantAvatar avatarUrl={resolvedAvatarUrl} label={copy.publicChatEmptyTitle} themeOverrides={resolvedThemeOverrides} className="size-12" />
-            </div>
-            <h2 className="mb-1 text-lg font-medium">{copy.publicChatEmptyTitle}</h2>
-            <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
-              {copy.publicChatEmptyMessage}
-            </p>
-          </div>
-        ) : (
-          <div className={`mx-auto max-w-3xl ${isCompactKeyboardLayout ? 'space-y-4' : 'space-y-6'}`}>
-            {hasOlderMessages ? (
-              <div className="flex justify-center">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void loadOlderMessages()}
-                  disabled={isLoadingOlderMessages}
-                  className="hover:opacity-90"
-                  style={{
-                    borderColor: theme.panelBorder,
-                    background: theme.mutedBackground,
-                    color: theme.panelForeground,
-                  }}
-                >
-                  {isLoadingOlderMessages ? <Spinner className="mr-2 h-4 w-4" /> : null}
-                  {copy.publicChatLoadOlderMessages}
-                </Button>
-              </div>
-            ) : null}
-            <ChatMessageThread
-              messages={visibleMessages}
-              onOpenDocument={async () => 'unavailable'}
-              onSuggestionSelect={handleSuggestionSelect}
-              onAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleAnswerFeedback : undefined}
-              onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
-              assistantAvatarUrl={resolvedAvatarUrl}
-              assistantAvatarLabel={resolvedWorkspaceName}
-              hideAssistantAvatar={surface === 'embed' && isNarrowLayout}
-              hideFeedbackEntries
+      {useCenteredIntro ? (
+        <PublicChatCenteredIntro
+          copy={copy}
+          theme={theme}
+          themeOverrides={resolvedThemeOverrides}
+          workspaceName={resolvedWorkspaceName}
+          avatarUrl={resolvedAvatarUrl}
+          greetingMessage={greetingMessage}
+          onSuggestionSelect={handleSuggestionSelect}
+          isLoading={isLoading}
+        >
+          {editionController.canUseHumanContact() && contactRequest ? (
+            <HumanContactInlineComposer
+              request={contactRequest}
+              publicChatToken={publicChatToken}
+              onCancel={() => setContactRequest(null)}
+              onSubmitted={handleContactSubmitted}
               theme={theme}
-              themedSuggestionButtons
+              compact={false}
             />
-            <div ref={messagesEndRef} />
+          ) : (
+            <PublicChatBubbleComposerForm
+              theme={theme}
+              copy={copy}
+              value={input}
+              onChange={setInput}
+              onKeyDown={handleKeyDown}
+              onSubmit={handleSubmit}
+              inputRef={inputRef}
+              isLoading={isLoading}
+              compact={false}
+              hero
+            />
+          )}
+        </PublicChatCenteredIntro>
+      ) : (
+        <>
+          <div
+            ref={messagesScrollRef}
+            className={`radioso-themed-scrollbar min-h-0 flex-1 overflow-y-auto ${
+              isCompactKeyboardLayout ? (onRequestCollapse ? 'px-3 pb-3 pt-10' : 'p-3') : 'p-6'
+            }`}
+            style={{ background: theme.panelBackground }}
+          >
+            {visibleMessages.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <div className="mb-4">
+                  <AssistantAvatar avatarUrl={resolvedAvatarUrl} label={copy.publicChatEmptyTitle} themeOverrides={resolvedThemeOverrides} className="size-12" />
+                </div>
+                <h2 className="mb-1 text-lg font-medium">{copy.publicChatEmptyTitle}</h2>
+                <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
+                  {copy.publicChatEmptyMessage}
+                </p>
+              </div>
+            ) : (
+              <div className={`mx-auto max-w-3xl ${isCompactKeyboardLayout ? 'space-y-4' : 'space-y-6'}`}>
+                {hasOlderMessages ? (
+                  <div className="flex justify-center">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void loadOlderMessages()}
+                      disabled={isLoadingOlderMessages}
+                      className="hover:opacity-90"
+                      style={{
+                        borderColor: theme.panelBorder,
+                        background: theme.mutedBackground,
+                        color: theme.panelForeground,
+                      }}
+                    >
+                      {isLoadingOlderMessages ? <Spinner className="mr-2 h-4 w-4" /> : null}
+                      {copy.publicChatLoadOlderMessages}
+                    </Button>
+                  </div>
+                ) : null}
+                <ChatMessageThread
+                  messages={visibleMessages}
+                  onOpenDocument={async () => 'unavailable'}
+                  onSuggestionSelect={handleSuggestionSelect}
+                  onAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleAnswerFeedback : undefined}
+                  onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
+                  assistantAvatarUrl={resolvedAvatarUrl}
+                  assistantAvatarLabel={resolvedWorkspaceName}
+                  hideAssistantAvatar={surface === 'embed' && isNarrowLayout}
+                  hideFeedbackEntries
+                  theme={theme}
+                  themedSuggestionButtons
+                />
+                <div ref={messagesEndRef} />
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {rateLimitError && retryAfterSeconds ? (
-        <div className={`shrink-0 ${isCompactKeyboardLayout ? 'px-3 pb-2' : 'px-4 pb-2'}`}>
-          <RateLimitBanner
-            key={retryAfterSeconds}
-            copy={copy}
-            message={rateLimitError}
-            retryAfterSeconds={retryAfterSeconds}
-            themeOverrides={resolvedThemeOverrides}
-          />
-        </div>
-      ) : null}
+          {rateLimitError && retryAfterSeconds ? (
+            <div className={`shrink-0 ${isCompactKeyboardLayout ? 'px-3 pb-2' : 'px-4 pb-2'}`}>
+              <RateLimitBanner
+                key={retryAfterSeconds}
+                copy={copy}
+                message={rateLimitError}
+                retryAfterSeconds={retryAfterSeconds}
+                themeOverrides={resolvedThemeOverrides}
+              />
+            </div>
+          ) : null}
 
-      <PublicChatBubbleComposerSurface theme={theme} compact={isCompactKeyboardLayout}>
-        {!isCompactKeyboardLayout ? (
-          <PublicChatBubbleDisclaimer
-            theme={theme}
-            copy={copy}
-            workspaceName={resolvedWorkspaceName}
-          />
-        ) : null}
-        {editionController.canUseHumanContact() && contactRequest ? (
-          <HumanContactInlineComposer
-            request={contactRequest}
-            publicChatToken={publicChatToken}
-            onCancel={() => setContactRequest(null)}
-            onSubmitted={handleContactSubmitted}
-            theme={theme}
-            compact={isCompactKeyboardLayout}
-          />
-        ) : (
-          <PublicChatBubbleComposerForm
-            theme={theme}
-            copy={copy}
-            value={input}
-            onChange={setInput}
-            onKeyDown={handleKeyDown}
-            onSubmit={handleSubmit}
-            inputRef={inputRef}
-            isLoading={isLoading}
-            compact={isCompactKeyboardLayout}
-          />
-        )}
-      </PublicChatBubbleComposerSurface>
+          <PublicChatBubbleComposerSurface theme={theme} compact={isCompactKeyboardLayout}>
+            {!isCompactKeyboardLayout ? (
+              <PublicChatBubbleDisclaimer
+                theme={theme}
+                copy={copy}
+                workspaceName={resolvedWorkspaceName}
+              />
+            ) : null}
+            {editionController.canUseHumanContact() && contactRequest ? (
+              <HumanContactInlineComposer
+                request={contactRequest}
+                publicChatToken={publicChatToken}
+                onCancel={() => setContactRequest(null)}
+                onSubmitted={handleContactSubmitted}
+                theme={theme}
+                compact={isCompactKeyboardLayout}
+              />
+            ) : (
+              <PublicChatBubbleComposerForm
+                theme={theme}
+                copy={copy}
+                value={input}
+                onChange={setInput}
+                onKeyDown={handleKeyDown}
+                onSubmit={handleSubmit}
+                inputRef={inputRef}
+                isLoading={isLoading}
+                compact={isCompactKeyboardLayout}
+              />
+            )}
+          </PublicChatBubbleComposerSurface>
+        </>
+      )}
     </div>
   )
 }

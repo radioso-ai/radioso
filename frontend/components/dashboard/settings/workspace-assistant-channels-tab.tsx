@@ -1,8 +1,15 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Building2, ExternalLink, FolderOpen, KeyRound, Mail, MessageSquare, RefreshCw, ShieldAlert, Sparkles, Trash2, Upload, UserRound, Webhook } from 'lucide-react'
+import { Building2, ExternalLink, FolderOpen, KeyRound, Mail, MessageSquare, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook } from 'lucide-react'
 
+import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
+import {
+  getAssistantLocaleLabel,
+  NO_GREETING_LOCALE_LABEL,
+  resolveAssistantLocaleInput,
+} from '@/components/dashboard/settings/assistant-locale-options'
+import { DEFAULT_ASSISTANT_THEME } from '@/components/dashboard/settings/assistant-theme-form-helpers'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
@@ -22,7 +29,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   accountApi,
@@ -33,66 +39,11 @@ import {
   type AccountMembershipRole,
   type GeneralSettings,
   type HumanContactAvailability,
-  type WebsiteEmbedThemeSettings,
 } from '@/lib/api'
 import { editionController } from '@/lib/edition-controller'
-import { normalizeLocaleTag } from '@/lib/locale'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const getOrganizationNameCacheKey = (accountId: string) => `radioso.organizationName:${accountId}`
-
-export const ASSISTANT_GREETING_LOCALE_OPTIONS = [
-  { label: 'English', tag: 'en' },
-  { label: 'Italian', tag: 'it' },
-  { label: 'Spanish', tag: 'es' },
-  { label: 'French', tag: 'fr' },
-  { label: 'German', tag: 'de' },
-  { label: 'Portuguese', tag: 'pt' },
-  { label: 'Dutch', tag: 'nl' },
-  { label: 'Swedish', tag: 'sv' },
-  { label: 'Norwegian', tag: 'no' },
-  { label: 'Danish', tag: 'da' },
-  { label: 'Finnish', tag: 'fi' },
-  { label: 'Estonian', tag: 'et' },
-  { label: 'Russian', tag: 'ru' },
-  { label: 'Japanese', tag: 'ja' },
-  { label: 'Korean', tag: 'ko' },
-  { label: 'Chinese', tag: 'zh' },
-] as const
-
-export const NO_GREETING_LOCALE_LABEL = 'No fallback'
-
-const DEFAULT_ASSISTANT_THEME: WebsiteEmbedThemeSettings = {
-  brand: '#0f172a',
-  brandText: '#f8fafc',
-  surface: '#ffffff',
-  text: '#0f172a',
-}
-
-export const getAssistantLocaleLabel = (tag: string | null) => {
-  if (!tag) {
-    return NO_GREETING_LOCALE_LABEL
-  }
-
-  return ASSISTANT_GREETING_LOCALE_OPTIONS.find((option) => option.tag === tag)?.label ?? `Custom locale: ${tag}`
-}
-
-export const resolveAssistantLocaleInput = (value: string) => {
-  const trimmed = value.trim()
-  const normalized = trimmed.toLowerCase()
-  if (!trimmed || normalized === NO_GREETING_LOCALE_LABEL.toLowerCase()) {
-    return null
-  }
-
-  const configuredOption = ASSISTANT_GREETING_LOCALE_OPTIONS.find(
-    (option) => option.label.toLowerCase() === normalized || option.tag.toLowerCase() === normalized,
-  )
-  if (configuredOption) {
-    return configuredOption.tag
-  }
-
-  return normalizeLocaleTag(trimmed) ?? undefined
-}
 
 const readCachedOrganizationName = (accountId: string) => {
   if (typeof window === 'undefined') {
@@ -645,11 +596,14 @@ export function WorkspaceAssistantChannelsTab({
           proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
         })
         if (saveSequenceRef.current !== saveId) return
+        const nameChanged = savedAnonSettings.assistantName !== updated.assistantName
         setSavedAnonSettings(updated)
         setAssistantSettingsError(null)
-        window.dispatchEvent(new CustomEvent('radioso:assistant-name-updated', {
-          detail: { assistantName: updated.assistantName },
-        }))
+        if (nameChanged) {
+          window.dispatchEvent(new CustomEvent('radioso:assistant-name-updated', {
+            detail: { assistantName: updated.assistantName },
+          }))
+        }
         if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
           setAnonSettings(updated)
           setSaveState('saved')
@@ -909,180 +863,19 @@ export function WorkspaceAssistantChannelsTab({
                 <LogoSpinner imageClassName="h-6 w-6" />
               </div>
             ) : anonSettings && assistantBehaviorSettings ? (
-              <SettingsCard
-                icon={<Sparkles className="h-5 w-5 text-primary" />}
-                title="Assistant behavior"
-                description="Public identity, answer behavior, and first-message defaults."
-              >
-                {assistantSettingsError ? (
-                  <p className="text-sm text-destructive" role="alert">{assistantSettingsError}</p>
-                ) : null}
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="assistantName" className="text-foreground">Assistant name</Label>
-                    <Input
-                      id="assistantName"
-                      value={anonSettings.assistantName}
-                      maxLength={200}
-                      onChange={(event) => handleAssistantSettingChange('assistantName', event.target.value)}
-                      placeholder="e.g. Marta"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Visible chat title in public chat. Falls back to the workspace name when left blank.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="assistantDefaultLocale" className="text-foreground">Greeting language fallback</Label>
-                    <Input
-                      id="assistantDefaultLocale"
-                      list="assistant-greeting-locale-options"
-                      value={assistantLocaleInput}
-                      onChange={(event) => handleAssistantLocaleInputChange(event.target.value)}
-                      placeholder="Search for a language"
-                    />
-                    <datalist id="assistant-greeting-locale-options">
-                      <option value={NO_GREETING_LOCALE_LABEL} />
-                      {ASSISTANT_GREETING_LOCALE_OPTIONS.map((option) => (
-                        <option key={option.tag} value={option.label} />
-                      ))}
-                    </datalist>
-                    <p className="text-xs text-muted-foreground">
-                      Used only for the automatic first greeting when the chat does not provide a language. Normal replies follow the user’s message language.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-3 rounded bg-muted/50 p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded border border-border bg-background">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={anonSettings.assistantLogoUrl ?? '/radioso-logo.png'} alt="" className="h-8 w-8 object-contain" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Assistant logo</p>
-                      <p className="text-xs text-muted-foreground">
-                        Used by anonymous chat and the hosted website widget. Uses the Radioso logo by default.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button asChild variant="outline" disabled={isAnonSaving || isAssistantLogoSaving}>
-                      <label>
-                        {isAssistantLogoSaving ? <Spinner className="mr-2 h-4 w-4" /> : <Upload className="mr-2 h-4 w-4" />}
-                        Upload
-                        <input
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp,image/gif"
-                          className="sr-only"
-                          onChange={(event) => {
-                            void handleAssistantLogoUpload(event.target.files?.[0] ?? null)
-                            event.currentTarget.value = ''
-                          }}
-                        />
-                      </label>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={handleAssistantLogoDelete}
-                      disabled={isAnonSaving || isAssistantLogoSaving || !anonSettings.assistantLogoUrl}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Remove
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="rounded bg-muted/50 p-3 space-y-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Assistant theme</p>
-                    <p className="text-xs text-muted-foreground">
-                      Set the identity colors used by anonymous chat and the hosted website widget.
-                    </p>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-4">
-                    {([
-                      ['brand', 'Brand'],
-                      ['brandText', 'Brand text'],
-                      ['surface', 'Surface'],
-                      ['text', 'Text'],
-                    ] as const).map(([key, label]) => (
-                      <div key={key} className="space-y-2">
-                        <Label htmlFor={`assistantTheme-${key}`} className="text-foreground">{label}</Label>
-                        <Input
-                          id={`assistantTheme-${key}`}
-                          type="color"
-                          value={(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME)[key]}
-                          onChange={(event) =>
-                            updateAssistantBehaviorDraft((current) => ({
-                              ...current,
-                              theme: {
-                                ...(current.theme ?? DEFAULT_ASSISTANT_THEME),
-                                [key]: event.target.value,
-                              },
-                            }))
-                          }
-                          className="h-10 p-1"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="assistantAnswerInstruction" className="text-foreground">Answer instruction</Label>
-                  <Textarea
-                    id="assistantAnswerInstruction"
-                    value={assistantBehaviorSettings.customInstruction}
-                    onChange={(event) =>
-                      updateAssistantBehaviorDraft((current) => ({
-                        ...current,
-                        customInstruction: event.target.value.slice(0, 2000),
-                      }))
-                    }
-                    placeholder="e.g. Help visitors choose the right course. Be concise, practical, and concrete."
-                    rows={4}
-                  />
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Purpose, scope, tone, and answer guidance applied to responses.</span>
-                    <span>{assistantBehaviorSettings.customInstruction.length} / 2000</span>
-                  </div>
-                </div>
-
-	                <div className="flex flex-col gap-4 rounded bg-muted/50 p-3 sm:flex-row sm:items-start sm:justify-between">
-	                  <div className="min-w-0">
-	                    <Label htmlFor="assistantSuggestedQuestionsEnabled" className="text-foreground">Suggested follow-up questions</Label>
-	                    <p className="text-sm text-muted-foreground mt-0.5">
-	                      Show grounded follow-up chips after assistant answers when useful.
-	                    </p>
-	                  </div>
-	                  <Switch
-	                    id="assistantSuggestedQuestionsEnabled"
-	                    checked={assistantBehaviorSettings.suggestedQuestionsEnabled}
-	                    onCheckedChange={(checked) =>
-	                      updateAssistantBehaviorDraft((current) => ({
-	                        ...current,
-	                        suggestedQuestionsEnabled: checked,
-	                      }))
-	                    }
-	                  />
-	                </div>
-
-	                <div className="flex flex-col gap-4 rounded bg-muted/50 p-3 sm:flex-row sm:items-start sm:justify-between">
-	                  <div className="min-w-0">
-	                    <Label htmlFor="proactiveGreetingEnabled" className="text-foreground">Proactive first greeting</Label>
-                    <p className="text-sm text-muted-foreground mt-0.5">
-                      Whether a brand-new chat begins with an assistant-first greeting.
-                    </p>
-                  </div>
-                  <Switch
-                    id="proactiveGreetingEnabled"
-                    checked={anonSettings.proactiveGreetingEnabled}
-                    onCheckedChange={(checked) => handleAssistantSettingChange('proactiveGreetingEnabled', checked)}
-                    disabled={isAnonSaving}
-                  />
-                </div>
-              </SettingsCard>
+              <AssistantBehaviorSection
+                anonSettings={anonSettings}
+                assistantBehaviorSettings={assistantBehaviorSettings}
+                assistantLocaleInput={assistantLocaleInput}
+                onAssistantSettingChange={handleAssistantSettingChange}
+                onAssistantLocaleInputChange={handleAssistantLocaleInputChange}
+                onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
+                onAssistantLogoUpload={(file) => void handleAssistantLogoUpload(file)}
+                onAssistantLogoDelete={() => void handleAssistantLogoDelete()}
+                isAnonSaving={isAnonSaving}
+                isAssistantLogoSaving={isAssistantLogoSaving}
+                assistantSettingsError={assistantSettingsError}
+              />
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load assistant settings.</p>
             )}

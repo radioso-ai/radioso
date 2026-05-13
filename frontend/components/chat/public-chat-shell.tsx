@@ -2,8 +2,15 @@
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 
-import { MoreHorizontal, RotateCcw, Send, Sparkles, UserRound, X } from 'lucide-react'
+import { MoreHorizontal, RotateCcw, UserRound, X } from 'lucide-react'
 
+import {
+  AssistantAvatar,
+  PublicChatBubbleComposerForm,
+  PublicChatBubbleComposerSurface,
+  PublicChatBubbleDisclaimer,
+  PublicChatBubbleHeader,
+} from '@/components/chat/public-chat-bubble-view'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -12,8 +19,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ChatMessageThread, type ChatThreadMessage } from '@/components/dashboard/chat-message-thread'
 import {
   HumanContactInlineComposer,
@@ -33,7 +38,6 @@ import { editionController } from '@/lib/edition-controller'
 import { HUMAN_CONTACT_REQUEST_TRIGGER_REASON, isHumanContactRequest } from '@/lib/human-contact-intent'
 import {
   buildWebsiteEmbedSurfaceCssVars,
-  formatWebsiteEmbedDisclaimer,
   formatWebsiteEmbedStartingMessage,
   formatWebsiteEmbedRateLimitRetry,
   getWebsiteEmbedCopy,
@@ -45,8 +49,6 @@ import {
 } from '@/lib/embed-widget'
 
 type PublicChatSurface = 'public' | 'embed'
-
-const DEFAULT_ASSISTANT_AVATAR_URL = '/radioso-logo.png'
 
 const isEditableElement = (element: Element | null) => {
   if (!element) {
@@ -145,43 +147,6 @@ function useWebsiteEmbedViewportLayout(enabled: boolean) {
   return enabled ? layout : { isCompactKeyboardLayout: false, isNarrowLayout: false }
 }
 
-function AssistantAvatar({
-  avatarUrl,
-  label,
-  themeOverrides,
-  className = 'size-10',
-}: {
-  avatarUrl?: string | null
-  label: string
-  themeOverrides?: WebsiteEmbedThemeOverrides | null
-  className?: string
-}) {
-  const theme = getWebsiteEmbedTheme(themeOverrides)
-  const resolvedAvatarUrl = avatarUrl ?? DEFAULT_ASSISTANT_AVATAR_URL
-
-  return (
-    <Avatar
-      className={`${className} rounded-xl border`}
-      style={{
-        borderColor: theme.panelBorder,
-        background: theme.mutedBackground,
-        color: theme.accent,
-      }}
-    >
-      <AvatarImage src={resolvedAvatarUrl} alt={label} className="object-cover" />
-      <AvatarFallback
-        className="rounded-xl"
-        style={{
-          background: theme.mutedBackground,
-          color: theme.accent,
-        }}
-      >
-        <Sparkles className="size-4" />
-      </AvatarFallback>
-    </Avatar>
-  )
-}
-
 function ChatUnavailable({
   localeOverride,
   avatarUrl,
@@ -262,6 +227,7 @@ function PublicChatActionsMenu({
   onContact,
   onClear,
   className = 'h-8 w-8 hover:opacity-90',
+  iconColor,
 }: {
   copy: ReturnType<typeof getWebsiteEmbedCopy>
   theme: ReturnType<typeof getWebsiteEmbedTheme>
@@ -271,6 +237,7 @@ function PublicChatActionsMenu({
   onContact: () => void
   onClear: () => void
   className?: string
+  iconColor?: string
 }) {
   return (
     <DropdownMenu>
@@ -280,7 +247,7 @@ function PublicChatActionsMenu({
           size="icon"
           variant="ghost"
           className={className}
-          style={{ color: theme.mutedForeground }}
+          style={{ color: iconColor ?? theme.mutedForeground }}
         >
           <MoreHorizontal className="h-4 w-4" />
           <span className="sr-only">Chat options</span>
@@ -389,6 +356,25 @@ function PublicChatContent({
   useEffect(() => {
     scrollToBottom()
   }, [contactConfirmation, isLoading, messages])
+
+  useEffect(() => {
+    if (surface !== 'public' || typeof document === 'undefined') {
+      return
+    }
+    const root = document.documentElement
+    const body = document.body
+    const previousRootBackground = root.style.background
+    const previousBodyBackground = body.style.background
+    const previousBodyColor = body.style.color
+    root.style.background = theme.panelBackground
+    body.style.background = theme.panelBackground
+    body.style.color = theme.panelForeground
+    return () => {
+      root.style.background = previousRootBackground
+      body.style.background = previousBodyBackground
+      body.style.color = previousBodyColor
+    }
+  }, [surface, theme.panelBackground, theme.panelForeground])
 
   useEffect(() => {
     if (!isCompactKeyboardLayout) {
@@ -595,7 +581,14 @@ function PublicChatContent({
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden" style={{ color: theme.panelForeground }}>
+    <div
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+      style={{
+        ...buildWebsiteEmbedSurfaceCssVars(theme),
+        background: theme.panelBackground,
+        color: theme.panelForeground,
+      }}
+    >
       {isCompactKeyboardLayout && onRequestCollapse ? (
         <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
           <PublicChatActionsMenu
@@ -622,26 +615,14 @@ function PublicChatContent({
       ) : null}
 
       {!isCompactKeyboardLayout ? (
-        <div
-          className="shrink-0 border-b px-6 py-4"
-          style={{
-            borderColor: theme.panelBorder,
-            background: theme.panelBackground,
-          }}
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <AssistantAvatar avatarUrl={resolvedAvatarUrl} label={resolvedWorkspaceName} themeOverrides={resolvedThemeOverrides} />
-              <div>
-                <h1 className="text-lg font-medium">{resolvedWorkspaceName}</h1>
-                {copy.publicChatSubtitle.trim() ? (
-                  <p className="text-sm" style={{ color: theme.mutedForeground }}>
-                    {copy.publicChatSubtitle}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-            <div className="mt-1 flex items-center gap-1">
+        <PublicChatBubbleHeader
+          theme={theme}
+          themeOverrides={resolvedThemeOverrides}
+          workspaceName={resolvedWorkspaceName}
+          subtitle={copy.publicChatSubtitle}
+          avatarUrl={resolvedAvatarUrl}
+          actions={
+            <>
               <PublicChatActionsMenu
                 copy={copy}
                 theme={theme}
@@ -650,6 +631,7 @@ function PublicChatContent({
                 clearDisabled={clearDisabled}
                 onContact={handleManualContact}
                 onClear={() => void handleStartNewChat()}
+                iconColor={theme.accentForeground}
               />
               {onRequestCollapse ? (
                 <Button
@@ -658,20 +640,20 @@ function PublicChatContent({
                   variant="ghost"
                   onClick={onRequestCollapse}
                   className="h-8 w-8 hover:opacity-90"
-                  style={{ color: theme.mutedForeground }}
+                  style={{ color: theme.accentForeground }}
                 >
                   <X className="h-4 w-4" />
                   <span className="sr-only">{copy.publicChatCollapseLabel}</span>
                 </Button>
               ) : null}
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        />
       ) : null}
 
       <div
         ref={messagesScrollRef}
-        className={`min-h-0 flex-1 overflow-y-auto ${
+        className={`radioso-themed-scrollbar min-h-0 flex-1 overflow-y-auto ${
           isCompactKeyboardLayout ? (onRequestCollapse ? 'px-3 pb-3 pt-10' : 'p-3') : 'p-6'
         }`}
         style={{ background: theme.panelBackground }}
@@ -717,6 +699,7 @@ function PublicChatContent({
               assistantAvatarUrl={resolvedAvatarUrl}
               assistantAvatarLabel={resolvedWorkspaceName}
               hideAssistantAvatar={surface === 'embed' && isNarrowLayout}
+              hideFeedbackEntries
               theme={theme}
               themedSuggestionButtons
             />
@@ -737,19 +720,13 @@ function PublicChatContent({
         </div>
       ) : null}
 
-      <div
-        className={`shrink-0 border-t ${isCompactKeyboardLayout ? 'px-3 py-2' : 'px-4 pb-3 pt-2'}`}
-        style={{
-          borderColor: theme.panelBorder,
-          background: theme.panelBackground,
-        }}
-      >
+      <PublicChatBubbleComposerSurface theme={theme} compact={isCompactKeyboardLayout}>
         {!isCompactKeyboardLayout ? (
-          <div className="mx-auto mb-2 flex max-w-3xl justify-center">
-            <p className="w-full text-center text-xs" style={{ color: theme.mutedForeground }}>
-              {formatWebsiteEmbedDisclaimer(copy, resolvedWorkspaceName)}
-            </p>
-          </div>
+          <PublicChatBubbleDisclaimer
+            theme={theme}
+            copy={copy}
+            workspaceName={resolvedWorkspaceName}
+          />
         ) : null}
         {editionController.canUseHumanContact() && contactRequest ? (
           <HumanContactInlineComposer
@@ -761,36 +738,19 @@ function PublicChatContent({
             compact={isCompactKeyboardLayout}
           />
         ) : (
-          <form onSubmit={handleSubmit} className={`mx-auto flex max-w-3xl items-end ${isCompactKeyboardLayout ? 'gap-2' : 'gap-3'}`}>
-            <Textarea
-              ref={inputRef}
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={copy.startPrompt}
-              className={`${isCompactKeyboardLayout ? 'min-h-10 max-h-24' : 'min-h-[44px] max-h-32'} resize-none placeholder:text-[var(--radioso-input-placeholder)]`}
-              style={{
-                background: theme.inputBackground,
-                borderColor: theme.inputBorder,
-                color: theme.inputForeground,
-              }}
-            />
-            <Button
-              type="submit"
-              size="icon"
-              className={`${isCompactKeyboardLayout ? 'h-10 w-10' : 'h-[44px] w-[44px]'} shrink-0 hover:opacity-90`}
-              disabled={isLoading || !input.trim()}
-              style={{
-                background: theme.accent,
-                color: theme.accentForeground,
-              }}
-            >
-              <Send className="h-4 w-4" />
-              <span className="sr-only">{copy.publicChatSendMessageLabel}</span>
-            </Button>
-          </form>
+          <PublicChatBubbleComposerForm
+            theme={theme}
+            copy={copy}
+            value={input}
+            onChange={setInput}
+            onKeyDown={handleKeyDown}
+            onSubmit={handleSubmit}
+            inputRef={inputRef}
+            isLoading={isLoading}
+            compact={isCompactKeyboardLayout}
+          />
         )}
-      </div>
+      </PublicChatBubbleComposerSurface>
     </div>
   )
 }

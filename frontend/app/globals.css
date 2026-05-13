@@ -166,3 +166,22 @@
   color: var(--shiki-dark) !important;
   background-color: var(--shiki-dark-bg) !important;
 }
+
+.radioso-themed-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--radioso-panel-border, rgba(148, 163, 184, 0.35)) transparent;
+}
+.radioso-themed-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.radioso-themed-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.radioso-themed-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--radioso-panel-border, rgba(148, 163, 184, 0.35));
+  border-radius: 9999px;
+}
+.radioso-themed-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--radioso-muted-foreground, rgba(100, 116, 139, 0.6));
+}

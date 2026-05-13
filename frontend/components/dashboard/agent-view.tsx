@@ -131,7 +131,7 @@ export function AgentView({
     <div className="flex flex-wrap items-center gap-2">
       <TabsList>
         <TabsTrigger value="chat">Chat</TabsTrigger>
-        <TabsTrigger value="behavior">Behavior</TabsTrigger>
+        <TabsTrigger value="behavior">Assistant</TabsTrigger>
         <TabsTrigger value="channels">Channels</TabsTrigger>
       </TabsList>
     </div>

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   getAssistantLocaleLabel,
   resolveAssistantLocaleInput,
-} from '@/components/dashboard/settings/workspace-assistant-channels-tab'
+} from '@/components/dashboard/settings/assistant-locale-options'
 
 describe('assistant greeting locale picker', () => {
   it('maps plain language labels to stored locale tags', () => {
@@ -23,6 +23,6 @@ describe('assistant greeting locale picker', () => {
     expect(resolveAssistantLocaleInput('Klingon')).toBeUndefined()
     expect(getAssistantLocaleLabel('en')).toBe('English')
     expect(getAssistantLocaleLabel(null)).toBe('No fallback')
-    expect(getAssistantLocaleLabel('en-GB')).toBe('Custom locale: en-GB')
+    expect(getAssistantLocaleLabel('en-GB')).toBe('en-GB')
   })
 })

@@ -5,6 +5,7 @@ import type {
   ResponseIntent,
   ResponseLanguagePolicy,
   RetrievalExecutionDiagnostics,
+  RetrievalSourceScope,
   RetrievalTrace,
 } from "./domain/retrievalPipelineTypes.js";
 
@@ -31,6 +32,8 @@ export type {
   RetrievalExecutionPath,
   RetrievalExecutionSurface,
   RetrievalSource,
+  RetrievalSourceFilter,
+  RetrievalSourceScope,
   RetrievalSubquery,
   RetrievalTrace,
   RetrievalTraceLink,
@@ -125,6 +128,7 @@ export interface RetrievalPipelineRequest {
   responseBehavior?: RetrievalResponseBehavior;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   metadataFilter?: Record<string, unknown>;
+  sourceScope?: RetrievalSourceScope;
 }
 
 export interface RetrievalPipelineResult {

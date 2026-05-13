@@ -651,6 +651,19 @@ const ConversationAgentSurfaceSettingsSchema = registry.register(
   }),
 );
 
+const AgentSourceScopeSchema = registry.register(
+  "AgentSourceScope",
+  z.discriminatedUnion("mode", [
+    z.object({
+      mode: z.literal("all"),
+    }),
+    z.object({
+      mode: z.literal("selected"),
+      sourceIds: z.array(z.string().uuid()),
+    }),
+  ]),
+);
+
 const ConversationAgentSchema = registry.register(
   "ConversationAgent",
   AgentSchema.extend({
@@ -664,6 +677,7 @@ const ConversationAgentSchema = registry.register(
       text: z.string(),
     }),
     retrievalEnabled: z.boolean(),
+    sourceScope: AgentSourceScopeSchema,
     logo: AgentLogoSchema,
     greetingInstruction: z.string(),
     assistantDefaultLocale: z.string().nullable(),
@@ -693,6 +707,15 @@ const ConversationAgentRequestSchema = registry.register(
       text: z.string().optional(),
     }).optional(),
     retrievalEnabled: z.boolean().optional(),
+    sourceScope: z.discriminatedUnion("mode", [
+      z.object({
+        mode: z.literal("all"),
+      }),
+      z.object({
+        mode: z.literal("selected"),
+        sourceIds: z.array(z.string().uuid()).max(200),
+      }),
+    ]).optional(),
     greetingInstruction: z.string().max(200).optional(),
     assistantDefaultLocale: z.string().max(35).nullable().optional(),
     proactiveGreetingEnabled: z.boolean().optional(),
@@ -772,6 +795,26 @@ const DocumentSourceSummarySchema = registry.register(
     kind: z.enum(["website", "api", "connector", "upload"]),
     name: z.string(),
     externalId: z.string().nullable(),
+  }),
+);
+const DocumentSourceListItemSchema = registry.register(
+  "DocumentSourceListItem",
+  z.object({
+    id: z.string().uuid(),
+    kind: z.enum(["website", "api", "connector", "upload"]),
+    name: z.string(),
+    externalId: z.string().nullable(),
+    lastSyncStatus: z.string().nullable(),
+    lastSyncedAt: z.string().datetime().nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    documentCount: z.number().int().min(0),
+  }),
+);
+const DocumentSourceListResponseSchema = registry.register(
+  "DocumentSourceListResponse",
+  z.object({
+    sources: z.array(DocumentSourceListItemSchema),
   }),
 );
 const DocumentImportRequestSchema = registry.register(
@@ -3441,6 +3484,33 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: DocumentListResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/document/sources",
+  tags: ["Documents"],
+  summary: "List document sources for the authenticated workspace",
+  operationId: "listDocumentSources",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Document sources returned",
+      content: {
+        "application/json": {
+          schema: DocumentSourceListResponseSchema,
         },
       },
     },

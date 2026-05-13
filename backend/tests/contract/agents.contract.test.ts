@@ -41,6 +41,9 @@ describe("agents contract", () => {
       id: expect.any(String),
       isDefault: true,
       retrievalEnabled: true,
+      sourceScope: {
+        mode: "all",
+      },
       surfaceSettings: {
         authenticatedChat: { enabled: true },
         anonymousChat: { enabled: false },
@@ -58,6 +61,161 @@ describe("agents contract", () => {
       agentName: list.body.agents[0].name,
       answer: expect.any(String),
     });
+  });
+
+  it("persists selected source scope and validates source ownership", async () => {
+    const { app } = createTestApp();
+    const first = await issueTestToken(app, "agents-source-scope-first@example.com");
+    const second = await issueTestToken(app, "agents-source-scope-second@example.com");
+    const firstAuthorization = `Bearer ${first.token}`;
+    const secondAuthorization = `Bearer ${second.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", firstAuthorization)
+      .send({
+        title: "First source doc",
+        content: "First source body",
+        source: {
+          kind: "website",
+          url: "https://first.example/docs",
+        },
+      })
+      .expect(202);
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", secondAuthorization)
+      .send({
+        title: "Second source doc",
+        content: "Second source body",
+        source: {
+          kind: "website",
+          url: "https://second.example/docs",
+        },
+      })
+      .expect(202);
+
+    const firstSources = await request(app)
+      .get("/api/v1/document/sources")
+      .set("Authorization", firstAuthorization)
+      .expect(200);
+    const secondSources = await request(app)
+      .get("/api/v1/document/sources")
+      .set("Authorization", secondAuthorization)
+      .expect(200);
+    const firstSourceId = firstSources.body.sources[0].id as string;
+    const secondSourceId = secondSources.body.sources[0].id as string;
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", firstAuthorization)
+      .send({
+        name: "Scoped agent",
+        sourceScope: {
+          mode: "selected",
+          sourceIds: [firstSourceId],
+        },
+      })
+      .expect(201);
+
+    expect(agent.body.sourceScope).toEqual({
+      mode: "selected",
+      sourceIds: [firstSourceId],
+    });
+
+    await request(app)
+      .put(`/api/v1/agents/${agent.body.id}`)
+      .set("Authorization", firstAuthorization)
+      .send({
+        sourceScope: {
+          mode: "selected",
+          sourceIds: [secondSourceId],
+        },
+      })
+      .expect(400);
+  });
+
+  it("limits assistant retrieval to the selected agent sources", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-source-retrieval@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Alpha Guide",
+        content: "Alpha meditation retreat details.",
+        source: {
+          kind: "website",
+          url: "https://alpha.example/docs",
+        },
+      })
+      .expect(202);
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Beta Guide",
+        content: "Beta pricing and support details.",
+        source: {
+          kind: "website",
+          url: "https://beta.example/docs",
+        },
+      })
+      .expect(202);
+
+    const sources = await request(app)
+      .get("/api/v1/document/sources")
+      .set("Authorization", authorization)
+      .expect(200);
+    const alphaSourceId = sources.body.sources.find((source: { externalId: string }) => source.externalId === "https://alpha.example/docs")?.id;
+    const betaSourceId = sources.body.sources.find((source: { externalId: string }) => source.externalId === "https://beta.example/docs")?.id;
+    expect(alphaSourceId).toEqual(expect.any(String));
+    expect(betaSourceId).toEqual(expect.any(String));
+
+    const scopedAgent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({
+        name: "Beta scoped",
+        sourceScope: {
+          mode: "selected",
+          sourceIds: [betaSourceId],
+        },
+      })
+      .expect(201);
+
+    const scopedChat = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", authorization)
+      .send({ agentId: scopedAgent.body.id, message: "Alpha meditation", stream: false })
+      .expect(200);
+
+    expect(scopedChat.body.retrievalInfo.candidateCounts.final).toBe(0);
+    expect(scopedChat.body.citations ?? []).toEqual([]);
+
+    await request(app)
+      .put(`/api/v1/agents/${scopedAgent.body.id}`)
+      .set("Authorization", authorization)
+      .send({
+        sourceScope: {
+          mode: "selected",
+          sourceIds: [alphaSourceId],
+        },
+      })
+      .expect(200);
+
+    const allowedChat = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", authorization)
+      .send({ agentId: scopedAgent.body.id, message: "Alpha meditation", stream: false })
+      .expect(200);
+
+    expect(allowedChat.body.retrievalInfo.candidateCounts.final).toBeGreaterThan(0);
+    expect(allowedChat.body.answer).toContain("Alpha meditation retreat details.");
   });
 
   it("routes explicit agents and rejects agents from another workspace", async () => {

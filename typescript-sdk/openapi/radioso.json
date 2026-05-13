@@ -2786,6 +2786,46 @@
           "websiteEmbed"
         ]
       },
+      "AgentSourceScope": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "all"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "selected"
+                ]
+              },
+              "sourceIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "required": [
+              "mode",
+              "sourceIds"
+            ]
+          }
+        ]
+      },
       "ConversationAgent": {
         "allOf": [
           {
@@ -2828,6 +2868,9 @@
               },
               "retrievalEnabled": {
                 "type": "boolean"
+              },
+              "sourceScope": {
+                "$ref": "#/components/schemas/AgentSourceScope"
               },
               "logo": {
                 "type": [
@@ -2890,6 +2933,7 @@
               "suggestedQuestionsEnabled",
               "theme",
               "retrievalEnabled",
+              "sourceScope",
               "logo",
               "greetingInstruction",
               "assistantDefaultLocale",
@@ -2947,6 +2991,47 @@
           },
           "retrievalEnabled": {
             "type": "boolean"
+          },
+          "sourceScope": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "all"
+                    ]
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "selected"
+                    ]
+                  },
+                  "sourceIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 200
+                  }
+                },
+                "required": [
+                  "mode",
+                  "sourceIds"
+                ]
+              }
+            ]
           },
           "greetingInstruction": {
             "type": "string",
@@ -3321,6 +3406,83 @@
           "kind",
           "name",
           "externalId"
+        ]
+      },
+      "DocumentSourceListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "website",
+              "api",
+              "connector",
+              "upload"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "externalId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastSyncStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastSyncedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "documentCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "externalId",
+          "lastSyncStatus",
+          "lastSyncedAt",
+          "createdAt",
+          "updatedAt",
+          "documentCount"
+        ]
+      },
+      "DocumentSourceListResponse": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentSourceListItem"
+            }
+          }
+        },
+        "required": [
+          "sources"
         ]
       },
       "DocumentImportRequest": {
@@ -9437,6 +9599,42 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/document/sources": {
+      "get": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "List document sources for the authenticated workspace",
+        "operationId": "listDocumentSources",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Document sources returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSourceListResponse"
                 }
               }
             }

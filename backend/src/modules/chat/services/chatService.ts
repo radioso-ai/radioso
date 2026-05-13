@@ -38,9 +38,8 @@ import {
   type GroundedMissResponseComposer,
 } from "./groundedMissResponseComposer.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
-import { ConversationModeExpansionService } from "./conversationModeExpansionService.js";
-import type { ConversationMode } from "../../settings/contracts/retrieval.js";
-import type { ChatResponse, ChatRoute, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
+import { AssistantSuggestionExpansionService } from "./assistantSuggestionExpansionService.js";
+import type { ChatResponse, ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
@@ -104,41 +103,7 @@ interface PresentedAnswer {
   answerOutcome: AssistantTurnOutcome;
   validation: AnswerValidationSummary;
   segmentResults: AnswerSegmentValidationResult[];
-  conversationModeMetadata: ConversationModeMetadata;
 }
-
-const inferConversationModeMetadata = (input: {
-  conversationMode: ConversationMode;
-  brevityOverrideApplied: boolean;
-  suggestionCount: number;
-  followUpQuestionApplied?: boolean;
-}): Omit<ConversationModeMetadata, "conversationMode" | "brevityOverrideApplied"> => {
-  if (input.brevityOverrideApplied) {
-    return {
-      expansionApplied: false,
-      expansionKind: "none",
-      suggestionCount: 0,
-      followUpQuestionApplied: false,
-    };
-  }
-
-  const expansionApplied = input.suggestionCount > 0;
-  if (!expansionApplied) {
-    return {
-      expansionApplied: false,
-      expansionKind: "none",
-      suggestionCount: 0,
-      followUpQuestionApplied: Boolean(input.followUpQuestionApplied),
-    };
-  }
-
-  return {
-    expansionApplied: true,
-    expansionKind: input.conversationMode === "exploratory" ? "expansive" : "focused",
-    suggestionCount: input.suggestionCount,
-    followUpQuestionApplied: Boolean(input.followUpQuestionApplied),
-  };
-};
 
 export class ModelChatGateway implements ChatGateway {
   constructor(private readonly client: TextGenerationClient) {}
@@ -177,7 +142,7 @@ export class ChatService {
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
   private readonly assistantInstructionBuilder = new AssistantInstructionBuilder();
-  private readonly conversationModeExpansionService: ConversationModeExpansionService;
+  private readonly assistantSuggestionExpansionService: AssistantSuggestionExpansionService;
   private readonly chatSessionPreparer: ChatSessionPreparer;
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
@@ -200,7 +165,7 @@ export class ChatService {
       workspaceRepository,
       agentService,
     );
-    this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, history, prompt }) =>
+    this.assistantSuggestionExpansionService = new AssistantSuggestionExpansionService(async ({ query, history, prompt }) =>
       this.chatGateway.answer({
         query,
         history,
@@ -208,28 +173,12 @@ export class ChatService {
       }));
   }
 
-  private getConversationMode(session: PreparedSession): ConversationMode {
-    return session.retrieval.responseSettings?.conversationMode ?? "guided";
-  }
-
   private getSuggestedQuestionsEnabled(session: PreparedSession): boolean {
     return session.retrieval.responseSettings?.suggestedQuestionsEnabled ?? true;
   }
 
   private getSuggestedQuestionsCount(session: PreparedSession): number {
-    return session.retrieval.responseSettings?.suggestedQuestionsCount ?? 3;
-  }
-
-  private getConversationModeMetadata(session: PreparedSession, input?: Partial<ConversationModeMetadata>): ConversationModeMetadata {
-    return {
-      conversationMode: this.getConversationMode(session),
-      brevityOverrideApplied: false,
-      expansionApplied: false,
-      expansionKind: "none",
-      suggestionCount: 0,
-      followUpQuestionApplied: false,
-      ...input,
-    };
+    return 3;
   }
 
   private getRoute(session: PreparedSession): ChatRoute {
@@ -253,7 +202,6 @@ export class ChatService {
     return this.assistantInstructionBuilder.buildCombinedBlock({
       responseIdentity: session.retrieval.responseIdentity,
       customInstruction: responseSettings?.customInstruction,
-      conversationMode: responseSettings?.conversationMode,
       responseLanguagePolicy: responseSettings?.responseLanguagePolicy,
       responseLanguage: session.retrieval.diagnostics.rewriteProposal?.responseLanguage,
     });
@@ -362,7 +310,6 @@ export class ChatService {
         nonSubstantiveSegmentCount: 0,
       },
       segmentResults: [],
-      conversationModeMetadata: this.getConversationModeMetadata(session),
     };
   }
 
@@ -448,8 +395,6 @@ export class ChatService {
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
         suggestions,
-        conversationMode: presentation.conversationModeMetadata.conversationMode,
-        conversationModeMetadata: presentation.conversationModeMetadata,
         priorRewriteContinuityState: session.priorRewriteContinuityState,
         diagnostics: session.retrieval.diagnostics,
         retrievalTrace,
@@ -468,8 +413,6 @@ export class ChatService {
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
         suggestions,
-        conversationMode: presentation.conversationModeMetadata.conversationMode,
-        conversationModeMetadata: presentation.conversationModeMetadata,
         retrievalInfo: resolvedRetrievalInfo,
         retrievalTrace,
       };
@@ -499,7 +442,7 @@ export class ChatService {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
     let lazySuggestionsPromise:
-      | Promise<Pick<PresentedAnswer, "suggestions" | "conversationModeMetadata">>
+      | Promise<Pick<PresentedAnswer, "suggestions">>
       | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
     const usageReservation = await this.usageLimitPolicy.reserveAnswer({
@@ -534,7 +477,6 @@ export class ChatService {
         rawAnswer = noContextPresentation?.answer
           ?? await this.groundedMissResponseComposer.composeNoContext({
             query: input.query,
-            conversationMode: this.getConversationMode(session),
             userExpectedLocale: input.userExpectedLocale,
             answerInstructionBlock: this.buildAnswerInstructionBlock(session),
           });
@@ -546,7 +488,6 @@ export class ChatService {
         rawAnswer = await this.generateAnswerWithPageContext(session, input.query)
           ?? await this.groundedMissResponseComposer.composeNoContext({
             query: input.query,
-            conversationMode: this.getConversationMode(session),
             userExpectedLocale: input.userExpectedLocale,
             answerInstructionBlock: this.buildAnswerInstructionBlock(session),
           });
@@ -601,13 +542,11 @@ export class ChatService {
       lazySuggestionsPromise = noContextPresentation
         ? Promise.resolve({
             suggestions: noContextPresentation.suggestions,
-            conversationModeMetadata: noContextPresentation.conversationModeMetadata,
           })
-        : this.applyConversationMode(session, presentationWithoutSuggestions);
+        : this.applyAssistantSuggestions(session, presentationWithoutSuggestions);
       const presentation: PresentedAnswer = {
         ...presentationWithoutSuggestions,
         suggestions: undefined,
-        conversationModeMetadata: noContextPresentation?.conversationModeMetadata ?? this.getConversationModeMetadata(session),
       };
 
       const route = this.getRoute(session);
@@ -664,8 +603,6 @@ export class ChatService {
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
         suggestions: actionSuggestions,
-        conversationMode: presentation.conversationModeMetadata.conversationMode,
-        conversationModeMetadata: presentation.conversationModeMetadata,
         priorRewriteContinuityState: session.priorRewriteContinuityState,
         diagnostics: session.retrieval.diagnostics,
         retrievalTrace,
@@ -686,8 +623,6 @@ export class ChatService {
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
         suggestions: actionSuggestions,
-        conversationMode: presentation.conversationModeMetadata.conversationMode,
-        conversationModeMetadata: presentation.conversationModeMetadata,
         retrievalInfo: resolvedRetrievalInfo,
         retrievalTrace,
       };
@@ -722,7 +657,6 @@ export class ChatService {
             conversationId: session.conversation.id,
             assistantMessageId,
             suggestions,
-            conversationModeMetadata: lazySuggestions.conversationModeMetadata,
           });
         }
 
@@ -730,7 +664,6 @@ export class ChatService {
           type: "suggestions",
           conversationId: session.conversation.id,
           suggestions,
-          conversationModeMetadata: lazySuggestions.conversationModeMetadata,
         };
       }
     } catch {
@@ -754,7 +687,6 @@ export class ChatService {
       ? await this.generateAnswerWithPageContext(session, query)
         ?? await this.groundedMissResponseComposer.composeNoContext({
             query,
-            conversationMode: this.getConversationMode(session),
             userExpectedLocale,
             answerInstructionBlock: this.buildAnswerInstructionBlock(session),
           })
@@ -805,7 +737,6 @@ export class ChatService {
           nonSubstantiveSegmentCount: 0,
         },
         segmentResults: [],
-        conversationModeMetadata: this.getConversationModeMetadata(session),
       };
     }
 
@@ -835,7 +766,6 @@ export class ChatService {
         }),
         validation,
         segmentResults: [],
-        conversationModeMetadata: this.getConversationModeMetadata(session),
       };
     }
     const validationAnswerSegments = remapAnswerSegmentsToCitationEvidence(
@@ -855,7 +785,6 @@ export class ChatService {
         content: citation.content,
       })),
       citationDisplayEnabled,
-      conversationMode: this.getConversationMode(session),
       groundedMissResponseComposer: this.groundedMissResponseComposer,
       unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
       userExpectedLocale,
@@ -873,7 +802,6 @@ export class ChatService {
         hadRetrievedContext: true,
         validation: validated.validation,
       }),
-      conversationModeMetadata: this.getConversationModeMetadata(session),
     };
   }
 
@@ -899,7 +827,7 @@ export class ChatService {
         citations: citationEvidence,
         citationDisplayEnabled,
       });
-      const expanded = await this.applyConversationMode(session, {
+      const expanded = await this.applyAssistantSuggestions(session, {
         ...presented,
         answerOutcome: ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL,
         validation: {
@@ -927,7 +855,7 @@ export class ChatService {
       });
       const validation = buildSkippedValidationSummary();
 
-      return await this.applyConversationMode(session, {
+      return await this.applyAssistantSuggestions(session, {
         ...presented,
         planningCitations: normalized.citationEvidence.map((citation) => ({
           documentId: citation.documentId,
@@ -959,13 +887,12 @@ export class ChatService {
         content: citation.content,
       })),
       citationDisplayEnabled,
-      conversationMode: this.getConversationMode(session),
       groundedMissResponseComposer: this.groundedMissResponseComposer,
       unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
       userExpectedLocale,
     });
 
-    return await this.applyConversationMode(session, {
+    return await this.applyAssistantSuggestions(session, {
       ...validated,
       planningCitations: normalized.citationEvidence.map((citation) => ({
         documentId: citation.documentId,
@@ -991,8 +918,6 @@ export class ChatService {
     citations: ChatCitation[];
     answerSegments?: AnswerSegment[];
     suggestions?: ChatSuggestion[];
-    conversationMode: ConversationMode;
-    conversationModeMetadata: ConversationModeMetadata;
     priorRewriteContinuityState?: RewriteContinuityState;
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
     retrievalTrace: RetrievalTrace;
@@ -1020,8 +945,6 @@ export class ChatService {
           routeReason: input.route.reason,
           retrievalInvoked: input.route.type === "retrieval",
         },
-        conversationMode: input.conversationMode,
-        conversationModeMetadata: input.conversationModeMetadata,
         validation: {
           ...input.validation,
           segmentResults: input.segmentResults.map((segment) => ({
@@ -1056,7 +979,6 @@ export class ChatService {
         properties: {
           stream: input.stream,
           answerOutcome: input.answerOutcome,
-          conversationMode: input.conversationMode,
           citationCount: input.citations.length,
           suggestionCount: input.suggestions?.length ?? 0,
         },
@@ -1090,22 +1012,18 @@ export class ChatService {
     return [...suggestions, action];
   }
 
-  private async applyConversationMode(
+  private async applyAssistantSuggestions(
     session: PreparedSession,
-    presentation: Omit<PresentedAnswer, "conversationModeMetadata">,
+    presentation: PresentedAnswer,
   ): Promise<PresentedAnswer> {
-    const conversationMode = this.getConversationMode(session);
-    const brevityOverrideApplied = false;
-
     const conversationIntentSnapshot = buildConversationIntentSnapshot({
       history: session.history,
       latestQuery: session.userMessage.content,
       priorRewriteContinuityState: session.priorRewriteContinuityState,
       rewriteProposal: session.retrieval.diagnostics.rewriteProposal,
     });
-    const expanded = await this.conversationModeExpansionService.apply({
+    const expanded = await this.assistantSuggestionExpansionService.apply({
       query: session.userMessage.content,
-      conversationMode,
       suggestedQuestionsEnabled: this.getSuggestedQuestionsEnabled(session),
       suggestedQuestionsCount: this.getSuggestedQuestionsCount(session),
       groundedAnswerSupported: hasGroundedSuggestionSupport({
@@ -1129,11 +1047,6 @@ export class ChatService {
     return {
       ...presentation,
       suggestions,
-      conversationModeMetadata: this.getConversationModeMetadata(session, inferConversationModeMetadata({
-        conversationMode,
-        brevityOverrideApplied,
-        suggestionCount: suggestions?.length ?? 0,
-      })),
     };
   }
 

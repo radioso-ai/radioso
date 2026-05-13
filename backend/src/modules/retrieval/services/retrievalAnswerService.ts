@@ -119,7 +119,6 @@ export class RetrievalAnswerService {
               content: context.content,
             })),
             citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
-            conversationMode: retrieval.responseSettings.conversationMode,
             groundedMissResponseComposer: this.groundedMissResponseComposer,
             unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
           });

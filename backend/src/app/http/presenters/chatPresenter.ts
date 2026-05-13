@@ -6,9 +6,7 @@ import type {
   ChatRoute,
   ChatStreamEvent,
   ChatSuggestion,
-  ConversationModeMetadata,
 } from "../../../modules/chat/contracts/index.js";
-import type { ConversationMode } from "../../../modules/settings/contracts/retrieval.js";
 import type { RetrievalInfo, RetrievalTrace } from "../../../modules/retrieval/public.js";
 
 export const sendChatJson = (
@@ -23,8 +21,6 @@ export const sendChatJson = (
     citations?: ChatCitation[];
     answerSegments?: AnswerSegment[];
     suggestions?: ChatSuggestion[];
-    conversationMode: ConversationMode;
-    conversationModeMetadata: ConversationModeMetadata;
     retrievalInfo: RetrievalInfo;
     retrievalTrace: RetrievalTrace;
   },
@@ -72,7 +68,6 @@ export const sendChatSse = (
       res.write(`data: ${JSON.stringify({
         conversationId: event.conversationId,
         suggestions: event.suggestions,
-        conversationModeMetadata: event.conversationModeMetadata,
       })}\n\n`);
       return;
     }
@@ -88,8 +83,6 @@ export const sendChatSse = (
       citations: event.citations,
       answerSegments: event.answerSegments,
       suggestions: event.suggestions,
-      conversationMode: event.conversationMode,
-      conversationModeMetadata: event.conversationModeMetadata,
       retrievalInfo: event.retrievalInfo,
       retrievalTrace: event.retrievalTrace,
     })}\n\n`);

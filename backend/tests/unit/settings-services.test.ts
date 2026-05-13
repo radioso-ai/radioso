@@ -23,7 +23,6 @@ describe("settings services", () => {
       websiteEmbedToken: string | null;
       websiteEmbedAllowedOrigins: string[];
       websiteEmbedLauncherLabel: string;
-      websiteEmbedLauncherIcon: "chat" | "sparkles" | "message";
       websiteEmbedLauncherPosition: "bottom-right" | "bottom-left";
     },
     overrides: Partial<AgentRecord> = {},
@@ -34,11 +33,16 @@ describe("settings services", () => {
     greetingInstruction: workspace.greetingInstruction,
     assistantDefaultLocale: workspace.assistantDefaultLocale,
     proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
-    conversationMode: "guided",
     suggestedQuestionsEnabled: true,
-    suggestedQuestionsCount: 3,
     customInstruction: "",
     retrievalEnabled: true,
+    logo: null,
+    theme: {
+      brand: "#0f172a",
+      brandText: "#f8fafc",
+      surface: "#ffffff",
+      text: "#0f172a",
+    },
     surfaceSettings: {
       authenticatedChat: {
         enabled: true,
@@ -46,15 +50,21 @@ describe("settings services", () => {
       anonymousChat: {
         enabled: workspace.anonymousChatEnabled,
         token: workspace.anonymousChatToken,
-        messagesPerMinute: workspace.anonymousRateLimit,
       },
       websiteEmbed: {
         enabled: workspace.websiteEmbedEnabled,
         token: workspace.websiteEmbedToken,
         allowedOrigins: workspace.websiteEmbedAllowedOrigins,
         launcherLabel: workspace.websiteEmbedLauncherLabel,
-        icon: workspace.websiteEmbedLauncherIcon,
         launcherPosition: workspace.websiteEmbedLauncherPosition,
+        theme: {
+          brand: "#0f172a",
+          brandText: "#f8fafc",
+          surface: "#ffffff",
+          text: "#0f172a",
+        },
+        copy: {},
+        expertOverrides: {},
       },
     },
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -101,13 +111,10 @@ describe("settings services", () => {
       websiteEmbedToken: null,
       websiteEmbedAllowedOrigins: [],
       websiteEmbedLauncherLabel: "Chat with us",
-      websiteEmbedLauncherIcon: "chat" as const,
       websiteEmbedLauncherPosition: "bottom-right" as const,
     };
     const agentService = createAgentService(createAgent(workspace, {
-      conversationMode: "exploratory",
       suggestedQuestionsEnabled: false,
-      suggestedQuestionsCount: 1,
       customInstruction: "Answer plainly.",
     }));
     const retrieval = {
@@ -136,9 +143,7 @@ describe("settings services", () => {
       assistantDefaultLocale: "it-IT",
       proactiveGreetingEnabled: true,
       assistantBootstrapActive: true,
-      conversationMode: "exploratory",
       suggestedQuestionsEnabled: false,
-      suggestedQuestionsCount: 1,
       customInstruction: "Answer plainly.",
     });
     expect(result.retrieval).toMatchObject({
@@ -164,7 +169,6 @@ describe("settings services", () => {
       websiteEmbedToken: null,
       websiteEmbedAllowedOrigins: [],
       websiteEmbedLauncherLabel: "Chat with us",
-      websiteEmbedLauncherIcon: "chat" as const,
       websiteEmbedLauncherPosition: "bottom-right" as const,
     };
     const retrieval = defaultRetrievalSettings("workspace-1");
@@ -220,7 +224,6 @@ describe("settings services", () => {
       websiteEmbedToken: "embed-token",
       websiteEmbedAllowedOrigins: ["https://example.com"],
       websiteEmbedLauncherLabel: "Ask Nora",
-      websiteEmbedLauncherIcon: "sparkles" as const,
       websiteEmbedLauncherPosition: "bottom-left" as const,
     };
     const retrieval = defaultRetrievalSettings("workspace-1");
@@ -269,7 +272,6 @@ describe("settings services", () => {
       websiteEmbedToken: "old-embed-token",
       websiteEmbedAllowedOrigins: [],
       websiteEmbedLauncherLabel: "Chat with us",
-      websiteEmbedLauncherIcon: "chat" as const,
       websiteEmbedLauncherPosition: "bottom-right" as const,
     };
     const retrieval = defaultRetrievalSettings("workspace-1");
@@ -300,7 +302,6 @@ describe("settings services", () => {
       {
         channels: {
           anonymousChatEnabled: true,
-          anonymousRateLimit: 20,
           rotateAnonymousChatToken: true,
           websiteEmbedEnabled: true,
           websiteEmbedAllowedOrigins: ["https://example.com"],
@@ -316,7 +317,7 @@ describe("settings services", () => {
       workspaceId: "workspace-1",
       eventType: "anonymous_chat.enabled",
       eventStatus: "success",
-      metadata: { anonymousRateLimit: 20 },
+      metadata: {},
     });
     expect(auditService.record).toHaveBeenCalledWith({
       accountId: "account-1",

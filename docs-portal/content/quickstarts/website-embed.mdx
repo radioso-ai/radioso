@@ -53,16 +53,13 @@ Those two URLs intentionally differ only by host. That is enough to prove that o
 
 ## Example launcher snippet
 
-In production, the launcher looks like a normal script include with workspace-scoped data attributes:
+In production, the launcher is a normal script include with the embed token. Branding, copy, locale text, theme colors, and expert overrides are stored in Radioso settings.
 
 ```html
 <script
   async
   src="https://your-frontend.example.com/radioso-embed.js"
   data-radioso-token="wksp_embed_example"
-  data-radioso-launcher-label="Chat with support"
-  data-radioso-launcher-icon="chat"
-  data-radioso-launcher-position="bottom-right"
 ></script>
 ```
 
@@ -81,7 +78,7 @@ Add the full origin, including protocol, host, and port. `http://127.0.0.1:4321`
 
 ### Install the launcher snippet
 
-Use the workspace embed snippet or script URL exposed by settings. In Enterprise Edition deployments, that script is served by the frontend from the commercial package under `ee/packages`. It boots the widget with the workspace token and launcher settings.
+Use the workspace embed snippet or script URL exposed by settings. In Enterprise Edition deployments, that script is served by the frontend from the commercial package under `ee/packages`. It boots the widget with the workspace token and then loads server-side widget settings.
 
 ### Test bootstrap and session reuse
 
@@ -109,6 +106,7 @@ Open the blocked origin and confirm the launcher cannot establish a valid embedd
 - The launcher appears only on approved origins
 - The embedded chat can establish a session through the frontend bootstrap route
 - The backend accepts the forwarded request only when the origin is allowlisted
+- The widget uses the assistant logo plus the server-side theme, locale copy, and expert override settings
 - Responses stay aligned with your workspace content and settings
 - Returning users can resume the same anonymous session instead of starting from scratch each time
 
@@ -131,7 +129,7 @@ Open the blocked origin and confirm the launcher cannot establish a valid embedd
 
 - The approved-origin test page can open chat and receive a valid response
 - The blocked-origin test page cannot bootstrap an embedded session
-- The widget behavior matches the workspace launcher label, icon, and position settings
+- The widget behavior matches the server-side embed branding and customization settings
 - the rollout gives you confidence that the embed is both usable and origin-scoped
 
 ## Production adaptation

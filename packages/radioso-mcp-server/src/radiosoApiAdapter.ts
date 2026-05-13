@@ -58,7 +58,6 @@ type CapabilityErrorCode = "resource_not_found" | "unsupported_capability";
 
 interface PlatformSettingsRecord {
   assistant?: {
-    conversationMode?: RetrievalSettingsRecord["conversationMode"];
     suggestedQuestionsEnabled?: boolean;
     suggestedQuestionsCount?: number;
     customInstruction?: string;
@@ -140,7 +139,6 @@ export const createRadiosoApiAdapter = (
 
   const toRetrievalSettings = (settings: PlatformSettingsRecord): RetrievalSettingsRecord => ({
     ...(settings.retrieval ?? {}),
-    conversationMode: settings.assistant?.conversationMode ?? "guided",
     suggestedQuestionsEnabled: settings.assistant?.suggestedQuestionsEnabled ?? true,
     suggestedQuestionsCount: settings.assistant?.suggestedQuestionsCount ?? 3,
     customInstruction: settings.assistant?.customInstruction ?? "",
@@ -197,7 +195,6 @@ export const createRadiosoApiAdapter = (
       request("/api/v1/settings", {
         body: JSON.stringify({
           assistant: {
-            conversationMode: body.conversationMode,
             suggestedQuestionsEnabled: body.suggestedQuestionsEnabled,
             suggestedQuestionsCount: body.suggestedQuestionsCount,
             customInstruction: body.customInstruction,

@@ -460,6 +460,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     websiteCrawlWorker,
     websiteCrawlJobConsumer,
     documentDeletionService,
+    documentStorage,
     chatService,
     chatBootstrapService,
     chatHistoryService,

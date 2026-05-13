@@ -7,8 +7,10 @@ import type {
   RetrievalMetadataRule,
 } from "./retrievalSettings.js";
 import type {
-  WebsiteEmbedLauncherIcon,
   WebsiteEmbedLauncherPosition,
+  WebsiteEmbedThemeSettings,
+  WebsiteEmbedCopyPacks,
+  WebsiteEmbedExpertOverrides,
 } from "./websiteEmbedSettings.js";
 
 export interface PlatformRetrievalSettingsSection {
@@ -28,15 +30,16 @@ export interface PlatformRetrievalSettingsSection {
 export interface PlatformChannelsSettingsSection {
   anonymousChatEnabled: boolean;
   anonymousChatUrl: string | null;
-  anonymousRateLimit: number;
   websiteEmbedEnabled: boolean;
   websiteEmbedToken: string | null;
   websiteEmbedAllowedOrigins: string[];
   websiteEmbedLauncherLabel: string;
-  websiteEmbedLauncherIcon: WebsiteEmbedLauncherIcon;
   websiteEmbedLauncherPosition: WebsiteEmbedLauncherPosition;
   websiteEmbedScriptUrl: string | null;
   websiteEmbedSnippet: string | null;
+  websiteEmbedTheme: WebsiteEmbedThemeSettings;
+  websiteEmbedCopy: WebsiteEmbedCopyPacks;
+  websiteEmbedExpertOverrides: WebsiteEmbedExpertOverrides;
 }
 
 export interface PlatformSettingsResource {
@@ -60,14 +63,15 @@ export interface PlatformRetrievalSettingsPatch {
 
 export interface PlatformChannelsSettingsPatch {
   anonymousChatEnabled?: boolean;
-  anonymousRateLimit?: number;
   rotateAnonymousChatToken?: boolean;
   websiteEmbedEnabled?: boolean;
   rotateWebsiteEmbedToken?: boolean;
   websiteEmbedAllowedOrigins?: string[];
   websiteEmbedLauncherLabel?: string;
-  websiteEmbedLauncherIcon?: WebsiteEmbedLauncherIcon;
   websiteEmbedLauncherPosition?: WebsiteEmbedLauncherPosition;
+  websiteEmbedTheme?: WebsiteEmbedThemeSettings;
+  websiteEmbedCopy?: WebsiteEmbedCopyPacks;
+  websiteEmbedExpertOverrides?: WebsiteEmbedExpertOverrides;
 }
 
 export interface PlatformSettingsPatch {

@@ -4,28 +4,21 @@ import {
 } from "../../../shared/domain/responseIdentity.js";
 import { normalizeLlmClassifierLanguageLabel } from "../../../shared/domain/llmClassifierFields.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import { ConversationModeInstructionBuilder, type ResponseLanguagePolicy } from "../../retrieval/public.js";
-import type { ConversationMode } from "../../settings/contracts/retrieval.js";
+import type { ResponseLanguagePolicy } from "../../retrieval/public.js";
 
 export interface AssistantInstructionInput {
   responseIdentity?: ResponseIdentity | null;
   customInstruction?: string;
-  conversationMode?: ConversationMode;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   responseLanguage?: string;
 }
 
 export class AssistantInstructionBuilder {
-  private readonly conversationModeInstructionBuilder = new ConversationModeInstructionBuilder();
-
   buildCombinedBlock(input: AssistantInstructionInput): string {
     return [
       this.renderResponseIdentity(input.responseIdentity),
       this.renderCustomInstruction(input.customInstruction),
       this.renderResponseFormattingGuidelines(),
-      this.conversationModeInstructionBuilder.build({
-        conversationMode: input.conversationMode ?? "guided",
-      }),
       this.renderResponseLanguageInstruction(input.responseLanguagePolicy ?? "match_user_question", input.responseLanguage),
     ]
       .filter((block): block is string => Boolean(block))

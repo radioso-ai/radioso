@@ -38,9 +38,7 @@ test("shared settings saves assistant, retrieval, and channel sections without c
   await expect.poll(() => settingsUpdates.length).toBeGreaterThanOrEqual(1);
   expect(settingsUpdates.at(-1)).toMatchObject({
     assistant: {
-      conversationMode: "guided",
       suggestedQuestionsEnabled: true,
-      suggestedQuestionsCount: 3,
       customInstruction: "Keep answers concise.",
     },
     retrieval: {

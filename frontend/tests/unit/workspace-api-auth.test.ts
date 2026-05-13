@@ -41,9 +41,7 @@ const platformSettingsPayload = {
     assistantDefaultLocale: null,
     proactiveGreetingEnabled: false,
     assistantBootstrapActive: false,
-    conversationMode: 'guided',
     suggestedQuestionsEnabled: true,
-    suggestedQuestionsCount: 3,
     customInstruction: '',
   },
   retrieval: {
@@ -61,7 +59,6 @@ const platformSettingsPayload = {
   },
   channels: {
     anonymousChatEnabled: false,
-    anonymousRateLimit: 10,
     anonymousChatUrl: null,
     anonymousChatToken: null,
   },

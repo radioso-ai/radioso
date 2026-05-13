@@ -17,8 +17,7 @@ import {
   type RetrievalTrace,
 } from "../../retrieval/public.js";
 import type { AssistantTurnOutcome, HiddenSupportEvidence, ValidationDisposition } from "./answerSupportValidationTypes.js";
-import type { ConversationMode } from "../../settings/contracts/retrieval.js";
-import type { ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
+import type { ChatSuggestion } from "../types/chatResponses.js";
 import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
 import {
   NoopContactHistoryProvider,
@@ -54,8 +53,6 @@ export interface ChatConversationTurnDebug {
   stream: boolean;
   citationCount: number;
   answerOutcome?: AssistantTurnOutcome;
-  conversationMode?: ConversationMode;
-  conversationModeMetadata?: ConversationModeMetadata;
   validation?: {
     ran: boolean;
     answerModified: boolean;
@@ -176,8 +173,6 @@ export interface PublicConversationPage {
 
 interface ChatAuditMetadata {
   answerOutcome?: AssistantTurnOutcome;
-  conversationMode?: ConversationMode;
-  conversationModeMetadata?: ConversationModeMetadata;
   assistantMessageId?: string;
   stream?: boolean;
   citationCount?: number;
@@ -546,34 +541,6 @@ export class ChatHistoryService {
         stream: Boolean(metadata.stream),
         citationCount: typeof metadata.citationCount === "number" ? metadata.citationCount : 0,
         answerOutcome: metadata.answerOutcome,
-        conversationMode:
-          metadata.conversationMode === "factual" ||
-          metadata.conversationMode === "guided" ||
-          metadata.conversationMode === "exploratory"
-            ? metadata.conversationMode
-            : undefined,
-        conversationModeMetadata: metadata.conversationModeMetadata
-          ? {
-              conversationMode:
-                metadata.conversationModeMetadata.conversationMode === "factual" ||
-                metadata.conversationModeMetadata.conversationMode === "guided" ||
-                metadata.conversationModeMetadata.conversationMode === "exploratory"
-                  ? metadata.conversationModeMetadata.conversationMode
-                  : "guided",
-              brevityOverrideApplied: Boolean(metadata.conversationModeMetadata.brevityOverrideApplied),
-              expansionApplied: Boolean(metadata.conversationModeMetadata.expansionApplied),
-              expansionKind:
-                metadata.conversationModeMetadata.expansionKind === "focused" ||
-                metadata.conversationModeMetadata.expansionKind === "expansive"
-                  ? metadata.conversationModeMetadata.expansionKind
-                  : "none",
-              suggestionCount:
-                typeof metadata.conversationModeMetadata.suggestionCount === "number"
-                  ? metadata.conversationModeMetadata.suggestionCount
-                  : 0,
-              followUpQuestionApplied: Boolean(metadata.conversationModeMetadata.followUpQuestionApplied),
-            }
-          : undefined,
         validation: metadata.validation
           ? {
               ran: Boolean(metadata.validation.ran),

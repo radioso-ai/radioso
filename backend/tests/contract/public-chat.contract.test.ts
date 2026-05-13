@@ -12,14 +12,12 @@ describe("public chat contract", () => {
   const enableAnonymousChat = async (
     app: any,
     session: { cookie: string; workspaceId: string },
-    anonymousRateLimit?: number,
   ) => {
     const response = await request(app)
       .put("/api/v1/settings/general")
       .set(adminSessionHeaders(session))
       .send({
         anonymousChatEnabled: true,
-        ...(anonymousRateLimit ? { anonymousRateLimit } : {}),
       });
     // Extract the chat token from the URL
     const url: string = response.body.anonymousChatUrl;
@@ -144,7 +142,12 @@ describe("public chat contract", () => {
   });
 
   it("GET /api/v1/public/chat/:token returns conversations for the session", async () => {
-    const { app } = createTestApp();
+    const { app } = createTestApp({
+      envOverrides: {
+        PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
+        PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 100,
+      },
+    });
     const session = await issueTestSession(app, "public-chat-list@example.com");
     await request(app)
       .post("/api/v1/document/")
@@ -178,7 +181,12 @@ describe("public chat contract", () => {
   }, 10_000);
 
   it("rejects malformed anonymous history cursors with a client error", async () => {
-    const { app } = createTestApp();
+    const { app } = createTestApp({
+      envOverrides: {
+        PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
+        PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 100,
+      },
+    });
     const session = await issueTestSession(app, "public-chat-bad-cursor@example.com");
     const chatToken = await enableAnonymousChat(app, session);
     const publicSession = await createPublicSession(app, chatToken);
@@ -381,6 +389,10 @@ describe("public chat contract", () => {
 
   it("grounds anonymous chat answers using retrieval validation defaults", async () => {
     const { app } = createTestApp({
+      envOverrides: {
+        PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
+        PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 100,
+      },
       chatGateway: {
         async answer() {
           return "Narayani is a teacher and author.";
@@ -455,14 +467,19 @@ describe("public chat contract", () => {
   });
 
   it("exceeding rate limit returns 429 with retryAfterSeconds", async () => {
-    const { app } = createTestApp();
+    const { app } = createTestApp({
+      envOverrides: {
+        PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
+        PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 100,
+      },
+    });
     const session = await issueTestSession(app, "public-chat-rate-limit@example.com");
     await request(app)
       .post("/api/v1/document/")
       .set(adminSessionHeaders(session))
       .send({ title: "Doc", content: "Content" });
 
-    const chatToken = await enableAnonymousChat(app, session, 1);
+    const chatToken = await enableAnonymousChat(app, session);
     const publicSession = await createPublicSession(app, chatToken);
 
     // First message should succeed
@@ -493,6 +510,10 @@ describe("public chat contract", () => {
 
   it("creates a public bootstrap greeting with request locale for a new session", async () => {
     const { app } = createTestApp({
+      envOverrides: {
+        PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
+        PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 100,
+      },
       chatGateway: {
         async answer() {
           return "Hello! I'm Marta and I can help with your documents.";
@@ -530,6 +551,10 @@ describe("public chat contract", () => {
   it("uses embedded page locale for the public bootstrap greeting when no request locale is set", async () => {
     const prompts: string[] = [];
     const { app } = createTestApp({
+      envOverrides: {
+        PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
+        PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 100,
+      },
       chatGateway: {
         async answer(input) {
           prompts.push(input.prompt);
@@ -574,6 +599,10 @@ describe("public chat contract", () => {
 
   it("ignores malformed public bootstrap locale hints and falls back safely", async () => {
     const { app } = createTestApp({
+      envOverrides: {
+        PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
+        PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 100,
+      },
       chatGateway: {
         async answer(input) {
           if (input.query.length === 0) {
@@ -613,6 +642,10 @@ describe("public chat contract", () => {
 
   it("counts bootstrap greeting requests against the anonymous rate limit", async () => {
     const { app } = createTestApp({
+      envOverrides: {
+        PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
+        PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 100,
+      },
       chatGateway: {
         async answer(input) {
           if (input.query.length === 0) {
@@ -636,7 +669,6 @@ describe("public chat contract", () => {
       .set(adminSessionHeaders(session))
       .send({
         anonymousChatEnabled: true,
-        anonymousRateLimit: 1,
         assistantName: "Marta",
         proactiveGreetingEnabled: true,
       });

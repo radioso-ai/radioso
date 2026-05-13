@@ -138,6 +138,97 @@ describe("default Crawlee fetcher", () => {
     expect(pages[0].text).not.toContain("&auml;");
   });
 
+  it("keeps main content when utility classes contain navigation-like breakpoint names", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      if (req.url === "/what-we-do") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end("<html><head><title>Services</title></head><body><main><p>Service detail content.</p></main></body></html>");
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html>
+            <head><title>Utility Classes</title></head>
+            <body>
+              <header class="header nav:h-25">
+                <nav><a href="/menu-only">Menu only</a></nav>
+              </header>
+              <main class="nav:mt-25">
+                <h1>Ready to take your business venture to the next level?</h1>
+                <p>We build large-scale software solutions for financial companies.</p>
+                <a href="/what-we-do">What we do</a>
+              </main>
+            </body>
+          </html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 2
+    });
+
+    expect(pages.map((page) => page.url).sort()).toEqual([
+      `${baseUrl}/`,
+      `${baseUrl}/what-we-do`,
+    ].sort());
+    expect(pages[0].text).toContain("Ready to take your business venture to the next level?");
+    expect(pages[0].text).toContain("We build large-scale software solutions");
+  });
+
+  it("keeps link-card content inside the main page content", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      if (req.url?.startsWith("/news/")) {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end(`<html><head><title>News</title></head><body><main><p>News detail ${req.url}</p></main></body></html>`);
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html>
+            <head><title>Link Card Home</title></head>
+            <body>
+              <header><nav><a href="/schedule">Schedule</a></nav></header>
+              <main>
+                <div class="featured-card-grid">
+                  <a href="/news/inside-ferrari">Inside Ferrari and Red Bull's wing changes</a>
+                  <a href="/news/sim-racing">Watch round seven of the racing championship</a>
+                  <a href="/news/quiz">Quiz: name the champion from the year</a>
+                  <a href="/news/audi">McNish on stepping into the hot seat at Audi</a>
+                  <a href="/news/antonelli">How Antonelli made the best points start in years</a>
+                  <a href="/news/button">Jenson Button revisits his maiden win after twenty years</a>
+                </div>
+              </main>
+              <footer><a href="/privacy">Privacy</a></footer>
+            </body>
+          </html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 2
+    });
+
+    expect(pages[0].text).toContain("Inside Ferrari and Red Bull's wing changes");
+    expect(pages[0].text).toContain("Jenson Button revisits his maiden win");
+    expect(pages.map((page) => page.url)).toContain(`${baseUrl}/news/inside-ferrari`);
+  });
+
   it("sends the configured user agent when fetching pages", async () => {
     const userAgents = new Map<string, string | undefined>();
     const { server, baseUrl } = await listen((req, res) => {
@@ -312,5 +403,31 @@ describe("default Crawlee fetcher", () => {
       httpStatus: 429,
       error: "Blocked by status code 429 (Retry-After: 120)"
     }));
+  });
+
+  it("preserves the status code for failed HTTP responses", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(503, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><body><main><p>Maintenance page should not be ingested.</p></main></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1
+    });
+
+    expect(pages[0]).toEqual(expect.objectContaining({
+      status: "failed",
+      text: "",
+      html: "",
+      httpStatus: 503
+    }));
+    expect(pages[0].error).toContain("503");
   });
 });

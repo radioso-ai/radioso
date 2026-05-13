@@ -61,6 +61,35 @@ export type FetchPage = (
 
 const BLOCKED_HTTP_STATUS_CODES = new Set([401, 403, 429]);
 
+const readNumericProperty = (input: Record<string, unknown>, name: string): number | undefined => {
+  const value = input[name];
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
+};
+
+const readHttpStatusFromError = (error: Record<string, unknown>): number | undefined => {
+  const direct =
+    readNumericProperty(error, "statusCode") ??
+    readNumericProperty(error, "status");
+  if (direct) {
+    return direct;
+  }
+
+  const response = error.response;
+  if (response && typeof response === "object") {
+    const responseRecord = response as Record<string, unknown>;
+    const responseStatus =
+      readNumericProperty(responseRecord, "statusCode") ??
+      readNumericProperty(responseRecord, "status");
+    if (responseStatus) {
+      return responseStatus;
+    }
+  }
+
+  const message = typeof error.message === "string" ? error.message : "";
+  const statusFromMessage = /^(\d{3})\b/.exec(message)?.[1];
+  return statusFromMessage ? Number(statusFromMessage) : undefined;
+};
+
 const readErrorMetadata = (
   error: unknown
 ): Partial<Pick<
@@ -70,13 +99,24 @@ const readErrorMetadata = (
   if (!error || typeof error !== "object") {
     return {};
   }
+  const errorRecord = error as Record<string, unknown>;
   const metadata = (error as { crawlMetadata?: unknown }).crawlMetadata;
   if (!metadata || typeof metadata !== "object") {
-    return {};
+    const httpStatus = readHttpStatusFromError(errorRecord);
+    return httpStatus
+      ? {
+          httpStatus,
+          transportUsed: "http",
+          httpAttempted: true,
+          browserAttempted: false,
+          browserFallbackReason: null,
+          httpQualityScore: null
+        }
+      : {};
   }
   const typed = metadata as Partial<FetchedPage>;
   return {
-    httpStatus: typed.httpStatus,
+    httpStatus: typed.httpStatus ?? readHttpStatusFromError(errorRecord),
     transportUsed: typed.transportUsed,
     httpAttempted: typed.httpAttempted,
     browserAttempted: typed.browserAttempted,
@@ -227,32 +267,47 @@ const DEFAULT_NON_CONTENT_SELECTOR = [
   "[role='banner']",
   "[role='contentinfo']",
   "[aria-label*='menu' i]",
-  "[aria-label*='navigation' i]",
-  "[class*='menu' i]",
-  "[id*='menu' i]",
-  "[class*='nav' i]",
-  "[id*='nav' i]",
-  "[class*='header' i]",
-  "[id*='header' i]",
-  "[class*='footer' i]",
-  "[id*='footer' i]",
-  "[class*='cookie' i]",
-  "[id*='cookie' i]",
-  "[class*='search' i]",
-  "[id*='search' i]",
-  "[class*='login' i]",
-  "[id*='login' i]"
+  "[aria-label*='navigation' i]"
 ].join(", ");
 
+const NON_CONTENT_ATTRIBUTE_PATTERN =
+  /(?:^|[-_\s])(cookie|footer|header|login|menu|nav|navbar|navigation|search)(?:$|[-_\s])/i;
 const LINK_DENSE_BLOCK_SELECTOR = "ul, ol, section, div";
 const LINK_DENSE_MIN_LINKS = 6;
 const LINK_DENSE_MIN_RATIO = 0.75;
+const PRIMARY_CONTENT_SELECTOR = "main, article, [role='main']";
+
+const hasNonContentAttribute = (value: string | undefined): boolean => {
+  if (!value) {
+    return false;
+  }
+  return value.split(/\s+/).some((token) => NON_CONTENT_ATTRIBUTE_PATTERN.test(token));
+};
+
+const removeAttributeMarkedPageChrome = ($: any): void => {
+  $("[class], [id]").each((_index: number, element: unknown) => {
+    const block = $(element);
+    if (block.closest(PRIMARY_CONTENT_SELECTOR).length > 0) {
+      return;
+    }
+    if (
+      hasNonContentAttribute(block.attr("class")) ||
+      hasNonContentAttribute(block.attr("id"))
+    ) {
+      block.remove();
+    }
+  });
+};
 
 const removePageChrome = ($: any): void => {
   $(DEFAULT_NON_CONTENT_SELECTOR).remove();
+  removeAttributeMarkedPageChrome($);
   $(LINK_DENSE_BLOCK_SELECTOR).each((_index: number, element: unknown) => {
     const block = $(element);
-    if (block.find("main, article, [role='main']").length > 0) {
+    if (
+      block.closest(PRIMARY_CONTENT_SELECTOR).length > 0 ||
+      block.find(PRIMARY_CONTENT_SELECTOR).length > 0
+    ) {
       return;
     }
     const text = normalizeText(block.text());
@@ -325,6 +380,37 @@ const extractStructuredTextFromHtml = (html: string): string =>
   normalizeText(
     formatHtmlAsMarkdown(extractMainContentHtml(html))
   );
+
+const hasPrimaryContentContainer = (html: string): boolean =>
+  /<(main|article)\b/i.test(html) || /\brole\s*=\s*["']main["']/i.test(html);
+
+const extractStructuredTextWithFallback = (input: {
+  cleanedHtml: string;
+  originalHtml: string;
+}): string => {
+  const cleanedText = extractStructuredTextFromHtml(input.cleanedHtml);
+  if (cleanedText) {
+    return cleanedText;
+  }
+  if (!hasPrimaryContentContainer(input.originalHtml)) {
+    return "";
+  }
+  return extractStructuredTextFromHtml(input.originalHtml);
+};
+
+const extractLinks = ($: any, loadedUrl: string): string[] =>
+  $("a[href]")
+    .toArray()
+    .map((anchor: unknown) => {
+      const href = $(anchor).attr("href");
+      if (!href) return null;
+      try {
+        return new URL(href, loadedUrl).toString();
+      } catch {
+        return null;
+      }
+    })
+    .filter((candidate: string | null): candidate is string => Boolean(candidate));
 
 const createStorageConfig = () =>
   new Configuration({
@@ -406,26 +492,21 @@ const fetchPageWithCrawlee: FetchPage = async (url, options) => {
         if (statusCode && BLOCKED_HTTP_STATUS_CODES.has(statusCode)) {
           throw buildBlockedResponseError(statusCode, readHeader(response?.headers, "retry-after"));
         }
+        const originalHtml = $.html();
+        const originalLinks = extractLinks($, loadedUrl);
         removePageChrome($);
         const html = $.html();
+        const cleanedLinks = extractLinks($, loadedUrl);
         result = {
           url: loadedUrl,
           title: $("title").text() || null,
-          text: extractStructuredTextFromHtml(html),
+          text: extractStructuredTextWithFallback({
+            cleanedHtml: html,
+            originalHtml
+          }),
           html,
           httpStatus: statusCode,
-          links: $("a[href]")
-            .toArray()
-            .map((anchor) => {
-              const href = $(anchor).attr("href");
-              if (!href) return null;
-              try {
-                return new URL(href, loadedUrl).toString();
-              } catch {
-                return null;
-              }
-            })
-            .filter((candidate): candidate is string => Boolean(candidate)),
+          links: cleanedLinks.length > 0 ? cleanedLinks : originalLinks,
           parsedData: null,
           etag: readHeader(response?.headers, "etag"),
           lastModified: readHeader(response?.headers, "last-modified"),

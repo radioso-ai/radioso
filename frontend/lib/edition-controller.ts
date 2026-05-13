@@ -24,7 +24,7 @@ export const editionController = {
   canUseAssistantAnswerFeedback: () => isEnterprise,
 
   shouldLoadHumanContactSettings: (mode: 'workspace' | 'assistant' | 'channels') =>
-    isEnterprise && mode === 'channels',
+    isEnterprise && mode === 'assistant',
 
   shouldRenderWebsiteEmbedSettings: (mode: 'workspace' | 'assistant' | 'channels') =>
     isEnterprise && mode === 'channels',

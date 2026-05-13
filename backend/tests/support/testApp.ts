@@ -143,6 +143,9 @@ export const createTestEnv = (): Env => ({
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
   WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 30,
+  PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
+  PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
+  PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 600,
   CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),
   DOCUMENT_STORAGE_DRIVER: "local",
   DOCUMENT_STORAGE_LOCAL_PATH: "../.context/test-document-storage",
@@ -186,7 +189,6 @@ class TestGroundedMissResponseComposer implements GroundedMissResponseComposer {
     query: string;
     unsupportedText: string;
     contexts: Array<{ title: string; content: string }>;
-    conversationMode?: "factual" | "guided" | "exploratory";
   }): Promise<string> {
     const title = input.contexts.find((context) => context.title.trim().length > 0)?.title.trim();
     if (title) {
@@ -692,6 +694,7 @@ export const createTestDependencies = (overrides: {
       runOnce: async () => false,
     } as any,
     documentDeletionService,
+    documentStorage,
     chatService,
     chatBootstrapService,
     chatHistoryService,

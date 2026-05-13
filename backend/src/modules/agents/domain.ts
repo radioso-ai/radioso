@@ -1,29 +1,23 @@
 import { badRequest } from "../../shared/domain/errors.js";
 import { normalizeLocaleTag } from "../settings/contracts/assistantBootstrap.js";
-
-export const agentConversationModes = ["factual", "guided", "exploratory"] as const;
-export type AgentConversationMode = (typeof agentConversationModes)[number];
-
-export const agentSurfaceIcons = ["chat", "sparkles", "message"] as const;
-export type AgentSurfaceIcon = (typeof agentSurfaceIcons)[number];
+import {
+  defaultWebsiteEmbedTheme,
+  type WebsiteEmbedThemeSettings,
+} from "../settings/contracts/websiteEmbed.js";
 
 export const agentSurfacePositions = ["bottom-right", "bottom-left"] as const;
 export type AgentSurfacePosition = (typeof agentSurfacePositions)[number];
 
-const DEFAULT_CONVERSATION_MODE: AgentConversationMode = "guided";
 const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
-const DEFAULT_SUGGESTED_QUESTIONS_COUNT = 3;
-const MIN_SUGGESTED_QUESTIONS_COUNT = 1;
-const MAX_SUGGESTED_QUESTIONS_COUNT = 4;
-const DEFAULT_AGENT_SURFACE_ICON: AgentSurfaceIcon = "chat";
 const DEFAULT_AGENT_SURFACE_POSITION: AgentSurfacePosition = "bottom-right";
+const MAX_EMBED_COPY_LOCALES = 10;
 
 export interface AgentBehaviorSettings {
   customInstruction: string;
-  conversationMode: AgentConversationMode;
   suggestedQuestionsEnabled: boolean;
-  suggestedQuestionsCount: number;
   retrievalEnabled: boolean;
+  logo: AgentLogo | null;
+  theme: AgentEmbedTheme;
 }
 
 export interface AgentGreetingSettings {
@@ -43,14 +37,29 @@ export interface PublicAgentSurfaceSettings extends AgentSurfaceSettings {
 export interface AuthenticatedChatSurfaceSettings extends AgentSurfaceSettings {}
 
 export interface AnonymousChatSurfaceSettings extends PublicAgentSurfaceSettings {
-  messagesPerMinute: number;
+}
+
+export type AgentEmbedTheme = WebsiteEmbedThemeSettings;
+
+export type AgentEmbedCopyPacks = Record<string, Record<string, string>>;
+export type AgentEmbedExpertOverrides = Record<string, string>;
+
+export interface AgentLogo {
+  bucket: string;
+  objectPath: string;
+  generation?: string | null;
+  mimeType: string;
+  filename: string;
+  sizeBytes: number;
 }
 
 export interface WebsiteEmbedSurfaceSettings extends PublicAgentSurfaceSettings {
   allowedOrigins: string[];
   launcherLabel: string;
-  icon: AgentSurfaceIcon;
   launcherPosition: AgentSurfacePosition;
+  theme: AgentEmbedTheme;
+  copy: AgentEmbedCopyPacks;
+  expertOverrides: AgentEmbedExpertOverrides;
 }
 
 export interface ConversationAgentSurfaceSettings {
@@ -122,41 +131,6 @@ const normalizeLongText = (value: unknown, fieldName: string, maxLength: number)
   return normalized;
 };
 
-const normalizeConversationMode = (value: unknown): AgentConversationMode => {
-  if (value === undefined || value === null || value === "") {
-    return DEFAULT_CONVERSATION_MODE;
-  }
-  if (agentConversationModes.includes(value as AgentConversationMode)) {
-    return value as AgentConversationMode;
-  }
-  throw badRequest("conversationMode is invalid");
-};
-
-const normalizeSuggestedQuestionsCount = (value: unknown): number => {
-  if (value === undefined || value === null) {
-    return DEFAULT_SUGGESTED_QUESTIONS_COUNT;
-  }
-  if (
-    typeof value !== "number" ||
-    !Number.isInteger(value) ||
-    value < MIN_SUGGESTED_QUESTIONS_COUNT ||
-    value > MAX_SUGGESTED_QUESTIONS_COUNT
-  ) {
-    throw badRequest("suggestedQuestionsCount is invalid");
-  }
-  return value;
-};
-
-const normalizeMessagesPerMinute = (value: unknown): number => {
-  if (value === undefined || value === null) {
-    return 10;
-  }
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 60) {
-    throw badRequest("messagesPerMinute must be between 1 and 60");
-  }
-  return value;
-};
-
 const normalizeStringArray = (value: unknown, fieldName: string, maxItemLength: number): string[] => {
   if (value === undefined || value === null) {
     return [];
@@ -194,16 +168,6 @@ const normalizeWebsiteEmbedAllowedOrigins = (value: unknown): string[] =>
       .filter((origin): origin is string => Boolean(origin)),
   )];
 
-const normalizeSurfaceIcon = (value: unknown): AgentSurfaceIcon => {
-  if (value === undefined || value === null || value === "") {
-    return DEFAULT_AGENT_SURFACE_ICON;
-  }
-  if (agentSurfaceIcons.includes(value as AgentSurfaceIcon)) {
-    return value as AgentSurfaceIcon;
-  }
-  throw badRequest("websiteEmbedLauncherIcon is invalid");
-};
-
 const normalizeSurfacePosition = (value: unknown): AgentSurfacePosition => {
   if (value === undefined || value === null || value === "") {
     return DEFAULT_AGENT_SURFACE_POSITION;
@@ -212,6 +176,129 @@ const normalizeSurfacePosition = (value: unknown): AgentSurfacePosition => {
     return value as AgentSurfacePosition;
   }
   throw badRequest("websiteEmbedLauncherPosition is invalid");
+};
+
+export const defaultAgentEmbedTheme = (): AgentEmbedTheme => defaultWebsiteEmbedTheme();
+
+const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+
+const normalizeEmbedTheme = (value: unknown): AgentEmbedTheme => {
+  const defaults = defaultAgentEmbedTheme();
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return defaults;
+  }
+  const record = value as Record<string, unknown>;
+  const readColor = (key: keyof AgentEmbedTheme) => {
+    const candidate = record[key];
+    if (candidate === undefined || candidate === null || candidate === "") {
+      return defaults[key];
+    }
+    if (typeof candidate !== "string" || !HEX_COLOR_PATTERN.test(candidate.trim())) {
+      throw badRequest(`${key} must be a 6-digit hex color`);
+    }
+    return candidate.trim();
+  };
+
+  return {
+    brand: readColor("brand"),
+    brandText: readColor("brandText"),
+    surface: readColor("surface"),
+    text: readColor("text"),
+  };
+};
+
+const normalizeStringRecord = (
+  value: unknown,
+  fieldName: string,
+  options: { maxKeys: number; maxKeyLength: number; maxValueLength: number },
+): Record<string, string> => {
+  if (value === undefined || value === null) {
+    return {};
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest(`${fieldName} must be an object`);
+  }
+  const output: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    if (Object.keys(output).length >= options.maxKeys) {
+      throw badRequest(`${fieldName} has too many entries`);
+    }
+    const normalizedKey = key.trim();
+    if (!normalizedKey || normalizedKey.length > options.maxKeyLength) {
+      throw badRequest(`${fieldName} keys must not exceed ${options.maxKeyLength} characters`);
+    }
+    if (typeof rawValue !== "string") {
+      throw badRequest(`${fieldName}.${normalizedKey} must be a string`);
+    }
+    const normalizedValue = rawValue.trim();
+    if (!normalizedValue) {
+      continue;
+    }
+    if (normalizedValue.length > options.maxValueLength) {
+      throw badRequest(`${fieldName}.${normalizedKey} must not exceed ${options.maxValueLength} characters`);
+    }
+    output[normalizedKey] = normalizedValue;
+  }
+  return output;
+};
+
+const normalizeEmbedCopy = (value: unknown): AgentEmbedCopyPacks => {
+  if (value === undefined || value === null) {
+    return {};
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest("websiteEmbedCopy must be an object");
+  }
+  const output: AgentEmbedCopyPacks = {};
+  for (const [locale, rawPack] of Object.entries(value as Record<string, unknown>)) {
+    const normalizedLocale = normalizeLocaleTag(locale);
+    if (!normalizedLocale) {
+      throw badRequest("websiteEmbedCopy locale keys must be valid locale tags");
+    }
+    if (!Object.prototype.hasOwnProperty.call(output, normalizedLocale) && Object.keys(output).length >= MAX_EMBED_COPY_LOCALES) {
+      throw badRequest(`websiteEmbedCopy must not exceed ${MAX_EMBED_COPY_LOCALES} locales`);
+    }
+    output[normalizedLocale] = normalizeStringRecord(rawPack, `websiteEmbedCopy.${normalizedLocale}`, {
+      maxKeys: 30,
+      maxKeyLength: 80,
+      maxValueLength: 500,
+    });
+  }
+  return output;
+};
+
+const normalizeEmbedExpertOverrides = (value: unknown): AgentEmbedExpertOverrides =>
+  normalizeStringRecord(value, "websiteEmbedExpertOverrides", {
+    maxKeys: 40,
+    maxKeyLength: 80,
+    maxValueLength: 500,
+  });
+
+const normalizeAgentLogo = (value: unknown): AgentLogo | null => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest("assistantLogo must be an object");
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.bucket !== "string" ||
+    typeof record.objectPath !== "string" ||
+    typeof record.mimeType !== "string" ||
+    typeof record.filename !== "string" ||
+    typeof record.sizeBytes !== "number"
+  ) {
+    throw badRequest("assistantLogo is invalid");
+  }
+  return {
+    bucket: record.bucket,
+    objectPath: record.objectPath,
+    generation: typeof record.generation === "string" ? record.generation : null,
+    mimeType: record.mimeType,
+    filename: record.filename,
+    sizeBytes: record.sizeBytes,
+  };
 };
 
 export const validateAgentInput = (input: AgentInput = {}): NormalizedAgentInput => {
@@ -224,10 +311,10 @@ export const validateAgentInput = (input: AgentInput = {}): NormalizedAgentInput
   return {
     name: normalizeText(input.name ?? "Agent", "name", 200),
     customInstruction: normalizeLongText(input.customInstruction, "customInstruction", 2000),
-    conversationMode: normalizeConversationMode(input.conversationMode),
     suggestedQuestionsEnabled: input.suggestedQuestionsEnabled ?? DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
-    suggestedQuestionsCount: normalizeSuggestedQuestionsCount(input.suggestedQuestionsCount),
     retrievalEnabled: input.retrievalEnabled ?? true,
+    logo: normalizeAgentLogo(input.logo),
+    theme: normalizeEmbedTheme(input.theme ?? input.surfaceSettings?.websiteEmbed?.theme),
     greetingInstruction: normalizeText(input.greetingInstruction, "greetingInstruction", 200),
     assistantDefaultLocale: normalizeLocaleTag(input.assistantDefaultLocale),
     proactiveGreetingEnabled: Boolean(input.proactiveGreetingEnabled),
@@ -238,15 +325,16 @@ export const validateAgentInput = (input: AgentInput = {}): NormalizedAgentInput
       anonymousChat: {
         enabled: Boolean(input.surfaceSettings?.anonymousChat?.enabled),
         token: input.surfaceSettings?.anonymousChat?.token ?? null,
-        messagesPerMinute: normalizeMessagesPerMinute(input.surfaceSettings?.anonymousChat?.messagesPerMinute),
       },
       websiteEmbed: {
         enabled: websiteEmbedEnabled,
         token: input.surfaceSettings?.websiteEmbed?.token ?? null,
         allowedOrigins: websiteEmbedAllowedOrigins,
         launcherLabel: normalizeText(input.surfaceSettings?.websiteEmbed?.launcherLabel ?? "Chat with us", "websiteEmbedLauncherLabel", 80),
-        icon: normalizeSurfaceIcon(input.surfaceSettings?.websiteEmbed?.icon),
         launcherPosition: normalizeSurfacePosition(input.surfaceSettings?.websiteEmbed?.launcherPosition),
+        theme: normalizeEmbedTheme(input.surfaceSettings?.websiteEmbed?.theme ?? input.theme),
+        copy: normalizeEmbedCopy(input.surfaceSettings?.websiteEmbed?.copy),
+        expertOverrides: normalizeEmbedExpertOverrides(input.surfaceSettings?.websiteEmbed?.expertOverrides),
       },
     },
   };

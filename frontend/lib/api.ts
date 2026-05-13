@@ -61,17 +61,23 @@ export type LoginResponse = ApiSchemas['LoginResponse']
 export type RetrievalSettings = PlatformRetrievalSettings &
   Pick<
     ApiSchemas['AssistantSettingsSection'],
-    'conversationMode' | 'suggestedQuestionsEnabled' | 'suggestedQuestionsCount' | 'customInstruction'
+    'suggestedQuestionsEnabled' | 'customInstruction'
   >
 
 export type AssistantBehaviorSettings = Pick<
   RetrievalSettings,
-  'conversationMode' | 'suggestedQuestionsEnabled' | 'suggestedQuestionsCount' | 'customInstruction'
->
+  'suggestedQuestionsEnabled' | 'customInstruction'
+> & {
+  theme: WebsiteEmbedThemeSettings
+}
 
 export type PlatformSettings = Omit<ApiSchemas['PlatformSettingsResponse'], 'retrieval'> & {
   retrieval: PlatformRetrievalSettings
 }
+
+export type WebsiteEmbedThemeSettings = ApiSchemas['GeneralSettingsResponse']['websiteEmbedTheme']
+export type WebsiteEmbedCopyPacks = ApiSchemas['GeneralSettingsResponse']['websiteEmbedCopy']
+export type WebsiteEmbedExpertOverrides = ApiSchemas['GeneralSettingsResponse']['websiteEmbedExpertOverrides']
 
 export type RetrievalMetadataRule = Omit<ApiSchemas['RetrievalMetadataRule'], 'combinator' | 'conditions'> &
   Partial<Pick<ApiSchemas['RetrievalMetadataRule'], 'combinator' | 'conditions'>>
@@ -129,9 +135,7 @@ const toAssistantChatPayload = (data: ChatRequest) => ({
 
 const toRetrievalSettings = (settings: PlatformSettings): RetrievalSettings => ({
   ...settings.retrieval,
-  conversationMode: settings.assistant.conversationMode,
   suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
-  suggestedQuestionsCount: settings.assistant.suggestedQuestionsCount,
   customInstruction: settings.assistant.customInstruction,
 })
 
@@ -142,6 +146,7 @@ const toGeneralSettings = (settings: PlatformSettings): GeneralSettings => ({
   assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
   proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
   assistantBootstrapActive: settings.assistant.assistantBootstrapActive,
+  assistantLogoUrl: settings.assistant.assistantLogoUrl,
 })
 
 export type ChatUserInputMetadata = NonNullable<
@@ -247,7 +252,6 @@ export interface ChatStreamChunk {
 export interface ChatStreamSuggestions {
   conversationId?: string
   suggestions?: ChatSuggestion[]
-  conversationModeMetadata?: ChatResponse['conversationModeMetadata']
 }
 
 export interface ChatStreamCompletion {
@@ -260,15 +264,6 @@ export interface ChatStreamCompletion {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
-  conversationMode?: 'factual' | 'guided' | 'exploratory'
-  conversationModeMetadata?: {
-    conversationMode: 'factual' | 'guided' | 'exploratory'
-    brevityOverrideApplied: boolean
-    expansionApplied: boolean
-    expansionKind: 'none' | 'focused' | 'expansive'
-    suggestionCount: number
-    followUpQuestionApplied: boolean
-  }
   retrievalInfo?: RetrievalInfo
   retrievalTrace?: RetrievalTrace
 }
@@ -517,9 +512,7 @@ export const settingsApi = {
       method: "PUT",
       body: JSON.stringify({
         assistant: {
-          conversationMode: payload.conversationMode,
           suggestedQuestionsEnabled: payload.suggestedQuestionsEnabled,
-          suggestedQuestionsCount: payload.suggestedQuestionsCount,
           customInstruction: payload.customInstruction,
         },
         retrieval: {
@@ -752,8 +745,6 @@ export const chatApi = {
         citations: payload.citations,
         answerSegments: payload.answerSegments,
         suggestions: payload.suggestions,
-        conversationMode: payload.conversationMode,
-        conversationModeMetadata: payload.conversationModeMetadata,
         retrievalInfo: payload.retrievalInfo,
         retrievalTrace: payload.retrievalTrace,
       })
@@ -935,34 +926,44 @@ const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings => ({
   anonymousChatUrl: agent.surfaceSettings.anonymousChat.enabled && agent.surfaceSettings.anonymousChat.token && typeof window !== 'undefined'
       ? `${window.location.origin}/chat/${agent.surfaceSettings.anonymousChat.token}`
       : null,
-  anonymousRateLimit: agent.surfaceSettings.anonymousChat.messagesPerMinute,
   assistantName: agent.name,
   greetingInstruction: agent.greetingInstruction,
   assistantDefaultLocale: agent.assistantDefaultLocale,
   proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
   assistantBootstrapActive: agent.assistantBootstrapActive,
+  assistantLogoUrl: (() => {
+    const token = agent.surfaceSettings.anonymousChat.token ?? agent.surfaceSettings.websiteEmbed.token
+    return agent.logo && token && typeof window !== 'undefined'
+      ? `${window.location.origin}/backend/api/v1/public/chat/${token}/assistant-logo`
+      : null
+  })(),
   websiteEmbedEnabled: agent.surfaceSettings.websiteEmbed.enabled,
   websiteEmbedToken: agent.surfaceSettings.websiteEmbed.token,
   websiteEmbedScriptUrl: typeof window !== 'undefined' ? `${window.location.origin}/embed-widget.js` : null,
   websiteEmbedSnippet: null,
   websiteEmbedAllowedOrigins: agent.surfaceSettings.websiteEmbed.allowedOrigins,
   websiteEmbedLauncherLabel: agent.surfaceSettings.websiteEmbed.launcherLabel,
-  websiteEmbedLauncherIcon: agent.surfaceSettings.websiteEmbed.icon,
   websiteEmbedLauncherPosition: agent.surfaceSettings.websiteEmbed.launcherPosition,
+  websiteEmbedTheme: agent.surfaceSettings.websiteEmbed.theme,
+  websiteEmbedCopy: agent.surfaceSettings.websiteEmbed.copy,
+  websiteEmbedExpertOverrides: agent.surfaceSettings.websiteEmbed.expertOverrides,
 })
 
 const agentToAssistantBehaviorSettings = (agent: AgentSettings): AssistantBehaviorSettings => ({
-  conversationMode: agent.conversationMode,
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-  suggestedQuestionsCount: agent.suggestedQuestionsCount,
   customInstruction: agent.customInstruction,
+  theme: agent.theme,
 })
 
 const retrievalSettingsToAssistantBehaviorSettings = (settings: RetrievalSettings): AssistantBehaviorSettings => ({
-  conversationMode: settings.conversationMode,
   suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
-  suggestedQuestionsCount: settings.suggestedQuestionsCount,
   customInstruction: settings.customInstruction,
+  theme: {
+    brand: '#0f172a',
+    brandText: '#f8fafc',
+    surface: '#ffffff',
+    text: '#0f172a',
+  },
 })
 
 export type WorkspaceTokenResponse = ApiSchemas['WorkspaceTokenResponse']
@@ -1007,21 +1008,20 @@ export const generalSettingsApi = {
 
   async updateGeneralSettings(data: {
     anonymousChatEnabled?: boolean
-    anonymousRateLimit?: number
-    rotateAnonymousChatToken?: boolean
     assistantName?: string
     greetingInstruction?: string
     assistantDefaultLocale?: string | null
     proactiveGreetingEnabled?: boolean
     websiteEmbedEnabled?: boolean
-    rotateWebsiteEmbedToken?: boolean
     websiteEmbedToken?: string | null
     websiteEmbedScriptUrl?: string | null
     websiteEmbedSnippet?: string | null
     websiteEmbedAllowedOrigins?: string[]
     websiteEmbedLauncherLabel?: string
-    websiteEmbedLauncherIcon?: 'chat' | 'sparkles' | 'message'
     websiteEmbedLauncherPosition?: 'bottom-right' | 'bottom-left'
+    websiteEmbedTheme?: Partial<WebsiteEmbedThemeSettings>
+    websiteEmbedCopy?: WebsiteEmbedCopyPacks
+    websiteEmbedExpertOverrides?: WebsiteEmbedExpertOverrides
   }, options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {
     const settings = await request<PlatformSettings>('/settings', {
       method: 'PUT',
@@ -1034,16 +1034,46 @@ export const generalSettingsApi = {
         },
         channels: {
           anonymousChatEnabled: data.anonymousChatEnabled,
-          anonymousRateLimit: data.anonymousRateLimit,
-          rotateAnonymousChatToken: data.rotateAnonymousChatToken,
           websiteEmbedEnabled: data.websiteEmbedEnabled,
-          rotateWebsiteEmbedToken: data.rotateWebsiteEmbedToken,
           websiteEmbedAllowedOrigins: data.websiteEmbedAllowedOrigins,
           websiteEmbedLauncherLabel: data.websiteEmbedLauncherLabel,
-          websiteEmbedLauncherIcon: data.websiteEmbedLauncherIcon,
           websiteEmbedLauncherPosition: data.websiteEmbedLauncherPosition,
+          websiteEmbedTheme: data.websiteEmbedTheme,
+          websiteEmbedCopy: data.websiteEmbedCopy,
+          websiteEmbedExpertOverrides: data.websiteEmbedExpertOverrides,
         },
       }),
+    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
+    return toGeneralSettings(settings)
+  },
+
+  async rotateAnonymousChatToken(options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {
+    const settings = await request<PlatformSettings>('/settings/general/anonymous-chat-token/rotate', {
+      method: 'POST',
+    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
+    return toGeneralSettings(settings)
+  },
+
+  async rotateWebsiteEmbedToken(options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {
+    const settings = await request<PlatformSettings>('/settings/general/website-embed-token/rotate', {
+      method: 'POST',
+    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
+    return toGeneralSettings(settings)
+  },
+
+  async uploadAssistantLogo(file: File, options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {
+    const formData = new FormData()
+    formData.set('logo', file)
+    const settings = await request<PlatformSettings>('/settings/general/assistant-logo', {
+      method: 'POST',
+      body: formData,
+    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
+    return toGeneralSettings(settings)
+  },
+
+  async deleteAssistantLogo(options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {
+    const settings = await request<PlatformSettings>('/settings/general/assistant-logo', {
+      method: 'DELETE',
     }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
     return toGeneralSettings(settings)
   },
@@ -1095,23 +1125,49 @@ export const agentsApi = {
       surfaceSettings: {
         anonymousChat: {
           enabled: data.anonymousChatEnabled,
-          messagesPerMinute: data.anonymousRateLimit,
         },
         websiteEmbed: {
           enabled: data.websiteEmbedEnabled,
           allowedOrigins: data.websiteEmbedAllowedOrigins,
           launcherLabel: data.websiteEmbedLauncherLabel,
-          icon: data.websiteEmbedLauncherIcon,
           launcherPosition: data.websiteEmbedLauncherPosition,
+          theme: data.websiteEmbedTheme,
+          copy: data.websiteEmbedCopy,
+          expertOverrides: data.websiteEmbedExpertOverrides,
         },
       },
-      rotateAnonymousChatToken: data.rotateAnonymousChatToken,
       name: data.assistantName,
       greetingInstruction: data.greetingInstruction,
       assistantDefaultLocale: data.assistantDefaultLocale,
       proactiveGreetingEnabled: data.proactiveGreetingEnabled,
-      rotateWebsiteEmbedToken: data.rotateWebsiteEmbedToken,
     }))
+  },
+
+  async rotateAnonymousChatToken(agentId: string): Promise<GeneralSettings> {
+    return agentToGeneralSettings(await request<AgentSettings>(`/agents/${agentId}/anonymous-chat-token/rotate`, {
+      method: 'POST',
+    }, { withApiToken: true }))
+  },
+
+  async rotateWebsiteEmbedToken(agentId: string): Promise<GeneralSettings> {
+    return agentToGeneralSettings(await request<AgentSettings>(`/agents/${agentId}/website-embed-token/rotate`, {
+      method: 'POST',
+    }, { withApiToken: true }))
+  },
+
+  async uploadAssistantLogo(agentId: string, file: File): Promise<GeneralSettings> {
+    const formData = new FormData()
+    formData.set('logo', file)
+    return agentToGeneralSettings(await request<AgentSettings>(`/agents/${agentId}/assistant-logo`, {
+      method: 'POST',
+      body: formData,
+    }, { withApiToken: true }))
+  },
+
+  async deleteAssistantLogo(agentId: string): Promise<GeneralSettings> {
+    return agentToGeneralSettings(await request<AgentSettings>(`/agents/${agentId}/assistant-logo`, {
+      method: 'DELETE',
+    }, { withApiToken: true }))
   },
 
   async getBehaviorSettings(agentId: string): Promise<AssistantBehaviorSettings> {
@@ -1120,10 +1176,9 @@ export const agentsApi = {
 
   async updateBehaviorSettings(agentId: string, data: AssistantBehaviorSettings): Promise<AssistantBehaviorSettings> {
     return agentToAssistantBehaviorSettings(await this.updateAgent(agentId, {
-      conversationMode: data.conversationMode,
       suggestedQuestionsEnabled: data.suggestedQuestionsEnabled,
-      suggestedQuestionsCount: data.suggestedQuestionsCount,
       customInstruction: data.customInstruction,
+      theme: data.theme,
     }))
   },
 
@@ -1406,8 +1461,6 @@ export const publicChatApi = {
         citations: payload.citations,
         answerSegments: payload.answerSegments,
         suggestions: payload.suggestions,
-        conversationMode: payload.conversationMode,
-        conversationModeMetadata: payload.conversationModeMetadata,
         retrievalInfo: payload.retrievalInfo,
         retrievalTrace: payload.retrievalTrace,
       })

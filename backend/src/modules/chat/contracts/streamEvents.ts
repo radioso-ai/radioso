@@ -1,7 +1,6 @@
-import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 import type { RetrievalInfo, RetrievalTrace } from "../../retrieval/public.js";
 import type { AnswerSegment, ChatCitation } from "./answerTypes.js";
-import type { ChatRoute, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
+import type { ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
 
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
@@ -10,7 +9,6 @@ export type ChatStreamEvent =
       type: "suggestions";
       conversationId: string;
       suggestions: ChatSuggestion[];
-      conversationModeMetadata: ConversationModeMetadata;
     }
   | {
       type: "done";
@@ -22,8 +20,6 @@ export type ChatStreamEvent =
       citations?: ChatCitation[];
       answerSegments?: AnswerSegment[];
       suggestions?: ChatSuggestion[];
-      conversationMode: ConversationMode;
-      conversationModeMetadata: ConversationModeMetadata;
       retrievalInfo: RetrievalInfo;
       retrievalTrace: RetrievalTrace;
       route: ChatRoute;

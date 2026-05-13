@@ -17,7 +17,6 @@ type EmbedTestConfig = {
   position: string
   displayMode: string
   initialState: string
-  avatarUrl: string
   copy: string
   theme: string
   pageContext: string
@@ -34,13 +33,13 @@ const DEFAULT_CONFIG: EmbedTestConfig = {
   position: 'bottom-right',
   displayMode: '',
   initialState: '',
-  avatarUrl: '',
   copy: '',
   theme: '',
   pageContext: 'metadata',
 }
 
-const firstSearchValue = (params: URLSearchParams, key: keyof EmbedTestConfig) => params.get(key) ?? ''
+const firstSearchValue = (params: URLSearchParams, key: keyof EmbedTestConfig) =>
+  params.has(key) ? params.get(key) ?? '' : null
 
 const normalizeOrigin = (value: string) => {
   try {
@@ -67,18 +66,17 @@ const resolveInitialConfig = () => {
   return {
     ...DEFAULT_CONFIG,
     ...stored,
-    appOrigin: firstSearchValue(params, 'appOrigin') || stored.appOrigin || fallbackOrigin,
-    token: firstSearchValue(params, 'token') || stored.token || '',
-    scriptVersion: firstSearchValue(params, 'scriptVersion') || stored.scriptVersion || '',
-    label: firstSearchValue(params, 'label') || stored.label || DEFAULT_CONFIG.label,
-    icon: firstSearchValue(params, 'icon') || stored.icon || DEFAULT_CONFIG.icon,
-    position: firstSearchValue(params, 'position') || stored.position || DEFAULT_CONFIG.position,
-    displayMode: firstSearchValue(params, 'displayMode') || stored.displayMode || '',
-    initialState: firstSearchValue(params, 'initialState') || stored.initialState || '',
-    avatarUrl: firstSearchValue(params, 'avatarUrl') || stored.avatarUrl || '',
-    copy: firstSearchValue(params, 'copy') || stored.copy || '',
-    theme: firstSearchValue(params, 'theme') || stored.theme || '',
-    pageContext: firstSearchValue(params, 'pageContext') || stored.pageContext || DEFAULT_CONFIG.pageContext,
+    appOrigin: firstSearchValue(params, 'appOrigin') ?? stored.appOrigin ?? fallbackOrigin,
+    token: firstSearchValue(params, 'token') ?? stored.token ?? '',
+    scriptVersion: firstSearchValue(params, 'scriptVersion') ?? stored.scriptVersion ?? '',
+    label: firstSearchValue(params, 'label') ?? stored.label ?? DEFAULT_CONFIG.label,
+    icon: firstSearchValue(params, 'icon') ?? stored.icon ?? DEFAULT_CONFIG.icon,
+    position: firstSearchValue(params, 'position') ?? stored.position ?? DEFAULT_CONFIG.position,
+    displayMode: firstSearchValue(params, 'displayMode') ?? stored.displayMode ?? '',
+    initialState: firstSearchValue(params, 'initialState') ?? stored.initialState ?? '',
+    copy: firstSearchValue(params, 'copy') ?? stored.copy ?? '',
+    theme: firstSearchValue(params, 'theme') ?? stored.theme ?? '',
+    pageContext: firstSearchValue(params, 'pageContext') ?? stored.pageContext ?? DEFAULT_CONFIG.pageContext,
   }
 }
 
@@ -101,7 +99,6 @@ const buildSnippet = (config: EmbedTestConfig) =>
     `  data-radioso-launcher-position="${config.position}"`,
     config.displayMode ? `  data-radioso-display-mode="${config.displayMode}"` : null,
     config.initialState ? `  data-radioso-initial-state="${config.initialState}"` : null,
-    config.avatarUrl ? `  data-radioso-avatar-url="${config.avatarUrl}"` : null,
     config.copy ? `  data-radioso-copy='${config.copy}'` : null,
     config.theme ? `  data-radioso-theme='${config.theme}'` : null,
     config.pageContext === 'content' ? '  data-radioso-page-context="content"' : null,
@@ -143,14 +140,13 @@ export default function EmbedTestPage() {
     script.src = buildScriptUrl(config)
     script.dataset.radiosoTestScript = 'true'
     script.dataset.radiosoToken = config.token.trim()
-    script.dataset.radiosoLauncherLabel = config.label.trim() || DEFAULT_CONFIG.label
+    script.dataset.radiosoLauncherLabel = config.label
     script.dataset.radiosoLauncherIcon = config.icon || DEFAULT_CONFIG.icon
     script.dataset.radiosoLauncherPosition = config.position || DEFAULT_CONFIG.position
     script.dataset.radiosoAllowedOrigins = window.location.origin
 
     if (config.displayMode) script.dataset.radiosoDisplayMode = config.displayMode
     if (config.initialState) script.dataset.radiosoInitialState = config.initialState
-    if (config.avatarUrl.trim()) script.dataset.radiosoAvatarUrl = config.avatarUrl.trim()
     if (config.copy.trim()) script.dataset.radiosoCopy = config.copy.trim()
     if (config.theme.trim()) script.dataset.radiosoTheme = config.theme.trim()
     if (config.pageContext === 'content') script.dataset.radiosoPageContext = 'content'
@@ -186,7 +182,6 @@ export default function EmbedTestPage() {
     params.set('position', config.position)
     if (config.displayMode) params.set('displayMode', config.displayMode)
     if (config.initialState) params.set('initialState', config.initialState)
-    if (config.avatarUrl) params.set('avatarUrl', config.avatarUrl)
     if (config.copy) params.set('copy', config.copy)
     if (config.theme) params.set('theme', config.theme)
     if (config.pageContext !== DEFAULT_CONFIG.pageContext) params.set('pageContext', config.pageContext)
@@ -259,10 +254,6 @@ export default function EmbedTestPage() {
                   <option value="collapsed">collapsed</option>
                   <option value="open">open</option>
                 </select>
-              </label>
-              <label className="space-y-2 md:col-span-2">
-                <Label htmlFor="avatar-url">Avatar URL</Label>
-                <Input id="avatar-url" value={config.avatarUrl} onChange={(event) => updateConfig('avatarUrl', event.target.value)} placeholder="https://cdn.example.com/avatar.gif" />
               </label>
               <label className="space-y-2 md:col-span-2">
                 <Label htmlFor="copy-json">Copy JSON</Label>

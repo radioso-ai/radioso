@@ -338,6 +338,5 @@ export interface WebsiteEmbedIntegrationWorkspace {
   websiteEmbedToken: string | null;
   websiteEmbedAllowedOrigins: string[];
   websiteEmbedLauncherLabel: string;
-  websiteEmbedLauncherIcon: string;
   websiteEmbedLauncherPosition: string;
 }

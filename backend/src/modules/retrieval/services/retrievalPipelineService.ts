@@ -46,7 +46,6 @@ export interface RetrievalPipelineResult {
   responseSettings: {
     citationDisplayEnabled: boolean;
     answerSupportValidationEnabled?: boolean;
-    conversationMode: import("../../settings/contracts/retrieval.js").ConversationMode;
     suggestedQuestionsEnabled: boolean;
     suggestedQuestionsCount: number;
     customInstruction?: string;
@@ -184,7 +183,6 @@ export class RetrievalPipelineService {
     const responseSettings = {
       citationDisplayEnabled: input.context.result.settings.citationDisplayEnabled,
       answerSupportValidationEnabled: input.context.result.settings.answerSupportValidationEnabled ?? true,
-      conversationMode: responseBehavior?.conversationMode ?? input.context.result.settings.conversationMode,
       suggestedQuestionsEnabled: responseBehavior?.suggestedQuestionsEnabled ?? input.context.result.settings.suggestedQuestionsEnabled,
       suggestedQuestionsCount: responseBehavior?.suggestedQuestionsCount ?? input.context.result.settings.suggestedQuestionsCount,
       customInstruction: responseBehavior?.customInstruction ?? input.context.result.settings.customInstruction,

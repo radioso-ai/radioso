@@ -27,7 +27,6 @@ describe("ProductAnalyticsService", () => {
       subjectId: "workspace-1",
       properties: {
         prompt: "private",
-        conversationMode: "guided",
       },
       source: "backend",
     });
@@ -37,7 +36,6 @@ describe("ProductAnalyticsService", () => {
       workspaceId: "workspace-1",
       properties: {
         prompt: "[REDACTED]",
-        conversationMode: "guided",
       },
     });
     expect(logger.info).toHaveBeenCalledOnce();

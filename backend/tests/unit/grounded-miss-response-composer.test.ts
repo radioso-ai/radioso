@@ -25,7 +25,6 @@ describe("grounded miss response composer", () => {
       composer.composeUnsupportedWithContext({
         query: "I need a raspberry cake recipe",
         unsupportedText: "Here is a raspberry cake recipe.",
-        conversationMode: "exploratory",
         contexts: [
           {
             title: "Ananda Vegetarian Cuisine",
@@ -54,7 +53,6 @@ describe("grounded miss response composer", () => {
     await expect(
       composer.composeNoContext({
         query: "What is the capital of France?",
-        conversationMode: "guided",
       }),
     ).resolves.toBe("MODEL_NO_CONTEXT");
   });
@@ -78,7 +76,6 @@ describe("grounded miss response composer", () => {
 
     await composer.composeNoContext({
       query: "I like potato chips",
-      conversationMode: "exploratory",
       answerInstructionBlock: "Configured response instructions:\nHelp visitors choose and book Ananda courses.",
     });
 

@@ -1,6 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
+import { MCP_CONTEXT_VERSION } from "../../src/app/http/routes/mcpContextRoutes.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 
 describe("workspace MCP context contract", () => {
@@ -15,7 +16,7 @@ describe("workspace MCP context contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       apiVersion: "0.1.0",
-      mcpContextVersion: "2026-04-22",
+      mcpContextVersion: MCP_CONTEXT_VERSION,
       supportedTools: expect.arrayContaining([
         "answer_grounded",
         "create_document",

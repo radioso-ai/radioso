@@ -141,7 +141,6 @@ Update general settings:
 ```ts
 await client.settings.updateGeneral({
   anonymousChatEnabled: true,
-  anonymousRateLimit: 10,
 });
 ```
 

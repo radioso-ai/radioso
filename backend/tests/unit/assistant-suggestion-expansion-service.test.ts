@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { ConversationModeExpansionService } from "../../src/modules/chat/services/conversationModeExpansionService.js";
+import { AssistantSuggestionExpansionService } from "../../src/modules/chat/services/assistantSuggestionExpansionService.js";
 
-describe("ConversationModeExpansionService", () => {
+describe("AssistantSuggestionExpansionService", () => {
   it("keeps retrieved context available while instructing suggestions not to reveal hidden specifics", async () => {
     let capturedPrompt = "";
-    const service = new ConversationModeExpansionService(async ({ prompt }) => {
+    const service = new AssistantSuggestionExpansionService(async ({ prompt }) => {
       capturedPrompt = prompt;
       return JSON.stringify({
         suggestions: [
@@ -17,7 +17,6 @@ describe("ConversationModeExpansionService", () => {
 
     const result = await service.apply({
       query: "Tell me about yoga",
-      conversationMode: "exploratory",
       suggestedQuestionsEnabled: true,
       suggestedQuestionsCount: 2,
       groundedAnswerSupported: true,

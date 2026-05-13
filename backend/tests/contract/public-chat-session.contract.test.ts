@@ -156,6 +156,49 @@ describe("public chat session contract", () => {
     });
   });
 
+  it("returns a proxy-aware assistant logo URL for anonymous link sessions", async () => {
+    const { app, dependencies } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-logo@example.com");
+
+    await request(app)
+      .post("/api/v1/settings/general/assistant-logo")
+      .set(adminSessionHeaders(session))
+      .attach("logo", Buffer.from("fake-logo"), {
+        filename: "assistant.png",
+        contentType: "image/png",
+      })
+      .expect(200);
+
+    await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+      })
+      .expect(200);
+
+    const agent = await dependencies.agentService.resolve(session.workspaceId);
+    const anonymousChatToken = agent.surfaceSettings.anonymousChat.token;
+    expect(anonymousChatToken).toEqual(expect.any(String));
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${anonymousChatToken}/sessions`)
+      .set("X-Forwarded-Prefix", "/backend")
+      .send({ channel: "anonymous_link" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.assistantAvatarUrl).toBe(
+      `/backend/api/v1/public/chat/${anonymousChatToken}/assistant-logo`,
+    );
+
+    const logo = await request(app)
+      .get(`/api/v1/public/chat/${anonymousChatToken}/assistant-logo`);
+
+    expect(logo.status).toBe(200);
+    expect(logo.headers["content-type"]).toContain("image/png");
+    expect(Buffer.from(logo.body).toString("utf8")).toBe("fake-logo");
+  });
+
   it("returns the current agent token when a legacy workspace public token resolves the launch", async () => {
     const { app, dependencies, repositories } = createTestApp();
     const session = await issueTestSession(app, "public-chat-legacy-token@example.com");
@@ -316,30 +359,36 @@ describe("public chat session contract", () => {
       .expect(200);
     const defaultAgentId = agents.body.agents[0].id as string;
 
-    const defaultAgent = await request(app)
+    await request(app)
       .put(`/api/v1/agents/${defaultAgentId}`)
       .set("Authorization", authorization)
       .send({
         surfaceSettings: {
           anonymousChat: { enabled: true },
         },
-        rotateAnonymousChatToken: true,
       })
+      .expect(200);
+    const defaultAgent = await request(app)
+      .post(`/api/v1/agents/${defaultAgentId}/anonymous-chat-token/rotate`)
+      .set("Authorization", authorization)
       .expect(200);
     const sideAgent = await request(app)
       .post("/api/v1/agents")
       .set("Authorization", authorization)
       .send({ name: "Side public agent" })
       .expect(201);
-    const sideAgentWithToken = await request(app)
+    await request(app)
       .put(`/api/v1/agents/${sideAgent.body.id}`)
       .set("Authorization", authorization)
       .send({
         surfaceSettings: {
           anonymousChat: { enabled: true },
         },
-        rotateAnonymousChatToken: true,
       })
+      .expect(200);
+    const sideAgentWithToken = await request(app)
+      .post(`/api/v1/agents/${sideAgent.body.id}/anonymous-chat-token/rotate`)
+      .set("Authorization", authorization)
       .expect(200);
 
     const defaultToken = defaultAgent.body.surfaceSettings.anonymousChat.token as string;

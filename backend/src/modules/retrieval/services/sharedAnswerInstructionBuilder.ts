@@ -3,35 +3,26 @@ import {
   type ResponseIdentity,
 } from "../../../shared/domain/responseIdentity.js";
 import { normalizeLlmClassifierLanguageLabel } from "../../../shared/domain/llmClassifierFields.js";
-import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 import type { ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
-import { ConversationModeInstructionBuilder } from "./conversationModeInstructionBuilder.js";
 
 export interface SharedAnswerInstructionBlocks {
   responseIdentityBlock: string | null;
   customInstructionBlock: string | null;
-  conversationModeInstructionBlock: string | null;
   responseLanguageInstruction: string;
 }
 
 export interface SharedAnswerInstructionInput {
   responseIdentity?: ResponseIdentity | null;
   customInstruction?: string;
-  conversationMode?: ConversationMode;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   responseLanguage?: string;
 }
 
 export class SharedAnswerInstructionBuilder {
-  private readonly conversationModeInstructionBuilder = new ConversationModeInstructionBuilder();
-
   build(input: SharedAnswerInstructionInput): SharedAnswerInstructionBlocks {
     return {
       responseIdentityBlock: this.renderResponseIdentity(input.responseIdentity),
       customInstructionBlock: this.renderCustomInstruction(input.customInstruction),
-      conversationModeInstructionBlock: input.conversationMode
-        ? this.conversationModeInstructionBuilder.build({ conversationMode: input.conversationMode })
-        : null,
       responseLanguageInstruction: this.renderResponseLanguageInstruction(
         input.responseLanguagePolicy ?? "match_user_question",
         input.responseLanguage,
@@ -45,7 +36,6 @@ export class SharedAnswerInstructionBuilder {
     return [
       blocks.responseIdentityBlock,
       blocks.customInstructionBlock,
-      blocks.conversationModeInstructionBlock,
       blocks.responseLanguageInstruction,
     ]
       .filter((block): block is string => Boolean(block))

@@ -68,6 +68,8 @@ export const runMigrations = async (connectionString: string, logger: AppLogger)
 
       const migrationSql = await readFile(new URL(migrationFile, migrationsDirectory), "utf8");
       await database.withTransaction(async (client) => {
+        // Migration filenames are recorded only after the SQL transaction succeeds.
+        // IF NOT EXISTS in migration SQL is for drift tolerance, not normal re-runs.
         await client.query(migrationSql);
         await client.query("INSERT INTO schema_migrations (filename) VALUES ($1)", [migrationFile]);
       });

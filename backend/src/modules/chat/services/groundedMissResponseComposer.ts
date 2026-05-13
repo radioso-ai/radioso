@@ -2,7 +2,6 @@ import type { TextGenerationClient } from "../../../shared/infra/llm/providerTyp
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
-import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 import { resolveChatLocale } from "./chatLocale.js";
 
 export interface GroundedMissContextSummary {
@@ -15,13 +14,11 @@ export interface GroundedMissResponseComposer {
     query: string;
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
-    conversationMode?: ConversationMode;
     userExpectedLocale?: string | null;
     answerInstructionBlock?: string;
   }): Promise<string>;
   composeNoContext(input: {
     query: string;
-    conversationMode?: ConversationMode;
     userExpectedLocale?: string | null;
     answerInstructionBlock?: string;
   }): Promise<string>;
@@ -32,7 +29,6 @@ export class MissingGroundedMissResponseComposer implements GroundedMissResponse
     query: string;
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
-    conversationMode?: ConversationMode;
     userExpectedLocale?: string | null;
     answerInstructionBlock?: string;
   }): Promise<string> {
@@ -41,7 +37,6 @@ export class MissingGroundedMissResponseComposer implements GroundedMissResponse
 
   async composeNoContext(_input: {
     query: string;
-    conversationMode?: ConversationMode;
     userExpectedLocale?: string | null;
     answerInstructionBlock?: string;
   }): Promise<string> {
@@ -184,7 +179,6 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     query: string;
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
-    conversationMode?: ConversationMode;
     userExpectedLocale?: string | null;
     answerInstructionBlock?: string;
   }): Promise<string> {
@@ -194,7 +188,6 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
           miss_kind: "unsupported_with_context",
           locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
           query: input.query,
-          conversation_mode: input.conversationMode ?? "guided",
           answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
           has_retrieved_contexts: "yes",
           unsupported_text: input.unsupportedText.trim(),
@@ -221,7 +214,6 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
 
   async composeNoContext(input: {
     query: string;
-    conversationMode?: ConversationMode;
     userExpectedLocale?: string | null;
     answerInstructionBlock?: string;
   }): Promise<string> {
@@ -231,7 +223,6 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
           miss_kind: "no_context",
           locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
           query: input.query,
-          conversation_mode: input.conversationMode ?? "guided",
           answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
           has_retrieved_contexts: "no",
           unsupported_text: "None",

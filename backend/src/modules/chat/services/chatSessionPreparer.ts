@@ -8,6 +8,7 @@ import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.j
 import type { RetrievalPipelineService, RewriteContinuityState } from "../../retrieval/public.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { isAgentRetrievalEnabled } from "../../agents/public.js";
+import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
@@ -82,9 +83,8 @@ export class ChatSessionPreparer {
       responseIdentity,
       responseBehavior: {
         customInstruction: agent.customInstruction,
-        conversationMode: agent.conversationMode,
         suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-        suggestedQuestionsCount: agent.suggestedQuestionsCount,
+        suggestedQuestionsCount: 3,
       },
       responseBehaviorEnabled: true,
       metadataFilter: input.metadataFilter,
@@ -166,9 +166,8 @@ export class ChatSessionPreparer {
         responseSettings: {
           citationDisplayEnabled: false,
           answerSupportValidationEnabled: false,
-          conversationMode: agent.conversationMode,
           suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-          suggestedQuestionsCount: agent.suggestedQuestionsCount,
+          suggestedQuestionsCount: 3,
           customInstruction: agent.customInstruction,
           responseLanguagePolicy: "match_user_question" as const,
         },
@@ -230,10 +229,11 @@ export class ChatSessionPreparer {
         workspaceId,
         name: "",
         customInstruction: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
-        suggestedQuestionsCount: 3,
         retrievalEnabled: true,
+        logo: null,
+        // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
+        theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
         greetingInstruction: "",
         assistantDefaultLocale: null,
         proactiveGreetingEnabled: false,
@@ -244,15 +244,17 @@ export class ChatSessionPreparer {
           anonymousChat: {
             enabled: false,
             token: null,
-            messagesPerMinute: 10,
           },
           websiteEmbed: {
             enabled: false,
             token: null,
             allowedOrigins: [],
             launcherLabel: "Chat with us",
-            icon: "chat",
             launcherPosition: "bottom-right",
+            // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
+            theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
+            copy: {},
+            expertOverrides: {},
           },
         },
         createdAt: now,
@@ -269,10 +271,11 @@ export class ChatSessionPreparer {
       workspaceId,
       name: workspace.assistantName,
       customInstruction: "",
-      conversationMode: "guided",
       suggestedQuestionsEnabled: true,
-      suggestedQuestionsCount: 3,
       retrievalEnabled: true,
+      logo: null,
+      // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
+      theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
       greetingInstruction: workspace.greetingInstruction,
       assistantDefaultLocale: workspace.assistantDefaultLocale,
       proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
@@ -283,15 +286,17 @@ export class ChatSessionPreparer {
         anonymousChat: {
           enabled: workspace.anonymousChatEnabled,
           token: workspace.anonymousChatToken,
-          messagesPerMinute: workspace.anonymousRateLimit,
         },
         websiteEmbed: {
           enabled: workspace.websiteEmbedEnabled,
           token: workspace.websiteEmbedToken,
           allowedOrigins: workspace.websiteEmbedAllowedOrigins,
           launcherLabel: workspace.websiteEmbedLauncherLabel,
-          icon: workspace.websiteEmbedLauncherIcon,
           launcherPosition: workspace.websiteEmbedLauncherPosition,
+          // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
+          theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
+          copy: {},
+          expertOverrides: {},
         },
       },
       createdAt: workspace.createdAt,

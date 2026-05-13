@@ -10,7 +10,6 @@ export type RadiosoChatStreamEvent =
       type: "suggestions";
       conversationId: string;
       suggestions: NonNullable<ChatResponse["suggestions"]>;
-      conversationModeMetadata: ChatResponse["conversationModeMetadata"];
     }
   | ({ type: "done" } & ChatResponse)
   | { type: "error"; error: RadiosoError };
@@ -68,15 +67,12 @@ const parseFrame = (frame: string): RadiosoChatStreamEvent | null => {
   if (
     eventName === "suggestions" &&
     typeof payload.conversationId === "string" &&
-    Array.isArray(payload.suggestions) &&
-    typeof payload.conversationModeMetadata === "object" &&
-    payload.conversationModeMetadata !== null
+    Array.isArray(payload.suggestions)
   ) {
     return {
       type: "suggestions",
       conversationId: payload.conversationId,
       suggestions: payload.suggestions as NonNullable<ChatResponse["suggestions"]>,
-      conversationModeMetadata: payload.conversationModeMetadata as ChatResponse["conversationModeMetadata"],
     };
   }
 
@@ -85,21 +81,16 @@ const parseFrame = (frame: string): RadiosoChatStreamEvent | null => {
     typeof payload.conversationId === "string" &&
     typeof payload.answer === "string" &&
     typeof payload.route === "object" &&
-    payload.route !== null &&
-    typeof payload.conversationMode === "string" &&
-    typeof payload.conversationModeMetadata === "object" &&
-    payload.conversationModeMetadata !== null
+    payload.route !== null
   ) {
     return {
       type: "done",
       conversationId: payload.conversationId,
       route: payload.route,
       answer: payload.answer,
-      citations: Array.isArray(payload.citations) ? payload.citations : undefined,
-      answerSegments: Array.isArray(payload.answerSegments) ? payload.answerSegments : undefined,
-      suggestions: Array.isArray(payload.suggestions) ? payload.suggestions : undefined,
-      conversationMode: payload.conversationMode,
-      conversationModeMetadata: payload.conversationModeMetadata,
+      ...(Array.isArray(payload.citations) ? { citations: payload.citations } : {}),
+      ...(Array.isArray(payload.answerSegments) ? { answerSegments: payload.answerSegments } : {}),
+      ...(Array.isArray(payload.suggestions) ? { suggestions: payload.suggestions } : {}),
       retrievalInfo: payload.retrievalInfo,
       retrievalTrace: payload.retrievalTrace,
     } as RadiosoChatStreamEvent;

@@ -14,9 +14,8 @@ export const basePlatformSettings = () => ({
     assistantDefaultLocale: "en-US",
     proactiveGreetingEnabled: true,
     assistantBootstrapActive: true,
-    conversationMode: "guided",
+    assistantLogoUrl: null,
     suggestedQuestionsEnabled: true,
-    suggestedQuestionsCount: 3,
     customInstruction: "Keep answers concise.",
   },
   retrieval: {
@@ -35,15 +34,21 @@ export const basePlatformSettings = () => ({
   channels: {
     anonymousChatEnabled: false,
     anonymousChatUrl: "http://localhost:3000/chat/public-token",
-    anonymousRateLimit: 20,
     websiteEmbedEnabled: false,
     websiteEmbedToken: "embed-token",
     websiteEmbedScriptUrl: "http://localhost:3000/embed.js",
     websiteEmbedSnippet: "<script src=\"http://localhost:3000/embed.js\"></script>",
     websiteEmbedAllowedOrigins: [],
     websiteEmbedLauncherLabel: "Chat with us",
-    websiteEmbedLauncherIcon: "chat",
     websiteEmbedLauncherPosition: "bottom-right",
+    websiteEmbedTheme: {
+      brand: "#0f172a",
+      brandText: "#f8fafc",
+      surface: "#ffffff",
+      text: "#0f172a",
+    },
+    websiteEmbedCopy: {},
+    websiteEmbedExpertOverrides: {},
   },
 });
 
@@ -55,13 +60,12 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture) => ({
   name: settings.assistant.assistantName,
   isDefault: true,
   customInstruction: settings.assistant.customInstruction,
-  conversationMode: settings.assistant.conversationMode,
   suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
-  suggestedQuestionsCount: settings.assistant.suggestedQuestionsCount,
   greetingInstruction: settings.assistant.greetingInstruction,
   assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
   proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
   assistantBootstrapActive: settings.assistant.assistantBootstrapActive,
+  logo: null,
   retrievalEnabled: true,
   surfaceSettings: {
     authenticatedChat: {
@@ -70,15 +74,16 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture) => ({
     anonymousChat: {
       enabled: settings.channels.anonymousChatEnabled,
       token: "public-token",
-      messagesPerMinute: settings.channels.anonymousRateLimit,
     },
     websiteEmbed: {
       enabled: settings.channels.websiteEmbedEnabled,
       token: settings.channels.websiteEmbedToken,
       allowedOrigins: settings.channels.websiteEmbedAllowedOrigins,
       launcherLabel: settings.channels.websiteEmbedLauncherLabel,
-      icon: settings.channels.websiteEmbedLauncherIcon,
       launcherPosition: settings.channels.websiteEmbedLauncherPosition,
+      theme: settings.channels.websiteEmbedTheme,
+      copy: settings.channels.websiteEmbedCopy,
+      expertOverrides: settings.channels.websiteEmbedExpertOverrides,
     },
   },
   createdAt: nowIso,

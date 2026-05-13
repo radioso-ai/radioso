@@ -118,7 +118,7 @@ export function EmbeddedChatFrame({
       }
     }
 
-    const storedSession = typeof window !== 'undefined' ? readStoredEmbedBootstrapSession(token) : null
+    const storedSession = readStoredEmbedBootstrapSession(token)
     return { status: 'bootstrapping', workspaceName: storedSession?.workspaceName ?? null }
   })
   const isBootstrappedRef = useRef(false)
@@ -134,6 +134,14 @@ export function EmbeddedChatFrame({
     const storedSession = readStoredEmbedBootstrapSession(token)
     const resumeAnonymousSessionId =
       storedSession ? readStoredAnonymousSessionId(storedSession.publicChatToken) : null
+
+    if (storedSession?.workspaceName) {
+      setState((current) =>
+        current.status === 'bootstrapping'
+          ? { ...current, workspaceName: storedSession.workspaceName }
+          : current,
+      )
+    }
 
     const stopHandshake = () => {
       if (handshakeInterval !== null) {

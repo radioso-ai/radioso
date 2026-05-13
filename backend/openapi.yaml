@@ -1858,6 +1858,22 @@ components:
               type: string
             suggestedQuestionsEnabled:
               type: boolean
+            theme:
+              type: object
+              properties:
+                brand:
+                  type: string
+                brandText:
+                  type: string
+                surface:
+                  type: string
+                text:
+                  type: string
+              required:
+                - brand
+                - brandText
+                - surface
+                - text
             retrievalEnabled:
               type: boolean
             logo:
@@ -1901,6 +1917,7 @@ components:
             - isDefault
             - customInstruction
             - suggestedQuestionsEnabled
+            - theme
             - retrievalEnabled
             - logo
             - greetingInstruction
@@ -1928,6 +1945,17 @@ components:
           maxLength: 2000
         suggestedQuestionsEnabled:
           type: boolean
+        theme:
+          type: object
+          properties:
+            brand:
+              type: string
+            brandText:
+              type: string
+            surface:
+              type: string
+            text:
+              type: string
         retrievalEnabled:
           type: boolean
         greetingInstruction:
@@ -2014,6 +2042,22 @@ components:
           type:
             - string
             - "null"
+        theme:
+          type: object
+          properties:
+            brand:
+              type: string
+            brandText:
+              type: string
+            surface:
+              type: string
+            text:
+              type: string
+          required:
+            - brand
+            - brandText
+            - surface
+            - text
         actions:
           type: object
           additionalProperties: {}

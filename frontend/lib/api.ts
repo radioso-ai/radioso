@@ -16,6 +16,7 @@ import {
 } from './api-client'
 import { streamChatEvents } from './api-chat-stream'
 import { AUTH_RECOVERY_ENABLED } from './enterprise-features'
+import type { components } from '../../typescript-sdk/src/generated/types'
 
 export {
   activateWorkspaceToken,
@@ -37,54 +38,31 @@ export {
   storePublicSessionToken,
 } from './api-client'
 
-// Types based on OpenAPI schema
-export interface RegisterRequest {
-  email: string
-  password: string
-  organizationName?: string
+type ApiSchemas = components['schemas']
+type RelaxedAssistantChatResponse<T> = T extends unknown
+  ? Omit<T, 'conversationId' | 'assistantMessageId' | 'route' | 'suggestions'> & {
+      conversationId?: string
+      assistantMessageId?: string
+      route?: ApiSchemas['AssistantRoute']
+      suggestions?: ChatSuggestion[]
+    }
+  : never
+type PlatformRetrievalSettings = Omit<ApiSchemas['PlatformRetrievalSettingsSection'], 'metadataRules'> & {
+  metadataRules: RetrievalMetadataRule[]
 }
 
-export interface RegisterResponse {
-  userId: string
-  accountId: string
-  organizationName: string
-  workspaceId: string
-  workspaceName: string
-  workspacePublicRouteKey: string
+export type RegisterRequest = ApiSchemas['RegisterRequest']
+export type RegisterResponse = ApiSchemas['RegisterResponse'] & {
   requiresEmailVerification?: boolean
 }
+export type LoginRequest = ApiSchemas['LoginRequest']
+export type LoginResponse = ApiSchemas['LoginResponse']
 
-export interface LoginRequest {
-  email: string
-  password: string
-  preferredWorkspaceId?: string
-  preferredAccountId?: string
-}
-
-export interface LoginResponse {
-  userId: string
-  accountId: string
-  organizationName: string
-  workspaceId: string
-  workspaceName: string
-  workspacePublicRouteKey: string
-}
-
-export interface RetrievalSettings {
-  queryRewriteEnabled: boolean
-  semanticRewriteInstructions: string
-  lexicalRewriteInstructions: string
-  suggestedQuestionsEnabled: boolean
-  rerankEnabled: boolean
-  vectorTopK: number
-  similarityThreshold: number
-  rerankTopK: number
-  citationDisplayEnabled: boolean
-  answerSupportValidationEnabled: boolean
-  metadataFieldSuggestions: MetadataFieldSuggestion[]
-  metadataRules: RetrievalMetadataRule[]
-  customInstruction: string
-}
+export type RetrievalSettings = PlatformRetrievalSettings &
+  Pick<
+    ApiSchemas['AssistantSettingsSection'],
+    'suggestedQuestionsEnabled' | 'customInstruction'
+  >
 
 export type AssistantBehaviorSettings = Pick<
   RetrievalSettings,
@@ -93,219 +71,41 @@ export type AssistantBehaviorSettings = Pick<
   theme: WebsiteEmbedThemeSettings
 }
 
-export interface WebsiteEmbedThemeSettings {
-  brand: string
-  brandText: string
-  surface: string
-  text: string
+export type PlatformSettings = Omit<ApiSchemas['PlatformSettingsResponse'], 'retrieval'> & {
+  retrieval: PlatformRetrievalSettings
 }
 
-export type WebsiteEmbedCopyPacks = Record<string, Record<string, string>>
-export type WebsiteEmbedExpertOverrides = Record<string, string>
+export type WebsiteEmbedThemeSettings = ApiSchemas['GeneralSettingsResponse']['websiteEmbedTheme']
+export type WebsiteEmbedCopyPacks = ApiSchemas['GeneralSettingsResponse']['websiteEmbedCopy']
+export type WebsiteEmbedExpertOverrides = ApiSchemas['GeneralSettingsResponse']['websiteEmbedExpertOverrides']
 
-export interface PlatformSettings {
-  assistant: {
-    assistantName: string
-    greetingInstruction: string
-    assistantDefaultLocale: string | null
-    proactiveGreetingEnabled: boolean
-    assistantBootstrapActive: boolean
-    suggestedQuestionsEnabled: boolean
-    customInstruction: string
-    assistantLogoUrl?: string | null
-  }
-  retrieval: Omit<RetrievalSettings, 'suggestedQuestionsEnabled' | 'customInstruction'>
-  channels: {
-    anonymousChatEnabled: boolean
-    anonymousChatUrl: string | null
-    websiteEmbedEnabled?: boolean
-    websiteEmbedToken?: string | null
-    websiteEmbedScriptUrl?: string | null
-    websiteEmbedSnippet?: string | null
-    websiteEmbedAllowedOrigins?: string[]
-    websiteEmbedLauncherLabel?: string
-    websiteEmbedLauncherPosition?: 'bottom-right' | 'bottom-left'
-    websiteEmbedTheme?: WebsiteEmbedThemeSettings
-    websiteEmbedCopy?: WebsiteEmbedCopyPacks
-    websiteEmbedExpertOverrides?: WebsiteEmbedExpertOverrides
-  }
-}
+export type RetrievalMetadataRule = Omit<ApiSchemas['RetrievalMetadataRule'], 'combinator' | 'conditions'> &
+  Partial<Pick<ApiSchemas['RetrievalMetadataRule'], 'combinator' | 'conditions'>>
+export type RetrievalMetadataValueType = RetrievalMetadataRule['valueType']
+export type MetadataFieldSuggestion = ApiSchemas['PlatformRetrievalSettingsSection']['metadataFieldSuggestions'][number]
+export type RetrievalMetadataRuleOperator = RetrievalMetadataRule['operator']
+export type RetrievalMetadataRuleEffect = RetrievalMetadataRule['effect']
+export type RetrievalMetadataRuleCombinator = NonNullable<RetrievalMetadataRule['combinator']>
+export type RetrievalMetadataCondition = NonNullable<RetrievalMetadataRule['conditions']>[number]
 
-export type RetrievalMetadataValueType = 'string' | 'number' | 'date' | 'boolean'
+export type IngestionSettings = ApiSchemas['IngestionSettings']
+export type WorkspaceIngestionReprocessResponse = ApiSchemas['WorkspaceIngestionReprocessResponse']
+export type DocumentCreateRequest = ApiSchemas['DocumentCreateRequest']
+export type DocumentCreateResponse = ApiSchemas['DocumentOperationResponse']
+export type DocumentSourceSummary = ApiSchemas['DocumentSourceSummary']
+export type DocumentSummary = ApiSchemas['DocumentSummary']
+export type DocumentDetails = ApiSchemas['DocumentDetails']
+export type DocumentListResponse = ApiSchemas['DocumentListResponse']
 
-export interface MetadataFieldSuggestion {
-  field: string
-  inferredType: RetrievalMetadataValueType
-}
-
-export type RetrievalMetadataRuleOperator =
-  | 'equals'
-  | 'not_equals'
-  | 'contains'
-  | 'not_contains'
-  | 'lt'
-  | 'lte'
-  | 'gt'
-  | 'gte'
-
-export type RetrievalMetadataRuleEffect = 'boost' | 'filter'
-export type RetrievalMetadataRuleCombinator = 'and' | 'or'
-
-export interface RetrievalMetadataCondition {
-  id: string
-  field: string
-  valueType: RetrievalMetadataValueType
-  operator: RetrievalMetadataRuleOperator
-  value: string
-}
-
-export interface IngestionSettings {
-  workspaceId: string
-  chunkingStrategy: 'fixed_window' | 'structured_semantic'
-  fixedWindowChunkSize: number
-  fixedWindowChunkOverlap: number
-  structuredMinChunkSize: number
-  structuredMaxChunkSize: number
-  createdAt: string
-  updatedAt: string
-}
-
-export interface WorkspaceIngestionReprocessResponse {
-  workspaceId: string
-  queuedDocumentCount: number
-  skippedDocumentCount: number
-  status: 'queued' | 'noop'
-}
-
-export interface RetrievalMetadataRule {
-  id: string
-  field: string
-  valueType: RetrievalMetadataValueType
-  operator: RetrievalMetadataRuleOperator
-  value: string
-  combinator?: RetrievalMetadataRuleCombinator
-  conditions?: RetrievalMetadataCondition[]
-  effect: RetrievalMetadataRuleEffect
-  enabled: boolean
-  triggerMode: 'always_on' | 'match_turn'
-  triggerInstruction?: string
-}
-
-export interface DocumentCreateRequest {
-  title: string
-  content: string
-  metadata?: Record<string, string | number | boolean | null>
-}
-
-export interface DocumentCreateResponse {
-  documentId: string
-  status: 'queued' | 'processing' | 'ready' | 'failed'
-}
-
-export interface DocumentSourceSummary {
-  id: string
-  kind: string
-  name: string
-  externalId?: string | null
-}
-
-export interface DocumentSummary {
-  id: string
-  title: string
-  status: string
-  ragStatus: 'processed' | 'pending'
-  failureReason?: string | null
-  createdAt: string
-  updatedAt: string
-  metadata: Record<string, string | number | boolean | null>
-  sourceId?: string | null
-  source?: DocumentSourceSummary | null
-  sourceKind: 'inline_text' | 'uploaded_file'
-  sourceFilename?: string | null
-  sourceMimeType?: string | null
-}
-
-export interface DocumentDetails extends DocumentSummary {
-  content: string
-}
-
-export interface DocumentListResponse {
-  documents: DocumentSummary[]
-  total: number
-  nextCursor: string | null
-  hasMore: boolean
-}
-
-export interface DocumentSearchAction {
-  type: 'open_document' | 'inspect_match_evidence' | 'open_history_entry' | 'rerun_search'
-  status: 'available' | 'unavailable'
-}
-
-export interface DocumentSearchResult {
-  documentId: string
-  title: string
-  status: string
-  ragStatus: 'processed' | 'pending'
-  metadata: Record<string, unknown>
-  score: number
-  rank: number
-  matchEvidence: string[]
-  sourceKind: 'inline_text' | 'uploaded_file'
-  sourceFilename?: string | null
-  sourceMimeType?: string | null
-  actions: DocumentSearchAction[]
-}
-
-export interface DocumentSearchResponse {
-  searchId: string
-  mode: 'live' | 'snapshot'
-  query: string
-  resultCount: number
-  results: DocumentSearchResult[]
-  retrievalTrace?: RetrievalTrace
-}
-
-export interface DocumentSearchHistoryEntry {
-  searchId: string
-  query: string
-  createdAt: string
-  resultCount: number
-  traceAvailable: boolean
-  previewTopTitles: string[]
-}
-
-export interface DocumentSearchHistoryListResponse {
-  searches: DocumentSearchHistoryEntry[]
-  total: number
-  nextCursor: string | null
-  hasMore: boolean
-}
-
-export type WebsiteCrawlJobStatus = 'queued' | 'processing' | 'completed' | 'failed'
-
-export interface WebsiteCrawlJobSummary {
-  id: string
-  requestedUrl: string
-  status: WebsiteCrawlJobStatus
-  limit: number
-  sourceId: string | null
-  documentCount: number | null
-  lastError: string | null
-  createdAt: string
-  updatedAt: string
-  completedAt: string | null
-}
-
-export interface WebsiteCrawlEnqueueResponse {
-  jobId: string
-  sourceId: string | null
-  requestedUrl: string
-  status: 'queued'
-}
-
-export interface WebsiteCrawlJobListResponse {
-  jobs: WebsiteCrawlJobSummary[]
-}
+export type DocumentSearchAction = ApiSchemas['DocumentSearchAction']
+export type DocumentSearchResult = ApiSchemas['DocumentSearchResult']
+export type DocumentSearchResponse = ApiSchemas['DocumentSearchResponse']
+export type DocumentSearchHistoryEntry = ApiSchemas['DocumentSearchHistoryEntry']
+export type DocumentSearchHistoryListResponse = ApiSchemas['DocumentSearchHistoryListResponse']
+export type WebsiteCrawlJobStatus = ApiSchemas['WebsiteCrawlJobStatus']
+export type WebsiteCrawlJobSummary = ApiSchemas['WebsiteCrawlJobSummary']
+export type WebsiteCrawlEnqueueResponse = ApiSchemas['WebsiteCrawlJobResponse']
+export type WebsiteCrawlJobListResponse = ApiSchemas['WebsiteCrawlJobListResponse']
 
 export interface ChatRequest {
   agentId?: string
@@ -317,27 +117,8 @@ export interface ChatRequest {
   inputMetadata?: ChatUserInputMetadata
 }
 
-export interface WebsiteEmbedPageContext {
-  pageUrl?: string | null
-  pageTitle?: string | null
-  pageLocale?: string | null
-  browserLocale?: string | null
-  content?: string | null
-}
-
-export interface PublicChatSessionResponse {
-  agentId?: string
-  agentName?: string
-  workspaceName: string
-  publicChatToken: string
-  publicSessionId: string
-  publicSessionToken: string
-  assistantBootstrapActive: boolean
-  assistantAvatarUrl?: string | null
-  theme?: WebsiteEmbedThemeSettings
-  actions?: Record<string, unknown>
-  expiresAt: string
-}
+export type WebsiteEmbedPageContext = NonNullable<ApiSchemas['PublicChatSessionRequest']['pageContext']>
+export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse']
 
 const toAssistantChatPayload = (data: ChatRequest) => ({
   agentId: data.agentId,
@@ -365,35 +146,17 @@ const toGeneralSettings = (settings: PlatformSettings): GeneralSettings => ({
   assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
   proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
   assistantBootstrapActive: settings.assistant.assistantBootstrapActive,
-  assistantLogoUrl: settings.assistant.assistantLogoUrl ?? null,
+  assistantLogoUrl: settings.assistant.assistantLogoUrl,
 })
 
-export interface ChatUserInputMetadata {
-  method: 'typed' | 'suggestion_click'
-  suggestionSourceMessageId?: string
-}
-
-export interface Citation {
-  documentId: string
-  chunkId: string
-  title?: string
-}
-
-export interface AnswerSegment {
-  text: string
-  citationIndices?: number[]
-}
-
-export type ChatSuggestionKind = string
-
-export interface ChatSuggestion {
-  text: string
-  citation?: Citation
+export type ChatUserInputMetadata = NonNullable<
+  Extract<ApiSchemas['AssistantChatRequest'], { inputMetadata?: unknown }>['inputMetadata']
+>
+export type Citation = ApiSchemas['Citation']
+export type AnswerSegment = ApiSchemas['AnswerSegment']
+export type ChatSuggestionKind = ApiSchemas['ChatSuggestion']['kind']
+export type ChatSuggestion = Omit<ApiSchemas['ChatSuggestion'], 'kind'> & {
   kind?: ChatSuggestionKind
-  action?: {
-    kind: string
-    payload?: Record<string, unknown>
-  }
 }
 
 export type HumanContactTriggerSource =
@@ -447,188 +210,16 @@ export interface HumanContactSigningSecretResponse {
   signingSecret: string | null
 }
 
-export interface RetrievalInfo {
-  execution?: {
-    surface: 'assistant' | 'retrieval' | 'mcp_capability'
-    path:
-      | 'assistant_direct'
-      | 'assistant_retrieval'
-      | 'retrieval_search'
-      | 'retrieval_answer'
-      | 'mcp_grounded_answer'
-    retrievalInvoked: boolean
-  }
-  parsedQuery?: ParsedQueryInfo
-  retrievalSubqueries?: RetrievalSubqueryInfo[]
-  responseLanguagePolicy?: 'match_user_question'
-  candidateCounts: CandidateCounts
-  appliedConstraints?: AppliedConstraintInfo[]
-  fallbackApplied: boolean
-  rerankStatus: 'skipped' | 'applied' | 'fallback'
-  rewrite?: {
-    status: 'skipped' | 'applied' | 'fallback' | 'rejected'
-    eligible: boolean
-    ran: boolean
-    materialDisagreement: boolean
-    continuityDecision?: string
-    rejectionReason?: string
-    fallbackReason?: string
-  }
-  triggerAnalysis?: {
-    status: 'skipped_not_configured' | 'skipped_unavailable' | 'applied' | 'fallback'
-    consideredRules: Array<{
-      ruleId: string
-      matched: boolean
-      matchStrength: number
-      reason: string
-      triggerInstructionPreview: string
-    }>
-    matchedRuleIds: string[]
-    unmatchedRuleIds: string[]
-    matchCount: number
-    matcherVersion: string
-    failureReason?: string
-  }
-  triggerBackoff?: {
-    applied: boolean
-    reason?: 'empty_filtered_candidates' | 'weak_filtered_support'
-    relaxedRuleIds: string[]
-    restoredCandidateCount?: number
-  }
-  shapeName?:
-    | 'definition_lookup'
-    | 'event_date_lookup'
-    | 'policy_answer'
-    | 'exploratory_summary'
-    | 'follow_up_grounding'
-    | 'default_hybrid'
-  queryShape?:
-    | 'definition_lookup'
-    | 'event_date_lookup'
-    | 'policy_answer'
-    | 'exploratory_summary'
-    | 'follow_up_grounding'
-    | 'default_hybrid'
-    | 'general_grounding'
-  skillDiagnostic?: SkillDiagnostic
-  resolvedSteps?: Array<Record<string, unknown>>
-}
-
-export interface SkillDiagnostic {
-  skillName: string
-  shapeName?: string
-  strategy?: string
-  selectionMode: 'deterministic' | 'probabilistic'
-  selectionReason?: string
-  selectionConfidence?: number
-  callerSurface: 'assistant' | 'retrieval_api' | 'sdk' | 'mcp' | 'dashboard' | 'public_embed'
-  capabilityChecks: Array<{
-    capability: string
-    allowed: boolean
-    reason?: string
-  }>
-  parameters?: Record<string, unknown>
-  fallback?: {
-    used: boolean
-    reason?: string
-    path?: string
-  }
-  outcome: 'success' | 'unsupported' | 'forbidden' | 'failed' | 'skipped'
-  error?: {
-    code: string
-    message?: string
-  }
-  evidence?: {
-    queryShape?: string
-    retrievalShape?: string
-    retrievalStrategy?: string
-    candidateSourceSummary?: Record<string, unknown>
-    ranking?: Record<string, unknown>
-    resolvedSteps?: Array<Record<string, unknown>>
-    evidenceStatus?: 'found' | 'missing' | 'partial' | 'not_applicable'
-    supportStatus?: 'supported' | 'unsupported' | 'not_checked' | 'not_applicable'
-    groundingOutcome?: string
-  }
-}
-
-export interface ParsedQueryInfo {
-  originalQuery: string
-  semanticQuery: string
-  lexicalQuery: string
-  constraintSummary: string[]
-}
-
-export interface RetrievalSubqueryInfo {
-  id: string
-  label: string
-  semanticQuery: string
-  lexicalQuery: string
-  reason?: string
-  responseLanguagePolicy?: 'match_user_question'
-}
-
-export interface CandidateCounts {
-  semantic: number
-  lexical: number
-  merged: number
-  final: number
-}
-
-export interface AppliedConstraintInfo {
-  signalKey: 'document_date' | 'document_period' | 'document_amount' | 'document_location'
-  mode: 'boost_only' | 'hard_filter'
-  outcome: 'applied' | 'relaxed' | 'skipped'
-  summary: string
-}
-
-export interface RetrievalTraceStage {
-  stageId: string
-  kind: string
-  label: string
-  status: 'applied' | 'skipped' | 'fallback' | 'rejected' | 'unavailable' | 'failed'
-  startedAt?: string
-  durationMs?: number
-  settings?: Record<string, unknown>
-  inputs?: Record<string, unknown>
-  outputs?: Record<string, unknown>
-  metrics?: Record<string, number>
-  reason?: string
-}
-
-export interface RetrievalTraceLink {
-  fromStageId: string
-  toStageId: string
-  kind: 'sequence' | 'branch' | 'converge'
-}
-
-export interface RetrievalTrace {
-  traceId: string
-  startedAt: string
-  completedAt?: string
-  totalDurationMs?: number
-  stages: RetrievalTraceStage[]
-  links: RetrievalTraceLink[]
-  summary?: RetrievalInfo & {
-    retrievalSubqueries?: RetrievalSubqueryInfo[]
-  }
-}
-
-export interface ChatResponse {
-  agentId?: string
-  agentName?: string
-  conversationId?: string
-  assistantMessageId?: string
-  route?: {
-    type: 'direct' | 'retrieval'
-    reason: 'assistant_identity' | 'conversation_start' | 'evidence_required' | 'social_only'
-  }
-  answer: string
-  citations?: Citation[]
-  answerSegments?: AnswerSegment[]
-  suggestions?: ChatSuggestion[]
-  retrievalInfo: RetrievalInfo
-  retrievalTrace: RetrievalTrace
-}
+export type RetrievalInfo = ApiSchemas['RetrievalInfo']
+export type SkillDiagnostic = NonNullable<ApiSchemas['RetrievalInfo']['skillDiagnostic']>
+export type ParsedQueryInfo = ApiSchemas['ParsedQuery']
+export type RetrievalSubqueryInfo = ApiSchemas['RetrievalSubquery']
+export type CandidateCounts = ApiSchemas['CandidateCounts']
+export type AppliedConstraintInfo = ApiSchemas['AppliedConstraint']
+export type RetrievalTraceStage = ApiSchemas['RetrievalTraceStage']
+export type RetrievalTraceLink = ApiSchemas['RetrievalTraceLink']
+export type RetrievalTrace = ApiSchemas['RetrievalTrace']
+export type ChatResponse = RelaxedAssistantChatResponse<ApiSchemas['AssistantChatResponse']>
 
 export type AnswerFeedbackValue = 'up' | 'down'
 
@@ -677,84 +268,12 @@ export interface ChatStreamCompletion {
   retrievalTrace?: RetrievalTrace
 }
 
-export interface ChatConversationSummary {
-  id: string
-  agentId: string | null
-  agentName: string | null
-  sourceChannel: string | null
-  sourceOrigin: string | null
-  anonymousSessionId: string | null
-  createdAt: string
-  updatedAt: string
-  messageCount: number
-  userMessageCount: number
-  assistantMessageCount: number
-  preview: string | null
-}
-
-export interface ChatConversationTurnDebug {
-  eventStatus: 'success' | 'failure'
-  recordedAt: string
-  stream: boolean
-  citationCount: number
-  answerOutcome?: 'grounded_success' | 'grounded_degraded_unsupported_segments' | 'no_context_refusal'
-  validation?: {
-    ran: boolean
-    answerModified: boolean
-    unsupportedSegmentCount: number
-    substantiveUnsupportedSegmentCount: number
-    supportedSegmentCount: number
-    nonSubstantiveSegmentCount: number
-    hiddenSupportUsed?: boolean
-    hiddenSupportKindsUsed?: Array<'assistant_name'>
-    segmentResults: Array<{
-      originalText?: string
-      text: string
-      disposition: 'supported' | 'unsupported' | 'non_substantive'
-      replacementApplied: boolean
-      reason: string
-      citationIndices?: number[]
-    }>
-  }
-  retrievalInfo?: RetrievalInfo
-  retrievalTrace?: RetrievalTrace
-  route?: {
-    generator: string
-    routeType: 'direct' | 'retrieval'
-    routeReason: string
-    retrievalInvoked: boolean
-  }
-  errorMessage?: string | null
-}
-
-export interface ChatConversationTurn {
-  id: string
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  createdAt: string
-  inputMetadata?: ChatUserInputMetadata
-  citations?: Citation[]
-  answerSegments?: AnswerSegment[]
-  suggestions?: ChatSuggestion[]
+export type ChatConversationSummary = ApiSchemas['ChatConversationSummary']
+export type ChatConversationTurnDebug = ApiSchemas['ChatConversationMessageDebug']
+export type ChatConversationTurn = ApiSchemas['ChatConversationMessage'] & {
   answerFeedbackEntries?: AnswerFeedbackEntry[]
-  debug?: ChatConversationTurnDebug
 }
-
-export interface ChatConversationDetail {
-  conversationId: string
-  workspaceId: string
-  sourceChannel: string | null
-  sourceOrigin: string | null
-  createdAt: string
-  updatedAt: string
-  messageCount: number
-  userMessageCount: number
-  assistantMessageCount: number
-  messagesTotal: number
-  messageWindowOffset: number
-  messageWindowLimit: number
-  hasOlderMessages: boolean
-  nextCursor: string | null
+export type ChatConversationDetail = Omit<ApiSchemas['ChatConversationDetail'], 'messages'> & {
   messages: ChatConversationTurn[]
 }
 
@@ -793,30 +312,13 @@ export interface ContactHistoryDetailResponse {
   conversation: ChatConversationDetail
 }
 
-export interface ChatHistoryListResponse {
+export type ChatHistoryListResponse = ApiSchemas['ChatHistoryListResponse'] & {
   workspaceName?: string
-  assistantAvatarUrl?: string | null
-  theme?: WebsiteEmbedThemeSettings
   assistantBootstrapActive?: boolean
-  conversations: ChatConversationSummary[]
-  total: number
-  nextCursor: string | null
-  hasMore: boolean
 }
 
 export type HistoryItem =
-  | {
-      kind: 'chat'
-      id: string
-      sortAt: string
-      conversation: ChatConversationSummary
-    }
-  | {
-      kind: 'search'
-      id: string
-      sortAt: string
-      search: DocumentSearchHistoryEntry
-    }
+  | ApiSchemas['HistoryItem']
   | {
       kind: 'contact'
       id: string
@@ -896,125 +398,31 @@ export interface ChatStreamHandlers {
   onSuggestions?: (payload: ChatStreamSuggestions) => void
 }
 
-export interface ErrorResponse {
-  error: {
-    code: string
-    message: string
+export type ErrorResponse = ApiSchemas['ErrorResponse'] & {
+  error: ApiSchemas['ErrorResponse']['error'] & {
     retryAfterSeconds?: number
   }
 }
 
 // Workspace types
-export interface Workspace {
-  id: string
-  accountId: string
-  name: string
-  publicRouteKey: string
-  createdAt: string
-  updatedAt: string
-}
-
-export interface AccountUserSummary {
-  membershipId: string
-  userId: string
-  email: string
-  role: 'owner' | 'admin' | 'member'
-  status: 'active'
-  createdAt: string
-}
+export type Workspace = ApiSchemas['Workspace']
+export type AccountUserSummary = ApiSchemas['AccountUser']
 
 export type AccountMembershipRole = AccountUserSummary['role']
 export type AssignableAccountRole = Exclude<AccountMembershipRole, 'owner'>
-export type WorkspaceGrantRole = 'admin' | 'member'
+export type WorkspaceGrantRole = ApiSchemas['WorkspaceGrant']['role']
+export type AccountInvitationSummary = ApiSchemas['AccountInvitation']
+export type WorkspaceGrantSummary = ApiSchemas['WorkspaceGrant']
 
-export interface AccountInvitationSummary {
-  id: string
-  email: string
-  status: 'pending' | 'accepted' | 'revoked' | 'expired'
-  role: AssignableAccountRole
-  expiresAt: string
-  acceptedAt: string | null
-  createdAt: string
-}
+export type SupportImpersonationSummary = ApiSchemas['SupportImpersonation']
 
-export interface WorkspaceGrantSummary {
-  workspaceId: string
-  userId: string
-  role: WorkspaceGrantRole
-  createdAt: string
-  updatedAt: string
-}
-
-export interface SupportImpersonationSummary {
-  id: string
-  accountId: string
-  staffUserId: string
-  approverUserId: string
-  reason: string
-  status: 'approved' | 'active' | 'ended' | 'expired' | 'revoked'
-  approvedAt: string
-  startedAt: string | null
-  expiresAt: string
-  endedAt: string | null
-  active: boolean
-}
-
-export interface AccountUsersResponse {
-  accountId: string
-  currentUserId: string
-  users: AccountUserSummary[]
-  invitations: AccountInvitationSummary[]
-  workspaceGrants: WorkspaceGrantSummary[]
-  supportImpersonations: SupportImpersonationSummary[]
-}
-
-export interface AccessibleAccountSummary {
-  accountId: string
-  organizationName: string
-  role: AccountMembershipRole
-  workspaceId: string
-  workspaceName: string
-  workspacePublicRouteKey: string
-}
-
-export interface AccessibleAccountsResponse {
-  currentAccountId: string
-  accounts: AccessibleAccountSummary[]
-}
-
-export interface CreateAccountInvitationResponse extends AccountInvitationSummary {
-  acceptanceUrl: string
-}
-
-export interface InvitationDetailsResponse {
-  accountId: string
-  email: string
-  status: 'pending' | 'accepted' | 'revoked' | 'expired'
-  expiresAt: string
-}
-
-export interface WorkspaceRouteResolutionResponse {
-  workspaceKey: string
-  workspaceId: string
-  workspaceName: string
-  accountId: string
-  organizationName: string
-}
-
-export interface WorkspaceSummaryResponse {
-  documentCount: number
-  readyDocumentCount: number
-  pendingDocumentCount: number
-  sampleDocumentCount: number
-  sampleDocumentSlugs: string[]
-  conversationCount: number
-  hasDocuments: boolean
-  hasPendingDocuments: boolean
-  hasReadyDocuments: boolean
-  hasCompletedChat: boolean
-  sampleDocumentsImported: boolean
-  websiteCrawlerEnabled: boolean
-}
+export type AccountUsersResponse = ApiSchemas['AccountUsersResponse']
+export type AccessibleAccountSummary = ApiSchemas['AccessibleAccount']
+export type AccessibleAccountsResponse = ApiSchemas['AccessibleAccountsResponse']
+export type CreateAccountInvitationResponse = ApiSchemas['CreateAccountInvitationResponse']
+export type InvitationDetailsResponse = ApiSchemas['InvitationDetailsResponse']
+export type WorkspaceRouteResolutionResponse = ApiSchemas['WorkspaceRouteResolutionResponse']
+export type WorkspaceSummaryResponse = ApiSchemas['WorkspaceSummaryResponse']
 
 // Workspace API
 export const workspaceApi = {
@@ -1508,102 +916,10 @@ export const humanContactApi = {
 }
 
 // General Settings types
-export interface GeneralSettings {
-  anonymousChatEnabled: boolean
-  anonymousChatUrl: string | null
-  assistantName: string
-  greetingInstruction: string
-  assistantDefaultLocale: string | null
-  proactiveGreetingEnabled: boolean
-  assistantBootstrapActive: boolean
-  assistantLogoUrl?: string | null
-  websiteEmbedEnabled?: boolean
-  websiteEmbedToken?: string | null
-  websiteEmbedScriptUrl?: string | null
-  websiteEmbedSnippet?: string | null
-  websiteEmbedAllowedOrigins?: string[]
-  websiteEmbedLauncherLabel?: string
-  websiteEmbedLauncherPosition?: 'bottom-right' | 'bottom-left'
-  websiteEmbedTheme?: WebsiteEmbedThemeSettings
-  websiteEmbedCopy?: WebsiteEmbedCopyPacks
-  websiteEmbedExpertOverrides?: WebsiteEmbedExpertOverrides
-}
-
-export interface AgentSettings {
-  id: string
-  workspaceId: string
-  name: string
-  isDefault: boolean
-  customInstruction: string
-  suggestedQuestionsEnabled: boolean
-  greetingInstruction: string
-  assistantDefaultLocale: string | null
-  proactiveGreetingEnabled: boolean
-  assistantBootstrapActive: boolean
-  theme: WebsiteEmbedThemeSettings
-  logo: {
-    bucket: string
-    objectPath: string
-    generation?: string | null
-    mimeType: string
-    filename: string
-    sizeBytes: number
-  } | null
-  retrievalEnabled: boolean
-  surfaceSettings: {
-    authenticatedChat: {
-      enabled: boolean
-    }
-    anonymousChat: {
-      enabled: boolean
-      token: string | null
-    }
-    websiteEmbed: {
-      enabled: boolean
-      token: string | null
-      allowedOrigins: string[]
-      launcherLabel: string
-      launcherPosition: 'bottom-right' | 'bottom-left'
-      theme: WebsiteEmbedThemeSettings
-      copy: WebsiteEmbedCopyPacks
-      expertOverrides: WebsiteEmbedExpertOverrides
-    }
-  }
-  createdAt: string
-  updatedAt: string
-}
-
-export interface AgentListResponse {
-  agents: AgentSettings[]
-}
-
-export type AgentSettingsUpdate = Partial<{
-  name: string
-  customInstruction: string
-  suggestedQuestionsEnabled: boolean
-  greetingInstruction: string
-  assistantDefaultLocale: string | null
-  proactiveGreetingEnabled: boolean
-  theme?: WebsiteEmbedThemeSettings
-  retrievalEnabled: boolean
-  surfaceSettings: {
-    authenticatedChat?: {
-      enabled?: boolean
-    }
-    anonymousChat?: {
-      enabled?: boolean
-    }
-    websiteEmbed?: {
-      enabled?: boolean
-      allowedOrigins?: string[]
-      launcherLabel?: string
-      launcherPosition?: 'bottom-right' | 'bottom-left'
-      theme?: WebsiteEmbedThemeSettings
-      copy?: WebsiteEmbedCopyPacks
-      expertOverrides?: WebsiteEmbedExpertOverrides
-    }
-  }
-}>
+export type GeneralSettings = ApiSchemas['GeneralSettingsResponse']
+export type AgentSettings = ApiSchemas['ConversationAgent']
+export type AgentListResponse = ApiSchemas['AgentListResponse']
+export type AgentSettingsUpdate = ApiSchemas['ConversationAgentRequest']
 
 const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings => ({
   anonymousChatEnabled: agent.surfaceSettings.anonymousChat.enabled,
@@ -1624,7 +940,7 @@ const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings => ({
   websiteEmbedEnabled: agent.surfaceSettings.websiteEmbed.enabled,
   websiteEmbedToken: agent.surfaceSettings.websiteEmbed.token,
   websiteEmbedScriptUrl: typeof window !== 'undefined' ? `${window.location.origin}/embed-widget.js` : null,
-  websiteEmbedSnippet: undefined,
+  websiteEmbedSnippet: null,
   websiteEmbedAllowedOrigins: agent.surfaceSettings.websiteEmbed.allowedOrigins,
   websiteEmbedLauncherLabel: agent.surfaceSettings.websiteEmbed.launcherLabel,
   websiteEmbedLauncherPosition: agent.surfaceSettings.websiteEmbed.launcherPosition,
@@ -1636,7 +952,7 @@ const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings => ({
 const agentToAssistantBehaviorSettings = (agent: AgentSettings): AssistantBehaviorSettings => ({
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
   customInstruction: agent.customInstruction,
-  theme: agent.theme ?? agent.surfaceSettings.websiteEmbed.theme,
+  theme: agent.theme,
 })
 
 const retrievalSettingsToAssistantBehaviorSettings = (settings: RetrievalSettings): AssistantBehaviorSettings => ({
@@ -1650,9 +966,7 @@ const retrievalSettingsToAssistantBehaviorSettings = (settings: RetrievalSetting
   },
 })
 
-export interface WorkspaceTokenResponse {
-  token: string
-}
+export type WorkspaceTokenResponse = ApiSchemas['WorkspaceTokenResponse']
 
 export interface RenameOrganizationResponse {
   accountId: string
@@ -1705,7 +1019,7 @@ export const generalSettingsApi = {
     websiteEmbedAllowedOrigins?: string[]
     websiteEmbedLauncherLabel?: string
     websiteEmbedLauncherPosition?: 'bottom-right' | 'bottom-left'
-    websiteEmbedTheme?: WebsiteEmbedThemeSettings
+    websiteEmbedTheme?: Partial<WebsiteEmbedThemeSettings>
     websiteEmbedCopy?: WebsiteEmbedCopyPacks
     websiteEmbedExpertOverrides?: WebsiteEmbedExpertOverrides
   }, options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {

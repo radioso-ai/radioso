@@ -1799,6 +1799,12 @@ export interface components {
             isDefault: boolean;
             customInstruction: string;
             suggestedQuestionsEnabled: boolean;
+            theme: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
             retrievalEnabled: boolean;
             logo: {
                 bucket: string;
@@ -1821,6 +1827,12 @@ export interface components {
             name?: string;
             customInstruction?: string;
             suggestedQuestionsEnabled?: boolean;
+            theme?: {
+                brand?: string;
+                brandText?: string;
+                surface?: string;
+                text?: string;
+            };
             retrievalEnabled?: boolean;
             greetingInstruction?: string;
             assistantDefaultLocale?: string | null;
@@ -1866,6 +1878,12 @@ export interface components {
             publicSessionToken: string;
             assistantBootstrapActive: boolean;
             assistantAvatarUrl?: string | null;
+            theme?: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
             actions?: {
                 [key: string]: unknown;
             };

@@ -2803,6 +2803,29 @@
               "suggestedQuestionsEnabled": {
                 "type": "boolean"
               },
+              "theme": {
+                "type": "object",
+                "properties": {
+                  "brand": {
+                    "type": "string"
+                  },
+                  "brandText": {
+                    "type": "string"
+                  },
+                  "surface": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "brand",
+                  "brandText",
+                  "surface",
+                  "text"
+                ]
+              },
               "retrievalEnabled": {
                 "type": "boolean"
               },
@@ -2865,6 +2888,7 @@
               "isDefault",
               "customInstruction",
               "suggestedQuestionsEnabled",
+              "theme",
               "retrievalEnabled",
               "logo",
               "greetingInstruction",
@@ -2903,6 +2927,23 @@
           },
           "suggestedQuestionsEnabled": {
             "type": "boolean"
+          },
+          "theme": {
+            "type": "object",
+            "properties": {
+              "brand": {
+                "type": "string"
+              },
+              "brandText": {
+                "type": "string"
+              },
+              "surface": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            }
           },
           "retrievalEnabled": {
             "type": "boolean"
@@ -3033,6 +3074,29 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "theme": {
+            "type": "object",
+            "properties": {
+              "brand": {
+                "type": "string"
+              },
+              "brandText": {
+                "type": "string"
+              },
+              "surface": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "brand",
+              "brandText",
+              "surface",
+              "text"
             ]
           },
           "actions": {

@@ -26,20 +26,18 @@ export default async function PublicChatPage({
 
   return (
     <div
-      className="flex h-full w-full items-center justify-center"
+      className="flex h-full w-full flex-col overflow-hidden"
       style={{
         ...buildWebsiteEmbedSurfaceCssVars(resolvedTheme),
         color: resolvedTheme.panelForeground,
       }}
     >
-      <div className="flex h-full w-full max-w-4xl flex-col overflow-hidden">
-        <PublicChatShell
-          token={token}
-          localeOverride={localeOverride}
-          copyOverrides={parseWebsiteEmbedCopyOverridesParam(copy)}
-          themeOverrides={themeOverrides}
-        />
-      </div>
+      <PublicChatShell
+        token={token}
+        localeOverride={localeOverride}
+        copyOverrides={parseWebsiteEmbedCopyOverridesParam(copy)}
+        themeOverrides={themeOverrides}
+      />
     </div>
   )
 }

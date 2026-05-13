@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Building2, CheckCircle2, CircleAlert, ExternalLink, FolderOpen, KeyRound, Link as LinkIcon, Mail, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook } from 'lucide-react'
 
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
@@ -80,6 +80,30 @@ const isValidHumanContactWebhookUrl = (value: string) => {
 
 const isValidHumanContactEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
 
+const loadGeneralSettingsByAgent = (agentId: string | undefined) =>
+  agentId ? agentsApi.getGeneralSettings(agentId) : generalSettingsApi.getGeneralSettings({ auth: 'session' })
+
+const updateGeneralSettingsByAgent = (
+  agentId: string | undefined,
+  data: Parameters<typeof generalSettingsApi.updateGeneralSettings>[0],
+) =>
+  agentId
+    ? agentsApi.updateGeneralSettings(agentId, data)
+    : generalSettingsApi.updateGeneralSettings(data, { auth: 'session' })
+
+const loadAssistantBehaviorSettingsByAgent = (agentId: string | undefined) =>
+  agentId ? agentsApi.getBehaviorSettings(agentId) : agentsApi.getWorkspaceBehaviorSettings({ auth: 'session' })
+
+const updateAssistantBehaviorSettingsByAgent = (agentId: string | undefined, data: AssistantBehaviorSettings) =>
+  agentId
+    ? agentsApi.updateBehaviorSettings(agentId, data)
+    : agentsApi.updateWorkspaceBehaviorSettings(data, { auth: 'session' })
+
+const normalizeAssistantBehaviorSettingsByAgent = (agentId: string | undefined, settings: AssistantBehaviorSettings) => ({
+  ...settings,
+  sourceScope: agentId ? settings.sourceScope ?? { mode: 'all' } : undefined,
+})
+
 export function WorkspaceAssistantChannelsTab({
   accountId,
   mode,
@@ -145,16 +169,8 @@ export function WorkspaceAssistantChannelsTab({
   const canReadWorkspaceTokens = Boolean(currentAccountRole)
   const canRotateWorkspaceTokens = currentAccountRole === 'owner' || currentAccountRole === 'admin'
 
-  const loadGeneralSettings = useCallback(
-    () => (agentId ? agentsApi.getGeneralSettings(agentId) : generalSettingsApi.getGeneralSettings({ auth: 'session' })),
-    [agentId],
-  )
-
-  const updateGeneralSettings = useCallback(
-    (data: Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]) =>
-      agentId ? agentsApi.updateGeneralSettings(agentId, data) : generalSettingsApi.updateGeneralSettings(data, { auth: 'session' }),
-    [agentId],
-  )
+  const updateGeneralSettings = async (data: Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]) =>
+    updateGeneralSettingsByAgent(agentId, data)
 
   const rotateWebsiteEmbedToken = async () =>
     agentId ? agentsApi.rotateWebsiteEmbedToken(agentId) : generalSettingsApi.rotateWebsiteEmbedToken({ auth: 'session' })
@@ -164,27 +180,6 @@ export function WorkspaceAssistantChannelsTab({
 
   const deleteAssistantLogo = async () =>
     agentId ? agentsApi.deleteAssistantLogo(agentId) : generalSettingsApi.deleteAssistantLogo({ auth: 'session' })
-
-  const loadAssistantBehaviorSettings = useCallback(
-    () => (agentId ? agentsApi.getBehaviorSettings(agentId) : agentsApi.getWorkspaceBehaviorSettings({ auth: 'session' })),
-    [agentId],
-  )
-
-  const updateAssistantBehaviorSettings = useCallback(
-    (data: AssistantBehaviorSettings) =>
-      agentId
-        ? agentsApi.updateBehaviorSettings(agentId, data)
-        : agentsApi.updateWorkspaceBehaviorSettings(data, { auth: 'session' }),
-    [agentId],
-  )
-
-  const normalizeAssistantBehaviorSettings = useCallback(
-    (settings: AssistantBehaviorSettings): AssistantBehaviorSettings => ({
-      ...settings,
-      sourceScope: agentId ? settings.sourceScope ?? { mode: 'all' } : undefined,
-    }),
-    [agentId],
-  )
 
   useEffect(() => {
     let active = true
@@ -239,7 +234,7 @@ export function WorkspaceAssistantChannelsTab({
     setIsAnonLoading(true)
     const loadAnonSettings = async () => {
       try {
-        const data = await loadGeneralSettings()
+        const data = await loadGeneralSettingsByAgent(agentId)
         if (!active) return
         setAnonSettings(data)
         setSavedAnonSettings(data)
@@ -258,7 +253,7 @@ export function WorkspaceAssistantChannelsTab({
     return () => {
       active = false
     }
-  }, [activeWorkspaceId, agentId, isWorkspaceLoading, loadGeneralSettings])
+  }, [activeWorkspaceId, agentId, isWorkspaceLoading])
 
   useEffect(() => {
     if (mode !== 'assistant') {
@@ -278,9 +273,9 @@ export function WorkspaceAssistantChannelsTab({
     setIsAssistantBehaviorLoading(true)
     const loadAssistantBehaviorSettingsEffect = async () => {
       try {
-        const data = await loadAssistantBehaviorSettings()
+        const data = await loadAssistantBehaviorSettingsByAgent(agentId)
         if (!active) return
-        const normalized = normalizeAssistantBehaviorSettings(data)
+        const normalized = normalizeAssistantBehaviorSettingsByAgent(agentId, data)
         setAssistantBehaviorSettings(normalized)
         setSavedAssistantBehaviorSettings(normalized)
         setAssistantSettingsError(null)
@@ -299,7 +294,7 @@ export function WorkspaceAssistantChannelsTab({
     return () => {
       active = false
     }
-  }, [activeWorkspaceId, agentId, isWorkspaceLoading, mode, loadAssistantBehaviorSettings, normalizeAssistantBehaviorSettings])
+  }, [activeWorkspaceId, agentId, isWorkspaceLoading, mode])
 
   useEffect(() => {
     let active = true
@@ -382,7 +377,7 @@ export function WorkspaceAssistantChannelsTab({
   const handleAnonToggle = async (enabled: boolean) => {
     setIsAnonSaving(true)
     try {
-      const updated = await updateGeneralSettings({
+      const updated = await updateGeneralSettingsByAgent(agentId, {
         anonymousChatEnabled: enabled,
       })
       setAnonSettings(updated)
@@ -646,7 +641,7 @@ export function WorkspaceAssistantChannelsTab({
       setSaveState('saving')
       setSaveError(null)
       try {
-        const updated = await updateGeneralSettings({
+        const updated = await updateGeneralSettingsByAgent(agentId, {
           assistantName: anonSettings.assistantName,
           assistantDefaultLocale: anonSettings.assistantDefaultLocale,
           proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
@@ -677,7 +672,7 @@ export function WorkspaceAssistantChannelsTab({
       }
     }, 700)
     return () => window.clearTimeout(timeout)
-  }, [anonSettings, hasAssistantChanges, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState, updateGeneralSettings])
+  }, [agentId, anonSettings, hasAssistantChanges, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState])
 
   useEffect(() => {
     if (!assistantBehaviorSettings || !savedAssistantBehaviorSettings || !hasAssistantBehaviorChanges) {
@@ -691,7 +686,10 @@ export function WorkspaceAssistantChannelsTab({
       setSaveState('saving')
       setSaveError(null)
       try {
-        const updated = normalizeAssistantBehaviorSettings(await updateAssistantBehaviorSettings(assistantBehaviorSettings))
+        const updated = normalizeAssistantBehaviorSettingsByAgent(
+          agentId,
+          await updateAssistantBehaviorSettingsByAgent(agentId, assistantBehaviorSettings),
+        )
         if (saveSequenceRef.current !== saveId) return
         setSavedAssistantBehaviorSettings(updated)
         setAssistantSettingsError(null)
@@ -713,12 +711,11 @@ export function WorkspaceAssistantChannelsTab({
   }, [
     assistantBehaviorSettings,
     hasAssistantBehaviorChanges,
-    normalizeAssistantBehaviorSettings,
+    agentId,
     saveSequenceRef,
     savedAssistantBehaviorSettings,
     setSaveError,
     setSaveState,
-    updateAssistantBehaviorSettings,
   ])
 
   const handleAnonymousChatTokenRotate = async () => {

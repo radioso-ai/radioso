@@ -47,29 +47,51 @@ const COPY_FIELDS = [
   ['publicChatDisclaimerTemplate', 'Disclaimer', '{name} uses AI and can make mistakes.'],
 ] as const
 
-const EXPERT_FIELDS = [
-  ['displayMode', 'Display mode', 'bubble or panel'],
-  ['initialState', 'Initial state', 'collapsed or open'],
-  ['pageContext', 'Page context', 'metadata or content'],
-  ['launcherBackground', 'Launcher background', 'CSS color or gradient'],
-  ['launcherForeground', 'Launcher text', 'CSS color'],
-  ['launcherBorder', 'Launcher border', 'CSS color'],
-  ['launcherShadow', 'Launcher shadow', 'CSS shadow'],
-  ['panelBackground', 'Panel background', 'CSS color'],
-  ['panelForeground', 'Panel text', 'CSS color'],
-  ['panelBorder', 'Panel border', 'CSS color'],
-  ['panelShadow', 'Panel shadow', 'CSS shadow'],
-  ['mutedBackground', 'Muted background', 'CSS color'],
-  ['mutedForeground', 'Muted text', 'CSS color'],
-  ['inputBackground', 'Input background', 'CSS color'],
-  ['inputForeground', 'Input text', 'CSS color'],
-  ['inputBorder', 'Input border', 'CSS color'],
-  ['inputPlaceholder', 'Input placeholder', 'CSS color'],
-  ['assistantBubbleBackground', 'Assistant bubble background', 'CSS color'],
-  ['assistantBubbleForeground', 'Assistant bubble text', 'CSS color'],
-  ['userBubbleBackground', 'User bubble background', 'CSS color'],
-  ['userBubbleForeground', 'User bubble text', 'CSS color'],
-] as const
+type ExpertField = readonly [string, string, string]
+
+const EXPERT_FIELD_GROUPS: { title: string; description: string; fields: readonly ExpertField[] }[] = [
+  {
+    title: 'Launcher chrome',
+    description: 'Styling for the floating bubble launcher.',
+    fields: [
+      ['launcherBackground', 'Background', 'CSS color or gradient'],
+      ['launcherForeground', 'Text', 'CSS color'],
+      ['launcherBorder', 'Border', 'CSS color'],
+      ['launcherShadow', 'Shadow', 'CSS shadow'],
+    ],
+  },
+  {
+    title: 'Panel chrome',
+    description: 'Outer chat window styling.',
+    fields: [
+      ['panelBackground', 'Background', 'CSS color'],
+      ['panelForeground', 'Text', 'CSS color'],
+      ['panelBorder', 'Border', 'CSS color'],
+      ['panelShadow', 'Shadow', 'CSS shadow'],
+    ],
+  },
+  {
+    title: 'Chat surface overrides',
+    description: 'Override the Assistant identity theme just inside this widget. Blank values inherit the identity.',
+    fields: [
+      ['mutedBackground', 'Muted background', 'CSS color'],
+      ['mutedForeground', 'Muted text', 'CSS color'],
+      ['inputBackground', 'Input background', 'CSS color'],
+      ['inputForeground', 'Input text', 'CSS color'],
+      ['inputBorder', 'Input border', 'CSS color'],
+      ['inputPlaceholder', 'Input placeholder', 'CSS color'],
+      ['assistantBubbleBackground', 'Assistant bubble background', 'CSS color'],
+      ['assistantBubbleForeground', 'Assistant bubble text', 'CSS color'],
+      ['userBubbleBackground', 'User bubble background', 'CSS color'],
+      ['userBubbleForeground', 'User bubble text', 'CSS color'],
+    ],
+  },
+]
+
+const DISPLAY_MODES: { value: 'bubble' | 'panel'; label: string; description: string }[] = [
+  { value: 'bubble', label: 'Bubble', description: 'A circular launcher button opens a floating chat window.' },
+  { value: 'panel', label: 'Side panel', description: 'A persistent pull-tab on the edge of the screen opens a full-height chat.' },
+]
 
 export function WebsiteEmbedSettingsController(props: WebsiteEmbedSettingsControllerProps) {
   if (!editionController.shouldRenderWebsiteEmbedSettings(props.mode)) {
@@ -345,9 +367,9 @@ function WebsiteEmbedSettingsPanel({
                 <Globe className="h-5 w-5 text-primary" />
               </div>
               <div className="min-w-0">
-                <h3 className="font-medium text-foreground">Hosted website widget</h3>
+                <h3 className="font-medium text-foreground">Website chat widget</h3>
                 <p className="text-sm text-muted-foreground">
-                  Radioso-hosted launcher script and iframe chat for approved sites.
+                  Embed a chat launcher on approved sites with one script tag.
                 </p>
               </div>
             </div>
@@ -360,31 +382,97 @@ function WebsiteEmbedSettingsPanel({
             />
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="mt-5 space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="websiteEmbedLauncherLabel" className="text-foreground">Launcher label</Label>
-              <Input
-                id="websiteEmbedLauncherLabel"
-                value={anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us'}
-                maxLength={80}
-                onChange={(event) => handleWebsiteEmbedSettingChange('websiteEmbedLauncherLabel', event.target.value)}
-                placeholder="Chat with us"
-              />
+              <Label className="text-foreground">Display mode</Label>
+              <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5" role="group">
+                {DISPLAY_MODES.map(({ value, label }) => {
+                  const currentValue = (anonSettings.websiteEmbedExpertOverrides?.displayMode ?? 'bubble') as 'bubble' | 'panel'
+                  const isActive = currentValue === value
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`rounded-sm px-3 py-1 text-xs font-medium transition-colors ${
+                        isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                      onClick={() =>
+                        handleWebsiteEmbedExpertOverrideChange('displayMode', value === 'bubble' ? '' : value)
+                      }
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {DISPLAY_MODES.find(
+                  (mode) => mode.value === ((anonSettings.websiteEmbedExpertOverrides?.displayMode ?? 'bubble') as 'bubble' | 'panel'),
+                )?.description}
+              </p>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="websiteEmbedLauncherPosition" className="text-foreground">Launcher position</Label>
-              <select
-                id="websiteEmbedLauncherPosition"
-                value={anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right'}
-                onChange={(event) =>
-                  handleWebsiteEmbedSettingChange('websiteEmbedLauncherPosition', event.target.value as GeneralSettings['websiteEmbedLauncherPosition'])
-                }
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
-              >
-                <option value="bottom-right">Bottom right</option>
-                <option value="bottom-left">Bottom left</option>
-              </select>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="websiteEmbedLauncherLabel" className="text-foreground">Launcher label</Label>
+                <Input
+                  id="websiteEmbedLauncherLabel"
+                  value={anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us'}
+                  maxLength={80}
+                  onChange={(event) => handleWebsiteEmbedSettingChange('websiteEmbedLauncherLabel', event.target.value)}
+                  placeholder="Chat with us"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="websiteEmbedLauncherPosition" className="text-foreground">Launcher position</Label>
+                <select
+                  id="websiteEmbedLauncherPosition"
+                  value={anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right'}
+                  onChange={(event) =>
+                    handleWebsiteEmbedSettingChange('websiteEmbedLauncherPosition', event.target.value as GeneralSettings['websiteEmbedLauncherPosition'])
+                  }
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                >
+                  <option value="bottom-right">Bottom right</option>
+                  <option value="bottom-left">Bottom left</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="websiteEmbedInitialState" className="text-foreground">Initial state</Label>
+                <select
+                  id="websiteEmbedInitialState"
+                  value={(anonSettings.websiteEmbedExpertOverrides?.initialState ?? 'collapsed') as 'collapsed' | 'open'}
+                  onChange={(event) =>
+                    handleWebsiteEmbedExpertOverrideChange('initialState', event.target.value === 'collapsed' ? '' : event.target.value)
+                  }
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                >
+                  <option value="collapsed">Collapsed</option>
+                  <option value="open">Open on load</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="websiteEmbedPageContext" className="text-foreground">Page context</Label>
+                <select
+                  id="websiteEmbedPageContext"
+                  value={(anonSettings.websiteEmbedExpertOverrides?.pageContext ?? 'metadata') as 'metadata' | 'content'}
+                  onChange={(event) =>
+                    handleWebsiteEmbedExpertOverrideChange('pageContext', event.target.value === 'metadata' ? '' : event.target.value)
+                  }
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                >
+                  <option value="metadata">Page metadata only</option>
+                  <option value="content">Full page content</option>
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  What the widget passes to the assistant about the current page.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -456,9 +544,9 @@ function WebsiteEmbedSettingsPanel({
               <details className="rounded-md border border-border bg-background/80 p-3">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-medium text-foreground">Expert overrides</p>
+                    <p className="text-sm font-medium text-foreground">Colour overrides</p>
                     <p className="text-xs text-muted-foreground">
-                      Override individual widget properties from the schema. Blank values inherit the derived theme and default behavior.
+                      Fine-tune individual colours. Blank values inherit the Assistant identity.
                     </p>
                   </div>
                   <span className="text-xs text-muted-foreground">
@@ -466,16 +554,26 @@ function WebsiteEmbedSettingsPanel({
                   </span>
                 </summary>
 
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  {EXPERT_FIELDS.map(([key, label, placeholder]) => (
-                    <div key={key} className="space-y-2">
-                      <Label htmlFor={`websiteEmbedExpert-${key}`} className="text-foreground">{label}</Label>
-                      <Input
-                        id={`websiteEmbedExpert-${key}`}
-                        value={anonSettings.websiteEmbedExpertOverrides?.[key] ?? ''}
-                        onChange={(event) => handleWebsiteEmbedExpertOverrideChange(key, event.target.value)}
-                        placeholder={placeholder}
-                      />
+                <div className="mt-4 space-y-5">
+                  {EXPERT_FIELD_GROUPS.map((group) => (
+                    <div key={group.title} className="space-y-2">
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{group.title}</p>
+                        <p className="text-xs text-muted-foreground">{group.description}</p>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        {group.fields.map(([key, label, placeholder]) => (
+                          <div key={key} className="space-y-2">
+                            <Label htmlFor={`websiteEmbedExpert-${key}`} className="text-foreground">{label}</Label>
+                            <Input
+                              id={`websiteEmbedExpert-${key}`}
+                              value={anonSettings.websiteEmbedExpertOverrides?.[key] ?? ''}
+                              onChange={(event) => handleWebsiteEmbedExpertOverrideChange(key, event.target.value)}
+                              placeholder={placeholder}
+                            />
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>

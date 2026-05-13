@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 
-import { createOpenApiDocument } from "../../src/app/http/openapi/document.js";
+import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
 
 describe("openapi contract", () => {
   it("matches the checked-in generated yaml", () => {

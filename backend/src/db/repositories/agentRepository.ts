@@ -6,7 +6,10 @@ import {
   validateAgentInput,
   type AgentInput,
   type AgentRecord,
-  type AgentSurfaceIcon,
+  type AgentEmbedCopyPacks,
+  type AgentEmbedExpertOverrides,
+  type AgentLogo,
+  type AgentEmbedTheme,
   type AgentSurfacePosition,
   type NormalizedAgentInput,
 } from "../../modules/agents/public.js";
@@ -56,9 +59,9 @@ const readStringArray = (record: Record<string, unknown>, key: string): string[]
 
 const toBehaviorSettings = (agent: NormalizedAgentInput): Record<string, unknown> => ({
   customInstruction: agent.customInstruction,
-  conversationMode: agent.conversationMode,
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-  suggestedQuestionsCount: agent.suggestedQuestionsCount,
+  logo: agent.logo,
+  theme: agent.theme,
 });
 
 const toGreetingSettings = (agent: NormalizedAgentInput): Record<string, unknown> => ({
@@ -74,15 +77,16 @@ const toOutputModes = (agent: NormalizedAgentInput): Record<string, unknown> => 
   anonymousChat: {
     enabled: agent.surfaceSettings.anonymousChat.enabled,
     token: agent.surfaceSettings.anonymousChat.token,
-    messagesPerMinute: agent.surfaceSettings.anonymousChat.messagesPerMinute,
   },
   websiteEmbed: {
     enabled: agent.surfaceSettings.websiteEmbed.enabled,
     token: agent.surfaceSettings.websiteEmbed.token,
     allowedOrigins: agent.surfaceSettings.websiteEmbed.allowedOrigins,
     launcherLabel: agent.surfaceSettings.websiteEmbed.launcherLabel,
-    icon: agent.surfaceSettings.websiteEmbed.icon,
     launcherPosition: agent.surfaceSettings.websiteEmbed.launcherPosition,
+    theme: agent.surfaceSettings.websiteEmbed.theme,
+    copy: agent.surfaceSettings.websiteEmbed.copy,
+    expertOverrides: agent.surfaceSettings.websiteEmbed.expertOverrides,
   },
 });
 
@@ -97,10 +101,10 @@ const mapAgent = (row: AgentRow): AgentRecord => {
   const normalized = validateAgentInput({
     name: row.name,
     customInstruction: readString(behavior, "customInstruction"),
-    conversationMode: readString(behavior, "conversationMode") as AgentInput["conversationMode"],
     suggestedQuestionsEnabled: readBoolean(behavior, "suggestedQuestionsEnabled"),
-    suggestedQuestionsCount: readNumber(behavior, "suggestedQuestionsCount"),
     retrievalEnabled: row.retrieval_enabled,
+    logo: (behavior.logo ?? websiteEmbed.logo) as AgentLogo | null | undefined,
+    theme: (behavior.theme ?? websiteEmbed.theme) as AgentEmbedTheme | undefined,
     greetingInstruction: readString(greeting, "greetingInstruction"),
     assistantDefaultLocale: readString(greeting, "assistantDefaultLocale") ?? null,
     proactiveGreetingEnabled: readBoolean(greeting, "proactiveGreetingEnabled"),
@@ -111,15 +115,16 @@ const mapAgent = (row: AgentRow): AgentRecord => {
       anonymousChat: {
         enabled: readBoolean(anonymousChat, "enabled"),
         token: readString(anonymousChat, "token") ?? null,
-        messagesPerMinute: readNumber(anonymousChat, "messagesPerMinute") ?? readNumber(anonymousChat, "rateLimit"),
       },
       websiteEmbed: {
         enabled: readBoolean(websiteEmbed, "enabled"),
         token: readString(websiteEmbed, "token") ?? null,
         allowedOrigins: readStringArray(websiteEmbed, "allowedOrigins"),
         launcherLabel: readString(websiteEmbed, "launcherLabel"),
-        icon: readString(websiteEmbed, "icon") as AgentSurfaceIcon | undefined,
         launcherPosition: readString(websiteEmbed, "launcherPosition") as AgentSurfacePosition | undefined,
+        theme: websiteEmbed.theme as AgentEmbedTheme | undefined,
+        copy: websiteEmbed.copy as AgentEmbedCopyPacks | undefined,
+        expertOverrides: websiteEmbed.expertOverrides as AgentEmbedExpertOverrides | undefined,
       },
     },
   });

@@ -1,7 +1,6 @@
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ChatSuggestion, ChatSuggestionKind } from "../types/chatResponses.js";
-import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 import type { ConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import { formatConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 
@@ -14,9 +13,8 @@ interface ExpansionContext {
 
 type SuggestionTextGenerator = (input: { query: string; history: MessageRecord[]; prompt: string }) => Promise<string>;
 
-export interface ConversationModeExpansionInput {
+export interface AssistantSuggestionExpansionInput {
   query: string;
-  conversationMode: ConversationMode;
   suggestedQuestionsEnabled: boolean;
   suggestedQuestionsCount: number;
   groundedAnswerSupported: boolean;
@@ -27,7 +25,7 @@ export interface ConversationModeExpansionInput {
   conversationIntentSnapshot: ConversationIntentSnapshot;
 }
 
-export interface ConversationModeExpansionResult {
+export interface AssistantSuggestionExpansionResult {
   suggestions?: ChatSuggestion[];
 }
 
@@ -184,13 +182,12 @@ const normalizeSuggestionKind = (value: unknown): ChatSuggestionKind | null => {
   return value === "broader" ? "broader" : null;
 };
 
-export class ConversationModeExpansionService {
+export class AssistantSuggestionExpansionService {
   constructor(private readonly generateSuggestionText: SuggestionTextGenerator) {}
 
-  async apply(input: ConversationModeExpansionInput): Promise<ConversationModeExpansionResult> {
+  async apply(input: AssistantSuggestionExpansionInput): Promise<AssistantSuggestionExpansionResult> {
     if (
       !input.groundedAnswerSupported ||
-      input.conversationMode === "factual" ||
       !input.suggestedQuestionsEnabled ||
       input.contexts.length === 0
     ) {
@@ -213,8 +210,7 @@ export class ConversationModeExpansionService {
       const rawResponse = await this.generateSuggestionText({
         query: input.query,
         history: input.history,
-        prompt: renderPromptTemplate("chat/conversation-mode-suggestions.md", {
-          conversation_mode: input.conversationMode,
+        prompt: renderPromptTemplate("chat/assistant-suggestions.md", {
           max_suggestions: String(maxSuggestions),
           query: input.query,
           answer: input.answer,
@@ -231,7 +227,6 @@ export class ConversationModeExpansionService {
         maxSuggestions,
         input.query,
         input.answer,
-        input.conversationMode,
       );
       return suggestions.length > 0 ? { suggestions } : {};
     } catch {
@@ -245,7 +240,6 @@ export class ConversationModeExpansionService {
     maxSuggestions: number,
     query: string,
     answer: string,
-    conversationMode: ConversationMode,
   ): ChatSuggestion[] {
     let parsed: unknown;
     try {
@@ -274,10 +268,6 @@ export class ConversationModeExpansionService {
         continue;
       }
 
-      if (conversationMode !== "exploratory" && candidate.kind === "broader") {
-        continue;
-      }
-
       validatedSuggestions.push({
         text: normalizeWhitespace(candidate.text),
         kind: candidate.kind,
@@ -290,19 +280,18 @@ export class ConversationModeExpansionService {
       seenTexts.add(normalizedText);
     }
 
-    return this.selectSuggestions(validatedSuggestions, maxSuggestions, conversationMode);
+    return this.selectSuggestions(validatedSuggestions, maxSuggestions);
   }
 
   private selectSuggestions(
     suggestions: ChatSuggestion[],
     maxSuggestions: number,
-    conversationMode: ConversationMode,
   ): ChatSuggestion[] {
     if (suggestions.length <= maxSuggestions) {
       return suggestions;
     }
 
-    if (conversationMode !== "exploratory" || maxSuggestions < 2) {
+    if (maxSuggestions < 2) {
       return suggestions.slice(0, maxSuggestions);
     }
 

@@ -86,6 +86,7 @@ export async function POST(
       cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
+        'X-Forwarded-Prefix': '/backend',
         Origin: requestOrigin,
       },
       body: JSON.stringify({

@@ -55,14 +55,12 @@ export class AuditService {
     conversationId: string;
     assistantMessageId: string;
     suggestions: unknown[];
-    conversationModeMetadata: unknown;
   }): Promise<void> {
     await this.auditEventRepository.updateChatAnswerSuggestions({
       workspaceId: input.workspaceId,
       conversationId: input.conversationId,
       assistantMessageId: input.assistantMessageId,
       suggestions: input.suggestions,
-      conversationModeMetadata: input.conversationModeMetadata,
     });
   }
 }

@@ -55,9 +55,6 @@ export interface RetrievalMetadataRule {
   triggerInstruction?: string;
 }
 
-export const conversationModes = ["factual", "guided", "exploratory"] as const;
-export type ConversationMode = (typeof conversationModes)[number];
-
 export const MIN_SUGGESTED_QUESTIONS_COUNT = 1;
 export const MAX_SUGGESTED_QUESTIONS_COUNT = 4;
 export const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
@@ -67,7 +64,6 @@ interface RetrievalSettingsPayload {
   metadataRules?: unknown;
   semanticRewriteInstructions?: unknown;
   lexicalRewriteInstructions?: unknown;
-  conversationMode?: unknown;
   suggestedQuestionsEnabled?: unknown;
   suggestedQuestionsCount?: unknown;
   answerSupportValidationEnabled?: unknown;
@@ -92,7 +88,6 @@ export interface RetrievalSettingsRecord {
   queryRewriteEnabled: boolean;
   semanticRewriteInstructions: string;
   lexicalRewriteInstructions: string;
-  conversationMode: ConversationMode;
   suggestedQuestionsEnabled: boolean;
   suggestedQuestionsCount: number;
   rerankEnabled: boolean;
@@ -111,7 +106,6 @@ export interface RetrievalSettingsInput {
   queryRewriteEnabled: boolean;
   semanticRewriteInstructions: string;
   lexicalRewriteInstructions: string;
-  conversationMode: ConversationMode;
   suggestedQuestionsEnabled: boolean;
   suggestedQuestionsCount: number;
   rerankEnabled: boolean;
@@ -131,14 +125,11 @@ export const DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS =
 export const DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS =
   "Rewrite for lexical retrieval using exact literals likely to appear in the corpus. Prefer aliases, abbreviations, citation forms, and corpus-native notation when grounded.";
 
-export const DEFAULT_CONVERSATION_MODE: ConversationMode = "guided";
-
 export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettingsRecord => ({
   workspaceId,
   queryRewriteEnabled: false,
   semanticRewriteInstructions: DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS,
   lexicalRewriteInstructions: DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
-  conversationMode: DEFAULT_CONVERSATION_MODE,
   suggestedQuestionsEnabled: DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
   suggestedQuestionsCount: DEFAULT_SUGGESTED_QUESTIONS_COUNT,
   rerankEnabled: false,
@@ -326,9 +317,6 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   }
   if (typeof input.lexicalRewriteInstructions !== "string") {
     throw badRequest("lexicalRewriteInstructions must be a string");
-  }
-  if (!conversationModes.includes(input.conversationMode)) {
-    throw badRequest("conversationMode must be a supported value");
   }
   if (typeof input.suggestedQuestionsEnabled !== "boolean") {
     throw badRequest("suggestedQuestionsEnabled must be a boolean");

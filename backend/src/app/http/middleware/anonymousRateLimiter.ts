@@ -5,13 +5,13 @@ import { createRateLimitMiddleware } from "./rateLimit.js";
 
 export type AnonymousRateLimiterDependencies = Pick<AppDependencies, "env" | "abuseControlService" | "auditService">;
 
-export const anonymousRateLimiter = (dependencies: AnonymousRateLimiterDependencies): RequestHandler =>
+export const anonymousRateLimiters = (dependencies: AnonymousRateLimiterDependencies): RequestHandler[] => [
   createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
-    scope: "anonymous.chat",
-    limit: (_req, res) => (res.locals.anonymousRateLimit as number | undefined) ?? 10,
-    windowMs: dependencies.env.AUTH_RATE_LIMIT_WINDOW_MS,
+    scope: "public.chat.session",
+    limit: dependencies.env.PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS,
+    windowMs: dependencies.env.PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS,
     resolveSubjectKey: (req, res) => {
       const workspaceId = res.locals.workspaceId as string | undefined;
       if (!workspaceId) {
@@ -32,7 +32,25 @@ export const anonymousRateLimiter = (dependencies: AnonymousRateLimiterDependenc
         anonymousSessionId: res.locals.anonymousSessionId as string | undefined,
       },
     }),
-  });
+  }),
+  createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "public.chat.global",
+    limit: dependencies.env.PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS,
+    windowMs: dependencies.env.PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS,
+    resolveSubjectKey: (_req, res) => {
+      const workspaceId = res.locals.workspaceId as string | undefined;
+      return workspaceId ? `${workspaceId}:global` : null;
+    },
+    resolveAuditContext: (_req, res) => ({
+      workspaceId: res.locals.workspaceId as string | undefined,
+      metadata: {
+        anonymousSessionId: res.locals.anonymousSessionId as string | undefined,
+      },
+    }),
+  }),
+];
 
 export const resetRateLimiterState = () => {
   // Durable abuse control state is reset by test repository setup, so this is now a no-op.

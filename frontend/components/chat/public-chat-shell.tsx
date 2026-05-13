@@ -46,6 +46,8 @@ import {
 
 type PublicChatSurface = 'public' | 'embed'
 
+const DEFAULT_ASSISTANT_AVATAR_URL = '/radioso-logo.png'
+
 const isEditableElement = (element: Element | null) => {
   if (!element) {
     return false
@@ -155,18 +157,20 @@ function AssistantAvatar({
   className?: string
 }) {
   const theme = getWebsiteEmbedTheme(themeOverrides)
+  const resolvedAvatarUrl = avatarUrl ?? DEFAULT_ASSISTANT_AVATAR_URL
 
   return (
     <Avatar
-      className={`${className} border`}
+      className={`${className} rounded-xl border`}
       style={{
         borderColor: theme.panelBorder,
         background: theme.mutedBackground,
         color: theme.accent,
       }}
     >
-      {avatarUrl ? <AvatarImage src={avatarUrl} alt={label} /> : null}
+      <AvatarImage src={resolvedAvatarUrl} alt={label} className="object-cover" />
       <AvatarFallback
+        className="rounded-xl"
         style={{
           background: theme.mutedBackground,
           color: theme.accent,
@@ -328,7 +332,6 @@ function PublicChatContent({
   surface: PublicChatSurface
 }) {
   const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
-  const theme = getWebsiteEmbedTheme(themeOverrides)
   const [input, setInput] = useState('')
   const [contactRequest, setContactRequest] = useState<HumanContactInlineRequest | null>(null)
   const [contactConfirmation, setContactConfirmation] = useState<ChatThreadMessage | null>(null)
@@ -338,6 +341,8 @@ function PublicChatContent({
     conversationId,
     messages,
     workspaceName,
+    assistantAvatarUrl,
+    assistantTheme,
     publicSessionActions,
     isLoading,
     isHydrating,
@@ -354,6 +359,9 @@ function PublicChatContent({
   const messagesScrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const resolvedWorkspaceName = workspaceName ?? initialWorkspaceName ?? copy.embeddedChatTitle
+  const resolvedAvatarUrl = assistantAvatarUrl ?? avatarUrl
+  const resolvedThemeOverrides = assistantTheme ?? themeOverrides
+  const theme = getWebsiteEmbedTheme(resolvedThemeOverrides)
   const contactAction = publicSessionActions.contact
   const contactAvailable =
     editionController.canUseHumanContact() &&
@@ -579,9 +587,9 @@ function PublicChatContent({
     return (
       <ChatUnavailable
         localeOverride={localeOverride}
-        avatarUrl={avatarUrl}
+        avatarUrl={resolvedAvatarUrl}
         copyOverrides={copyOverrides}
-        themeOverrides={themeOverrides}
+        themeOverrides={resolvedThemeOverrides}
       />
     )
   }
@@ -623,7 +631,7 @@ function PublicChatContent({
         >
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
-              <AssistantAvatar avatarUrl={avatarUrl} label={resolvedWorkspaceName} themeOverrides={themeOverrides} />
+              <AssistantAvatar avatarUrl={resolvedAvatarUrl} label={resolvedWorkspaceName} themeOverrides={resolvedThemeOverrides} />
               <div>
                 <h1 className="text-lg font-medium">{resolvedWorkspaceName}</h1>
                 {copy.publicChatSubtitle.trim() ? (
@@ -671,7 +679,7 @@ function PublicChatContent({
         {visibleMessages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center">
             <div className="mb-4">
-              <AssistantAvatar avatarUrl={avatarUrl} label={copy.publicChatEmptyTitle} themeOverrides={themeOverrides} className="size-12" />
+              <AssistantAvatar avatarUrl={resolvedAvatarUrl} label={copy.publicChatEmptyTitle} themeOverrides={resolvedThemeOverrides} className="size-12" />
             </div>
             <h2 className="mb-1 text-lg font-medium">{copy.publicChatEmptyTitle}</h2>
             <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
@@ -706,7 +714,7 @@ function PublicChatContent({
               onSuggestionSelect={handleSuggestionSelect}
               onAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleAnswerFeedback : undefined}
               onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
-              assistantAvatarUrl={avatarUrl}
+              assistantAvatarUrl={resolvedAvatarUrl}
               assistantAvatarLabel={resolvedWorkspaceName}
               hideAssistantAvatar={surface === 'embed' && isNarrowLayout}
               theme={theme}
@@ -724,7 +732,7 @@ function PublicChatContent({
             copy={copy}
             message={rateLimitError}
             retryAfterSeconds={retryAfterSeconds}
-            themeOverrides={themeOverrides}
+            themeOverrides={resolvedThemeOverrides}
           />
         </div>
       ) : null}

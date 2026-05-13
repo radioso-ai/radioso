@@ -2,7 +2,6 @@ import type { GeneralSettings } from '@/lib/api'
 import { normalizeLocaleTag } from '@/lib/locale'
 
 export type WebsiteEmbedLauncherPosition = 'bottom-right' | 'bottom-left'
-export type WebsiteEmbedLauncherIcon = 'chat' | 'sparkles' | 'message'
 export type WebsiteEmbedInitialState = 'open' | 'collapsed'
 export type WebsiteEmbedDisplayMode = 'bubble' | 'panel'
 
@@ -10,8 +9,6 @@ export interface WebsiteEmbedSnippetOverrides {
   locale?: string | null
   initialState?: string | null
   displayMode?: string | null
-  avatarUrl?: string | null
-  collapsedAvatarUrl?: string | null
   pageContext?: 'metadata' | 'content' | null
   copy?: WebsiteEmbedCopyOverrides | null
   theme?: WebsiteEmbedThemeOverrides | null
@@ -66,7 +63,6 @@ export type WebsiteEmbedThemeOverrides = Partial<WebsiteEmbedTheme>
 export type WebsiteEmbedPageContextMode = 'metadata' | 'content'
 
 export const DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL = 'Chat with us'
-export const DEFAULT_WEBSITE_EMBED_LAUNCHER_ICON: WebsiteEmbedLauncherIcon = 'chat'
 export const DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION: WebsiteEmbedLauncherPosition = 'bottom-right'
 export const DEFAULT_WEBSITE_EMBED_SCRIPT_PATH = '/radioso-embed.js'
 export const DEFAULT_WEBSITE_EMBED_TEST_PATH = '/embed-test'
@@ -268,36 +264,6 @@ export const normalizeWebsiteEmbedPageContextMode = (value: string | null | unde
   }
 
   return null
-}
-
-export const normalizeWebsiteEmbedAvatarUrl = (value: string | null | undefined): string | null => {
-  if (!value) {
-    return null
-  }
-
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return null
-  }
-
-  if (
-    trimmed.startsWith('/') ||
-    trimmed.startsWith('./') ||
-    trimmed.startsWith('../') ||
-    trimmed.startsWith('//')
-  ) {
-    return trimmed
-  }
-
-  try {
-    const url = new URL(trimmed)
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-      return null
-    }
-    return url.toString()
-  } catch {
-    return null
-  }
 }
 
 export const sanitizeWebsiteEmbedCopyOverrides = (input: unknown): WebsiteEmbedCopyOverrides =>
@@ -511,7 +477,6 @@ export const buildWebsiteEmbedTestHarnessUrl = (
     | 'websiteEmbedToken'
     | 'websiteEmbedScriptUrl'
     | 'websiteEmbedLauncherLabel'
-    | 'websiteEmbedLauncherIcon'
     | 'websiteEmbedLauncherPosition'
   >,
   appBaseUrl?: string,
@@ -527,9 +492,8 @@ export const buildWebsiteEmbedTestHarnessUrl = (
   params.set('token', settings.websiteEmbedToken)
   params.set(
     'label',
-    settings.websiteEmbedLauncherLabel?.trim() || DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL,
+    settings.websiteEmbedLauncherLabel ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL,
   )
-  params.set('icon', settings.websiteEmbedLauncherIcon ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_ICON)
   params.set(
     'position',
     settings.websiteEmbedLauncherPosition ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION,
@@ -537,7 +501,6 @@ export const buildWebsiteEmbedTestHarnessUrl = (
 
   const displayMode = normalizeWebsiteEmbedDisplayMode(overrides?.displayMode)
   const initialState = normalizeWebsiteEmbedInitialState(overrides?.initialState)
-  const avatarUrl = normalizeWebsiteEmbedAvatarUrl(overrides?.avatarUrl ?? overrides?.collapsedAvatarUrl)
   const copyOverrides = sanitizeWebsiteEmbedCopyOverrides(overrides?.copy)
   const themeOverrides = sanitizeWebsiteEmbedThemeOverrides(overrides?.theme)
   const pageContextMode = normalizeWebsiteEmbedPageContextMode(overrides?.pageContext)
@@ -548,10 +511,6 @@ export const buildWebsiteEmbedTestHarnessUrl = (
 
   if (initialState) {
     params.set('initialState', initialState)
-  }
-
-  if (avatarUrl) {
-    params.set('avatarUrl', avatarUrl)
   }
 
   if (Object.keys(copyOverrides).length > 0) {
@@ -575,13 +534,8 @@ export const buildWebsiteEmbedSnippet = (
     | 'websiteEmbedEnabled'
     | 'websiteEmbedToken'
     | 'websiteEmbedScriptUrl'
-    | 'websiteEmbedAllowedOrigins'
-    | 'websiteEmbedLauncherLabel'
-    | 'websiteEmbedLauncherIcon'
-    | 'websiteEmbedLauncherPosition'
   >,
   baseUrl?: string,
-  overrides?: WebsiteEmbedSnippetOverrides,
 ) => {
   if (!settings.websiteEmbedEnabled || !settings.websiteEmbedToken) {
     return null
@@ -592,46 +546,11 @@ export const buildWebsiteEmbedSnippet = (
   if (!scriptUrl) {
     return null
   }
-  const launcherLabel = settings.websiteEmbedLauncherLabel?.trim() || DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL
-  const launcherIcon = settings.websiteEmbedLauncherIcon ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_ICON
-  const launcherPosition = settings.websiteEmbedLauncherPosition ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION
-  const allowedOrigins = (settings.websiteEmbedAllowedOrigins ?? []).map(normalizeOrigin).filter((origin): origin is string => Boolean(origin))
-  const originAttribute = allowedOrigins.length > 0 ? ` data-radioso-allowed-origins="${escapeHtmlAttribute(allowedOrigins.join(','))}"` : ''
-  const displayMode = normalizeWebsiteEmbedDisplayMode(overrides?.displayMode)
-  const initialState = normalizeWebsiteEmbedInitialState(overrides?.initialState)
-  const avatarUrl = normalizeWebsiteEmbedAvatarUrl(overrides?.avatarUrl ?? overrides?.collapsedAvatarUrl)
-  const copyOverrides = sanitizeWebsiteEmbedCopyOverrides(overrides?.copy)
-  const themeOverrides = sanitizeWebsiteEmbedThemeOverrides(overrides?.theme)
-  const pageContextMode = normalizeWebsiteEmbedPageContextMode(overrides?.pageContext)
-  const displayModeAttribute =
-    displayMode && displayMode !== DEFAULT_WEBSITE_EMBED_DISPLAY_MODE
-      ? ` data-radioso-display-mode="${escapeHtmlAttribute(displayMode)}"`
-      : ''
-  const initialStateAttribute = initialState ? ` data-radioso-initial-state="${escapeHtmlAttribute(initialState)}"` : ''
-  const avatarAttribute = avatarUrl
-    ? ` data-radioso-avatar-url="${escapeHtmlAttribute(avatarUrl)}"`
-    : ''
-  const copyAttribute =
-    Object.keys(copyOverrides).length > 0
-      ? ` data-radioso-copy="${escapeHtmlAttribute(JSON.stringify(copyOverrides))}"`
-      : ''
-  const themeAttribute =
-    Object.keys(themeOverrides).length > 0
-      ? ` data-radioso-theme="${escapeHtmlAttribute(JSON.stringify(themeOverrides))}"`
-      : ''
-  const pageContextAttribute =
-    pageContextMode && pageContextMode !== 'metadata'
-      ? ` data-radioso-page-context="${escapeHtmlAttribute(pageContextMode)}"`
-      : ''
-
   return [
     `<script`,
     `  async`,
     `  src="${escapeHtmlAttribute(scriptUrl)}"`,
     `  data-radioso-token="${escapeHtmlAttribute(settings.websiteEmbedToken)}"`,
-    `  data-radioso-launcher-label="${escapeHtmlAttribute(launcherLabel)}"`,
-    `  data-radioso-launcher-icon="${escapeHtmlAttribute(launcherIcon)}"`,
-    `  data-radioso-launcher-position="${escapeHtmlAttribute(launcherPosition)}"${originAttribute}${displayModeAttribute}${initialStateAttribute}${avatarAttribute}${copyAttribute}${themeAttribute}${pageContextAttribute}`,
     `></script>`,
   ].join('\n')
 }

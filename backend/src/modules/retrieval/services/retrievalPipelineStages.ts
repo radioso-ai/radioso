@@ -94,7 +94,6 @@ export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
   responseSettings: {
     citationDisplayEnabled: boolean;
     answerSupportValidationEnabled?: boolean;
-    conversationMode: RetrievalSettingsRecord["conversationMode"];
     suggestedQuestionsEnabled: RetrievalSettingsRecord["suggestedQuestionsEnabled"];
     suggestedQuestionsCount: RetrievalSettingsRecord["suggestedQuestionsCount"];
     customInstruction?: RetrievalSettingsRecord["customInstruction"];

@@ -1,11 +1,9 @@
 import type { Database } from "../../shared/infra/database.js";
 import type {
-  ConversationMode,
   RetrievalSettingsInput,
   RetrievalSettingsRecord,
 } from "../../modules/settings/contracts/retrieval.js";
 import {
-  DEFAULT_CONVERSATION_MODE,
   DEFAULT_SUGGESTED_QUESTIONS_COUNT,
   DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
   normalizeMetadataRules,
@@ -16,7 +14,6 @@ interface RetrievalSettingsPayload {
   metadataRules?: unknown;
   semanticRewriteInstructions?: unknown;
   lexicalRewriteInstructions?: unknown;
-  conversationMode?: unknown;
   suggestedQuestionsEnabled?: unknown;
   suggestedQuestionsCount?: unknown;
   answerSupportValidationEnabled?: unknown;
@@ -49,10 +46,6 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => {
       typeof payload.semanticRewriteInstructions === "string" ? payload.semanticRewriteInstructions : "",
     lexicalRewriteInstructions:
       typeof payload.lexicalRewriteInstructions === "string" ? payload.lexicalRewriteInstructions : "",
-    conversationMode:
-      typeof payload.conversationMode === "string"
-        ? (payload.conversationMode as ConversationMode)
-        : DEFAULT_CONVERSATION_MODE,
     suggestedQuestionsEnabled:
       typeof payload.suggestedQuestionsEnabled === "boolean"
         ? payload.suggestedQuestionsEnabled
@@ -131,7 +124,6 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
           metadataRules: input.metadataRules,
           semanticRewriteInstructions: input.semanticRewriteInstructions,
           lexicalRewriteInstructions: input.lexicalRewriteInstructions,
-          conversationMode: input.conversationMode,
           suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
           suggestedQuestionsCount: input.suggestedQuestionsCount,
           answerSupportValidationEnabled: input.answerSupportValidationEnabled ?? true,

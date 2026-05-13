@@ -15,7 +15,6 @@ describe("general settings contract", () => {
     expect(response.body).toMatchObject({
       anonymousChatEnabled: false,
       anonymousChatUrl: null,
-      anonymousRateLimit: 10,
       assistantName: "",
       greetingInstruction: "",
       assistantDefaultLocale: null,
@@ -28,8 +27,13 @@ describe("general settings contract", () => {
       websiteEmbedAllowedOrigins: [],
     });
     expect(response.body.websiteEmbedLauncherLabel).toEqual(expect.any(String));
-    expect(response.body.websiteEmbedLauncherIcon).toEqual(expect.any(String));
     expect(response.body.websiteEmbedLauncherPosition).toEqual(expect.any(String));
+    expect(response.body.websiteEmbedTheme).toEqual(expect.objectContaining({
+      brand: expect.any(String),
+      brandText: expect.any(String),
+      surface: expect.any(String),
+      text: expect.any(String),
+    }));
   });
 
   it("PUT /api/v1/settings/general enables anonymous chat and generates URL", async () => {
@@ -45,21 +49,7 @@ describe("general settings contract", () => {
     expect(response.body.anonymousChatEnabled).toBe(true);
     expect(response.body.anonymousChatUrl).toBeDefined();
     expect(response.body.anonymousChatUrl).toContain("/chat/");
-    expect(response.body.anonymousRateLimit).toBe(10);
     expect(response.body.assistantBootstrapActive).toBe(false);
-  });
-
-  it("PUT /api/v1/settings/general updates rate limit", async () => {
-    const { app } = createTestApp();
-    const session = await issueTestSession(app);
-
-    const response = await request(app)
-      .put("/api/v1/settings/general")
-      .set(adminSessionHeaders(session))
-      .send({ anonymousChatEnabled: true, anonymousRateLimit: 20 });
-
-    expect(response.status).toBe(200);
-    expect(response.body.anonymousRateLimit).toBe(20);
   });
 
   it("round-trips website embed settings and generated snippet", async () => {
@@ -73,8 +63,21 @@ describe("general settings contract", () => {
         websiteEmbedEnabled: true,
         websiteEmbedAllowedOrigins: ["https://example.com/help", "https://docs.example.com"],
         websiteEmbedLauncherLabel: "Talk to Marta",
-        websiteEmbedLauncherIcon: "sparkles",
         websiteEmbedLauncherPosition: "bottom-left",
+        websiteEmbedTheme: {
+          brand: "#112233",
+          brandText: "#ffffff",
+          surface: "#f8fafc",
+          text: "#101820",
+        },
+        websiteEmbedCopy: {
+          it: {
+            startPrompt: "Fai una domanda...",
+          },
+        },
+        websiteEmbedExpertOverrides: {
+          displayMode: "panel",
+        },
       });
 
     expect(response.status).toBe(200);
@@ -82,8 +85,21 @@ describe("general settings contract", () => {
       websiteEmbedEnabled: true,
       websiteEmbedAllowedOrigins: ["https://example.com", "https://docs.example.com"],
       websiteEmbedLauncherLabel: "Talk to Marta",
-      websiteEmbedLauncherIcon: "sparkles",
       websiteEmbedLauncherPosition: "bottom-left",
+      websiteEmbedTheme: {
+        brand: "#112233",
+        brandText: "#ffffff",
+        surface: "#f8fafc",
+        text: "#101820",
+      },
+      websiteEmbedCopy: {
+        it: {
+          startPrompt: "Fai una domanda...",
+        },
+      },
+      websiteEmbedExpertOverrides: {
+        displayMode: "panel",
+      },
       websiteEmbedScriptUrl: null,
       websiteEmbedSnippet: null,
     });
@@ -153,20 +169,22 @@ describe("general settings contract", () => {
     const initialAnonymousUrl = initial.body.anonymousChatUrl as string;
     const initialEmbedToken = initial.body.websiteEmbedToken as string;
 
-    const rotated = await request(app)
-      .put("/api/v1/settings/general")
+    const anonymousRotated = await request(app)
+      .post("/api/v1/settings/general/anonymous-chat-token/rotate")
       .set(adminSessionHeaders(session))
-      .send({
-        rotateAnonymousChatToken: true,
-        rotateWebsiteEmbedToken: true,
-      });
+      .send();
+    const rotated = await request(app)
+      .post("/api/v1/settings/general/website-embed-token/rotate")
+      .set(adminSessionHeaders(session))
+      .send();
 
     expect(rotated.status).toBe(200);
+    expect(anonymousRotated.status).toBe(200);
     expect(rotated.body.anonymousChatEnabled).toBe(true);
     expect(rotated.body.websiteEmbedEnabled).toBe(true);
-    expect(rotated.body.anonymousChatUrl).toEqual(expect.any(String));
+    expect(anonymousRotated.body.anonymousChatUrl).toEqual(expect.any(String));
     expect(rotated.body.websiteEmbedToken).toEqual(expect.any(String));
-    expect(rotated.body.anonymousChatUrl).not.toBe(initialAnonymousUrl);
+    expect(anonymousRotated.body.anonymousChatUrl).not.toBe(initialAnonymousUrl);
     expect(rotated.body.websiteEmbedToken).not.toBe(initialEmbedToken);
     expect(rotated.body.websiteEmbedSnippet).toBeNull();
   });
@@ -177,18 +195,6 @@ describe("general settings contract", () => {
     const response = await request(app).get("/api/v1/settings/general");
 
     expect(response.status).toBe(401);
-  });
-
-  it("rejects invalid rate limit", async () => {
-    const { app } = createTestApp();
-    const session = await issueTestSession(app);
-
-    const response = await request(app)
-      .put("/api/v1/settings/general")
-      .set(adminSessionHeaders(session))
-      .send({ anonymousChatEnabled: true, anonymousRateLimit: 100 });
-
-    expect(response.status).toBe(400);
   });
 
   it("round-trips assistant bootstrap settings in general settings", async () => {
@@ -259,7 +265,6 @@ describe("general settings contract", () => {
       .set(adminSessionHeaders(session))
       .send({
         anonymousChatEnabled: true,
-        anonymousRateLimit: 20,
         assistantDefaultLocale: "not a locale",
       });
 
@@ -272,7 +277,6 @@ describe("general settings contract", () => {
     expect(fetched.status).toBe(200);
     expect(fetched.body).toMatchObject({
       anonymousChatEnabled: false,
-      anonymousRateLimit: 10,
       assistantDefaultLocale: null,
     });
   });

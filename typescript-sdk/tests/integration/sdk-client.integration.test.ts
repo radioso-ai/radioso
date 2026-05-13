@@ -55,7 +55,6 @@ describe("sdk client integration", () => {
         new Response(JSON.stringify({
           anonymousChatEnabled: true,
           anonymousChatUrl: "https://chat.example.com/token",
-          anonymousRateLimit: 10,
         }), {
           status: 200,
           headers: { "content-type": "application/json" },

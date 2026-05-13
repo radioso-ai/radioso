@@ -10,6 +10,7 @@ import { isAgentBootstrapActive } from "../../../modules/agents/public.js";
 import {
   resolveAssistantDisplayName,
 } from "../../../modules/settings/contracts/assistantBootstrap.js";
+import { defaultWebsiteEmbedSettings } from "../../../modules/settings/contracts/websiteEmbed.js";
 import { verifyPublicChatSession } from "../../../modules/settings/contracts/publicChatSession.js";
 
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
@@ -21,7 +22,7 @@ const anonymousTokenParamsSchema = z.object({
   token: z.string().min(1),
 });
 
-type PublicSessionAgent = Pick<AgentRecord, "id" | "workspaceId" | "name" | "proactiveGreetingEnabled" | "surfaceSettings">;
+type PublicSessionAgent = Pick<AgentRecord, "id" | "workspaceId" | "name" | "logo" | "theme" | "proactiveGreetingEnabled" | "surfaceSettings">;
 
 const isLoopbackHost = (host: string | undefined) => {
   if (!host) {
@@ -101,6 +102,9 @@ const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionA
     id: workspace.defaultAgentId ?? workspace.id,
     workspaceId: workspace.id,
     name: workspace.assistantName,
+    logo: null,
+    // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
+    theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
     proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
     surfaceSettings: {
       authenticatedChat: {
@@ -109,15 +113,17 @@ const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionA
       anonymousChat: {
         enabled: workspace.anonymousChatEnabled,
         token: workspace.anonymousChatToken,
-        messagesPerMinute: workspace.anonymousRateLimit,
       },
       websiteEmbed: {
         enabled: workspace.websiteEmbedEnabled,
         token: workspace.websiteEmbedToken,
         allowedOrigins: workspace.websiteEmbedAllowedOrigins,
         launcherLabel: workspace.websiteEmbedLauncherLabel,
-        icon: workspace.websiteEmbedLauncherIcon,
         launcherPosition: workspace.websiteEmbedLauncherPosition,
+        // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
+        theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
+        copy: {},
+        expertOverrides: {},
       },
     },
   };
@@ -223,10 +229,11 @@ export const resolveAnonymousSession = (
       res.locals.anonymousSessionId = sessionId;
       res.locals.anonymousRateLimitId = rateLimitId;
       res.locals.anonymousRateLimitIdFromCookie = Boolean(rateLimitIdFromCookie);
-      res.locals.anonymousRateLimit = agent.surfaceSettings.anonymousChat.messagesPerMinute;
       res.locals.sourceChannel = publicSession?.sourceChannel ?? "anonymous";
       res.locals.sourceOrigin = publicSession?.sourceOrigin ?? null;
       res.locals.assistantBootstrapActive = isAgentBootstrapActive(agent);
+      res.locals.assistantLogoAvailable = Boolean(agent.logo);
+      res.locals.assistantTheme = agent.theme;
       next();
     } catch (error) {
       next(error);

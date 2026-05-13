@@ -19,7 +19,6 @@ describe("settings and chunking", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,
@@ -56,7 +55,6 @@ describe("settings and chunking", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,
@@ -89,7 +87,6 @@ describe("settings and chunking", () => {
     expect(defaults.customInstruction).toBe("");
     expect(defaults.semanticRewriteInstructions).not.toBe("");
     expect(defaults.lexicalRewriteInstructions).not.toBe("");
-    expect(defaults.conversationMode).toBe("guided");
     expect(defaults.suggestedQuestionsEnabled).toBe(true);
     expect(defaults.suggestedQuestionsCount).toBe(3);
   });
@@ -106,7 +103,6 @@ describe("settings and chunking", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,
@@ -130,7 +126,6 @@ describe("settings and chunking", () => {
       queryRewriteEnabled: false,
       semanticRewriteInstructions: "",
       lexicalRewriteInstructions: "",
-      conversationMode: "guided",
       suggestedQuestionsEnabled: true,
       suggestedQuestionsCount: 3,
       rerankEnabled: false,
@@ -151,7 +146,6 @@ describe("settings and chunking", () => {
       queryRewriteEnabled: true,
       semanticRewriteInstructions: "   ",
       lexicalRewriteInstructions: "",
-      conversationMode: "guided",
       suggestedQuestionsEnabled: true,
       suggestedQuestionsCount: 3,
       rerankEnabled: false,
@@ -173,7 +167,6 @@ describe("settings and chunking", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: "yes" as never,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,
@@ -185,26 +178,6 @@ describe("settings and chunking", () => {
         customInstruction: "",
       }),
     ).toThrow("suggestedQuestionsEnabled must be a boolean");
-  });
-
-  it("rejects unsupported conversationMode values", () => {
-    expect(() =>
-      validateRetrievalSettings({
-        queryRewriteEnabled: false,
-        semanticRewriteInstructions: "",
-        lexicalRewriteInstructions: "",
-        conversationMode: "invalid" as never,
-        suggestedQuestionsEnabled: true,
-        suggestedQuestionsCount: 3,
-        rerankEnabled: false,
-        vectorTopK: 15,
-        similarityThreshold: 0.2,
-        rerankTopK: 5,
-        citationDisplayEnabled: true,
-        metadataRules: [],
-        customInstruction: "",
-      }),
-    ).toThrow("conversationMode must be a supported value");
   });
 
   it("uses the current chunking defaults for ingestion settings", () => {
@@ -263,7 +236,6 @@ describe("settings and chunking", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 5,
         rerankEnabled: false,
@@ -282,7 +254,6 @@ describe("settings and chunking", () => {
       queryRewriteEnabled: false,
       semanticRewriteInstructions: "",
       lexicalRewriteInstructions: "",
-      conversationMode: "guided",
       suggestedQuestionsEnabled: true,
       suggestedQuestionsCount: 3,
       rerankEnabled: false,
@@ -322,7 +293,6 @@ describe("settings and chunking", () => {
       queryRewriteEnabled: false,
       semanticRewriteInstructions: "",
       lexicalRewriteInstructions: "",
-      conversationMode: "guided",
       suggestedQuestionsEnabled: true,
       suggestedQuestionsCount: 3,
       rerankEnabled: false,
@@ -375,7 +345,6 @@ describe("settings and chunking", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,

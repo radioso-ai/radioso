@@ -54,8 +54,6 @@ export const streamChatEvents = async (
   let assistantMessageId: string | undefined
   let agentId: string | undefined
   let agentName: string | undefined
-  let conversationMode: ChatResponse['conversationMode'] | undefined
-  let conversationModeMetadata: ChatResponse['conversationModeMetadata'] | undefined
   let retrievalInfo: RetrievalInfo | undefined
   let retrievalTrace: RetrievalTrace | undefined
   let route: ChatResponse['route'] | undefined
@@ -106,8 +104,6 @@ export const streamChatEvents = async (
       citations = completionPayload.citations
       answerSegments = completionPayload.answerSegments
       suggestions = completionPayload.suggestions
-      conversationMode = completionPayload.conversationMode
-      conversationModeMetadata = completionPayload.conversationModeMetadata
       retrievalInfo = completionPayload.retrievalInfo
       retrievalTrace = completionPayload.retrievalTrace
       route = completionPayload.route
@@ -121,8 +117,6 @@ export const streamChatEvents = async (
         citations,
         answerSegments,
         suggestions,
-        conversationMode,
-        conversationModeMetadata,
         retrievalInfo,
         retrievalTrace,
       })
@@ -133,11 +127,9 @@ export const streamChatEvents = async (
       const suggestionsPayload = payload as ChatStreamSuggestions
       conversationId = suggestionsPayload.conversationId ?? conversationId
       suggestions = suggestionsPayload.suggestions
-      conversationModeMetadata = suggestionsPayload.conversationModeMetadata ?? conversationModeMetadata
       handlers.onSuggestions?.({
         conversationId,
         suggestions,
-        conversationModeMetadata,
       })
     }
   }
@@ -173,8 +165,6 @@ export const streamChatEvents = async (
     citations,
     answerSegments,
     suggestions,
-    conversationMode: conversationMode!,
-    conversationModeMetadata: conversationModeMetadata!,
     retrievalInfo: retrievalInfo!,
     retrievalTrace: retrievalTrace!,
   }

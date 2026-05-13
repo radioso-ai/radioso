@@ -1,5 +1,4 @@
 export {
-  DEFAULT_CONVERSATION_MODE,
   DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
   DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS,
   DEFAULT_SUGGESTED_QUESTIONS_COUNT,
@@ -7,7 +6,6 @@ export {
   MAX_SUGGESTED_QUESTIONS_COUNT,
   MIN_SUGGESTED_QUESTIONS_COUNT,
   allowedOperatorsForValueType,
-  conversationModes,
   createDefaultMetadataCondition,
   createDefaultMetadataRule,
   defaultRetrievalSettings,
@@ -21,7 +19,6 @@ export {
   normalizeMetadataField,
   normalizeMetadataRules,
   validateRetrievalSettings,
-  type ConversationMode,
   type MetadataFieldSuggestion,
   type MetadataRuleCombinator,
   type MetadataRuleEffect,

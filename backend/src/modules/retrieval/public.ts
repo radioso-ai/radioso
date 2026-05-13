@@ -72,7 +72,6 @@ export {
   ModelEmbeddingGateway,
   OpenAIEmbeddingGateway,
 } from "./services/embeddingService.js";
-export { ConversationModeInstructionBuilder } from "./services/conversationModeInstructionBuilder.js";
 export { resolveContextSourceUrl } from "./services/contextSourceUrl.js";
 export type { EmbeddingGateway, EmbeddingService } from "./services/embeddingService.js";
 export type { PromptBuildResult } from "./services/promptBuilder.js";
@@ -111,11 +110,8 @@ export {
   deriveDocumentSubject,
 } from "./services/subjectIdentityService.js";
 
-type RetrievalConversationMode = "factual" | "exploratory" | "guided";
-
 export interface RetrievalResponseBehavior {
   customInstruction?: string;
-  conversationMode: RetrievalConversationMode;
   suggestedQuestionsEnabled: boolean;
   suggestedQuestionsCount: number;
 }
@@ -141,7 +137,6 @@ export interface RetrievalPipelineResult {
   responseSettings: {
     citationDisplayEnabled: boolean;
     answerSupportValidationEnabled?: boolean;
-    conversationMode: RetrievalConversationMode;
     suggestedQuestionsEnabled: boolean;
     suggestedQuestionsCount: number;
     customInstruction?: string;

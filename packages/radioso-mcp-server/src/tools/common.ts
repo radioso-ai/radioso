@@ -6,7 +6,6 @@ export const metadataRecordSchema = z.record(z.string(), z.union([z.string(), z.
 
 export const retrievalPatchSchema = z.object({
   citationDisplayEnabled: z.boolean().optional(),
-  conversationMode: z.enum(["factual", "guided", "exploratory"]).optional(),
   customInstruction: z.string().max(2000).optional(),
   lexicalRewriteInstructions: z.string().max(2000).optional(),
   metadataRules: z

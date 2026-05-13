@@ -6,6 +6,7 @@ import type {
   ChatService,
 } from "../../modules/chat/composition.js";
 import type {
+  DocumentStoragePort,
   DocumentDeletionService,
   DocumentImportService,
   DocumentIngestionService,
@@ -89,6 +90,7 @@ export interface AppDependencies {
   websiteCrawlWorker: WebsiteCrawlWorker;
   websiteCrawlJobConsumer?: DocumentJobConsumerPort;
   documentDeletionService: DocumentDeletionService;
+  documentStorage: DocumentStoragePort;
   chatService: ChatService;
   chatBootstrapService: ChatBootstrapService;
   chatHistoryService: ChatHistoryService;

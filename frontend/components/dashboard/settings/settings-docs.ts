@@ -6,7 +6,6 @@ import structuredMaxChunkSizeSource from '../../../docs/settings-docs/ingestion/
 import structuredMinChunkSizeSource from '../../../docs/settings-docs/ingestion/structured-min-chunk-size.md'
 import answerSupportValidationEnabledSource from '../../../docs/settings-docs/retrieval/answer-support-validation-enabled.md'
 import citationDisplayEnabledSource from '../../../docs/settings-docs/retrieval/citation-display-enabled.md'
-import conversationModeSource from '../../../docs/settings-docs/retrieval/conversation-mode.md'
 import customInstructionSource from '../../../docs/settings-docs/retrieval/custom-instruction.md'
 import lexicalRewriteInstructionsSource from '../../../docs/settings-docs/retrieval/lexical-rewrite-instructions.md'
 import metadataEffectSource from '../../../docs/settings-docs/retrieval/metadata-effect.md'
@@ -23,7 +22,6 @@ import queryRewriteEnabledSource from '../../../docs/settings-docs/retrieval/que
 import rerankEnabledSource from '../../../docs/settings-docs/retrieval/rerank-enabled.md'
 import rerankTopKSource from '../../../docs/settings-docs/retrieval/rerank-top-k.md'
 import semanticRewriteInstructionsSource from '../../../docs/settings-docs/retrieval/semantic-rewrite-instructions.md'
-import suggestedQuestionsCountSource from '../../../docs/settings-docs/retrieval/suggested-questions-count.md'
 import suggestedQuestionsEnabledSource from '../../../docs/settings-docs/retrieval/suggested-questions-enabled.md'
 import similarityThresholdSource from '../../../docs/settings-docs/retrieval/similarity-threshold.md'
 import vectorTopKSource from '../../../docs/settings-docs/retrieval/vector-top-k.md'
@@ -88,9 +86,7 @@ export const retrievalSettingDocs = {
   metadataRules: parseSettingDoc(metadataRulesSource),
   rerankEnabled: parseSettingDoc(rerankEnabledSource),
   rerankTopK: parseSettingDoc(rerankTopKSource),
-  conversationMode: parseSettingDoc(conversationModeSource),
   suggestedQuestionsEnabled: parseSettingDoc(suggestedQuestionsEnabledSource),
-  suggestedQuestionsCount: parseSettingDoc(suggestedQuestionsCountSource),
   citationDisplayEnabled: parseSettingDoc(citationDisplayEnabledSource),
   answerSupportValidationEnabled: parseSettingDoc(answerSupportValidationEnabledSource),
   customInstruction: parseSettingDoc(customInstructionSource),

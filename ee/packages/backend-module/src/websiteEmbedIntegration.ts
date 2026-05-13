@@ -39,24 +39,11 @@ export class HostedWebsiteEmbedIntegrationProvider implements WebsiteEmbedIntegr
       return null;
     }
 
-    const title = workspace.assistantName.trim() || workspace.name.trim();
-    const copy = title ? { embeddedChatTitle: title } : null;
-    const originAttribute =
-      workspace.websiteEmbedAllowedOrigins.length > 0
-        ? ` data-radioso-allowed-origins="${escapeHtmlAttribute(workspace.websiteEmbedAllowedOrigins.join(","))}"`
-        : "";
-    const copyAttribute = copy
-      ? ` data-radioso-copy="${escapeHtmlAttribute(JSON.stringify(copy))}"`
-      : "";
-
     return [
       `<script`,
       `  async`,
       `  src="${escapeHtmlAttribute(scriptUrl)}"`,
       `  data-radioso-token="${escapeHtmlAttribute(workspace.websiteEmbedToken)}"`,
-      `  data-radioso-launcher-label="${escapeHtmlAttribute(workspace.websiteEmbedLauncherLabel)}"`,
-      `  data-radioso-launcher-icon="${escapeHtmlAttribute(workspace.websiteEmbedLauncherIcon)}"`,
-      `  data-radioso-launcher-position="${escapeHtmlAttribute(workspace.websiteEmbedLauncherPosition)}"${originAttribute}${copyAttribute}`,
       `></script>`,
     ].join("\n");
   }

@@ -36,7 +36,6 @@ This payload includes fields such as:
 - `queryRewriteEnabled`
 - `semanticRewriteInstructions`
 - `lexicalRewriteInstructions`
-- `conversationMode`
 - `rerankEnabled`
 - `vectorTopK`
 - `similarityThreshold`
@@ -68,19 +67,24 @@ POST /api/v1/settings/ingestion/reprocess
 This payload covers user-facing workspace behavior such as:
 
 - `anonymousChatEnabled`
-- `anonymousRateLimit`
-- `rotateAnonymousChatToken`
 - `assistantName`
-- `assistantRole`
 - `greetingInstruction`
 - `assistantDefaultLocale`
 - `proactiveGreetingEnabled`
 - `websiteEmbedEnabled`
-- `rotateWebsiteEmbedToken`
 - `websiteEmbedAllowedOrigins`
 - `websiteEmbedLauncherLabel`
-- `websiteEmbedLauncherIcon`
 - `websiteEmbedLauncherPosition`
+- `websiteEmbedTheme`
+- `websiteEmbedCopy`
+- `websiteEmbedExpertOverrides`
+
+Public link and embed token rotation use explicit endpoints:
+
+```text
+POST /api/v1/settings/general/anonymous-chat-token/rotate
+POST /api/v1/settings/general/website-embed-token/rotate
+```
 
 ## Common failure modes
 

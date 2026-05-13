@@ -22,7 +22,6 @@ export type {
   ChatRoute,
   ChatSuggestion,
   ChatSuggestionKind,
-  ConversationModeMetadata,
 } from "../types/chatResponses.js";
 
 export interface ChatAnswerPort {

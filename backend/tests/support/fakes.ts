@@ -626,8 +626,15 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       websiteEmbedToken: null,
       websiteEmbedAllowedOrigins: [],
       websiteEmbedLauncherLabel: "Chat with us",
-      websiteEmbedLauncherIcon: "chat",
       websiteEmbedLauncherPosition: "bottom-right",
+      websiteEmbedTheme: {
+        brand: "#0f172a",
+        brandText: "#f8fafc",
+        surface: "#ffffff",
+        text: "#0f172a",
+      },
+      websiteEmbedCopy: {},
+      websiteEmbedExpertOverrides: {},
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -726,7 +733,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     input: {
       anonymousChatEnabled: boolean;
       anonymousChatToken: string | null;
-      anonymousRateLimit: number;
       assistantName: string;
       greetingInstruction: string;
       assistantDefaultLocale: string | null;
@@ -735,7 +741,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       websiteEmbedToken: string | null;
       websiteEmbedAllowedOrigins: string[];
       websiteEmbedLauncherLabel: string;
-      websiteEmbedLauncherIcon: WorkspaceRecord["websiteEmbedLauncherIcon"];
       websiteEmbedLauncherPosition: WorkspaceRecord["websiteEmbedLauncherPosition"];
     },
   ): Promise<WorkspaceRecord> {
@@ -747,7 +752,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       ...item,
       anonymousChatEnabled: input.anonymousChatEnabled,
       anonymousChatToken: input.anonymousChatToken,
-      anonymousRateLimit: input.anonymousRateLimit,
       assistantName: input.assistantName,
       greetingInstruction: input.greetingInstruction,
       assistantDefaultLocale: input.assistantDefaultLocale,
@@ -756,7 +760,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       websiteEmbedToken: input.websiteEmbedToken,
       websiteEmbedAllowedOrigins: input.websiteEmbedAllowedOrigins,
       websiteEmbedLauncherLabel: input.websiteEmbedLauncherLabel,
-      websiteEmbedLauncherIcon: input.websiteEmbedLauncherIcon,
       websiteEmbedLauncherPosition: input.websiteEmbedLauncherPosition,
       updatedAt: new Date(),
     };
@@ -936,7 +939,6 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       queryRewriteEnabled: input.queryRewriteEnabled,
       semanticRewriteInstructions: input.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.lexicalRewriteInstructions,
-      conversationMode: input.conversationMode,
       suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
       suggestedQuestionsCount: input.suggestedQuestionsCount,
       rerankEnabled: input.rerankEnabled,
@@ -2280,7 +2282,6 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     conversationId: string;
     assistantMessageId: string;
     suggestions: unknown[];
-    conversationModeMetadata: unknown;
   }): Promise<boolean> {
     const match = this.items
       .filter((event) => {
@@ -2301,7 +2302,6 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     match.metadata = {
       ...match.metadata,
       suggestions: input.suggestions,
-      conversationModeMetadata: input.conversationModeMetadata,
     };
 
     return true;

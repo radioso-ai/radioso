@@ -12,7 +12,6 @@ import type { AssistantPageContext } from "../types/assistantApi.js";
 import {
   buildPublicAssistantIdentityLines,
 } from "../../settings/contracts/assistantBootstrap.js";
-import { DEFAULT_CONVERSATION_MODE } from "../../settings/contracts/retrieval.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { isValidLocaleHint, resolveChatLocale } from "./chatLocale.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
@@ -29,15 +28,6 @@ const emptyChatResponse = (answer: string): ChatBootstrapResponse => ({
   answer,
   citations: [],
   answerSegments: answer ? [{ text: answer }] : [],
-  conversationMode: DEFAULT_CONVERSATION_MODE,
-  conversationModeMetadata: {
-    conversationMode: DEFAULT_CONVERSATION_MODE,
-    brevityOverrideApplied: false,
-    expansionApplied: false,
-    expansionKind: "none",
-    suggestionCount: 0,
-    followUpQuestionApplied: false,
-  },
   retrievalInfo: {
     candidateCounts: {
       semantic: 0,

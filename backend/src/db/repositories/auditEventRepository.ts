@@ -38,7 +38,6 @@ export interface AuditEventRepositoryPort {
     conversationId: string;
     assistantMessageId: string;
     suggestions: unknown[];
-    conversationModeMetadata: unknown;
   }): Promise<boolean>;
   listDocumentSearchEventPageByWorkspaceId(
     workspaceId: string,
@@ -156,19 +155,13 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     conversationId: string;
     assistantMessageId: string;
     suggestions: unknown[];
-    conversationModeMetadata: unknown;
   }): Promise<boolean> {
     const result = await this.database.query<{ id: string }>(
       `UPDATE audit_events
        SET metadata_json = jsonb_set(
-         jsonb_set(
-           coalesce(metadata_json, '{}'::jsonb),
-           '{suggestions}',
-           $4::jsonb,
-           true
-         ),
-         '{conversationModeMetadata}',
-         $5::jsonb,
+         coalesce(metadata_json, '{}'::jsonb),
+         '{suggestions}',
+         $4::jsonb,
          true
        )
        WHERE id = (
@@ -188,7 +181,6 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
         input.conversationId,
         input.assistantMessageId,
         stringifyJsonb(input.suggestions),
-        stringifyJsonb(input.conversationModeMetadata),
       ],
     );
 

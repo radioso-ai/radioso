@@ -19,9 +19,11 @@ export const supportedMcpTools = [
   "update_retrieval_settings",
 ] as const;
 
+export const MCP_CONTEXT_VERSION = "2026-05-06";
+
 export const workspaceMcpContextSchema = z.object({
   apiVersion: z.literal("0.1.0"),
-  mcpContextVersion: z.literal("2026-04-22"),
+  mcpContextVersion: z.literal(MCP_CONTEXT_VERSION),
   supportedTools: z.array(z.enum(supportedMcpTools)),
   workspaceId: z.string().uuid(),
   workspaceName: z.string().min(1),
@@ -42,7 +44,7 @@ export const createMcpContextRoutes = (dependencies: McpContextRouteDependencies
 
       res.status(200).json({
         apiVersion: "0.1.0",
-        mcpContextVersion: "2026-04-22",
+        mcpContextVersion: MCP_CONTEXT_VERSION,
         supportedTools: [...supportedMcpTools],
         workspaceId: workspace.id,
         workspaceName: workspace.name,

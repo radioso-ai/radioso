@@ -22,9 +22,7 @@ describe("settings contract", () => {
         assistantDefaultLocale: null,
         proactiveGreetingEnabled: false,
         assistantBootstrapActive: false,
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
-        suggestedQuestionsCount: 3,
         customInstruction: "",
       },
       retrieval: {
@@ -43,11 +41,9 @@ describe("settings contract", () => {
       channels: {
         anonymousChatEnabled: false,
         anonymousChatUrl: null,
-        anonymousRateLimit: 10,
         websiteEmbedEnabled: false,
         websiteEmbedAllowedOrigins: [],
         websiteEmbedLauncherLabel: expect.any(String),
-        websiteEmbedLauncherIcon: expect.any(String),
         websiteEmbedLauncherPosition: expect.any(String),
         websiteEmbedScriptUrl: null,
         websiteEmbedSnippet: null,
@@ -67,7 +63,6 @@ describe("settings contract", () => {
       .send({
         assistant: {
           assistantName: "Marta",
-          conversationMode: "exploratory",
           customInstruction: "Answer plainly.",
         },
       });
@@ -89,7 +84,6 @@ describe("settings contract", () => {
       .send({
         channels: {
           anonymousChatEnabled: true,
-          anonymousRateLimit: 20,
         },
       });
 
@@ -99,7 +93,6 @@ describe("settings contract", () => {
     expect(channelsUpdate.body).toMatchObject({
       assistant: {
         assistantName: "Marta",
-        conversationMode: "exploratory",
         customInstruction: "Answer plainly.",
       },
       retrieval: {
@@ -109,7 +102,6 @@ describe("settings contract", () => {
       },
       channels: {
         anonymousChatEnabled: true,
-        anonymousRateLimit: 20,
         anonymousChatUrl: expect.any(String),
       },
     });
@@ -127,7 +119,6 @@ describe("settings contract", () => {
     expect(Object.keys(response.body).sort()).toEqual([
       "answerSupportValidationEnabled",
       "citationDisplayEnabled",
-      "conversationMode",
       "createdAt",
       "customInstruction",
       "lexicalRewriteInstructions",
@@ -138,7 +129,6 @@ describe("settings contract", () => {
       "rerankTopK",
       "semanticRewriteInstructions",
       "similarityThreshold",
-      "suggestedQuestionsCount",
       "suggestedQuestionsEnabled",
       "updatedAt",
       "vectorTopK",
@@ -150,9 +140,7 @@ describe("settings contract", () => {
     expect(response.body.customInstruction).toBe("");
     expect(response.body.semanticRewriteInstructions).toEqual(expect.any(String));
     expect(response.body.lexicalRewriteInstructions).toEqual(expect.any(String));
-    expect(response.body.conversationMode).toBe("guided");
     expect(response.body.suggestedQuestionsEnabled).toBe(true);
-    expect(response.body.suggestedQuestionsCount).toBe(3);
     expect(response.body.metadataFieldSuggestions).toEqual([]);
     expect(response.body.metadataRules).toEqual([]);
   });
@@ -179,9 +167,7 @@ describe("settings contract", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
         lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
-        conversationMode: "exploratory",
         suggestedQuestionsEnabled: true,
-        suggestedQuestionsCount: 4,
         rerankEnabled: true,
         vectorTopK: 12,
         similarityThreshold: 0.4,
@@ -206,9 +192,7 @@ describe("settings contract", () => {
       queryRewriteEnabled: true,
       semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
       lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
-      conversationMode: "exploratory",
       suggestedQuestionsEnabled: true,
-      suggestedQuestionsCount: 4,
       rerankEnabled: true,
       vectorTopK: 12,
       similarityThreshold: 0.4,
@@ -241,9 +225,7 @@ describe("settings contract", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
         lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
-        suggestedQuestionsCount: 3,
         rerankEnabled: false,
         vectorTopK: 15,
         similarityThreshold: 0.2,
@@ -312,9 +294,7 @@ describe("settings contract", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep the meaning.",
         lexicalRewriteInstructions: "Prefer exact notation.",
-        conversationMode: "factual",
         suggestedQuestionsEnabled: false,
-        suggestedQuestionsCount: 1,
         rerankEnabled: true,
         vectorTopK: 12,
         similarityThreshold: 0.4,
@@ -352,9 +332,7 @@ describe("settings contract", () => {
     expect(secondUpdate.body.customInstruction).toBe("Cite paragraph numbers.");
     expect(secondUpdate.body.semanticRewriteInstructions).toBe("Keep the meaning.");
     expect(secondUpdate.body.lexicalRewriteInstructions).toBe("Prefer exact notation.");
-    expect(secondUpdate.body.conversationMode).toBe("factual");
     expect(secondUpdate.body.suggestedQuestionsEnabled).toBe(false);
-    expect(secondUpdate.body.suggestedQuestionsCount).toBe(1);
   });
 
   it("returns default ingestion settings for a valid session workspace context", async () => {
@@ -432,15 +410,11 @@ describe("settings contract", () => {
     expect(retrievalSettingsSchema).not.toContain("chunkingStrategy:");
     expect(retrievalSettingsSchema).toContain("semanticRewriteInstructions:");
     expect(retrievalSettingsSchema).toContain("lexicalRewriteInstructions:");
-    expect(retrievalSettingsSchema).toContain("conversationMode:");
     expect(retrievalSettingsSchema).toContain("suggestedQuestionsEnabled:");
-    expect(retrievalSettingsSchema).toContain("suggestedQuestionsCount:");
     expect(retrievalUpdateSchema).toContain("metadataRules:");
     expect(retrievalUpdateSchema).toContain("semanticRewriteInstructions:");
     expect(retrievalUpdateSchema).toContain("suggestedQuestionsEnabled:");
-    expect(retrievalUpdateSchema).toContain("suggestedQuestionsCount:");
     expect(retrievalUpdateSchema).toContain("lexicalRewriteInstructions:");
-    expect(retrievalUpdateSchema).toContain("conversationMode:");
     expect(retrievalUpdateSchema).not.toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("fixedWindowChunkSize:");

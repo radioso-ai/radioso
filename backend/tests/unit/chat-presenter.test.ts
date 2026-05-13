@@ -64,15 +64,6 @@ describe("chat presenter", () => {
             },
           },
         ],
-        conversationMode: "guided",
-        conversationModeMetadata: {
-          conversationMode: "guided",
-          brevityOverrideApplied: false,
-          expansionApplied: true,
-          expansionKind: "focused",
-          suggestionCount: 2,
-          followUpQuestionApplied: false,
-        },
         retrievalInfo: {
           candidateCounts: { semantic: 0, lexical: 0, merged: 0, final: 0 },
           fallbackApplied: false,
@@ -99,9 +90,6 @@ describe("chat presenter", () => {
 
     const donePayload = writes.find((entry) => entry.startsWith("data: {") && entry.includes("\"answer\":\"Answer\""));
     expect(donePayload).toContain("\"assistantMessageId\":\"assistant-message-1\"");
-    expect(donePayload).toContain("\"conversationMode\":\"guided\"");
-    expect(donePayload).toContain("\"conversationModeMetadata\":");
-    expect(donePayload).toContain("\"expansionKind\":\"focused\"");
     expect(donePayload).toContain("\"suggestions\":[");
     expect(donePayload).toContain("\"kind\":\"deeper\"");
   });

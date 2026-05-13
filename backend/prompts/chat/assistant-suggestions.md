@@ -8,8 +8,7 @@ Output rules
 Return {{max_suggestions}} suggestions.
 Ground each suggestion in exactly one provided context; reference it with contextIndex.
 Use kind: "deeper" to explore a grounded concept more fully. Use kind: "broader" only to widen into a clearly adjacent grounded avenue that still fits the conversation intent.
-For guided mode: return only deeper suggestions, staying close to the user's intent.
-For exploratory mode: broader suggestions are allowed if the contexts genuinely support them; otherwise use another deeper suggestion.
+Broader suggestions are allowed if the contexts genuinely support them; otherwise use another deeper suggestion.
 
 Language
 
@@ -39,9 +38,6 @@ Weak or limited answers
 Even if the answer is limited, still return {{max_suggestions}} suggestions.
 Never use suggestions to paper over a weak or off-target answer.
 Don't repeat the original query or paraphrase the answer.
-
-Conversation mode:
-{{conversation_mode}}
 
 Recent conversation context:
 {{recent_turns_json}}

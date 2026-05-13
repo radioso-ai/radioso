@@ -121,7 +121,6 @@ declare module '@/lib/embed-widget' {
   export function formatWebsiteEmbedStartingMessage(copy: Pick<WebsiteEmbedCopy, 'embeddedChatStartingMessage' | 'embeddedChatTitle'>): string
   export function getWebsiteEmbedCopy(locale?: string | null, overrides?: WebsiteEmbedCopyOverrides | null): WebsiteEmbedCopy
   export function getWebsiteEmbedTheme(overrides?: WebsiteEmbedThemeOverrides | null): WebsiteEmbedTheme
-  export function normalizeWebsiteEmbedAvatarUrl(value?: string | null): string | null
   export function normalizeWebsiteEmbedDisplayMode(value?: string | null): WebsiteEmbedDisplayMode
   export function parseWebsiteEmbedCopyOverridesParam(value?: string | string[]): WebsiteEmbedCopyOverrides | null
   export function parseWebsiteEmbedThemeOverridesParam(value?: string | string[]): WebsiteEmbedThemeOverrides | null

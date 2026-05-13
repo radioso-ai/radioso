@@ -14,7 +14,6 @@ export interface RetrievalSettingsRecord {
   queryRewriteEnabled: boolean;
   semanticRewriteInstructions: string;
   lexicalRewriteInstructions: string;
-  conversationMode: "factual" | "guided" | "exploratory";
   suggestedQuestionsEnabled: boolean;
   suggestedQuestionsCount: number;
   rerankEnabled: boolean;

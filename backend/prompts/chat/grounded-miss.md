@@ -8,7 +8,6 @@ Locale guidance:
 User query:
 {{query}}
 
-Conversation mode: {{conversation_mode}}
 Retrieved contexts available: {{has_retrieved_contexts}}
 
 Answer Instructions:

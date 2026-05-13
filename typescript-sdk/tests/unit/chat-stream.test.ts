@@ -20,8 +20,8 @@ describe("chat stream", () => {
           [
             'event: conversation\ndata: {"conversationId":"c1"}\n\n',
             'event: chunk\ndata: {"text":"hello"}\n\n',
-            'event: suggestions\ndata: {"conversationId":"c1","suggestions":[{"text":"What next?"}],"conversationModeMetadata":{"conversationMode":"guided","brevityOverrideApplied":false,"expansionApplied":true,"expansionKind":"focused","suggestionCount":1,"followUpQuestionApplied":false}}\n\n',
-            'event: done\ndata: {"conversationId":"c1","route":{"type":"retrieval","reason":"evidence_required"},"answer":"hello","suggestions":[{"text":"What next?"}],"conversationMode":"guided","conversationModeMetadata":{"conversationMode":"guided","brevityOverrideApplied":false,"expansionApplied":true,"expansionKind":"focused","suggestionCount":1,"followUpQuestionApplied":false},"retrievalInfo":{},"retrievalTrace":{}}\n\n',
+            'event: suggestions\ndata: {"conversationId":"c1","suggestions":[{"text":"What next?"}]}\n\n',
+            'event: done\ndata: {"conversationId":"c1","route":{"type":"retrieval","reason":"evidence_required"},"answer":"hello","suggestions":[{"text":"What next?"}],"retrievalInfo":{},"retrievalTrace":{}}\n\n',
           ].join(""),
         ),
         {
@@ -49,14 +49,6 @@ describe("chat stream", () => {
         type: "suggestions",
         conversationId: "c1",
         suggestions: [{ text: "What next?" }],
-        conversationModeMetadata: {
-          conversationMode: "guided",
-          brevityOverrideApplied: false,
-          expansionApplied: true,
-          expansionKind: "focused",
-          suggestionCount: 1,
-          followUpQuestionApplied: false,
-        },
       },
       {
         type: "done",
@@ -64,15 +56,6 @@ describe("chat stream", () => {
         route: { type: "retrieval", reason: "evidence_required" },
         answer: "hello",
         suggestions: [{ text: "What next?" }],
-        conversationMode: "guided",
-        conversationModeMetadata: {
-          conversationMode: "guided",
-          brevityOverrideApplied: false,
-          expansionApplied: true,
-          expansionKind: "focused",
-          suggestionCount: 1,
-          followUpQuestionApplied: false,
-        },
         retrievalInfo: {},
         retrievalTrace: {},
       },

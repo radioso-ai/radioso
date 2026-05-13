@@ -100,9 +100,7 @@ export class AgentService {
     const agent = await this.agentRepository.create(workspaceId, {
       name: workspace.assistantName ?? "",
       customInstruction: settings.customInstruction,
-      conversationMode: settings.conversationMode,
       suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
-      suggestedQuestionsCount: settings.suggestedQuestionsCount,
       retrievalEnabled: true,
       greetingInstruction: workspace.greetingInstruction,
       assistantDefaultLocale: workspace.assistantDefaultLocale,
@@ -114,14 +112,12 @@ export class AgentService {
         anonymousChat: {
           enabled: workspace.anonymousChatEnabled,
           token: workspace.anonymousChatToken,
-          messagesPerMinute: workspace.anonymousRateLimit,
         },
         websiteEmbed: {
           enabled: workspace.websiteEmbedEnabled,
           token: workspace.websiteEmbedToken,
           allowedOrigins: workspace.websiteEmbedAllowedOrigins,
           launcherLabel: workspace.websiteEmbedLauncherLabel,
-          icon: workspace.websiteEmbedLauncherIcon,
           launcherPosition: workspace.websiteEmbedLauncherPosition,
         },
       },
@@ -193,7 +189,6 @@ export class AgentService {
     await this.workspaceRepository.updateGeneralSettings(workspace.id, {
       anonymousChatEnabled: agent.surfaceSettings.anonymousChat.enabled,
       anonymousChatToken: agent.surfaceSettings.anonymousChat.token,
-      anonymousRateLimit: agent.surfaceSettings.anonymousChat.messagesPerMinute,
       assistantName: agent.name,
       greetingInstruction: agent.greetingInstruction,
       assistantDefaultLocale: agent.assistantDefaultLocale,
@@ -202,7 +197,6 @@ export class AgentService {
       websiteEmbedToken: agent.surfaceSettings.websiteEmbed.token,
       websiteEmbedAllowedOrigins: agent.surfaceSettings.websiteEmbed.allowedOrigins,
       websiteEmbedLauncherLabel: agent.surfaceSettings.websiteEmbed.launcherLabel,
-      websiteEmbedLauncherIcon: agent.surfaceSettings.websiteEmbed.icon,
       websiteEmbedLauncherPosition: agent.surfaceSettings.websiteEmbed.launcherPosition,
     });
   }

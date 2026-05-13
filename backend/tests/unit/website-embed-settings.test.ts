@@ -13,8 +13,15 @@ describe("website embed settings", () => {
       websiteEmbedToken: null,
       websiteEmbedAllowedOrigins: [],
       websiteEmbedLauncherLabel: "Chat with us",
-      websiteEmbedLauncherIcon: "chat",
       websiteEmbedLauncherPosition: "bottom-right",
+      websiteEmbedTheme: {
+        brand: "#0f172a",
+        brandText: "#f8fafc",
+        surface: "#ffffff",
+        text: "#0f172a",
+      },
+      websiteEmbedCopy: {},
+      websiteEmbedExpertOverrides: {},
     });
   });
 
@@ -34,6 +41,14 @@ describe("website embed settings", () => {
     });
   });
 
+  it("preserves an explicitly empty launcher label", () => {
+    expect(
+      validateWebsiteEmbedSettings({
+        websiteEmbedLauncherLabel: "",
+      }).websiteEmbedLauncherLabel,
+    ).toBe("");
+  });
+
   it("rejects enabling website embed without an allowed origin", () => {
     expect(() =>
       validateWebsiteEmbedSettings({
@@ -48,4 +63,3 @@ describe("website embed settings", () => {
     expect(isAllowedWebsiteEmbedOrigin(["https://example.com"], "https://other.example.com")).toBe(false);
   });
 });
-

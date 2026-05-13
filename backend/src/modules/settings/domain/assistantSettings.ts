@@ -1,10 +1,7 @@
 import type { WorkspaceRecord } from "../../../db/repositories/workspaceRepository.js";
 import type { AssistantBootstrapSettingsInput } from "./assistantBootstrapSettings.js";
 import { isAssistantBootstrapActive } from "./assistantBootstrapSettings.js";
-import type {
-  ConversationMode,
-  RetrievalSettingsRecord,
-} from "./retrievalSettings.js";
+import type { RetrievalSettingsRecord } from "./retrievalSettings.js";
 
 export interface AssistantSettingsSection {
   assistantName: string;
@@ -12,16 +9,13 @@ export interface AssistantSettingsSection {
   assistantDefaultLocale: string | null;
   proactiveGreetingEnabled: boolean;
   assistantBootstrapActive: boolean;
-  conversationMode: ConversationMode;
   suggestedQuestionsEnabled: boolean;
-  suggestedQuestionsCount: number;
   customInstruction: string;
+  assistantLogoUrl: string | null;
 }
 
 export interface AssistantSettingsPatch extends AssistantBootstrapSettingsInput {
-  conversationMode?: ConversationMode;
   suggestedQuestionsEnabled?: boolean;
-  suggestedQuestionsCount?: number;
   customInstruction?: string;
 }
 
@@ -34,8 +28,8 @@ export const buildAssistantSettingsSection = (
   assistantDefaultLocale: workspace.assistantDefaultLocale,
   proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
   assistantBootstrapActive: isAssistantBootstrapActive(workspace),
-  conversationMode: retrievalSettings.conversationMode,
   suggestedQuestionsEnabled: retrievalSettings.suggestedQuestionsEnabled,
-  suggestedQuestionsCount: retrievalSettings.suggestedQuestionsCount,
   customInstruction: retrievalSettings.customInstruction,
+  // The platform settings service derives the public logo URL from the active agent and public chat base URL.
+  assistantLogoUrl: null,
 });

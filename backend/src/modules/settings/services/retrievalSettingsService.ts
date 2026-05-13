@@ -67,7 +67,6 @@ export class RetrievalSettingsService {
           subjectId: workspaceId,
           properties: {
             queryRewriteEnabled: settings.queryRewriteEnabled,
-            conversationMode: settings.conversationMode,
             rerankEnabled: settings.rerankEnabled,
             suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
           },

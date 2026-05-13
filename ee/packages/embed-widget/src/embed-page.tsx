@@ -2,7 +2,6 @@ import { EmbeddedChatFrame } from "../components/chat/embedded-chat-frame.js";
 import {
   buildWebsiteEmbedSurfaceCssVars,
   getWebsiteEmbedTheme,
-  normalizeWebsiteEmbedAvatarUrl,
   normalizeWebsiteEmbedDisplayMode,
   parseWebsiteEmbedCopyOverridesParam,
   parseWebsiteEmbedThemeOverridesParam,
@@ -19,17 +18,14 @@ export default async function EmbeddedChatPage({
   searchParams: Promise<{
     locale?: string | string[];
     displayMode?: string | string[];
-    avatar?: string | string[];
-    avatarUrl?: string | string[];
     copy?: string | string[];
     theme?: string | string[];
   }>;
 }) {
   const { token } = await params;
-  const { locale, displayMode, avatar, avatarUrl, copy, theme } = await searchParams;
+  const { locale, displayMode, copy, theme } = await searchParams;
   const localeOverride = resolveEmbedLocaleSearchParam(locale);
   const resolvedDisplayMode = normalizeWebsiteEmbedDisplayMode(firstSearchValue(displayMode));
-  const resolvedAvatarUrl = normalizeWebsiteEmbedAvatarUrl(firstSearchValue(avatarUrl) ?? firstSearchValue(avatar));
   const copyOverrides = parseWebsiteEmbedCopyOverridesParam(copy);
   const themeOverrides = parseWebsiteEmbedThemeOverridesParam(theme);
   const resolvedTheme = getWebsiteEmbedTheme(themeOverrides);
@@ -47,7 +43,6 @@ export default async function EmbeddedChatPage({
         token={token}
         localeOverride={localeOverride}
         displayMode={resolvedDisplayMode}
-        avatarUrl={resolvedAvatarUrl}
         copyOverrides={copyOverrides}
         themeOverrides={themeOverrides}
       />

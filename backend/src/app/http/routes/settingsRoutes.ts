@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 
@@ -7,9 +8,6 @@ import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/public.js";
 import {
-  MAX_SUGGESTED_QUESTIONS_COUNT,
-  MIN_SUGGESTED_QUESTIONS_COUNT,
-  conversationModes,
   metadataRuleCombinators,
   metadataRuleEffects,
   metadataRuleOperators,
@@ -17,18 +15,21 @@ import {
   metadataValueTypes,
 } from "../../../modules/settings/contracts/retrieval.js";
 import {
-  websiteEmbedLauncherIcons,
   websiteEmbedLauncherPositions,
 } from "../../../modules/settings/contracts/websiteEmbed.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { badRequest } from "../../../shared/domain/errors.js";
+import {
+  ASSISTANT_LOGO_MIME_TYPES,
+  assistantThemeSchema,
+  createAssistantLogoUploadHandler,
+} from "../shared/assistantIdentity.js";
 
 export const updateSettingsSchema = z.object({
   queryRewriteEnabled: z.boolean(),
   semanticRewriteInstructions: z.string().max(2000).optional(),
   lexicalRewriteInstructions: z.string().max(2000).optional(),
-  conversationMode: z.enum(conversationModes).optional(),
   suggestedQuestionsEnabled: z.boolean().optional(),
-  suggestedQuestionsCount: z.number().int().min(MIN_SUGGESTED_QUESTIONS_COUNT).max(MAX_SUGGESTED_QUESTIONS_COUNT).optional(),
   rerankEnabled: z.boolean(),
   vectorTopK: z.number().int().min(1),
   similarityThreshold: z.number(),
@@ -65,18 +66,17 @@ export const updateSettingsSchema = z.object({
 
 export const updateGeneralSettingsSchema = z.object({
   anonymousChatEnabled: z.boolean().optional(),
-  anonymousRateLimit: z.number().int().min(1).max(60).optional(),
-  rotateAnonymousChatToken: z.boolean().optional(),
   assistantName: z.string().max(200).optional(),
   greetingInstruction: z.string().max(200).optional(),
   assistantDefaultLocale: z.string().max(35).nullable().optional(),
   proactiveGreetingEnabled: z.boolean().optional(),
   websiteEmbedEnabled: z.boolean().optional(),
-  rotateWebsiteEmbedToken: z.boolean().optional(),
   websiteEmbedAllowedOrigins: z.array(z.string().max(200)).max(20).optional(),
   websiteEmbedLauncherLabel: z.string().max(80).optional(),
-  websiteEmbedLauncherIcon: z.enum(websiteEmbedLauncherIcons).optional(),
   websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions).optional(),
+  websiteEmbedTheme: assistantThemeSchema.optional(),
+  websiteEmbedCopy: z.record(z.record(z.string().max(500))).optional(),
+  websiteEmbedExpertOverrides: z.record(z.string().max(500)).optional(),
 });
 
 export const updatePlatformSettingsSchema = z.object({
@@ -85,9 +85,7 @@ export const updatePlatformSettingsSchema = z.object({
     greetingInstruction: z.string().max(200).optional(),
     assistantDefaultLocale: z.string().max(35).nullable().optional(),
     proactiveGreetingEnabled: z.boolean().optional(),
-    conversationMode: z.enum(conversationModes).optional(),
     suggestedQuestionsEnabled: z.boolean().optional(),
-    suggestedQuestionsCount: z.number().int().min(MIN_SUGGESTED_QUESTIONS_COUNT).max(MAX_SUGGESTED_QUESTIONS_COUNT).optional(),
     customInstruction: z.string().max(2000).optional(),
   }).optional(),
   retrieval: z.object({
@@ -104,14 +102,13 @@ export const updatePlatformSettingsSchema = z.object({
   }).optional(),
   channels: z.object({
     anonymousChatEnabled: z.boolean().optional(),
-    anonymousRateLimit: z.number().int().min(1).max(60).optional(),
-    rotateAnonymousChatToken: z.boolean().optional(),
     websiteEmbedEnabled: z.boolean().optional(),
-    rotateWebsiteEmbedToken: z.boolean().optional(),
     websiteEmbedAllowedOrigins: z.array(z.string().max(200)).max(20).optional(),
     websiteEmbedLauncherLabel: z.string().max(80).optional(),
-    websiteEmbedLauncherIcon: z.enum(websiteEmbedLauncherIcons).optional(),
     websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions).optional(),
+    websiteEmbedTheme: updateGeneralSettingsSchema.shape.websiteEmbedTheme,
+    websiteEmbedCopy: updateGeneralSettingsSchema.shape.websiteEmbedCopy,
+    websiteEmbedExpertOverrides: updateGeneralSettingsSchema.shape.websiteEmbedExpertOverrides,
   }).optional(),
 });
 
@@ -137,11 +134,15 @@ type SettingsRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "platformSettingsService"
   | "retrievalSettingsService"
   | "workspaceIngestionReprocessService"
+  | "agentService"
+  | "documentStorage"
+  | "logger"
 >;
 
 export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const runUploadSingle = createAssistantLogoUploadHandler();
 
   router.get("/", workspaceSession, async (_req, res, next) => {
     try {
@@ -171,9 +172,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     workspaceId: record.workspaceId,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
-    conversationMode: settings.assistant.conversationMode,
     suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
-    suggestedQuestionsCount: settings.assistant.suggestedQuestionsCount,
     customInstruction: settings.assistant.customInstruction,
   });
 
@@ -195,9 +194,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.platformSettingsService.updateForWorkspace(workspaceId, {
         assistant: {
-          conversationMode: req.body.conversationMode,
           suggestedQuestionsEnabled: req.body.suggestedQuestionsEnabled,
-          suggestedQuestionsCount: req.body.suggestedQuestionsCount,
           customInstruction: req.body.customInstruction,
         },
         retrieval: {
@@ -257,20 +254,22 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
   ) => ({
     anonymousChatEnabled: settings.channels.anonymousChatEnabled,
     anonymousChatUrl: settings.channels.anonymousChatUrl,
-    anonymousRateLimit: settings.channels.anonymousRateLimit,
     assistantName: settings.assistant.assistantName,
     greetingInstruction: settings.assistant.greetingInstruction,
     assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
     proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
     assistantBootstrapActive: settings.assistant.assistantBootstrapActive,
+    assistantLogoUrl: settings.assistant.assistantLogoUrl,
     websiteEmbedEnabled: settings.channels.websiteEmbedEnabled,
     websiteEmbedToken: settings.channels.websiteEmbedToken,
     websiteEmbedScriptUrl: settings.channels.websiteEmbedScriptUrl,
     websiteEmbedSnippet: settings.channels.websiteEmbedSnippet,
     websiteEmbedAllowedOrigins: settings.channels.websiteEmbedAllowedOrigins,
     websiteEmbedLauncherLabel: settings.channels.websiteEmbedLauncherLabel,
-    websiteEmbedLauncherIcon: settings.channels.websiteEmbedLauncherIcon,
     websiteEmbedLauncherPosition: settings.channels.websiteEmbedLauncherPosition,
+    websiteEmbedTheme: settings.channels.websiteEmbedTheme,
+    websiteEmbedCopy: settings.channels.websiteEmbedCopy,
+    websiteEmbedExpertOverrides: settings.channels.websiteEmbedExpertOverrides,
   });
 
   router.get("/general", workspaceSession, async (_req, res, next) => {
@@ -297,20 +296,135 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
           },
           channels: {
             anonymousChatEnabled: req.body.anonymousChatEnabled,
-            anonymousRateLimit: req.body.anonymousRateLimit,
-            rotateAnonymousChatToken: req.body.rotateAnonymousChatToken,
             websiteEmbedEnabled: req.body.websiteEmbedEnabled,
-            rotateWebsiteEmbedToken: req.body.rotateWebsiteEmbedToken,
             websiteEmbedAllowedOrigins: req.body.websiteEmbedAllowedOrigins,
             websiteEmbedLauncherLabel: req.body.websiteEmbedLauncherLabel,
-            websiteEmbedLauncherIcon: req.body.websiteEmbedLauncherIcon,
             websiteEmbedLauncherPosition: req.body.websiteEmbedLauncherPosition,
+            websiteEmbedTheme: req.body.websiteEmbedTheme,
+            websiteEmbedCopy: req.body.websiteEmbedCopy,
+            websiteEmbedExpertOverrides: req.body.websiteEmbedExpertOverrides,
           },
         },
         { accountId },
       );
 
       res.status(200).json(presentGeneralSettings(settings));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/general/anonymous-chat-token/rotate", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), async (_req, res, next) => {
+    try {
+      const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
+      const settings = await dependencies.platformSettingsService.updateForWorkspace(
+        workspaceId,
+        {
+          channels: {
+            rotateAnonymousChatToken: true,
+          },
+        },
+        { accountId },
+      );
+      res.status(200).json(presentGeneralSettings(settings));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/general/website-embed-token/rotate", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), async (_req, res, next) => {
+    try {
+      const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
+      const settings = await dependencies.platformSettingsService.updateForWorkspace(
+        workspaceId,
+        {
+          channels: {
+            rotateWebsiteEmbedToken: true,
+          },
+        },
+        { accountId },
+      );
+      res.status(200).json(presentGeneralSettings(settings));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/general/assistant-logo", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const current = await dependencies.agentService.resolve(workspaceId);
+      await runUploadSingle(req, res);
+      if (!req.file) {
+        throw badRequest("Logo file is required");
+      }
+      if (!ASSISTANT_LOGO_MIME_TYPES.has(req.file.mimetype)) {
+        throw badRequest("Assistant logo must be a PNG, JPEG, WebP, or GIF image");
+      }
+
+      const stored = await dependencies.documentStorage.upload({
+        workspaceId,
+        documentId: `assistant-logo-${current.id}-${randomUUID()}`,
+        filename: req.file.originalname || "assistant-logo",
+        mimeType: req.file.mimetype,
+        buffer: req.file.buffer,
+      });
+      const uploadedLogo = {
+        bucket: stored.bucket,
+        objectPath: stored.objectPath,
+        generation: stored.generation ?? null,
+        mimeType: req.file.mimetype,
+        filename: req.file.originalname || "assistant-logo",
+        sizeBytes: stored.sizeBytes,
+      };
+      await dependencies.agentService.update(workspaceId, current.id, {
+        logo: uploadedLogo,
+      }).catch(async (error: unknown) => {
+        await dependencies.documentStorage.delete({
+          bucket: uploadedLogo.bucket,
+          objectPath: uploadedLogo.objectPath,
+          generation: uploadedLogo.generation,
+        }).catch((cleanupError: unknown) => {
+          dependencies.logger.warn({ err: cleanupError, workspaceId, agentId: current.id }, "Failed to clean up orphaned assistant logo upload");
+        });
+        throw error;
+      });
+      const previousLogo = current.logo;
+      if (previousLogo) {
+        await dependencies.documentStorage.delete({
+          bucket: previousLogo.bucket,
+          objectPath: previousLogo.objectPath,
+          generation: previousLogo.generation ?? null,
+        }).catch((error: unknown) => {
+          dependencies.logger.warn({ err: error, workspaceId, agentId: current.id }, "Failed to delete replaced assistant logo");
+        });
+      }
+
+      res.status(200).json(presentGeneralSettings(await dependencies.platformSettingsService.getForWorkspace(workspaceId)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/general/assistant-logo", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), async (_req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const current = await dependencies.agentService.resolve(workspaceId);
+      await dependencies.agentService.update(workspaceId, current.id, {
+        logo: null,
+      });
+      const previousLogo = current.logo;
+      if (previousLogo) {
+        await dependencies.documentStorage.delete({
+          bucket: previousLogo.bucket,
+          objectPath: previousLogo.objectPath,
+          generation: previousLogo.generation ?? null,
+        }).catch((error: unknown) => {
+          dependencies.logger.warn({ err: error, workspaceId, agentId: current.id }, "Failed to delete removed assistant logo");
+        });
+      }
+
+      res.status(200).json(presentGeneralSettings(await dependencies.platformSettingsService.getForWorkspace(workspaceId)));
     } catch (error) {
       next(error);
     }

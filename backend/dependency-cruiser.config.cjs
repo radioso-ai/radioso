@@ -1,4 +1,6 @@
 module.exports = {
+  // TODO: keep module-boundary coverage expanding as new modules expose public
+  // contract entrypoints; each contract-owning module should get matching rules.
   forbidden: [
     {
       name: "no-direct-crawler-package-imports",

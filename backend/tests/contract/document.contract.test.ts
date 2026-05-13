@@ -207,10 +207,10 @@ describe("document contract", () => {
         contentType: "text/plain",
       });
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(413);
     expect(response.body).toMatchObject({
       error: {
-        code: "bad_request",
+        code: "payload_too_large",
         message: "Uploaded file exceeds maximum size",
       },
     });

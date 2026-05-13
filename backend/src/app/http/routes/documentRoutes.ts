@@ -7,7 +7,7 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { validateBody } from "../middleware/validate.js";
-import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { badRequest, notFound, payloadTooLarge } from "../../../shared/domain/errors.js";
 import { createWebsiteCrawlerRoutes } from "../../../modules/websiteCrawler/routes.js";
 
 const MAX_DOCUMENT_LIST_LIMIT = 100;
@@ -105,7 +105,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         }
 
         if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
-          reject(badRequest("Uploaded file exceeds maximum size"));
+          reject(payloadTooLarge("Uploaded file exceeds maximum size"));
           return;
         }
 

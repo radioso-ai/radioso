@@ -1,8 +1,4 @@
-import {
-  type WebsiteEmbedLauncherIcon,
-  type WebsiteEmbedLauncherPosition,
-} from "./websiteEmbedSettings.js";
-import { resolveAssistantDisplayName } from "./assistantBootstrapSettings.js";
+import { type WebsiteEmbedLauncherPosition } from "./websiteEmbedSettings.js";
 
 export interface WebsiteEmbedIntegrationWorkspace {
   name: string;
@@ -11,7 +7,6 @@ export interface WebsiteEmbedIntegrationWorkspace {
   websiteEmbedToken: string | null;
   websiteEmbedAllowedOrigins: string[];
   websiteEmbedLauncherLabel: string;
-  websiteEmbedLauncherIcon: WebsiteEmbedLauncherIcon;
   websiteEmbedLauncherPosition: WebsiteEmbedLauncherPosition;
 }
 
@@ -37,26 +32,11 @@ export class DefaultWebsiteEmbedIntegrationProvider implements WebsiteEmbedInteg
       return null;
     }
 
-    const originAttribute =
-      workspace.websiteEmbedAllowedOrigins.length > 0
-        ? ` data-radioso-allowed-origins="${escapeHtmlAttribute(workspace.websiteEmbedAllowedOrigins.join(","))}"`
-        : "";
-    const displayName = resolveAssistantDisplayName({
-      assistantName: workspace.assistantName,
-      workspaceName: workspace.name,
-    });
-    const titleOverride = displayName
-      ? ` data-radioso-copy="${escapeHtmlAttribute(JSON.stringify({ embeddedChatTitle: displayName }))}"`
-      : "";
-
     return [
       `<script`,
       `  async`,
       `  src="${escapeHtmlAttribute(scriptUrl)}"`,
       `  data-radioso-token="${escapeHtmlAttribute(workspace.websiteEmbedToken)}"`,
-      `  data-radioso-launcher-label="${escapeHtmlAttribute(workspace.websiteEmbedLauncherLabel)}"`,
-      `  data-radioso-launcher-icon="${escapeHtmlAttribute(workspace.websiteEmbedLauncherIcon)}"`,
-      `  data-radioso-launcher-position="${escapeHtmlAttribute(workspace.websiteEmbedLauncherPosition)}"${originAttribute}${titleOverride}`,
       `></script>`,
     ].join("\n");
   }

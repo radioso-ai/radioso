@@ -1,7 +1,6 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
-import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 import { SharedAnswerInstructionBuilder } from "./sharedAnswerInstructionBuilder.js";
@@ -25,7 +24,6 @@ export class PromptBuilder {
     settings: {
       responseIdentity?: ResponseIdentity | null;
       customInstruction?: string;
-      conversationMode?: ConversationMode;
       responseLanguagePolicy?: ResponseLanguagePolicy;
       responseLanguage?: string;
     };
@@ -48,7 +46,6 @@ export class PromptBuilder {
     const answerInstructionBlocks = this.sharedAnswerInstructionBuilder.build({
       responseIdentity: input.settings.responseIdentity,
       customInstruction: input.settings.customInstruction,
-      conversationMode: input.settings.conversationMode,
       responseLanguagePolicy: input.settings.responseLanguagePolicy,
       responseLanguage: input.settings.responseLanguage,
     });
@@ -61,9 +58,7 @@ export class PromptBuilder {
         custom_instruction_block: answerInstructionBlocks.customInstructionBlock
           ? `${answerInstructionBlocks.customInstructionBlock}\n`
           : "",
-        conversation_mode_instruction_block: answerInstructionBlocks.conversationModeInstructionBlock
-          ? `${answerInstructionBlocks.conversationModeInstructionBlock}\n`
-          : "",
+        conversation_mode_instruction_block: "",
         response_language_instruction: answerInstructionBlocks.responseLanguageInstruction,
         intent_topic: input.intentTopic || "not provided",
       }),

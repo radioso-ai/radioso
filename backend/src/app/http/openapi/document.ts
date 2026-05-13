@@ -60,17 +60,12 @@ import {
   anonymousChatSchema,
   publicConversationParamsSchema,
 } from "../routes/publicChatRoutes.js";
-import { websiteEmbedLauncherIcons, websiteEmbedLauncherPositions } from "../../../modules/settings/contracts/websiteEmbed.js";
+import { websiteEmbedLauncherPositions } from "../../../modules/settings/contracts/websiteEmbed.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/public.js";
 import {
-  agentConversationModes,
-  agentSurfaceIcons,
   agentSurfacePositions,
 } from "../../../modules/agents/public.js";
 import {
-  MAX_SUGGESTED_QUESTIONS_COUNT,
-  MIN_SUGGESTED_QUESTIONS_COUNT,
-  conversationModes,
   metadataRuleEffects,
   metadataRuleOperators,
   metadataRuleTriggerModes,
@@ -339,9 +334,7 @@ const RetrievalSettingsSchema = registry.register(
     queryRewriteEnabled: z.boolean(),
     semanticRewriteInstructions: z.string().max(2000),
     lexicalRewriteInstructions: z.string().max(2000),
-    conversationMode: z.enum(conversationModes),
     suggestedQuestionsEnabled: z.boolean(),
-    suggestedQuestionsCount: z.number().int().min(MIN_SUGGESTED_QUESTIONS_COUNT).max(MAX_SUGGESTED_QUESTIONS_COUNT),
     rerankEnabled: z.boolean(),
     vectorTopK: z.number().int().min(1).max(300),
     similarityThreshold: z.number().min(0).max(1),
@@ -480,20 +473,34 @@ const GeneralSettingsResponseSchema = registry.register(
   z.object({
     anonymousChatEnabled: z.boolean(),
     anonymousChatUrl: z.string().nullable(),
-    anonymousRateLimit: z.number().int().min(1).max(60),
     assistantName: z.string(),
     greetingInstruction: z.string(),
     assistantDefaultLocale: z.string().nullable(),
     proactiveGreetingEnabled: z.boolean(),
     assistantBootstrapActive: z.boolean(),
+    assistantLogoUrl: z.string().nullable(),
     websiteEmbedEnabled: z.boolean(),
     websiteEmbedToken: z.string().nullable(),
     websiteEmbedScriptUrl: z.string().nullable(),
     websiteEmbedSnippet: z.string().nullable(),
     websiteEmbedAllowedOrigins: z.array(z.string()),
     websiteEmbedLauncherLabel: z.string(),
-    websiteEmbedLauncherIcon: z.enum(websiteEmbedLauncherIcons),
     websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions),
+    websiteEmbedTheme: z.object({
+      brand: z.string(),
+      brandText: z.string(),
+      surface: z.string(),
+      text: z.string(),
+    }),
+    websiteEmbedCopy: z.record(z.record(z.string())),
+    websiteEmbedExpertOverrides: z.record(z.string()),
+  }),
+);
+
+const AssistantLogoUploadRequestSchema = registry.register(
+  "AssistantLogoUploadRequest",
+  z.object({
+    logo: z.string().openapi({ format: "binary" }),
   }),
 );
 
@@ -508,10 +515,9 @@ const AssistantSettingsSectionSchema = registry.register(
       description: "Server-managed bootstrap readiness derived from the current assistant configuration.",
       readOnly: true,
     }),
-    conversationMode: z.enum(conversationModes),
     suggestedQuestionsEnabled: z.boolean(),
-    suggestedQuestionsCount: z.number().int().min(MIN_SUGGESTED_QUESTIONS_COUNT).max(MAX_SUGGESTED_QUESTIONS_COUNT),
     customInstruction: z.string(),
+    assistantLogoUrl: z.string().nullable(),
   }),
 );
 
@@ -564,17 +570,32 @@ const PlatformChannelsSettingsSectionSchema = registry.register(
   z.object({
     anonymousChatEnabled: z.boolean(),
     anonymousChatUrl: z.string().nullable(),
-    anonymousRateLimit: z.number().int().min(1).max(60),
     websiteEmbedEnabled: z.boolean(),
     websiteEmbedToken: z.string().nullable(),
     websiteEmbedAllowedOrigins: z.array(z.string()),
     websiteEmbedLauncherLabel: z.string(),
-    websiteEmbedLauncherIcon: z.enum(websiteEmbedLauncherIcons),
     websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions),
     websiteEmbedScriptUrl: z.string().nullable(),
     websiteEmbedSnippet: z.string().nullable(),
+    websiteEmbedTheme: z.object({
+      brand: z.string(),
+      brandText: z.string(),
+      surface: z.string(),
+      text: z.string(),
+    }),
+    websiteEmbedCopy: z.record(z.record(z.string())),
+    websiteEmbedExpertOverrides: z.record(z.string()),
   }),
 );
+
+const AgentLogoSchema = z.object({
+  bucket: z.string(),
+  objectPath: z.string(),
+  generation: z.string().nullable().optional(),
+  mimeType: z.string(),
+  filename: z.string(),
+  sizeBytes: z.number(),
+}).nullable();
 
 const PlatformSettingsResponseSchema = registry.register(
   "PlatformSettingsResponse",
@@ -610,15 +631,21 @@ const ConversationAgentSurfaceSettingsSchema = registry.register(
     anonymousChat: z.object({
       enabled: z.boolean(),
       token: z.string().nullable(),
-      messagesPerMinute: z.number().int().min(1).max(60),
     }),
     websiteEmbed: z.object({
       enabled: z.boolean(),
       token: z.string().nullable(),
       allowedOrigins: z.array(z.string()),
       launcherLabel: z.string(),
-      icon: z.enum(agentSurfaceIcons),
       launcherPosition: z.enum(agentSurfacePositions),
+      theme: z.object({
+        brand: z.string(),
+        brandText: z.string(),
+        surface: z.string(),
+        text: z.string(),
+      }),
+      copy: z.record(z.record(z.string())),
+      expertOverrides: z.record(z.string()),
     }),
   }),
 );
@@ -628,10 +655,15 @@ const ConversationAgentSchema = registry.register(
   AgentSchema.extend({
     isDefault: z.boolean(),
     customInstruction: z.string(),
-    conversationMode: z.enum(agentConversationModes),
     suggestedQuestionsEnabled: z.boolean(),
-    suggestedQuestionsCount: z.number().int().min(1).max(4),
+    theme: z.object({
+      brand: z.string(),
+      brandText: z.string(),
+      surface: z.string(),
+      text: z.string(),
+    }),
     retrievalEnabled: z.boolean(),
+    logo: AgentLogoSchema,
     greetingInstruction: z.string(),
     assistantDefaultLocale: z.string().nullable(),
     proactiveGreetingEnabled: z.boolean(),
@@ -652,9 +684,13 @@ const ConversationAgentRequestSchema = registry.register(
   z.object({
     name: z.string().max(200).optional(),
     customInstruction: z.string().max(2000).optional(),
-    conversationMode: z.enum(agentConversationModes).optional(),
     suggestedQuestionsEnabled: z.boolean().optional(),
-    suggestedQuestionsCount: z.number().int().min(1).max(4).optional(),
+    theme: z.object({
+      brand: z.string().optional(),
+      brandText: z.string().optional(),
+      surface: z.string().optional(),
+      text: z.string().optional(),
+    }).optional(),
     retrievalEnabled: z.boolean().optional(),
     greetingInstruction: z.string().max(200).optional(),
     assistantDefaultLocale: z.string().max(35).nullable().optional(),
@@ -665,18 +701,22 @@ const ConversationAgentRequestSchema = registry.register(
       }).optional(),
       anonymousChat: z.object({
         enabled: z.boolean().optional(),
-        messagesPerMinute: z.number().int().min(1).max(60).optional(),
       }).optional(),
       websiteEmbed: z.object({
         enabled: z.boolean().optional(),
         allowedOrigins: z.array(z.string().max(200)).max(20).optional(),
         launcherLabel: z.string().max(80).optional(),
-        icon: z.enum(agentSurfaceIcons).optional(),
         launcherPosition: z.enum(agentSurfacePositions).optional(),
+        theme: z.object({
+          brand: z.string().optional(),
+          brandText: z.string().optional(),
+          surface: z.string().optional(),
+          text: z.string().optional(),
+        }).optional(),
+        copy: z.record(z.record(z.string())).optional(),
+        expertOverrides: z.record(z.string()).optional(),
       }).optional(),
     }).optional(),
-    rotateAnonymousChatToken: z.boolean().optional(),
-    rotateWebsiteEmbedToken: z.boolean().optional(),
   }),
 );
 
@@ -702,6 +742,13 @@ const PublicChatSessionResponseSchema = registry.register(
     publicSessionId: z.string().uuid(),
     publicSessionToken: z.string(),
     assistantBootstrapActive: z.boolean(),
+    assistantAvatarUrl: z.string().nullable().optional(),
+    theme: z.object({
+      brand: z.string(),
+      brandText: z.string(),
+      surface: z.string(),
+      text: z.string(),
+    }).optional(),
     actions: z.record(z.unknown()).optional(),
     expiresAt: z.string().datetime(),
   }),
@@ -1223,15 +1270,6 @@ const chatResponseCoreShape = {
   citations: z.array(CitationSchema).optional(),
   answerSegments: z.array(AnswerSegmentSchema).optional(),
   suggestions: z.array(ChatSuggestionSchema).optional(),
-  conversationMode: z.enum(conversationModes),
-  conversationModeMetadata: z.object({
-    conversationMode: z.enum(conversationModes),
-    brevityOverrideApplied: z.boolean(),
-    expansionApplied: z.boolean(),
-    expansionKind: z.enum(["none", "focused", "expansive"]),
-    suggestionCount: z.number().int().min(0),
-    followUpQuestionApplied: z.boolean(),
-  }),
   retrievalInfo: RetrievalInfoSchema,
   retrievalTrace: RetrievalTraceSchema,
 };
@@ -1373,6 +1411,7 @@ const ChatHistoryListResponseSchema = registry.register(
   "ChatHistoryListResponse",
   z.object({
     conversations: z.array(ChatConversationSummarySchema),
+    assistantAvatarUrl: z.string().nullable().optional(),
     total: z.number().int().min(0),
     nextCursor: z.string().nullable(),
     hasMore: z.boolean(),
@@ -1447,16 +1486,7 @@ const ChatConversationMessageDebugSchema = registry.register(
     stream: z.boolean(),
     citationCount: z.number().int().min(0),
     answerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal", "non_retrieval_response"]).optional(),
-    conversationMode: z.enum(conversationModes).optional(),
     route: AssistantRouteDiagnosticsSchema.optional(),
-    conversationModeMetadata: z.object({
-      conversationMode: z.enum(conversationModes),
-      brevityOverrideApplied: z.boolean(),
-      expansionApplied: z.boolean(),
-      expansionKind: z.enum(["none", "focused", "expansive"]),
-      suggestionCount: z.number().int().min(0),
-      followUpQuestionApplied: z.boolean(),
-    }).optional(),
     validation: ValidationDebugSchema.optional(),
     retrievalInfo: RetrievalInfoSchema.optional(),
     retrievalTrace: RetrievalTraceSchema.optional(),
@@ -2945,6 +2975,132 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/api/v1/settings/general/anonymous-chat-token/rotate",
+  tags: ["Settings"],
+  summary: "Reset the anonymous chat public link",
+  operationId: "rotateAnonymousChatToken",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Updated general settings",
+      content: {
+        "application/json": {
+          schema: GeneralSettingsResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/settings/general/website-embed-token/rotate",
+  tags: ["Settings"],
+  summary: "Reset the website embed token",
+  operationId: "rotateWebsiteEmbedToken",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Updated general settings",
+      content: {
+        "application/json": {
+          schema: GeneralSettingsResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/settings/general/assistant-logo",
+  tags: ["Settings"],
+  summary: "Upload the default assistant logo",
+  operationId: "uploadAssistantLogo",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "multipart/form-data": {
+          schema: AssistantLogoUploadRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Updated general settings",
+      content: {
+        "application/json": {
+          schema: GeneralSettingsResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/settings/general/assistant-logo",
+  tags: ["Settings"],
+  summary: "Remove the default assistant logo",
+  operationId: "deleteAssistantLogo",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Updated general settings",
+      content: {
+        "application/json": {
+          schema: GeneralSettingsResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
   method: "get",
   path: "/api/v1/agents",
   tags: ["Agents"],
@@ -3012,6 +3168,47 @@ registry.registerPath({
   responses: {
     200: { description: "Agent updated", content: { "application/json": { schema: ConversationAgentSchema } } },
     400: { description: "Request validation failed", content: { "application/json": { schema: ErrorResponseSchema } } },
+    401: { description: "Authentication required", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "Agent not found", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/agents/{agentId}/assistant-logo",
+  tags: ["Agents"],
+  summary: "Upload an assistant logo",
+  operationId: "uploadAgentAssistantLogo",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    params: AgentParamsSchema,
+    body: {
+      required: true,
+      content: {
+        "multipart/form-data": {
+          schema: AssistantLogoUploadRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "Agent updated", content: { "application/json": { schema: ConversationAgentSchema } } },
+    400: { description: "Request validation failed", content: { "application/json": { schema: ErrorResponseSchema } } },
+    401: { description: "Authentication required", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "Agent not found", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/agents/{agentId}/assistant-logo",
+  tags: ["Agents"],
+  summary: "Remove an assistant logo",
+  operationId: "deleteAgentAssistantLogo",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: { params: AgentParamsSchema },
+  responses: {
+    200: { description: "Agent updated", content: { "application/json": { schema: ConversationAgentSchema } } },
     401: { description: "Authentication required", content: { "application/json": { schema: ErrorResponseSchema } } },
     404: { description: "Agent not found", content: { "application/json": { schema: ErrorResponseSchema } } },
   },

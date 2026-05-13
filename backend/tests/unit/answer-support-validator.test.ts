@@ -50,7 +50,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -95,7 +94,6 @@ describe("answer support validator", () => {
       citationEvidence: [],
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -123,7 +121,6 @@ describe("answer support validator", () => {
       citationEvidence: [],
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -159,7 +156,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -198,7 +194,6 @@ describe("answer support validator", () => {
       hiddenSupportEvidence: [{ kind: "assistant_name", content: "Vikram" }],
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -221,7 +216,6 @@ describe("answer support validator", () => {
       ],
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -250,7 +244,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: false,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -284,7 +277,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -325,7 +317,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -368,7 +359,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -387,7 +377,6 @@ describe("answer support validator", () => {
       citationEvidence: [],
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -427,7 +416,6 @@ describe("answer support validator", () => {
         },
       ],
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -470,7 +458,6 @@ describe("answer support validator", () => {
         },
       ],
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -512,7 +499,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -560,7 +546,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -604,7 +589,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -641,7 +625,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -679,7 +662,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -724,7 +706,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -757,7 +738,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -789,7 +769,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
@@ -822,7 +801,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      conversationMode: "guided",
       groundedMissResponseComposer: {
         async composeUnsupportedWithContext() {
           return "I couldn't verify that from your workspace documents.";

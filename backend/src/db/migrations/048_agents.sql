@@ -39,7 +39,6 @@ SELECT
   true,
   jsonb_build_object(
     'customInstruction', COALESCE(rs.custom_instruction, ''),
-    'conversationMode', COALESCE(rs.attribute_controls ->> 'conversationMode', 'guided'),
     'suggestedQuestionsEnabled', COALESCE((rs.attribute_controls ->> 'suggestedQuestionsEnabled')::boolean, true),
     'suggestedQuestionsCount', COALESCE((rs.attribute_controls ->> 'suggestedQuestionsCount')::integer, 3)
   ),

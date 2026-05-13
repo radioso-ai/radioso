@@ -14,6 +14,8 @@ POST /api/v1/public/chat/{token}/sessions
 GET  /api/v1/public/chat/{token}
 POST /api/v1/public/chat/{token}
 GET  /api/v1/public/chat/{token}/history/{conversationId}
+GET  /api/v1/public/chat/{token}/embed-config
+GET  /api/v1/public/chat/{token}/assistant-logo
 ```
 
 ## How it works
@@ -77,7 +79,7 @@ Use `GET /api/v1/public/chat/{token}/history/{conversationId}` to fetch one conv
 
 - `403` on a website embed session usually means the origin is not in the allowlist.
 - `404` usually means the public token is unknown or not active.
-- `429` on public chat means the anonymous rate limit has been reached.
+- `429` on public chat means the optional server-side public chat rate limit has been reached.
 - If history appears empty, the browser or cookie jar is probably not preserving the HttpOnly anonymous session cookie.
 
 ## Read next

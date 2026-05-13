@@ -24,15 +24,6 @@ const bootstrapPayload = {
   answer: 'Hello, how can I help?',
   citations: [],
   answerSegments: [{ text: 'Hello, how can I help?' }],
-  conversationMode: 'guided',
-  conversationModeMetadata: {
-    conversationMode: 'guided',
-    brevityOverrideApplied: false,
-    expansionApplied: false,
-    expansionKind: 'none',
-    suggestionCount: 0,
-    followUpQuestionApplied: false,
-  },
   retrievalInfo: {
     retrievalSkipped: true,
   },

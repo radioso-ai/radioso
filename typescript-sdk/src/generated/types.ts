@@ -471,6 +471,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/general/anonymous-chat-token/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset the anonymous chat public link */
+        post: operations["rotateAnonymousChatToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/general/website-embed-token/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset the website embed token */
+        post: operations["rotateWebsiteEmbedToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/general/assistant-logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload the default assistant logo */
+        post: operations["uploadAssistantLogo"];
+        /** Remove the default assistant logo */
+        delete: operations["deleteAssistantLogo"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents": {
         parameters: {
             query?: never;
@@ -502,6 +554,24 @@ export interface paths {
         put: operations["updateAgent"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/assistant-logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload an assistant logo */
+        post: operations["uploadAgentAssistantLogo"];
+        /** Remove an assistant logo */
+        delete: operations["deleteAgentAssistantLogo"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1093,7 +1163,7 @@ export interface components {
             /** @enum {string} */
             apiVersion: "0.1.0";
             /** @enum {string} */
-            mcpContextVersion: "2026-04-22";
+            mcpContextVersion: "2026-05-06";
             supportedTools: ("answer_grounded" | "create_document" | "delete_document" | "describe_capabilities" | "get_document" | "get_retrieval_settings" | "list_documents" | "reprocess_document" | "search_documents" | "update_document" | "update_retrieval_settings")[];
             /** Format: uuid */
             workspaceId: string;
@@ -1258,10 +1328,7 @@ export interface components {
             queryRewriteEnabled: boolean;
             semanticRewriteInstructions: string;
             lexicalRewriteInstructions: string;
-            /** @enum {string} */
-            conversationMode: "factual" | "guided" | "exploratory";
             suggestedQuestionsEnabled: boolean;
-            suggestedQuestionsCount: number;
             rerankEnabled: boolean;
             vectorTopK: number;
             similarityThreshold: number;
@@ -1315,10 +1382,7 @@ export interface components {
             queryRewriteEnabled: boolean;
             semanticRewriteInstructions?: string;
             lexicalRewriteInstructions?: string;
-            /** @enum {string} */
-            conversationMode?: "factual" | "guided" | "exploratory";
             suggestedQuestionsEnabled?: boolean;
-            suggestedQuestionsCount?: number;
             rerankEnabled: boolean;
             vectorTopK: number;
             similarityThreshold: number;
@@ -1357,10 +1421,7 @@ export interface components {
             queryRewriteEnabled?: boolean;
             semanticRewriteInstructions?: string;
             lexicalRewriteInstructions?: string;
-            /** @enum {string} */
-            conversationMode?: "factual" | "guided" | "exploratory";
             suggestedQuestionsEnabled?: boolean;
-            suggestedQuestionsCount?: number;
             rerankEnabled?: boolean;
             vectorTopK?: number;
             similarityThreshold?: number;
@@ -1473,30 +1534,39 @@ export interface components {
         };
         UpdateGeneralSettingsRequest: {
             anonymousChatEnabled?: boolean;
-            anonymousRateLimit?: number;
-            rotateAnonymousChatToken?: boolean;
             assistantName?: string;
             greetingInstruction?: string;
             assistantDefaultLocale?: string | null;
             proactiveGreetingEnabled?: boolean;
             websiteEmbedEnabled?: boolean;
-            rotateWebsiteEmbedToken?: boolean;
             websiteEmbedAllowedOrigins?: string[];
             websiteEmbedLauncherLabel?: string;
             /** @enum {string} */
-            websiteEmbedLauncherIcon?: "chat" | "sparkles" | "message";
-            /** @enum {string} */
             websiteEmbedLauncherPosition?: "bottom-right" | "bottom-left";
+            websiteEmbedTheme?: {
+                brand?: string;
+                brandText?: string;
+                surface?: string;
+                text?: string;
+            };
+            websiteEmbedCopy?: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+            websiteEmbedExpertOverrides?: {
+                [key: string]: string;
+            };
         };
         GeneralSettingsResponse: {
             anonymousChatEnabled: boolean;
             anonymousChatUrl: string | null;
-            anonymousRateLimit: number;
             assistantName: string;
             greetingInstruction: string;
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
             assistantBootstrapActive: boolean;
+            assistantLogoUrl: string | null;
             websiteEmbedEnabled: boolean;
             websiteEmbedToken: string | null;
             websiteEmbedScriptUrl: string | null;
@@ -1504,9 +1574,25 @@ export interface components {
             websiteEmbedAllowedOrigins: string[];
             websiteEmbedLauncherLabel: string;
             /** @enum {string} */
-            websiteEmbedLauncherIcon: "chat" | "sparkles" | "message";
-            /** @enum {string} */
             websiteEmbedLauncherPosition: "bottom-right" | "bottom-left";
+            websiteEmbedTheme: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
+            websiteEmbedCopy: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+            websiteEmbedExpertOverrides: {
+                [key: string]: string;
+            };
+        };
+        AssistantLogoUploadRequest: {
+            /** Format: binary */
+            logo: string;
         };
         AssistantSettingsSection: {
             assistantName: string;
@@ -1515,11 +1601,9 @@ export interface components {
             proactiveGreetingEnabled: boolean;
             /** @description Server-managed bootstrap readiness derived from the current assistant configuration. */
             readonly assistantBootstrapActive: boolean;
-            /** @enum {string} */
-            conversationMode: "factual" | "guided" | "exploratory";
             suggestedQuestionsEnabled: boolean;
-            suggestedQuestionsCount: number;
             customInstruction: string;
+            assistantLogoUrl: string | null;
         };
         PlatformRetrievalSettingsSection: {
             queryRewriteEnabled: boolean;
@@ -1572,17 +1656,28 @@ export interface components {
         PlatformChannelsSettingsSection: {
             anonymousChatEnabled: boolean;
             anonymousChatUrl: string | null;
-            anonymousRateLimit: number;
             websiteEmbedEnabled: boolean;
             websiteEmbedToken: string | null;
             websiteEmbedAllowedOrigins: string[];
             websiteEmbedLauncherLabel: string;
             /** @enum {string} */
-            websiteEmbedLauncherIcon: "chat" | "sparkles" | "message";
-            /** @enum {string} */
             websiteEmbedLauncherPosition: "bottom-right" | "bottom-left";
             websiteEmbedScriptUrl: string | null;
             websiteEmbedSnippet: string | null;
+            websiteEmbedTheme: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
+            websiteEmbedCopy: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+            websiteEmbedExpertOverrides: {
+                [key: string]: string;
+            };
         };
         PlatformSettingsResponse: {
             assistant: components["schemas"]["AssistantSettingsSection"];
@@ -1595,10 +1690,7 @@ export interface components {
                 greetingInstruction?: string;
                 assistantDefaultLocale?: string | null;
                 proactiveGreetingEnabled?: boolean;
-                /** @enum {string} */
-                conversationMode?: "factual" | "guided" | "exploratory";
                 suggestedQuestionsEnabled?: boolean;
-                suggestedQuestionsCount?: number;
                 customInstruction?: string;
             };
             retrieval?: {
@@ -1640,16 +1732,25 @@ export interface components {
             };
             channels?: {
                 anonymousChatEnabled?: boolean;
-                anonymousRateLimit?: number;
-                rotateAnonymousChatToken?: boolean;
                 websiteEmbedEnabled?: boolean;
-                rotateWebsiteEmbedToken?: boolean;
                 websiteEmbedAllowedOrigins?: string[];
                 websiteEmbedLauncherLabel?: string;
                 /** @enum {string} */
-                websiteEmbedLauncherIcon?: "chat" | "sparkles" | "message";
-                /** @enum {string} */
                 websiteEmbedLauncherPosition?: "bottom-right" | "bottom-left";
+                websiteEmbedTheme?: {
+                    brand?: string;
+                    brandText?: string;
+                    surface?: string;
+                    text?: string;
+                };
+                websiteEmbedCopy?: {
+                    [key: string]: {
+                        [key: string]: string;
+                    };
+                };
+                websiteEmbedExpertOverrides?: {
+                    [key: string]: string;
+                };
             };
         };
         Agent: {
@@ -1670,7 +1771,6 @@ export interface components {
             anonymousChat: {
                 enabled: boolean;
                 token: string | null;
-                messagesPerMinute: number;
             };
             websiteEmbed: {
                 enabled: boolean;
@@ -1678,19 +1778,42 @@ export interface components {
                 allowedOrigins: string[];
                 launcherLabel: string;
                 /** @enum {string} */
-                icon: "chat" | "sparkles" | "message";
-                /** @enum {string} */
                 launcherPosition: "bottom-right" | "bottom-left";
+                theme: {
+                    brand: string;
+                    brandText: string;
+                    surface: string;
+                    text: string;
+                };
+                copy: {
+                    [key: string]: {
+                        [key: string]: string;
+                    };
+                };
+                expertOverrides: {
+                    [key: string]: string;
+                };
             };
         };
         ConversationAgent: components["schemas"]["Agent"] & {
             isDefault: boolean;
             customInstruction: string;
-            /** @enum {string} */
-            conversationMode: "factual" | "guided" | "exploratory";
             suggestedQuestionsEnabled: boolean;
-            suggestedQuestionsCount: number;
+            theme: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
             retrievalEnabled: boolean;
+            logo: {
+                bucket: string;
+                objectPath: string;
+                generation?: string | null;
+                mimeType: string;
+                filename: string;
+                sizeBytes: number;
+            } | null;
             greetingInstruction: string;
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
@@ -1703,10 +1826,13 @@ export interface components {
         ConversationAgentRequest: {
             name?: string;
             customInstruction?: string;
-            /** @enum {string} */
-            conversationMode?: "factual" | "guided" | "exploratory";
             suggestedQuestionsEnabled?: boolean;
-            suggestedQuestionsCount?: number;
+            theme?: {
+                brand?: string;
+                brandText?: string;
+                surface?: string;
+                text?: string;
+            };
             retrievalEnabled?: boolean;
             greetingInstruction?: string;
             assistantDefaultLocale?: string | null;
@@ -1717,20 +1843,29 @@ export interface components {
                 };
                 anonymousChat?: {
                     enabled?: boolean;
-                    messagesPerMinute?: number;
                 };
                 websiteEmbed?: {
                     enabled?: boolean;
                     allowedOrigins?: string[];
                     launcherLabel?: string;
                     /** @enum {string} */
-                    icon?: "chat" | "sparkles" | "message";
-                    /** @enum {string} */
                     launcherPosition?: "bottom-right" | "bottom-left";
+                    theme?: {
+                        brand?: string;
+                        brandText?: string;
+                        surface?: string;
+                        text?: string;
+                    };
+                    copy?: {
+                        [key: string]: {
+                            [key: string]: string;
+                        };
+                    };
+                    expertOverrides?: {
+                        [key: string]: string;
+                    };
                 };
             };
-            rotateAnonymousChatToken?: boolean;
-            rotateWebsiteEmbedToken?: boolean;
         };
         PublicChatSessionResponse: {
             /** Format: uuid */
@@ -1742,6 +1877,13 @@ export interface components {
             publicSessionId: string;
             publicSessionToken: string;
             assistantBootstrapActive: boolean;
+            assistantAvatarUrl?: string | null;
+            theme?: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
             actions?: {
                 [key: string]: unknown;
             };
@@ -2375,18 +2517,6 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
-            /** @enum {string} */
-            conversationMode: "factual" | "guided" | "exploratory";
-            conversationModeMetadata: {
-                /** @enum {string} */
-                conversationMode: "factual" | "guided" | "exploratory";
-                brevityOverrideApplied: boolean;
-                expansionApplied: boolean;
-                /** @enum {string} */
-                expansionKind: "none" | "focused" | "expansive";
-                suggestionCount: number;
-                followUpQuestionApplied: boolean;
-            };
             retrievalInfo: components["schemas"]["RetrievalInfo"];
             retrievalTrace: components["schemas"]["RetrievalTrace"];
             route: components["schemas"]["AssistantRoute"];
@@ -2402,18 +2532,6 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
-            /** @enum {string} */
-            conversationMode: "factual" | "guided" | "exploratory";
-            conversationModeMetadata: {
-                /** @enum {string} */
-                conversationMode: "factual" | "guided" | "exploratory";
-                brevityOverrideApplied: boolean;
-                expansionApplied: boolean;
-                /** @enum {string} */
-                expansionKind: "none" | "focused" | "expansive";
-                suggestionCount: number;
-                followUpQuestionApplied: boolean;
-            };
             retrievalInfo: components["schemas"]["RetrievalInfo"];
             retrievalTrace: components["schemas"]["RetrievalTrace"];
             route: components["schemas"]["AssistantRoute"];
@@ -2547,6 +2665,7 @@ export interface components {
         };
         ChatHistoryListResponse: {
             conversations: components["schemas"]["ChatConversationSummary"][];
+            assistantAvatarUrl?: string | null;
             total: number;
             nextCursor: string | null;
             hasMore: boolean;
@@ -2604,19 +2723,7 @@ export interface components {
             citationCount: number;
             /** @enum {string} */
             answerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
-            /** @enum {string} */
-            conversationMode?: "factual" | "guided" | "exploratory";
             route?: components["schemas"]["AssistantRouteDiagnostics"];
-            conversationModeMetadata?: {
-                /** @enum {string} */
-                conversationMode: "factual" | "guided" | "exploratory";
-                brevityOverrideApplied: boolean;
-                expansionApplied: boolean;
-                /** @enum {string} */
-                expansionKind: "none" | "focused" | "expansive";
-                suggestionCount: number;
-                followUpQuestionApplied: boolean;
-            };
             validation?: components["schemas"]["ValidationDebug"];
             retrievalInfo?: components["schemas"]["RetrievalInfo"];
             retrievalTrace?: components["schemas"]["RetrievalTrace"];
@@ -4105,6 +4212,135 @@ export interface operations {
             };
         };
     };
+    rotateAnonymousChatToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated general settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettingsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateWebsiteEmbedToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated general settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettingsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    uploadAssistantLogo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AssistantLogoUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated general settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettingsResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAssistantLogo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated general settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettingsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listAgents: {
         parameters: {
             query?: never;
@@ -4247,6 +4483,99 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    uploadAgentAssistantLogo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AssistantLogoUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentAssistantLogo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
                 };
             };
             /** @description Authentication required */

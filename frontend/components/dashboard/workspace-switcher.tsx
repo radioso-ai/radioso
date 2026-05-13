@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   DropdownMenu,
@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 import { useWorkspace } from '@/lib/workspace-context'
-import { accountApi, seedWorkspaceSession, setPendingAccountSwitchId, type AccountMembershipRole } from '@/lib/api'
+import { accountApi, seedWorkspaceSession, setPendingAccountSwitchId } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 import {
   buildDashboardHref,
@@ -39,7 +39,15 @@ interface WorkspaceSwitcherProps {
 export function WorkspaceSwitcher({ accountId, currentView, routeState }: WorkspaceSwitcherProps) {
   const router = useRouter()
   const { user, login } = useAuth()
-  const { workspaces, activeWorkspace, switchWorkspace, createWorkspace } = useWorkspace()
+  const {
+    workspaces,
+    activeWorkspace,
+    accounts,
+    accountsLoaded,
+    accountsLoadFailed,
+    switchWorkspace,
+    createWorkspace,
+  } = useWorkspace()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isCreateOrganizationOpen, setIsCreateOrganizationOpen] = useState(false)
   const [newName, setNewName] = useState('')
@@ -47,57 +55,7 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
   const [isCreating, setIsCreating] = useState(false)
   const [isCreatingOrganization, setIsCreatingOrganization] = useState(false)
   const [createOrganizationError, setCreateOrganizationError] = useState<string | null>(null)
-  const [accounts, setAccounts] = useState<Array<{
-    accountId: string
-    organizationName: string
-    role: AccountMembershipRole
-    workspaceId: string
-    workspaceName: string
-  }>>([])
-  const [accountsLoaded, setAccountsLoaded] = useState(false)
-  const [accountsLoadFailed, setAccountsLoadFailed] = useState(false)
   const [isSwitchingAccountId, setIsSwitchingAccountId] = useState<string | null>(null)
-
-  useEffect(() => {
-    let active = true
-
-    const loadAccounts = async () => {
-      if (!user) {
-        if (!active) return
-        setAccounts([])
-        setAccountsLoaded(true)
-        setAccountsLoadFailed(false)
-        return
-      }
-
-      try {
-        const response = await accountApi.listAccounts()
-        if (!active) return
-        setAccounts(response.accounts)
-        setAccountsLoadFailed(false)
-      } catch {
-        if (!active) return
-        setAccounts([])
-        setAccountsLoadFailed(true)
-      } finally {
-        if (!active) return
-        setAccountsLoaded(true)
-      }
-    }
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Account menu reloads when the authenticated user changes.
-    setAccountsLoaded(false)
-    setAccountsLoadFailed(false)
-    void loadAccounts()
-    const handleAccountRefresh = () => {
-      void loadAccounts()
-    }
-    window.addEventListener('radioso:accounts-updated', handleAccountRefresh)
-    return () => {
-      active = false
-      window.removeEventListener('radioso:accounts-updated', handleAccountRefresh)
-    }
-  }, [user, user?.accountId, user?.userId])
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -189,82 +147,60 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
                 className="w-full"
                 tooltip={activeWorkspace?.name ?? 'Workspace'}
               >
-                <div className="w-5 h-5 rounded bg-muted flex items-center justify-center flex-shrink-0">
-                  <Layers className="w-3 h-3 text-muted-foreground" />
-                </div>
-                <span className="truncate group-data-[collapsible=icon]:hidden">
+                <Layers className="w-4 h-4" />
+                <span className="truncate ">
                   {activeWorkspace?.name ?? 'Workspace'}
                 </span>
-                <ChevronsUpDown className="ml-auto w-4 h-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
+                <ChevronsUpDown className="ml-auto w-4 h-4 text-muted-foreground " />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-72">
               {accountsLoaded ? (
                 accounts.length > 0 ? (
-                  <div className="space-y-3 p-1">
+                  <>
                     {currentAccount ? (
-                      <div className="space-y-1">
-                        <div className="px-2 pb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                          Current organization
+                      <>
+                        <div className="px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground">
+                          {currentAccount.organizationName}
                         </div>
-                        <div className="flex items-start gap-2 px-2 py-1.5">
-                          <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                            <Building2 className="h-4 w-4" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-inherit">{currentAccount.organizationName}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">Workspaces in this organization</p>
-                          </div>
-                        </div>
-                        <div className="mt-1 space-y-1">
-                          {workspaces.map((workspace) => (
-                            <DropdownMenuItem
-                              key={workspace.id}
-                              onClick={() => void handleWorkspaceSwitch(workspace)}
-                              className="ml-5"
-                            >
-                              <div className="mr-2 flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                                <Layers className="h-4 w-4" />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate text-inherit">{workspace.name}</div>
-                              </div>
-                              {workspace.id === activeWorkspace?.id ? (
-                                <Check className="ml-auto w-4 h-4" />
-                              ) : null}
-                            </DropdownMenuItem>
-                          ))}
-                          <DropdownMenuItem onClick={() => setIsCreateOpen(true)} className="ml-5">
-                            <Plus className="w-4 h-4 mr-2" />
-                            Create workspace
+                        {workspaces.map((workspace) => (
+                          <DropdownMenuItem
+                            key={workspace.id}
+                            onClick={() => void handleWorkspaceSwitch(workspace)}
+                          >
+                            <Layers className="w-4 h-4 mr-2 text-muted-foreground" />
+                            <span className="truncate">{workspace.name}</span>
+                            {workspace.id === activeWorkspace?.id ? (
+                              <Check className="ml-auto w-4 h-4" />
+                            ) : null}
                           </DropdownMenuItem>
-                        </div>
-                      </div>
+                        ))}
+                        <DropdownMenuItem onClick={() => setIsCreateOpen(true)}>
+                          <Plus className="w-4 h-4 mr-2 text-muted-foreground" />
+                          New workspace
+                        </DropdownMenuItem>
+                      </>
                     ) : null}
 
                     {otherAccounts.length > 0 ? (
-                      <div className="space-y-2">
-                        <div className="px-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                          Other organizations
+                      <>
+                        <DropdownMenuSeparator />
+                        <div className="px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground">
+                          Switch organization
                         </div>
                         {otherAccounts.map((account) => (
                           <DropdownMenuItem
                             key={account.accountId}
                             onClick={() => void handleAccountSwitch(account.accountId, account.workspaceId)}
                             disabled={isSwitchingAccountId !== null}
-                            className="px-2 py-1.5"
                           >
-                            <div className="mr-2 flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                              <Building2 className="h-4 w-4" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium text-inherit">{account.organizationName}</p>
-                            </div>
+                            <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                            <span className="truncate">{account.organizationName}</span>
                           </DropdownMenuItem>
                         ))}
-                      </div>
+                      </>
                     ) : null}
-                  </div>
+                  </>
                 ) : (
                   <DropdownMenuItem disabled>
                     <Building2 className="w-4 h-4 mr-2" />
@@ -282,12 +218,10 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
                   Loading organizations...
                 </DropdownMenuItem>
               )}
-              {accountsLoaded ? (
-                <DropdownMenuSeparator />
-              ) : null}
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setIsCreateOrganizationOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Create organization
+                <Plus className="w-4 h-4 mr-2 text-muted-foreground" />
+                New organization
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

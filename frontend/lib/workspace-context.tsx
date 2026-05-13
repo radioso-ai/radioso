@@ -9,10 +9,12 @@ import {
   type ReactNode,
 } from 'react'
 import {
+  accountApi,
   workspaceApi,
   activateWorkspaceToken,
   removeWorkspaceToken,
   getStoredActiveWorkspaceId,
+  type AccessibleAccountSummary,
   type Workspace,
 } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
@@ -21,11 +23,15 @@ interface WorkspaceContextValue {
   workspaces: Workspace[]
   activeWorkspace: Workspace | null
   activeWorkspaceId: string | null
+  accounts: AccessibleAccountSummary[]
+  accountsLoaded: boolean
+  accountsLoadFailed: boolean
   isLoading: boolean
   switchWorkspace: (workspaceId: string) => Promise<void>
   createWorkspace: (name: string) => Promise<Workspace>
   renameWorkspace: (workspaceId: string, name: string) => Promise<Workspace>
   deleteWorkspace: (workspaceId: string) => Promise<void>
+  refreshAccounts: () => Promise<void>
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
@@ -52,6 +58,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [accounts, setAccounts] = useState<AccessibleAccountSummary[]>([])
+  const [accountsLoaded, setAccountsLoaded] = useState(false)
+  const [accountsLoadFailed, setAccountsLoadFailed] = useState(false)
+
+  const refreshAccounts = useCallback(async () => {
+    try {
+      const response = await accountApi.listAccounts()
+      setAccounts(response.accounts)
+      setAccountsLoadFailed(false)
+    } catch {
+      setAccounts([])
+      setAccountsLoadFailed(true)
+    } finally {
+      setAccountsLoaded(true)
+    }
+  }, [])
 
   useEffect(() => {
     if (isBootstrapping) return
@@ -61,8 +83,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setWorkspaces([])
       setActiveWorkspaceId(null)
       setIsLoading(false)
+      setAccounts([])
+      setAccountsLoaded(false)
+      setAccountsLoadFailed(false)
       return
     }
+
+    void refreshAccounts()
+    const handleAccountRefresh = () => {
+      void refreshAccounts()
+    }
+    window.addEventListener('radioso:accounts-updated', handleAccountRefresh)
 
     let cancelled = false
 
@@ -93,8 +124,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
 
     void bootstrap()
-    return () => { cancelled = true }
-  }, [user, isBootstrapping, logout])
+    return () => {
+      cancelled = true
+      window.removeEventListener('radioso:accounts-updated', handleAccountRefresh)
+    }
+  }, [user, isBootstrapping, logout, refreshAccounts])
 
   const switchWorkspace = useCallback(async (workspaceId: string) => {
     const workspace = workspaces.find((candidate) => candidate.id === workspaceId) ?? null
@@ -134,11 +168,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         workspaces,
         activeWorkspace,
         activeWorkspaceId,
+        accounts,
+        accountsLoaded,
+        accountsLoadFailed,
         isLoading,
         switchWorkspace,
         createWorkspace,
         renameWorkspace,
         deleteWorkspace,
+        refreshAccounts,
       }}
     >
       {children}

@@ -48,6 +48,11 @@ export function DocumentSourcesView() {
   const sectionShellClassName = 'w-full'
 
   const loadSources = async () => {
+    if (isWorkspaceLoading) {
+      setIsLoading(true)
+      return
+    }
+
     if (!activeWorkspaceId) {
       setSources([])
       setIsLoading(false)
@@ -67,10 +72,6 @@ export function DocumentSourcesView() {
   }
 
   useEffect(() => {
-    if (isWorkspaceLoading) {
-      setIsLoading(true)
-      return
-    }
     void loadSources()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId, isWorkspaceLoading])

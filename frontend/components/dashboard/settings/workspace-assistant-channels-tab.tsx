@@ -287,20 +287,16 @@ export function WorkspaceAssistantChannelsTab({
   }, [activeWorkspaceId, agentId, isWorkspaceLoading, mode])
 
   useEffect(() => {
-    if (mode !== 'assistant' || !agentId) {
-      setSourceList([])
-      setSourceListError(null)
-      setIsSourceListLoading(false)
-      return
-    }
-    if (isWorkspaceLoading || !activeWorkspaceId) {
-      setIsSourceListLoading(true)
-      return
-    }
-
     let active = true
-    setIsSourceListLoading(true)
     const loadSources = async () => {
+      if (mode !== 'assistant' || !agentId || isWorkspaceLoading || !activeWorkspaceId) {
+        setSourceList([])
+        setSourceListError(null)
+        setIsSourceListLoading(false)
+        return
+      }
+
+      setIsSourceListLoading(true)
       try {
         const response = await documentsApi.listSources()
         if (!active) return

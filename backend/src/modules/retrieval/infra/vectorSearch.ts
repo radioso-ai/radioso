@@ -57,10 +57,20 @@ export class PgVectorSearch implements VectorSearchPort {
       input.topK,
       maxDistance,
     ];
-    const hasConstrainedSourceFilter = input.sourceFilter?.constrained;
-    const includeUnassignedDocuments = Boolean(input.sourceFilter?.includeUnassignedDocuments);
-    const sourceIds = input.sourceFilter?.sourceIds ?? [];
-    const hasSourceFilter = sourceIds.length > 0;
+    const hasConstrainedSourceFilter = input.sourceFilter?.constrained ?? false;
+    let includeUnassignedDocuments = false;
+    let sourceIds: string[] = [];
+    let hasSourceFilter = false;
+
+    if (hasConstrainedSourceFilter && input.sourceFilter) {
+      const constrainedFilter = input.sourceFilter;
+      if (constrainedFilter.constrained) {
+        includeUnassignedDocuments = constrainedFilter.includeUnassignedDocuments;
+        sourceIds = constrainedFilter.sourceIds;
+        hasSourceFilter = sourceIds.length > 0;
+      }
+    }
+
     const sourceClause =
       hasConstrainedSourceFilter && hasSourceFilter && includeUnassignedDocuments
         ? `AND (d.source_id = ANY($${params.length + 1}::uuid[]) OR d.source_id IS NULL)`
@@ -73,7 +83,7 @@ export class PgVectorSearch implements VectorSearchPort {
               : "";
 
     if (hasConstrainedSourceFilter) {
-      params.push(hasSourceFilter ? input.sourceFilter?.sourceIds : []);
+      params.push(hasSourceFilter ? sourceIds : []);
     }
 
     const metadataClause = hasMetadataFilter ? `AND c.metadata @> $${params.length + 1}::jsonb` : "";

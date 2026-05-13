@@ -5,8 +5,7 @@ import { useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Sparkles, ThumbsDown, ThumbsUp, UserRound } from 'lucide-react'
+import { ThumbsDown, ThumbsUp, UserRound } from 'lucide-react'
 import type { WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { editionController } from '@/lib/edition-controller'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
@@ -59,13 +58,11 @@ export function ChatMessageThread({
   onSuggestionSelect,
   onMessageSelect,
   selectedMessageId,
-  assistantAvatarUrl,
-  assistantAvatarLabel,
-  hideAssistantAvatar = false,
   theme,
   themedSuggestionButtons = false,
   onAnswerFeedback,
   onClearAnswerFeedback,
+  hideFeedbackEntries = false,
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
@@ -79,6 +76,7 @@ export function ChatMessageThread({
   hideAssistantAvatar?: boolean
   theme?: WebsiteEmbedTheme | null
   themedSuggestionButtons?: boolean
+  hideFeedbackEntries?: boolean
 }) {
   const [localFeedback, setLocalFeedback] = useState<Record<string, AnswerFeedbackState | null | undefined>>({})
   const [pendingFeedbackId, setPendingFeedbackId] = useState<string | null>(null)
@@ -219,7 +217,7 @@ export function ChatMessageThread({
         const currentDay = dayFormatter.format(new Date(message.createdAt))
         const previousDay =
           index > 0 ? dayFormatter.format(new Date(messages[index - 1].createdAt)) : null
-        const showDayDivider = currentDay !== previousDay
+        const showDayDivider = previousDay !== null && currentDay !== previousDay
         const assistantMessageId = message.role === 'assistant'
           ? message.persistedAssistantMessageId ?? null
           : null
@@ -262,16 +260,13 @@ export function ChatMessageThread({
                   <>
                     <div
                       {...getSelectableMessageProps(message.id)}
-                      className={`rounded-lg border px-4 py-3 text-primary-foreground ${
-                        selectedMessageId === message.id
-                          ? 'border-white/90 bg-primary ring-1 ring-white/50'
-                          : 'border-primary bg-primary'
-                      } ${onMessageSelect ? 'cursor-pointer transition hover:border-white/80' : 'bg-primary'}`}
+                      className={`rounded-2xl rounded-br-md px-4 py-3 text-primary-foreground animate-in fade-in-50 slide-in-from-bottom-2 duration-300 ${
+                        selectedMessageId === message.id ? 'bg-primary ring-1 ring-white/50' : 'bg-primary'
+                      } ${onMessageSelect ? 'cursor-pointer transition' : ''}`}
                       style={
                         theme
                           ? {
                               background: theme.userBubbleBackground,
-                              borderColor: theme.userBubbleBackground,
                               color: theme.userBubbleForeground,
                             }
                           : undefined
@@ -287,49 +282,17 @@ export function ChatMessageThread({
                     </p>
                   </>
                 ) : (
-                  <div className="flex w-full items-start gap-3">
-                    {!hideAssistantAvatar && (assistantAvatarUrl || assistantAvatarLabel) ? (
-                      <Avatar
-                        className="mt-0.5 size-8 border"
-                        style={{
-                          borderColor: theme?.panelBorder,
-                          background: theme?.mutedBackground,
-                          color: theme?.accent,
-                        }}
-                      >
-                        {assistantAvatarUrl ? (
-                          <AvatarImage src={assistantAvatarUrl} alt={assistantAvatarLabel ?? 'Assistant avatar'} />
-                        ) : null}
-                        <AvatarFallback
-                          style={{
-                            background: theme?.mutedBackground,
-                            color: theme?.accent,
-                          }}
-                        >
-                          <Sparkles className="size-4" />
-                        </AvatarFallback>
-                      </Avatar>
-                    ) : null}
+                  <div className="flex w-full items-start">
                     <div className="min-w-0 flex-1 flex flex-col gap-2">
                       <div
                         {...getSelectableMessageProps(message.id)}
-                        className={`self-start w-fit max-w-full rounded-lg border bg-card px-4 py-3 text-left text-foreground ${
-                          selectedMessageId === message.id
-                            ? 'border-primary/70 ring-1 ring-primary/60'
-                            : 'border-border'
-                        } ${
-                          onMessageSelect && message.role === 'assistant'
-                            ? 'cursor-pointer transition hover:border-primary/40'
-                            : onMessageSelect
-                              ? 'cursor-pointer transition hover:border-primary/40'
-                              : ''
-                        }`}
+                        className={`self-start w-fit max-w-full rounded-2xl rounded-tl-md bg-card px-4 py-3 text-left text-foreground animate-in fade-in-50 slide-in-from-bottom-2 duration-300 ${
+                          selectedMessageId === message.id ? 'ring-1 ring-primary/60' : ''
+                        } ${onMessageSelect ? 'cursor-pointer transition' : ''}`}
                         style={
                           theme
                             ? {
                                 background: theme.assistantBubbleBackground,
-                                borderColor:
-                                  selectedMessageId === message.id ? theme.accent : theme.panelBorder,
                                 color: theme.assistantBubbleForeground,
                               }
                             : undefined
@@ -352,51 +315,49 @@ export function ChatMessageThread({
                       {(() => {
                         const visibleSuggestions = editionController.filterChatSuggestions(message.suggestions)
                         return visibleSuggestions.length > 0 ? (
-                          <div className="w-full">
-                            <div className="flex w-full flex-col gap-2">
-                              {visibleSuggestions
-                                .filter((suggestion) => suggestion.text.trim())
-                                .map((suggestion, suggestionIndex) => {
-                                const isContactAction = suggestion.action?.kind === 'contact_human'
-                                return onSuggestionSelect ? (
-                                  <Button
-                                    key={`${message.id}-suggestion-${suggestionIndex}`}
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className={`h-auto w-full justify-start whitespace-normal rounded-lg px-4 py-3 text-left text-base leading-5 shadow-none ${
-                                      themedSuggestionButtons
-                                        ? 'border-[var(--suggestion-border)] bg-[var(--suggestion-bg)] text-[var(--suggestion-fg)] transition-colors hover:border-[var(--suggestion-hover-border)] hover:bg-[var(--suggestion-hover-bg)] hover:text-[var(--suggestion-hover-fg)]'
-                                        : ''
-                                    }`}
-                                    style={themedSuggestionButtons ? suggestionThemeVars : undefined}
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      onSuggestionSelect(suggestion, message.id)
-                                    }}
-                                  >
-                                    {isContactAction ? <UserRound className="mr-2 h-4 w-4 shrink-0" /> : null}
-                                    {suggestion.text}
-                                  </Button>
-                                ) : (
-                                  <div
-                                    key={`${message.id}-suggestion-${suggestionIndex}`}
-                                    className="w-full rounded-lg border border-border bg-muted/40 px-4 py-3 text-base leading-5 text-foreground"
-                                    style={
-                                      theme
-                                        ? {
-                                            background: theme.mutedBackground,
-                                            borderColor: theme.panelBorder,
-                                            color: theme.panelForeground,
-                                          }
-                                        : undefined
-                                    }
-                                  >
-                                    {suggestion.text}
-                                  </div>
-                                )
-                              })}
-                            </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {visibleSuggestions
+                              .filter((suggestion) => suggestion.text.trim())
+                              .map((suggestion, suggestionIndex) => {
+                              const isContactAction = suggestion.action?.kind === 'contact_human'
+                              return onSuggestionSelect ? (
+                                <Button
+                                  key={`${message.id}-suggestion-${suggestionIndex}`}
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className={`h-auto max-w-full whitespace-normal rounded-full px-3 py-1 text-left text-sm leading-snug shadow-none ${
+                                    themedSuggestionButtons
+                                      ? 'border-[var(--suggestion-border)] bg-[var(--suggestion-bg)] text-[var(--suggestion-fg)] transition-colors hover:border-[var(--suggestion-hover-border)] hover:bg-[var(--suggestion-hover-bg)] hover:text-[var(--suggestion-hover-fg)]'
+                                      : ''
+                                  }`}
+                                  style={themedSuggestionButtons ? suggestionThemeVars : undefined}
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    onSuggestionSelect(suggestion, message.id)
+                                  }}
+                                >
+                                  {isContactAction ? <UserRound className="mr-1.5 h-3.5 w-3.5 shrink-0" /> : null}
+                                  {suggestion.text}
+                                </Button>
+                              ) : (
+                                <div
+                                  key={`${message.id}-suggestion-${suggestionIndex}`}
+                                  className="rounded-full border border-border bg-muted/40 px-3 py-1 text-sm leading-snug text-foreground"
+                                  style={
+                                    theme
+                                      ? {
+                                          background: theme.mutedBackground,
+                                          borderColor: theme.panelBorder,
+                                          color: theme.panelForeground,
+                                        }
+                                      : undefined
+                                  }
+                                >
+                                  {suggestion.text}
+                                </div>
+                              )
+                            })}
                           </div>
                         ) : null
                       })()}
@@ -480,7 +441,7 @@ export function ChatMessageThread({
                           ) : null}
                         </div>
                       ) : null}
-                      {feedbackEntries.length > 0 ? (
+                      {!hideFeedbackEntries && feedbackEntries.length > 0 ? (
                         <div className="space-y-2 px-1">
                           {feedbackEntries.map((entry) => (
                             <div

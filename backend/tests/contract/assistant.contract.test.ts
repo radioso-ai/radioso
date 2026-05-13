@@ -39,10 +39,6 @@ describe("assistant contract", () => {
       answer: expect.any(String),
       citations: expect.any(Array),
       answerSegments: expect.any(Array),
-      conversationMode: expect.any(String),
-      conversationModeMetadata: expect.objectContaining({
-        conversationMode: expect.any(String),
-      }),
       retrievalInfo: expect.objectContaining({
         candidateCounts: expect.any(Object),
       }),

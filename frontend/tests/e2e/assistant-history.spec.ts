@@ -77,15 +77,6 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
           stream: false,
           citationCount: 1,
           answerOutcome: "grounded_success",
-          conversationMode: "guided",
-          conversationModeMetadata: {
-            conversationMode: "guided",
-            brevityOverrideApplied: false,
-            expansionApplied: false,
-            expansionKind: "none",
-            suggestionCount: 0,
-            followUpQuestionApplied: false,
-          },
           validation: {
             ran: true,
             answerModified: false,

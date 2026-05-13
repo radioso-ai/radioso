@@ -143,15 +143,6 @@ describe("chat history service", () => {
           links: [],
         },
         answerOutcome: "grounded_degraded_unsupported_segments",
-        conversationMode: "exploratory",
-        conversationModeMetadata: {
-          conversationMode: "exploratory",
-          brevityOverrideApplied: false,
-          expansionApplied: true,
-          expansionKind: "expansive",
-          suggestionCount: 2,
-          followUpQuestionApplied: true,
-        },
         suggestions: [
           {
             text: "What examples does it include?",
@@ -227,15 +218,6 @@ describe("chat history service", () => {
       routeType: "retrieval",
       routeReason: "evidence_required",
       retrievalInvoked: true,
-    });
-    expect(debug?.conversationMode).toBe("exploratory");
-    expect(debug?.conversationModeMetadata).toEqual({
-      conversationMode: "exploratory",
-      brevityOverrideApplied: false,
-      expansionApplied: true,
-      expansionKind: "expansive",
-      suggestionCount: 2,
-      followUpQuestionApplied: true,
     });
     expect(assistantMessage?.suggestions).toEqual([
       expect.objectContaining({

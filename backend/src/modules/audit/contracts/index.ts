@@ -32,7 +32,6 @@ export interface AuditPort {
     conversationId: string;
     assistantMessageId: string;
     suggestions: unknown[];
-    conversationModeMetadata: unknown;
   }): Promise<void>;
 }
 

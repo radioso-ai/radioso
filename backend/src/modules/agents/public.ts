@@ -1,5 +1,4 @@
 export {
-  agentConversationModes,
   agentSurfacePositions,
   defaultAgentEmbedTheme,
   isAgentBootstrapActive,
@@ -8,7 +7,6 @@ export {
   validateAgentInput,
   type AgentBehaviorSettings,
   type Agent,
-  type AgentConversationMode,
   type AgentInput,
   mergeAgentSurfaceSettings,
   type AgentRecord,

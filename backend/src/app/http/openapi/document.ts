@@ -66,7 +66,6 @@ import {
   agentSurfacePositions,
 } from "../../../modules/agents/public.js";
 import {
-  conversationModes,
   metadataRuleEffects,
   metadataRuleOperators,
   metadataRuleTriggerModes,
@@ -1253,15 +1252,6 @@ const chatResponseCoreShape = {
   citations: z.array(CitationSchema).optional(),
   answerSegments: z.array(AnswerSegmentSchema).optional(),
   suggestions: z.array(ChatSuggestionSchema).optional(),
-  conversationMode: z.enum(conversationModes),
-  conversationModeMetadata: z.object({
-    conversationMode: z.enum(conversationModes),
-    brevityOverrideApplied: z.boolean(),
-    expansionApplied: z.boolean(),
-    expansionKind: z.enum(["none", "focused", "expansive"]),
-    suggestionCount: z.number().int().min(0),
-    followUpQuestionApplied: z.boolean(),
-  }),
   retrievalInfo: RetrievalInfoSchema,
   retrievalTrace: RetrievalTraceSchema,
 };
@@ -1478,16 +1468,7 @@ const ChatConversationMessageDebugSchema = registry.register(
     stream: z.boolean(),
     citationCount: z.number().int().min(0),
     answerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal", "non_retrieval_response"]).optional(),
-    conversationMode: z.enum(conversationModes).optional(),
     route: AssistantRouteDiagnosticsSchema.optional(),
-    conversationModeMetadata: z.object({
-      conversationMode: z.enum(conversationModes),
-      brevityOverrideApplied: z.boolean(),
-      expansionApplied: z.boolean(),
-      expansionKind: z.enum(["none", "focused", "expansive"]),
-      suggestionCount: z.number().int().min(0),
-      followUpQuestionApplied: z.boolean(),
-    }).optional(),
     validation: ValidationDebugSchema.optional(),
     retrievalInfo: RetrievalInfoSchema.optional(),
     retrievalTrace: RetrievalTraceSchema.optional(),

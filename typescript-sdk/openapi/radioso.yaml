@@ -3620,40 +3620,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatSuggestion"
-        conversationMode:
-          type: string
-          enum: &a14
-            - factual
-            - guided
-            - exploratory
-        conversationModeMetadata:
-          type: object
-          properties:
-            conversationMode:
-              type: string
-              enum: *a14
-            brevityOverrideApplied:
-              type: boolean
-            expansionApplied:
-              type: boolean
-            expansionKind:
-              type: string
-              enum: &a15
-                - none
-                - focused
-                - expansive
-            suggestionCount:
-              type: integer
-              minimum: 0
-            followUpQuestionApplied:
-              type: boolean
-          required:
-            - conversationMode
-            - brevityOverrideApplied
-            - expansionApplied
-            - expansionKind
-            - suggestionCount
-            - followUpQuestionApplied
         retrievalInfo:
           $ref: "#/components/schemas/RetrievalInfo"
         retrievalTrace:
@@ -3664,8 +3630,6 @@ components:
         - conversationId
         - assistantMessageId
         - answer
-        - conversationMode
-        - conversationModeMetadata
         - retrievalInfo
         - retrievalTrace
         - route
@@ -3694,34 +3658,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatSuggestion"
-        conversationMode:
-          type: string
-          enum: *a14
-        conversationModeMetadata:
-          type: object
-          properties:
-            conversationMode:
-              type: string
-              enum: *a14
-            brevityOverrideApplied:
-              type: boolean
-            expansionApplied:
-              type: boolean
-            expansionKind:
-              type: string
-              enum: *a15
-            suggestionCount:
-              type: integer
-              minimum: 0
-            followUpQuestionApplied:
-              type: boolean
-          required:
-            - conversationMode
-            - brevityOverrideApplied
-            - expansionApplied
-            - expansionKind
-            - suggestionCount
-            - followUpQuestionApplied
         retrievalInfo:
           $ref: "#/components/schemas/RetrievalInfo"
         retrievalTrace:
@@ -3730,8 +3666,6 @@ components:
           $ref: "#/components/schemas/AssistantRoute"
       required:
         - answer
-        - conversationMode
-        - conversationModeMetadata
         - retrievalInfo
         - retrievalTrace
         - route
@@ -4219,39 +4153,8 @@ components:
             - grounded_degraded_unsupported_segments
             - no_context_refusal
             - non_retrieval_response
-        conversationMode:
-          type: string
-          enum: *a14
         route:
           $ref: "#/components/schemas/AssistantRouteDiagnostics"
-        conversationModeMetadata:
-          type: object
-          properties:
-            conversationMode:
-              type: string
-              enum: *a14
-            brevityOverrideApplied:
-              type: boolean
-            expansionApplied:
-              type: boolean
-            expansionKind:
-              type: string
-              enum:
-                - none
-                - focused
-                - expansive
-            suggestionCount:
-              type: integer
-              minimum: 0
-            followUpQuestionApplied:
-              type: boolean
-          required:
-            - conversationMode
-            - brevityOverrideApplied
-            - expansionApplied
-            - expansionKind
-            - suggestionCount
-            - followUpQuestionApplied
         validation:
           $ref: "#/components/schemas/ValidationDebug"
         retrievalInfo:
@@ -6060,7 +5963,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - &a16
+        - &a14
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -6084,7 +5987,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a16
+        - *a14
       parameters:
         - schema:
             type: string

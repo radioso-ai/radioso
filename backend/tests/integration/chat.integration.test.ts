@@ -62,7 +62,6 @@ describe("chat integration", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,
@@ -172,7 +171,6 @@ describe("chat integration", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
         lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,
@@ -225,19 +223,10 @@ describe("chat integration", () => {
     );
   });
 
-  it("adds bounded grounded continuations for guided and exploratory modes", async () => {
+  it("adds bounded grounded continuations without conversation-mode metadata", async () => {
     const deterministicGateway: ChatGateway = {
       async answer({ prompt }) {
         if (prompt.includes("Generate grounded follow-up suggestions")) {
-          if (prompt.includes("Conversation mode:\nguided")) {
-            return JSON.stringify({
-              suggestions: [
-                { text: "Which input formats do the parser notes list?", kind: "deeper", contextIndex: 1 },
-                { text: "Which onboarding questions are answered?", kind: "deeper", contextIndex: 2 },
-              ],
-            });
-          }
-
           return JSON.stringify({
             suggestions: [
               { text: "Which input formats do the parser notes list?", kind: "deeper", contextIndex: 1 },
@@ -290,38 +279,18 @@ describe("chat integration", () => {
     };
 
     const factual = await ask();
-    const guided = await ask();
-    const exploratory = await ask();
+    const followUp = await ask();
 
     expect(factual.status).toBe(200);
-    expect(guided.status).toBe(200);
-    expect(exploratory.status).toBe(200);
+    expect(followUp.status).toBe(200);
 
     expect(factual.body.answer).toEqual(expect.any(String));
-    expect(guided.body.answer).toEqual(expect.any(String));
-    expect(exploratory.body.answer).toEqual(expect.any(String));
+    expect(followUp.body.answer).toEqual(expect.any(String));
     expect(factual.body.answer).not.toContain("\n- ");
-    expect(guided.body.answer).not.toContain("\n- ");
-    expect(guided.body.suggestions.length).toBeGreaterThan(0);
-    expect(guided.body.suggestions.every((suggestion: { kind: string }) => suggestion.kind === "deeper")).toBe(true);
-    expect(guided.body.conversationModeMetadata).toMatchObject({
-      conversationMode: "guided",
-      expansionApplied: true,
-      expansionKind: "focused",
-      suggestionCount: guided.body.suggestions.length,
-    });
-    expect(exploratory.body.answer).not.toContain("\n- ");
-    expect(exploratory.body.suggestions.length).toBeGreaterThan(0);
-    expect(
-      exploratory.body.suggestions.every((suggestion: { kind: string }) =>
-        suggestion.kind === "deeper")
-    ).toBe(true);
-    expect(exploratory.body.conversationModeMetadata).toMatchObject({
-      conversationMode: "guided",
-      expansionApplied: true,
-      expansionKind: "focused",
-      suggestionCount: exploratory.body.suggestions.length,
-    });
+    expect(followUp.body.answer).not.toContain("\n- ");
+    expect(followUp.body.suggestions.length).toBeGreaterThan(0);
+    expect(followUp.body.suggestions.length).toBeLessThanOrEqual(3);
+    expect(followUp.body.conversationModeMetadata).toBeUndefined();
   });
 
   it("suppresses suggested questions when the setting is disabled", async () => {
@@ -355,7 +324,6 @@ describe("chat integration", () => {
     await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
       ...existing,
       queryRewriteEnabled: false,
-      conversationMode: "exploratory",
       suggestedQuestionsEnabled: false,
       suggestedQuestionsCount: 4,
       rerankEnabled: false,
@@ -372,11 +340,7 @@ describe("chat integration", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.suggestions).toBeUndefined();
-    expect(response.body.conversationModeMetadata).toMatchObject({
-      conversationMode: "exploratory",
-      expansionApplied: false,
-      suggestionCount: 0,
-    });
+    expect(response.body.conversationModeMetadata).toBeUndefined();
   });
 
   it("uses recent conversation context for broader exploratory suggestions across turns", async () => {
@@ -429,7 +393,6 @@ describe("chat integration", () => {
       similarityThreshold: 0.1,
       rerankTopK: 5,
       citationDisplayEnabled: true,
-      conversationMode: "exploratory",
     });
 
     const first = await request(app)
@@ -543,7 +506,6 @@ describe("chat integration", () => {
       similarityThreshold: 0.1,
       rerankTopK: 5,
       citationDisplayEnabled: true,
-      conversationMode: "exploratory",
     });
 
     const first = await request(app)
@@ -566,7 +528,7 @@ describe("chat integration", () => {
     expect(second.body.suggestions.some((suggestion: { kind: string }) => suggestion.kind === "broader")).toBe(true);
   });
 
-  it("does not suppress exploratory suggestions from language-specific directness wording", async () => {
+  it("caps suggestions at three without directness-mode filtering", async () => {
     let suggestionCallCount = 0;
     const deterministicGateway: ChatGateway = {
       async answer({ prompt }) {
@@ -604,7 +566,6 @@ describe("chat integration", () => {
     await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
       ...existing,
       queryRewriteEnabled: false,
-      conversationMode: "exploratory",
       suggestedQuestionsEnabled: true,
       suggestedQuestionsCount: 4,
       rerankEnabled: false,
@@ -621,13 +582,8 @@ describe("chat integration", () => {
 
     expect(response.status).toBe(200);
     expect(suggestionCallCount).toBe(1);
-    expect(response.body.suggestions).toHaveLength(4);
-    expect(response.body.conversationModeMetadata).toMatchObject({
-      conversationMode: "exploratory",
-      brevityOverrideApplied: false,
-      expansionApplied: true,
-      suggestionCount: 4,
-    });
+    expect(response.body.suggestions).toHaveLength(3);
+    expect(response.body.conversationModeMetadata).toBeUndefined();
   });
 
   it("creates a new conversation and reuses it on follow-up questions", async () => {
@@ -891,7 +847,6 @@ describe("chat integration", () => {
         similarityThreshold: 0.1,
         rerankTopK: 5,
         citationDisplayEnabled: true,
-        conversationMode: "exploratory",
       });
 
     const response = await request(app)
@@ -1426,7 +1381,6 @@ describe("chat integration", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,
@@ -1500,7 +1454,6 @@ describe("chat integration", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,
@@ -1573,7 +1526,6 @@ describe("chat integration", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,
@@ -1667,7 +1619,6 @@ describe("chat integration", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,
@@ -1754,7 +1705,6 @@ describe("chat integration", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,
@@ -1832,7 +1782,6 @@ describe("chat integration", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,

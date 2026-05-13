@@ -939,7 +939,6 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       queryRewriteEnabled: input.queryRewriteEnabled,
       semanticRewriteInstructions: input.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.lexicalRewriteInstructions,
-      conversationMode: input.conversationMode,
       suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
       suggestedQuestionsCount: input.suggestedQuestionsCount,
       rerankEnabled: input.rerankEnabled,
@@ -2283,7 +2282,6 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     conversationId: string;
     assistantMessageId: string;
     suggestions: unknown[];
-    conversationModeMetadata: unknown;
   }): Promise<boolean> {
     const match = this.items
       .filter((event) => {
@@ -2304,7 +2302,6 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     match.metadata = {
       ...match.metadata,
       suggestions: input.suggestions,
-      conversationModeMetadata: input.conversationModeMetadata,
     };
 
     return true;

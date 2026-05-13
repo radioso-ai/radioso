@@ -5,9 +5,6 @@ import {
   type WebsiteEmbedThemeSettings,
 } from "../settings/domain/websiteEmbedSettings.js";
 
-export const agentConversationModes = ["factual", "guided", "exploratory"] as const;
-export type AgentConversationMode = (typeof agentConversationModes)[number];
-
 export const agentSurfacePositions = ["bottom-right", "bottom-left"] as const;
 export type AgentSurfacePosition = (typeof agentSurfacePositions)[number];
 

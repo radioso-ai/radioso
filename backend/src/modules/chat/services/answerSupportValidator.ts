@@ -1,5 +1,4 @@
 import type { AnswerSegment, CitationEvidence } from "../contracts/answerTypes.js";
-import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 import {
   type HiddenSupportEvidence,
   type ValidatedAnswer,
@@ -431,7 +430,6 @@ export class AnswerSupportValidator {
     hiddenSupportEvidence?: HiddenSupportEvidence[];
     retrievedContextSummaries: Array<{ title: string; content: string }>;
     citationDisplayEnabled: boolean;
-    conversationMode: ConversationMode;
     groundedMissResponseComposer: GroundedMissResponseComposer;
     unsupportedNoticeMarked?: boolean;
     userExpectedLocale?: string | null;
@@ -539,7 +537,6 @@ export class AnswerSupportValidator {
               query: input.query,
               unsupportedText: input.answer,
               contexts: input.retrievedContextSummaries,
-              conversationMode: input.conversationMode,
               userExpectedLocale: input.userExpectedLocale,
             }),
           }]

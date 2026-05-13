@@ -33,7 +33,6 @@ const buildInput = (rewrittenContexts: RetrievedChunk[]): CandidateRetrievalStag
     queryRewriteEnabled: true,
     semanticRewriteInstructions: "",
     lexicalRewriteInstructions: "",
-    conversationMode: "guided",
     suggestedQuestionsEnabled: true,
     suggestedQuestionsCount: 3,
     rerankEnabled: false,

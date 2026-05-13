@@ -5386,56 +5386,6 @@
               "$ref": "#/components/schemas/ChatSuggestion"
             }
           },
-          "conversationMode": {
-            "type": "string",
-            "enum": [
-              "factual",
-              "guided",
-              "exploratory"
-            ]
-          },
-          "conversationModeMetadata": {
-            "type": "object",
-            "properties": {
-              "conversationMode": {
-                "type": "string",
-                "enum": [
-                  "factual",
-                  "guided",
-                  "exploratory"
-                ]
-              },
-              "brevityOverrideApplied": {
-                "type": "boolean"
-              },
-              "expansionApplied": {
-                "type": "boolean"
-              },
-              "expansionKind": {
-                "type": "string",
-                "enum": [
-                  "none",
-                  "focused",
-                  "expansive"
-                ]
-              },
-              "suggestionCount": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "followUpQuestionApplied": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "conversationMode",
-              "brevityOverrideApplied",
-              "expansionApplied",
-              "expansionKind",
-              "suggestionCount",
-              "followUpQuestionApplied"
-            ]
-          },
           "retrievalInfo": {
             "$ref": "#/components/schemas/RetrievalInfo"
           },
@@ -5450,8 +5400,6 @@
           "conversationId",
           "assistantMessageId",
           "answer",
-          "conversationMode",
-          "conversationModeMetadata",
           "retrievalInfo",
           "retrievalTrace",
           "route"
@@ -5492,56 +5440,6 @@
               "$ref": "#/components/schemas/ChatSuggestion"
             }
           },
-          "conversationMode": {
-            "type": "string",
-            "enum": [
-              "factual",
-              "guided",
-              "exploratory"
-            ]
-          },
-          "conversationModeMetadata": {
-            "type": "object",
-            "properties": {
-              "conversationMode": {
-                "type": "string",
-                "enum": [
-                  "factual",
-                  "guided",
-                  "exploratory"
-                ]
-              },
-              "brevityOverrideApplied": {
-                "type": "boolean"
-              },
-              "expansionApplied": {
-                "type": "boolean"
-              },
-              "expansionKind": {
-                "type": "string",
-                "enum": [
-                  "none",
-                  "focused",
-                  "expansive"
-                ]
-              },
-              "suggestionCount": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "followUpQuestionApplied": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "conversationMode",
-              "brevityOverrideApplied",
-              "expansionApplied",
-              "expansionKind",
-              "suggestionCount",
-              "followUpQuestionApplied"
-            ]
-          },
           "retrievalInfo": {
             "$ref": "#/components/schemas/RetrievalInfo"
           },
@@ -5554,8 +5452,6 @@
         },
         "required": [
           "answer",
-          "conversationMode",
-          "conversationModeMetadata",
           "retrievalInfo",
           "retrievalTrace",
           "route"
@@ -6255,58 +6151,8 @@
               "non_retrieval_response"
             ]
           },
-          "conversationMode": {
-            "type": "string",
-            "enum": [
-              "factual",
-              "guided",
-              "exploratory"
-            ]
-          },
           "route": {
             "$ref": "#/components/schemas/AssistantRouteDiagnostics"
-          },
-          "conversationModeMetadata": {
-            "type": "object",
-            "properties": {
-              "conversationMode": {
-                "type": "string",
-                "enum": [
-                  "factual",
-                  "guided",
-                  "exploratory"
-                ]
-              },
-              "brevityOverrideApplied": {
-                "type": "boolean"
-              },
-              "expansionApplied": {
-                "type": "boolean"
-              },
-              "expansionKind": {
-                "type": "string",
-                "enum": [
-                  "none",
-                  "focused",
-                  "expansive"
-                ]
-              },
-              "suggestionCount": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "followUpQuestionApplied": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "conversationMode",
-              "brevityOverrideApplied",
-              "expansionApplied",
-              "expansionKind",
-              "suggestionCount",
-              "followUpQuestionApplied"
-            ]
           },
           "validation": {
             "$ref": "#/components/schemas/ValidationDebug"

@@ -62,7 +62,6 @@ const asChatRetrievalPipeline = (pipeline: Record<string, unknown>) => {
               queryRewriteEnabled: true,
               semanticRewriteInstructions: "",
               lexicalRewriteInstructions: "",
-              conversationMode: "guided",
               suggestedQuestionsEnabled: true,
               suggestedQuestionsCount: 3,
               rerankEnabled: false,
@@ -136,7 +135,6 @@ describe("chat service streaming", () => {
               queryRewriteEnabled: true,
               semanticRewriteInstructions: "",
               lexicalRewriteInstructions: "",
-              conversationMode: "guided",
               suggestedQuestionsEnabled: true,
               suggestedQuestionsCount: 3,
               rerankEnabled: false,
@@ -177,7 +175,6 @@ describe("chat service streaming", () => {
         responseIdentity: input.responseIdentity ?? null,
         responseSettings: {
           citationDisplayEnabled: true,
-          conversationMode: "guided",
           suggestedQuestionsEnabled: true,
           suggestedQuestionsCount: 3,
           customInstruction: input.customInstruction ?? "",
@@ -260,7 +257,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "guided",
           },
         };
       },
@@ -316,15 +312,6 @@ describe("chat service streaming", () => {
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer", citationIndices: [0] }],
       suggestions: undefined,
-      conversationMode: "exploratory",
-      conversationModeMetadata: {
-        conversationMode: "exploratory",
-        brevityOverrideApplied: false,
-        expansionApplied: false,
-        expansionKind: "none",
-        suggestionCount: 0,
-        followUpQuestionApplied: false,
-      },
       retrievalInfo: expect.objectContaining({
         parsedQuery: expect.objectContaining({
           originalQuery: "page do",
@@ -408,7 +395,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "guided",
           },
         };
       },
@@ -784,7 +770,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "exploratory",
             customInstruction: "Help visitors choose and book Ananda courses.",
             responseLanguagePolicy: "match_user_question",
           },
@@ -828,7 +813,6 @@ describe("chat service streaming", () => {
     expect(observedNoContextInstruction).toContain("Vikram");
     expect(observedNoContextInstruction).toContain("Configured response instructions:");
     expect(observedNoContextInstruction).toContain("Help visitors choose and book Ananda courses.");
-    expect(observedNoContextInstruction).toContain("Conversation mode: exploratory.");
   });
 
   it("excludes URL-shaped citation titles from carry-forward literals", async () => {
@@ -1082,15 +1066,6 @@ describe("chat service streaming", () => {
       answer: "full answer  marker",
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer  marker", citationIndices: [0] }],
-      conversationMode: "exploratory",
-      conversationModeMetadata: {
-        conversationMode: "exploratory",
-        brevityOverrideApplied: false,
-        expansionApplied: false,
-        expansionKind: "none",
-        suggestionCount: 0,
-        followUpQuestionApplied: false,
-      },
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
@@ -1206,15 +1181,6 @@ describe("chat service streaming", () => {
         { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
       ],
       suggestions: undefined,
-      conversationMode: "exploratory",
-      conversationModeMetadata: {
-        conversationMode: "exploratory",
-        brevityOverrideApplied: false,
-        expansionApplied: false,
-        expansionKind: "none",
-        suggestionCount: 0,
-        followUpQuestionApplied: false,
-      },
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
@@ -1533,7 +1499,6 @@ describe("chat service streaming", () => {
           responseSettings: {
             citationDisplayEnabled: true,
             answerSupportValidationEnabled: false,
-            conversationMode: "exploratory",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 2,
           },
@@ -1582,14 +1547,6 @@ describe("chat service streaming", () => {
         },
       }),
     ]);
-    expect(response.conversationModeMetadata).toEqual({
-      conversationMode: "exploratory",
-      brevityOverrideApplied: false,
-      expansionApplied: true,
-      expansionKind: "expansive",
-      suggestionCount: 1,
-      followUpQuestionApplied: false,
-    });
     expect(response.retrievalTrace.stages).toEqual(expect.arrayContaining([
       expect.objectContaining({
         stageId: "answer",
@@ -1639,7 +1596,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "factual",
           },
         };
       },
@@ -1906,7 +1862,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "exploratory",
           },
         };
       },
@@ -1943,14 +1898,6 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(response.conversationModeMetadata).toEqual({
-      conversationMode: "exploratory",
-      brevityOverrideApplied: false,
-      expansionApplied: false,
-      expansionKind: "none",
-      suggestionCount: 0,
-      followUpQuestionApplied: false,
-    });
     expect(response.suggestions).toBeUndefined();
   });
 
@@ -2008,7 +1955,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "exploratory",
           },
         };
       },
@@ -2066,14 +2012,6 @@ describe("chat service streaming", () => {
         kind: "broader",
       }),
     ]);
-    expect(response.conversationModeMetadata).toEqual({
-      conversationMode: "exploratory",
-      brevityOverrideApplied: false,
-      expansionApplied: true,
-      expansionKind: "expansive",
-      suggestionCount: 3,
-      followUpQuestionApplied: false,
-    });
     expect(response.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Mahiya" },
     ]);
@@ -2121,7 +2059,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "exploratory",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 2,
           },
@@ -2168,14 +2105,6 @@ describe("chat service streaming", () => {
       type: "done",
       answer: "Mahiya is a teacher and author.",
       suggestions: undefined,
-      conversationModeMetadata: {
-        conversationMode: "exploratory",
-        brevityOverrideApplied: false,
-        expansionApplied: false,
-        expansionKind: "none",
-        suggestionCount: 0,
-        followUpQuestionApplied: false,
-      },
     });
     expect(events[3]).toMatchObject({
       type: "suggestions",
@@ -2189,14 +2118,6 @@ describe("chat service streaming", () => {
           },
         },
       ],
-      conversationModeMetadata: {
-        conversationMode: "exploratory",
-        brevityOverrideApplied: false,
-        expansionApplied: true,
-        expansionKind: "expansive",
-        suggestionCount: 1,
-        followUpQuestionApplied: false,
-      },
     });
   });
 
@@ -2237,7 +2158,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "exploratory",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 2,
           },
@@ -2322,7 +2242,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "exploratory",
           },
         };
       },
@@ -2413,7 +2332,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "exploratory",
           },
         };
       },
@@ -2504,7 +2422,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "exploratory",
           },
         };
       },
@@ -2654,7 +2571,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "exploratory",
           },
         };
       },
@@ -2766,7 +2682,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "exploratory",
           },
         };
       },
@@ -2822,14 +2737,6 @@ describe("chat service streaming", () => {
         kind: "broader",
       }),
     ]);
-    expect(response.conversationModeMetadata).toEqual({
-      conversationMode: "exploratory",
-      brevityOverrideApplied: false,
-      expansionApplied: true,
-      expansionKind: "expansive",
-      suggestionCount: 3,
-      followUpQuestionApplied: false,
-    });
   });
 
   it("drops invalid grouped suggestions and removes duplicates across lanes", async () => {
@@ -2874,7 +2781,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "exploratory",
           },
         };
       },
@@ -2979,7 +2885,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "exploratory",
             suggestedQuestionsCount: 3,
           },
         };
@@ -3084,7 +2989,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "guided",
           },
         };
       },
@@ -3161,7 +3065,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "guided",
           },
         };
       },
@@ -3244,7 +3147,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "guided",
           },
         };
       },
@@ -3329,7 +3231,6 @@ describe("chat service streaming", () => {
                 queryRewriteEnabled: true,
                 semanticRewriteInstructions: "",
                 lexicalRewriteInstructions: "",
-                conversationMode: "guided",
                 suggestedQuestionsEnabled: true,
                 suggestedQuestionsCount: 3,
                 rerankEnabled: false,
@@ -3374,7 +3275,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "guided",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 3,
             customInstruction: "Keep the tone calm and welcoming.",
@@ -3478,7 +3378,6 @@ describe("chat service streaming", () => {
     expect(observedPrompt).toContain("Keep the tone calm and welcoming.");
     expect(observedPrompt).toContain("Stable assistant identity:");
     expect(observedPrompt).toContain("Vikram");
-    expect(observedPrompt).toContain("Conversation mode: exploratory.");
     expect(groundedMissCalls).toBe(0);
     expect(runWithoutRetrievalCalls).toBe(1);
     expect(runInterpretedCalls).toBe(0);
@@ -3537,7 +3436,6 @@ describe("chat service streaming", () => {
                 queryRewriteEnabled: true,
                 semanticRewriteInstructions: "",
                 lexicalRewriteInstructions: "",
-                conversationMode: "guided",
                 suggestedQuestionsEnabled: true,
                 suggestedQuestionsCount: 3,
                 rerankEnabled: false,
@@ -3580,7 +3478,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            conversationMode: "guided",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 3,
             customInstruction: "Keep the reply brief.",

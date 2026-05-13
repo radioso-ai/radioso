@@ -142,7 +142,6 @@ describe("anonymous chat bootstrap integration", () => {
       .set(headers)
       .send({
         queryRewriteEnabled: false,
-        conversationMode: "exploratory",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 4,
         rerankEnabled: false,

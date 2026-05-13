@@ -1,6 +1,5 @@
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import type { RetrievalInfo, RetrievalTrace } from "../../retrieval/public.js";
-import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 
 export type ChatSuggestionKind = string;
 
@@ -12,15 +11,6 @@ export interface ChatSuggestion {
     kind: string;
     payload?: Record<string, unknown>;
   };
-}
-
-export interface ConversationModeMetadata {
-  conversationMode: ConversationMode;
-  brevityOverrideApplied: boolean;
-  expansionApplied: boolean;
-  expansionKind: "none" | "focused" | "expansive";
-  suggestionCount: number;
-  followUpQuestionApplied: boolean;
 }
 
 export interface ChatRoute {
@@ -38,8 +28,6 @@ export interface ChatResponse {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
-  conversationMode: ConversationMode;
-  conversationModeMetadata: ConversationModeMetadata;
   retrievalInfo: RetrievalInfo;
   retrievalTrace: RetrievalTrace;
 }

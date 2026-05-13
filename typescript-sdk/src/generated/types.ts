@@ -2499,18 +2499,6 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
-            /** @enum {string} */
-            conversationMode: "factual" | "guided" | "exploratory";
-            conversationModeMetadata: {
-                /** @enum {string} */
-                conversationMode: "factual" | "guided" | "exploratory";
-                brevityOverrideApplied: boolean;
-                expansionApplied: boolean;
-                /** @enum {string} */
-                expansionKind: "none" | "focused" | "expansive";
-                suggestionCount: number;
-                followUpQuestionApplied: boolean;
-            };
             retrievalInfo: components["schemas"]["RetrievalInfo"];
             retrievalTrace: components["schemas"]["RetrievalTrace"];
             route: components["schemas"]["AssistantRoute"];
@@ -2526,18 +2514,6 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
-            /** @enum {string} */
-            conversationMode: "factual" | "guided" | "exploratory";
-            conversationModeMetadata: {
-                /** @enum {string} */
-                conversationMode: "factual" | "guided" | "exploratory";
-                brevityOverrideApplied: boolean;
-                expansionApplied: boolean;
-                /** @enum {string} */
-                expansionKind: "none" | "focused" | "expansive";
-                suggestionCount: number;
-                followUpQuestionApplied: boolean;
-            };
             retrievalInfo: components["schemas"]["RetrievalInfo"];
             retrievalTrace: components["schemas"]["RetrievalTrace"];
             route: components["schemas"]["AssistantRoute"];
@@ -2729,19 +2705,7 @@ export interface components {
             citationCount: number;
             /** @enum {string} */
             answerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
-            /** @enum {string} */
-            conversationMode?: "factual" | "guided" | "exploratory";
             route?: components["schemas"]["AssistantRouteDiagnostics"];
-            conversationModeMetadata?: {
-                /** @enum {string} */
-                conversationMode: "factual" | "guided" | "exploratory";
-                brevityOverrideApplied: boolean;
-                expansionApplied: boolean;
-                /** @enum {string} */
-                expansionKind: "none" | "focused" | "expansive";
-                suggestionCount: number;
-                followUpQuestionApplied: boolean;
-            };
             validation?: components["schemas"]["ValidationDebug"];
             retrievalInfo?: components["schemas"]["RetrievalInfo"];
             retrievalTrace?: components["schemas"]["RetrievalTrace"];

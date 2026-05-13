@@ -249,7 +249,6 @@ export class PlatformSettingsService {
       queryRewriteEnabled: retrieval.queryRewriteEnabled ?? existing.queryRewriteEnabled,
       semanticRewriteInstructions: retrieval.semanticRewriteInstructions ?? existing.semanticRewriteInstructions,
       lexicalRewriteInstructions: retrieval.lexicalRewriteInstructions ?? existing.lexicalRewriteInstructions,
-      conversationMode: existing.conversationMode,
       suggestedQuestionsEnabled: existing.suggestedQuestionsEnabled,
       suggestedQuestionsCount: existing.suggestedQuestionsCount,
       rerankEnabled: retrieval.rerankEnabled ?? existing.rerankEnabled,

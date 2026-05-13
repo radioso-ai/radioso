@@ -626,15 +626,6 @@ export interface ChatResponse {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
-  conversationMode: 'factual' | 'guided' | 'exploratory'
-  conversationModeMetadata: {
-    conversationMode: 'factual' | 'guided' | 'exploratory'
-    brevityOverrideApplied: boolean
-    expansionApplied: boolean
-    expansionKind: 'none' | 'focused' | 'expansive'
-    suggestionCount: number
-    followUpQuestionApplied: boolean
-  }
   retrievalInfo: RetrievalInfo
   retrievalTrace: RetrievalTrace
 }
@@ -670,7 +661,6 @@ export interface ChatStreamChunk {
 export interface ChatStreamSuggestions {
   conversationId?: string
   suggestions?: ChatSuggestion[]
-  conversationModeMetadata?: ChatResponse['conversationModeMetadata']
 }
 
 export interface ChatStreamCompletion {
@@ -683,15 +673,6 @@ export interface ChatStreamCompletion {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
-  conversationMode?: 'factual' | 'guided' | 'exploratory'
-  conversationModeMetadata?: {
-    conversationMode: 'factual' | 'guided' | 'exploratory'
-    brevityOverrideApplied: boolean
-    expansionApplied: boolean
-    expansionKind: 'none' | 'focused' | 'expansive'
-    suggestionCount: number
-    followUpQuestionApplied: boolean
-  }
   retrievalInfo?: RetrievalInfo
   retrievalTrace?: RetrievalTrace
 }
@@ -717,15 +698,6 @@ export interface ChatConversationTurnDebug {
   stream: boolean
   citationCount: number
   answerOutcome?: 'grounded_success' | 'grounded_degraded_unsupported_segments' | 'no_context_refusal'
-  conversationMode?: 'factual' | 'guided' | 'exploratory'
-  conversationModeMetadata?: {
-    conversationMode: 'factual' | 'guided' | 'exploratory'
-    brevityOverrideApplied: boolean
-    expansionApplied: boolean
-    expansionKind: 'none' | 'focused' | 'expansive'
-    suggestionCount: number
-    followUpQuestionApplied: boolean
-  }
   validation?: {
     ran: boolean
     answerModified: boolean
@@ -1365,8 +1337,6 @@ export const chatApi = {
         citations: payload.citations,
         answerSegments: payload.answerSegments,
         suggestions: payload.suggestions,
-        conversationMode: payload.conversationMode,
-        conversationModeMetadata: payload.conversationModeMetadata,
         retrievalInfo: payload.retrievalInfo,
         retrievalTrace: payload.retrievalTrace,
       })
@@ -2177,8 +2147,6 @@ export const publicChatApi = {
         citations: payload.citations,
         answerSegments: payload.answerSegments,
         suggestions: payload.suggestions,
-        conversationMode: payload.conversationMode,
-        conversationModeMetadata: payload.conversationModeMetadata,
         retrievalInfo: payload.retrievalInfo,
         retrievalTrace: payload.retrievalTrace,
       })

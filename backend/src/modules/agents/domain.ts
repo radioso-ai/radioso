@@ -3,7 +3,7 @@ import { normalizeLocaleTag } from "../settings/contracts/assistantBootstrap.js"
 import {
   defaultWebsiteEmbedTheme,
   type WebsiteEmbedThemeSettings,
-} from "../settings/domain/websiteEmbedSettings.js";
+} from "../settings/contracts/websiteEmbed.js";
 
 export const agentSurfacePositions = ["bottom-right", "bottom-left"] as const;
 export type AgentSurfacePosition = (typeof agentSurfacePositions)[number];

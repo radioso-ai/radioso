@@ -237,7 +237,7 @@ components:
         mcpContextVersion:
           type: string
           enum:
-            - 2026-04-22
+            - 2026-05-06
         supportedTools:
           type: array
           items:

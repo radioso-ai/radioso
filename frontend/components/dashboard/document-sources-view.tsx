@@ -72,6 +72,7 @@ export function DocumentSourcesView() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Load request sets source list/error state in this effect.
     void loadSources()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId, isWorkspaceLoading])

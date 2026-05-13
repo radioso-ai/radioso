@@ -6,7 +6,7 @@ import { createHttpLogger } from "../../shared/observability/logger.js";
 import { createRequestTelemetryMiddleware } from "../../shared/observability/telemetry/telemetryService.js";
 import { badRequest, payloadTooLarge } from "../../shared/domain/errors.js";
 import { createErrorHandler } from "../http/middleware/errorHandler.js";
-import { createOpenApiDocument } from "../http/openapi/document.js";
+import { createOpenApiDocument } from "../http/openapi/openApiDocument.js";
 import { createApiRouter } from "../http/routes/index.js";
 import type { AppDependencies } from "./types.js";
 

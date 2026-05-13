@@ -1,4 +1,5 @@
 import type { RadiosoMcpConfig } from "./config.js";
+import type { components } from "./generated/openapiTypes.js";
 import type {
   DocumentListResult,
   JsonRecord,
@@ -56,14 +57,7 @@ export interface RadiosoApiAdapter {
 type FetchLike = typeof fetch;
 type CapabilityErrorCode = "resource_not_found" | "unsupported_capability";
 
-interface PlatformSettingsRecord {
-  assistant?: {
-    suggestedQuestionsEnabled?: boolean;
-    suggestedQuestionsCount?: number;
-    customInstruction?: string;
-  };
-  retrieval?: Partial<RetrievalSettingsRecord>;
-}
+type PlatformSettingsRecord = components["schemas"]["PlatformSettingsResponse"];
 
 interface RequestOptions {
   notFoundCode?: CapabilityErrorCode;
@@ -138,11 +132,10 @@ export const createRadiosoApiAdapter = (
   };
 
   const toRetrievalSettings = (settings: PlatformSettingsRecord): RetrievalSettingsRecord => ({
-    ...(settings.retrieval ?? {}),
-    suggestedQuestionsEnabled: settings.assistant?.suggestedQuestionsEnabled ?? true,
-    suggestedQuestionsCount: settings.assistant?.suggestedQuestionsCount ?? 3,
-    customInstruction: settings.assistant?.customInstruction ?? "",
-  } as RetrievalSettingsRecord);
+    ...settings.retrieval,
+    suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
+    customInstruction: settings.assistant.customInstruction,
+  });
 
   return {
     answerGrounded: (body) =>
@@ -196,7 +189,6 @@ export const createRadiosoApiAdapter = (
         body: JSON.stringify({
           assistant: {
             suggestedQuestionsEnabled: body.suggestedQuestionsEnabled,
-            suggestedQuestionsCount: body.suggestedQuestionsCount,
             customInstruction: body.customInstruction,
           },
           retrieval: {
@@ -208,6 +200,7 @@ export const createRadiosoApiAdapter = (
             similarityThreshold: body.similarityThreshold,
             rerankTopK: body.rerankTopK,
             citationDisplayEnabled: body.citationDisplayEnabled,
+            answerSupportValidationEnabled: body.answerSupportValidationEnabled,
             metadataRules: body.metadataRules,
           },
         }),

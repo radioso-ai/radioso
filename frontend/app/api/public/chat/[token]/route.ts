@@ -1,3 +1,5 @@
+import type { components } from '../../../../../../typescript-sdk/src/generated/types'
+
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
@@ -5,16 +7,11 @@ const BACKEND_BASE = process.env.BACKEND_INTERNAL_URL ?? 'http://localhost:8080'
 const ANONYMOUS_SESSION_HEADER = 'x-radioso-anonymous-session'
 const PUBLIC_SESSION_HEADER = 'x-radioso-public-session'
 
-interface PublicChatProxyRequestBody {
-  message?: string
+type PublicChatRequest = components['schemas']['PublicChatRequest']
+
+type PublicChatProxyRequestBody = Partial<PublicChatRequest> & {
   query?: string
-  stream?: boolean
-  conversationId?: string
-  startConversation?: boolean
   bootstrapGreeting?: boolean
-  userExpectedLocale?: string
-  inputMetadata?: unknown
-  pageContext?: unknown
 }
 
 export async function POST(

@@ -2537,45 +2537,17 @@ export interface components {
             route: components["schemas"]["AssistantRoute"];
         };
         AssistantChatResponse: components["schemas"]["ChatResponse"] | components["schemas"]["ChatBootstrapResponse"];
+        /** @description `message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`. */
         AssistantChatRequest: {
             /** Format: uuid */
             agentId?: string;
             /** Format: uuid */
             conversationId?: string;
-            message: string;
-            /**
-             * @default false
-             * @enum {boolean}
-             */
-            startConversation: false;
+            message?: string;
+            /** @default false */
+            startConversation: boolean;
             /** @default false */
             stream: boolean;
-            userExpectedLocale?: string;
-            inputMetadata?: {
-                /** @enum {string} */
-                method: "typed" | "suggestion_click";
-                /** Format: uuid */
-                suggestionSourceMessageId?: string;
-            };
-            sourceContext?: {
-                /** @enum {string} */
-                surface?: "authenticated_chat" | "public_chat" | "website_embed";
-                sourceOrigin?: string | null;
-            };
-            metadataFilter?: {
-                [key: string]: unknown;
-            };
-        } | {
-            /** Format: uuid */
-            agentId?: string;
-            /** @enum {boolean} */
-            startConversation: true;
-            /**
-             * @default false
-             * @enum {boolean}
-             */
-            stream: false;
-            message?: string;
             userExpectedLocale?: string;
             inputMetadata?: {
                 /** @enum {string} */
@@ -2592,44 +2564,14 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** @description `message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`. */
         PublicChatRequest: {
-            /** Format: uuid */
-            agentId?: string;
-            /** Format: uuid */
-            conversationId?: string;
-            message: string;
-            /**
-             * @default false
-             * @enum {boolean}
-             */
-            startConversation: false;
+            message?: string;
             /** @default false */
             stream: boolean;
-            userExpectedLocale?: string;
-            pageContext?: {
-                pageUrl?: string | null;
-                pageTitle?: string | null;
-                pageLocale?: string | null;
-                browserLocale?: string | null;
-                content?: string | null;
-            };
-            inputMetadata?: {
-                /** @enum {string} */
-                method: "typed" | "suggestion_click";
-                /** Format: uuid */
-                suggestionSourceMessageId?: string;
-            };
-        } | {
             /** Format: uuid */
-            agentId?: string;
-            /** @enum {boolean} */
-            startConversation: true;
-            /**
-             * @default false
-             * @enum {boolean}
-             */
-            stream: false;
-            message?: string;
+            conversationId?: string;
+            startConversation?: boolean;
             userExpectedLocale?: string;
             pageContext?: {
                 pageUrl?: string | null;
@@ -2664,8 +2606,16 @@ export interface components {
             preview: string | null;
         };
         ChatHistoryListResponse: {
+            workspaceName?: string;
+            assistantBootstrapActive?: boolean;
             conversations: components["schemas"]["ChatConversationSummary"][];
             assistantAvatarUrl?: string | null;
+            theme?: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
             total: number;
             nextCursor: string | null;
             hasMore: boolean;

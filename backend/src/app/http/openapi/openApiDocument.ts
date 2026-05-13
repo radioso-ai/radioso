@@ -58,6 +58,7 @@ import {
 } from "../../../modules/skills/public.js";
 import {
   anonymousChatSchema,
+  publicChatSessionSchema,
   publicConversationParamsSchema,
 } from "../routes/publicChatRoutes.js";
 import { websiteEmbedLauncherPositions } from "../../../modules/settings/contracts/websiteEmbed.js";
@@ -724,14 +725,6 @@ const AgentParamsSchema = z.object({
   agentId: z.string().uuid(),
 });
 
-const PublicChatPageContextSchema = z.object({
-  pageUrl: z.string().trim().max(2048).nullable().optional(),
-  pageTitle: z.string().trim().max(180).nullable().optional(),
-  pageLocale: z.string().trim().max(35).nullable().optional(),
-  browserLocale: z.string().trim().max(35).nullable().optional(),
-  content: z.string().trim().max(6000).nullable().optional(),
-}).optional();
-
 const PublicChatSessionResponseSchema = registry.register(
   "PublicChatSessionResponse",
   z.object({
@@ -756,12 +749,7 @@ const PublicChatSessionResponseSchema = registry.register(
 
 const PublicChatSessionRequestSchema = registry.register(
   "PublicChatSessionRequest",
-  z.object({
-    channel: z.enum(["anonymous_link", "website_embed"]),
-    agentId: z.string().uuid().optional(),
-    anonymousSessionId: z.string().uuid().optional(),
-    pageContext: PublicChatPageContextSchema,
-  }),
+  publicChatSessionSchema,
 );
 
 const WorkspaceIngestionReprocessResponseSchema = registry.register(
@@ -1302,91 +1290,15 @@ const AssistantChatResponseSchema = registry.register(
 
 const AssistantChatRequestSchema = registry.register(
   "AssistantChatRequest",
-  z.union([
-    z.object({
-      agentId: z.string().uuid().optional(),
-      conversationId: z.string().uuid().optional(),
-      message: z.string().min(1),
-      startConversation: z.literal(false).optional().default(false),
-      stream: z.boolean().default(false),
-      userExpectedLocale: z.string().trim().max(35).optional(),
-      inputMetadata: z.object({
-        method: z.enum(["typed", "suggestion_click"]),
-        suggestionSourceMessageId: z.string().uuid().optional(),
-      }).optional(),
-      sourceContext: z.object({
-        surface: z.enum(["authenticated_chat", "public_chat", "website_embed"]).optional(),
-        sourceOrigin: z.string().trim().max(200).nullable().optional(),
-      }).optional(),
-      metadataFilter: z.record(z.unknown()).optional(),
-    }).openapi({
-      description: "Standard assistant turn. `message` is required for non-bootstrap requests.",
-    }),
-    z.object({
-      agentId: z.string().uuid().optional(),
-      startConversation: z.literal(true),
-      stream: z.literal(false).default(false),
-      message: z.string().min(1).optional(),
-      userExpectedLocale: z.string().trim().max(35).optional(),
-      inputMetadata: z.object({
-        method: z.enum(["typed", "suggestion_click"]),
-        suggestionSourceMessageId: z.string().uuid().optional(),
-      }).optional(),
-      sourceContext: z.object({
-        surface: z.enum(["authenticated_chat", "public_chat", "website_embed"]).optional(),
-        sourceOrigin: z.string().trim().max(200).nullable().optional(),
-      }).optional(),
-      metadataFilter: z.record(z.unknown()).optional(),
-    }).strict().openapi({
-      description: "Conversation bootstrap request. `conversationId` is not allowed and streaming is disabled.",
-    }),
-  ]),
+  assistantChatSchema.openapi({
+    description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`.",
+  }),
 );
 const PublicChatRequestSchema = registry.register(
   "PublicChatRequest",
-  z.union([
-    z.object({
-      agentId: z.string().uuid().optional(),
-      conversationId: z.string().uuid().optional(),
-      message: z.string().min(1),
-      startConversation: z.literal(false).optional().default(false),
-      stream: z.boolean().default(false),
-      userExpectedLocale: z.string().trim().max(35).optional(),
-      pageContext: z.object({
-        pageUrl: z.string().trim().max(2048).nullable().optional(),
-        pageTitle: z.string().trim().max(180).nullable().optional(),
-        pageLocale: z.string().trim().max(35).nullable().optional(),
-        browserLocale: z.string().trim().max(35).nullable().optional(),
-        content: z.string().trim().max(6000).nullable().optional(),
-      }).optional(),
-      inputMetadata: z.object({
-        method: z.enum(["typed", "suggestion_click"]),
-        suggestionSourceMessageId: z.string().uuid().optional(),
-      }).optional(),
-    }).openapi({
-      description: "Standard public chat turn. `message` is required for non-bootstrap requests.",
-    }),
-    z.object({
-      agentId: z.string().uuid().optional(),
-      startConversation: z.literal(true),
-      stream: z.literal(false).default(false),
-      message: z.string().min(1).optional(),
-      userExpectedLocale: z.string().trim().max(35).optional(),
-      pageContext: z.object({
-        pageUrl: z.string().trim().max(2048).nullable().optional(),
-        pageTitle: z.string().trim().max(180).nullable().optional(),
-        pageLocale: z.string().trim().max(35).nullable().optional(),
-        browserLocale: z.string().trim().max(35).nullable().optional(),
-        content: z.string().trim().max(6000).nullable().optional(),
-      }).optional(),
-      inputMetadata: z.object({
-        method: z.enum(["typed", "suggestion_click"]),
-        suggestionSourceMessageId: z.string().uuid().optional(),
-      }).optional(),
-    }).strict().openapi({
-      description: "Public conversation bootstrap request. `conversationId` is not allowed and streaming is disabled.",
-    }),
-  ]),
+  anonymousChatSchema.openapi({
+    description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`.",
+  }),
 );
 
 const ChatConversationSummarySchema = registry.register(
@@ -1410,8 +1322,16 @@ const ChatConversationSummarySchema = registry.register(
 const ChatHistoryListResponseSchema = registry.register(
   "ChatHistoryListResponse",
   z.object({
+    workspaceName: z.string().optional(),
+    assistantBootstrapActive: z.boolean().optional(),
     conversations: z.array(ChatConversationSummarySchema),
     assistantAvatarUrl: z.string().nullable().optional(),
+    theme: z.object({
+      brand: z.string(),
+      brandText: z.string(),
+      surface: z.string(),
+      text: z.string(),
+    }).optional(),
     total: z.number().int().min(0),
     nextCursor: z.string().nullable(),
     hasMore: z.boolean(),

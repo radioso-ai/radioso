@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { createOpenApiDocument } from "../src/app/http/openapi/document.js";
+import { createOpenApiDocument } from "../src/app/http/openapi/openApiDocument.js";
 
 export const retrievalAnswerGeneratedContractPath = path.resolve(
   new URL("../src/modules/skills/definitions/retrieval.answer/generated.contract.json", import.meta.url).pathname,

@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { stringify } from "yaml";
 
-import { createOpenApiDocument } from "../src/app/http/openapi/document.js";
+import { createOpenApiDocument } from "../src/app/http/openapi/openApiDocument.js";
 
 const rootDir = path.resolve(new URL("..", import.meta.url).pathname);
 const jsonPath = path.join(rootDir, "openapi.json");

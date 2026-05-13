@@ -1,22 +1,15 @@
+import type { components } from '../../../../../typescript-sdk/src/generated/types'
+
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const BACKEND_BASE = process.env.BACKEND_INTERNAL_URL ?? 'http://localhost:8080'
 
-interface ChatStreamProxyRequestBody {
-  agentId?: string
+type AssistantChatRequest = components['schemas']['AssistantChatRequest']
+
+type ChatStreamProxyRequestBody = Partial<AssistantChatRequest> & {
   query?: string
-  message?: string
-  conversationId?: string
   bootstrapGreeting?: boolean
-  startConversation?: boolean
-  stream?: boolean
-  userExpectedLocale?: string
-  inputMetadata?: unknown
-  sourceContext?: {
-    surface?: 'authenticated_chat' | 'public_chat' | 'website_embed'
-    sourceOrigin?: string | null
-  }
 }
 
 export async function POST(request: Request) {

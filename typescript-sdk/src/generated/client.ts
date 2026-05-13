@@ -37,7 +37,7 @@ export type ChatResponse = components["schemas"]["ChatResponse"];
 export type HistoryItemsResponse = components["schemas"]["HistoryItemsResponse"];
 export type ChatHistoryListResponse = components["schemas"]["ChatHistoryListResponse"];
 export type ChatConversationDetail = components["schemas"]["ChatConversationDetail"];
-export type AssistantChatTurnRequest = Extract<AssistantChatRequest, { message: string }>;
+export type AssistantChatTurnRequest = AssistantChatRequest & { message: string; startConversation?: false };
 export type ChatCreateRequest = Omit<AssistantChatTurnRequest, "stream" | "startConversation"> & {
   stream?: false;
   startConversation?: false;

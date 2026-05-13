@@ -41,9 +41,9 @@ describe("runtime configuration", () => {
       name === "build" || name === "build:crawler" || name.startsWith("predev:"),
     );
 
-    expect(packageJson.scripts["install:crawler"]).toContain("npm --prefix ../packages/crawler ci");
+    expect(packageJson.scripts["install:crawler"]).toContain("pnpm --dir ../packages/crawler install --frozen-lockfile");
     for (const [name, script] of normalScripts) {
-      expect(script, `${name} should not install crawler dependencies`).not.toContain("npm --prefix ../packages/crawler ci");
+      expect(script, `${name} should not install crawler dependencies`).not.toContain("pnpm --dir ../packages/crawler install --frozen-lockfile");
     }
   });
 
@@ -69,9 +69,8 @@ describe("runtime configuration", () => {
       "dev:crawler-worker",
     ]);
     expect((prodCompose.services?.["backend-crawler-worker"] as { command?: string[] | string })?.command).toEqual([
-      "npm",
-      "run",
-      "start:crawler-worker",
+      "node",
+      "./dist/src/crawlerWorker.js",
     ]);
   });
 

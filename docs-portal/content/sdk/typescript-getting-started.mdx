@@ -21,8 +21,8 @@ If you are working in this repo:
 
 ```bash
 cd typescript-sdk
-npm install
-npm run build
+pnpm install --filter @radioso/typescript-sdk...
+pnpm run build
 ```
 
 If you are consuming the built package from another project, point your package manager at the SDK package output or local package path.
@@ -51,12 +51,12 @@ const documents = await client.documents.list({ limit: 10 })
 From `typescript-sdk/`:
 
 ```bash
-npm run sync
-npm run test
-npm run build
+pnpm run sync
+pnpm run test
+pnpm run build
 ```
 
-`npm run sync` updates the SDK's generated types from the backend API description.
+`pnpm run sync` updates the SDK's generated types from the backend API description.
 
 ## What you can do with it right now
 

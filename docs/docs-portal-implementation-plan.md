@@ -349,7 +349,7 @@ docs-portal/
     metadata.ts
     openapi.ts
   public/
-    radioso-logo.png
+    radioso-icon.svg
     favicon.ico
   scripts/
     sync-openapi.mjs

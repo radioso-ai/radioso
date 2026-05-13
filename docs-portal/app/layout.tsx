@@ -32,10 +32,10 @@ export const metadata: Metadata = {
     description: site.description,
     url: site.docsUrl,
     siteName: site.name,
-    images: [{ url: '/radioso-logo.png', width: 512, height: 512, alt: 'Radioso' }],
+    images: [{ url: '/radioso-lockup.svg', width: 983, height: 300, alt: 'Radioso' }],
   },
   icons: {
-    icon: '/icon.svg',
+    icon: '/radioso-icon.svg',
     apple: '/apple-icon.png',
   },
 }

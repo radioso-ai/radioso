@@ -1,0 +1,15 @@
+packages:
+  - backend
+  - frontend
+  - docs-portal
+  - typescript-sdk
+  - packages/*
+  - ee
+  - ee/packages/*
+
+onlyBuiltDependencies:
+  - "@scarf/scarf"
+  - esbuild
+  - protobufjs
+  - sharp
+  - unrs-resolver

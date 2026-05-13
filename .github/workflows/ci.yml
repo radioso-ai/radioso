@@ -67,41 +67,40 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: |
-            backend/package-lock.json
-            packages/crawler/package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
       - name: Install backend dependencies
-        working-directory: backend
-        run: npm ci
-
-      - name: Install crawler dependencies
-        working-directory: packages/crawler
-        run: npm ci
+        run: pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler...
 
       - name: Lint backend module boundaries
         working-directory: backend
-        run: npm run lint:boundaries
+        run: pnpm run lint:boundaries
 
       - name: Build backend
         working-directory: backend
-        run: npm run build
+        run: pnpm run build
 
       - name: Test backend unit suite
         working-directory: backend
-        run: npm run test:unit
+        run: pnpm run test:unit
 
       - name: Test backend integration suite
         working-directory: backend
-        run: npm run test:integration
+        run: pnpm run test:integration
 
       - name: Test backend contracts
         working-directory: backend
-        run: npm run test:contract
+        run: pnpm run test:contract
 
       - name: Upload backend OpenAPI artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -120,35 +119,40 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
       - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
+        run: pnpm install --frozen-lockfile --filter radioso-frontend...
 
       - name: Lint frontend
         working-directory: frontend
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Build frontend
         working-directory: frontend
-        run: npm run build
+        run: pnpm run build
 
       - name: Test frontend unit suite
         working-directory: frontend
-        run: npm test
+        run: pnpm test
 
       - name: Install Playwright browsers
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Test frontend end-to-end suite
         working-directory: frontend
-        run: npm run test:e2e
+        run: pnpm run test:e2e
 
   docs-portal:
     name: Docs Portal
@@ -160,11 +164,17 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: docs-portal/package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
       - name: Download backend OpenAPI artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -173,16 +183,15 @@ jobs:
           path: backend
 
       - name: Install docs portal dependencies
-        working-directory: docs-portal
-        run: npm ci
+        run: pnpm install --frozen-lockfile --filter radioso-docs-portal...
 
       - name: Lint docs portal
         working-directory: docs-portal
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Build docs portal
         working-directory: docs-portal
-        run: npm run build
+        run: pnpm run build
 
   typescript-sdk:
     name: TypeScript SDK
@@ -194,11 +203,17 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: typescript-sdk/package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
       - name: Download backend OpenAPI artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -207,16 +222,15 @@ jobs:
           path: backend
 
       - name: Install TypeScript SDK dependencies
-        working-directory: typescript-sdk
-        run: npm ci
+        run: pnpm install --frozen-lockfile --filter @radioso/typescript-sdk...
 
       - name: Build TypeScript SDK
         working-directory: typescript-sdk
-        run: npm run build
+        run: pnpm run build
 
       - name: Test TypeScript SDK
         working-directory: typescript-sdk
-        run: npm test
+        run: pnpm test
 
   mcp-server:
     name: MCP Server
@@ -238,33 +252,32 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: |
-            backend/package-lock.json
-            packages/radioso-mcp-server/package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
       - name: Install backend dependencies
-        working-directory: backend
-        run: npm ci
-
-      - name: Install MCP server dependencies
-        working-directory: packages/radioso-mcp-server
-        run: npm ci
+        run: pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/mcp-server...
 
       - name: Build MCP server
         working-directory: packages/radioso-mcp-server
-        run: npm run build
+        run: pnpm run build
 
       - name: Test MCP server
         working-directory: packages/radioso-mcp-server
-        run: npm test
+        run: pnpm test
 
       - name: Smoke test MCP server
         working-directory: packages/radioso-mcp-server
-        run: npm run smoke:all
+        run: pnpm run smoke:all
 
   crawler:
     name: Crawler Package
@@ -274,23 +287,28 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: packages/crawler/package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
       - name: Install crawler dependencies
-        working-directory: packages/crawler
-        run: npm ci
+        run: pnpm install --frozen-lockfile --filter @radioso/crawler...
 
       - name: Build crawler
         working-directory: packages/crawler
-        run: npm run build
+        run: pnpm run build
 
       - name: Test crawler
         working-directory: packages/crawler
-        run: npm test
+        run: pnpm test
 
   ee:
     name: Enterprise Edition
@@ -300,20 +318,25 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: ee/package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
       - name: Install Enterprise Edition dependencies
-        working-directory: ee
-        run: npm ci
+        run: pnpm install --frozen-lockfile --filter './ee/packages/*...'
 
       - name: Build Enterprise Edition packages
         working-directory: ee
-        run: npm run build
+        run: pnpm run build
 
       - name: Test Enterprise Edition packages
         working-directory: ee
-        run: npm test
+        run: pnpm test

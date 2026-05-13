@@ -119,29 +119,6 @@ export function PublicChatBubbleHeader({
   )
 }
 
-export function PublicChatBubblePoweredBy({
-  theme,
-}: {
-  theme: WebsiteEmbedTheme
-}) {
-  return (
-    <p
-      className="mt-1 text-center text-[10px] uppercase tracking-[0.18em]"
-      style={{ color: theme.mutedForeground, opacity: 0.7 }}
-    >
-      Powered by{' '}
-      <a
-        href="https://radioso.com"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="font-medium underline-offset-2 hover:underline"
-      >
-        Radioso
-      </a>
-    </p>
-  )
-}
-
 export function PublicChatBubbleDisclaimer({
   theme,
   copy,

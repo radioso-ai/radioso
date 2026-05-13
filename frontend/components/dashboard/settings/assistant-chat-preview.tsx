@@ -8,7 +8,6 @@ import {
   PublicChatBubbleComposerSurface,
   PublicChatBubbleDisclaimer,
   PublicChatBubbleHeader,
-  PublicChatBubblePoweredBy,
 } from '@/components/chat/public-chat-bubble-view'
 import { ChatMessageThread, type ChatThreadMessage } from '@/components/dashboard/chat-message-thread'
 import { deriveThemeOverridesFromModel } from '@/lib/anonymous-chat-context'
@@ -165,7 +164,6 @@ export function ChatPreview({
           value=""
           readOnly
         />
-        <PublicChatBubblePoweredBy theme={embedTheme} />
       </PublicChatBubbleComposerSurface>
     </div>
   )

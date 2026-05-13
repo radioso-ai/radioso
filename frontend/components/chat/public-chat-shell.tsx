@@ -10,7 +10,6 @@ import {
   PublicChatBubbleComposerSurface,
   PublicChatBubbleDisclaimer,
   PublicChatBubbleHeader,
-  PublicChatBubblePoweredBy,
 } from '@/components/chat/public-chat-bubble-view'
 import { Button } from '@/components/ui/button'
 import {
@@ -751,7 +750,6 @@ function PublicChatContent({
             compact={isCompactKeyboardLayout}
           />
         )}
-        {!isCompactKeyboardLayout ? <PublicChatBubblePoweredBy theme={theme} /> : null}
       </PublicChatBubbleComposerSurface>
     </div>
   )

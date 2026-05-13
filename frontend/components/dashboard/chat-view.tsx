@@ -335,18 +335,20 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
           onSubmitted={handleContactSubmitted}
         />
       ) : (
-        <form onSubmit={handleSubmit} className="mx-auto flex max-w-3xl items-end gap-3">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask a question..."
-            className="min-h-[44px] max-h-32 resize-none"
-          />
-          <Button type="submit" size="icon" className="h-[44px] w-[44px] shrink-0" disabled={isLoading || isBootstrapping || !input.trim()}>
-            <Send className="w-4 h-4" />
-            <span className="sr-only">Send message</span>
-          </Button>
+        <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
+          <div className="flex items-end gap-1 rounded-3xl border border-input bg-input/40 px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0">
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask a question..."
+              className="min-h-[36px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
+            />
+            <Button type="submit" size="icon" className="h-9 w-9 shrink-0 rounded-full" disabled={isLoading || isBootstrapping || !input.trim()}>
+              <Send className="w-4 h-4" />
+              <span className="sr-only">Send message</span>
+            </Button>
+          </div>
         </form>
       )}
     >

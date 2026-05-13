@@ -29,7 +29,6 @@ export default async function PublicChatPage({
       className="flex h-full w-full items-center justify-center"
       style={{
         ...buildWebsiteEmbedSurfaceCssVars(resolvedTheme),
-        background: resolvedTheme.panelBackground,
         color: resolvedTheme.panelForeground,
       }}
     >

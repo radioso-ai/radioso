@@ -3,9 +3,50 @@ name: CI
 on:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    outputs:
+      run_ci: ${{ steps.filter.outputs.run_ci }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        name: Detect CI-relevant changes
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags --prune --depth=1 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+
+          run_ci=false
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+
+            case "$path" in
+              .github/workflows/*|infra/*|.dockerignore|*/.dockerignore|Dockerfile|*/Dockerfile|*.Dockerfile)
+                ;;
+              *)
+                run_ci=true
+                break
+                ;;
+            esac
+          done < <(git diff --name-only "origin/${BASE_REF}...HEAD")
+
+          echo "run_ci=${run_ci}" >> "$GITHUB_OUTPUT"
+
   backend:
     name: Backend
+    needs: changes
+    if: needs.changes.outputs.run_ci == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -73,6 +114,8 @@ jobs:
 
   frontend:
     name: Frontend
+    needs: changes
+    if: needs.changes.outputs.run_ci == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -110,7 +153,10 @@ jobs:
   docs-portal:
     name: Docs Portal
     runs-on: ubuntu-latest
-    needs: backend
+    needs:
+      - changes
+      - backend
+    if: needs.changes.outputs.run_ci == 'true'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
@@ -141,7 +187,10 @@ jobs:
   typescript-sdk:
     name: TypeScript SDK
     runs-on: ubuntu-latest
-    needs: backend
+    needs:
+      - changes
+      - backend
+    if: needs.changes.outputs.run_ci == 'true'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
@@ -171,6 +220,8 @@ jobs:
 
   mcp-server:
     name: MCP Server
+    needs: changes
+    if: needs.changes.outputs.run_ci == 'true'
     runs-on: ubuntu-latest
     services:
       redis:
@@ -217,6 +268,8 @@ jobs:
 
   crawler:
     name: Crawler Package
+    needs: changes
+    if: needs.changes.outputs.run_ci == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5

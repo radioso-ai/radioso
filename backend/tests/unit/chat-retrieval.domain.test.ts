@@ -8,10 +8,12 @@ import { ConversationContextService } from "../../src/modules/retrieval/services
 import { ModelRerankGateway, OpenAISemanticRerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
+import { QueryInterpretationStageService } from "../../src/modules/retrieval/services/queryInterpretationStage.js";
 import { OpenAIQueryRewriteGateway, QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalAnswerService } from "../../src/modules/retrieval/services/retrievalAnswerService.js";
 import { selectRetrievalAnswerShape } from "../../src/modules/retrieval/services/retrievalShapeResolver.js";
+import { defaultRetrievalSettings } from "../../src/modules/settings/contracts/retrieval.js";
 import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 
 const message = (content: string, role: MessageRecord["role"] = "user"): MessageRecord => ({
@@ -1097,6 +1099,77 @@ describe("chat retrieval domain", () => {
     expect(createInput?.messages[0]?.content).not.toContain(
       "Retrieval continuity state from the most recent successful assistant turn",
     );
+    expect(createInput?.messages[0]?.content).not.toContain("Assistant answer scope reference:");
+    expect(createInput?.messages[0]?.content).not.toContain("No configured assistant answer instructions");
+  });
+
+  it("includes configured assistant scope when interpreting non-retrieval intent", async () => {
+    let prompt = "";
+    const gateway = new OpenAIQueryRewriteGateway(
+      {
+        chat: {
+          completions: {
+            create: async (input: { messages: Array<{ content: string }>; model: string }) => {
+              prompt = input.messages[0]?.content ?? "";
+              return {
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        rewrittenQuery: "sqrt(5)",
+                        semanticQuery: "sqrt(5)",
+                        lexicalQuery: "sqrt(5)",
+                        responseIntent: "social_only",
+                        intentTopic: "math expression",
+                        inScopeRequest: null,
+                        outsideScopeRequest: "sqrt(5)",
+                        responseLanguagePolicy: "match_user_question",
+                        responseLanguage: "English",
+                        queryShape: "general_grounding",
+                        retrievalSubqueries: [],
+                        turnKind: "fresh_subject",
+                        proposedActiveSubject: null,
+                        relatedEntities: [],
+                        unresolved: false,
+                        confidence: 0.99,
+                      }),
+                    },
+                  },
+                ],
+              };
+            },
+          },
+        },
+      } as never,
+      "gpt-5-mini",
+    );
+    const stage = new QueryInterpretationStageService(new QueryRewriteService(gateway));
+
+    await stage.execute({
+      request: {
+        workspaceId: "workspace-1",
+        query: "sqrt(5)",
+        history: [],
+        responseIdentity: { name: "Vikram" },
+        responseBehaviorEnabled: true,
+        responseBehavior: {
+          customInstruction: "Help visitors choose meditation retreats and courses.",
+          suggestedQuestionsEnabled: true,
+          suggestedQuestionsCount: 3,
+        },
+      },
+      settings: defaultRetrievalSettings("workspace-1"),
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+    });
+
+    expect(prompt).toContain("Assistant answer scope reference:");
+    expect(prompt).toContain("Help visitors choose meditation retreats and courses.");
+    expect(prompt).toContain("Compare the latest user question against this scope reference");
+    expect(prompt).toContain("outsideScopeRequest");
   });
 
   it("accepts assistant-offered multi-option continuations through retrieval subqueries", async () => {

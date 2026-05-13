@@ -1,4 +1,7 @@
 import type { Page, Route } from "@playwright/test";
+import type { components } from "../../../typescript-sdk/src/generated/types";
+
+type ApiSchemas = components["schemas"];
 
 export const workspaceId = "workspace-1";
 export const workspaceKey = "workspace-key";
@@ -7,7 +10,7 @@ export const defaultAgentId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
 
 export const nowIso = "2026-04-26T12:00:00.000Z";
 
-export const basePlatformSettings = () => ({
+export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] => ({
   assistant: {
     assistantName: "Marta",
     greetingInstruction: "",
@@ -54,13 +57,14 @@ export const basePlatformSettings = () => ({
 
 export type PlatformSettingsFixture = ReturnType<typeof basePlatformSettings>;
 
-const buildDefaultAgentSettings = (settings: PlatformSettingsFixture) => ({
+const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchemas["ConversationAgent"] => ({
   id: defaultAgentId,
   workspaceId,
   name: settings.assistant.assistantName,
   isDefault: true,
   customInstruction: settings.assistant.customInstruction,
   suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
+  theme: settings.channels.websiteEmbedTheme,
   greetingInstruction: settings.assistant.greetingInstruction,
   assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
   proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,

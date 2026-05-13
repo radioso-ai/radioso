@@ -18,6 +18,18 @@ export const retrievalPatchSchema = z.object({
         operator: z.enum(["equals", "not_equals", "contains", "not_contains", "lt", "lte", "gt", "gte"]),
         value: z.string(),
         valueType: z.enum(["string", "number", "date", "boolean"]),
+        combinator: z.enum(["and", "or"]).default("and"),
+        conditions: z.array(
+          z.object({
+            field: z.string().min(1),
+            id: z.string().min(1),
+            operator: z.enum(["equals", "not_equals", "contains", "not_contains", "lt", "lte", "gt", "gte"]),
+            value: z.string(),
+            valueType: z.enum(["string", "number", "date", "boolean"]),
+          }),
+        ).default([]),
+        triggerInstruction: z.string().max(500).optional(),
+        triggerMode: z.enum(["always_on", "match_turn"]).default("always_on"),
       }),
     )
     .optional(),
@@ -26,8 +38,8 @@ export const retrievalPatchSchema = z.object({
   rerankTopK: z.number().int().positive().optional(),
   semanticRewriteInstructions: z.string().max(2000).optional(),
   similarityThreshold: z.number().min(0).max(1).optional(),
-  suggestedQuestionsCount: z.number().int().positive().optional(),
   suggestedQuestionsEnabled: z.boolean().optional(),
+  answerSupportValidationEnabled: z.boolean().optional(),
   vectorTopK: z.number().int().positive().optional(),
 });
 

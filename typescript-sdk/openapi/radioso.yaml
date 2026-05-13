@@ -3719,249 +3719,116 @@ components:
         - $ref: "#/components/schemas/ChatResponse"
         - $ref: "#/components/schemas/ChatBootstrapResponse"
     AssistantChatRequest:
-      anyOf:
-        - type: object
+      type: object
+      properties:
+        agentId:
+          type: string
+          format: uuid
+        conversationId:
+          type: string
+          format: uuid
+        message:
+          type: string
+          minLength: 1
+        startConversation:
+          type: boolean
+          default: false
+        stream:
+          type: boolean
+          default: false
+        userExpectedLocale:
+          type: string
+          maxLength: 35
+        inputMetadata:
+          type: object
           properties:
-            agentId:
+            method:
               type: string
-              format: uuid
-            conversationId:
-              type: string
-              format: uuid
-            message:
-              type: string
-              minLength: 1
-            startConversation:
-              type: boolean
               enum:
-                - false
-              default: false
-            stream:
-              type: boolean
-              default: false
-            userExpectedLocale:
+                - typed
+                - suggestion_click
+            suggestionSourceMessageId:
               type: string
-              maxLength: 35
-            inputMetadata:
-              type: object
-              properties:
-                method:
-                  type: string
-                  enum:
-                    - typed
-                    - suggestion_click
-                suggestionSourceMessageId:
-                  type: string
-                  format: uuid
-              required:
-                - method
-            sourceContext:
-              type: object
-              properties:
-                surface:
-                  type: string
-                  enum:
-                    - authenticated_chat
-                    - public_chat
-                    - website_embed
-                sourceOrigin:
-                  type:
-                    - string
-                    - "null"
-                  maxLength: 200
-            metadataFilter:
-              type: object
-              additionalProperties: {}
+              format: uuid
           required:
-            - message
-          description: Standard assistant turn. `message` is required for non-bootstrap requests.
-        - type: object
+            - method
+        sourceContext:
+          type: object
           properties:
-            agentId:
+            surface:
               type: string
-              format: uuid
-            startConversation:
-              type: boolean
               enum:
-                - true
-            stream:
-              type: boolean
-              enum:
-                - false
-              default: false
-            message:
-              type: string
-              minLength: 1
-            userExpectedLocale:
-              type: string
-              maxLength: 35
-            inputMetadata:
-              type: object
-              properties:
-                method:
-                  type: string
-                  enum:
-                    - typed
-                    - suggestion_click
-                suggestionSourceMessageId:
-                  type: string
-                  format: uuid
-              required:
-                - method
-            sourceContext:
-              type: object
-              properties:
-                surface:
-                  type: string
-                  enum:
-                    - authenticated_chat
-                    - public_chat
-                    - website_embed
-                sourceOrigin:
-                  type:
-                    - string
-                    - "null"
-                  maxLength: 200
-            metadataFilter:
-              type: object
-              additionalProperties: {}
-          required:
-            - startConversation
-          additionalProperties: false
-          description: Conversation bootstrap request. `conversationId` is not allowed and streaming is disabled.
+                - authenticated_chat
+                - public_chat
+                - website_embed
+            sourceOrigin:
+              type:
+                - string
+                - "null"
+              maxLength: 200
+        metadataFilter:
+          type: object
+          additionalProperties: {}
+      description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`."
     PublicChatRequest:
-      anyOf:
-        - type: object
+      type: object
+      properties:
+        message:
+          type: string
+          minLength: 1
+        stream:
+          type: boolean
+          default: false
+        conversationId:
+          type: string
+          format: uuid
+        startConversation:
+          type: boolean
+        userExpectedLocale:
+          type: string
+          maxLength: 35
+        pageContext:
+          type: object
           properties:
-            agentId:
-              type: string
-              format: uuid
-            conversationId:
-              type: string
-              format: uuid
-            message:
-              type: string
-              minLength: 1
-            startConversation:
-              type: boolean
-              enum:
-                - false
-              default: false
-            stream:
-              type: boolean
-              default: false
-            userExpectedLocale:
-              type: string
+            pageUrl:
+              type:
+                - string
+                - "null"
+              maxLength: 2048
+            pageTitle:
+              type:
+                - string
+                - "null"
+              maxLength: 180
+            pageLocale:
+              type:
+                - string
+                - "null"
               maxLength: 35
-            pageContext:
-              type: object
-              properties:
-                pageUrl:
-                  type:
-                    - string
-                    - "null"
-                  maxLength: 2048
-                pageTitle:
-                  type:
-                    - string
-                    - "null"
-                  maxLength: 180
-                pageLocale:
-                  type:
-                    - string
-                    - "null"
-                  maxLength: 35
-                browserLocale:
-                  type:
-                    - string
-                    - "null"
-                  maxLength: 35
-                content:
-                  type:
-                    - string
-                    - "null"
-                  maxLength: 6000
-            inputMetadata:
-              type: object
-              properties:
-                method:
-                  type: string
-                  enum:
-                    - typed
-                    - suggestion_click
-                suggestionSourceMessageId:
-                  type: string
-                  format: uuid
-              required:
-                - method
-          required:
-            - message
-          description: Standard public chat turn. `message` is required for non-bootstrap requests.
-        - type: object
+            browserLocale:
+              type:
+                - string
+                - "null"
+              maxLength: 35
+            content:
+              type:
+                - string
+                - "null"
+              maxLength: 6000
+        inputMetadata:
+          type: object
           properties:
-            agentId:
+            method:
+              type: string
+              enum:
+                - typed
+                - suggestion_click
+            suggestionSourceMessageId:
               type: string
               format: uuid
-            startConversation:
-              type: boolean
-              enum:
-                - true
-            stream:
-              type: boolean
-              enum:
-                - false
-              default: false
-            message:
-              type: string
-              minLength: 1
-            userExpectedLocale:
-              type: string
-              maxLength: 35
-            pageContext:
-              type: object
-              properties:
-                pageUrl:
-                  type:
-                    - string
-                    - "null"
-                  maxLength: 2048
-                pageTitle:
-                  type:
-                    - string
-                    - "null"
-                  maxLength: 180
-                pageLocale:
-                  type:
-                    - string
-                    - "null"
-                  maxLength: 35
-                browserLocale:
-                  type:
-                    - string
-                    - "null"
-                  maxLength: 35
-                content:
-                  type:
-                    - string
-                    - "null"
-                  maxLength: 6000
-            inputMetadata:
-              type: object
-              properties:
-                method:
-                  type: string
-                  enum:
-                    - typed
-                    - suggestion_click
-                suggestionSourceMessageId:
-                  type: string
-                  format: uuid
-              required:
-                - method
           required:
-            - startConversation
-          additionalProperties: false
-          description: Public conversation bootstrap request. `conversationId` is not allowed and streaming is disabled.
+            - method
+      description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`."
     ChatConversationSummary:
       type: object
       properties:
@@ -4024,6 +3891,10 @@ components:
     ChatHistoryListResponse:
       type: object
       properties:
+        workspaceName:
+          type: string
+        assistantBootstrapActive:
+          type: boolean
         conversations:
           type: array
           items:
@@ -4032,6 +3903,22 @@ components:
           type:
             - string
             - "null"
+        theme:
+          type: object
+          properties:
+            brand:
+              type: string
+            brandText:
+              type: string
+            surface:
+              type: string
+            text:
+              type: string
+          required:
+            - brand
+            - brandText
+            - surface
+            - text
         total:
           type: integer
           minimum: 0

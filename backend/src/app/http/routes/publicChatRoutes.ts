@@ -63,7 +63,7 @@ export const publicConversationParamsSchema = z.object({
   conversationId: z.string().uuid(),
 });
 
-const publicChatSessionSchema = z.object({
+export const publicChatSessionSchema = z.object({
   channel: z.enum(["anonymous_link", "website_embed"]),
   agentId: z.string().uuid().optional(),
   anonymousSessionId: z.string().uuid().optional(),

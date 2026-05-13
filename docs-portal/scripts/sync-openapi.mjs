@@ -15,7 +15,7 @@ try {
     [
       'Missing backend/openapi.json.',
       'Generate it first with:',
-      '  cd backend && npm run generate:openapi',
+      '  cd backend && pnpm run generate:openapi',
     ].join('\n')
   )
   process.exit(1)

@@ -49,6 +49,7 @@ import type { UserRepositoryPort } from "../../db/repositories/userRepository.js
 import type { SkillCatalogService } from "../../modules/skills/public.js";
 import type { AgentService } from "../../modules/agents/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
+import type { DocumentSourceRepositoryPort } from "../../db/repositories/documentSourceRepository.js";
 import type { SupportImpersonationService } from "../../modules/support/services/supportImpersonationService.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
@@ -79,6 +80,7 @@ export interface AppDependencies {
   ingestionSettingsService: IngestionSettingsService;
   retrievalSettingsService: RetrievalSettingsService;
   documentIngestionService: DocumentIngestionService;
+  documentSourceRepository: DocumentSourceRepositoryPort;
   documentImportService: DocumentImportService;
   documentSearchService: DocumentSearchService;
   documentSearchHistoryService: DocumentSearchHistoryService;

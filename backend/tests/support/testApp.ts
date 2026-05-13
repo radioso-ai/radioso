@@ -285,6 +285,7 @@ export const createTestDependencies = (overrides: {
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
   const documentRepository = new InMemoryDocumentRepository();
   const documentSourceRepository = new InMemoryDocumentSourceRepository();
+  documentSourceRepository.setDocumentRepository(documentRepository);
   const documentProcessingJobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
   documentRepository.setJobRepository(documentProcessingJobRepository);
   const chunkRepository = new InMemoryChunkRepository(documentRepository);
@@ -310,6 +311,9 @@ export const createTestDependencies = (overrides: {
       for (const [documentId, chunks] of chunkRepository.items.entries()) {
         const document = documentRepository.items.get(documentId);
         if (!document || document.workspaceId !== input.workspaceId || document.status !== "ready") {
+          continue;
+        }
+        if (input.sourceFilter?.constrained && (!document.sourceId || !input.sourceFilter.sourceIds.includes(document.sourceId))) {
           continue;
         }
         for (const chunk of chunks) {
@@ -338,6 +342,9 @@ export const createTestDependencies = (overrides: {
       for (const [documentId, chunks] of chunkRepository.items.entries()) {
         const document = documentRepository.items.get(documentId);
         if (!document || document.workspaceId !== input.workspaceId || document.status !== "ready") {
+          continue;
+        }
+        if (input.sourceFilter?.constrained && (!document.sourceId || !input.sourceFilter.sourceIds.includes(document.sourceId))) {
           continue;
         }
         for (const chunk of chunks) {
@@ -489,6 +496,7 @@ export const createTestDependencies = (overrides: {
     undefined,
     undefined,
     usageLimitPolicy,
+    documentSourceRepository,
   );
   const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
   const documentDeletionService = new DocumentDeletionService(
@@ -584,7 +592,7 @@ export const createTestDependencies = (overrides: {
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
   const agentRepository = new InMemoryAgentRepository();
-  const agentService = new AgentService(agentRepository, workspaceRepository, retrievalSettingsService);
+  const agentService = new AgentService(agentRepository, workspaceRepository, retrievalSettingsService, documentSourceRepository);
 
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
@@ -674,6 +682,7 @@ export const createTestDependencies = (overrides: {
     ingestionSettingsService,
     retrievalSettingsService,
     documentIngestionService,
+    documentSourceRepository,
     documentImportService,
     documentSearchService,
     documentSearchHistoryService,

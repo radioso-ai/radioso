@@ -2,6 +2,7 @@ import type { EmbeddingService } from "./embeddingService.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import type { RetrievedChunk, VectorSearchPort } from "../infra/vectorSearch.js";
+import type { RetrievalSourceFilter } from "../domain/retrievalPipelineTypes.js";
 import type { CandidateRetrievalStage as CandidateRetrievalStageContract, QueryInterpretationStageResult } from "./retrievalPipelineStages.js";
 
 export class CandidateRetrievalStageService implements CandidateRetrievalStageContract {
@@ -13,6 +14,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
 
   async execute(input: QueryInterpretationStageResult) {
     const embeddingStartedAt = Date.now();
+    const sourceFilter = input.request.sourceFilter;
     const semanticQueries = input.activeRetrievalSubqueries.map((subquery) => subquery.semanticQuery);
     const uniqueSemanticQueries = [...new Set(semanticQueries)];
     const embeddings = await this.embeddingService.embedChunks(uniqueSemanticQueries);
@@ -29,6 +31,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           topK: input.settings.vectorTopK,
           similarityThreshold: input.settings.similarityThreshold,
           metadataFilter: input.request.metadataFilter,
+          sourceFilter,
         }),
       ] as const),
     );
@@ -41,6 +44,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
             query: subquery.lexicalQuery,
             topK: RETRIEVAL_BEHAVIOR.hybrid.lexicalTopK,
             metadataFilter: input.request.metadataFilter,
+            sourceFilter,
             lexicalPlan: subquery.lexicalPlan,
           }),
         ]);
@@ -86,6 +90,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     topK: number;
     similarityThreshold: number;
     metadataFilter?: Record<string, unknown>;
+    sourceFilter?: RetrievalSourceFilter;
   }): Promise<{ contexts: RetrievedChunk[]; fallbackApplied: boolean }> {
     const rows = await this.vectorSearch.search(input);
 

@@ -9,6 +9,7 @@ import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest, notFound, payloadTooLarge } from "../../../shared/domain/errors.js";
 import { createWebsiteCrawlerRoutes } from "../../../modules/websiteCrawler/routes.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/domain/sourceConstants.js";
 
 const MAX_DOCUMENT_LIST_LIMIT = 100;
 
@@ -67,6 +68,7 @@ type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "documentDeletionService"
   | "documentImportService"
   | "documentIngestionService"
+  | "documentSourceRepository"
   | "documentSearchHistoryService"
   | "documentSearchService"
   | "websiteCrawlJobService"
@@ -123,6 +125,51 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       }
       const page = await dependencies.documentIngestionService.listForWorkspace(workspaceId, parsedQuery.data);
       res.status(200).json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/sources", workspaceSession, async (_req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const [sources, documentsWithoutSourceCount] = await Promise.all([
+        dependencies.documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
+        dependencies.documentSourceRepository.countDocumentsWithoutSource(workspaceId),
+      ]);
+      const syntheticSourceRows: typeof sources = [];
+
+      if (documentsWithoutSourceCount > 0) {
+        syntheticSourceRows.push({
+          id: MANUALLY_ADDED_DOCUMENTS_SOURCE_ID,
+          workspaceId,
+          kind: "upload",
+          name: "Manually added documents",
+          externalId: null,
+          config: {},
+          metadata: {},
+          lastSyncStatus: null,
+          lastSyncedAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          documentCount: documentsWithoutSourceCount,
+        });
+      }
+
+      const allSources = [...sources, ...syntheticSourceRows];
+      res.status(200).json({
+        sources: allSources.map((source) => ({
+          id: source.id,
+          kind: source.kind,
+          name: source.name,
+          externalId: source.externalId,
+          lastSyncStatus: source.lastSyncStatus,
+          lastSyncedAt: source.lastSyncedAt?.toISOString() ?? null,
+          createdAt: source.createdAt.toISOString(),
+          updatedAt: source.updatedAt.toISOString(),
+          documentCount: source.documentCount,
+        })),
+      });
     } catch (error) {
       next(error);
     }

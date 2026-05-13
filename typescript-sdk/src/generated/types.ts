@@ -731,6 +731,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/document/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List document sources for the authenticated workspace */
+        get: operations["listDocumentSources"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/document/import": {
         parameters: {
             query?: never;
@@ -1795,6 +1812,14 @@ export interface components {
                 };
             };
         };
+        AgentSourceScope: {
+            /** @enum {string} */
+            mode: "all";
+        } | {
+            /** @enum {string} */
+            mode: "selected";
+            sourceIds: string[];
+        };
         ConversationAgent: components["schemas"]["Agent"] & {
             isDefault: boolean;
             customInstruction: string;
@@ -1806,6 +1831,7 @@ export interface components {
                 text: string;
             };
             retrievalEnabled: boolean;
+            sourceScope: components["schemas"]["AgentSourceScope"];
             logo: {
                 bucket: string;
                 objectPath: string;
@@ -1834,6 +1860,14 @@ export interface components {
                 text?: string;
             };
             retrievalEnabled?: boolean;
+            sourceScope?: {
+                /** @enum {string} */
+                mode: "all";
+            } | {
+                /** @enum {string} */
+                mode: "selected";
+                sourceIds: string[];
+            };
             greetingInstruction?: string;
             assistantDefaultLocale?: string | null;
             proactiveGreetingEnabled?: boolean;
@@ -1937,6 +1971,25 @@ export interface components {
             kind: "website" | "api" | "connector" | "upload";
             name: string;
             externalId: string | null;
+        };
+        DocumentSourceListItem: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "website" | "api" | "connector" | "upload";
+            name: string;
+            externalId: string | null;
+            lastSyncStatus: string | null;
+            /** Format: date-time */
+            lastSyncedAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            documentCount: number;
+        };
+        DocumentSourceListResponse: {
+            sources: components["schemas"]["DocumentSourceListItem"][];
         };
         DocumentImportRequest: {
             /**
@@ -4918,6 +4971,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDocumentSources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document sources returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceListResponse"];
                 };
             };
             /** @description Authentication required */

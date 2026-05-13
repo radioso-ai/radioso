@@ -1104,10 +1104,46 @@ export class InMemoryConnectorDatabase {
 
 export class InMemoryDocumentSourceRepository implements DocumentSourceRepositoryPort {
   readonly items = new Map<string, DocumentSourceRecord>();
+  private documentRepository?: InMemoryDocumentRepository;
+
+  setDocumentRepository(documentRepository: InMemoryDocumentRepository): void {
+    this.documentRepository = documentRepository;
+  }
 
   async findByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<DocumentSourceRecord | null> {
     const source = this.items.get(sourceId);
     return source && source.workspaceId === workspaceId ? source : null;
+  }
+
+  async findExistingIdsByWorkspaceId(workspaceId: string, sourceIds: string[]): Promise<string[]> {
+    const allowedIds = new Set(sourceIds);
+    return [...this.items.values()]
+      .filter((source) => source.workspaceId === workspaceId && allowedIds.has(source.id))
+      .map((source) => source.id);
+  }
+
+  async listByWorkspaceIdWithDocumentCounts(workspaceId: string): Promise<Array<DocumentSourceRecord & { documentCount: number }>> {
+    return [...this.items.values()]
+      .filter((source) => source.workspaceId === workspaceId)
+      .map((source) => ({
+        ...source,
+        documentCount: this.documentRepository
+          ? [...this.documentRepository.items.values()].filter((document) =>
+              document.workspaceId === workspaceId && document.sourceId === source.id,
+            ).length
+          : 0,
+      }))
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || right.id.localeCompare(left.id));
+  }
+
+  async countDocumentsWithoutSource(workspaceId: string): Promise<number> {
+    if (!this.documentRepository) {
+      return 0;
+    }
+
+    return [...this.documentRepository.items.values()]
+      .filter((document) => document.workspaceId === workspaceId && document.sourceId === null)
+      .length;
   }
 
   async upsertByExternalId(input: {

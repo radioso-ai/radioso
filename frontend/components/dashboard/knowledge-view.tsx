@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { DocumentsView } from '@/components/dashboard/documents-view'
+import { DocumentSourcesView } from '@/components/dashboard/document-sources-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { IngestionSettingsPanel } from '@/components/dashboard/settings/ingestion-settings-panel'
 import { RetrievalSettingsPanel } from '@/components/dashboard/settings/retrieval-settings-panel'
@@ -17,6 +18,7 @@ import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 
 const knowledgeTabSummaries: Record<KnowledgeTab, string> = {
   documents: 'Manage the shared knowledge available in this workspace.',
+  sources: 'Review the sources agents can use for scoped knowledge.',
   ingestion: 'Control how documents are split before they become searchable.',
   retrieval: 'Control how this workspace finds evidence for grounded answers.',
 }
@@ -54,6 +56,7 @@ export function KnowledgeView({
   const tabNavigation = (
     <TabsList>
       <TabsTrigger value="documents">Documents</TabsTrigger>
+      <TabsTrigger value="sources">Sources</TabsTrigger>
       <TabsTrigger value="ingestion">Ingestion</TabsTrigger>
       <TabsTrigger value="retrieval">Retrieval</TabsTrigger>
     </TabsList>
@@ -115,6 +118,17 @@ export function KnowledgeView({
           onboarding={onboarding}
           navigation={tabNavigation}
         />
+      </TabsContent>
+
+      <TabsContent value="sources" className="min-h-0 flex flex-1 flex-col overflow-hidden">
+        <DashboardPage
+          title="Knowledge Base"
+          description={knowledgeTabSummaries.sources}
+          titleAccessory={saveStateAccessory}
+          actions={tabNavigation}
+        >
+          <DocumentSourcesView />
+        </DashboardPage>
       </TabsContent>
 
       <TabsContent value="ingestion" className="min-h-0 flex flex-1 flex-col overflow-hidden">

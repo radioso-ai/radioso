@@ -6,6 +6,8 @@ import type {
   ConversationContextWindow,
   ResponseIntent,
   RetrievalSubquery,
+  RetrievalSourceFilter,
+  RetrievalSourceScope,
   ResponseLanguagePolicy,
   RewrittenRetrievalQuery,
   RetrievalAnswerShapeSelection,
@@ -26,6 +28,8 @@ export interface RetrievalPipelineRequest {
   responseBehavior?: RetrievalResponseBehavior;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   metadataFilter?: Record<string, unknown>;
+  sourceScope?: RetrievalSourceScope;
+  sourceFilter?: RetrievalSourceFilter;
   execution?: RetrievalExecutionMetadata;
 }
 

@@ -6,6 +6,7 @@ export {
   resolveAgentDisplayName,
   validateAgentInput,
   type AgentBehaviorSettings,
+  type AgentSourceScope,
   type Agent,
   type AgentInput,
   mergeAgentSurfaceSettings,

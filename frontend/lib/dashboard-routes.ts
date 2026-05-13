@@ -1,6 +1,6 @@
 export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'settings' | 'usage'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
-export type KnowledgeTab = 'documents' | 'ingestion' | 'retrieval'
+export type KnowledgeTab = 'documents' | 'sources' | 'ingestion' | 'retrieval'
 export type SettingsTab = 'workspace' | 'users'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
 export type HistoryItemKind = 'chat' | 'search' | 'contact'
@@ -85,7 +85,7 @@ const parseAgentTab = (value: string | null): AgentTab | undefined => {
 const isValidAgentId = (value: string): boolean => UUID_PATTERN.test(value)
 
 const parseKnowledgeTab = (value: string | null): KnowledgeTab | undefined => {
-  if (value === 'documents' || value === 'ingestion' || value === 'retrieval') {
+  if (value === 'documents' || value === 'sources' || value === 'ingestion' || value === 'retrieval') {
     return value
   }
 

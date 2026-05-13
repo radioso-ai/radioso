@@ -1,9 +1,11 @@
 import { randomBytes } from "node:crypto";
 
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
+import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
-import { notFound } from "../../../shared/domain/errors.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/domain/sourceConstants.js";
+import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import {
   isAgentBootstrapActive,
   type AgentInput,
@@ -20,6 +22,10 @@ export class AgentService {
     private readonly agentRepository: AgentRepositoryPort,
     private readonly workspaceRepository: Pick<WorkspaceRepositoryPort, "findById" | "updateGeneralSettings">,
     private readonly retrievalSettingsService: Pick<RetrievalSettingsService, "getForWorkspace">,
+    private readonly documentSourceRepository?: Pick<
+      DocumentSourceRepositoryPort,
+      "findExistingIdsByWorkspaceId" | "countDocumentsWithoutSource"
+    >,
   ) {}
 
   async list(workspaceId: string): Promise<AgentSettingsResource[]> {
@@ -56,6 +62,7 @@ export class AgentService {
 
   async create(workspaceId: string, input: AgentInput): Promise<AgentSettingsResource> {
     const workspace = await this.requireWorkspace(workspaceId);
+    await this.validateSourceScope(workspaceId, input);
     const existingDefault = workspace.defaultAgentId
       ? await this.agentRepository.findByIdAndWorkspaceId(workspace.defaultAgentId, workspaceId)
       : await this.agentRepository.findDefaultByWorkspaceId(workspaceId);
@@ -68,6 +75,7 @@ export class AgentService {
 
   async update(workspaceId: string, agentId: string, input: AgentInput): Promise<AgentSettingsResource> {
     const workspace = await this.requireWorkspace(workspaceId);
+    await this.validateSourceScope(workspaceId, input);
     const existing = await this.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!existing) {
       throw notFound("Agent not found");
@@ -102,6 +110,7 @@ export class AgentService {
       customInstruction: settings.customInstruction,
       suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
       retrievalEnabled: true,
+      sourceScope: { mode: "all" },
       greetingInstruction: workspace.greetingInstruction,
       assistantDefaultLocale: workspace.assistantDefaultLocale,
       proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
@@ -183,6 +192,37 @@ export class AgentService {
       throw notFound("Workspace not found");
     }
     return workspace;
+  }
+
+  private async validateSourceScope(workspaceId: string, input: AgentInput): Promise<void> {
+    if (input.sourceScope?.mode !== "selected") {
+      return;
+    }
+    if (!this.documentSourceRepository) {
+      throw badRequest("Document sources are not configured");
+    }
+    const sourceIds = input.sourceScope.sourceIds;
+    const hasManualSourceIds = sourceIds.includes(MANUALLY_ADDED_DOCUMENTS_SOURCE_ID);
+    const sourceIdsToValidate = sourceIds.filter((sourceId) => sourceId !== MANUALLY_ADDED_DOCUMENTS_SOURCE_ID);
+
+    if (sourceIdsToValidate.length === 0 && !hasManualSourceIds) {
+      return;
+    }
+
+    const existingIds = new Set(await this.documentSourceRepository.findExistingIdsByWorkspaceId(workspaceId, sourceIdsToValidate));
+    const missingSourceId = sourceIdsToValidate.find((sourceId) => !existingIds.has(sourceId));
+    if (missingSourceId) {
+      throw badRequest("sourceScope.sourceIds contains a source that does not belong to this workspace");
+    }
+
+    if (!hasManualSourceIds) {
+      return;
+    }
+
+    const documentsWithoutSourceCount = await this.documentSourceRepository.countDocumentsWithoutSource(workspaceId);
+    if (documentsWithoutSourceCount === 0) {
+      throw badRequest("sourceScope.sourceIds contains a source that does not belong to this workspace");
+    }
   }
 
   private async syncLegacyWorkspaceDefaults(workspace: WorkspaceRecord, agent: AgentRecord): Promise<void> {

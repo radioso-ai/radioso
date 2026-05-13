@@ -4,6 +4,72 @@ import { describe, expect, it } from "vitest";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("document contract", () => {
+  it("lists persisted document sources with document counts", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "document-sources@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Source page",
+        content: "Source scoped content.",
+        source: {
+          kind: "website",
+          url: "https://example.com/docs",
+        },
+      })
+      .expect(202);
+
+    const response = await request(app)
+      .get("/api/v1/document/sources")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    expect(response.body.sources).toEqual([
+      expect.objectContaining({
+        id: expect.any(String),
+        kind: "website",
+        name: "example.com/docs",
+        externalId: "https://example.com/docs",
+        lastSyncStatus: null,
+        lastSyncedAt: null,
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+        documentCount: 1,
+      }),
+    ]);
+  });
+
+  it("imports uploaded files under a workspace upload source", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "document-import-source@example.com");
+
+    await request(app)
+      .post("/api/v1/document/import")
+      .set(adminSessionHeaders(session))
+      .field("title", "Imported source text")
+      .attach("file", Buffer.from("Imported content"), {
+        filename: "import-source.txt",
+        contentType: "text/plain",
+      })
+      .expect(202);
+
+    const response = await request(app)
+      .get("/api/v1/document/sources")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    expect(response.body.sources).toEqual([
+      expect.objectContaining({
+        kind: "upload",
+        name: "Uploads",
+        externalId: "workspace-uploads",
+        documentCount: 1,
+      }),
+    ]);
+  });
+
   it("searches documents and returns a stable search snapshot with shared diagnostics", async () => {
     const { app } = createTestApp();
 

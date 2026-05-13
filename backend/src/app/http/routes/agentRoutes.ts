@@ -37,12 +37,23 @@ const surfaceSettingsSchema = z.object({
   }).optional(),
 }).optional();
 
+const sourceScopeSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("all"),
+  }),
+  z.object({
+    mode: z.literal("selected"),
+    sourceIds: z.array(z.string().uuid()).max(200),
+  }),
+]).optional();
+
 const agentBodySchema = z.object({
   name: z.string().max(200).optional(),
   customInstruction: z.string().max(2000).optional(),
   suggestedQuestionsEnabled: z.boolean().optional(),
   theme: assistantThemeSchema.optional(),
   retrievalEnabled: z.boolean().optional(),
+  sourceScope: sourceScopeSchema,
   greetingInstruction: z.string().max(200).optional(),
   assistantDefaultLocale: z.string().max(35).nullable().optional(),
   proactiveGreetingEnabled: z.boolean().optional(),

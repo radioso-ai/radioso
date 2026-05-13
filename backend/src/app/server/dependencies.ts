@@ -246,6 +246,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentProcessingJobRepository,
     documentJobDispatcher,
     usageLimitPolicy,
+    documentSourceRepository,
   );
   const documentProcessingWorker = new DocumentProcessingWorker(
     documentRepository,
@@ -343,7 +344,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
           logger,
         })
       : composition.answerFeedbackHistoryProviderRegistration;
-  const agentService = new AgentService(agentRepository, workspaceRepository, retrievalSettingsService);
+  const agentService = new AgentService(agentRepository, workspaceRepository, retrievalSettingsService, documentSourceRepository);
   const groundedMissResponseComposer = llmRegistry.createGroundedMissResponseComposer();
   const chatService = new ChatService(
     conversationRepository,
@@ -449,6 +450,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ingestionSettingsService,
     retrievalSettingsService,
     documentIngestionService,
+    documentSourceRepository,
     documentImportService,
     documentSearchService,
     documentSearchHistoryService,

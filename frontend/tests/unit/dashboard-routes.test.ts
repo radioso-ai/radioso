@@ -33,6 +33,20 @@ describe('dashboard route state', () => {
     expect(href).toBe('/w/support-abc123/knowledge/documents/doc-9?page=3')
   })
 
+  it('builds and parses the knowledge sources tab', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'knowledge',
+      workspaceId: 'workspace-1',
+      workspacePublicRouteKey: 'support-abc123',
+      knowledgeTab: 'sources',
+    })).toBe('/w/support-abc123/knowledge?tab=sources')
+
+    expect(parseDashboardRoute(['knowledge'], new URLSearchParams({ tab: 'sources' }))).toEqual({
+      section: 'knowledge',
+      knowledgeTab: 'sources',
+    })
+  })
+
   it('parses activity filter, page, and selected item state', () => {
     const params = new URLSearchParams({
       workspace: 'workspace-2',

@@ -88,6 +88,7 @@ export class ChatSessionPreparer {
       },
       responseBehaviorEnabled: true,
       metadataFilter: input.metadataFilter,
+      sourceScope: agent.sourceScope,
     };
 
     const retrievalPipeline = this.retrievalPipeline as ChatIntentCapableRetrievalPipeline;
@@ -231,6 +232,7 @@ export class ChatSessionPreparer {
         customInstruction: "",
         suggestedQuestionsEnabled: true,
         retrievalEnabled: true,
+        sourceScope: { mode: "all" },
         logo: null,
         // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
         theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
@@ -273,6 +275,7 @@ export class ChatSessionPreparer {
       customInstruction: "",
       suggestedQuestionsEnabled: true,
       retrievalEnabled: true,
+      sourceScope: { mode: "all" },
       logo: null,
       // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
       theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,

@@ -71,6 +71,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   assistantBootstrapActive: settings.assistant.assistantBootstrapActive,
   logo: null,
   retrievalEnabled: true,
+  sourceScope: { mode: "all" },
   surfaceSettings: {
     authenticatedChat: {
       enabled: true,

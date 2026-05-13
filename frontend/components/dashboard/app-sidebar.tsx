@@ -11,6 +11,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuAction,
@@ -19,7 +20,6 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-  SidebarSeparator,
 } from '@/components/ui/sidebar'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
@@ -56,7 +56,6 @@ import {
   ChevronUp,
   Plus,
   RefreshCw,
-  User,
   Users,
   Gauge,
 } from 'lucide-react'
@@ -95,8 +94,9 @@ const resolvePreferredAgent = (agents: AgentSettings[], preferredAgentId?: strin
 export function AppSidebar({ accountId, currentView, routeState }: AppSidebarProps) {
   const router = useRouter()
   const { user, logout } = useAuth()
-  const { activeWorkspace, activeWorkspaceId } = useWorkspace()
+  const { activeWorkspace, activeWorkspaceId, accounts } = useWorkspace()
   const { theme, setTheme } = useTheme()
+  const organizationName = accounts.find((account) => account.accountId === accountId)?.organizationName ?? 'radioso'
   const workspaceCacheKey = activeWorkspaceId ? `${accountId}:${activeWorkspaceId}` : null
   const routeAgentId = currentView === 'agents' ? routeState.agentId ?? null : null
   const preferredAgentId = routeAgentId ?? getLastSelectedAgentId(activeWorkspaceId)
@@ -122,8 +122,10 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
   const selectedAgent = resolvePreferredAgent(agents, preferredAgentId)
   const selectedAgentId = selectedAgent?.id ?? null
   const selectedAgentName = selectedAgent?.name ?? null
-  const agentName = selectedAgentName?.trim() || activeWorkspace?.name || 'Agent'
-  const agentLabel = `Agent: ${agentName}`
+  const agentName = selectedAgentName?.trim() || 'Agent'
+  const agentTooltip = `Agent: ${agentName}`
+  const userDisplayName = user?.email?.split('@')[0] || 'User'
+  const userInitial = userDisplayName.charAt(0).toUpperCase() || 'U'
 
   useEffect(() => {
     let active = true
@@ -248,7 +250,7 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
 
   return (
     <>
-      <Sidebar collapsible="icon">
+      <Sidebar collapsible="offcanvas">
         <SidebarHeader className="p-4">
           <div className="flex items-center gap-2">
             <Image
@@ -256,33 +258,34 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
               alt="radioso logo"
               width={32}
               height={32}
-              className="h-8 w-8 rounded-lg object-cover flex-shrink-0"
+              className="h-8 w-8 flex-shrink-0"
             />
-            <span className="font-semibold text-foreground group-data-[collapsible=icon]:hidden">
-              radioso
+            <span className="truncate font-semibold text-foreground">
+              {organizationName}
             </span>
           </div>
         </SidebarHeader>
 
-        <div className="px-2">
-          <WorkspaceSwitcher accountId={accountId} currentView={currentView} routeState={routeState} />
-        </div>
-
         <SidebarContent>
           <SidebarGroup>
+            <SidebarGroupLabel className="text-[11px] text-sidebar-foreground/50">Workspace</SidebarGroupLabel>
             <SidebarGroupContent>
+              <WorkspaceSwitcher accountId={accountId} currentView={currentView} routeState={routeState} />
               <SidebarMenu>
                 <SidebarMenuItem>
                   <Collapsible open={agentsMenuOpen} onOpenChange={setAgentsMenuOpen}>
                     <div className="relative">
-                      <SidebarMenuButton asChild isActive={currentView === 'agents'} tooltip={agentLabel} className="pr-8">
+                      <SidebarMenuButton asChild isActive={currentView === 'agents'} tooltip={agentTooltip} className="pr-8">
                         <Link href={agentHref}>
                           <Bot className="w-4 h-4" />
-                          <span>{agentLabel}</span>
+                          <span>{agentName}</span>
                         </Link>
                       </SidebarMenuButton>
                       <CollapsibleTrigger asChild>
-                        <SidebarMenuAction aria-label={agentsMenuOpen ? 'Collapse agents' : 'Expand agents'}>
+                        <SidebarMenuAction
+                          aria-label={agentsMenuOpen ? 'Collapse agents' : 'Expand agents'}
+                          className="right-2 w-4 text-muted-foreground"
+                        >
                           <ChevronDown className={`transition-transform ${agentsMenuOpen ? 'rotate-180' : ''}`} />
                         </SidebarMenuAction>
                       </CollapsibleTrigger>
@@ -313,7 +316,7 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
                           </SidebarMenuSubItem>
                         ))}
                         <SidebarMenuSubItem className="mt-1 border-t border-sidebar-border pt-1">
-                          <SidebarMenuSubButton asChild size="md" className="h-auto py-2">
+                          <SidebarMenuSubButton asChild>
                             <button
                               type="button"
                               onClick={() => {
@@ -322,10 +325,7 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
                               }}
                             >
                               <Plus className="h-4 w-4" />
-                              <span className="flex min-w-0 flex-col items-start">
-                                <span className="truncate">Create an agent</span>
-                                <span className="truncate text-xs text-muted-foreground">Create a new agent</span>
-                              </span>
+                              <span>New agent</span>
                             </button>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
@@ -333,6 +333,14 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
                     </CollapsibleContent>
                   </Collapsible>
                 </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-[11px] text-sidebar-foreground/50">Navigation</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
                 {navItems.map((item) => (
                   <SidebarMenuItem key={item.id}>
                     <SidebarMenuButton asChild isActive={currentView === item.id} tooltip={item.label}>
@@ -355,29 +363,31 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
         </SidebarContent>
 
         <SidebarFooter>
-          <SidebarSeparator />
           <SidebarMenu>
             <SidebarMenuItem>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <SidebarMenuButton className="w-full">
-                    <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                      <User className="w-3.5 h-3.5 text-muted-foreground" />
+                  <SidebarMenuButton className="group/user w-full">
+                    <div className="relative flex-shrink-0">
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-secondary/60 to-primary/40 flex items-center justify-center text-xs font-semibold text-sidebar-foreground">
+                        {userInitial}
+                      </div>
+                      <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-sidebar" />
                     </div>
-                    <div className="flex-1 min-w-0 text-left group-data-[collapsible=icon]:hidden">
+                    <div className="flex-1 min-w-0 text-left">
                       <p className="text-sm font-medium text-foreground truncate">
-                        {user?.email?.split('@')[0] || 'User'}
+                        {userDisplayName}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
                         {user?.email || 'user@example.com'}
                       </p>
                     </div>
-                    <ChevronUp className="w-4 h-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
+                    <ChevronUp className="w-4 h-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]/user:rotate-180" />
                   </SidebarMenuButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-56">
                   <div className="px-2 py-1.5">
-                    <p className="text-sm font-medium">{user?.email?.split('@')[0]}</p>
+                    <p className="text-sm font-medium">{userDisplayName}</p>
                     <p className="text-xs text-muted-foreground">{user?.email}</p>
                   </div>
                   <DropdownMenuSeparator />

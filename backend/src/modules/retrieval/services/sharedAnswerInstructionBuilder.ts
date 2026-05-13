@@ -42,6 +42,15 @@ export class SharedAnswerInstructionBuilder {
       .join("\n\n");
   }
 
+  buildScopeReferenceBlock(input: Pick<SharedAnswerInstructionInput, "responseIdentity" | "customInstruction">): string {
+    return [
+      this.renderResponseIdentity(input.responseIdentity),
+      this.renderCustomInstruction(input.customInstruction),
+    ]
+      .filter((block): block is string => Boolean(block))
+      .join("\n\n");
+  }
+
   private renderCustomInstruction(customInstruction?: string): string | null {
     if (!customInstruction) {
       return null;

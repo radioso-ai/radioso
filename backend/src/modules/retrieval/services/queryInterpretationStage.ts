@@ -2,9 +2,12 @@ import { RESPONSE_INTENT } from "../domain/retrievalPipelineTypes.js";
 import type { ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { QueryRewriteService } from "./queryRewriteService.js";
+import { SharedAnswerInstructionBuilder } from "./sharedAnswerInstructionBuilder.js";
 import type { QueryInterpretationStage as QueryInterpretationStageContract, RetrievalContextStageResult } from "./retrievalPipelineStages.js";
 
 export class QueryInterpretationStageService implements QueryInterpretationStageContract {
+  private readonly answerInstructionBuilder = new SharedAnswerInstructionBuilder();
+
   constructor(private readonly queryRewriteService: QueryRewriteService) {}
 
   async execute(input: RetrievalContextStageResult) {
@@ -34,6 +37,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       enabled: input.settings.queryRewriteEnabled,
       semanticRewriteInstructions: input.settings.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.settings.lexicalRewriteInstructions,
+      answerScopeReference: this.buildAnswerScopeReference(input),
     });
     const responseIntent = rewrittenQuery.responseIntent;
     const parsedQueryBase = originalParsedQuery;
@@ -113,5 +117,20 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       promptHistory,
       continuityDecision,
     };
+  }
+
+  private buildAnswerScopeReference(input: RetrievalContextStageResult): string | undefined {
+    const includeResponseBehavior = input.request.responseBehaviorEnabled ?? input.request.responseIdentity !== null;
+    if (!includeResponseBehavior) {
+      return undefined;
+    }
+
+    const customInstruction = input.request.responseBehavior?.customInstruction ?? input.settings.customInstruction;
+    const block = this.answerInstructionBuilder.buildScopeReferenceBlock({
+      responseIdentity: input.request.responseIdentity,
+      customInstruction,
+    });
+
+    return block.trim() ? block : undefined;
   }
 }

@@ -9,6 +9,8 @@ Semantic rewrite guidance:
 Lexical rewrite guidance:
 {{lexical_rewrite_instructions}}
 
+{{answer_scope_reference_section}}
+
 Latest user question:
 {{query}}
 

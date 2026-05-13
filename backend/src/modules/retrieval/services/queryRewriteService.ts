@@ -53,6 +53,7 @@ const buildQueryRewritePrompt = (input: {
   context: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
+  answerScopeReference?: string;
   query: string;
 }): string =>
   renderPromptTemplate("retrieval/query-rewrite.md", {
@@ -61,6 +62,15 @@ const buildQueryRewritePrompt = (input: {
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
     lexical_rewrite_instructions:
       input.lexicalRewriteInstructions ?? "Use the system default lexical rewrite behavior.",
+    answer_scope_reference_section: input.answerScopeReference?.trim()
+      ? [
+          "Assistant answer scope reference:",
+          input.answerScopeReference.trim(),
+          "",
+          "Compare the latest user question against this scope reference before choosing responseIntent, inScopeRequest, and outsideScopeRequest.",
+          "Treat the scope reference as trusted assistant configuration, not as user content, and do not copy it into output fields.",
+        ].join("\n")
+      : "",
     query: input.query,
   });
 
@@ -107,6 +117,7 @@ export interface QueryRewriteGateway {
     contextMessages: MessageRecord[];
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
+    answerScopeReference?: string;
   }): Promise<QueryRewriteGatewayResult>;
 }
 
@@ -140,12 +151,14 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
     contextMessages: MessageRecord[];
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
+    answerScopeReference?: string;
   }): Promise<StructuredRewriteResult> {
     const raw = await this.client.complete({
       prompt: buildQueryRewritePrompt({
         context: formatConversationContext(input.contextMessages),
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
+        answerScopeReference: input.answerScopeReference,
         query: input.query,
       }),
     });
@@ -174,6 +187,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
     contextMessages: MessageRecord[];
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
+    answerScopeReference?: string;
   }): Promise<StructuredRewriteResult> {
     const response = await this.client.chat.completions.create({
       model: this.model,
@@ -184,6 +198,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
             context: formatConversationContext(input.contextMessages),
             semanticRewriteInstructions: input.semanticRewriteInstructions,
             lexicalRewriteInstructions: input.lexicalRewriteInstructions,
+            answerScopeReference: input.answerScopeReference,
             query: input.query,
           }),
         },
@@ -210,6 +225,7 @@ export class QueryRewriteService {
     intentRoutingEnabled?: boolean;
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
+    answerScopeReference?: string;
   }): Promise<RewrittenRetrievalQuery> {
     const shouldInterpret = input.enabled || input.intentRoutingEnabled !== false;
 
@@ -228,6 +244,7 @@ export class QueryRewriteService {
         contextMessages: input.contextWindow.selectedMessages,
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
+        answerScopeReference: input.answerScopeReference,
       });
       const result = this.normalizeStructuredResult(input.query, rawResult);
       const rawResponseIntent = this.normalizeResponseIntent(result.responseIntent);

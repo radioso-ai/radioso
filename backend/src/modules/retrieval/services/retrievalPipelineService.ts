@@ -9,7 +9,10 @@ import { PromptContextSelectorService } from "./promptContextSelectorService.js"
 import { QueryRewriteService } from "./queryRewriteService.js";
 import { RerankService } from "./rerankService.js";
 import { RetrievalExecutionTelemetryService } from "./retrievalExecutionTelemetryService.js";
-import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
+import {
+  resolveRetrievalSourceFilter,
+  type RetrievalExecutionDiagnostics,
+} from "../domain/retrievalPipelineTypes.js";
 import type { VectorSearchPort } from "../infra/vectorSearch.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import { PromptBuilder } from "./promptBuilder.js";
@@ -245,6 +248,7 @@ export class RetrievalPipelineService {
     return {
       ...input,
       responseIdentity: input.responseIdentity ?? null,
+      sourceFilter: resolveRetrievalSourceFilter(input.sourceScope),
     };
   }
 

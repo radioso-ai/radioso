@@ -33,10 +33,12 @@ import { getApiErrorMessage } from '@/lib/api-error'
 import {
   accountApi,
   agentsApi,
+  documentsApi,
   generalSettingsApi,
   humanContactApi,
   type AssistantBehaviorSettings,
   type AccountMembershipRole,
+  type DocumentSourceListItem,
   type GeneralSettings,
   type HumanContactAvailability,
 } from '@/lib/api'
@@ -120,6 +122,9 @@ export function WorkspaceAssistantChannelsTab({
   const [humanContactError, setHumanContactError] = useState<string | null>(null)
   const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
+  const [sourceList, setSourceList] = useState<DocumentSourceListItem[]>([])
+  const [sourceListError, setSourceListError] = useState<string | null>(null)
+  const [isSourceListLoading, setIsSourceListLoading] = useState(false)
   const [isAssistantBehaviorLoading, setIsAssistantBehaviorLoading] = useState(mode === 'assistant')
   const [isAssistantLogoSaving, setIsAssistantLogoSaving] = useState(false)
   const { setSaveState, setSaveError, saveSequenceRef } = useSettingsSaveStatus(onSaveStateChange)
@@ -157,6 +162,11 @@ export function WorkspaceAssistantChannelsTab({
 
   const updateAssistantBehaviorSettings = async (data: AssistantBehaviorSettings) =>
     agentId ? agentsApi.updateBehaviorSettings(agentId, data) : agentsApi.updateWorkspaceBehaviorSettings(data, { auth: 'session' })
+
+  const normalizeAssistantBehaviorSettings = (settings: AssistantBehaviorSettings): AssistantBehaviorSettings => ({
+    ...settings,
+    sourceScope: agentId ? settings.sourceScope ?? { mode: 'all' } : undefined,
+  })
 
   useEffect(() => {
     let active = true
@@ -252,8 +262,9 @@ export function WorkspaceAssistantChannelsTab({
       try {
         const data = await loadAssistantBehaviorSettings()
         if (!active) return
-        setAssistantBehaviorSettings(data)
-        setSavedAssistantBehaviorSettings(data)
+        const normalized = normalizeAssistantBehaviorSettings(data)
+        setAssistantBehaviorSettings(normalized)
+        setSavedAssistantBehaviorSettings(normalized)
         setAssistantSettingsError(null)
       } catch (error) {
         if (!active) return
@@ -267,6 +278,44 @@ export function WorkspaceAssistantChannelsTab({
     }
 
     void loadAssistantBehaviorSettingsEffect()
+    return () => {
+      active = false
+    }
+  }, [activeWorkspaceId, agentId, isWorkspaceLoading, mode])
+
+  useEffect(() => {
+    if (mode !== 'assistant' || !agentId) {
+      setSourceList([])
+      setSourceListError(null)
+      setIsSourceListLoading(false)
+      return
+    }
+    if (isWorkspaceLoading || !activeWorkspaceId) {
+      setIsSourceListLoading(true)
+      return
+    }
+
+    let active = true
+    setIsSourceListLoading(true)
+    const loadSources = async () => {
+      try {
+        const response = await documentsApi.listSources()
+        if (!active) return
+        setSourceList(response.sources)
+        setSourceListError(null)
+      } catch (error) {
+        if (!active) return
+        console.error('Failed to load document sources:', error)
+        setSourceList([])
+        setSourceListError(getApiErrorMessage(error, 'Failed to load sources.'))
+      } finally {
+        if (active) {
+          setIsSourceListLoading(false)
+        }
+      }
+    }
+
+    void loadSources()
     return () => {
       active = false
     }
@@ -455,6 +504,8 @@ export function WorkspaceAssistantChannelsTab({
       ? (
 	          assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction ||
 	          assistantBehaviorSettings.suggestedQuestionsEnabled !== savedAssistantBehaviorSettings.suggestedQuestionsEnabled ||
+            JSON.stringify(assistantBehaviorSettings.sourceScope ?? null) !==
+              JSON.stringify(savedAssistantBehaviorSettings.sourceScope ?? null) ||
             JSON.stringify(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) !==
               JSON.stringify(savedAssistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME)
 	        )
@@ -635,7 +686,7 @@ export function WorkspaceAssistantChannelsTab({
       setSaveState('saving')
       setSaveError(null)
       try {
-        const updated = await updateAssistantBehaviorSettings(assistantBehaviorSettings)
+        const updated = normalizeAssistantBehaviorSettings(await updateAssistantBehaviorSettings(assistantBehaviorSettings))
         if (saveSequenceRef.current !== saveId) return
         setSavedAssistantBehaviorSettings(updated)
         setAssistantSettingsError(null)
@@ -645,10 +696,11 @@ export function WorkspaceAssistantChannelsTab({
         }
       } catch (error) {
         if (saveSequenceRef.current !== saveId) return
-        console.error('Failed to update assistant behavior settings:', error)
-        setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant settings.'))
+        const message = getApiErrorMessage(error, 'Failed to update assistant settings.')
+        console.error('Failed to update assistant behavior settings:', message)
+        setAssistantSettingsError(message)
         setSaveState('error')
-        setSaveError('Failed to save changes')
+        setSaveError(message)
       }
     }, 700)
 
@@ -875,6 +927,9 @@ export function WorkspaceAssistantChannelsTab({
                 isAnonSaving={isAnonSaving}
                 isAssistantLogoSaving={isAssistantLogoSaving}
                 assistantSettingsError={assistantSettingsError}
+                sourceList={sourceList}
+                isSourceListLoading={isSourceListLoading}
+                sourceListError={sourceListError}
               />
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load assistant settings.</p>

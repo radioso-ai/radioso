@@ -1,4 +1,5 @@
 import type { Database } from "../../../shared/infra/database.js";
+import type { RetrievalSourceFilter } from "../domain/retrievalPipelineTypes.js";
 
 export interface RetrievedChunk {
   chunkId: string;
@@ -20,6 +21,7 @@ export interface VectorSearchPort {
     topK: number;
     similarityThreshold: number;
     metadataFilter?: Record<string, unknown>;
+    sourceFilter?: RetrievalSourceFilter;
   }): Promise<RetrievedChunk[]>;
 }
 
@@ -45,6 +47,7 @@ export class PgVectorSearch implements VectorSearchPort {
     topK: number;
     similarityThreshold: number;
     metadataFilter?: Record<string, unknown>;
+    sourceFilter?: RetrievalSourceFilter;
   }): Promise<RetrievedChunk[]> {
     const maxDistance = 1 - input.similarityThreshold;
     const hasMetadataFilter = hasNonEmptyFilter(input.metadataFilter);
@@ -54,7 +57,26 @@ export class PgVectorSearch implements VectorSearchPort {
       input.topK,
       maxDistance,
     ];
-    const metadataClause = hasMetadataFilter ? `AND c.metadata @> $5::jsonb` : "";
+    const hasConstrainedSourceFilter = input.sourceFilter?.constrained;
+    const includeUnassignedDocuments = Boolean(input.sourceFilter?.includeUnassignedDocuments);
+    const sourceIds = input.sourceFilter?.sourceIds ?? [];
+    const hasSourceFilter = sourceIds.length > 0;
+    const sourceClause =
+      hasConstrainedSourceFilter && hasSourceFilter && includeUnassignedDocuments
+        ? `AND (d.source_id = ANY($${params.length + 1}::uuid[]) OR d.source_id IS NULL)`
+        : hasConstrainedSourceFilter && hasSourceFilter
+          ? `AND d.source_id = ANY($${params.length + 1}::uuid[])`
+          : hasConstrainedSourceFilter && includeUnassignedDocuments
+            ? `AND d.source_id IS NULL`
+            : hasConstrainedSourceFilter
+              ? `AND d.source_id = ANY($${params.length + 1}::uuid[])`
+              : "";
+
+    if (hasConstrainedSourceFilter) {
+      params.push(hasSourceFilter ? input.sourceFilter?.sourceIds : []);
+    }
+
+    const metadataClause = hasMetadataFilter ? `AND c.metadata @> $${params.length + 1}::jsonb` : "";
 
     if (hasMetadataFilter) {
       params.push(JSON.stringify(input.metadataFilter));
@@ -76,6 +98,7 @@ export class PgVectorSearch implements VectorSearchPort {
       WHERE c.workspace_id = $1
         AND d.status = 'ready'
         AND c.embedding IS NOT NULL
+        ${sourceClause}
         ${metadataClause}
       ORDER BY c.embedding <=> $2::vector ASC
       LIMIT $3

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Database } from "../../shared/infra/database.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/domain/sourceConstants.js";
 
 export type DocumentOriginKind = "website" | "api" | "connector" | "upload";
 
@@ -25,8 +26,15 @@ export interface DocumentSourceSummary {
   externalId: string | null;
 }
 
+export interface DocumentSourceListRecord extends DocumentSourceRecord {
+  documentCount: number;
+}
+
 export interface DocumentSourceRepositoryPort {
   findByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<DocumentSourceRecord | null>;
+  findExistingIdsByWorkspaceId(workspaceId: string, sourceIds: string[]): Promise<string[]>;
+  listByWorkspaceIdWithDocumentCounts(workspaceId: string): Promise<DocumentSourceListRecord[]>;
+  countDocumentsWithoutSource(workspaceId: string): Promise<number>;
   upsertByExternalId(input: {
     workspaceId: string;
     kind: DocumentOriginKind;
@@ -57,6 +65,10 @@ interface DocumentSourceRow {
   updated_at: Date;
 }
 
+interface DocumentSourceListRow extends DocumentSourceRow {
+  document_count: string;
+}
+
 const sourceSelect = `
   id,
   workspace_id,
@@ -69,6 +81,20 @@ const sourceSelect = `
   last_synced_at,
   created_at,
   updated_at
+`;
+
+const qualifiedSourceSelect = `
+  document_sources.id,
+  document_sources.workspace_id,
+  document_sources.kind,
+  document_sources.name,
+  document_sources.external_id,
+  document_sources.config,
+  document_sources.metadata,
+  document_sources.last_sync_status,
+  document_sources.last_synced_at,
+  document_sources.created_at,
+  document_sources.updated_at
 `;
 
 export const toDocumentSourceSummary = (source: DocumentSourceRecord): DocumentSourceSummary => ({
@@ -92,6 +118,11 @@ export const mapDocumentSource = (row: DocumentSourceRow): DocumentSourceRecord 
   updatedAt: new Date(row.updated_at),
 });
 
+const mapDocumentSourceListRecord = (row: DocumentSourceListRow): DocumentSourceListRecord => ({
+  ...mapDocumentSource(row),
+  documentCount: Number(row.document_count ?? "0"),
+});
+
 export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
   constructor(private readonly database: Database) {}
 
@@ -104,6 +135,50 @@ export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
     );
 
     return row ? mapDocumentSource(row) : null;
+  }
+
+  async findExistingIdsByWorkspaceId(workspaceId: string, sourceIds: string[]): Promise<string[]> {
+    if (sourceIds.length === 0) {
+      return [];
+    }
+    const rows = await this.database.query<{ id: string }>(
+      `SELECT id::text AS id
+       FROM document_sources
+       WHERE workspace_id = $1
+         AND id = ANY($2::uuid[])`,
+      [workspaceId, sourceIds],
+    );
+
+    return rows.map((row) => row.id);
+  }
+
+  async listByWorkspaceIdWithDocumentCounts(workspaceId: string): Promise<DocumentSourceListRecord[]> {
+    const rows = await this.database.query<DocumentSourceListRow>(
+      `SELECT ${qualifiedSourceSelect},
+              COUNT(d.id)::text AS document_count
+       FROM document_sources
+       LEFT JOIN documents d
+         ON d.source_id = document_sources.id
+        AND d.workspace_id = document_sources.workspace_id
+       WHERE document_sources.workspace_id = $1
+       GROUP BY document_sources.id
+       ORDER BY document_sources.created_at DESC, document_sources.id DESC`,
+      [workspaceId],
+    );
+
+    return rows.map(mapDocumentSourceListRecord);
+  }
+
+  async countDocumentsWithoutSource(workspaceId: string): Promise<number> {
+    const [row] = await this.database.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM documents
+       WHERE workspace_id = $1
+         AND source_id IS NULL`,
+      [workspaceId],
+    );
+
+    return Number(row?.count ?? "0");
   }
 
   async upsertByExternalId(input: {

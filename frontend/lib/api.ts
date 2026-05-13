@@ -69,6 +69,7 @@ export type AssistantBehaviorSettings = Pick<
   'suggestedQuestionsEnabled' | 'customInstruction'
 > & {
   theme: WebsiteEmbedThemeSettings
+  sourceScope?: AgentSourceScope
 }
 
 export type PlatformSettings = Omit<ApiSchemas['PlatformSettingsResponse'], 'retrieval'> & {
@@ -93,6 +94,10 @@ export type WorkspaceIngestionReprocessResponse = ApiSchemas['WorkspaceIngestion
 export type DocumentCreateRequest = ApiSchemas['DocumentCreateRequest']
 export type DocumentCreateResponse = ApiSchemas['DocumentOperationResponse']
 export type DocumentSourceSummary = ApiSchemas['DocumentSourceSummary']
+export type DocumentSourceKind = DocumentSourceSummary['kind']
+export type AgentSourceScope = ApiSchemas['AgentSourceScope']
+export type DocumentSourceListItem = ApiSchemas['DocumentSourceListItem']
+export type DocumentSourceListResponse = ApiSchemas['DocumentSourceListResponse']
 export type DocumentSummary = ApiSchemas['DocumentSummary']
 export type DocumentDetails = ApiSchemas['DocumentDetails']
 export type DocumentListResponse = ApiSchemas['DocumentListResponse']
@@ -573,6 +578,12 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
+  async listSources(): Promise<DocumentSourceListResponse> {
+    return request<DocumentSourceListResponse>('/document/sources', {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
   async listDocuments(input?: { limit?: number; offset?: number; cursor?: string }): Promise<DocumentListResponse> {
     const searchParams = new URLSearchParams()
     if (input?.limit !== undefined) {
@@ -953,6 +964,7 @@ const agentToAssistantBehaviorSettings = (agent: AgentSettings): AssistantBehavi
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
   customInstruction: agent.customInstruction,
   theme: agent.theme,
+  sourceScope: agent.sourceScope,
 })
 
 const retrievalSettingsToAssistantBehaviorSettings = (settings: RetrievalSettings): AssistantBehaviorSettings => ({
@@ -1179,6 +1191,7 @@ export const agentsApi = {
       suggestedQuestionsEnabled: data.suggestedQuestionsEnabled,
       customInstruction: data.customInstruction,
       theme: data.theme,
+      sourceScope: data.sourceScope,
     }))
   },
 

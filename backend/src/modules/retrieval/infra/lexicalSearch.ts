@@ -1,6 +1,6 @@
 import type { Database } from "../../../shared/infra/database.js";
 import { buildPlainLexicalQueryPlan } from "../domain/lexicalQueryPlan.js";
-import type { LexicalQueryPlan } from "../domain/retrievalPipelineTypes.js";
+import type { LexicalQueryPlan, RetrievalSourceFilter } from "../domain/retrievalPipelineTypes.js";
 import type { RetrievedChunk } from "./vectorSearch.js";
 import { hasNonEmptyFilter } from "./vectorSearch.js";
 
@@ -10,6 +10,7 @@ export interface LexicalSearchPort {
     query: string;
     topK: number;
     metadataFilter?: Record<string, unknown>;
+    sourceFilter?: RetrievalSourceFilter;
     lexicalPlan?: LexicalQueryPlan;
   }): Promise<RetrievedChunk[]>;
 }
@@ -35,6 +36,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
     query: string;
     topK: number;
     metadataFilter?: Record<string, unknown>;
+    sourceFilter?: RetrievalSourceFilter;
     lexicalPlan?: LexicalQueryPlan;
   }): Promise<RetrievedChunk[]> {
     const normalizedQuery = input.query.trim();
@@ -49,6 +51,25 @@ export class PgLexicalSearch implements LexicalSearchPort {
     }
 
     const params: unknown[] = [input.workspaceId];
+    const hasConstrainedSourceFilter = input.sourceFilter?.constrained;
+    const includeUnassignedDocuments = Boolean(input.sourceFilter?.includeUnassignedDocuments);
+    const sourceIds = input.sourceFilter?.sourceIds ?? [];
+    const hasSourceFilter = sourceIds.length > 0;
+    const sourceClause =
+      hasConstrainedSourceFilter && hasSourceFilter && includeUnassignedDocuments
+        ? `AND (d.source_id = ANY($${params.length + 1}::uuid[]) OR d.source_id IS NULL)`
+        : hasConstrainedSourceFilter && hasSourceFilter
+          ? `AND d.source_id = ANY($${params.length + 1}::uuid[])`
+          : hasConstrainedSourceFilter && includeUnassignedDocuments
+            ? `AND d.source_id IS NULL`
+            : hasConstrainedSourceFilter
+              ? `AND d.source_id = ANY($${params.length + 1}::uuid[])`
+              : "";
+
+    if (hasConstrainedSourceFilter) {
+      params.push(hasSourceFilter ? input.sourceFilter?.sourceIds : []);
+    }
+
     const hasFilter = hasNonEmptyFilter(input.metadataFilter);
     const metadataClause = hasFilter ? `AND c.metadata @> $${params.length + 1}::jsonb` : "";
 
@@ -84,6 +105,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
          JOIN documents d ON d.id = c.document_id
          WHERE c.workspace_id = $1
            AND d.status = 'ready'
+           ${sourceClause}
            ${metadataClause}
        )
        SELECT c.chunk_id,

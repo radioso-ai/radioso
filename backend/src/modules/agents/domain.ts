@@ -20,6 +20,10 @@ export interface AgentBehaviorSettings {
   theme: AgentEmbedTheme;
 }
 
+export type AgentSourceScope =
+  | { mode: "all" }
+  | { mode: "selected"; sourceIds: string[] };
+
 export interface AgentGreetingSettings {
   greetingInstruction: string;
   assistantDefaultLocale: string | null;
@@ -77,6 +81,7 @@ export interface Agent {
 }
 
 export interface ConversationAgent extends Agent, AgentBehaviorSettings, AgentGreetingSettings {
+  sourceScope: AgentSourceScope;
   surfaceSettings: ConversationAgentSurfaceSettings;
 }
 
@@ -94,6 +99,7 @@ export type AgentInput = Partial<
     | "name"
     | keyof AgentBehaviorSettings
     | keyof AgentGreetingSettings
+    | "sourceScope"
   >
 > & {
   surfaceSettings?: AgentSurfaceSettingsInput;
@@ -301,6 +307,38 @@ const normalizeAgentLogo = (value: unknown): AgentLogo | null => {
   };
 };
 
+const normalizeSourceScope = (value: unknown): AgentSourceScope => {
+  if (value === undefined || value === null) {
+    return { mode: "all" };
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest("sourceScope must be an object");
+  }
+  const record = value as Record<string, unknown>;
+  if (record.mode === "all") {
+    return { mode: "all" };
+  }
+  if (record.mode !== "selected") {
+    throw badRequest("sourceScope.mode is invalid");
+  }
+  if (!Array.isArray(record.sourceIds)) {
+    throw badRequest("sourceScope.sourceIds must be an array");
+  }
+  const sourceIds = [...new Set(record.sourceIds.map((sourceId) => {
+    if (typeof sourceId !== "string" || !sourceId.trim()) {
+      throw badRequest("sourceScope.sourceIds entries must be strings");
+    }
+    return sourceId.trim();
+  }))];
+  if (sourceIds.length > 200) {
+    throw badRequest("sourceScope.sourceIds must not exceed 200 entries");
+  }
+  return {
+    mode: "selected",
+    sourceIds,
+  };
+};
+
 export const validateAgentInput = (input: AgentInput = {}): NormalizedAgentInput => {
   const websiteEmbedEnabled = Boolean(input.surfaceSettings?.websiteEmbed?.enabled);
   const websiteEmbedAllowedOrigins = normalizeWebsiteEmbedAllowedOrigins(input.surfaceSettings?.websiteEmbed?.allowedOrigins);
@@ -313,6 +351,7 @@ export const validateAgentInput = (input: AgentInput = {}): NormalizedAgentInput
     customInstruction: normalizeLongText(input.customInstruction, "customInstruction", 2000),
     suggestedQuestionsEnabled: input.suggestedQuestionsEnabled ?? DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
     retrievalEnabled: input.retrievalEnabled ?? true,
+    sourceScope: normalizeSourceScope(input.sourceScope),
     logo: normalizeAgentLogo(input.logo),
     theme: normalizeEmbedTheme(input.theme ?? input.surfaceSettings?.websiteEmbed?.theme),
     greetingInstruction: normalizeText(input.greetingInstruction, "greetingInstruction", 200),

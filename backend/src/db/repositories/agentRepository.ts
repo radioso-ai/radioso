@@ -19,6 +19,8 @@ interface AgentRow {
   workspace_id: string;
   name: string;
   retrieval_enabled: boolean;
+  source_scope_mode: "all" | "selected";
+  source_ids: string[] | null;
   behavior_settings: unknown;
   greeting_settings: unknown;
   output_modes: unknown;
@@ -31,6 +33,15 @@ const agentColumns = `
   workspace_id,
   name,
   retrieval_enabled,
+  source_scope_mode,
+  COALESCE(
+    (
+      SELECT ARRAY_AGG(source_id::text ORDER BY source_id::text)
+      FROM agent_document_sources
+      WHERE agent_id = agents.id
+    ),
+    ARRAY[]::text[]
+  ) AS source_ids,
   behavior_settings,
   greeting_settings,
   output_modes,
@@ -103,6 +114,9 @@ const mapAgent = (row: AgentRow): AgentRecord => {
     customInstruction: readString(behavior, "customInstruction"),
     suggestedQuestionsEnabled: readBoolean(behavior, "suggestedQuestionsEnabled"),
     retrievalEnabled: row.retrieval_enabled,
+    sourceScope: row.source_scope_mode === "selected"
+      ? { mode: "selected", sourceIds: row.source_ids ?? [] }
+      : { mode: "all" },
     logo: (behavior.logo ?? websiteEmbed.logo) as AgentLogo | null | undefined,
     theme: (behavior.theme ?? websiteEmbed.theme) as AgentEmbedTheme | undefined,
     greetingInstruction: readString(greeting, "greetingInstruction"),
@@ -155,29 +169,42 @@ export class AgentRepository implements AgentRepositoryPort {
 
   async create(workspaceId: string, input: AgentInput): Promise<AgentRecord> {
     const normalized = validateAgentInput(input);
-    const row = await this.database.queryOne<AgentRow>(
-      `INSERT INTO agents (
-         id,
-         workspace_id,
-         name,
-         retrieval_enabled,
-         behavior_settings,
-         greeting_settings,
-         output_modes
-       )
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb)
-       RETURNING ${agentColumns}`,
-      [
-        randomUUID(),
-        workspaceId,
-        normalized.name,
-        normalized.retrievalEnabled,
-        JSON.stringify(toBehaviorSettings(normalized)),
-        JSON.stringify(toGreetingSettings(normalized)),
-        JSON.stringify(toOutputModes(normalized)),
-      ],
-    );
-    return mapAgent(row);
+    return this.database.withTransaction(async (client) => {
+      const agentId = randomUUID();
+      const result = await client.query<AgentRow>(
+        `INSERT INTO agents (
+           id,
+           workspace_id,
+           name,
+           retrieval_enabled,
+           source_scope_mode,
+           behavior_settings,
+           greeting_settings,
+           output_modes
+         )
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb)
+         RETURNING ${agentColumns}`,
+        [
+          agentId,
+          workspaceId,
+          normalized.name,
+          normalized.retrievalEnabled,
+          normalized.sourceScope.mode,
+          JSON.stringify(toBehaviorSettings(normalized)),
+          JSON.stringify(toGreetingSettings(normalized)),
+          JSON.stringify(toOutputModes(normalized)),
+        ],
+      );
+      await this.replaceSourceScope(client, agentId, normalized.sourceScope);
+      const row = result.rows[0];
+      if (!row) {
+        throw new Error("Expected created agent");
+      }
+      return mapAgent({
+        ...row,
+        source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
+      });
+    });
   }
 
   async findById(agentId: string): Promise<AgentRecord | null> {
@@ -248,34 +275,67 @@ export class AgentRepository implements AgentRepositoryPort {
       ...input,
       surfaceSettings: mergeAgentSurfaceSettings(current.surfaceSettings, input.surfaceSettings),
     });
-    const row = await this.database.queryOne<AgentRow>(
-      `UPDATE agents
-       SET name = $1,
-           retrieval_enabled = $2,
-           behavior_settings = $3::jsonb,
-           greeting_settings = $4::jsonb,
-           output_modes = $5::jsonb,
-           updated_at = NOW()
-       WHERE id = $6
-         AND workspace_id = $7
-       RETURNING ${agentColumns}`,
-      [
-        normalized.name,
-        normalized.retrievalEnabled,
-        JSON.stringify(toBehaviorSettings(normalized)),
-        JSON.stringify(toGreetingSettings(normalized)),
-        JSON.stringify(toOutputModes(normalized)),
-        agentId,
-        workspaceId,
-      ],
-    );
-    return mapAgent(row);
+    return this.database.withTransaction(async (client) => {
+      const result = await client.query<AgentRow>(
+        `UPDATE agents
+         SET name = $1,
+             retrieval_enabled = $2,
+             source_scope_mode = $3,
+             behavior_settings = $4::jsonb,
+             greeting_settings = $5::jsonb,
+             output_modes = $6::jsonb,
+             updated_at = NOW()
+         WHERE id = $7
+           AND workspace_id = $8
+         RETURNING ${agentColumns}`,
+        [
+          normalized.name,
+          normalized.retrievalEnabled,
+          normalized.sourceScope.mode,
+          JSON.stringify(toBehaviorSettings(normalized)),
+          JSON.stringify(toGreetingSettings(normalized)),
+          JSON.stringify(toOutputModes(normalized)),
+          agentId,
+          workspaceId,
+        ],
+      );
+      await this.replaceSourceScope(client, agentId, normalized.sourceScope);
+      const row = result.rows[0];
+      if (!row) {
+        throw new Error(`Agent ${agentId} not found`);
+      }
+      return mapAgent({
+        ...row,
+        source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
+      });
+    });
   }
 
   async setDefault(workspaceId: string, agentId: string): Promise<void> {
     await this.database.execute(
       `UPDATE workspaces SET default_agent_id = $1, updated_at = NOW() WHERE id = $2`,
       [agentId, workspaceId],
+    );
+  }
+
+  private async replaceSourceScope(
+    client: { query: (text: string, params?: unknown[]) => Promise<unknown> },
+    agentId: string,
+    sourceScope: NormalizedAgentInput["sourceScope"],
+  ): Promise<void> {
+    await client.query(
+      `DELETE FROM agent_document_sources
+       WHERE agent_id = $1`,
+      [agentId],
+    );
+    if (sourceScope.mode !== "selected" || sourceScope.sourceIds.length === 0) {
+      return;
+    }
+    await client.query(
+      `INSERT INTO agent_document_sources (agent_id, source_id)
+       SELECT $1::uuid, UNNEST($2::uuid[])
+       ON CONFLICT DO NOTHING`,
+      [agentId, sourceScope.sourceIds],
     );
   }
 }

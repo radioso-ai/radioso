@@ -68,7 +68,7 @@ export function ChatPreview({
   showProactiveGreeting: boolean
 }) {
   const displayName = assistantName.trim() || 'Assistant'
-  const resolvedLogo = logoUrl ?? '/radioso-logo.png'
+  const resolvedLogo = logoUrl ?? '/radioso-icon.svg'
 
   const themeOverrides = useMemo(
     () => deriveThemeOverridesFromModel(themeSettings),
@@ -136,7 +136,7 @@ export function ChatPreview({
         theme={embedTheme}
         themeOverrides={themeOverrides}
         workspaceName={displayName}
-        avatarUrl={logoUrl}
+        avatarUrl={resolvedLogo}
       />
 
       <div className="radioso-themed-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-4">

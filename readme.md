@@ -1,4 +1,4 @@
-# <img src="./frontend/public/radioso-logo.png" alt="Radioso logo" width="44" align="center" /> Radioso
+# <img src="./frontend/public/radioso-icon.svg" alt="Radioso logo" width="44" align="center" /> Radioso
 
 **Self-hosted AI agents grounded in your knowledge.**
 

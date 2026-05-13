@@ -11,7 +11,7 @@ export function Logo() {
         letterSpacing: '-0.02em',
       }}
     >
-      <Image alt="Radioso" src="/radioso-logo.png" width={28} height={28} priority />
+      <Image alt="Radioso" src="/radioso-icon.svg" width={28} height={28} priority />
       <span>Radioso Docs</span>
     </span>
   )

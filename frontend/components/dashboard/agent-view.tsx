@@ -21,8 +21,8 @@ import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 
 const agentTabSummaries: Record<AgentTab, string> = {
   chat: 'Test the selected agent against this workspace knowledge.',
-  behavior: 'Control the selected agent identity, instructions, and answer behavior.',
-  channels: 'Control where users can access this agent.',
+  behavior: 'Identity, behavior, and escalation for the selected agent.',
+  channels: 'Where users can access this agent.',
 }
 
 export function AgentView({
@@ -86,6 +86,17 @@ export function AgentView({
       window.removeEventListener('radioso:assistant-name-updated', handleAgentsUpdated)
     }
   }, [loadAgents])
+
+  const channelsTabHref = useMemo(
+    () =>
+      buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'agents',
+        agentTab: 'channels',
+        anchor: undefined,
+      }),
+    [accountId, routeState],
+  )
 
   const fallbackAgent = useMemo(() => agents[0] ?? null, [agents])
   const rememberedAgentId = getLastSelectedAgentId(activeWorkspaceId)
@@ -263,7 +274,7 @@ export function AgentView({
             contentClassName="flex flex-col overflow-hidden p-0"
             contentScroll={false}
           >
-            <WorkspaceAssistantChannelsTab accountId={accountId} mode="assistant" agentId={selectedAgentId} onSaveStateChange={setSaveState} />
+            <WorkspaceAssistantChannelsTab accountId={accountId} mode="assistant" agentId={selectedAgentId} channelsTabHref={channelsTabHref} onSaveStateChange={setSaveState} />
           </DashboardPage>
         )}
       </TabsContent>

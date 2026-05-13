@@ -10,6 +10,7 @@ import {
   PublicChatBubbleHeader,
 } from '@/components/chat/public-chat-bubble-view'
 import { ChatMessageThread, type ChatThreadMessage } from '@/components/dashboard/chat-message-thread'
+import type { ChatSuggestion } from '@/lib/api'
 import { deriveThemeOverridesFromModel } from '@/lib/anonymous-chat-context'
 import type { WebsiteEmbedThemeSettings } from '@/lib/api'
 import { contrastRatio } from '@/lib/color'
@@ -60,12 +61,14 @@ export function ChatPreview({
   logoUrl,
   showSuggestedQuestions,
   showProactiveGreeting,
+  showHumanContactSuggestion = false,
 }: {
   themeSettings: WebsiteEmbedThemeSettings
   assistantName: string
   logoUrl: string | null
   showSuggestedQuestions: boolean
   showProactiveGreeting: boolean
+  showHumanContactSuggestion?: boolean
 }) {
   const displayName = assistantName.trim() || 'Assistant'
   const resolvedLogo = logoUrl ?? '/radioso-logo.png'
@@ -94,6 +97,17 @@ export function ChatPreview({
         content: 'What’s the meaning of life?',
         createdAt: PREVIEW_TIMESTAMP,
       }
+      const suggestions: ChatSuggestion[] = []
+      if (showSuggestedQuestions) {
+        suggestions.push(
+          { text: 'Summarize last quarter’s roadmap' },
+          { text: 'What does “on-brand” actually mean here?' },
+          { text: 'Read me the welcome email we send new customers' },
+        )
+      }
+      if (showHumanContactSuggestion) {
+        suggestions.push({ text: 'Talk to a human', action: { kind: 'contact_human' } })
+      }
       const assistantReply: ChatThreadMessage = {
         id: 'preview-assistant-2',
         role: 'assistant',
@@ -101,19 +115,13 @@ export function ChatPreview({
           'Out of scope, I’m afraid — your team hasn’t written that one down yet. I can, however, recite your refund policy from memory and explain, in three different tones, what your style guide means by “on-brand”. Pick a more answerable mystery?',
         createdAt: PREVIEW_TIMESTAMP,
         status: 'complete',
-        suggestions: showSuggestedQuestions
-          ? [
-              { text: 'Summarize last quarter’s roadmap' },
-              { text: 'What does “on-brand” actually mean here?' },
-              { text: 'Read me the welcome email we send new customers' },
-            ]
-          : undefined,
+        suggestions: suggestions.length > 0 ? suggestions : undefined,
       }
       return showProactiveGreeting
         ? [greeting, userQuestion, assistantReply]
         : [userQuestion, assistantReply]
     },
-    [showProactiveGreeting, showSuggestedQuestions],
+    [showProactiveGreeting, showSuggestedQuestions, showHumanContactSuggestion],
   )
 
   const surfaceVars = useMemo(

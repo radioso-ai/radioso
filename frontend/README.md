@@ -23,7 +23,7 @@ After the stack is ready, open the app on [http://localhost:3000](http://localho
 If you only need the standalone frontend development server, run:
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 That starts the standalone Next.js app on [http://localhost:3000](http://localhost:3000).

@@ -20,7 +20,7 @@ This file is hand-maintained. Do not regenerate it from Speckit plans, append "r
 | Tests | Vitest, Supertest, Playwright |
 | Local runtime | Docker Compose via `./run-dev.sh` |
 | Enterprise local runtime | Host services via `./run-ee-dev.sh` |
-| Package manager | `npm` in each package directory |
+| Package manager | `pnpm` workspace from repo root |
 
 ## Architecture
 
@@ -70,51 +70,51 @@ Backend:
 
 ```bash
 cd backend
-npm run dev
-npm run dev:worker
-npm run build
-npm test
-npm run test:unit
-npm run test:integration
-npm run test:contract
+pnpm run dev
+pnpm run dev:worker
+pnpm run build
+pnpm test
+pnpm run test:unit
+pnpm run test:integration
+pnpm run test:contract
 ```
 
 Frontend:
 
 ```bash
 cd frontend
-npm run dev
-npm run build
-npm run lint
-npm test
-npm run test:e2e
+pnpm run dev
+pnpm run build
+pnpm run lint
+pnpm test
+pnpm run test:e2e
 ```
 
 Docs portal:
 
 ```bash
 cd docs-portal
-npm run dev
-npm run build
-npm run lint
+pnpm run dev
+pnpm run build
+pnpm run lint
 ```
 
 MCP server package:
 
 ```bash
 cd packages/radioso-mcp-server
-npm run build
-npm test
-npm run smoke:all
+pnpm run build
+pnpm test
+pnpm run smoke:all
 ```
 
 TypeScript SDK:
 
 ```bash
 cd typescript-sdk
-npm run sync
-npm run build
-npm test
+pnpm run sync
+pnpm run build
+pnpm test
 ```
 
 Enterprise Edition packages:
@@ -122,8 +122,8 @@ Enterprise Edition packages:
 ```bash
 ./run-ee-dev.sh
 cd ee
-npm run build
-npm test
+pnpm run build
+pnpm test
 ```
 
 ## Code Style

@@ -13,7 +13,7 @@ Cursor can connect to Radioso in two ways:
 ```bash
 source <(
   RADIOSO_WORKSPACE_TOKEN=radioso_example \
-  npm --prefix packages/radioso-mcp-server run -s token:exchange
+  pnpm --dir packages/radioso-mcp-server run -s token:exchange
 )
 ```
 
@@ -57,7 +57,7 @@ If you normally open Cursor from the Dock, Spotlight, Raycast, or a desktop laun
 
 ```bash
 RADIOSO_WORKSPACE_TOKEN=radioso_example \
-npm --prefix packages/radioso-mcp-server run -s cursor:prepare -- --open
+pnpm --dir packages/radioso-mcp-server run -s cursor:prepare -- --open
 ```
 
 That exchanges the token, installs `RADIOSO_MCP_ACCESS_TOKEN` into the macOS GUI app environment with `launchctl`, and opens a fresh Cursor instance for this repo.
@@ -70,7 +70,7 @@ If you prefer Cursor to spawn the MCP server directly:
 
 - Set `RADIOSO_BASE_URL` (for example `http://localhost:8080`)
 - Set `RADIOSO_API_TOKEN` (your workspace token, `radioso_...`)
-- Ensure `npm install` has been run in `packages/radioso-mcp-server/` so the `cursor:mcp-stdio` entrypoint can run.
+- Ensure `pnpm install --filter @radioso/mcp-server...` has been run so the `cursor:mcp-stdio` entrypoint can run.
 
 ## Claude And Claude Desktop Remote Connectors
 

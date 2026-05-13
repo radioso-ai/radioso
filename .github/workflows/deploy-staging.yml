@@ -7,6 +7,9 @@ on:
     paths:
       - .github/workflows/_deploy-cloud-run.yml
       - .github/workflows/deploy-staging.yml
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
       - .dockerignore
       - backend/**
       - frontend/**

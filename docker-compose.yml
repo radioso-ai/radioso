@@ -39,7 +39,7 @@ services:
       SESSION_TTL_HOURS: 168
     volumes:
       - radioso_document_storage:/app/.context/document-storage
-    command: ["npm", "run", "start:http"]
+    command: ["node", "./dist/src/httpServer.js"]
     ports:
       - "8080:8080"
     healthcheck:
@@ -74,7 +74,7 @@ services:
       SESSION_TTL_HOURS: 168
     volumes:
       - radioso_document_storage:/app/.context/document-storage
-    command: ["npm", "run", "start:worker"]
+    command: ["node", "./dist/src/documentWorker.js"]
 
   backend-crawler-worker:
     container_name: radioso-backend-crawler-worker
@@ -95,14 +95,14 @@ services:
       SESSION_TTL_HOURS: 168
     volumes:
       - radioso_document_storage:/app/.context/document-storage
-    command: ["npm", "run", "start:crawler-worker"]
+    command: ["node", "./dist/src/crawlerWorker.js"]
 
   frontend:
     container_name: radioso-frontend
     pull_policy: build
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: infra/frontend.Dockerfile
       args:
         BACKEND_INTERNAL_URL: http://backend:8080
     env_file:

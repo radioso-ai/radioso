@@ -17,7 +17,7 @@ const readGeneratedContractJson = (url: URL, skillName: string): unknown => {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(
       `Generated contract for skill "${skillName}" is missing or invalid at ${url.pathname}. ` +
-        `Run \`npm run generate:skills\` from backend/. Original error: ${message}`,
+        `Run \`pnpm run generate:skills\` from backend/. Original error: ${message}`,
     );
   }
 };

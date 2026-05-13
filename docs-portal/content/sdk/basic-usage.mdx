@@ -234,5 +234,5 @@ try {
 - The SDK sends the API token as `Authorization: Bearer <token>`.
 - Streaming chat is layered on top of `POST /api/v1/assistant/chat`, with `stream: true`.
 - Workspace creation, rename, and deletion are not exposed because those routes are currently session-authenticated rather than token-authenticated.
-- Run `npm run sync` in `typescript-sdk/` after backend API changes so the generated types stay up to date.
+- Run `pnpm run sync` in `typescript-sdk/` after backend API changes so the generated types stay up to date.
 - Search and answer settings are documented separately in [Retrieval settings](/sdk/retrieval-settings).

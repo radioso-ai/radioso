@@ -4,7 +4,7 @@ import { cwd } from "node:process";
 import { exchangeAccessToken, parseExchangeArgs, usage } from "./exchangeAccessTokenCore.ts";
 
 const cursorUsage = `Usage:
-  RADIOSO_WORKSPACE_TOKEN=radioso_... npm --prefix packages/radioso-mcp-server run -s cursor:prepare
+  RADIOSO_WORKSPACE_TOKEN=radioso_... pnpm --dir packages/radioso-mcp-server run -s cursor:prepare
 
 What it does:
   1. Exchanges your Radioso workspace token for a short-lived MCP access token.
@@ -23,8 +23,8 @@ ${usage
   .join("\n")}
 
 Examples:
-  RADIOSO_WORKSPACE_TOKEN=radioso_... npm --prefix packages/radioso-mcp-server run -s cursor:prepare
-  RADIOSO_WORKSPACE_TOKEN=radioso_... npm --prefix packages/radioso-mcp-server run -s cursor:prepare -- --open
+  RADIOSO_WORKSPACE_TOKEN=radioso_... pnpm --dir packages/radioso-mcp-server run -s cursor:prepare
+  RADIOSO_WORKSPACE_TOKEN=radioso_... pnpm --dir packages/radioso-mcp-server run -s cursor:prepare -- --open
 `;
 
 const main = async (): Promise<void> => {

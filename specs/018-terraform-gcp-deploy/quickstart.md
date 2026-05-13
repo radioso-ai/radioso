@@ -62,7 +62,7 @@ docker build --platform linux/amd64 -f infra/backend.Dockerfile -t REGION-docker
 docker push REGION-docker.pkg.dev/PROJECT_ID/radioso/backend:latest
 
 # Build and push frontend
-docker build --platform linux/amd64 -f frontend/Dockerfile -t REGION-docker.pkg.dev/PROJECT_ID/radioso/frontend:latest ./frontend
+docker build --platform linux/amd64 -f frontend/Dockerfile -t REGION-docker.pkg.dev/PROJECT_ID/radioso/frontend:latest .
 docker push REGION-docker.pkg.dev/PROJECT_ID/radioso/frontend:latest
 ```
 

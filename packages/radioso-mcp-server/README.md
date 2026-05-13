@@ -62,17 +62,17 @@ Workspace policy files use this JSON shape:
 
 ```bash
 cd packages/radioso-mcp-server
-npm install
-npm run build
+pnpm install --filter @radioso/mcp-server...
+pnpm run build
 ```
 
 ## Safe Smoke Tests
 
 The package includes smoke commands that do not touch your existing Radioso PostgreSQL data.
 
-- `npm run smoke:http` starts the backend's in-memory test app and runs a real remote MCP read/write flow against it.
-- `npm run smoke:redis` runs the same style of flow across two MCP HTTP instances with a shared Redis store. It uses `RADIOSO_MCP_SMOKE_REDIS_URL` when provided, otherwise it starts a disposable local Redis instance with `redis-server` or Docker.
-- `npm run smoke:all` runs both.
+- `pnpm run smoke:http` starts the backend's in-memory test app and runs a real remote MCP read/write flow against it.
+- `pnpm run smoke:redis` runs the same style of flow across two MCP HTTP instances with a shared Redis store. It uses `RADIOSO_MCP_SMOKE_REDIS_URL` when provided, otherwise it starts a disposable local Redis instance with `redis-server` or Docker.
+- `pnpm run smoke:all` runs both.
 
 ## Start The Remote HTTP Server
 
@@ -106,7 +106,7 @@ For Cursor or other local clients that read bearer tokens from the environment, 
 ```bash
 source <(
   RADIOSO_WORKSPACE_TOKEN=radioso_example \
-  npm run -s token:exchange
+  pnpm run -s token:exchange
 )
 ```
 
@@ -114,7 +114,7 @@ On macOS, if you launch Cursor from the Dock or Spotlight instead of from Termin
 
 ```bash
 RADIOSO_WORKSPACE_TOKEN=radioso_example \
-npm run -s cursor:prepare -- --open
+pnpm run -s cursor:prepare -- --open
 ```
 
 That uses `launchctl setenv RADIOSO_MCP_ACCESS_TOKEN ...` and opens a fresh Cursor instance. If Cursor was already running, fully quit it before reopening so it picks up the new token.
@@ -123,7 +123,7 @@ That uses `launchctl setenv RADIOSO_MCP_ACCESS_TOKEN ...` and opens a fresh Curs
 
 Cursor can connect to a local config that points at `http://127.0.0.1:8787/mcp` and reads the bearer token from `RADIOSO_MCP_ACCESS_TOKEN`.
 
-Cursor can use that local config directly once you export an access token with `npm run -s token:exchange`.
+Cursor can use that local config directly once you export an access token with `pnpm run -s token:exchange`.
 
 Claude, Claude Desktop remote connectors, ChatGPT apps, and OpenAI-hosted remote MCP flows require a public HTTPS deployment of this server. They do not connect to `localhost` from your laptop, and the current package's `/v1/auth/exchange` flow is not a native cloud-connector auth mechanism by itself. See [`../../docs/mcp-client-setup.md`](../../docs/mcp-client-setup.md) for the exact split between local Cursor usage, Anthropic API usage with a pre-minted token, and hosted Claude/OpenAI connector requirements.
 

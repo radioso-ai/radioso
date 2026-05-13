@@ -48,8 +48,8 @@ again by the normal `./run-dev.sh` bootstrap path.
 From this directory:
 
 ```bash
-npm run build
-npm test
+pnpm run build
+pnpm test
 ```
 
 ## Usage limit profiles

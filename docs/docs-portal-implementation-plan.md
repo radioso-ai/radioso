@@ -391,7 +391,7 @@ Development:
   "private": true,
   "scripts": {
     "dev": "next dev --port 3001",
-    "build": "npm run sync:openapi && next build",
+    "build": "pnpm run sync:openapi && next build",
     "start": "next start --port 3001",
     "lint": "eslint .",
     "sync:openapi": "node ./scripts/sync-openapi.mjs"
@@ -445,8 +445,8 @@ The docs app should be runnable independently:
 
 ```bash
 cd docs-portal
-npm install
-npm run dev
+pnpm install --filter radioso-docs-portal...
+pnpm run dev
 ```
 
 The local developer experience should make the three golden paths visible immediately from the docs homepage. The first screen should not be a generic docs index.
@@ -485,7 +485,7 @@ Add a dedicated Dockerfile for the docs app, for example:
 That image should:
 
 - install docs app dependencies
-- run `npm run build`
+- run `pnpm run build`
 - start Next.js in production on port `3001` or `3000`, depending on the chosen container convention
 
 Preferred production convention:
@@ -534,8 +534,8 @@ The docs app should be publicly reachable directly. No dependency on the existin
 
 Add a docs job with this execution order:
 
-1. `cd backend && npm ci && npm run generate:openapi`
-2. `cd docs-portal && npm ci && npm run build`
+1. `cd backend && pnpm install --filter radioso-backend... && pnpm run generate:openapi`
+2. `cd docs-portal && pnpm install --filter radioso-docs-portal... && pnpm run build`
 
 ### Failure conditions
 

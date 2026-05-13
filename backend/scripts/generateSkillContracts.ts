@@ -9,7 +9,7 @@ if (process.argv.includes("--check")) {
   if (!current) {
     console.error(
       `Generated skill contract is stale: ${retrievalAnswerGeneratedContractPath}\n` +
-        "Run `npm run generate:skills` from backend/.",
+        "Run `pnpm run generate:skills` from backend/.",
     );
     process.exitCode = 1;
   }

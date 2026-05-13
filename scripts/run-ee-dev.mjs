@@ -73,6 +73,14 @@ const pathExists = async (filePath) => {
   }
 };
 
+const linkPackage = async (fromPackage, packageName, targetPackage) => {
+  const scopeDir = path.join(fromPackage, "node_modules", "@radioso");
+  const linkPath = path.join(scopeDir, packageName.replace("@radioso/", ""));
+  await fs.mkdir(scopeDir, { recursive: true });
+  await fs.rm(linkPath, { recursive: true, force: true });
+  await fs.symlink(path.relative(scopeDir, targetPackage), linkPath, "dir");
+};
+
 const updateEnvFile = async (filePath, updates) => {
   const source = await fs.readFile(filePath, "utf8");
   const pending = new Map(Object.entries(updates));
@@ -224,30 +232,38 @@ const main = async () => {
   await command("docker", ["compose", "-f", "docker-compose.yml", "up", "-d", "postgres"]);
 
   console.log("Building Enterprise Edition packages...");
-  await command("npm", ["install", "--package-lock=false", "--no-audit", "--no-fund"], { cwd: eeRoot });
-  await command("npm", ["run", "build"], { cwd: eeRoot });
+  await command("pnpm", [
+    "install",
+    "--frozen-lockfile",
+    "--filter",
+    "@radioso/enterprise-backend-module...",
+    "--filter",
+    "@radioso/enterprise-embed-widget...",
+    "--filter",
+    "@radioso/enterprise-auth-frontend...",
+  ]);
+  await command("pnpm", ["run", "build"], { cwd: eeRoot });
 
   console.log("Installing local app dependencies and private packages...");
-  await command("npm", ["install", "--no-audit", "--no-fund"], { cwd: backendDir });
-  await command("npm", ["ci", "--no-audit", "--no-fund"], { cwd: crawlerDir });
-  await command("npm", ["install", "--no-audit", "--no-fund"], { cwd: frontendDir });
-  await command("npm", [
+  await command("pnpm", [
     "install",
-    "--no-save",
-    "--package-lock=false",
-    "--no-audit",
-    "--no-fund",
-    enterpriseBackendPackage,
-  ], { cwd: backendDir });
-  await command("npm", [
-    "install",
-    "--no-save",
-    "--package-lock=false",
-    "--no-audit",
-    "--no-fund",
-    enterpriseWidgetPackage,
-    enterpriseAuthFrontendPackage,
-  ], { cwd: frontendDir });
+    "--frozen-lockfile",
+    "--filter",
+    "radioso-backend...",
+    "--filter",
+    "@radioso/crawler...",
+    "--filter",
+    "radioso-frontend...",
+    "--filter",
+    "@radioso/enterprise-backend-module...",
+    "--filter",
+    "@radioso/enterprise-embed-widget...",
+    "--filter",
+    "@radioso/enterprise-auth-frontend...",
+  ]);
+  await linkPackage(backendDir, "@radioso/enterprise-backend-module", enterpriseBackendPackage);
+  await linkPackage(frontendDir, "@radioso/enterprise-embed-widget", enterpriseWidgetPackage);
+  await linkPackage(frontendDir, "@radioso/enterprise-auth-frontend", enterpriseAuthFrontendPackage);
 
   console.log("Generating Enterprise Edition frontend routes...");
   await command("node", ["scripts/sync-ee-frontend-routes.mjs", "enable"]);
@@ -273,15 +289,15 @@ const main = async () => {
   }
 
   const services = [
-    spawnService("backend", "npm", ["run", "dev"], {
+    spawnService("backend", "pnpm", ["run", "dev"], {
       cwd: backendDir,
       env: enterpriseBackendEnv,
     }),
-    spawnService("worker", "npm", ["run", "dev:worker"], {
+    spawnService("worker", "pnpm", ["run", "dev:worker"], {
       cwd: backendDir,
       env: enterpriseBackendEnv,
     }),
-    spawnService("frontend", "npm", ["run", "dev"], {
+    spawnService("frontend", "pnpm", ["run", "dev"], {
       cwd: frontendDir,
       env: {
         ...process.env,

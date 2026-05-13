@@ -12,10 +12,10 @@ In-repo SDK package for token-based Radioso integrations.
 ## Development
 
 ```bash
-npm install
-npm run sync
-npm run test
-npm run build
+pnpm install --filter @radioso/typescript-sdk...
+pnpm run sync
+pnpm run test
+pnpm run build
 ```
 
 ## Public Surface
@@ -46,6 +46,6 @@ npm run build
 ## Contract Refresh
 
 1. Regenerate backend OpenAPI artifacts from the code-first registry.
-2. Run `npm run sync` in `typescript-sdk/`.
+2. Run `pnpm run sync` in `typescript-sdk/`.
 3. Review the synced OpenAPI snapshot and generated SDK types.
 4. Run SDK tests before release.

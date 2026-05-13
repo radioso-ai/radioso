@@ -4,11 +4,11 @@ set -eu
 cd /app
 
 if [ "${RADIOSO_EDITION:-oss}" != "enterprise" ]; then
-  rm -rf app/embed app/api/embed app/radioso-embed.js
+  rm -rf frontend/app/embed frontend/app/api/embed frontend/app/radioso-embed.js
 fi
 
-INSTALL_STATE_FILE="node_modules/.install-state"
-CURRENT_HASH="$(sha256sum package-lock.json | awk '{print $1}')"
+INSTALL_STATE_FILE="frontend/node_modules/.install-state"
+CURRENT_HASH="$(sha256sum pnpm-lock.yaml | awk '{print $1}')"
 NODE_VERSION="$(node -p 'process.version')"
 EXPECTED_SWC_PACKAGE="$(
   node -e '
@@ -82,19 +82,19 @@ if [ -f "$INSTALL_STATE_FILE" ]; then
 fi
 
 module_is_ready() {
-  node -e "require.resolve(process.argv[1])" "$1" >/dev/null 2>&1
+  node -e "require.resolve(process.argv[1], { paths: ['/app/frontend'] })" "$1" >/dev/null 2>&1
 }
 
 module_can_load() {
-  node -e "require(process.argv[1])" "$1" >/dev/null 2>&1
+  node -e "require(require.resolve(process.argv[1], { paths: ['/app/frontend'] }))" "$1" >/dev/null 2>&1
 }
 
 frontend_modules_ready() {
-  if [ ! -d node_modules ]; then
+  if [ ! -d frontend/node_modules ]; then
     return 1
   fi
 
-  if [ ! -x node_modules/.bin/next ]; then
+  if [ ! -x frontend/node_modules/.bin/next ]; then
     return 1
   fi
 
@@ -133,9 +133,9 @@ frontend_dependencies_ready() {
 }
 
 install_frontend_dependencies() {
-  echo "Installing frontend dependencies..."
-  npm ci --include=optional --no-audit --no-fund
-  mkdir -p node_modules
+  echo "Installing frontend workspace dependencies..."
+  pnpm install --frozen-lockfile --filter radioso-frontend...
+  mkdir -p frontend/node_modules
   printf '%s' "$CURRENT_INSTALL_STATE" > "$INSTALL_STATE_FILE"
   SAVED_INSTALL_STATE="$CURRENT_INSTALL_STATE"
 }
@@ -147,14 +147,15 @@ fi
 
 if ! frontend_dependencies_ready; then
   if ! install_frontend_dependencies || ! frontend_dependencies_ready; then
-    echo "Frontend dependency install incomplete; clearing npm cache and retrying..."
-    npm cache clean --force
+    echo "Frontend dependency install incomplete; pruning pnpm store and retrying..."
+    pnpm store prune
 
     if ! install_frontend_dependencies || ! frontend_dependencies_ready; then
-      echo "Frontend dependency install failed; the Compose node_modules volume may need to be recreated." >&2
+      echo "Frontend dependency install failed; the Compose node_modules volumes may need to be recreated." >&2
       exit 1
     fi
   fi
 fi
 
-exec ./node_modules/.bin/next dev --webpack -H 0.0.0.0 -p 3000
+cd frontend
+exec node_modules/.bin/next dev --webpack -H 0.0.0.0 -p 3000

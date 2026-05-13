@@ -20,15 +20,15 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "npm run sync:openapi && tsc -p tsconfig.build.json",
+    "build": "pnpm run sync:openapi && tsc -p tsconfig.build.json",
     "cursor:prepare": "node --import tsx ./scripts/prepareCursorSession.ts",
     "cursor:mcp-stdio": "node --import tsx ./src/cli/stdio.ts",
-    "smoke:all": "npm run smoke:http && npm run smoke:redis",
+    "smoke:all": "pnpm run smoke:http && pnpm run smoke:redis",
     "smoke:http": "node --import tsx ./scripts/smokeHttp.ts",
     "smoke:redis": "node --import tsx ./scripts/smokeRedis.ts",
     "token:exchange": "node --import tsx ./scripts/exchangeAccessToken.ts",
     "sync:openapi": "node ./scripts/sync-openapi-types.mjs",
-    "test": "npm run sync:openapi && vitest run"
+    "test": "pnpm run sync:openapi && vitest run"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",

@@ -102,7 +102,7 @@ export function AssistantBehaviorSection({
             <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-background">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={anonSettings.assistantLogoUrl ?? '/radioso-logo.png'}
+                src={anonSettings.assistantLogoUrl ?? '/radioso-icon.svg'}
                 alt=""
                 className="h-12 w-12 object-contain"
               />

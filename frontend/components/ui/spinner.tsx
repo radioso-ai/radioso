@@ -27,7 +27,7 @@ function LogoSpinner({
       {...props}
     >
       <Image
-        src="/radioso-logo.png"
+        src="/radioso-icon.svg"
         alt=""
         aria-hidden="true"
         width={32}

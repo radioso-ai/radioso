@@ -20,7 +20,7 @@ import {
   type WebsiteEmbedThemeOverrides,
 } from '@/lib/embed-widget'
 
-const DEFAULT_ASSISTANT_AVATAR_URL = '/radioso-logo.png'
+const DEFAULT_ASSISTANT_AVATAR_URL = '/radioso-icon.svg'
 
 export function AssistantAvatar({
   avatarUrl,

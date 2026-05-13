@@ -13,14 +13,13 @@ export function AuthPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Image
-            src="/radioso-logo.png"
+            src="/radioso-lockup-stacked.svg"
             alt="radioso logo"
-            width={64}
-            height={64}
-            className="mx-auto mb-4 h-16 w-16 rounded-2xl object-cover"
+            width={300}
+            height={409}
+            className="mx-auto mb-4 h-28 w-auto object-contain"
             priority
           />
-          <h1 className="text-2xl font-semibold text-foreground">radioso</h1>
           <p className="text-muted-foreground mt-1">Knowledge Agents Platform</p>
         </div>
         <div className="bg-card border border-border rounded-lg p-6 shadow-sm">

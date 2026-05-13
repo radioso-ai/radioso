@@ -194,7 +194,7 @@ export function UsersPanel() {
 
   const renderRoleChip = (role: AccountUserSummary['role'] | AssignableAccountRole) => (
     <Badge className={roleChipClassName(role)}>
-      {role === 'owner' ? <Image src="/radioso-logo.png" alt="" aria-hidden="true" width={12} height={12} className="rounded-[2px]" /> : null}
+      {role === 'owner' ? <Image src="/radioso-icon.svg" alt="" aria-hidden="true" width={12} height={12} className="rounded-[2px]" /> : null}
       {formatRoleLabel(role)}
     </Badge>
   )

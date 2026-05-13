@@ -252,7 +252,7 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
         <SidebarHeader className="p-4">
           <div className="flex items-center gap-2">
             <Image
-              src="/radioso-logo.png"
+              src="/radioso-icon.svg"
               alt="radioso logo"
               width={32}
               height={32}

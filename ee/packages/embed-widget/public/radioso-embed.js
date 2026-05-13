@@ -567,7 +567,7 @@
     const initialState = normalizeInitialState(expertOverrides.initialState) || DEFAULT_INITIAL_STATE
     const pageContextMode = normalizePageContextMode(expertOverrides.pageContext)
     const pageContext = collectPageContext(pageContextMode)
-    const avatarUrl = resolveAvatarUrl(config.assistantLogoUrl, scriptUrl) || new URL('/radioso-logo.png', scriptUrl).toString()
+    const avatarUrl = resolveAvatarUrl(config.assistantLogoUrl, scriptUrl) || new URL('/radioso-icon.svg', scriptUrl).toString()
 
     const host = document.createElement('div')
     host.style.position = 'fixed'

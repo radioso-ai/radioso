@@ -20,6 +20,10 @@ type EmbedTestConfig = {
   copy: string
   theme: string
   pageContext: string
+  launcherAttention: string
+  launcherTeaserDelayMs: string
+  proactiveGreetingTeaser: string
+  proactiveGreeting: string
 }
 
 const STORAGE_KEY = 'radioso.embedTest.config'
@@ -36,6 +40,10 @@ const DEFAULT_CONFIG: EmbedTestConfig = {
   copy: '',
   theme: '',
   pageContext: 'metadata',
+  launcherAttention: '',
+  launcherTeaserDelayMs: '',
+  proactiveGreetingTeaser: '',
+  proactiveGreeting: '',
 }
 
 const firstSearchValue = (params: URLSearchParams, key: keyof EmbedTestConfig) =>
@@ -77,19 +85,34 @@ const resolveInitialConfig = () => {
     copy: firstSearchValue(params, 'copy') ?? stored.copy ?? '',
     theme: firstSearchValue(params, 'theme') ?? stored.theme ?? '',
     pageContext: firstSearchValue(params, 'pageContext') ?? stored.pageContext ?? DEFAULT_CONFIG.pageContext,
+    launcherAttention: firstSearchValue(params, 'launcherAttention') ?? stored.launcherAttention ?? '',
+    launcherTeaserDelayMs: firstSearchValue(params, 'launcherTeaserDelayMs') ?? stored.launcherTeaserDelayMs ?? '',
+    proactiveGreetingTeaser: firstSearchValue(params, 'proactiveGreetingTeaser') ?? stored.proactiveGreetingTeaser ?? '',
+    proactiveGreeting: firstSearchValue(params, 'proactiveGreeting') ?? stored.proactiveGreeting ?? '',
   }
 }
 
-const buildScriptUrl = (config: EmbedTestConfig) => {
+const buildExpertOverridesJson = (config: EmbedTestConfig): string => {
+  const overrides: Record<string, string> = {}
+  if (config.launcherAttention.trim()) overrides.launcherAttention = config.launcherAttention.trim()
+  if (config.launcherTeaserDelayMs.trim()) overrides.launcherTeaserDelayMs = config.launcherTeaserDelayMs.trim()
+  if (config.proactiveGreetingTeaser.trim()) overrides.proactiveGreetingTeaser = config.proactiveGreetingTeaser.trim()
+  return Object.keys(overrides).length > 0 ? JSON.stringify(overrides) : ''
+}
+
+const buildScriptUrl = (config: EmbedTestConfig, cacheBust?: string) => {
   const scriptUrl = new URL('/radioso-embed.js', normalizeOrigin(config.appOrigin || window.location.origin))
   if (config.scriptVersion.trim()) {
     scriptUrl.searchParams.set('v', config.scriptVersion.trim())
+  } else if (cacheBust) {
+    scriptUrl.searchParams.set('v', cacheBust)
   }
   return scriptUrl.toString()
 }
 
-const buildSnippet = (config: EmbedTestConfig) =>
-  [
+const buildSnippet = (config: EmbedTestConfig) => {
+  const expertOverridesJson = buildExpertOverridesJson(config)
+  return [
     '<script',
     '  async',
     `  src="${buildScriptUrl(config)}"`,
@@ -102,9 +125,12 @@ const buildSnippet = (config: EmbedTestConfig) =>
     config.copy ? `  data-radioso-copy='${config.copy}'` : null,
     config.theme ? `  data-radioso-theme='${config.theme}'` : null,
     config.pageContext === 'content' ? '  data-radioso-page-context="content"' : null,
+    expertOverridesJson ? `  data-radioso-expert-overrides='${expertOverridesJson}'` : null,
+    config.proactiveGreeting ? `  data-radioso-proactive-greeting="${config.proactiveGreeting}"` : null,
     `  data-radioso-allowed-origins="${window.location.origin}"`,
     '></script>',
   ].filter(Boolean).join('\n')
+}
 
 export default function EmbedTestPage() {
   const [isClientReady, setIsClientReady] = useState(false)
@@ -129,7 +155,14 @@ export default function EmbedTestPage() {
   useEffect(() => {
     const existing = document.querySelector('[data-radioso-test-script="true"]')
     existing?.remove()
+    document.querySelectorAll('[data-radioso-token]').forEach((node) => {
+      // Remove any previously mounted launcher host(s) so the new config takes effect.
+      if (node instanceof HTMLElement && node.tagName !== 'SCRIPT') {
+        node.remove()
+      }
+    })
     delete (window as typeof window & { __radiosoEmbedMounted?: boolean }).__radiosoEmbedMounted
+    document.getElementById('radioso-embed-style')?.remove()
 
     if (!isClientReady || !config.token.trim()) {
       return
@@ -137,7 +170,8 @@ export default function EmbedTestPage() {
 
     const script = document.createElement('script')
     script.async = true
-    script.src = buildScriptUrl(config)
+    // Always cache-bust in the test page so launcher edits are picked up on every remount.
+    script.src = buildScriptUrl(config, String(Date.now()))
     script.dataset.radiosoTestScript = 'true'
     script.dataset.radiosoToken = config.token.trim()
     script.dataset.radiosoLauncherLabel = config.label
@@ -151,6 +185,10 @@ export default function EmbedTestPage() {
     if (config.theme.trim()) script.dataset.radiosoTheme = config.theme.trim()
     if (config.pageContext === 'content') script.dataset.radiosoPageContext = 'content'
 
+    const expertOverridesJson = buildExpertOverridesJson(config)
+    if (expertOverridesJson) script.dataset.radiosoExpertOverrides = expertOverridesJson
+    if (config.proactiveGreeting) script.dataset.radiosoProactiveGreeting = config.proactiveGreeting
+
     script.addEventListener('load', () => setLoadedScriptKey(scriptKey))
     script.addEventListener('error', () => setFailedScriptKey(scriptKey))
     document.body.appendChild(script)
@@ -159,6 +197,20 @@ export default function EmbedTestPage() {
       script.remove()
     }
   }, [config, isClientReady, scriptKey])
+
+  const clearVisitorState = () => {
+    const token = config.token.trim()
+    if (!token) {
+      return
+    }
+    try {
+      window.sessionStorage.removeItem(`radioso:embed:opened:${token}`)
+      window.sessionStorage.removeItem(`radioso:embed:teaserDismissed:${token}`)
+    } catch {
+      /* ignore */
+    }
+    window.location.reload()
+  }
 
   const snippet = useMemo(() => {
     if (!isClientReady) {
@@ -185,6 +237,10 @@ export default function EmbedTestPage() {
     if (config.copy) params.set('copy', config.copy)
     if (config.theme) params.set('theme', config.theme)
     if (config.pageContext !== DEFAULT_CONFIG.pageContext) params.set('pageContext', config.pageContext)
+    if (config.launcherAttention) params.set('launcherAttention', config.launcherAttention)
+    if (config.launcherTeaserDelayMs) params.set('launcherTeaserDelayMs', config.launcherTeaserDelayMs)
+    if (config.proactiveGreetingTeaser) params.set('proactiveGreetingTeaser', config.proactiveGreetingTeaser)
+    if (config.proactiveGreeting) params.set('proactiveGreeting', config.proactiveGreeting)
     window.location.search = params.toString()
   }
 
@@ -222,7 +278,7 @@ export default function EmbedTestPage() {
                 <Input id="script-version" value={config.scriptVersion} onChange={(event) => updateConfig('scriptVersion', event.target.value)} />
               </label>
               <label className="space-y-2">
-                <Label htmlFor="label">Launcher label</Label>
+                <Label htmlFor="label">{config.displayMode === 'panel' ? 'Accessible name' : 'Launcher label'}</Label>
                 <Input id="label" value={config.label} maxLength={80} onChange={(event) => updateConfig('label', event.target.value)} />
               </label>
               <label className="space-y-2">
@@ -234,17 +290,17 @@ export default function EmbedTestPage() {
                 </select>
               </label>
               <label className="space-y-2">
-                <Label htmlFor="position">Position</Label>
-                <select id="position" value={config.position} onChange={(event) => updateConfig('position', event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                  <option value="bottom-right">bottom-right</option>
-                  <option value="bottom-left">bottom-left</option>
+                <Label htmlFor="display-mode">Display mode</Label>
+                <select id="display-mode" value={config.displayMode} onChange={(event) => updateConfig('displayMode', event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  <option value="">Bubble</option>
+                  <option value="panel">Side panel</option>
                 </select>
               </label>
               <label className="space-y-2">
-                <Label htmlFor="display-mode">Display mode</Label>
-                <select id="display-mode" value={config.displayMode} onChange={(event) => updateConfig('displayMode', event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                  <option value="">bubble</option>
-                  <option value="panel">retractable side panel</option>
+                <Label htmlFor="position">{config.displayMode === 'panel' ? 'Panel side' : 'Position'}</Label>
+                <select id="position" value={config.position} onChange={(event) => updateConfig('position', event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  <option value="bottom-right">{config.displayMode === 'panel' ? 'Right edge' : 'Bottom right'}</option>
+                  <option value="bottom-left">{config.displayMode === 'panel' ? 'Left edge' : 'Bottom left'}</option>
                 </select>
               </label>
               <label className="space-y-2">
@@ -265,7 +321,48 @@ export default function EmbedTestPage() {
               </label>
             </div>
 
+            <div className="mt-6 border-t border-border pt-4">
+              <div className="mb-3 space-y-0.5">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Attention &amp; engagement</p>
+                <p className="text-xs text-muted-foreground">
+                  Test-only overrides — applied via <code>data-radioso-expert-overrides</code> on the script tag, so changes take effect immediately without saving to the agent.
+                </p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-2">
+                  <Label htmlFor="launcher-attention">Attention animation</Label>
+                  <select id="launcher-attention" value={config.launcherAttention} onChange={(event) => updateConfig('launcherAttention', event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    <option value="">none</option>
+                    <option value="breathe">breathe</option>
+                    <option value="pulse">pulse</option>
+                    <option value="nudge">nudge</option>
+                    <option value="bounce-in">bounce-in</option>
+                  </select>
+                </label>
+                <label className="space-y-2">
+                  <Label htmlFor="proactive-greeting">Proactive greeting</Label>
+                  <select id="proactive-greeting" value={config.proactiveGreeting} onChange={(event) => updateConfig('proactiveGreeting', event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    <option value="">agent default</option>
+                    <option value="true">force on</option>
+                    <option value="false">force off</option>
+                  </select>
+                </label>
+                <label className="space-y-2">
+                  <Label htmlFor="teaser-delay">Teaser delay (ms)</Label>
+                  <Input id="teaser-delay" value={config.launcherTeaserDelayMs} onChange={(event) => updateConfig('launcherTeaserDelayMs', event.target.value)} placeholder="4000" />
+                </label>
+                <label className="space-y-2">
+                  <Label htmlFor="teaser-text">Teaser text</Label>
+                  <Input id="teaser-text" value={config.proactiveGreetingTeaser} onChange={(event) => updateConfig('proactiveGreetingTeaser', event.target.value)} placeholder="Hi! How can I help?" />
+                </label>
+              </div>
+            </div>
+
             <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Button variant="outline" onClick={clearVisitorState} disabled={!config.token.trim()}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Reset visitor state
+              </Button>
               <Button variant="outline" onClick={clearConfig}>
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Clear

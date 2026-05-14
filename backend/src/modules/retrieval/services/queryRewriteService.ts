@@ -248,7 +248,8 @@ export class QueryRewriteService {
       });
       const result = this.normalizeStructuredResult(input.query, rawResult);
       const rawResponseIntent = this.normalizeResponseIntent(result.responseIntent);
-      const responseIntent = this.shouldRescueProceduralQuery(input.query, result)
+      const responseIntent = this.shouldRouteScopeClassifiedRequestToRetrieval(result)
+        || this.shouldRescueProceduralQuery(input.query, result)
         ? RESPONSE_INTENT.RETRIEVAL
         : rawResponseIntent;
       const normalizedStructuredResult = {
@@ -736,6 +737,18 @@ export class QueryRewriteService {
     return PROCEDURAL_LOOKUP_PATTERN.test(query);
   }
 
+  private shouldRouteScopeClassifiedRequestToRetrieval(result: StructuredRewriteResult): boolean {
+    if (this.normalizeResponseIntent(result.responseIntent) !== RESPONSE_INTENT.SOCIAL_ONLY) {
+      return false;
+    }
+
+    const hasScopeRequest =
+      (typeof result.inScopeRequest === "string" && result.inScopeRequest.trim().length > 0)
+      || (typeof result.outsideScopeRequest === "string" && result.outsideScopeRequest.trim().length > 0);
+
+    return hasScopeRequest;
+  }
+
   private normalizeIntentTopic(value?: string): string | undefined {
     if (typeof value !== "string") {
       return undefined;
@@ -755,6 +768,10 @@ export class QueryRewriteService {
       .trim()
       .slice(0, 240)
       .trim();
+
+    if (normalized.toLowerCase() === "null") {
+      return undefined;
+    }
 
     return normalized.length > 0 ? normalized : undefined;
   }

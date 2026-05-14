@@ -1,4 +1,4 @@
-import type { WorkspaceService } from "../../workspace/services/workspaceService.js";
+import type { WorkspaceService } from "../../workspace/public.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 
 export class WorkspaceSessionService {

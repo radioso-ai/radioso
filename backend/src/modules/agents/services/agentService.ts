@@ -4,7 +4,7 @@ import type { AgentRepositoryPort } from "../../../db/repositories/agentReposito
 import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
-import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/domain/sourceConstants.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import {
   isAgentBootstrapActive,

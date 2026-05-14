@@ -60,7 +60,6 @@ describe('backend proxy route', () => {
         method: 'POST',
         cache: 'no-store',
         redirect: 'manual',
-        duplex: 'half',
       }),
     )
 
@@ -68,6 +67,15 @@ describe('backend proxy route', () => {
     expect(upstreamInit.headers.get('content-type')).toBe('application/json')
     expect(upstreamInit.headers.get('cookie')).toBe('theme=dark')
     expect(upstreamInit.headers.get('x-forwarded-prefix')).toBe('/backend')
+    expect(upstreamInit.body).toBeInstanceOf(ArrayBuffer)
+    expect(new TextDecoder().decode(upstreamInit.body as ArrayBuffer)).toBe(
+      JSON.stringify({
+        email: 'user@example.com',
+        password: 'Password123!',
+        organizationName: 'Acme',
+      }),
+    )
+    expect('duplex' in upstreamInit).toBe(false)
 
     expect(response.status).toBe(201)
     expect(response.headers.get('set-cookie')).toContain('radioso_session=session-1')
@@ -96,6 +104,60 @@ describe('backend proxy route', () => {
       error: {
         code: 'UPSTREAM_UNAVAILABLE',
         message: 'Backend is unavailable: getaddrinfo EAI_AGAIN backend',
+      },
+    })
+  })
+
+  it('buffers proxied request bodies so backend auth failures propagate', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+
+    const fetchMock = vi.fn((_: string, init?: RequestInit) => {
+      if (init?.body instanceof ReadableStream) {
+        throw new Error('expected non-null body source')
+      }
+
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'unauthorized',
+              message: 'Invalid email or password',
+            },
+          }),
+          {
+            status: 401,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          },
+        ),
+      )
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { POST } = await import('@/app/backend/[...path]/route')
+
+    const request = new Request('https://frontend.example.com/backend/api/v1/ee/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: 'user@example.com',
+        password: 'wrong-password',
+      }),
+    })
+
+    const response = await POST(request, {
+      params: Promise.resolve({ path: ['api', 'v1', 'ee', 'auth', 'login'] }),
+    })
+
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({
+      error: {
+        code: 'unauthorized',
+        message: 'Invalid email or password',
       },
     })
   })

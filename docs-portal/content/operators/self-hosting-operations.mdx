@@ -1,0 +1,126 @@
+---
+title: Self-hosting operations
+description: Backup, restore, upgrade, and worker incident practices for self-hosted Radioso deployments.
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Self-hosting operations
+
+Self-hosted Radioso has two durable data surfaces:
+
+- PostgreSQL, including accounts, workspaces, settings, conversations, audit events, documents, chunks, vectors, and worker queues
+- uploaded source-file storage, either the local document-storage volume or the configured object-storage bucket
+
+Back up both surfaces together. A database backup without source files can leave document records whose original uploads cannot be reprocessed. Source files without the database are not enough to restore accounts, settings, embeddings, or chat history.
+
+## Minimum operating baseline
+
+For a small private deployment, the minimum baseline is:
+
+- run the backend, frontend, document worker, crawler worker, PostgreSQL, and document storage as separate services or containers
+- put the frontend and backend behind HTTPS
+- keep `.env` and secret values outside source control
+- back up PostgreSQL and document storage every day
+- test restore before relying on the backup
+- pin the deployed image tag or Git commit
+- apply upgrades manually after reading the migration list
+
+## Backup
+
+For Docker Compose deployments, back up:
+
+- the PostgreSQL database with `pg_dump` or a physical volume snapshot
+- the `radioso_document_storage` volume when `DOCUMENT_STORAGE_DRIVER=local`
+- the deployed `.env` or equivalent secret inventory, stored in a secure password manager or secrets system
+
+For cloud deployments, back up:
+
+- Cloud SQL or the managed PostgreSQL database
+- the GCS bucket or object-storage bucket used by `DOCUMENT_STORAGE_BUCKET`
+- Secret Manager values or the external secret inventory
+
+Keep database and source-file backups from the same time window. That makes document reprocessing predictable after restore.
+
+## Restore
+
+<Steps>
+### Stop writers
+
+Stop the backend, document worker, and crawler worker before restoring. This prevents new writes while the database and file storage are out of sync.
+
+### Restore PostgreSQL
+
+Restore the database first. Confirm the `schema_migrations` table exists and matches the deployed code version.
+
+### Restore source files
+
+Restore the local document-storage volume or object-storage bucket. Keep object paths unchanged.
+
+### Start the backend
+
+Start the backend and confirm `/health` returns success. The backend owns SQL migrations, so it should be the first runtime to touch the restored database.
+
+### Start workers
+
+Start the document worker and crawler worker. Watch for pending or failed processing jobs before opening the deployment to users.
+</Steps>
+
+## Upgrade
+
+Use this order for self-hosted upgrades:
+
+1. Read the release notes or inspect `backend/src/db/migrations/` for new SQL migrations.
+2. Back up PostgreSQL and document storage.
+3. Build or pull the new backend, frontend, and worker images.
+4. Start the backend and let migrations run.
+5. Start the document worker and crawler worker.
+6. Start or refresh the frontend.
+7. Upload a small document and confirm it becomes searchable.
+8. Ask one grounded question and verify citations or retrieval trace data.
+
+Do not auto-pull `main` into production without a backup. A failed application upgrade is usually reversible; a partially applied schema or mismatched storage restore is harder to recover.
+
+## Worker incidents
+
+If uploads succeed but new documents do not become searchable, treat it as a worker-path incident first.
+
+Check in this order:
+
+1. The backend can accept uploads and write document records.
+2. The document worker is running and can connect to PostgreSQL.
+3. Source-file storage is reachable from the worker.
+4. The embedding provider credentials and model settings are valid.
+5. The queue is draining rather than growing.
+6. Failed jobs have enough logs to identify parser, storage, embedding, or timeout failures.
+
+For local polling deployments, `WORKER_DISPATCH_DRIVER=noop` means the worker claims durable jobs from PostgreSQL. For queue-backed deployments, also check Cloud Tasks or AMQP delivery and retry configuration.
+
+## Secrets
+
+Rotate these values deliberately and keep historical impact in mind:
+
+- `SESSION_COOKIE_SECRET` affects browser sessions.
+- `WORKSPACE_TOKEN_SECRET` affects workspace API tokens.
+- `PUBLIC_CHAT_SESSION_SECRET` affects anonymous public-chat sessions and website embeds.
+- `CONNECTOR_ENCRYPTION_KEY` protects connector secrets.
+- provider API keys affect chat, rewrite, rerank, and embedding calls.
+
+Changing encryption or token secrets without a migration or rotation plan can invalidate existing sessions, tokens, or saved connector credentials.
+
+## Health checks
+
+At minimum, monitor:
+
+- backend `/health`
+- frontend reachability
+- worker process liveness
+- PostgreSQL connection errors
+- document-processing failures
+- embedding provider failures
+- disk or bucket storage errors
+- HTTP 429 and 5xx rates for public chat and website embeds
+
+<Callout type="info" emoji="i">
+  The key point is that self-hosting is mostly database, storage, worker, and provider-key operations. The app itself is straightforward once those surfaces are backed up and monitored.
+</Callout>

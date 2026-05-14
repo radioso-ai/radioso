@@ -1,394 +1,114 @@
 import { getEnv, type Env } from "../config/env.js";
 import {
-  AssistantChatService,
-  AssistantHistoryService,
-  ChatBootstrapService,
-  ChatHistoryService,
-  ChatService,
-  NoopAnswerFeedbackHistoryProvider,
-  NoopChatActionProvider,
-  NoopContactHistoryProvider,
-} from "../../modules/chat/composition.js";
-import { AccountMembershipRepository } from "../../db/repositories/accountMembershipRepository.js";
-import { AccountInvitationRepository } from "../../db/repositories/accountInvitationRepository.js";
-import { WorkspaceGrantRepository } from "../../db/repositories/workspaceGrantRepository.js";
-import { SupportImpersonationRepository } from "../../db/repositories/supportImpersonationRepository.js";
-import { AccountRepository } from "../../db/repositories/accountRepository.js";
-import { UserRepository } from "../../db/repositories/userRepository.js";
-import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
-import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
-import { AgentRepository } from "../../db/repositories/agentRepository.js";
-import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
-import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
-import { ChunkRepository } from "../../db/repositories/chunkRepository.js";
-import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
-import { DocumentRepository } from "../../db/repositories/documentRepository.js";
-import { DocumentSourceRepository } from "../../db/repositories/documentSourceRepository.js";
-import { HistoryItemsRepository } from "../../db/repositories/historyItemsRepository.js";
-import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
-import { WebsiteCrawlJobRepository } from "../../db/repositories/websiteCrawlJobRepository.js";
-import { MessageRepository } from "../../db/repositories/messageRepository.js";
-import { IngestionSettingsRepository } from "../../db/repositories/ingestionSettingsRepository.js";
-import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSettingsRepository.js";
-import { SessionRepository } from "../../db/repositories/sessionRepository.js";
-import { AuthService } from "../../modules/auth/services/authService.js";
-import { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
-import { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
-import { SupportImpersonationService } from "../../modules/support/services/supportImpersonationService.js";
-import { AuditService } from "../../modules/audit/composition.js";
-import { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
-import { WorkspaceSummaryService } from "../../modules/workspace/services/workspaceSummaryService.js";
-import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
-import {
-  DocumentDeletionService,
-  DocumentImportService,
-  DocumentIngestionService,
-  DocumentProcessingService,
-  DocumentProcessingWorker,
-  DocumentSearchHistoryService,
-  DocumentSearchService,
-  DocumentSourceContentService,
-  WorkspaceIngestionReprocessService,
-} from "../../modules/documents/composition.js";
-import {
-  CandidatePreparationService,
-  ConversationContextService,
-  EmbeddingService,
-  PgLexicalSearch,
-  PgVectorSearch,
-  PromptBuilder,
-  PromptContextSelectorService,
-  QueryRewriteService,
-  RerankService,
-  RetrievalAnswerService,
-  RetrievalExecutionTelemetryService,
-  RetrievalPipelineService,
-  RetrievalSearchService,
-} from "../../modules/retrieval/composition.js";
-import { IngestionSettingsService } from "../../modules/settings/composition.js";
-import { PlatformSettingsService } from "../../modules/settings/composition.js";
-import { RetrievalSettingsService } from "../../modules/settings/composition.js";
-import { AbuseControlRepository } from "../../db/repositories/abuseControlRepository.js";
-import { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
-import { Database } from "../../shared/infra/database.js";
-import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
-import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
-import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
-import { createLogger } from "../../shared/observability/logger.js";
-import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
-import { IncidentReportingService } from "../../shared/incidents/incidentReportingService.js";
-import {
-  createDefaultAnalyticsSinks,
   createDefaultApplicationComposition,
-  createDefaultChunkingStrategyRegistry,
-  createDefaultDocumentJobConsumer,
-  createDefaultConnectorRegistry,
-  createDefaultDocumentJobDispatcher,
-  createDefaultWebsiteCrawlJobConsumer,
-  createDefaultWebsiteCrawlJobDispatcher,
-  createDefaultDocumentStorage,
-  createDefaultIncidentSinks,
-  createDefaultTelemetrySinks,
   type ApplicationModule,
 } from "../composition/index.js";
-import type { AppDependencies } from "./types.js";
-import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
-import { SkillCatalogService } from "../../modules/skills/public.js";
 import { AgentService } from "../../modules/agents/public.js";
-import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
-import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
-import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
+import { PlatformSettingsService } from "../../modules/settings/composition.js";
+import type { AppDependencies } from "./types.js";
+import {
+  buildAccessServices,
+  buildAuthService,
+  buildChatServices,
+  buildConnectorRegistry,
+  buildDocumentServices,
+  buildInfrastructure,
+  buildLlmRegistry,
+  buildLogger,
+  buildRepositories,
+  buildRetrievalServices,
+  buildSettingsServices,
+  buildWorkspaceServices,
+} from "./dependencyBuilders.js";
+import { EmbeddingService } from "../../modules/retrieval/composition.js";
+import { SkillCatalogService } from "../../modules/skills/public.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
 }
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
-  const logger = createLogger();
+  const logger = buildLogger();
   const composition = createDefaultApplicationComposition({
     logger,
     modules: options.modules,
   });
-  const { metricsRegistry, sinks: defaultTelemetrySinks } = createDefaultTelemetrySinks(env);
-  const telemetryService = new TelemetryService({
-    enabled: env.OBSERVABILITY_ENABLED,
-    environment: env.OBSERVABILITY_ENVIRONMENT,
-    logger,
-    service: env.OBSERVABILITY_SERVICE_NAME,
-    sinks: [...defaultTelemetrySinks, ...composition.telemetrySinks],
-    version: env.OBSERVABILITY_VERSION,
-  });
-  const database = new Database(env.DATABASE_URL, {
-    poolMax: env.DB_POOL_MAX,
-    idleTimeoutMs: env.DB_POOL_IDLE_TIMEOUT_MS,
-    connectionTimeoutMs: env.DB_POOL_CONNECTION_TIMEOUT_MS,
-    statementTimeoutMs: env.DB_STATEMENT_TIMEOUT_MS,
-    queryTimeoutMs: env.DB_QUERY_TIMEOUT_MS,
-    applicationName: `radioso-${env.NODE_ENV}`,
-  });
-  const usageLimitPolicy = !composition.usageLimitPolicyRegistration
-    ? new NoopUsageLimitPolicy()
-    : typeof composition.usageLimitPolicyRegistration === "function"
-      ? composition.usageLimitPolicyRegistration({ database, logger })
-      : composition.usageLimitPolicyRegistration;
-  const onAccountCreated = composition.accountCreatedHooks.length === 0
-    ? undefined
-    : async ({ accountId }: { accountId: string }) => {
-      for (const hook of composition.accountCreatedHooks) {
-        await hook({ accountId, database, logger });
-      }
-    };
-  const auditEventRepository = new AuditEventRepository(database);
-  const auditService = new AuditService(logger, auditEventRepository);
-  const productAnalyticsService = new ProductAnalyticsService({
-    enabled: env.OBSERVABILITY_ENABLED,
-    logger,
-    sinks: [
-      ...createDefaultAnalyticsSinks({
-        auditService,
-        env,
-        metricsRegistry,
-      }),
-      ...composition.productAnalyticsSinks,
-    ],
-  });
-  const persistentIncidentReportingService = new IncidentReportingService({
-    enabled: env.OBSERVABILITY_ENABLED,
-    environment: env.OBSERVABILITY_ENVIRONMENT,
-    logger,
-    service: env.OBSERVABILITY_SERVICE_NAME,
-    version: env.OBSERVABILITY_VERSION,
-    sinks: [
-      ...createDefaultIncidentSinks({
-        auditService,
-        env,
-        metricsRegistry,
-      }),
-      ...composition.incidentSinks,
-    ],
-  });
-  const accountMembershipRepository = new AccountMembershipRepository(database);
-  const accountRepository = new AccountRepository(database);
-  const userRepository = new UserRepository(database);
-  const sessionRepository = new SessionRepository(database);
-  const workspaceRepository = new WorkspaceRepository(database);
-  const workspaceGrantRepository = new WorkspaceGrantRepository(database);
-  const supportImpersonationService = new SupportImpersonationService(
-    new SupportImpersonationRepository(database),
-    userRepository,
-    auditService,
+  const infrastructure = buildInfrastructure({ env, logger, composition });
+  const repositories = buildRepositories(infrastructure.database);
+  const access = buildAccessServices({
+    auditService: infrastructure.auditService,
     env,
-  );
-  const accountAccessService = new AccountAccessService(
-    accountMembershipRepository,
-    auditService,
-    workspaceGrantRepository,
-    workspaceRepository,
-  );
-  const accountInvitationService = new AccountInvitationService(
-    new AccountInvitationRepository(database),
-    userRepository,
-    accountAccessService,
-    auditService,
-  );
-  const llmRegistry = new LlmProviderRegistry(resolveLlmConfig(env), logger);
-  logger.info({ llmProviders: llmRegistry.describe() }, "Resolved LLM providers");
-  const ingestionSettingsService = new IngestionSettingsService(new IngestionSettingsRepository(database), auditService);
+    repositories,
+  });
+  const llmRegistry = buildLlmRegistry(env, logger);
   const embeddingService = new EmbeddingService(llmRegistry.createEmbeddingGateway());
-  const documentRepository = new DocumentRepository(database);
-  const documentSourceRepository = new DocumentSourceRepository(database);
-  const retrievalSettingsService = new RetrievalSettingsService(
-    new RetrievalSettingsRepository(database),
-    auditService,
-    documentRepository,
-    productAnalyticsService,
-  );
-  const documentStorage = composition.documentStorage ?? createDefaultDocumentStorage(env);
-  const documentSourceContentService = new DocumentSourceContentService(documentStorage);
-  const documentProcessingJobRepository = new DocumentProcessingJobRepository(database);
-  const documentJobDispatcher = composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
-  const websiteCrawlJobRepository = new WebsiteCrawlJobRepository(database);
-  const websiteCrawlJobDispatcher = createDefaultWebsiteCrawlJobDispatcher(env, logger);
-  const websiteCrawlerProvider = composition.websiteCrawlerProvider ?? new RadiosoCrawlerProvider();
-  const chunkRepository = new ChunkRepository(database);
-  const chunkingStrategyRegistry = createDefaultChunkingStrategyRegistry(embeddingService);
-  const documentProcessingService = new DocumentProcessingService(
-    documentRepository,
-    chunkRepository,
-    embeddingService,
-    auditService,
-    ingestionSettingsService,
-    chunkingStrategyRegistry,
-    documentSourceContentService,
-    logger,
-  );
-  const documentIngestionService = new DocumentIngestionService(
-    documentRepository,
-    auditService,
-    () => documentProcessingJobRepository.getQueueSnapshot(),
-    documentProcessingJobRepository,
-    documentJobDispatcher,
-    productAnalyticsService,
-    usageLimitPolicy,
-    documentSourceRepository,
-  );
-  const websiteCrawlJobService = new WebsiteCrawlJobService({
-    repository: websiteCrawlJobRepository,
-    dispatcher: websiteCrawlJobDispatcher,
-    documentIngestionService,
-    logger,
+  const settings = buildSettingsServices({
+    auditService: infrastructure.auditService,
+    documentRepository: repositories.documentRepository,
+    ingestionSettingsRepository: repositories.ingestionSettingsRepository,
+    productAnalyticsService: infrastructure.productAnalyticsService,
+    retrievalSettingsRepository: repositories.retrievalSettingsRepository,
   });
-  const documentImportService = new DocumentImportService(
-    documentRepository,
-    auditService,
-    documentStorage,
-    () => documentProcessingJobRepository.getQueueSnapshot(),
-    documentProcessingJobRepository,
-    documentJobDispatcher,
-    usageLimitPolicy,
-    documentSourceRepository,
-  );
-  const documentProcessingWorker = new DocumentProcessingWorker(
-    documentRepository,
-    documentProcessingJobRepository,
-    documentProcessingService,
-    auditService,
-    logger,
-    undefined,
-    documentJobDispatcher,
-    env.DOCUMENT_PROCESSING_JOB_LEASE_MS,
-    telemetryService,
-  );
-  const documentJobConsumer = composition.documentJobConsumer ?? createDefaultDocumentJobConsumer(
+  const documents = buildDocumentServices({
+    auditEventRepository: infrastructure.auditEventRepository,
+    auditService: infrastructure.auditService,
+    composition,
+    documentSourceRepository: repositories.documentSourceRepository,
+    embeddingService,
     env,
     logger,
-    documentProcessingWorker,
-  );
-  const websiteCrawlWorker = new WebsiteCrawlWorker({
-    repository: websiteCrawlJobRepository,
-    provider: websiteCrawlerProvider,
-    documentIngestionService,
-    auditService,
-    logger,
-    pollIntervalMs: env.WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS,
-    jobLeaseMs: env.WEBSITE_CRAWL_JOB_LEASE_MS,
+    productAnalyticsService: infrastructure.productAnalyticsService,
+    repositories,
+    settings,
+    telemetryService: infrastructure.telemetryService,
+    usageLimitPolicy: infrastructure.usageLimitPolicy,
   });
-  const websiteCrawlJobConsumer = createDefaultWebsiteCrawlJobConsumer(env, logger, websiteCrawlWorker);
-  const documentDeletionService = new DocumentDeletionService(
-    documentRepository,
-    documentStorage,
-    auditService,
-    composition.capabilityPolicy,
-  );
-  const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(
-    documentRepository,
-    auditService,
-    documentProcessingJobRepository,
-    documentJobDispatcher,
-  );
-  const conversationRepository = new ConversationRepository(database);
-  const messageRepository = new MessageRepository(database);
-  const agentRepository = new AgentRepository(database);
-  const bootstrapGreetingCacheRepository = new BootstrapGreetingCacheRepository(database);
-  const retrievalPipeline = new RetrievalPipelineService(
-    retrievalSettingsService,
+  const retrieval = buildRetrievalServices({
+    auditService: infrastructure.auditService,
+    database: infrastructure.database,
+    documentRepository: repositories.documentRepository,
     embeddingService,
-    new PgVectorSearch(database),
-    new PgLexicalSearch(database),
-    new ConversationContextService(),
-    new QueryRewriteService(llmRegistry.createRewriteGateway(), llmRegistry.createTriggerAnalysisGateway()),
-    new CandidatePreparationService(),
-    undefined,
-    new RerankService(llmRegistry.createRerankGateway(), logger),
-    new PromptContextSelectorService(),
-    new PromptBuilder(),
-    new RetrievalExecutionTelemetryService(telemetryService),
+    llmRegistry,
+    logger,
+    retrievalSettingsService: settings.retrievalSettingsService,
+    telemetryService: infrastructure.telemetryService,
+  });
+  const workspace = buildWorkspaceServices({
+    accountMembershipRepository: repositories.accountMembershipRepository,
+    auditService: infrastructure.auditService,
+    conversationRepository: repositories.conversationRepository,
+    documentRepository: repositories.documentRepository,
+    env,
+    workspaceRepository: repositories.workspaceRepository,
+  });
+  const agentService = new AgentService(
+    repositories.agentRepository,
+    repositories.workspaceRepository,
+    settings.retrievalSettingsService,
+    repositories.documentSourceRepository,
   );
-  const documentSearchService = new DocumentSearchService(
-    documentRepository,
-    retrievalPipeline,
-    auditService,
-  );
-  const documentSearchHistoryService = new DocumentSearchHistoryService(
-    auditEventRepository,
-    documentRepository,
-  );
-  const abuseControlService = new AbuseControlService(new AbuseControlRepository(database));
-  const chatGateway = llmRegistry.createChatGateway();
-  const chatActionProvider = !composition.chatActionProviderRegistration
-    ? new NoopChatActionProvider()
-    : typeof composition.chatActionProviderRegistration === "function"
-      ? composition.chatActionProviderRegistration({
-          database,
-          chatGateway,
-          logger,
-          conversationRepository,
-          messageRepository,
-          auditService,
-          abuseControlService,
-      })
-      : composition.chatActionProviderRegistration;
-  const contactHistoryProvider = !composition.contactHistoryProviderRegistration
-    ? new NoopContactHistoryProvider()
-    : typeof composition.contactHistoryProviderRegistration === "function"
-      ? composition.contactHistoryProviderRegistration({
-          database,
-          logger,
-      })
-      : composition.contactHistoryProviderRegistration;
-  const answerFeedbackHistoryProvider = !composition.answerFeedbackHistoryProviderRegistration
-    ? new NoopAnswerFeedbackHistoryProvider()
-    : typeof composition.answerFeedbackHistoryProviderRegistration === "function"
-      ? composition.answerFeedbackHistoryProviderRegistration({
-          database,
-          logger,
-        })
-      : composition.answerFeedbackHistoryProviderRegistration;
-  const agentService = new AgentService(agentRepository, workspaceRepository, retrievalSettingsService, documentSourceRepository);
-  const groundedMissResponseComposer = llmRegistry.createGroundedMissResponseComposer();
-  const chatService = new ChatService(
-    conversationRepository,
-    messageRepository,
-    retrievalPipeline,
-    chatGateway,
-    auditService,
-    groundedMissResponseComposer,
-    productAnalyticsService,
-    workspaceRepository,
-    usageLimitPolicy,
-    chatActionProvider,
+  const chat = buildChatServices({
     agentService,
-  );
-  const chatBootstrapService = new ChatBootstrapService(
-    workspaceRepository,
-    bootstrapGreetingCacheRepository,
-    chatGateway,
-    auditService,
-    usageLimitPolicy,
-    productAnalyticsService,
-    agentService,
-  );
-  const chatHistoryService = new ChatHistoryService(
-    conversationRepository,
-    messageRepository,
-    auditEventRepository,
-    new HistoryItemsRepository(database),
-    contactHistoryProvider,
-    answerFeedbackHistoryProvider,
-  );
-  const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
-  const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
-  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
-  const retrievalAnswerService = new RetrievalAnswerService({
-    retrievalPipeline,
-    chatGateway,
-    usageLimitPolicy,
+    auditEventRepository: infrastructure.auditEventRepository,
+    auditService: infrastructure.auditService,
+    bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
+    composition,
+    conversationRepository: repositories.conversationRepository,
+    database: infrastructure.database,
+    historyItemsRepository: repositories.historyItemsRepository,
+    llmRegistry,
+    logger,
+    messageRepository: repositories.messageRepository,
+    productAnalyticsService: infrastructure.productAnalyticsService,
+    retrievalPipeline: retrieval.retrievalPipeline,
+    usageLimitPolicy: infrastructure.usageLimitPolicy,
+    workspaceRepository: repositories.workspaceRepository,
   });
   const platformSettingsService = new PlatformSettingsService({
-    workspaceRepository,
+    workspaceRepository: repositories.workspaceRepository,
     agentService,
-    retrievalSettingsService,
-    auditService,
+    retrievalSettingsService: settings.retrievalSettingsService,
+    auditService: infrastructure.auditService,
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
     websiteEmbedIntegration: composition.websiteEmbedIntegration,
   });
@@ -396,91 +116,79 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     capabilityPolicy: composition.capabilityPolicy,
     registry: composition.skillCatalogRegistry,
   });
-  const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
-  const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, {
-    websiteCrawlerEnabled: env.WEBSITE_CRAWLER_ENABLED,
-  });
-  const workspaceSessionService = new WorkspaceSessionService(workspaceService);
-  const connectorRegistry = createDefaultConnectorRegistry(composition.connectors);
-  if (env.CONNECTOR_ENCRYPTION_KEY) {
-    connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY);
-  } else {
-    logger.warn(
-      {
-        remediation: "Set CONNECTOR_ENCRYPTION_KEY before saving or rotating connector secrets.",
-      },
-      "Connector secret encryption is not configured; secret-field writes will be rejected until this is fixed",
-    );
-  }
-  const authService = new AuthService({
+  const onAccountCreated = composition.accountCreatedHooks.length === 0
+    ? undefined
+    : async ({ accountId }: { accountId: string }) => {
+        for (const hook of composition.accountCreatedHooks) {
+          await hook({ accountId, database: infrastructure.database, logger });
+        }
+      };
+  const authService = buildAuthService({
+    access,
+    auditService: infrastructure.auditService,
     env,
-    accountRepository,
-    userRepository,
-    sessionRepository,
-    workspaceTokenRepository: new WorkspaceTokenRepository(database),
-    workspaceService,
-    accountAccessService,
-    accountInvitationService,
     onAccountCreated,
-    auditService,
+    repositories,
+    workspaceService: workspace.workspaceService,
   });
+  const connectorRegistry = buildConnectorRegistry({ composition, env, logger });
 
   return {
     env,
     logger,
-    metricsRegistry,
-    telemetryService,
-    incidentReportingService: persistentIncidentReportingService,
-    productAnalyticsService,
+    metricsRegistry: infrastructure.metricsRegistry,
+    telemetryService: infrastructure.telemetryService,
+    incidentReportingService: infrastructure.incidentReportingService,
+    productAnalyticsService: infrastructure.productAnalyticsService,
     capabilityPolicy: composition.capabilityPolicy,
-    usageLimitPolicy,
-    chatActionProvider,
-    contactHistoryProvider,
+    usageLimitPolicy: infrastructure.usageLimitPolicy,
+    chatActionProvider: chat.chatActionProvider,
+    contactHistoryProvider: chat.contactHistoryProvider,
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
     authService,
-    accountAccessService,
-    accountInvitationService,
-    supportImpersonationService,
-    workspaceSessionService,
-    abuseControlService,
-    auditService,
-    workspaceService,
-    workspaceSummaryService,
-    ingestionSettingsService,
-    retrievalSettingsService,
-    documentIngestionService,
-    documentSourceRepository,
-    documentImportService,
-    documentSearchService,
-    documentSearchHistoryService,
-    workspaceIngestionReprocessService,
-    documentProcessingWorker,
-    documentJobConsumer,
-    websiteCrawlerProvider,
-    websiteCrawlJobService,
-    websiteCrawlWorker,
-    websiteCrawlJobConsumer,
-    documentDeletionService,
-    documentStorage,
-    chatService,
-    chatBootstrapService,
-    chatHistoryService,
-    assistantChatService,
-    assistantHistoryService,
-    retrievalSearchService,
-    retrievalAnswerService,
+    accountAccessService: access.accountAccessService,
+    accountInvitationService: access.accountInvitationService,
+    supportImpersonationService: access.supportImpersonationService,
+    workspaceSessionService: workspace.workspaceSessionService,
+    abuseControlService: chat.abuseControlService,
+    auditService: infrastructure.auditService,
+    workspaceService: workspace.workspaceService,
+    workspaceSummaryService: workspace.workspaceSummaryService,
+    ingestionSettingsService: settings.ingestionSettingsService,
+    retrievalSettingsService: settings.retrievalSettingsService,
+    documentIngestionService: documents.documentIngestionService,
+    documentSourceRepository: repositories.documentSourceRepository,
+    documentImportService: documents.documentImportService,
+    documentSearchService: retrieval.documentSearchService,
+    documentSearchHistoryService: documents.documentSearchHistoryService,
+    workspaceIngestionReprocessService: documents.workspaceIngestionReprocessService,
+    documentProcessingWorker: documents.documentProcessingWorker,
+    documentJobConsumer: documents.documentJobConsumer,
+    websiteCrawlerProvider: documents.websiteCrawlerProvider,
+    websiteCrawlJobService: documents.websiteCrawlJobService,
+    websiteCrawlWorker: documents.websiteCrawlWorker,
+    websiteCrawlJobConsumer: documents.websiteCrawlJobConsumer,
+    documentDeletionService: documents.documentDeletionService,
+    documentStorage: documents.documentStorage,
+    chatService: chat.chatService,
+    chatBootstrapService: chat.chatBootstrapService,
+    chatHistoryService: chat.chatHistoryService,
+    assistantChatService: chat.assistantChatService,
+    assistantHistoryService: chat.assistantHistoryService,
+    retrievalSearchService: retrieval.retrievalSearchService,
+    retrievalAnswerService: chat.retrievalAnswerService,
     platformSettingsService,
     agentService,
     skillCatalogService,
-    accountRepository,
-    userRepository,
-    workspaceRepository,
-    agentRepository,
-    bootstrapGreetingCacheRepository,
-    conversationRepository,
-    messageRepository,
+    accountRepository: repositories.accountRepository,
+    userRepository: repositories.userRepository,
+    workspaceRepository: repositories.workspaceRepository,
+    agentRepository: repositories.agentRepository,
+    bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
+    conversationRepository: repositories.conversationRepository,
+    messageRepository: repositories.messageRepository,
     connectorRegistry,
-    connectorDb: database,
+    connectorDb: infrastructure.database,
   };
 };

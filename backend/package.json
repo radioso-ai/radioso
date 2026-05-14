@@ -35,7 +35,7 @@
     "test:unit": "vitest run tests/unit",
     "test:composition": "vitest run tests/unit/capability-policy.test.ts tests/unit/application-modules.test.ts tests/unit/default-composition.test.ts tests/unit/document-capability-policy.test.ts",
     "test:integration": "vitest run tests/integration",
-    "test:contract": "pnpm run generate:openapi && pnpm run generate:skills -- --check && vitest run tests/contract",
+    "test:contract": "pnpm run generate:openapi && node ../scripts/check-api-contracts.mjs && pnpm run generate:skills -- --check && vitest run tests/contract",
     "test:persistence": "vitest run tests/integration/persistence.integration.test.ts",
     "validate:architecture": "node ../scripts/validate-architecture-boundaries.mjs"
   },
@@ -73,6 +73,7 @@
     "@types/pg": "^8.15.5",
     "@types/supertest": "^6.0.3",
     "dependency-cruiser": "^17.4.0",
+    "openapi-typescript": "^7.13.0",
     "supertest": "^7.1.4",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",

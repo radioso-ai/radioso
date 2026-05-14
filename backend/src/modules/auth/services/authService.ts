@@ -1,9 +1,8 @@
 import type { Env } from "../../../app/config/env.js";
 import { conflict, serviceUnavailable, unauthorized } from "../../../shared/domain/errors.js";
-import type { AccountAccessService } from "../../account/services/accountAccessService.js";
-import type { AccountInvitationService } from "../../account/services/accountInvitationService.js";
+import type { AccountAccessService, AccountInvitationService } from "../../account/public.js";
 import type { AuditService } from "../../audit/contracts/index.js";
-import type { WorkspaceService } from "../../workspace/services/workspaceService.js";
+import type { WorkspaceService } from "../../workspace/public.js";
 import type { UserRepositoryPort } from "../../../db/repositories/userRepository.js";
 import {
   decryptSecret,

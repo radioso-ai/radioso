@@ -3,7 +3,7 @@ import type { ResolvedSkillRun, SkillDiagnostic } from "../../skills/public.js";
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "./queryConstraintTypes.js";
 
-import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/domain/sourceConstants.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";
 
 export interface ConversationContextWindow {
   selectedMessages: MessageRecord[];

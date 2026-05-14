@@ -7,10 +7,11 @@ import { sendChatSse } from "../presenters/chatPresenter.js";
 import { AppError, badRequest, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
 import { anonymousRateLimiters, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
+import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../modules/settings/contracts/websiteEmbed.js";
-import { isAgentBootstrapActive, resolveAgentDisplayName } from "../../../modules/agents/public.js";
+import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive, resolveAgentDisplayName } from "../../../modules/agents/public.js";
 import { issuePublicChatSession } from "../../../modules/settings/contracts/publicChatSession.js";
 import { buildPublicAssistantLogoUrl } from "../shared/assistantLogoUrl.js";
 
@@ -93,6 +94,7 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "env"
   | "agentRepository"
   | "agentService"
+  | "agentSurfaceExtensions"
   | "assistantChatService"
   | "auditService"
   | "chatActionProvider"
@@ -141,34 +143,43 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       return anonymousAgent;
     }
     const embedAgent = await dependencies.agentRepository.findByWebsiteEmbedToken(launchToken);
-    if (embedAgent?.surfaceSettings.websiteEmbed.enabled) {
+    if (embedAgent && getWebsiteEmbedSurfaceSettings(embedAgent).enabled) {
       return embedAgent;
     }
     return null;
   };
 
-  router.get("/:token/embed-config", async (req, res, next) => {
+  router.get("/:token/embed-config", requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"), async (req, res, next) => {
     try {
       const launchToken = String(req.params.token);
       const origin = resolveOrigin(req.header("origin"));
       const agent = await dependencies.agentRepository.findByWebsiteEmbedToken(launchToken);
-      if (!agent || !agent.surfaceSettings.websiteEmbed.enabled) {
+      const websiteEmbed = agent ? getWebsiteEmbedSurfaceSettings(agent) : null;
+      if (!agent || !websiteEmbed?.enabled) {
         next(notFound("Not found"));
         return;
       }
-      if (origin && !isAllowedWebsiteEmbedOrigin(agent.surfaceSettings.websiteEmbed.allowedOrigins, origin)) {
+      if (origin && !isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, origin)) {
         throw badRequest("This website is not approved to host the embedded assistant.");
       }
 
-      // Server-side config probes may not send Origin; browser session creation still enforces origins.
-      const websiteEmbed = agent.surfaceSettings.websiteEmbed;
+      // Ask the website-embed extension for a built-in translation pack
+      // matching the visitor's Accept-Language. Operator's per-locale packs
+      // still win because they're merged AFTER under the locale's own key.
+      const extension = dependencies.agentSurfaceExtensions.get("websiteEmbed");
+      const localizedDefault = extension?.resolveCopyForAcceptLanguage?.(req.header("accept-language") ?? null);
+      const copyResponse = localizedDefault
+        ? { ...websiteEmbed.copy, default: localizedDefault.pack }
+        : websiteEmbed.copy;
+
       res.status(200).json({
         launcherLabel: websiteEmbed.launcherLabel,
         launcherPosition: websiteEmbed.launcherPosition,
         theme: agent.theme,
-        copy: websiteEmbed.copy,
+        copy: copyResponse,
         expertOverrides: websiteEmbed.expertOverrides,
         assistantLogoUrl: buildAssistantLogoUrl(req, launchToken, Boolean(agent.logo)),
+        proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
       });
     } catch (error) {
       next(error);
@@ -317,7 +328,8 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         return;
       }
 
-      if (!isAllowedWebsiteEmbedOrigin(agent.surfaceSettings.websiteEmbed.allowedOrigins, origin)) {
+      const websiteEmbed = getWebsiteEmbedSurfaceSettings(agent);
+      if (!isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, origin)) {
         await dependencies.auditService.record({
           accountId: workspace.accountId,
           workspaceId: workspace.id,
@@ -335,7 +347,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         return;
       }
 
-      if (!agent.surfaceSettings.websiteEmbed.enabled) {
+      if (!websiteEmbed.enabled) {
         await dependencies.auditService.record({
           accountId: workspace.accountId,
           workspaceId: workspace.id,
@@ -364,7 +376,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         metadata: { origin },
       });
 
-      const publicChatToken = agent.surfaceSettings.websiteEmbed.token;
+      const publicChatToken = websiteEmbed.token;
       if (!publicChatToken) {
         res.status(404).json({
           error: {

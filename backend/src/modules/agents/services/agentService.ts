@@ -7,6 +7,7 @@ import type { RetrievalSettingsService } from "../../settings/contracts/services
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import {
+  getWebsiteEmbedSurfaceSettings,
   isAgentBootstrapActive,
   type AgentInput,
   type AgentRecord,
@@ -226,6 +227,7 @@ export class AgentService {
   }
 
   private async syncLegacyWorkspaceDefaults(workspace: WorkspaceRecord, agent: AgentRecord): Promise<void> {
+    const websiteEmbed = getWebsiteEmbedSurfaceSettings(agent);
     await this.workspaceRepository.updateGeneralSettings(workspace.id, {
       anonymousChatEnabled: agent.surfaceSettings.anonymousChat.enabled,
       anonymousChatToken: agent.surfaceSettings.anonymousChat.token,
@@ -233,11 +235,11 @@ export class AgentService {
       greetingInstruction: agent.greetingInstruction,
       assistantDefaultLocale: agent.assistantDefaultLocale,
       proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
-      websiteEmbedEnabled: agent.surfaceSettings.websiteEmbed.enabled,
-      websiteEmbedToken: agent.surfaceSettings.websiteEmbed.token,
-      websiteEmbedAllowedOrigins: agent.surfaceSettings.websiteEmbed.allowedOrigins,
-      websiteEmbedLauncherLabel: agent.surfaceSettings.websiteEmbed.launcherLabel,
-      websiteEmbedLauncherPosition: agent.surfaceSettings.websiteEmbed.launcherPosition,
+      websiteEmbedEnabled: websiteEmbed.enabled,
+      websiteEmbedToken: websiteEmbed.token,
+      websiteEmbedAllowedOrigins: websiteEmbed.allowedOrigins,
+      websiteEmbedLauncherLabel: websiteEmbed.launcherLabel,
+      websiteEmbedLauncherPosition: websiteEmbed.launcherPosition,
     });
   }
 }

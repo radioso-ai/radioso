@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Building2, CheckCircle2, CircleAlert, ExternalLink, FolderOpen, KeyRound, Link as LinkIcon, Mail, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook } from 'lucide-react'
 
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
@@ -77,6 +77,7 @@ const isValidHumanContactWebhookUrl = (value: string) => {
 }
 
 const isValidHumanContactEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
 
 export function WorkspaceAssistantChannelsTab({
   accountId,
@@ -140,26 +141,33 @@ export function WorkspaceAssistantChannelsTab({
   const canReadWorkspaceTokens = Boolean(currentAccountRole)
   const canRotateWorkspaceTokens = currentAccountRole === 'owner' || currentAccountRole === 'admin'
 
-  const loadGeneralSettings = async () =>
-    agentId ? agentsApi.getGeneralSettings(agentId) : generalSettingsApi.getGeneralSettings({ auth: 'session' })
+  const loadGeneralSettings = useCallback(async () => {
+    return agentId ? agentsApi.getGeneralSettings(agentId) : generalSettingsApi.getGeneralSettings({ auth: 'session' })
+  }, [agentId])
 
-  const updateGeneralSettings = async (data: Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]) =>
-    agentId ? agentsApi.updateGeneralSettings(agentId, data) : generalSettingsApi.updateGeneralSettings(data, { auth: 'session' })
+  const updateGeneralSettings = useCallback(async (data: GeneralSettingsUpdateInput) => {
+    return agentId ? agentsApi.updateGeneralSettings(agentId, data) : generalSettingsApi.updateGeneralSettings(data, { auth: 'session' })
+  }, [agentId])
 
-  const rotateWebsiteEmbedToken = async () =>
-    agentId ? agentsApi.rotateWebsiteEmbedToken(agentId) : generalSettingsApi.rotateWebsiteEmbedToken({ auth: 'session' })
+  const rotateWebsiteEmbedToken = useCallback(async () => {
+    return agentId ? agentsApi.rotateWebsiteEmbedToken(agentId) : generalSettingsApi.rotateWebsiteEmbedToken({ auth: 'session' })
+  }, [agentId])
 
-  const uploadAssistantLogo = async (file: File) =>
-    agentId ? agentsApi.uploadAssistantLogo(agentId, file) : generalSettingsApi.uploadAssistantLogo(file, { auth: 'session' })
+  const uploadAssistantLogo = useCallback(async (file: File) => {
+    return agentId ? agentsApi.uploadAssistantLogo(agentId, file) : generalSettingsApi.uploadAssistantLogo(file, { auth: 'session' })
+  }, [agentId])
 
-  const deleteAssistantLogo = async () =>
-    agentId ? agentsApi.deleteAssistantLogo(agentId) : generalSettingsApi.deleteAssistantLogo({ auth: 'session' })
+  const deleteAssistantLogo = useCallback(async () => {
+    return agentId ? agentsApi.deleteAssistantLogo(agentId) : generalSettingsApi.deleteAssistantLogo({ auth: 'session' })
+  }, [agentId])
 
-  const loadAssistantBehaviorSettings = async () =>
-    agentId ? agentsApi.getBehaviorSettings(agentId) : agentsApi.getWorkspaceBehaviorSettings({ auth: 'session' })
+  const loadAssistantBehaviorSettings = useCallback(async () => {
+    return agentId ? agentsApi.getBehaviorSettings(agentId) : agentsApi.getWorkspaceBehaviorSettings({ auth: 'session' })
+  }, [agentId])
 
-  const updateAssistantBehaviorSettings = async (data: AssistantBehaviorSettings) =>
-    agentId ? agentsApi.updateBehaviorSettings(agentId, data) : agentsApi.updateWorkspaceBehaviorSettings(data, { auth: 'session' })
+  const updateAssistantBehaviorSettings = useCallback(async (data: AssistantBehaviorSettings) => {
+    return agentId ? agentsApi.updateBehaviorSettings(agentId, data) : agentsApi.updateWorkspaceBehaviorSettings(data, { auth: 'session' })
+  }, [agentId])
 
   useEffect(() => {
     let active = true
@@ -233,7 +241,7 @@ export function WorkspaceAssistantChannelsTab({
     return () => {
       active = false
     }
-  }, [activeWorkspaceId, agentId, isWorkspaceLoading])
+  }, [activeWorkspaceId, agentId, isWorkspaceLoading, loadGeneralSettings])
 
   useEffect(() => {
     if (mode !== 'assistant') {
@@ -273,7 +281,7 @@ export function WorkspaceAssistantChannelsTab({
     return () => {
       active = false
     }
-  }, [activeWorkspaceId, agentId, isWorkspaceLoading, mode])
+  }, [activeWorkspaceId, agentId, isWorkspaceLoading, loadAssistantBehaviorSettings, mode])
 
   useEffect(() => {
     if (!editionController.shouldLoadHumanContactSettings(mode)) {
@@ -615,7 +623,7 @@ export function WorkspaceAssistantChannelsTab({
       }
     }, 700)
     return () => window.clearTimeout(timeout)
-  }, [anonSettings, hasAssistantChanges, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState])
+  }, [anonSettings, hasAssistantChanges, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState, updateGeneralSettings])
 
   useEffect(() => {
     if (!assistantBehaviorSettings || !savedAssistantBehaviorSettings || !hasAssistantBehaviorChanges) {
@@ -647,7 +655,7 @@ export function WorkspaceAssistantChannelsTab({
     }, 700)
 
     return () => window.clearTimeout(timeout)
-  }, [assistantBehaviorSettings, hasAssistantBehaviorChanges, saveSequenceRef, savedAssistantBehaviorSettings, setSaveError, setSaveState])
+  }, [assistantBehaviorSettings, hasAssistantBehaviorChanges, saveSequenceRef, savedAssistantBehaviorSettings, setSaveError, setSaveState, updateAssistantBehaviorSettings])
 
   const handleAnonymousChatTokenRotate = async () => {
     if (!anonSettings) return

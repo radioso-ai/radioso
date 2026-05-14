@@ -1,7 +1,6 @@
 'use client'
 
 import { Fragment, type ComponentPropsWithoutRef } from 'react'
-import type { Element as HastElement, ElementContent, Text as HastText } from 'hast'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -10,6 +9,20 @@ import { cn } from '@/lib/utils'
 import { CodeBlock } from './code-block'
 
 const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
+
+type HastText = {
+  type: 'text'
+  value: string
+}
+
+type HastElement = {
+  type: 'element'
+  tagName: string
+  properties?: Record<string, unknown>
+  children: ElementContent[]
+}
+
+type ElementContent = HastText | HastElement | { type: 'comment' | 'doctype' | 'raw' | 'root' }
 
 export const isSafeHref = (href?: string) => {
   if (!href) {

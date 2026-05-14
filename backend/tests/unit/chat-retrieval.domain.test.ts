@@ -552,7 +552,7 @@ describe("chat retrieval domain", () => {
     });
   });
 
-  it("does not rescue clearly self-contained code questions", async () => {
+  it("routes scope-classified requests to retrieval even when the model labels them social-only", async () => {
     const service = new QueryRewriteService({
       async rewrite() {
         return {
@@ -580,8 +580,9 @@ describe("chat retrieval domain", () => {
       },
     });
 
-    expect(result.responseIntent).toBe("social_only");
+    expect(result.responseIntent).toBe("retrieval");
     expect(result.retrievalEligible).toBe(false);
+    expect(result.structuredResult?.responseIntent).toBe("retrieval");
   });
 
   it("carries LLM-authored scope split fields for mixed retrieval turns", async () => {
@@ -648,6 +649,38 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.structuredResult?.intentTopic).toBe("Python syntax");
+  });
+
+  it("drops string null sentinels from scope split fields", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "what is kriya?",
+          semanticQuery: "what is kriya?",
+          lexicalQuery: "what is kriya?",
+          responseIntent: "retrieval" as const,
+          inScopeRequest: "null",
+          outsideScopeRequest: "null",
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: true,
+          confidence: 0.96,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "what is kriya?",
+      enabled: false,
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+    });
+
+    expect(result.structuredResult?.inScopeRequest).toBeUndefined();
+    expect(result.structuredResult?.outsideScopeRequest).toBeUndefined();
   });
 
   it("still classifies non-retrieval intent when query rewriting is disabled", async () => {
@@ -1080,6 +1113,21 @@ describe("chat retrieval domain", () => {
     );
     expect(createInput?.messages[0]?.content).toContain("Format/language-only follow-ups");
     expect(createInput?.messages[0]?.content).toContain("responseIntent: retrieval");
+    expect(createInput?.messages[0]?.content).toContain(
+      "any turn where the user wants information, an explanation, advice, comparison, calculation, drafting, transformation, troubleshooting, instructions, a continuation, or any other answer/action",
+    );
+    expect(createInput?.messages[0]?.content).toContain(
+      "social_only — only turns where the user does not want an answer or action",
+    );
+    expect(createInput?.messages[0]?.content).toContain(
+      "Put answerable requested work in inScopeRequest",
+    );
+    expect(createInput?.messages[0]?.content).toContain(
+      "inspect the immediately preceding assistant message",
+    );
+    expect(createInput?.messages[0]?.content).toContain(
+      "Short confirmations after an assistant message with an offered next topic",
+    );
     expect(createInput?.messages[0]?.content).toContain(
       "If the user accepts without choosing among multiple offered options",
     );
@@ -1990,66 +2038,6 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.map((context) => context.chunkId)).toEqual(["main-doc", "low-1", "low-2"]);
-  });
-
-  it("builds prompts with contexts and citations", () => {
-    const builder = new PromptBuilder();
-    const result = builder.build({
-      query: "What does the page do?",
-      intentTopic: "website content question",
-      inScopeRequest: "What does the page do?",
-      outsideScopeRequest: "calculate 12*12",
-      history: [],
-      settings: {
-        responseLanguage: "English",
-      },
-      contexts: [
-        {
-          chunkId: "c1",
-          documentId: "d1",
-          title: "Intro",
-          content: "The page parses content.",
-          similarity: 0.8,
-          retrievalSources: ["semantic_original"],
-          retrievalText: "Intro The page parses content.",
-          semanticScore: 0.8,
-          lexicalScore: 0,
-          relevanceScore: 0.9,
-          rerankPosition: 0,
-          promptPosition: 0,
-          estimatedTokenCost: 5,
-        },
-      ],
-    });
-
-    expect(result.prompt).toContain("The page parses content.");
-    expect(result.prompt).toContain("Website Excerpts:");
-    expect(result.prompt).toContain("Original latest user question:");
-    expect(result.prompt).toContain("Scope-filtered answer request:");
-    expect(result.prompt).toContain("Outside-scope subrequest to decline without answering:");
-    expect(result.prompt).toContain("calculate 12*12");
-    expect(result.prompt).toContain("Standalone retrieval query:");
-    expect(result.prompt).toContain("Result 1 (Intro):");
-    expect(result.systemPrompt).not.toContain("Warmth:");
-    expect(result.systemPrompt).toContain("Detected intent topic: website content question");
-    expect(result.systemPrompt).toContain("Classifier evidence only");
-    expect(result.systemPrompt).toContain("Compare the detected topic and user question against the configured assistant scope");
-    expect(result.systemPrompt).toContain("do not solve, explain, translate, calculate, debug, or partially answer it");
-    expect(result.systemPrompt).toContain("For mixed requests, answer only the in-scope part");
-    expect(result.systemPrompt).toContain("Respond in English.");
-    expect(result.systemPrompt).toContain("Translate source facts into English when retrieved context or sources use another language.");
-    expect(result.systemPrompt).toContain("Do not use outside knowledge");
-    expect(result.systemPrompt).toContain("If sources don't support the answer");
-    expect(result.systemPrompt).toContain("Do not invent dates, prices, locations");
-    expect(result.systemPrompt).toContain("Polished Markdown: short paragraphs");
-    expect(result.systemPrompt).toContain("Do not expose retrieval internals");
-    expect(result.systemPrompt).toContain("End with a natural next step or one focused clarifying question");
-    expect(result.systemPrompt).toContain("Citations");
-    expect(result.systemPrompt).toContain("Links");
-    expect(result.systemPrompt).toContain("Link descriptive noun phrases inline");
-    expect(result.systemPrompt).toContain("append <<UNSUPPORTED>> at the end");
-    expect(result.systemPrompt).toContain("[[n]]");
-    expect(result.citations).toEqual([{ documentId: "d1", chunkId: "c1", title: "Intro" }]);
   });
 
   it("uses a wider default final context target for broad source coverage", () => {

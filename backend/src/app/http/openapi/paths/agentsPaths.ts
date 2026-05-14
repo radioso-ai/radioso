@@ -1,0 +1,138 @@
+import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
+
+import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
+
+export const registerAgentsPaths = (
+  registry: OpenAPIRegistry,
+  schemas: OpenApiSchemas,
+  security: OpenApiSecurity,
+) => {
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents",
+    tags: ["Agents"],
+    summary: "List workspace agents",
+    operationId: "listAgents",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    responses: {
+      200: {
+        description: "Agents returned",
+        content: { "application/json": { schema: schemas.AgentListResponseSchema } },
+      },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents",
+    tags: ["Agents"],
+    summary: "Create a workspace agent",
+    operationId: "createAgent",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.ConversationAgentRequestSchema } },
+      },
+    },
+    responses: {
+      201: { description: "Agent created", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}",
+    tags: ["Agents"],
+    summary: "Get a workspace agent",
+    operationId: "getAgent",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: { description: "Agent returned", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/agents/{agentId}",
+    tags: ["Agents"],
+    summary: "Update a workspace agent",
+    operationId: "updateAgent",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.AgentParamsSchema,
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.ConversationAgentRequestSchema } },
+      },
+    },
+    responses: {
+      200: { description: "Agent updated", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/assistant-logo",
+    tags: ["Agents"],
+    summary: "Upload an assistant logo",
+    operationId: "uploadAgentAssistantLogo",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.AgentParamsSchema,
+      body: {
+        required: true,
+        content: {
+          "multipart/form-data": {
+            schema: schemas.AssistantLogoUploadRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: { description: "Agent updated", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/agents/{agentId}/assistant-logo",
+    tags: ["Agents"],
+    summary: "Remove an assistant logo",
+    operationId: "deleteAgentAssistantLogo",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: { description: "Agent updated", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/default",
+    tags: ["Agents"],
+    summary: "Set the default workspace agent",
+    operationId: "setDefaultAgent",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: { description: "Default agent updated", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+};

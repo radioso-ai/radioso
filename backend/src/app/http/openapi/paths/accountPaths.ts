@@ -1,0 +1,401 @@
+import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
+
+import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
+
+export const registerAccountManagementPaths = (
+  registry: OpenAPIRegistry,
+  schemas: OpenApiSchemas,
+  security: OpenApiSecurity,
+) => {
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/account/users",
+    tags: ["Account"],
+    summary: "List active account users and invitations",
+    operationId: "listAccountUsers",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    responses: {
+      200: {
+        description: "Account users returned",
+        content: {
+          "application/json": {
+            schema: schemas.AccountUsersResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/account/accounts",
+    tags: ["Account"],
+    summary: "List accessible accounts for the current user",
+    operationId: "listAccessibleAccounts",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    responses: {
+      200: {
+        description: "Accessible accounts returned",
+        content: {
+          "application/json": {
+            schema: schemas.AccessibleAccountsResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/account/invitations",
+    tags: ["Account"],
+    summary: "Create an account invitation",
+    operationId: "createAccountInvitation",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.AccountInvitationCreateRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      201: {
+        description: "Invitation created",
+        content: {
+          "application/json": {
+            schema: schemas.CreateAccountInvitationResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      409: {
+        description: "Invitation already pending or user already has access",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "patch",
+    path: "/api/v1/account/users/{membershipId}",
+    tags: ["Account"],
+    summary: "Update an account user's role",
+    operationId: "updateAccountUserRole",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      params: schemas.accountMembershipParamsSchema,
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.AccountMembershipRoleUpdateRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Membership role updated",
+        content: {
+          "application/json": {
+            schema: schemas.AccountUserSchema,
+          },
+        },
+      },
+      403: {
+        description: "Role management is not allowed for the caller",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/account/workspaces/{workspaceId}/grants/{userId}",
+    tags: ["Account"],
+    summary: "Set a workspace role grant",
+    operationId: "setWorkspaceGrant",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      params: schemas.workspaceGrantParamsSchema,
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.WorkspaceGrantRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Workspace grant updated",
+        content: {
+          "application/json": {
+            schema: schemas.WorkspaceGrantSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/account/workspaces/{workspaceId}/grants/{userId}",
+    tags: ["Account"],
+    summary: "Remove a workspace role grant",
+    operationId: "removeWorkspaceGrant",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      params: schemas.workspaceGrantParamsSchema,
+    },
+    responses: {
+      204: {
+        description: "Workspace grant removed",
+      },
+    },
+  });
+};
+
+export const registerAccountSessionPaths = (
+  registry: OpenAPIRegistry,
+  schemas: OpenApiSchemas,
+  security: OpenApiSecurity,
+) => {
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/account/switch",
+    tags: ["Account"],
+    summary: "Switch the current session to another accessible account",
+    operationId: "switchAccount",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.accountSwitchSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Account switched",
+        content: {
+          "application/json": {
+            schema: schemas.LoginResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/account/users/{membershipId}",
+    tags: ["Account"],
+    summary: "Remove account user access",
+    operationId: "removeAccountUser",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      params: schemas.accountMembershipParamsSchema,
+    },
+    responses: {
+      204: {
+        description: "Account user removed",
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Owner access required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Membership not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      409: {
+        description: "Membership cannot be removed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/account/workspaces/{workspaceId}/token",
+    tags: ["Account"],
+    summary: "Reveal the workspace API token for manual SDK or CLI use",
+    operationId: "getWorkspaceApiToken",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      params: schemas.workspaceParamsSchema,
+    },
+    responses: {
+      200: {
+        description: "Workspace token returned",
+        content: {
+          "application/json": {
+            schema: schemas.WorkspaceTokenResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Invalid workspace id",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Workspace token no longer resolves to an active workspace",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      429: {
+        description: "Token reveal temporarily rate limited",
+        content: {
+          "application/json": {
+            schema: schemas.RateLimitExceededSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/account/workspaces/{workspaceId}/token/rotate",
+    tags: ["Account"],
+    summary: "Rotate the workspace API token",
+    operationId: "rotateWorkspaceApiToken",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      params: schemas.workspaceParamsSchema,
+    },
+    responses: {
+      200: {
+        description: "Workspace token rotated",
+        content: {
+          "application/json": {
+            schema: schemas.WorkspaceTokenResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Invalid workspace id",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Workspace does not belong to the current account",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      429: {
+        description: "Too many rotate attempts",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      503: {
+        description: "Workspace token secret is not configured",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+};

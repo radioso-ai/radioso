@@ -1868,6 +1868,7 @@ components:
               items:
                 type: string
                 format: uuid
+              maxItems: 200
           required:
             - mode
             - sourceIds
@@ -2288,15 +2289,15 @@ components:
             - string
             - "null"
           format: date-time
+        documentCount:
+          type: integer
+          minimum: 0
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-        documentCount:
-          type: integer
-          minimum: 0
       required:
         - id
         - kind
@@ -2304,9 +2305,9 @@ components:
         - externalId
         - lastSyncStatus
         - lastSyncedAt
+        - documentCount
         - createdAt
         - updatedAt
-        - documentCount
     DocumentSourceListResponse:
       type: object
       properties:

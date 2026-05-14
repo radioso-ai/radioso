@@ -10,7 +10,7 @@ import type {
   Citation,
   RetrievalInfo,
   RetrievalTrace,
-} from './api'
+} from './api-types'
 
 const parseSseEvent = (rawEvent: string) => {
   const normalized = rawEvent.replaceAll('\r', '')

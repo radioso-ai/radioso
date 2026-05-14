@@ -51,8 +51,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         mode: z.literal("all"),
       }),
       z.object({
-        mode: z.literal("sources"),
-        sourceIds: z.array(z.string().uuid()),
+        mode: z.literal("selected"),
+        sourceIds: z.array(z.string().uuid()).max(200),
       }),
     ]),
   );
@@ -105,8 +105,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
           mode: z.literal("all"),
         }),
         z.object({
-          mode: z.literal("sources"),
-          sourceIds: z.array(z.string().uuid()),
+          mode: z.literal("selected"),
+          sourceIds: z.array(z.string().uuid()).max(200),
         }),
       ]).optional(),
       greetingInstruction: z.string().max(200).optional(),

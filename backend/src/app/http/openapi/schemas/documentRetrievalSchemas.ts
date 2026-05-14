@@ -35,6 +35,8 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       kind: z.enum(["website", "api", "connector", "upload"]),
       name: z.string(),
       externalId: z.string().nullable(),
+      lastSyncStatus: z.string().nullable(),
+      lastSyncedAt: z.string().datetime().nullable(),
       documentCount: z.number().int().min(0),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),

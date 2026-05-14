@@ -2808,7 +2808,7 @@
               "mode": {
                 "type": "string",
                 "enum": [
-                  "sources"
+                  "selected"
                 ]
               },
               "sourceIds": {
@@ -2816,7 +2816,8 @@
                 "items": {
                   "type": "string",
                   "format": "uuid"
-                }
+                },
+                "maxItems": 200
               }
             },
             "required": [
@@ -3014,7 +3015,7 @@
                   "mode": {
                     "type": "string",
                     "enum": [
-                      "sources"
+                      "selected"
                     ]
                   },
                   "sourceIds": {
@@ -3022,7 +3023,8 @@
                     "items": {
                       "type": "string",
                       "format": "uuid"
-                    }
+                    },
+                    "maxItems": 200
                   }
                 },
                 "required": [
@@ -3432,6 +3434,19 @@
               "null"
             ]
           },
+          "lastSyncStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastSyncedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
           "documentCount": {
             "type": "integer",
             "minimum": 0
@@ -3450,6 +3465,8 @@
           "kind",
           "name",
           "externalId",
+          "lastSyncStatus",
+          "lastSyncedAt",
           "documentCount",
           "createdAt",
           "updatedAt"

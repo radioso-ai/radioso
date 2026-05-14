@@ -1862,12 +1862,13 @@ components:
             mode:
               type: string
               enum:
-                - sources
+                - selected
             sourceIds:
               type: array
               items:
                 type: string
                 format: uuid
+              maxItems: 200
           required:
             - mode
             - sourceIds
@@ -2000,12 +2001,13 @@ components:
                 mode:
                   type: string
                   enum:
-                    - sources
+                    - selected
                 sourceIds:
                   type: array
                   items:
                     type: string
                     format: uuid
+                  maxItems: 200
               required:
                 - mode
                 - sourceIds
@@ -2278,6 +2280,15 @@ components:
           type:
             - string
             - "null"
+        lastSyncStatus:
+          type:
+            - string
+            - "null"
+        lastSyncedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
         documentCount:
           type: integer
           minimum: 0
@@ -2292,6 +2303,8 @@ components:
         - kind
         - name
         - externalId
+        - lastSyncStatus
+        - lastSyncedAt
         - documentCount
         - createdAt
         - updatedAt

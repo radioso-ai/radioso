@@ -2,6 +2,9 @@ import { defineConfig, devices } from "@playwright/test";
 
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 3210);
 const baseURL = `http://127.0.0.1:${port}`;
+const webServerCommand = process.env.CI
+  ? `pnpm exec next start --port ${port}`
+  : `pnpm exec next dev --webpack --port ${port}`;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -13,7 +16,7 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: `pnpm exec next dev --webpack --port ${port}`,
+    command: webServerCommand,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

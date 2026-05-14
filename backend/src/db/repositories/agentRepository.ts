@@ -69,6 +69,27 @@ const readStringArray = (record: Record<string, unknown>, key: string): string[]
     ? (record[key] as unknown[]).filter((item): item is string => typeof item === "string")
     : undefined;
 
+const parseSurfaceExtensions = (
+  extensions: Record<string, unknown>,
+  registry?: AgentSurfaceExtensionRegistry,
+): Record<string, unknown> => {
+  const parsed: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extensions)) {
+    const extension = registry?.get(key);
+    if (!extension) {
+      parsed[key] = value;
+      continue;
+    }
+
+    try {
+      parsed[key] = extension.parse(value);
+    } catch {
+      parsed[key] = extension.defaults();
+    }
+  }
+  return parsed;
+};
+
 const toBehaviorSettings = (agent: NormalizedAgentInput): Record<string, unknown> => ({
   customInstruction: agent.customInstruction,
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
@@ -103,14 +124,18 @@ const toOutputModes = (agent: NormalizedAgentInput): Record<string, unknown> => 
   extensions: agent.surfaceSettings.extensions,
 });
 
-const mapAgent = (row: AgentRow): AgentRecord => {
+const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegistry): AgentRecord => {
   const behavior = asRecord(row.behavior_settings);
   const greeting = asRecord(row.greeting_settings);
   const outputModes = asRecord(row.output_modes);
   const authenticatedChat = asRecord(outputModes.authenticatedChat);
   const anonymousChat = asRecord(outputModes.anonymousChat);
   const websiteEmbed = asRecord(outputModes.websiteEmbed);
-  const extensions = asRecord(outputModes.extensions);
+  const extensions = parseSurfaceExtensions(asRecord(outputModes.extensions), surfaceExtensions);
+  const extensionWebsiteEmbed = asRecord(extensions.websiteEmbed);
+  const websiteEmbedSource = Object.keys(extensionWebsiteEmbed).length > 0
+    ? extensionWebsiteEmbed
+    : websiteEmbed;
 
   const normalized = validateAgentInput({
     name: row.name,
@@ -120,8 +145,8 @@ const mapAgent = (row: AgentRow): AgentRecord => {
     sourceScope: row.source_scope_mode === "selected"
       ? { mode: "selected", sourceIds: row.source_ids ?? [] }
       : { mode: "all" },
-    logo: (behavior.logo ?? websiteEmbed.logo) as AgentLogo | null | undefined,
-    theme: (behavior.theme ?? websiteEmbed.theme) as AgentEmbedTheme | undefined,
+    logo: (behavior.logo ?? websiteEmbedSource.logo) as AgentLogo | null | undefined,
+    theme: (behavior.theme ?? websiteEmbedSource.theme) as AgentEmbedTheme | undefined,
     greetingInstruction: readString(greeting, "greetingInstruction"),
     assistantDefaultLocale: readString(greeting, "assistantDefaultLocale") ?? null,
     proactiveGreetingEnabled: readBoolean(greeting, "proactiveGreetingEnabled"),
@@ -134,14 +159,14 @@ const mapAgent = (row: AgentRow): AgentRecord => {
         token: readString(anonymousChat, "token") ?? null,
       },
       websiteEmbed: {
-        enabled: readBoolean(websiteEmbed, "enabled"),
-        token: readString(websiteEmbed, "token") ?? null,
-        allowedOrigins: readStringArray(websiteEmbed, "allowedOrigins"),
-        launcherLabel: readString(websiteEmbed, "launcherLabel"),
-        launcherPosition: readString(websiteEmbed, "launcherPosition") as AgentSurfacePosition | undefined,
-        theme: websiteEmbed.theme as AgentEmbedTheme | undefined,
-        copy: websiteEmbed.copy as AgentEmbedCopyPacks | undefined,
-        expertOverrides: websiteEmbed.expertOverrides as AgentEmbedExpertOverrides | undefined,
+        enabled: readBoolean(websiteEmbedSource, "enabled"),
+        token: readString(websiteEmbedSource, "token") ?? null,
+        allowedOrigins: readStringArray(websiteEmbedSource, "allowedOrigins"),
+        launcherLabel: readString(websiteEmbedSource, "launcherLabel"),
+        launcherPosition: readString(websiteEmbedSource, "launcherPosition") as AgentSurfacePosition | undefined,
+        theme: websiteEmbedSource.theme as AgentEmbedTheme | undefined,
+        copy: websiteEmbedSource.copy as AgentEmbedCopyPacks | undefined,
+        expertOverrides: websiteEmbedSource.expertOverrides as AgentEmbedExpertOverrides | undefined,
       },
       extensions,
     },
@@ -210,7 +235,7 @@ export class AgentRepository implements AgentRepositoryPort {
       return mapAgent({
         ...row,
         source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
-      });
+      }, this.surfaceExtensions);
     });
   }
 
@@ -219,7 +244,7 @@ export class AgentRepository implements AgentRepositoryPort {
       `SELECT ${agentColumns} FROM agents WHERE id = $1`,
       [agentId],
     );
-    return row ? mapAgent(row) : null;
+    return row ? mapAgent(row, this.surfaceExtensions) : null;
   }
 
   async findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<AgentRecord | null> {
@@ -227,7 +252,7 @@ export class AgentRepository implements AgentRepositoryPort {
       `SELECT ${agentColumns} FROM agents WHERE id = $1 AND workspace_id = $2`,
       [agentId, workspaceId],
     );
-    return row ? mapAgent(row) : null;
+    return row ? mapAgent(row, this.surfaceExtensions) : null;
   }
 
   async findDefaultByWorkspaceId(workspaceId: string): Promise<AgentRecord | null> {
@@ -238,7 +263,7 @@ export class AgentRepository implements AgentRepositoryPort {
          AND workspace_id = $1`,
       [workspaceId],
     );
-    return row ? mapAgent(row) : null;
+    return row ? mapAgent(row, this.surfaceExtensions) : null;
   }
 
   async findByAnonymousChatToken(token: string): Promise<AgentRecord | null> {
@@ -248,7 +273,7 @@ export class AgentRepository implements AgentRepositoryPort {
        WHERE output_modes #>> '{anonymousChat,token}' = $1`,
       [token],
     );
-    return row ? mapAgent(row) : null;
+    return row ? mapAgent(row, this.surfaceExtensions) : null;
   }
 
   async findByWebsiteEmbedToken(token: string): Promise<AgentRecord | null> {
@@ -258,7 +283,7 @@ export class AgentRepository implements AgentRepositoryPort {
        WHERE output_modes #>> '{websiteEmbed,token}' = $1`,
       [token],
     );
-    return row ? mapAgent(row) : null;
+    return row ? mapAgent(row, this.surfaceExtensions) : null;
   }
 
   async listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]> {
@@ -269,7 +294,7 @@ export class AgentRepository implements AgentRepositoryPort {
        ORDER BY created_at ASC, id ASC`,
       [workspaceId],
     );
-    return rows.map(mapAgent);
+    return rows.map((row) => mapAgent(row, this.surfaceExtensions));
   }
 
   async update(agentId: string, workspaceId: string, input: AgentInput): Promise<AgentRecord> {
@@ -317,7 +342,7 @@ export class AgentRepository implements AgentRepositoryPort {
       return mapAgent({
         ...row,
         source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
-      });
+      }, this.surfaceExtensions);
     });
   }
 

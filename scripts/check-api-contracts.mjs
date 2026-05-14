@@ -28,8 +28,8 @@ const expectSame = (actualPath, expectedPath, label) => {
 
 const generateTypes = ({ cwd, source, output }) => {
   const result = spawnSync(
-    "npx",
-    ["--no-install", "openapi-typescript", source, "-o", output],
+    "pnpm",
+    ["--dir", path.join(repoRoot, "backend"), "exec", "openapi-typescript", source, "-o", output],
     {
       cwd,
       encoding: "utf8",

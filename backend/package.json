@@ -73,6 +73,7 @@
     "@types/pg": "^8.15.5",
     "@types/supertest": "^6.0.3",
     "dependency-cruiser": "^17.4.0",
+    "openapi-typescript": "^7.13.0",
     "supertest": "^7.1.4",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",

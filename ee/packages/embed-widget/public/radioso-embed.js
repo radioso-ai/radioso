@@ -9,6 +9,11 @@
   const SESSION_MESSAGE = 'radioso:embed:session'
   const ERROR_MESSAGE = 'radioso:embed:error'
   const COLLAPSE_MESSAGE = 'radioso:embed:collapse'
+  const TYPING_MESSAGE = 'radioso:embed:typing'
+  const STYLE_ELEMENT_ID = 'radioso-embed-style'
+  const ATTENTION_PRESETS = new Set(['none', 'breathe', 'pulse', 'nudge', 'bounce-in'])
+  const DEFAULT_TEASER_DELAY_MS = 4000
+  const TEASER_AUTO_HIDE_MS = 25000
   const PANEL_HANDLE_WIDTH = 56
   const DESKTOP_PANEL_CONTENT_WIDTH = 560
   const NARROW_VIEWPORT_MAX_WIDTH = 640
@@ -16,6 +21,7 @@
   const defaultCopy = {
     launcherDefaultLabel: 'Chat with us',
     iframeTitle: 'Radioso embedded chat',
+    proactiveGreetingTeaser: 'Hi! How can I help?',
   }
 
   const defaultTheme = {
@@ -78,6 +84,7 @@
   const copyOverrideKeys = [
     'launcherDefaultLabel',
     'embeddedChatTitle',
+    'proactiveGreetingTeaser',
     'embeddedChatUnavailableTitle',
     'embeddedChatUnavailableMessage',
     'embeddedChatLauncherRequiredMessage',
@@ -125,6 +132,90 @@
     message: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 4.5A2.5 2.5 0 0 1 6.5 2h11A2.5 2.5 0 0 1 20 4.5v9A2.5 2.5 0 0 1 17.5 16H9l-5 4v-4.1A2.5 2.5 0 0 1 4 13.5z"/></svg>',
   }
 
+  // Session-scoped so visitors get a fresh attention nudge / greeting teaser on
+  // every new tab session — friendlier for testing and matches the way most
+  // chat widgets behave. Closing the tab clears the flags; reloads keep them.
+  const safeStorage = {
+    get(key) {
+      try {
+        return window.sessionStorage.getItem(key)
+      } catch {
+        return null
+      }
+    },
+    set(key, value) {
+      try {
+        window.sessionStorage.setItem(key, value)
+      } catch {
+        /* storage may be blocked (privacy mode, sandboxed iframe) — fail silently */
+      }
+    },
+  }
+
+  const prefersReducedMotion = () => {
+    try {
+      return Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+    } catch {
+      return false
+    }
+  }
+
+  const normalizeAttention = (value) => {
+    if (typeof value !== 'string') {
+      return 'none'
+    }
+    const normalized = value.trim().toLowerCase()
+    return ATTENTION_PRESETS.has(normalized) ? normalized : 'none'
+  }
+
+  const parsePositiveInt = (value, fallback) => {
+    if (typeof value !== 'string') {
+      return fallback
+    }
+    const parsed = parseInt(value.trim(), 10)
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
+  }
+
+  const ensureStylesInjected = () => {
+    if (document.getElementById(STYLE_ELEMENT_ID)) {
+      return
+    }
+    const style = document.createElement('style')
+    style.id = STYLE_ELEMENT_ID
+    style.textContent = [
+      '@keyframes radioso-breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04); } }',
+      '@keyframes radioso-nudge { 0%,90%,100% { transform: rotate(0deg); } 92% { transform: rotate(-6deg); } 94% { transform: rotate(5deg); } 96% { transform: rotate(-4deg); } 98% { transform: rotate(2deg); } }',
+      '@keyframes radioso-pulse-ring { 0% { transform: scale(0.85); opacity: 0.6; } 100% { transform: scale(1.6); opacity: 0; } }',
+      '@keyframes radioso-bounce-in { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }',
+      '@keyframes radioso-typing-ring { 0% { box-shadow: 0 0 0 0 var(--radioso-accent, rgba(15,23,42,0.55)); } 70% { box-shadow: 0 0 0 8px rgba(15,23,42,0); } 100% { box-shadow: 0 0 0 0 rgba(15,23,42,0); } }',
+      '@keyframes radioso-teaser-in { 0% { transform: translateY(8px) scale(0.96); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }',
+      '.radioso-launcher { position: relative; }',
+      // !important needed because the launcher button uses inline `all: unset`,
+      // which sets `animation: none` inline. Stylesheet rules normally lose to
+      // inline styles unless they declare !important. (The `pulse` variant
+      // below animates a ::before pseudo-element, which isn\'t affected by the
+      // button\'s inline styles, so it doesn\'t need !important.)
+      '.radioso-launcher[data-radioso-attention="breathe"] { animation: radioso-breathe 3.4s ease-in-out infinite !important; }',
+      '.radioso-launcher[data-radioso-attention="nudge"] { animation: radioso-nudge 8s ease-in-out infinite !important; transform-origin: 50% 80%; }',
+      '.radioso-launcher[data-radioso-attention="bounce-in"] { animation: radioso-bounce-in 700ms cubic-bezier(0.34, 1.56, 0.64, 1) 1 !important; }',
+      '.radioso-launcher[data-radioso-attention="pulse"]::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--radioso-pulse-color, rgba(15,23,42,0.45)); z-index: -1; animation: radioso-pulse-ring 2.2s ease-out infinite; pointer-events: none; }',
+      '.radioso-launcher[data-radioso-typing="true"] .radioso-launcher-avatar { animation: radioso-typing-ring 1.4s ease-out infinite; }',
+      '.radioso-launcher-dot { position: absolute; top: 4px; right: 6px; width: 10px; height: 10px; border-radius: 9999px; background: var(--radioso-dot-color, #ef4444); border: 2px solid var(--radioso-dot-border, #ffffff); opacity: 0; transform: scale(0.6); transition: opacity 180ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1); pointer-events: none; }',
+      '.radioso-launcher-dot[data-visible="true"] { opacity: 1; transform: scale(1); }',
+      '.radioso-teaser { position: relative; max-width: 280px; padding: 12px 14px; border-radius: 16px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.4; cursor: pointer; pointer-events: auto; opacity: 0; transform: translateY(8px) scale(0.96); transform-origin: bottom right; animation: radioso-teaser-in 280ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }',
+      '.radioso-teaser[data-position="bottom-left"] { transform-origin: bottom left; }',
+      '.radioso-teaser-close { position: absolute; top: 4px; right: 6px; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 9999px; background: transparent; color: inherit; opacity: 0.55; cursor: pointer; font: inherit; font-size: 14px; line-height: 1; padding: 0; }',
+      '.radioso-teaser-close:hover { opacity: 1; }',
+      '@media (prefers-reduced-motion: reduce) {',
+      '  .radioso-launcher[data-radioso-attention] { animation: none !important; }',
+      '  .radioso-launcher[data-radioso-attention="pulse"]::before { animation: none !important; opacity: 0 !important; }',
+      '  .radioso-launcher[data-radioso-typing="true"] .radioso-launcher-avatar { animation: none !important; }',
+      '  .radioso-teaser { animation: none !important; opacity: 1; transform: none; }',
+      '}',
+    ].join('\n')
+    document.head.appendChild(style)
+  }
+
   const getScriptElement = () => {
     const current = document.currentScript
     if (current && current.tagName === 'SCRIPT') {
@@ -163,11 +254,7 @@
   const normalizeLocale = (value) =>
     typeof value === 'string' ? value.trim().toLowerCase().replace('_', '-') : ''
 
-  const resolveLocaleCopy = (copyPacks) => {
-    if (!copyPacks || typeof copyPacks !== 'object') {
-      return {}
-    }
-
+  const getVisitorLanguageList = () => {
     const languages = []
     if (Array.isArray(window.navigator?.languages)) {
       languages.push(...window.navigator.languages)
@@ -176,7 +263,10 @@
       languages.push(window.navigator.language)
     }
     languages.push('default', 'en')
+    return languages
+  }
 
+  const pickLocalePack = (copyPacks, languages) => {
     for (const language of languages) {
       const normalized = normalizeLocale(language)
       const base = normalized.split('-')[0]
@@ -184,11 +274,18 @@
       const fallback = base ? copyPacks[base] : null
       const resolved = exact || fallback
       if (resolved && typeof resolved === 'object') {
-        return sanitizeOverrides(resolved, copyOverrideKeys, 280)
+        return resolved
       }
     }
+    return null
+  }
 
-    return {}
+  const resolveLocaleCopy = (copyPacks) => {
+    if (!copyPacks || typeof copyPacks !== 'object') {
+      return {}
+    }
+    const resolved = pickLocalePack(copyPacks, getVisitorLanguageList())
+    return resolved ? sanitizeOverrides(resolved, copyOverrideKeys, 280) : {}
   }
 
   const fetchEmbedConfig = async (scriptUrl, token) => {
@@ -321,6 +418,7 @@
   const styleLauncherAvatarContainer = (container, theme) => {
     container.setAttribute('aria-hidden', 'true')
     container.dataset.radiosoLauncherAvatar = 'true'
+    container.className = 'radioso-launcher-avatar'
     container.style.display = 'inline-flex'
     container.style.alignItems = 'center'
     container.style.justifyContent = 'center'
@@ -407,6 +505,7 @@
   const createPanelHandle = (label, icon, avatarUrl, theme, position) => {
     const button = document.createElement('button')
     button.type = 'button'
+    button.className = 'radioso-launcher'
     const accessibleLabel = label || defaultCopy.launcherDefaultLabel
     button.setAttribute('aria-label', accessibleLabel)
     button.setAttribute('title', accessibleLabel)
@@ -415,7 +514,12 @@
     styleLauncherAvatarContainer(iconContainer, theme)
     setLauncherAvatarMarkup(iconContainer, icon, avatarUrl)
 
+    const dot = document.createElement('span')
+    dot.className = 'radioso-launcher-dot'
+    dot.setAttribute('aria-hidden', 'true')
+
     button.appendChild(iconContainer)
+    button.appendChild(dot)
     button.style.all = 'unset'
     button.style.boxSizing = 'border-box'
     button.style.position = 'absolute'
@@ -495,6 +599,7 @@
   const createButton = (label, icon, avatarUrl, theme) => {
     const button = document.createElement('button')
     button.type = 'button'
+    button.className = 'radioso-launcher'
     button.setAttribute('aria-label', label || defaultCopy.launcherDefaultLabel)
 
     const iconContainer = document.createElement('span')
@@ -507,7 +612,14 @@
       labelNode.textContent = label
       button.appendChild(labelNode)
     }
+
+    const dot = document.createElement('span')
+    dot.className = 'radioso-launcher-dot'
+    dot.setAttribute('aria-hidden', 'true')
+    button.appendChild(dot)
+
     button.style.all = 'unset'
+    button.style.position = 'relative'
     button.style.boxSizing = 'border-box'
     button.style.display = 'inline-flex'
     button.style.alignItems = 'center'
@@ -522,17 +634,43 @@
     button.style.fontSize = '14px'
     button.style.fontWeight = '600'
     button.style.lineHeight = '1'
-    button.style.boxShadow = theme.launcherShadow
-    button.style.transition = 'transform 140ms ease, opacity 140ms ease'
+    button.style.boxShadow = `${theme.launcherShadow}, inset 0 1px 0 rgba(255, 255, 255, 0.18)`
+    button.style.transition = 'box-shadow 200ms ease, opacity 140ms ease'
     button.style.userSelect = 'none'
     button.style.pointerEvents = 'auto'
     button.addEventListener('mouseenter', () => {
-      button.style.transform = 'translateY(-1px)'
+      button.style.boxShadow = `0 22px 48px rgba(15, 23, 42, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.22)`
     })
     button.addEventListener('mouseleave', () => {
-      button.style.transform = 'translateY(0)'
+      button.style.boxShadow = `${theme.launcherShadow}, inset 0 1px 0 rgba(255, 255, 255, 0.18)`
     })
     return button
+  }
+
+  const createTeaser = (text, theme, position) => {
+    const teaser = document.createElement('div')
+    teaser.className = 'radioso-teaser'
+    teaser.setAttribute('role', 'button')
+    teaser.setAttribute('tabindex', '0')
+    teaser.dataset.position = position === 'bottom-left' ? 'bottom-left' : 'bottom-right'
+    teaser.style.background = theme.assistantBubbleBackground
+    teaser.style.color = theme.assistantBubbleForeground
+    teaser.style.border = `1px solid ${theme.panelBorder}`
+    teaser.style.boxShadow = theme.panelShadow
+
+    const body = document.createElement('span')
+    body.textContent = text
+    body.style.display = 'block'
+    body.style.paddingRight = '14px'
+    teaser.appendChild(body)
+
+    const close = document.createElement('button')
+    close.type = 'button'
+    close.className = 'radioso-teaser-close'
+    close.setAttribute('aria-label', 'Dismiss')
+    close.textContent = '×'
+    teaser.appendChild(close)
+    return { teaser, close }
   }
 
   const init = async () => {
@@ -549,7 +687,17 @@
 
     const scriptUrl = getScriptUrl(script)
     const config = await fetchEmbedConfig(scriptUrl, token)
-    const expertOverrides = config && typeof config.expertOverrides === 'object' ? config.expertOverrides : {}
+    const scriptOverrideJson = parseJsonOverrides(script.dataset.radiosoExpertOverrides)
+    const scriptOverrides =
+      scriptOverrideJson && typeof scriptOverrideJson === 'object' && !Array.isArray(scriptOverrideJson)
+        ? scriptOverrideJson
+        : {}
+    const configOverrides = config && typeof config.expertOverrides === 'object' ? config.expertOverrides : {}
+    const expertOverrides = { ...configOverrides, ...scriptOverrides }
+    // The server's `/embed-config` endpoint already merges a built-in locale
+    // pack (matched against this visitor's Accept-Language) into `config.copy`
+    // under the `default` key, so `resolveLocaleCopy` picks it up via its
+    // existing fallback chain. Operator's per-locale packs still win.
     const copyOverrides = {
       ...resolveLocaleCopy(config.copy),
       ...sanitizeOverrides(expertOverrides, copyOverrideKeys, 280),
@@ -568,6 +716,26 @@
     const pageContextMode = normalizePageContextMode(expertOverrides.pageContext)
     const pageContext = collectPageContext(pageContextMode)
     const avatarUrl = resolveAvatarUrl(config.assistantLogoUrl, scriptUrl) || new URL('/radioso-icon.svg', scriptUrl).toString()
+
+    const proactiveGreetingAttr =
+      typeof script.dataset.radiosoProactiveGreeting === 'string'
+        ? script.dataset.radiosoProactiveGreeting.trim().toLowerCase()
+        : null
+    const proactiveGreetingEnabled =
+      proactiveGreetingAttr === 'true'
+        ? true
+        : proactiveGreetingAttr === 'false'
+          ? false
+          : Boolean(config && config.proactiveGreetingEnabled)
+    const attentionPreset = normalizeAttention(expertOverrides.launcherAttention)
+    const teaserDelayMs = parsePositiveInt(expertOverrides.launcherTeaserDelayMs, DEFAULT_TEASER_DELAY_MS)
+    const teaserText = (copyOverrides.proactiveGreetingTeaser || defaultCopy.proactiveGreetingTeaser).trim()
+    const reducedMotion = prefersReducedMotion()
+    const openedStorageKey = `radioso:embed:opened:${token}`
+    const teaserStorageKey = `radioso:embed:teaserDismissed:${token}`
+    const hasBeenOpened = safeStorage.get(openedStorageKey) === '1'
+    const teaserPreviouslyDismissed = safeStorage.get(teaserStorageKey) === '1'
+    ensureStylesInjected()
 
     const host = document.createElement('div')
     host.style.position = 'fixed'
@@ -616,6 +784,44 @@
       shell.style.transition = 'transform 220ms ease'
       shell.style.willChange = 'transform'
       shell.style.pointerEvents = 'none'
+    }
+
+    button.style.setProperty('--radioso-accent', theme.accent)
+    button.style.setProperty('--radioso-pulse-color', theme.accent)
+    button.style.setProperty('--radioso-dot-color', '#ef4444')
+    button.style.setProperty('--radioso-dot-border', theme.launcherBackground)
+
+    // Panel-handle launchers have an absolute-position transform; keyframe-based
+    // attention animations would override that and break vertical centering, so
+    // only apply them to bubble-mode launchers.
+    const attentionEnabled =
+      attentionPreset !== 'none' && !reducedMotion && !hasBeenOpened && displayMode !== 'panel'
+    if (attentionEnabled) {
+      button.dataset.radiosoAttention = attentionPreset
+    }
+    if (displayMode !== 'panel') {
+      panel.style.transformOrigin = position === 'bottom-left' ? '0% 100%' : '100% 100%'
+      panel.style.transition = reducedMotion
+        ? 'none'
+        : 'opacity 200ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1)'
+      panel.style.willChange = 'opacity, transform'
+    }
+
+    const dotEl = button.querySelector('.radioso-launcher-dot')
+    let teaser = null
+    let teaserCloseBtn = null
+    let teaserTimer = null
+    let teaserScrollHandler = null
+
+    const showLauncherDot = (visible) => {
+      if (!dotEl) {
+        return
+      }
+      if (visible) {
+        dotEl.dataset.visible = 'true'
+      } else {
+        delete dotEl.dataset.visible
+      }
     }
 
     let isOpen = initialState === 'open'
@@ -801,6 +1007,41 @@
       }
     }
 
+    let panelHideTimer = null
+    const animateBubblePanel = (visible) => {
+      if (panelHideTimer) {
+        clearTimeout(panelHideTimer)
+        panelHideTimer = null
+      }
+      if (visible) {
+        panel.style.display = 'block'
+        if (reducedMotion) {
+          panel.style.opacity = '1'
+          panel.style.transform = 'none'
+          return
+        }
+        panel.style.opacity = '0'
+        panel.style.transform = 'scale(0.92) translateY(8px)'
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            panel.style.opacity = '1'
+            panel.style.transform = 'none'
+          })
+        })
+        return
+      }
+
+      if (reducedMotion) {
+        panel.style.display = 'none'
+        return
+      }
+      panel.style.opacity = '0'
+      panel.style.transform = 'scale(0.92) translateY(8px)'
+      panelHideTimer = setTimeout(() => {
+        panel.style.display = 'none'
+      }, 240)
+    }
+
     const updatePanelVisibility = () => {
       applyResponsiveLayout()
       if (displayMode === 'panel' && shell) {
@@ -816,7 +1057,7 @@
         button.style.pointerEvents = isOpen ? 'none' : 'auto'
         panel.style.pointerEvents = isOpen ? 'auto' : 'none'
       } else {
-        panel.style.display = isOpen ? 'block' : 'none'
+        animateBubblePanel(isOpen || isFullscreenOpen)
         button.style.display = isFullscreenOpen ? 'none' : 'inline-flex'
         button.style.opacity = isOpen ? '0.94' : '1'
         button.style.pointerEvents = isFullscreenOpen ? 'none' : 'auto'
@@ -825,16 +1066,88 @@
       button.setAttribute('aria-expanded', isOpen ? 'true' : 'false')
     }
 
+    const dismissTeaser = (persist) => {
+      if (teaserTimer) {
+        clearTimeout(teaserTimer)
+        teaserTimer = null
+      }
+      if (teaserScrollHandler) {
+        window.removeEventListener('scroll', teaserScrollHandler, { passive: true })
+        teaserScrollHandler = null
+      }
+      if (teaser && teaser.parentNode) {
+        teaser.parentNode.removeChild(teaser)
+      }
+      teaser = null
+      teaserCloseBtn = null
+      showLauncherDot(false)
+      if (persist) {
+        safeStorage.set(teaserStorageKey, '1')
+      }
+    }
+
+    const stopAttention = () => {
+      if (button.dataset.radiosoAttention) {
+        delete button.dataset.radiosoAttention
+      }
+    }
+
+    const markOpened = () => {
+      safeStorage.set(openedStorageKey, '1')
+      stopAttention()
+      dismissTeaser(true)
+    }
+
+    const showTeaser = () => {
+      if (teaser || isOpen || isFullscreenOpen || !teaserText) {
+        return
+      }
+      const created = createTeaser(teaserText, theme, position)
+      teaser = created.teaser
+      teaserCloseBtn = created.close
+      teaser.addEventListener('click', (event) => {
+        if (event.target === teaserCloseBtn) {
+          return
+        }
+        isOpen = true
+        ensureIframe()
+        markOpened()
+        updatePanelVisibility()
+      })
+      teaserCloseBtn.addEventListener('click', (event) => {
+        event.stopPropagation()
+        dismissTeaser(true)
+      })
+      if (displayMode === 'panel' && shell) {
+        teaser.style.position = 'fixed'
+        teaser.style.bottom = '24px'
+        if (position === 'bottom-left') {
+          teaser.style.left = `${PANEL_HANDLE_WIDTH + 16}px`
+        } else {
+          teaser.style.right = `${PANEL_HANDLE_WIDTH + 16}px`
+        }
+        document.body.appendChild(teaser)
+      } else {
+        host.insertBefore(teaser, button)
+      }
+      showLauncherDot(true)
+      teaserScrollHandler = () => dismissTeaser(true)
+      window.addEventListener('scroll', teaserScrollHandler, { passive: true })
+      teaserTimer = setTimeout(() => dismissTeaser(false), TEASER_AUTO_HIDE_MS)
+    }
+
     button.addEventListener('click', () => {
       isOpen = !isOpen
       if (isOpen) {
         ensureIframe()
+        markOpened()
       }
       updatePanelVisibility()
     })
 
     if (isOpen) {
       ensureIframe()
+      markOpened()
     }
 
     if (shell) {
@@ -846,11 +1159,31 @@
       host.appendChild(button)
     }
     window.addEventListener('message', handleIframeMessage)
+    window.addEventListener('message', (event) => {
+      if (!event.data || typeof event.data !== 'object' || event.data.type !== TYPING_MESSAGE) {
+        return
+      }
+      if (event.data.active) {
+        button.dataset.radiosoTyping = 'true'
+        if (!isOpen) {
+          showLauncherDot(true)
+        }
+      } else {
+        delete button.dataset.radiosoTyping
+        if (!teaser) {
+          showLauncherDot(false)
+        }
+      }
+    })
     window.addEventListener('resize', updatePanelVisibility)
     window.visualViewport?.addEventListener('resize', updatePanelVisibility)
     window.visualViewport?.addEventListener('scroll', updatePanelVisibility)
     updatePanelVisibility()
     document.body.appendChild(host)
+
+    if (proactiveGreetingEnabled && !teaserPreviouslyDismissed && !hasBeenOpened && !isOpen && teaserText) {
+      teaserTimer = setTimeout(showTeaser, teaserDelayMs)
+    }
   }
 
   if (document.readyState === 'loading') {

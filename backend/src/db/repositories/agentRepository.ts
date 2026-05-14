@@ -10,6 +10,7 @@ import {
   type AgentEmbedExpertOverrides,
   type AgentLogo,
   type AgentEmbedTheme,
+  type AgentSurfaceExtensionRegistry,
   type AgentSurfacePosition,
   type NormalizedAgentInput,
 } from "../../modules/agents/public.js";
@@ -99,6 +100,7 @@ const toOutputModes = (agent: NormalizedAgentInput): Record<string, unknown> => 
     copy: agent.surfaceSettings.websiteEmbed.copy,
     expertOverrides: agent.surfaceSettings.websiteEmbed.expertOverrides,
   },
+  extensions: agent.surfaceSettings.extensions,
 });
 
 const mapAgent = (row: AgentRow): AgentRecord => {
@@ -108,6 +110,7 @@ const mapAgent = (row: AgentRow): AgentRecord => {
   const authenticatedChat = asRecord(outputModes.authenticatedChat);
   const anonymousChat = asRecord(outputModes.anonymousChat);
   const websiteEmbed = asRecord(outputModes.websiteEmbed);
+  const extensions = asRecord(outputModes.extensions);
 
   const normalized = validateAgentInput({
     name: row.name,
@@ -140,6 +143,7 @@ const mapAgent = (row: AgentRow): AgentRecord => {
         copy: websiteEmbed.copy as AgentEmbedCopyPacks | undefined,
         expertOverrides: websiteEmbed.expertOverrides as AgentEmbedExpertOverrides | undefined,
       },
+      extensions,
     },
   });
 
@@ -165,10 +169,13 @@ export interface AgentRepositoryPort {
 }
 
 export class AgentRepository implements AgentRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(
+    private readonly database: Database,
+    private readonly surfaceExtensions?: AgentSurfaceExtensionRegistry,
+  ) {}
 
   async create(workspaceId: string, input: AgentInput): Promise<AgentRecord> {
-    const normalized = validateAgentInput(input);
+    const normalized = validateAgentInput(input, { extensions: this.surfaceExtensions });
     return this.database.withTransaction(async (client) => {
       const agentId = randomUUID();
       const result = await client.query<AgentRow>(
@@ -270,11 +277,14 @@ export class AgentRepository implements AgentRepositoryPort {
     if (!current) {
       throw new Error(`Agent ${agentId} not found`);
     }
-    const normalized = validateAgentInput({
-      ...current,
-      ...input,
-      surfaceSettings: mergeAgentSurfaceSettings(current.surfaceSettings, input.surfaceSettings),
-    });
+    const normalized = validateAgentInput(
+      {
+        ...current,
+        ...input,
+        surfaceSettings: mergeAgentSurfaceSettings(current.surfaceSettings, input.surfaceSettings),
+      },
+      { extensions: this.surfaceExtensions },
+    );
     return this.database.withTransaction(async (client) => {
       const result = await client.query<AgentRow>(
         `UPDATE agents

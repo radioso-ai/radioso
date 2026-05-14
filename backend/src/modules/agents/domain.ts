@@ -4,6 +4,17 @@ import {
   defaultWebsiteEmbedTheme,
   type WebsiteEmbedThemeSettings,
 } from "../settings/contracts/websiteEmbed.js";
+import type { AgentSurfaceExtensionRegistry } from "./surfaceExtensions.js";
+
+export interface ValidateAgentInputOptions {
+  /**
+   * When provided, entries in `surfaceSettings.extensions` are validated by
+   * the matching extension's `normalize()` method. Unknown keys pass through
+   * unchanged (legacy data won't crash). When omitted, all extension entries
+   * pass through opaquely — appropriate for trusted DB reads.
+   */
+  extensions?: AgentSurfaceExtensionRegistry;
+}
 
 export const agentSurfacePositions = ["bottom-right", "bottom-left"] as const;
 export type AgentSurfacePosition = (typeof agentSurfacePositions)[number];
@@ -66,10 +77,16 @@ export interface WebsiteEmbedSurfaceSettings extends PublicAgentSurfaceSettings 
   expertOverrides: AgentEmbedExpertOverrides;
 }
 
+/**
+ * `extensions` is the open-ended slot for surfaces contributed by plugins
+ * (see `surfaceExtensions.ts`). Keyed by the plugin's `key`. Stored opaquely
+ * at this layer; each plugin owns its own validation and shape.
+ */
 export interface ConversationAgentSurfaceSettings {
   authenticatedChat: AuthenticatedChatSurfaceSettings;
   anonymousChat: AnonymousChatSurfaceSettings;
   websiteEmbed: WebsiteEmbedSurfaceSettings;
+  extensions: Record<string, unknown>;
 }
 
 export interface Agent {
@@ -91,6 +108,7 @@ export type AgentSurfaceSettingsInput = {
   authenticatedChat?: Partial<AuthenticatedChatSurfaceSettings>;
   anonymousChat?: Partial<AnonymousChatSurfaceSettings>;
   websiteEmbed?: Partial<WebsiteEmbedSurfaceSettings>;
+  extensions?: Record<string, unknown>;
 };
 
 export type AgentInput = Partial<
@@ -280,6 +298,38 @@ const normalizeEmbedExpertOverrides = (value: unknown): AgentEmbedExpertOverride
     maxValueLength: 500,
   });
 
+const normalizeSurfaceExtensions = (
+  value: unknown,
+  registry?: AgentSurfaceExtensionRegistry,
+): Record<string, unknown> => {
+  if (value === undefined || value === null) {
+    return {};
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest("surfaceSettings.extensions must be an object");
+  }
+  const next: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (entry === undefined) continue;
+    const extension = registry?.get(key);
+    if (extension) {
+      try {
+        next[key] = extension.normalize(entry);
+      } catch (error) {
+        if (error instanceof Error) {
+          throw badRequest(error.message);
+        }
+        throw badRequest(`surfaceSettings.extensions.${key} is invalid`);
+      }
+    } else {
+      // No matching extension registered → pass through. Could be legacy data
+      // on read paths, or a write that we don't yet know how to validate.
+      next[key] = entry;
+    }
+  }
+  return next;
+};
+
 const normalizeAgentLogo = (value: unknown): AgentLogo | null => {
   if (value === undefined || value === null) {
     return null;
@@ -339,12 +389,36 @@ const normalizeSourceScope = (value: unknown): AgentSourceScope => {
   };
 };
 
-export const validateAgentInput = (input: AgentInput = {}): NormalizedAgentInput => {
+export const validateAgentInput = (
+  input: AgentInput = {},
+  options: ValidateAgentInputOptions = {},
+): NormalizedAgentInput => {
   const websiteEmbedEnabled = Boolean(input.surfaceSettings?.websiteEmbed?.enabled);
   const websiteEmbedAllowedOrigins = normalizeWebsiteEmbedAllowedOrigins(input.surfaceSettings?.websiteEmbed?.allowedOrigins);
   if (websiteEmbedEnabled && websiteEmbedAllowedOrigins.length === 0) {
     throw badRequest("At least one allowed origin is required when website embed is enabled");
   }
+
+  const websiteEmbed: WebsiteEmbedSurfaceSettings = {
+    enabled: websiteEmbedEnabled,
+    token: input.surfaceSettings?.websiteEmbed?.token ?? null,
+    allowedOrigins: websiteEmbedAllowedOrigins,
+    launcherLabel: normalizeText(input.surfaceSettings?.websiteEmbed?.launcherLabel ?? "Chat with us", "websiteEmbedLauncherLabel", 80),
+    launcherPosition: normalizeSurfacePosition(input.surfaceSettings?.websiteEmbed?.launcherPosition),
+    theme: normalizeEmbedTheme(input.surfaceSettings?.websiteEmbed?.theme ?? input.theme),
+    copy: normalizeEmbedCopy(input.surfaceSettings?.websiteEmbed?.copy),
+    expertOverrides: normalizeEmbedExpertOverrides(input.surfaceSettings?.websiteEmbed?.expertOverrides),
+  };
+
+  // Transitional auto-mirror: the new home for website-embed data is
+  // `surfaceSettings.extensions.websiteEmbed`, but the hardcoded
+  // `surfaceSettings.websiteEmbed` field still exists for the duration of the
+  // reader migration. Always overwrite the mirror from the freshly-normalized
+  // hardcoded value so partial patches (e.g. token rotation) keep both views
+  // in sync. After step 5 drops the hardcoded field, callers will write to
+  // `extensions.websiteEmbed` directly and this auto-mirror goes away.
+  const extensions = normalizeSurfaceExtensions(input.surfaceSettings?.extensions, options.extensions);
+  extensions.websiteEmbed = websiteEmbed;
 
   return {
     name: normalizeText(input.name ?? "Agent", "name", 200),
@@ -365,16 +439,8 @@ export const validateAgentInput = (input: AgentInput = {}): NormalizedAgentInput
         enabled: Boolean(input.surfaceSettings?.anonymousChat?.enabled),
         token: input.surfaceSettings?.anonymousChat?.token ?? null,
       },
-      websiteEmbed: {
-        enabled: websiteEmbedEnabled,
-        token: input.surfaceSettings?.websiteEmbed?.token ?? null,
-        allowedOrigins: websiteEmbedAllowedOrigins,
-        launcherLabel: normalizeText(input.surfaceSettings?.websiteEmbed?.launcherLabel ?? "Chat with us", "websiteEmbedLauncherLabel", 80),
-        launcherPosition: normalizeSurfacePosition(input.surfaceSettings?.websiteEmbed?.launcherPosition),
-        theme: normalizeEmbedTheme(input.surfaceSettings?.websiteEmbed?.theme ?? input.theme),
-        copy: normalizeEmbedCopy(input.surfaceSettings?.websiteEmbed?.copy),
-        expertOverrides: normalizeEmbedExpertOverrides(input.surfaceSettings?.websiteEmbed?.expertOverrides),
-      },
+      websiteEmbed,
+      extensions,
     },
   };
 };
@@ -395,7 +461,25 @@ export const mergeAgentSurfaceSettings = (
     ...current.websiteEmbed,
     ...patch?.websiteEmbed,
   },
+  // Per-extension replacement: patch value (when provided) wholly replaces the
+  // current value for that key. Extensions own their own deep-merge semantics.
+  extensions: {
+    ...current.extensions,
+    ...(patch?.extensions ?? {}),
+  },
 });
+
+/**
+ * Read the website-embed surface settings from the agent's extensions slot,
+ * falling back to the legacy hardcoded field for safety during the reader
+ * migration. After step 5 lands and the hardcoded field is removed, this
+ * helper falls back to defaults instead.
+ */
+export const getWebsiteEmbedSurfaceSettings = (
+  agent: Pick<ConversationAgent, "surfaceSettings">,
+): WebsiteEmbedSurfaceSettings =>
+  (agent.surfaceSettings.extensions?.websiteEmbed as WebsiteEmbedSurfaceSettings | undefined)
+    ?? agent.surfaceSettings.websiteEmbed;
 
 export const isAgentBootstrapActive = (agent: Pick<AgentRecord, "name" | "proactiveGreetingEnabled">): boolean =>
   agent.proactiveGreetingEnabled && agent.name.trim().length > 0;

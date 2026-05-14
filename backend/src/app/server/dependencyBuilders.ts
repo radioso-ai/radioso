@@ -2,6 +2,7 @@ import { AccountInvitationRepository } from "../../db/repositories/accountInvita
 import { AccountMembershipRepository } from "../../db/repositories/accountMembershipRepository.js";
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
+import type { AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { ChunkRepository } from "../../db/repositories/chunkRepository.js";
@@ -169,10 +170,13 @@ export const buildInfrastructure = (input: {
   };
 };
 
-export const buildRepositories = (database: Database) => ({
+export const buildRepositories = (
+  database: Database,
+  options: { agentSurfaceExtensions?: AgentSurfaceExtensionRegistry } = {},
+) => ({
   accountMembershipRepository: new AccountMembershipRepository(database),
   accountRepository: new AccountRepository(database),
-  agentRepository: new AgentRepository(database),
+  agentRepository: new AgentRepository(database, options.agentSurfaceExtensions),
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database),
   chunkRepository: new ChunkRepository(database),
   conversationRepository: new ConversationRepository(database),

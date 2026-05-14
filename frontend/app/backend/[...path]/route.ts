@@ -63,6 +63,14 @@ const buildResponseHeaders = (upstream: Response) => {
   return headers
 }
 
+const buildUpstreamBody = async (request: Request) => {
+  if (!request.body || request.method === 'GET' || request.method === 'HEAD') {
+    return undefined
+  }
+
+  return request.arrayBuffer()
+}
+
 const proxy = async (request: Request, context: ProxyContext) => {
   const { path } = await context.params
   const upstreamUrl = buildUpstreamUrl(request.url, path)
@@ -73,9 +81,9 @@ const proxy = async (request: Request, context: ProxyContext) => {
     redirect: 'manual',
   }
 
-  if (request.body && request.method !== 'GET' && request.method !== 'HEAD') {
-    init.body = request.body
-    init.duplex = 'half'
+  const body = await buildUpstreamBody(request)
+  if (body !== undefined) {
+    init.body = body
   }
 
   try {

@@ -4,5 +4,8 @@
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=24"
+  },
+  "scripts": {
+    "check:api-contracts": "pnpm --dir backend run generate:openapi && node scripts/check-api-contracts.mjs"
   }
 }

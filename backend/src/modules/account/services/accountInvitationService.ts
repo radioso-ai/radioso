@@ -9,7 +9,7 @@ import type {
   AccountInvitationRepositoryPort,
   AccountInvitationStatus,
 } from "../../../db/repositories/accountInvitationRepository.js";
-import { normalizeEmail, sha256 } from "../../auth/domain/authPrimitives.js";
+import { normalizeEmail, sha256 } from "../../auth/contracts/index.js";
 import { AccountAccessService } from "./accountAccessService.js";
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;

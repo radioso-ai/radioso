@@ -80,7 +80,7 @@ module.exports = {
         path: "^src/",
         pathNot: [
           "^src/modules/retrieval/",
-          "^src/app/server/(dependencies|types)\\.ts$",
+          "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
           "^src/app/composition/defaultComposition\\.ts$",
         ],
       },
@@ -130,7 +130,7 @@ module.exports = {
         path: "^src/",
         pathNot: [
           "^src/modules/documents/",
-          "^src/app/server/(dependencies|types)\\.ts$",
+          "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
           "^src/app/composition/defaultComposition\\.ts$",
         ],
       },
@@ -196,7 +196,7 @@ module.exports = {
         path: "^src/",
         pathNot: [
           "^src/modules/chat/",
-          "^src/app/server/(dependencies|types)\\.ts$",
+          "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
         ],
       },
       to: {
@@ -277,7 +277,7 @@ module.exports = {
         path: "^src/",
         pathNot: [
           "^src/modules/settings/",
-          "^src/app/server/(dependencies|types)\\.ts$",
+          "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
         ],
       },
       to: {
@@ -326,7 +326,7 @@ module.exports = {
         path: "^src/",
         pathNot: [
           "^src/modules/audit/",
-          "^src/app/server/(dependencies|types)\\.ts$",
+          "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
         ],
       },
       to: {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { ArrowLeft, Settings2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 import { DocumentsView } from '@/components/dashboard/documents-view'
@@ -8,7 +9,9 @@ import { DocumentSourcesView } from '@/components/dashboard/document-sources-vie
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { IngestionSettingsPanel } from '@/components/dashboard/settings/ingestion-settings-panel'
 import { RetrievalSettingsPanel } from '@/components/dashboard/settings/retrieval-settings-panel'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   buildDashboardHref,
   type DashboardRouteState,
@@ -16,12 +19,20 @@ import {
 } from '@/lib/dashboard-routes'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 
-const knowledgeTabSummaries: Record<KnowledgeTab, string> = {
+const dataTabSummaries: Record<'documents' | 'sources', string> = {
   documents: 'Manage the shared knowledge available in this workspace.',
   sources: 'Review the sources agents can use for scoped knowledge.',
+}
+
+const configTabSummaries: Record<'ingestion' | 'retrieval', string> = {
   ingestion: 'Control how documents are split before they become searchable.',
   retrieval: 'Control how this workspace finds evidence for grounded answers.',
 }
+
+type ConfigTab = 'ingestion' | 'retrieval'
+
+const isConfigTab = (tab: KnowledgeTab): tab is ConfigTab =>
+  tab === 'ingestion' || tab === 'retrieval'
 
 export function KnowledgeView({
   accountId,
@@ -46,6 +57,7 @@ export function KnowledgeView({
     state: 'idle' | 'saved' | 'saving' | 'error'
     message?: string | null
   }>({ state: 'idle' })
+
   const activeSaveState =
     activeTab === 'retrieval'
       ? retrievalSaveState
@@ -53,14 +65,18 @@ export function KnowledgeView({
         ? ingestionSaveState
         : { state: 'idle' as const }
 
-  const tabNavigation = (
-    <TabsList>
-      <TabsTrigger value="documents">Documents</TabsTrigger>
-      <TabsTrigger value="sources">Sources</TabsTrigger>
-      <TabsTrigger value="ingestion">Ingestion</TabsTrigger>
-      <TabsTrigger value="retrieval">Retrieval</TabsTrigger>
-    </TabsList>
-  )
+  const navigateToTab = (tab: KnowledgeTab) => {
+    router.push(
+      buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'knowledge',
+        knowledgeTab: tab,
+        documentId: undefined,
+        documentsPage: undefined,
+        anchor: undefined,
+      }),
+    )
+  }
 
   const saveStateAccessory = (
     <div className="text-sm">
@@ -94,68 +110,97 @@ export function KnowledgeView({
     element.scrollIntoView({ block: 'start', behavior: 'auto' })
   }, [accountId, routeState, router])
 
-  return (
-    <Tabs
-      value={activeTab}
-      onValueChange={(value) => {
-        router.push(buildDashboardHref(accountId, {
-          ...routeState,
-          section: 'knowledge',
-          knowledgeTab: value as KnowledgeTab,
-          documentId: undefined,
-          documentsPage: undefined,
-          anchor: undefined,
-        }))
-      }}
-      className="h-full min-h-0 gap-0"
-    >
-      <TabsContent value="documents" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-        <DocumentsView
-          routeState={routeState}
-          accountId={accountId}
-          selectedDocumentId={selectedDocumentId}
-          onSelectedDocumentChange={onSelectedDocumentChange}
-          onboarding={onboarding}
-          navigation={tabNavigation}
-        />
-      </TabsContent>
-
-      <TabsContent value="sources" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-        <DashboardPage
-          title="Knowledge Base"
-          description={knowledgeTabSummaries.sources}
-          titleAccessory={saveStateAccessory}
-          actions={tabNavigation}
+  if (isConfigTab(activeTab)) {
+    const configActions = (
+      <>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => navigateToTab('documents')}
+          className="gap-1.5"
         >
-          <DocumentSourcesView />
-        </DashboardPage>
-      </TabsContent>
-
-      <TabsContent value="ingestion" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-        <DashboardPage
-          title="Knowledge Base"
-          description={knowledgeTabSummaries.ingestion}
-          titleAccessory={saveStateAccessory}
-          actions={tabNavigation}
-          contentClassName="flex flex-col overflow-hidden p-0"
-          contentScroll={false}
+          <ArrowLeft className="size-4" />
+          Back to knowledge
+        </Button>
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => navigateToTab(value as ConfigTab)}
         >
+          <TabsList>
+            <TabsTrigger value="ingestion">Ingestion</TabsTrigger>
+            <TabsTrigger value="retrieval">Retrieval</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </>
+    )
+
+    return (
+      <DashboardPage
+        title="Configure knowledge base"
+        description={configTabSummaries[activeTab]}
+        titleAccessory={saveStateAccessory}
+        actions={configActions}
+        contentClassName="flex flex-col overflow-hidden p-0"
+        contentScroll={false}
+      >
+        {activeTab === 'ingestion' ? (
           <IngestionSettingsPanel onSaveStateChange={setIngestionSaveState} />
-        </DashboardPage>
-      </TabsContent>
-
-      <TabsContent value="retrieval" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-        <DashboardPage
-          title="Knowledge Base"
-          description={knowledgeTabSummaries.retrieval}
-          titleAccessory={saveStateAccessory}
-          actions={tabNavigation}
-          contentClassName="flex flex-col overflow-hidden p-0"
-          contentScroll={false}
-        >
+        ) : (
           <RetrievalSettingsPanel onSaveStateChange={setRetrievalSaveState} />
-        </DashboardPage>
-      </TabsContent>
-    </Tabs>
+        )}
+      </DashboardPage>
+    )
+  }
+
+  const dataNavigation = (
+    <>
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => navigateToTab(value as 'documents' | 'sources')}
+      >
+        <TabsList>
+          <TabsTrigger value="documents">Documents</TabsTrigger>
+          <TabsTrigger value="sources">Sources</TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Configure knowledge base"
+            onClick={() => navigateToTab('ingestion')}
+          >
+            <Settings2 className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Configure knowledge base</TooltipContent>
+      </Tooltip>
+    </>
+  )
+
+  if (activeTab === 'documents') {
+    return (
+      <DocumentsView
+        routeState={routeState}
+        accountId={accountId}
+        selectedDocumentId={selectedDocumentId}
+        onSelectedDocumentChange={onSelectedDocumentChange}
+        onboarding={onboarding}
+        navigation={dataNavigation}
+      />
+    )
+  }
+
+  return (
+    <DashboardPage
+      title="Knowledge Base"
+      description={dataTabSummaries.sources}
+      actions={dataNavigation}
+    >
+      <DocumentSourcesView />
+    </DashboardPage>
   )
 }

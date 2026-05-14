@@ -1,0 +1,472 @@
+import type { components } from '../../typescript-sdk/src/generated/types'
+
+type ApiSchemas = components['schemas']
+type RelaxedAssistantChatResponse<T> = T extends unknown
+  ? Omit<T, 'conversationId' | 'assistantMessageId' | 'route' | 'suggestions'> & {
+      conversationId?: string
+      assistantMessageId?: string
+      route?: ApiSchemas['AssistantRoute']
+      suggestions?: ChatSuggestion[]
+    }
+  : never
+type PlatformRetrievalSettings = Omit<ApiSchemas['PlatformRetrievalSettingsSection'], 'metadataRules'> & {
+  metadataRules: RetrievalMetadataRule[]
+}
+
+export type RegisterRequest = ApiSchemas['RegisterRequest']
+export type RegisterResponse = ApiSchemas['RegisterResponse'] & {
+  requiresEmailVerification?: boolean
+}
+export type LoginRequest = ApiSchemas['LoginRequest']
+export type LoginResponse = ApiSchemas['LoginResponse']
+
+export type RetrievalSettings = PlatformRetrievalSettings &
+  Pick<
+    ApiSchemas['AssistantSettingsSection'],
+    'suggestedQuestionsEnabled' | 'customInstruction'
+  >
+
+export type AssistantBehaviorSettings = Pick<
+  RetrievalSettings,
+  'suggestedQuestionsEnabled' | 'customInstruction'
+> & {
+  theme: WebsiteEmbedThemeSettings
+  sourceScope?: AgentSourceScope
+}
+
+export type PlatformSettings = Omit<ApiSchemas['PlatformSettingsResponse'], 'retrieval'> & {
+  retrieval: PlatformRetrievalSettings
+}
+
+export type GeneralSettings = ApiSchemas['GeneralSettingsResponse']
+export type WebsiteEmbedThemeSettings = ApiSchemas['GeneralSettingsResponse']['websiteEmbedTheme']
+export type WebsiteEmbedCopyPacks = ApiSchemas['GeneralSettingsResponse']['websiteEmbedCopy']
+export type WebsiteEmbedExpertOverrides = ApiSchemas['GeneralSettingsResponse']['websiteEmbedExpertOverrides']
+
+export type RetrievalMetadataRule = Omit<ApiSchemas['RetrievalMetadataRule'], 'combinator' | 'conditions'> &
+  Partial<Pick<ApiSchemas['RetrievalMetadataRule'], 'combinator' | 'conditions'>>
+export type RetrievalMetadataValueType = RetrievalMetadataRule['valueType']
+export type MetadataFieldSuggestion = ApiSchemas['PlatformRetrievalSettingsSection']['metadataFieldSuggestions'][number]
+export type RetrievalMetadataRuleOperator = RetrievalMetadataRule['operator']
+export type RetrievalMetadataRuleEffect = RetrievalMetadataRule['effect']
+export type RetrievalMetadataRuleCombinator = NonNullable<RetrievalMetadataRule['combinator']>
+export type RetrievalMetadataCondition = NonNullable<RetrievalMetadataRule['conditions']>[number]
+
+export type IngestionSettings = ApiSchemas['IngestionSettings']
+export type WorkspaceIngestionReprocessResponse = ApiSchemas['WorkspaceIngestionReprocessResponse']
+export type DocumentCreateRequest = ApiSchemas['DocumentCreateRequest']
+export type DocumentCreateResponse = ApiSchemas['DocumentOperationResponse']
+export type DocumentSourceSummary = ApiSchemas['DocumentSourceSummary']
+export type DocumentSourceKind = DocumentSourceSummary['kind']
+export type AgentSourceScope = ApiSchemas['AgentSourceScope']
+export type DocumentSourceListItem = ApiSchemas['DocumentSourceListItem']
+export type DocumentSourceListResponse = ApiSchemas['DocumentSourceListResponse']
+export type DocumentSummary = ApiSchemas['DocumentSummary']
+export type DocumentDetails = ApiSchemas['DocumentDetails']
+export type DocumentListResponse = ApiSchemas['DocumentListResponse']
+
+export type DocumentSearchAction = ApiSchemas['DocumentSearchAction']
+export type DocumentSearchResult = ApiSchemas['DocumentSearchResult']
+export type DocumentSearchResponse = ApiSchemas['DocumentSearchResponse']
+export type DocumentSearchHistoryEntry = ApiSchemas['DocumentSearchHistoryEntry']
+export type DocumentSearchHistoryListResponse = ApiSchemas['DocumentSearchHistoryListResponse']
+export type WebsiteCrawlJobStatus = ApiSchemas['WebsiteCrawlJobStatus']
+export type WebsiteCrawlJobSummary = ApiSchemas['WebsiteCrawlJobSummary']
+export type WebsiteCrawlEnqueueResponse = ApiSchemas['WebsiteCrawlJobResponse']
+export type WebsiteCrawlJobListResponse = ApiSchemas['WebsiteCrawlJobListResponse']
+
+export interface ChatRequest {
+  agentId?: string
+  query?: string
+  stream: boolean
+  conversationId?: string
+  bootstrapGreeting?: boolean
+  userExpectedLocale?: string
+  inputMetadata?: ChatUserInputMetadata
+}
+
+export type WebsiteEmbedPageContext = NonNullable<ApiSchemas['PublicChatSessionRequest']['pageContext']>
+export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse']
+
+export const toAssistantChatPayload = (data: ChatRequest) => ({
+  agentId: data.agentId,
+  conversationId: data.conversationId,
+  message: data.query,
+  startConversation: data.bootstrapGreeting,
+  stream: data.stream,
+  userExpectedLocale: data.userExpectedLocale,
+  inputMetadata: data.inputMetadata,
+  sourceContext: {
+    surface: 'authenticated_chat' as const,
+  },
+})
+
+export const toRetrievalSettings = (settings: PlatformSettings): RetrievalSettings => ({
+  ...settings.retrieval,
+  suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
+  customInstruction: settings.assistant.customInstruction,
+})
+
+export const toGeneralSettings = (settings: PlatformSettings): GeneralSettings => ({
+  ...settings.channels,
+  assistantName: settings.assistant.assistantName,
+  greetingInstruction: settings.assistant.greetingInstruction,
+  assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
+  proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
+  assistantBootstrapActive: settings.assistant.assistantBootstrapActive,
+  assistantLogoUrl: settings.assistant.assistantLogoUrl,
+})
+
+export type ChatUserInputMetadata = NonNullable<
+  Extract<ApiSchemas['AssistantChatRequest'], { inputMetadata?: unknown }>['inputMetadata']
+>
+export type Citation = ApiSchemas['Citation']
+export type AnswerSegment = ApiSchemas['AnswerSegment']
+export type ChatSuggestionKind = ApiSchemas['ChatSuggestion']['kind']
+export type ChatSuggestion = Omit<ApiSchemas['ChatSuggestion'], 'kind'> & {
+  kind?: ChatSuggestionKind
+}
+
+export type HumanContactTriggerSource =
+  | 'manual'
+  | 'assistant_suggestion'
+  | 'no_context_refusal'
+  | 'grounded_degraded_unsupported_segments'
+  | 'explicit_user_request'
+  | 'llm_classifier'
+
+export interface HumanContactDraftResponse {
+  draftMessage: string
+  defaultEmail?: string | null
+}
+
+export interface HumanContactSubmitResponse {
+  requestId: string
+}
+
+export interface HumanContactSubmitInput {
+  conversationId: string
+  assistantMessageId?: string
+  email: string
+  message: string
+  triggerSource: HumanContactTriggerSource
+  triggerReason?: string
+}
+
+export interface HumanContactAvailability {
+  enabled: boolean
+  configured: boolean
+  emailEnabled?: boolean
+  defaultEmail?: string | null
+  webhookEnabled?: boolean
+  webhookUrl?: string | null
+  signingSecretConfigured?: boolean
+  updatedAt?: string | null
+}
+
+export interface HumanContactSettingsUpdate {
+  enabled: boolean
+  emailEnabled?: boolean
+  defaultEmail?: string | null
+  webhookEnabled?: boolean
+  webhookUrl?: string | null
+  signingSecret?: string | null
+  rotateSigningSecret?: boolean
+}
+
+export interface HumanContactSigningSecretResponse {
+  signingSecret: string | null
+}
+
+export type RetrievalInfo = ApiSchemas['RetrievalInfo']
+export type SkillDiagnostic = NonNullable<ApiSchemas['RetrievalInfo']['skillDiagnostic']>
+export type ParsedQueryInfo = ApiSchemas['ParsedQuery']
+export type RetrievalSubqueryInfo = ApiSchemas['RetrievalSubquery']
+export type CandidateCounts = ApiSchemas['CandidateCounts']
+export type AppliedConstraintInfo = ApiSchemas['AppliedConstraint']
+export type RetrievalTraceStage = ApiSchemas['RetrievalTraceStage']
+export type RetrievalTraceLink = ApiSchemas['RetrievalTraceLink']
+export type RetrievalTrace = ApiSchemas['RetrievalTrace']
+export type ChatResponse = RelaxedAssistantChatResponse<ApiSchemas['AssistantChatResponse']>
+
+export type AnswerFeedbackValue = 'up' | 'down'
+
+export interface AnswerFeedbackEntry {
+  id: string
+  value: AnswerFeedbackValue
+  comment: string | null
+  actorType: 'authenticated_user' | 'api_token' | 'anonymous_user'
+  actorId: string
+  accountId: string | null
+  userId: string | null
+  anonymousSessionId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AnswerFeedbackState {
+  value: AnswerFeedbackValue
+  comment?: string | null
+}
+
+export interface ChatStreamConversation {
+  conversationId: string
+}
+
+export interface ChatStreamChunk {
+  text: string
+}
+
+export interface ChatStreamSuggestions {
+  conversationId?: string
+  suggestions?: ChatSuggestion[]
+}
+
+export interface ChatStreamCompletion {
+  agentId?: string
+  agentName?: string
+  conversationId?: string
+  assistantMessageId?: string
+  route?: ChatResponse['route']
+  answer?: string
+  citations?: Citation[]
+  answerSegments?: AnswerSegment[]
+  suggestions?: ChatSuggestion[]
+  retrievalInfo?: RetrievalInfo
+  retrievalTrace?: RetrievalTrace
+}
+
+export type ChatConversationSummary = ApiSchemas['ChatConversationSummary']
+export type ChatConversationTurnDebug = ApiSchemas['ChatConversationMessageDebug']
+export type ChatConversationTurn = ApiSchemas['ChatConversationMessage'] & {
+  answerFeedbackEntries?: AnswerFeedbackEntry[]
+}
+export type ChatConversationDetail = Omit<ApiSchemas['ChatConversationDetail'], 'messages'> & {
+  messages: ChatConversationTurn[]
+}
+
+export interface ContactHistorySummary {
+  id: string
+  sortAt: string
+  workspaceId: string
+  conversationId: string
+  assistantMessageId: string | null
+  sourceChannel: string | null
+  sourceOrigin: string | null
+  userEmail: string
+  messagePreview: string
+  triggerSource: string
+  triggerReason: string | null
+  status: 'pending' | 'delivering' | 'delivered' | 'failed'
+  attempts: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ContactHistoryDetail extends ContactHistorySummary {
+  message: string
+  finalDeliveryError: string | null
+}
+
+export interface ContactHistoryListResponse {
+  contacts: ContactHistorySummary[]
+  total: number
+  nextCursor: null
+  hasMore: boolean
+}
+
+export interface ContactHistoryDetailResponse {
+  contact: ContactHistoryDetail
+  conversation: ChatConversationDetail
+}
+
+export type ChatHistoryListResponse = ApiSchemas['ChatHistoryListResponse'] & {
+  workspaceName?: string
+  assistantBootstrapActive?: boolean
+}
+
+export type HistoryItem =
+  | ApiSchemas['HistoryItem']
+  | {
+      kind: 'contact'
+      id: string
+      sortAt: string
+      contact: ContactHistorySummary
+    }
+
+export interface HistoryItemsResponse {
+  items: HistoryItem[]
+  total: number
+  nextCursor: null
+  hasMore: boolean
+}
+
+export type HistoryItemsApiResponse =
+  | HistoryItemsResponse
+  | ChatHistoryListResponse
+  | DocumentSearchHistoryListResponse
+  | ContactHistoryListResponse
+
+export const normalizeHistoryItemsResponse = (response: HistoryItemsApiResponse): HistoryItemsResponse => {
+  if ('items' in response) {
+    return response
+  }
+
+  if ('conversations' in response) {
+    return {
+      items: response.conversations.map((conversation) => {
+        return {
+          kind: 'chat',
+          id: conversation.id,
+          sortAt: conversation.updatedAt,
+          conversation,
+        }
+      }),
+      total: response.total,
+      nextCursor: null,
+      hasMore: response.hasMore,
+    }
+  }
+
+  if ('contacts' in response) {
+    return {
+      items: response.contacts.map((contact) => {
+        return {
+          kind: 'contact',
+          id: contact.id,
+          sortAt: contact.sortAt,
+          contact,
+        }
+      }),
+      total: response.total,
+      nextCursor: null,
+      hasMore: response.hasMore,
+    }
+  }
+
+  return {
+    items: response.searches.map((search) => {
+      return {
+        kind: 'search',
+        id: search.searchId,
+        sortAt: search.createdAt,
+        search,
+      }
+    }),
+    total: response.total,
+    nextCursor: null,
+    hasMore: response.hasMore,
+  }
+}
+
+export interface ChatStreamHandlers {
+  onConversation?: (payload: ChatStreamConversation) => void
+  onChunk?: (payload: ChatStreamChunk) => void
+  onDone?: (payload: ChatStreamCompletion) => void
+  onSuggestions?: (payload: ChatStreamSuggestions) => void
+}
+
+export type ErrorResponse = ApiSchemas['ErrorResponse'] & {
+  error: ApiSchemas['ErrorResponse']['error'] & {
+    retryAfterSeconds?: number
+  }
+}
+
+export type Workspace = ApiSchemas['Workspace']
+export type AccountUserSummary = ApiSchemas['AccountUser']
+
+export type AccountMembershipRole = AccountUserSummary['role']
+export type AssignableAccountRole = Exclude<AccountMembershipRole, 'owner'>
+export type WorkspaceGrantRole = ApiSchemas['WorkspaceGrant']['role']
+export type AccountInvitationSummary = ApiSchemas['AccountInvitation']
+export type WorkspaceGrantSummary = ApiSchemas['WorkspaceGrant']
+
+export type SupportImpersonationSummary = ApiSchemas['SupportImpersonation']
+
+export type AccountUsersResponse = ApiSchemas['AccountUsersResponse']
+export type AccessibleAccountSummary = ApiSchemas['AccessibleAccount']
+export type AccessibleAccountsResponse = ApiSchemas['AccessibleAccountsResponse']
+export type CreateAccountInvitationResponse = ApiSchemas['CreateAccountInvitationResponse']
+export type InvitationDetailsResponse = ApiSchemas['InvitationDetailsResponse']
+export type WorkspaceRouteResolutionResponse = ApiSchemas['WorkspaceRouteResolutionResponse']
+export type WorkspaceSummaryResponse = ApiSchemas['WorkspaceSummaryResponse']
+
+export type AgentSettings = ApiSchemas['ConversationAgent']
+export type AgentListResponse = ApiSchemas['AgentListResponse']
+export type AgentSettingsUpdate = ApiSchemas['ConversationAgentRequest']
+export type WorkspaceTokenResponse = ApiSchemas['WorkspaceTokenResponse']
+
+export const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings => ({
+  anonymousChatEnabled: agent.surfaceSettings.anonymousChat.enabled,
+  anonymousChatUrl: agent.surfaceSettings.anonymousChat.enabled && agent.surfaceSettings.anonymousChat.token && typeof window !== 'undefined'
+      ? `${window.location.origin}/chat/${agent.surfaceSettings.anonymousChat.token}`
+      : null,
+  assistantName: agent.name,
+  greetingInstruction: agent.greetingInstruction,
+  assistantDefaultLocale: agent.assistantDefaultLocale,
+  proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
+  assistantBootstrapActive: agent.assistantBootstrapActive,
+  assistantLogoUrl: (() => {
+    const token = agent.surfaceSettings.anonymousChat.token ?? agent.surfaceSettings.websiteEmbed.token
+    return agent.logo && token && typeof window !== 'undefined'
+      ? `${window.location.origin}/backend/api/v1/public/chat/${token}/assistant-logo`
+      : null
+  })(),
+  websiteEmbedEnabled: agent.surfaceSettings.websiteEmbed.enabled,
+  websiteEmbedToken: agent.surfaceSettings.websiteEmbed.token,
+  websiteEmbedScriptUrl: typeof window !== 'undefined' ? `${window.location.origin}/embed-widget.js` : null,
+  websiteEmbedSnippet: null,
+  websiteEmbedAllowedOrigins: agent.surfaceSettings.websiteEmbed.allowedOrigins,
+  websiteEmbedLauncherLabel: agent.surfaceSettings.websiteEmbed.launcherLabel,
+  websiteEmbedLauncherPosition: agent.surfaceSettings.websiteEmbed.launcherPosition,
+  websiteEmbedTheme: agent.surfaceSettings.websiteEmbed.theme,
+  websiteEmbedCopy: agent.surfaceSettings.websiteEmbed.copy,
+  websiteEmbedExpertOverrides: agent.surfaceSettings.websiteEmbed.expertOverrides,
+})
+
+export const agentToAssistantBehaviorSettings = (agent: AgentSettings): AssistantBehaviorSettings => ({
+  suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
+  customInstruction: agent.customInstruction,
+  theme: agent.theme,
+  sourceScope: agent.sourceScope,
+})
+
+export const retrievalSettingsToAssistantBehaviorSettings = (settings: RetrievalSettings): AssistantBehaviorSettings => ({
+  suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
+  customInstruction: settings.customInstruction,
+  theme: {
+    brand: '#0f172a',
+    brandText: '#f8fafc',
+    surface: '#ffffff',
+    text: '#0f172a',
+  },
+})
+
+export interface RenameOrganizationResponse {
+  accountId: string
+  organizationName: string
+}
+
+export interface UsageLimitProfile {
+  key: string
+  displayName: string
+  monthlyAnswerLimit: number | null
+  storedDocumentLimit: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AccountUsageSummary {
+  accountId: string
+  profile: UsageLimitProfile | null
+  monthlyAnswers: {
+    periodStart: string
+    resetAt: string
+    used: number
+    limit: number | null
+  }
+  storedDocuments: {
+    used: number
+    limit: number | null
+  }
+}

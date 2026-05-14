@@ -5,33 +5,23 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AgentService } from "../../agents/public.js";
-import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import {
-  resolveContextSourceUrl,
   RetrievalInfoPresenter,
   RetrievalTracePresenter,
-  type RetrievalInfo,
   type RetrievalPipelineService,
   type RetrievalTrace,
   type RewriteContinuityState,
 } from "../../retrieval/public.js";
 import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
-import {
-  AnswerPresentationService,
-  remapAnswerSegmentsToCitationEvidence,
-} from "./answerPresentationService.js";
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatStreamEvent } from "../contracts/streamEvents.js";
-import { AnswerSupportValidator } from "./answerSupportValidator.js";
 import {
   ASSISTANT_TURN_OUTCOME,
   type AnswerSegmentValidationResult,
   type AnswerValidationSummary,
   type AssistantTurnOutcome,
-  type HiddenSupportEvidence,
 } from "./answerSupportValidationTypes.js";
-import { AssistantTurnOutcomeClassifier } from "./assistantTurnOutcomeClassifier.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import {
   MissingGroundedMissResponseComposer,
@@ -42,7 +32,6 @@ import { AssistantSuggestionExpansionService } from "./assistantSuggestionExpans
 import type { ChatResponse, ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
-import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
 import { buildNonRetrievalAnswerPrompt } from "./nonRetrievalAnswerPromptBuilder.js";
 import {
@@ -53,6 +42,7 @@ import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/dom
 import { NoopChatActionProvider, type ChatActionProviderPort } from "./chatActionProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import { buildRewriteContinuityState } from "./rewriteContinuityState.js";
+import { ChatAnswerPresenter, type ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -65,45 +55,6 @@ export class BlankChatAnswerError extends Error {
 }
 
 const isBlankChatAnswerError = (error: unknown): error is BlankChatAnswerError => error instanceof BlankChatAnswerError;
-
-const buildSkippedValidationSummary = (): AnswerValidationSummary => ({
-  ran: false,
-  answerModified: false,
-  unsupportedSegmentCount: 0,
-  substantiveUnsupportedSegmentCount: 0,
-  supportedSegmentCount: 0,
-  nonSubstantiveSegmentCount: 0,
-});
-
-const isAnswerSupportValidationEnabled = (session: PreparedSession): boolean =>
-  session.retrieval.responseSettings?.answerSupportValidationEnabled !== false;
-
-const hasGroundedSuggestionSupport = (input: {
-  validation: AnswerValidationSummary;
-  answerOutcome: AssistantTurnOutcome;
-  hasRetrievedContext: boolean;
-}): boolean => {
-  if (!input.hasRetrievedContext) {
-    return false;
-  }
-
-  if (!input.validation.ran) {
-    return input.answerOutcome === ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS;
-  }
-
-  return input.validation.supportedSegmentCount > 0;
-};
-
-interface PresentedAnswer {
-  answer: string;
-  citations?: ChatCitation[];
-  answerSegments?: AnswerSegment[];
-  suggestions?: ChatSuggestion[];
-  planningCitations?: ChatCitation[];
-  answerOutcome: AssistantTurnOutcome;
-  validation: AnswerValidationSummary;
-  segmentResults: AnswerSegmentValidationResult[];
-}
 
 export class ModelChatGateway implements ChatGateway {
   constructor(private readonly client: TextGenerationClient) {}
@@ -136,13 +87,10 @@ export class ModelChatGateway implements ChatGateway {
 export class OpenAIChatGateway extends ModelChatGateway {}
 
 export class ChatService {
-  private readonly answerPresentationService = new AnswerPresentationService();
-  private readonly answerSupportValidator = new AnswerSupportValidator();
-  private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
   private readonly assistantInstructionBuilder = new AssistantInstructionBuilder();
-  private readonly assistantSuggestionExpansionService: AssistantSuggestionExpansionService;
+  private readonly chatAnswerPresenter: ChatAnswerPresenter;
   private readonly chatSessionPreparer: ChatSessionPreparer;
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
@@ -165,20 +113,15 @@ export class ChatService {
       workspaceRepository,
       agentService,
     );
-    this.assistantSuggestionExpansionService = new AssistantSuggestionExpansionService(async ({ query, history, prompt }) =>
-      this.chatGateway.answer({
-        query,
-        history,
-        prompt,
-      }));
-  }
-
-  private getSuggestedQuestionsEnabled(session: PreparedSession): boolean {
-    return session.retrieval.responseSettings?.suggestedQuestionsEnabled ?? true;
-  }
-
-  private getSuggestedQuestionsCount(session: PreparedSession): number {
-    return 3;
+    this.chatAnswerPresenter = new ChatAnswerPresenter(
+      groundedMissResponseComposer,
+      new AssistantSuggestionExpansionService(async ({ query, history, prompt }) =>
+        this.chatGateway.answer({
+          query,
+          history,
+          prompt,
+        })),
+    );
   }
 
   private getRoute(session: PreparedSession): ChatRoute {
@@ -259,7 +202,7 @@ export class ChatService {
   private async generateNonRetrievalAnswer(
     session: PreparedSession,
     query: string,
-  ): Promise<PresentedAnswer | null> {
+  ): Promise<ChatPresentedAnswer | null> {
     if (session.turnRoute === CHAT_TURN_ROUTE.RETRIEVAL) {
       return null;
     }
@@ -291,26 +234,7 @@ export class ChatService {
       return null;
     }
 
-    const presented = this.answerPresentationService.present({
-      answer,
-      citations: [],
-      citationDisplayEnabled: false,
-    });
-
-    return {
-      ...presented,
-      planningCitations: [],
-      answerOutcome: ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE,
-      validation: {
-        ran: false,
-        answerModified: false,
-        unsupportedSegmentCount: 0,
-        substantiveUnsupportedSegmentCount: 0,
-        supportedSegmentCount: 0,
-        nonSubstantiveSegmentCount: 0,
-      },
-      segmentResults: [],
-    };
+    return this.chatAnswerPresenter.presentNonRetrievalAnswer(answer);
   }
 
   async answer(input: {
@@ -442,7 +366,7 @@ export class ChatService {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
     let lazySuggestionsPromise:
-      | Promise<Pick<PresentedAnswer, "suggestions">>
+      | Promise<Pick<ChatPresentedAnswer, "suggestions">>
       | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
     const usageReservation = await this.usageLimitPolicy.reserveAnswer({
@@ -469,7 +393,7 @@ export class ChatService {
       };
 
       let rawAnswer = "";
-      let noContextPresentation: PresentedAnswer | null = null;
+      let noContextPresentation: ChatPresentedAnswer | null = null;
       const answerStartedAt = Date.now();
 
       if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
@@ -533,7 +457,7 @@ export class ChatService {
         }
       }
 
-      const presentationWithoutSuggestions = noContextPresentation ?? await this.presentAnswerWithoutSuggestions(
+      const presentationWithoutSuggestions = noContextPresentation ?? await this.chatAnswerPresenter.presentWithoutSuggestions(
         session,
         rawAnswer,
         input.query,
@@ -543,8 +467,8 @@ export class ChatService {
         ? Promise.resolve({
             suggestions: noContextPresentation.suggestions,
           })
-        : this.applyAssistantSuggestions(session, presentationWithoutSuggestions);
-      const presentation: PresentedAnswer = {
+        : this.chatAnswerPresenter.applyAssistantSuggestions(session, presentationWithoutSuggestions);
+      const presentation: ChatPresentedAnswer = {
         ...presentationWithoutSuggestions,
         suggestions: undefined,
       };
@@ -675,7 +599,7 @@ export class ChatService {
     session: PreparedSession,
     query: string,
     userExpectedLocale?: string | null,
-  ): Promise<PresentedAnswer> {
+  ): Promise<ChatPresentedAnswer> {
     if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
       const nonRetrievalAnswer = await this.generateNonRetrievalAnswer(session, query);
       if (nonRetrievalAnswer) {
@@ -697,213 +621,7 @@ export class ChatService {
           prompt: this.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext),
         });
 
-    return this.presentAnswer(session, answer, query, userExpectedLocale);
-  }
-
-  private async presentAnswerWithoutSuggestions(
-    session: PreparedSession,
-    answer: string,
-    query: string,
-    userExpectedLocale?: string | null,
-  ): Promise<PresentedAnswer> {
-    const citationEvidence = session.retrieval.contexts.map((context) => ({
-      documentId: context.documentId,
-      chunkId: context.chunkId,
-      title: context.title,
-      content: context.content,
-      sourceUrl: resolveContextSourceUrl(context.metadata),
-    }));
-    const hiddenSupportEvidence = buildHiddenSupportEvidence(session.retrieval.responseIdentity);
-    const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
-
-    if (session.retrieval.contexts.length === 0) {
-      const presented = this.answerPresentationService.present({
-        answer,
-        citations: citationEvidence,
-        citationDisplayEnabled,
-      });
-
-      return {
-        ...presented,
-        suggestions: undefined,
-        planningCitations: [],
-        answerOutcome: ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL,
-        validation: {
-          ran: false,
-          answerModified: false,
-          unsupportedSegmentCount: 0,
-          substantiveUnsupportedSegmentCount: 0,
-          supportedSegmentCount: 0,
-          nonSubstantiveSegmentCount: 0,
-        },
-        segmentResults: [],
-      };
-    }
-
-    const normalized = this.answerPresentationService.normalize({
-      answer,
-      citations: citationEvidence,
-    });
-    if (!isAnswerSupportValidationEnabled(session)) {
-      const presented = this.answerPresentationService.present({
-        answer,
-        citations: citationEvidence,
-        citationDisplayEnabled,
-      });
-      const validation = buildSkippedValidationSummary();
-
-      return {
-        ...presented,
-        suggestions: undefined,
-        planningCitations: normalized.citationEvidence.map((citation) => ({
-          documentId: citation.documentId,
-          chunkId: citation.chunkId,
-          title: citation.title,
-        })),
-        answerOutcome: this.assistantTurnOutcomeClassifier.classify({
-          hadRetrievedContext: true,
-          validation,
-        }),
-        validation,
-        segmentResults: [],
-      };
-    }
-    const validationAnswerSegments = remapAnswerSegmentsToCitationEvidence(
-      normalized.answerSegments,
-      normalized.citationEvidence,
-      citationEvidence,
-    );
-
-    const validated = await this.answerSupportValidator.validate({
-      query,
-      answer: normalized.answer,
-      answerSegments: validationAnswerSegments,
-      citationEvidence,
-      hiddenSupportEvidence,
-      retrievedContextSummaries: citationEvidence.map((citation) => ({
-        title: citation.title,
-        content: citation.content,
-      })),
-      citationDisplayEnabled,
-      groundedMissResponseComposer: this.groundedMissResponseComposer,
-      unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
-      userExpectedLocale,
-    });
-
-    return {
-      ...validated,
-      suggestions: undefined,
-      planningCitations: normalized.citationEvidence.map((citation) => ({
-        documentId: citation.documentId,
-        chunkId: citation.chunkId,
-        title: citation.title,
-      })),
-      answerOutcome: this.assistantTurnOutcomeClassifier.classify({
-        hadRetrievedContext: true,
-        validation: validated.validation,
-      }),
-    };
-  }
-
-  private async presentAnswer(
-    session: PreparedSession,
-    answer: string,
-    query: string,
-    userExpectedLocale?: string | null,
-  ): Promise<PresentedAnswer> {
-    const citationEvidence = session.retrieval.contexts.map((context) => ({
-      documentId: context.documentId,
-      chunkId: context.chunkId,
-      title: context.title,
-      content: context.content,
-      sourceUrl: resolveContextSourceUrl(context.metadata),
-    }));
-    const hiddenSupportEvidence = buildHiddenSupportEvidence(session.retrieval.responseIdentity);
-    const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
-
-    if (session.retrieval.contexts.length === 0) {
-      const presented = this.answerPresentationService.present({
-        answer,
-        citations: citationEvidence,
-        citationDisplayEnabled,
-      });
-      const expanded = await this.applyAssistantSuggestions(session, {
-        ...presented,
-        answerOutcome: ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL,
-        validation: {
-          ran: false,
-          answerModified: false,
-          unsupportedSegmentCount: 0,
-          substantiveUnsupportedSegmentCount: 0,
-          supportedSegmentCount: 0,
-          nonSubstantiveSegmentCount: 0,
-        },
-        segmentResults: [],
-      });
-      return expanded;
-    }
-
-    const normalized = this.answerPresentationService.normalize({
-      answer,
-      citations: citationEvidence,
-    });
-    if (!isAnswerSupportValidationEnabled(session)) {
-      const presented = this.answerPresentationService.present({
-        answer,
-        citations: citationEvidence,
-        citationDisplayEnabled,
-      });
-      const validation = buildSkippedValidationSummary();
-
-      return await this.applyAssistantSuggestions(session, {
-        ...presented,
-        planningCitations: normalized.citationEvidence.map((citation) => ({
-          documentId: citation.documentId,
-          chunkId: citation.chunkId,
-          title: citation.title,
-        })),
-        answerOutcome: this.assistantTurnOutcomeClassifier.classify({
-          hadRetrievedContext: true,
-          validation,
-        }),
-        validation,
-        segmentResults: [],
-      });
-    }
-    const validationAnswerSegments = remapAnswerSegmentsToCitationEvidence(
-      normalized.answerSegments,
-      normalized.citationEvidence,
-      citationEvidence,
-    );
-
-    const validated = await this.answerSupportValidator.validate({
-      query,
-      answer: normalized.answer,
-      answerSegments: validationAnswerSegments,
-      citationEvidence,
-      hiddenSupportEvidence,
-      retrievedContextSummaries: citationEvidence.map((citation) => ({
-        title: citation.title,
-        content: citation.content,
-      })),
-      citationDisplayEnabled,
-      groundedMissResponseComposer: this.groundedMissResponseComposer,
-      unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
-      userExpectedLocale,
-    });
-
-    return await this.applyAssistantSuggestions(session, {
-      ...validated,
-      planningCitations: normalized.citationEvidence.map((citation) => ({
-        documentId: citation.documentId,
-        chunkId: citation.chunkId,
-        title: citation.title,
-      })),
-      answerOutcome: this.assistantTurnOutcomeClassifier.classify({
-        hadRetrievedContext: true,
-        validation: validated.validation,
-      }),
-    });
+    return this.chatAnswerPresenter.presentWithSuggestions(session, answer, query, userExpectedLocale);
   }
 
   private async finalizeAssistantTurn(input: {
@@ -1012,44 +730,6 @@ export class ChatService {
     return [...suggestions, action];
   }
 
-  private async applyAssistantSuggestions(
-    session: PreparedSession,
-    presentation: PresentedAnswer,
-  ): Promise<PresentedAnswer> {
-    const conversationIntentSnapshot = buildConversationIntentSnapshot({
-      history: session.history,
-      latestQuery: session.userMessage.content,
-      priorRewriteContinuityState: session.priorRewriteContinuityState,
-      rewriteProposal: session.retrieval.diagnostics.rewriteProposal,
-    });
-    const expanded = await this.assistantSuggestionExpansionService.apply({
-      query: session.userMessage.content,
-      suggestedQuestionsEnabled: this.getSuggestedQuestionsEnabled(session),
-      suggestedQuestionsCount: this.getSuggestedQuestionsCount(session),
-      groundedAnswerSupported: hasGroundedSuggestionSupport({
-        validation: presentation.validation,
-        answerOutcome: presentation.answerOutcome,
-        hasRetrievedContext: session.retrieval.contexts.length > 0,
-      }),
-      answer: presentation.answer,
-      citations: presentation.citations,
-      contexts: session.retrieval.contexts.map((context) => ({
-        documentId: context.documentId,
-        chunkId: context.chunkId,
-        title: context.title,
-        content: context.content,
-      })),
-      history: session.history,
-      conversationIntentSnapshot,
-    });
-    const suggestions = expanded.suggestions;
-
-    return {
-      ...presentation,
-      suggestions,
-    };
-  }
-
   private async recordFailure(
     input: {
       workspaceId: string;
@@ -1125,22 +805,3 @@ export class ChatService {
   }
 
 }
-
-const buildHiddenSupportEvidence = (
-  responseIdentity?: ResponseIdentity | null,
-): HiddenSupportEvidence[] => {
-  if (!responseIdentity) {
-    return [];
-  }
-
-  const evidence: HiddenSupportEvidence[] = [];
-
-  if (responseIdentity.name) {
-    evidence.push({
-      kind: "assistant_name",
-      content: responseIdentity.name,
-    });
-  }
-
-  return evidence;
-};

@@ -27,14 +27,17 @@ Continuation-only follow-ups ("tell me more", "go on", "continue") → anchor to
 If the user accepts or chooses a concrete option proposed by the assistant, resolve the rewrite from that offered material.
 If the user accepts without choosing among multiple offered options, keep options separate in retrievalSubqueries.
 Do not guess one branch and do not collapse several branches into one bag-of-terms rewrite.
-Format/language-only follow-ups → responseIntent: social_only; inScopeRequest = restate previous answer in requested language; outsideScopeRequest: null.
+Format/language-only follow-ups that ask for an answer transformation are requests; resolve them from the immediately preceding assistant answer and use responseIntent: retrieval.
+Short confirmations after an assistant message with an offered next topic, action, question, or list of options are acceptance requests. Use responseIntent: retrieval and build the query/subqueries from the offered material.
 
 Intent & Scope
-responseIntent: retrieval — substantive lookups, including procedural support ("how do I…", "can I…", "where can I…")
-social_only — greetings, thanks, self-contained tasks (math, code, translation, trivia) not requiring workspace retrieval
+responseIntent: retrieval — any turn where the user wants information, an explanation, advice, comparison, calculation, drafting, transformation, troubleshooting, instructions, a continuation, or any other answer/action. Use retrieval even when the request may be outside the assistant answer scope; scope is decided after retrieval evidence.
+social_only — only turns where the user does not want an answer or action, such as appreciation, acknowledgement, cancellation, or ending the conversation.
 assistant_identity — questions about the assistant's name, role, or purpose
+For every answer/action request, compare it with the assistant answer scope reference. Put answerable requested work in inScopeRequest. Put requested work outside that scope in outsideScopeRequest. Use null for the side that has no requested work.
 Mixed turns (in-scope + out-of-scope): use retrieval; put the out-of-scope task in outsideScopeRequest.
-Vague in-scope context + out-of-scope task: use social_only; inScopeRequest: null unless a concrete in-scope question exists.
+Vague in-scope context + a request for an answer/action: use retrieval.
+For short acknowledgements or confirmations, inspect the immediately preceding assistant message. If it offered any next topic, action, continuation, question, or option list, treat the user message as accepting that offer and use retrieval. Use social_only only when the acknowledgement closes the exchange or does not accept any offered action.
 
 Queries
 Do not broaden into extra subtopics the user didn't ask for.

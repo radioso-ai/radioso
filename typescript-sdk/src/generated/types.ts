@@ -1982,11 +1982,11 @@ export interface components {
             lastSyncStatus: string | null;
             /** Format: date-time */
             lastSyncedAt: string | null;
+            documentCount: number;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
-            documentCount: number;
         };
         DocumentSourceListResponse: {
             sources: components["schemas"]["DocumentSourceListItem"][];

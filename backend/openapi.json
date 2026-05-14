@@ -2816,7 +2816,8 @@
                 "items": {
                   "type": "string",
                   "format": "uuid"
-                }
+                },
+                "maxItems": 200
               }
             },
             "required": [
@@ -3446,6 +3447,10 @@
             ],
             "format": "date-time"
           },
+          "documentCount": {
+            "type": "integer",
+            "minimum": 0
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -3453,10 +3458,6 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
-          },
-          "documentCount": {
-            "type": "integer",
-            "minimum": 0
           }
         },
         "required": [
@@ -3466,9 +3467,9 @@
           "externalId",
           "lastSyncStatus",
           "lastSyncedAt",
+          "documentCount",
           "createdAt",
-          "updatedAt",
-          "documentCount"
+          "updatedAt"
         ]
       },
       "DocumentSourceListResponse": {

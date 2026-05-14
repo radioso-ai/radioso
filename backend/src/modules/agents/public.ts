@@ -1,6 +1,7 @@
 export {
   agentSurfacePositions,
   defaultAgentEmbedTheme,
+  getWebsiteEmbedSurfaceSettings,
   isAgentBootstrapActive,
   isAgentRetrievalEnabled,
   resolveAgentDisplayName,
@@ -28,3 +29,8 @@ export {
   AgentService,
   type AgentSettingsResource,
 } from "./services/agentService.js";
+export {
+  AgentSurfaceExtensionRegistry,
+  type AgentSurfaceExtension,
+} from "./surfaceExtensions.js";
+export type { ValidateAgentInputOptions } from "./domain.js";

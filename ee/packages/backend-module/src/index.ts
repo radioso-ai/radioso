@@ -29,6 +29,7 @@ export { createAnswerFeedbackApplicationModule } from "./answerFeedback/applicat
 export { createEnterpriseAuthApplicationModule } from "./mail/applicationModule.js";
 export { createHumanContactApplicationModule } from "./humanContact/applicationModule.js";
 export { createWebsiteEmbedApplicationModule } from "./websiteEmbedApplicationModule.js";
+export { createWebsiteEmbedSurfaceExtension } from "./websiteEmbedSurfaceExtension.js";
 
 export const createEnterpriseBackendModule = (): ApplicationModule => {
   const featureModules = [

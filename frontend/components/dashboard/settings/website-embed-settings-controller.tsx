@@ -1,10 +1,10 @@
 'use client'
 
 import { type Dispatch, type MutableRefObject, type SetStateAction, useEffect, useMemo, useState } from 'react'
-import { Code2, ExternalLink, Globe, RefreshCw } from 'lucide-react'
+import { ChevronDown, Code2, ExternalLink, Globe, RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { CopyValueField } from '@/components/ui/copy-value-field'
+import { CodeBlock } from '@/components/markdown/code-block'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
@@ -47,50 +47,25 @@ const COPY_FIELDS = [
   ['publicChatDisclaimerTemplate', 'Disclaimer', '{name} uses AI and can make mistakes.'],
 ] as const
 
-type ExpertField = readonly [string, string, string]
-
-const EXPERT_FIELD_GROUPS: { title: string; description: string; fields: readonly ExpertField[] }[] = [
-  {
-    title: 'Launcher chrome',
-    description: 'Styling for the floating bubble launcher.',
-    fields: [
-      ['launcherBackground', 'Background', 'CSS color or gradient'],
-      ['launcherForeground', 'Text', 'CSS color'],
-      ['launcherBorder', 'Border', 'CSS color'],
-      ['launcherShadow', 'Shadow', 'CSS shadow'],
-    ],
-  },
-  {
-    title: 'Panel chrome',
-    description: 'Outer chat window styling.',
-    fields: [
-      ['panelBackground', 'Background', 'CSS color'],
-      ['panelForeground', 'Text', 'CSS color'],
-      ['panelBorder', 'Border', 'CSS color'],
-      ['panelShadow', 'Shadow', 'CSS shadow'],
-    ],
-  },
-  {
-    title: 'Chat surface overrides',
-    description: 'Override the Assistant identity theme just inside this widget. Blank values inherit the identity.',
-    fields: [
-      ['mutedBackground', 'Muted background', 'CSS color'],
-      ['mutedForeground', 'Muted text', 'CSS color'],
-      ['inputBackground', 'Input background', 'CSS color'],
-      ['inputForeground', 'Input text', 'CSS color'],
-      ['inputBorder', 'Input border', 'CSS color'],
-      ['inputPlaceholder', 'Input placeholder', 'CSS color'],
-      ['assistantBubbleBackground', 'Assistant bubble background', 'CSS color'],
-      ['assistantBubbleForeground', 'Assistant bubble text', 'CSS color'],
-      ['userBubbleBackground', 'User bubble background', 'CSS color'],
-      ['userBubbleForeground', 'User bubble text', 'CSS color'],
-    ],
-  },
+const ATTENTION_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'None' },
+  { value: 'breathe', label: 'Breathe' },
+  { value: 'pulse', label: 'Pulse' },
+  { value: 'nudge', label: 'Nudge' },
+  { value: 'bounce-in', label: 'Bounce in' },
 ]
 
 const DISPLAY_MODES: { value: 'bubble' | 'panel'; label: string; description: string }[] = [
-  { value: 'bubble', label: 'Bubble', description: 'A circular launcher button opens a floating chat window.' },
-  { value: 'panel', label: 'Side panel', description: 'A persistent pull-tab on the edge of the screen opens a full-height chat.' },
+  {
+    value: 'bubble',
+    label: 'Bubble',
+    description: 'Shows a round chat button in the corner of every page. Visitors tap it to open a small chat window.',
+  },
+  {
+    value: 'panel',
+    label: 'Side panel',
+    description: 'Shows a slim tab on the side of every page. Visitors tap it and a tall chat panel slides out.',
+  },
 ]
 
 export function WebsiteEmbedSettingsController(props: WebsiteEmbedSettingsControllerProps) {
@@ -160,6 +135,8 @@ function WebsiteEmbedSettingsPanel({
 
   const activeCopyPack = anonSettings?.websiteEmbedCopy?.[websiteEmbedCopyLocale] ?? {}
   const hasWebsiteEmbedAdvancedOverrides = Object.keys(anonSettings?.websiteEmbedExpertOverrides ?? {}).length > 0
+  const displayMode =
+    (anonSettings?.websiteEmbedExpertOverrides?.displayMode ?? 'bubble') === 'panel' ? 'panel' : 'bubble'
 
   const websiteEmbedDemoUrl = useMemo(() => {
     if (
@@ -348,7 +325,7 @@ function WebsiteEmbedSettingsPanel({
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
     } catch (error) {
-      const message = getApiErrorMessage(error, 'Failed to reset website embed token')
+      const message = getApiErrorMessage(error, 'Could not generate a new install code. Please try again.')
       console.error('Failed to rotate website embed token:', message, error)
       setSaveState('error')
       setSaveError(message)
@@ -369,7 +346,7 @@ function WebsiteEmbedSettingsPanel({
               <div className="min-w-0">
                 <h3 className="font-medium text-foreground">Website chat widget</h3>
                 <p className="text-sm text-muted-foreground">
-                  Embed a chat launcher on approved sites with one script tag.
+                  Add a chat button to your website so visitors can ask the assistant questions.
                 </p>
               </div>
             </div>
@@ -384,27 +361,19 @@ function WebsiteEmbedSettingsPanel({
 
           <div className="mt-5 space-y-4">
             <div className="space-y-2">
-              <Label className="text-foreground">Display mode</Label>
-              <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5" role="group">
-                {DISPLAY_MODES.map(({ value, label }) => {
-                  const currentValue = (anonSettings.websiteEmbedExpertOverrides?.displayMode ?? 'bubble') as 'bubble' | 'panel'
-                  const isActive = currentValue === value
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      className={`rounded-sm px-3 py-1 text-xs font-medium transition-colors ${
-                        isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                      onClick={() =>
-                        handleWebsiteEmbedExpertOverrideChange('displayMode', value === 'bubble' ? '' : value)
-                      }
-                    >
-                      {label}
-                    </button>
-                  )
-                })}
-              </div>
+              <Label htmlFor="websiteEmbedDisplayMode" className="text-foreground">Display mode</Label>
+              <select
+                id="websiteEmbedDisplayMode"
+                value={(anonSettings.websiteEmbedExpertOverrides?.displayMode ?? 'bubble') as 'bubble' | 'panel'}
+                onChange={(event) =>
+                  handleWebsiteEmbedExpertOverrideChange('displayMode', event.target.value === 'bubble' ? '' : event.target.value)
+                }
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                {DISPLAY_MODES.map(({ value, label }) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
               <p className="text-xs text-muted-foreground">
                 {DISPLAY_MODES.find(
                   (mode) => mode.value === ((anonSettings.websiteEmbedExpertOverrides?.displayMode ?? 'bubble') as 'bubble' | 'panel'),
@@ -414,7 +383,9 @@ function WebsiteEmbedSettingsPanel({
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="websiteEmbedLauncherLabel" className="text-foreground">Launcher label</Label>
+                <Label htmlFor="websiteEmbedLauncherLabel" className="text-foreground">
+                  {displayMode === 'panel' ? 'Tooltip text' : 'Button text'}
+                </Label>
                 <Input
                   id="websiteEmbedLauncherLabel"
                   value={anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us'}
@@ -422,10 +393,17 @@ function WebsiteEmbedSettingsPanel({
                   onChange={(event) => handleWebsiteEmbedSettingChange('websiteEmbedLauncherLabel', event.target.value)}
                   placeholder="Chat with us"
                 />
+                <p className="text-xs text-muted-foreground">
+                  {displayMode === 'panel'
+                    ? 'Shown when visitors hover the side tab. The tab itself only shows the icon.'
+                    : 'The words visitors see on the chat button.'}
+                </p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="websiteEmbedLauncherPosition" className="text-foreground">Launcher position</Label>
+                <Label htmlFor="websiteEmbedLauncherPosition" className="text-foreground">
+                  {displayMode === 'panel' ? 'Which side' : 'Where to show it'}
+                </Label>
                 <select
                   id="websiteEmbedLauncherPosition"
                   value={anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right'}
@@ -434,15 +412,15 @@ function WebsiteEmbedSettingsPanel({
                   }
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
                 >
-                  <option value="bottom-right">Bottom right</option>
-                  <option value="bottom-left">Bottom left</option>
+                  <option value="bottom-right">{displayMode === 'panel' ? 'Right edge' : 'Bottom-right corner'}</option>
+                  <option value="bottom-left">{displayMode === 'panel' ? 'Left edge' : 'Bottom-left corner'}</option>
                 </select>
               </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="websiteEmbedInitialState" className="text-foreground">Initial state</Label>
+                <Label htmlFor="websiteEmbedInitialState" className="text-foreground">When a page loads</Label>
                 <select
                   id="websiteEmbedInitialState"
                   value={(anonSettings.websiteEmbedExpertOverrides?.initialState ?? 'collapsed') as 'collapsed' | 'open'}
@@ -451,13 +429,13 @@ function WebsiteEmbedSettingsPanel({
                   }
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
                 >
-                  <option value="collapsed">Collapsed</option>
-                  <option value="open">Open on load</option>
+                  <option value="collapsed">Stay closed until visitor opens it</option>
+                  <option value="open">Open chat automatically</option>
                 </select>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="websiteEmbedPageContext" className="text-foreground">Page context</Label>
+                <Label htmlFor="websiteEmbedPageContext" className="text-foreground">What the assistant knows about the page</Label>
                 <select
                   id="websiteEmbedPageContext"
                   value={(anonSettings.websiteEmbedExpertOverrides?.pageContext ?? 'metadata') as 'metadata' | 'content'}
@@ -466,18 +444,18 @@ function WebsiteEmbedSettingsPanel({
                   }
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
                 >
-                  <option value="metadata">Page metadata only</option>
-                  <option value="content">Full page content</option>
+                  <option value="metadata">Just the page title and address</option>
+                  <option value="content">Everything visible on the page</option>
                 </select>
                 <p className="text-xs text-muted-foreground">
-                  What the widget passes to the assistant about the current page.
+                  Helps the assistant give answers about what the visitor is looking at.
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="websiteEmbedAllowedOrigins" className="text-foreground">Approved origins</Label>
+          <div className="mt-5 space-y-2">
+            <Label htmlFor="websiteEmbedAllowedOrigins" className="text-foreground">Allowed websites</Label>
             <Textarea
               id="websiteEmbedAllowedOrigins"
               value={websiteEmbedOrigins}
@@ -488,126 +466,181 @@ function WebsiteEmbedSettingsPanel({
               placeholder={`https://example.com\nhttps://docs.example.com`}
               className="min-h-[132px]"
             />
-            <p className="text-sm text-muted-foreground">
-              Approved site origins for the embedded assistant, one per line.
+            <p className="text-xs text-muted-foreground">
+              The chat widget will only appear on these websites. List one address per line, starting with <code>https://</code>.
             </p>
           </div>
 
+          <details className="group mt-5 rounded-xl border border-border bg-background/60 p-4">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">Translations</p>
+                <p className="text-xs text-muted-foreground">
+                  Spanish, French, German, Italian, Portuguese, Dutch, Polish, Chinese, Japanese, and Russian are built in — only add a translation here if you want to override the wording.
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {Object.keys(anonSettings.websiteEmbedCopy ?? {}).length > 0 ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Active
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Optional</span>
+                )}
+                <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-open:rotate-180" />
+              </div>
+            </summary>
+
+            <div className="mt-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="websiteEmbedCopyLocale" className="text-foreground">Language code</Label>
+                <Input
+                  id="websiteEmbedCopyLocale"
+                  value={websiteEmbedCopyLocale}
+                  onChange={(event) => setWebsiteEmbedCopyLocale(event.target.value)}
+                  placeholder="en, it, fr-CA"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Use the short language code (e.g. <code>en</code> for English, <code>it</code> for Italian, <code>fr-CA</code> for Canadian French).
+                </p>
+              </div>
+
+              {COPY_FIELDS.map(([key, label, placeholder]) => (
+                <div key={key} className="space-y-2">
+                  <Label htmlFor={`websiteEmbedCopy-${key}`} className="text-foreground">{label}</Label>
+                  <Input
+                    id={`websiteEmbedCopy-${key}`}
+                    value={activeCopyPack[key] ?? ''}
+                    onChange={(event) => handleWebsiteEmbedCopyFieldChange(key, event.target.value)}
+                    placeholder={placeholder}
+                  />
+                </div>
+              ))}
+            </div>
+          </details>
+
+          <details className="group mt-3 rounded-xl border border-border bg-background/60 p-4">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">Get visitors&apos; attention</p>
+                <p className="text-xs text-muted-foreground">
+                  Add a subtle animation or a friendly greeting message above the chat button so visitors notice it.
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {hasWebsiteEmbedAdvancedOverrides ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Active
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Optional</span>
+                )}
+                <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-open:rotate-180" />
+              </div>
+            </summary>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              {displayMode === 'bubble' ? (
+                <div className="space-y-2">
+                  <Label htmlFor="websiteEmbedExpert-launcherAttention" className="text-foreground">Animation style</Label>
+                  <select
+                    id="websiteEmbedExpert-launcherAttention"
+                    value={anonSettings.websiteEmbedExpertOverrides?.launcherAttention ?? ''}
+                    onChange={(event) => handleWebsiteEmbedExpertOverrideChange('launcherAttention', event.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                  >
+                    {ATTENTION_OPTIONS.map(({ value, label }) => (
+                      <option key={value || 'none'} value={value}>{label}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    A subtle motion on the chat button to catch the eye. Stops automatically once a visitor opens the chat.
+                  </p>
+                </div>
+              ) : null}
+              <div className="space-y-2">
+                <Label htmlFor="websiteEmbedExpert-proactiveGreetingTeaser" className="text-foreground">Greeting message</Label>
+                <Input
+                  id="websiteEmbedExpert-proactiveGreetingTeaser"
+                  value={anonSettings.websiteEmbedExpertOverrides?.proactiveGreetingTeaser ?? ''}
+                  onChange={(event) => handleWebsiteEmbedExpertOverrideChange('proactiveGreetingTeaser', event.target.value)}
+                  placeholder="Hi! How can I help?"
+                />
+                <p className="text-xs text-muted-foreground">
+                  A small speech bubble pops up above the chat button with this message. Requires the assistant&apos;s <em>Proactive greeting</em> to be turned on.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="websiteEmbedExpert-launcherTeaserDelaySeconds" className="text-foreground">Show greeting after</Label>
+                <div className="relative">
+                  <Input
+                    id="websiteEmbedExpert-launcherTeaserDelaySeconds"
+                    value={(() => {
+                      const stored = anonSettings.websiteEmbedExpertOverrides?.launcherTeaserDelayMs
+                      if (!stored) return ''
+                      const parsed = parseInt(stored, 10)
+                      return Number.isFinite(parsed) ? String(parsed / 1000) : ''
+                    })()}
+                    onChange={(event) => {
+                      const raw = event.target.value.trim()
+                      if (!raw) {
+                        handleWebsiteEmbedExpertOverrideChange('launcherTeaserDelayMs', '')
+                        return
+                      }
+                      const seconds = parseFloat(raw)
+                      if (!Number.isFinite(seconds) || seconds < 0) {
+                        return
+                      }
+                      handleWebsiteEmbedExpertOverrideChange('launcherTeaserDelayMs', String(Math.round(seconds * 1000)))
+                    }}
+                    placeholder="4"
+                    className="pr-20"
+                  />
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+                    seconds
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  How long the page is open before the greeting appears. Defaults to 4 seconds.
+                </p>
+              </div>
+            </div>
+          </details>
+
           {anonSettings.websiteEmbedEnabled ? (
-            <div className="rounded bg-muted/50 p-3 space-y-3">
+            <div className="mt-5 space-y-3 rounded-xl bg-muted/50 p-4">
               <div className="flex items-center gap-2 text-foreground">
                 <Code2 className="h-4 w-4" />
-                <Label className="text-foreground">Install snippet</Label>
+                <Label className="text-foreground">Add this to your website</Label>
               </div>
-              <p className="text-sm text-muted-foreground">
-                The snippet only contains the loader URL and embed token. Branding, text, theme, and expert behavior are stored in Radioso settings.
+              <p className="text-xs text-muted-foreground">
+                Copy this code and paste it into your website&apos;s HTML, just before the closing <code>&lt;/body&gt;</code> tag. If you&apos;re not sure how, send it to whoever maintains the site.
               </p>
-
-              <details className="rounded-md border border-border bg-background/80 p-3">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Locale text packs</p>
-                    <p className="text-xs text-muted-foreground">
-                      Add translated copy per locale. Browser language picks the closest pack and falls back to defaults.
-                    </p>
-                  </div>
-                  <span className="text-xs text-muted-foreground">
-                    {Object.keys(anonSettings.websiteEmbedCopy ?? {}).length > 0 ? 'Custom text active' : 'Optional'}
-                  </span>
-                </summary>
-
-                <div className="mt-4 space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="websiteEmbedCopyLocale" className="text-foreground">Locale</Label>
-                    <Input
-                      id="websiteEmbedCopyLocale"
-                      value={websiteEmbedCopyLocale}
-                      onChange={(event) => setWebsiteEmbedCopyLocale(event.target.value)}
-                      placeholder="en, it, fr-CA"
-                    />
-                  </div>
-
-                  {COPY_FIELDS.map(([key, label, placeholder]) => (
-                    <div key={key} className="space-y-2">
-                      <Label htmlFor={`websiteEmbedCopy-${key}`} className="text-foreground">{label}</Label>
-                      <Input
-                        id={`websiteEmbedCopy-${key}`}
-                        value={activeCopyPack[key] ?? ''}
-                        onChange={(event) => handleWebsiteEmbedCopyFieldChange(key, event.target.value)}
-                        placeholder={placeholder}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </details>
-
-              <details className="rounded-md border border-border bg-background/80 p-3">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Colour overrides</p>
-                    <p className="text-xs text-muted-foreground">
-                      Fine-tune individual colours. Blank values inherit the Assistant identity.
-                    </p>
-                  </div>
-                  <span className="text-xs text-muted-foreground">
-                    {hasWebsiteEmbedAdvancedOverrides ? 'Custom overrides active' : 'Optional'}
-                  </span>
-                </summary>
-
-                <div className="mt-4 space-y-5">
-                  {EXPERT_FIELD_GROUPS.map((group) => (
-                    <div key={group.title} className="space-y-2">
-                      <div className="space-y-0.5">
-                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{group.title}</p>
-                        <p className="text-xs text-muted-foreground">{group.description}</p>
-                      </div>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        {group.fields.map(([key, label, placeholder]) => (
-                          <div key={key} className="space-y-2">
-                            <Label htmlFor={`websiteEmbedExpert-${key}`} className="text-foreground">{label}</Label>
-                            <Input
-                              id={`websiteEmbedExpert-${key}`}
-                              value={anonSettings.websiteEmbedExpertOverrides?.[key] ?? ''}
-                              onChange={(event) => handleWebsiteEmbedExpertOverrideChange(key, event.target.value)}
-                              placeholder={placeholder}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </details>
 
               {websiteEmbedSnippet ? (
-                <CopyValueField
-                  value={websiteEmbedSnippet}
-                  ariaLabel="Copy install snippet"
-                  className="w-full"
-                  wrap
-                />
+                <CodeBlock code={websiteEmbedSnippet} language="html" className="my-0" />
               ) : (
                 <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                  Fix the snippet override errors above to generate a copyable script tag.
+                  Fix the errors above to generate the code.
                 </div>
               )}
-              <p className="text-sm text-muted-foreground">
-                Paste this script tag into the target website. The loader opens a Radioso-hosted iframe on approved domains only.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Quick tryout: this action saves the current website embed settings, adds the current app origin to the approved origins when needed, and opens a same-origin demo page.
-              </p>
               {websiteEmbedDemoError ? (
                 <p className="text-xs text-destructive">{websiteEmbedDemoError}</p>
               ) : null}
-              {anonSettings.websiteEmbedScriptUrl ? (
-                <p className="text-xs text-muted-foreground">
-                  Loader URL: <span className="font-mono">{anonSettings.websiteEmbedScriptUrl}</span>
-                </p>
-              ) : null}
-              <div className="flex flex-wrap justify-end gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <Button
-                  variant="outline"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleWebsiteEmbedTokenRotate}
+                  disabled={isAnonSaving}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Generates a new install code. Any existing installations will stop working until you paste the new code."
+                >
+                  {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                  Generate new code
+                </Button>
+                <Button
+                  variant="default"
                   onClick={handleOpenWebsiteEmbedDemo}
                   disabled={
                     isAnonSaving ||
@@ -615,17 +648,14 @@ function WebsiteEmbedSettingsPanel({
                     !anonSettings.websiteEmbedEnabled ||
                     !websiteEmbedDemoUrl
                   }
+                  title="Saves your current settings and opens a sample page where you can try the widget right away."
                 >
                   {isPreparingWebsiteEmbedDemo ? (
                     <Spinner className="mr-2 h-4 w-4" />
                   ) : (
                     <ExternalLink className="mr-2 h-4 w-4" />
                   )}
-                  Open demo page
-                </Button>
-                <Button variant="outline" onClick={handleWebsiteEmbedTokenRotate} disabled={isAnonSaving}>
-                  {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                  Reset embed token
+                  Try it on a demo page
                 </Button>
               </div>
             </div>

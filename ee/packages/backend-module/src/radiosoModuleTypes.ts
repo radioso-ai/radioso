@@ -10,6 +10,24 @@ export interface ApplicationModuleRegistrationContext {
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillDefinition?(definition: SkillDefinition): void;
+  registerAgentSurfaceExtension?(extension: AgentSurfaceExtension): void;
+}
+
+/**
+ * Mirrors OSS's `AgentSurfaceExtension` (in `backend/src/modules/agents/surfaceExtensions.ts`).
+ * Kept structurally compatible so EE modules can implement and register the
+ * extension without importing OSS types directly.
+ */
+export interface AgentSurfaceExtension<TSettings = unknown> {
+  readonly key: string;
+  defaults(): TSettings;
+  normalize(input: unknown): TSettings;
+  serialize(settings: TSettings): unknown;
+  parse(raw: unknown): TSettings;
+  resolveCopyForAcceptLanguage?(acceptLanguage: string | undefined | null): {
+    locale: string;
+    pack: Record<string, string>;
+  } | null;
 }
 
 export type ApplicationAccountCreatedHandler = (context: {

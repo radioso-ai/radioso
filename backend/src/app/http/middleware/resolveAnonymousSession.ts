@@ -6,7 +6,7 @@ import { AppError, notFound } from "../../../shared/domain/errors.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import type { AgentRecord, AgentService } from "../../../modules/agents/public.js";
-import { isAgentBootstrapActive } from "../../../modules/agents/public.js";
+import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../../modules/agents/public.js";
 import {
   resolveAssistantDisplayName,
 } from "../../../modules/settings/contracts/assistantBootstrap.js";
@@ -84,8 +84,9 @@ const publicSessionMatchesAgentSurface = (
   sourceChannel: "anonymous" | "website_embed",
 ) => {
   if (sourceChannel === "website_embed") {
-    return agent.surfaceSettings.websiteEmbed.enabled && (
-      agent.surfaceSettings.websiteEmbed.token === token ||
+    const websiteEmbed = getWebsiteEmbedSurfaceSettings(agent);
+    return websiteEmbed.enabled && (
+      websiteEmbed.token === token ||
       agent.surfaceSettings.anonymousChat.token === token
     );
   }
@@ -125,6 +126,7 @@ const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionA
         copy: {},
         expertOverrides: {},
       },
+      extensions: {},
     },
   };
 };

@@ -26,6 +26,7 @@ import type { ConversationRepositoryPort } from "../../db/repositories/conversat
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { SkillCatalogEntryDefinition, SkillDefinition } from "../../modules/skills/public.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
+import type { AgentSurfaceExtension } from "../../modules/agents/public.js";
 
 export interface ApplicationDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
@@ -100,6 +101,7 @@ export interface ApplicationExtensionRegistry {
   answerFeedbackHistoryProviderRegistration?: ApplicationAnswerFeedbackHistoryProviderRegistration;
   skillCatalogEntries: SkillCatalogEntryDefinition[];
   skillDefinitions: SkillDefinition[];
+  agentSurfaceExtensions: AgentSurfaceExtension[];
 }
 
 export interface ApplicationModuleRegistrationContext {
@@ -122,6 +124,7 @@ export interface ApplicationModuleRegistrationContext {
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillCatalogEntry(entry: SkillCatalogEntryDefinition): void;
   registerSkillDefinition(definition: SkillDefinition): void;
+  registerAgentSurfaceExtension(extension: AgentSurfaceExtension): void;
 }
 
 export interface ApplicationModule {
@@ -142,6 +145,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   accountCreatedHooks: [],
   skillCatalogEntries: [],
   skillDefinitions: [],
+  agentSurfaceExtensions: [],
 });
 
 const createRegistrationContext = (registry: ApplicationExtensionRegistry): ApplicationModuleRegistrationContext => ({
@@ -201,6 +205,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerSkillDefinition(definition) {
     registry.skillDefinitions.push(definition);
+  },
+  registerAgentSurfaceExtension(extension) {
+    registry.agentSurfaceExtensions.push(extension);
   },
 });
 

@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
+import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/public.js";
 import {
@@ -135,6 +136,7 @@ type SettingsRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "retrievalSettingsService"
   | "workspaceIngestionReprocessService"
   | "agentService"
+  | "agentSurfaceExtensions"
   | "documentStorage"
   | "logger"
 >;
@@ -332,7 +334,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     }
   });
 
-  router.post("/general/website-embed-token/rotate", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), async (_req, res, next) => {
+  router.post("/general/website-embed-token/rotate", requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"), workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), async (_req, res, next) => {
     try {
       const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
       const settings = await dependencies.platformSettingsService.updateForWorkspace(

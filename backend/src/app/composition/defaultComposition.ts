@@ -66,6 +66,7 @@ export interface ApplicationComposition {
   chatActionProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["chatActionProviderRegistration"];
   contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
   answerFeedbackHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["answerFeedbackHistoryProviderRegistration"];
+  agentSurfaceExtensions: ReturnType<typeof createApplicationExtensionRegistry>["agentSurfaceExtensions"];
   skillCatalogRegistry: SkillCatalogRegistry;
   lifecycle: ApplicationModuleCoordinator;
   modules: ApplicationModule[];
@@ -99,6 +100,7 @@ export const createDefaultApplicationComposition = (options: {
     chatActionProviderRegistration: registry.chatActionProviderRegistration,
     contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
     answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,
+    agentSurfaceExtensions: registry.agentSurfaceExtensions,
     skillCatalogRegistry: createDefaultSkillCatalogRegistry([
       ...registry.skillCatalogEntries,
       ...registry.skillDefinitions,

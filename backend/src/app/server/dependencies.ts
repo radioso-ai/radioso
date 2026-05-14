@@ -3,7 +3,7 @@ import {
   createDefaultApplicationComposition,
   type ApplicationModule,
 } from "../composition/index.js";
-import { AgentService } from "../../modules/agents/public.js";
+import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { PlatformSettingsService } from "../../modules/settings/composition.js";
 import type { AppDependencies } from "./types.js";
 import {
@@ -34,7 +34,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     modules: options.modules,
   });
   const infrastructure = buildInfrastructure({ env, logger, composition });
-  const repositories = buildRepositories(infrastructure.database);
+  const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
+  for (const extension of composition.agentSurfaceExtensions) {
+    agentSurfaceExtensions.register(extension);
+  }
+  const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions });
   const access = buildAccessServices({
     auditService: infrastructure.auditService,
     env,
@@ -180,6 +184,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalAnswerService: chat.retrievalAnswerService,
     platformSettingsService,
     agentService,
+    agentSurfaceExtensions,
     skillCatalogService,
     accountRepository: repositories.accountRepository,
     userRepository: repositories.userRepository,

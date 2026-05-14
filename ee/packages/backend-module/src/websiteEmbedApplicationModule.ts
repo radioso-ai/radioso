@@ -1,6 +1,7 @@
 import type { ApplicationModule } from "./radiosoModuleTypes.js";
 
 import { HostedWebsiteEmbedIntegrationProvider } from "./websiteEmbedIntegration.js";
+import { createWebsiteEmbedSurfaceExtension } from "./websiteEmbedSurfaceExtension.js";
 
 export const createWebsiteEmbedApplicationModule = (): ApplicationModule => ({
   id: "radioso-enterprise-website-embed",
@@ -10,5 +11,6 @@ export const createWebsiteEmbedApplicationModule = (): ApplicationModule => ({
       widgetOrigin: process.env.RADIOSO_ENTERPRISE_WIDGET_ORIGIN,
       scriptPath: process.env.RADIOSO_ENTERPRISE_WIDGET_SCRIPT_PATH,
     }));
+    context.registerAgentSurfaceExtension?.(createWebsiteEmbedSurfaceExtension());
   },
 });

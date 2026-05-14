@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
+import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import {
@@ -60,7 +61,7 @@ const agentBodySchema = z.object({
   surfaceSettings: surfaceSettingsSchema,
 });
 
-type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "agentService" | "documentStorage" | "logger">;
+type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "agentService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
 
 export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router => {
   const router = Router();
@@ -209,7 +210,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     }
   });
 
-  router.post("/:agentId/website-embed-token/rotate", workspaceSession, async (req, res, next) => {
+  router.post("/:agentId/website-embed-token/rotate", requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"), workspaceSession, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentParamsSchema.parse(req.params);

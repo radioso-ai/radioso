@@ -13,6 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run_ci: ${{ steps.filter.outputs.run_ci }}
+      backend: ${{ steps.filter.outputs.backend }}
+      backend_openapi: ${{ steps.filter.outputs.backend_openapi }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      docs: ${{ steps.filter.outputs.docs }}
+      typescript_sdk: ${{ steps.filter.outputs.typescript_sdk }}
+      mcp_server: ${{ steps.filter.outputs.mcp_server }}
+      crawler: ${{ steps.filter.outputs.crawler }}
+      ee: ${{ steps.filter.outputs.ee }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -27,26 +35,168 @@ jobs:
 
           git fetch --no-tags --prune --depth=1 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
 
-          run_ci=false
+          backend=false
+          frontend=false
+          docs=false
+          typescript_sdk=false
+          mcp_server=false
+          crawler=false
+          ee=false
+
+          mark_all() {
+            backend=true
+            frontend=true
+            docs=true
+            typescript_sdk=true
+            mcp_server=true
+            crawler=true
+            ee=true
+          }
+
           while IFS= read -r path; do
             [ -n "$path" ] || continue
 
             case "$path" in
+              .github/workflows/ci.yml|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|scripts/*)
+                mark_all
+                ;;
               .github/workflows/*|infra/*|.dockerignore|*/.dockerignore|Dockerfile|*/Dockerfile|*.Dockerfile)
                 ;;
+              backend/*)
+                backend=true
+                frontend=true
+                docs=true
+                typescript_sdk=true
+                mcp_server=true
+                ;;
+              frontend/*)
+                frontend=true
+                ;;
+              docs-portal/*)
+                docs=true
+                ;;
+              docs/settings-docs/*)
+                frontend=true
+                docs=true
+                ;;
+              docs/*|readme.md)
+                docs=true
+                ;;
+              typescript-sdk/*)
+                frontend=true
+                typescript_sdk=true
+                ;;
+              packages/radioso-mcp-server/*)
+                mcp_server=true
+                ;;
+              packages/crawler/*)
+                backend=true
+                crawler=true
+                ;;
+              packages/document-parser/*|packages/connector-api/*)
+                backend=true
+                ;;
+              ee/*)
+                ee=true
+                ;;
               *)
-                run_ci=true
-                break
+                mark_all
                 ;;
             esac
           done < <(git diff --name-only "origin/${BASE_REF}...HEAD")
 
-          echo "run_ci=${run_ci}" >> "$GITHUB_OUTPUT"
+          backend_openapi="${backend}"
+          run_ci=false
+          for value in "$backend" "$frontend" "$docs" "$typescript_sdk" "$mcp_server" "$crawler" "$ee"; do
+            if [ "$value" = true ]; then
+              run_ci=true
+              break
+            fi
+          done
 
-  backend:
-    name: Backend
+          {
+            echo "run_ci=${run_ci}"
+            echo "backend=${backend}"
+            echo "backend_openapi=${backend_openapi}"
+            echo "frontend=${frontend}"
+            echo "docs=${docs}"
+            echo "typescript_sdk=${typescript_sdk}"
+            echo "mcp_server=${mcp_server}"
+            echo "crawler=${crawler}"
+            echo "ee=${ee}"
+          } >> "$GITHUB_OUTPUT"
+
+  backend-build-openapi:
+    name: Backend Build and OpenAPI
     needs: changes
-    if: needs.changes.outputs.run_ci == 'true'
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - name: Install backend dependencies
+        run: pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler...
+
+      - name: Lint backend module boundaries
+        working-directory: backend
+        run: pnpm run lint:boundaries
+
+      - name: Build backend
+        working-directory: backend
+        run: pnpm run build
+
+      - name: Upload backend OpenAPI artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: backend-openapi
+          path: |
+            backend/openapi.json
+            backend/openapi.yaml
+          if-no-files-found: error
+
+  backend-unit:
+    name: Backend Unit Tests
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - name: Install backend dependencies
+        run: pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler...
+
+      - name: Test backend unit suite
+        working-directory: backend
+        run: pnpm run test:unit
+
+  backend-integration:
+    name: Backend Integration Tests
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -82,39 +232,68 @@ jobs:
       - name: Install backend dependencies
         run: pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler...
 
-      - name: Lint backend module boundaries
-        working-directory: backend
-        run: pnpm run lint:boundaries
-
-      - name: Build backend
-        working-directory: backend
-        run: pnpm run build
-
-      - name: Test backend unit suite
-        working-directory: backend
-        run: pnpm run test:unit
-
       - name: Test backend integration suite
         working-directory: backend
         run: pnpm run test:integration
+
+  backend-contract:
+    name: Backend Contract Tests
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - name: Install backend dependencies
+        run: pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler...
 
       - name: Test backend contracts
         working-directory: backend
         run: pnpm run test:contract
 
-      - name: Upload backend OpenAPI artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: backend-openapi
-          path: |
-            backend/openapi.json
-            backend/openapi.yaml
-          if-no-files-found: error
+  backend:
+    name: Backend
+    needs:
+      - changes
+      - backend-build-openapi
+      - backend-unit
+      - backend-integration
+      - backend-contract
+    if: always() && needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    env:
+      BUILD_RESULT: ${{ needs['backend-build-openapi'].result }}
+      UNIT_RESULT: ${{ needs['backend-unit'].result }}
+      INTEGRATION_RESULT: ${{ needs['backend-integration'].result }}
+      CONTRACT_RESULT: ${{ needs['backend-contract'].result }}
+    steps:
+      - name: Verify backend jobs
+        run: |
+          set -euo pipefail
+
+          for result in "$BUILD_RESULT" "$UNIT_RESULT" "$INTEGRATION_RESULT" "$CONTRACT_RESULT"; do
+            if [ "$result" != "success" ]; then
+              echo "Backend split job completed with result: ${result}"
+              exit 1
+            fi
+          done
 
   frontend:
     name: Frontend
     needs: changes
-    if: needs.changes.outputs.run_ci == 'true'
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -146,6 +325,12 @@ jobs:
         working-directory: frontend
         run: pnpm test
 
+      - name: Restore Playwright browser cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install Playwright browsers
         working-directory: frontend
         run: pnpm exec playwright install --with-deps chromium
@@ -159,8 +344,8 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-      - backend
-    if: needs.changes.outputs.run_ci == 'true'
+      - backend-build-openapi
+    if: always() && needs.changes.outputs.docs == 'true' && (needs.changes.outputs.backend_openapi != 'true' || needs['backend-build-openapi'].result == 'success')
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
@@ -177,6 +362,7 @@ jobs:
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
       - name: Download backend OpenAPI artifacts
+        if: needs.changes.outputs.backend_openapi == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: backend-openapi
@@ -198,8 +384,8 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-      - backend
-    if: needs.changes.outputs.run_ci == 'true'
+      - backend-build-openapi
+    if: always() && needs.changes.outputs.typescript_sdk == 'true' && (needs.changes.outputs.backend_openapi != 'true' || needs['backend-build-openapi'].result == 'success')
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
@@ -216,6 +402,7 @@ jobs:
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
       - name: Download backend OpenAPI artifacts
+        if: needs.changes.outputs.backend_openapi == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: backend-openapi
@@ -234,8 +421,10 @@ jobs:
 
   mcp-server:
     name: MCP Server
-    needs: changes
-    if: needs.changes.outputs.run_ci == 'true'
+    needs:
+      - changes
+      - backend-build-openapi
+    if: always() && needs.changes.outputs.mcp_server == 'true' && (needs.changes.outputs.backend_openapi != 'true' || needs['backend-build-openapi'].result == 'success')
     runs-on: ubuntu-latest
     services:
       redis:
@@ -264,6 +453,13 @@ jobs:
       - name: Enable pnpm
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
+      - name: Download backend OpenAPI artifacts
+        if: needs.changes.outputs.backend_openapi == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: backend-openapi
+          path: backend
+
       - name: Install backend dependencies
         run: pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/mcp-server...
 
@@ -282,7 +478,7 @@ jobs:
   crawler:
     name: Crawler Package
     needs: changes
-    if: needs.changes.outputs.run_ci == 'true'
+    if: needs.changes.outputs.crawler == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -313,7 +509,7 @@ jobs:
   ee:
     name: Enterprise Edition
     needs: changes
-    if: needs.changes.outputs.run_ci == 'true'
+    if: needs.changes.outputs.ee == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5

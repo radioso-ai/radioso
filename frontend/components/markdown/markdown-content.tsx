@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, type ComponentPropsWithoutRef } from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
+import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import { cn } from '@/lib/utils'
@@ -10,19 +10,8 @@ import { CodeBlock } from './code-block'
 
 const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
 
-type HastText = {
-  type: 'text'
-  value: string
-}
-
-type HastElement = {
-  type: 'element'
-  tagName: string
-  properties?: Record<string, unknown>
-  children: ElementContent[]
-}
-
-type ElementContent = HastText | HastElement | { type: 'comment' | 'doctype' | 'raw' | 'root' }
+type HastElement = NonNullable<ExtraProps['node']>
+type ElementContent = HastElement['children'][number]
 
 export const isSafeHref = (href?: string) => {
   if (!href) {
@@ -62,10 +51,10 @@ const collectText = (nodes: readonly ElementContent[]): string =>
   nodes
     .map((node) => {
       if (node.type === 'text') {
-        return (node as HastText).value
+        return node.value
       }
       if (node.type === 'element') {
-        return collectText((node as HastElement).children)
+        return collectText(node.children)
       }
       return ''
     })
@@ -116,7 +105,7 @@ const MarkdownLink = ({
 
 export type MarkdownVariant = 'chat' | 'document'
 
-type PreProps = ComponentPropsWithoutRef<'pre'> & { node?: HastElement }
+type PreProps = ComponentPropsWithoutRef<'pre'> & ExtraProps
 
 const chatHeadingClasses: Record<1 | 2 | 3 | 4 | 5 | 6, string> = {
   1: 'mt-2 mb-1 text-base font-semibold text-foreground',

@@ -19,6 +19,7 @@ import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import type { AssistantSuggestionExpansionService } from "./assistantSuggestionExpansionService.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
+import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 
 export interface ChatPresentedAnswer {
   answer: string;
@@ -216,7 +217,7 @@ export class ChatAnswerPresenter {
     const expanded = await this.assistantSuggestionExpansionService.apply({
       query: session.userMessage.content,
       suggestedQuestionsEnabled: session.retrieval.responseSettings?.suggestedQuestionsEnabled ?? true,
-      suggestedQuestionsCount: 3,
+      suggestedQuestionsCount: DEFAULT_SUGGESTED_QUESTIONS_COUNT,
       groundedAnswerSupported: hasGroundedSuggestionSupport({
         validation: presentation.validation,
         answerOutcome: presentation.answerOutcome,

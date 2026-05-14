@@ -33,10 +33,12 @@ import { getApiErrorMessage } from '@/lib/api-error'
 import {
   accountApi,
   agentsApi,
+  documentsApi,
   generalSettingsApi,
   humanContactApi,
   type AssistantBehaviorSettings,
   type AccountMembershipRole,
+  type DocumentSourceListItem,
   type GeneralSettings,
   type HumanContactAvailability,
 } from '@/lib/api'
@@ -78,6 +80,11 @@ const isValidHumanContactWebhookUrl = (value: string) => {
 
 const isValidHumanContactEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
+
+const normalizeAssistantBehaviorSettingsByAgent = (agentId: string | undefined, settings: AssistantBehaviorSettings) => ({
+  ...settings,
+  sourceScope: agentId ? settings.sourceScope ?? { mode: 'all' } : undefined,
+})
 
 export function WorkspaceAssistantChannelsTab({
   accountId,
@@ -123,6 +130,9 @@ export function WorkspaceAssistantChannelsTab({
   const [humanContactError, setHumanContactError] = useState<string | null>(null)
   const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
+  const [sourceList, setSourceList] = useState<DocumentSourceListItem[]>([])
+  const [sourceListError, setSourceListError] = useState<string | null>(null)
+  const [isSourceListLoading, setIsSourceListLoading] = useState(false)
   const [isAssistantBehaviorLoading, setIsAssistantBehaviorLoading] = useState(mode === 'assistant')
   const [isAssistantLogoSaving, setIsAssistantLogoSaving] = useState(false)
   const { setSaveState, setSaveError, saveSequenceRef } = useSettingsSaveStatus(onSaveStateChange)
@@ -263,8 +273,9 @@ export function WorkspaceAssistantChannelsTab({
       try {
         const data = await loadAssistantBehaviorSettings()
         if (!active) return
-        setAssistantBehaviorSettings(data)
-        setSavedAssistantBehaviorSettings(data)
+        const normalized = normalizeAssistantBehaviorSettingsByAgent(agentId, data)
+        setAssistantBehaviorSettings(normalized)
+        setSavedAssistantBehaviorSettings(normalized)
         setAssistantSettingsError(null)
       } catch (error) {
         if (!active) return
@@ -282,6 +293,40 @@ export function WorkspaceAssistantChannelsTab({
       active = false
     }
   }, [activeWorkspaceId, agentId, isWorkspaceLoading, loadAssistantBehaviorSettings, mode])
+
+  useEffect(() => {
+    let active = true
+    const loadSources = async () => {
+      if (mode !== 'assistant' || !agentId || isWorkspaceLoading || !activeWorkspaceId) {
+        setSourceList([])
+        setSourceListError(null)
+        setIsSourceListLoading(false)
+        return
+      }
+
+      setIsSourceListLoading(true)
+      try {
+        const response = await documentsApi.listSources()
+        if (!active) return
+        setSourceList(response.sources)
+        setSourceListError(null)
+      } catch (error) {
+        if (!active) return
+        console.error('Failed to load document sources:', error)
+        setSourceList([])
+        setSourceListError(getApiErrorMessage(error, 'Failed to load sources.'))
+      } finally {
+        if (active) {
+          setIsSourceListLoading(false)
+        }
+      }
+    }
+
+    void loadSources()
+    return () => {
+      active = false
+    }
+  }, [activeWorkspaceId, agentId, isWorkspaceLoading, mode])
 
   useEffect(() => {
     if (!editionController.shouldLoadHumanContactSettings(mode)) {
@@ -637,7 +682,10 @@ export function WorkspaceAssistantChannelsTab({
       setSaveState('saving')
       setSaveError(null)
       try {
-        const updated = await updateAssistantBehaviorSettings(assistantBehaviorSettings)
+        const updated = normalizeAssistantBehaviorSettingsByAgent(
+          agentId,
+          await updateAssistantBehaviorSettings(assistantBehaviorSettings),
+        )
         if (saveSequenceRef.current !== saveId) return
         setSavedAssistantBehaviorSettings(updated)
         setAssistantSettingsError(null)
@@ -655,7 +703,7 @@ export function WorkspaceAssistantChannelsTab({
     }, 700)
 
     return () => window.clearTimeout(timeout)
-  }, [assistantBehaviorSettings, hasAssistantBehaviorChanges, saveSequenceRef, savedAssistantBehaviorSettings, setSaveError, setSaveState, updateAssistantBehaviorSettings])
+  }, [agentId, assistantBehaviorSettings, hasAssistantBehaviorChanges, saveSequenceRef, savedAssistantBehaviorSettings, setSaveError, setSaveState, updateAssistantBehaviorSettings])
 
   const handleAnonymousChatTokenRotate = async () => {
     if (!anonSettings) return
@@ -914,6 +962,9 @@ export function WorkspaceAssistantChannelsTab({
                 isAnonSaving={isAnonSaving}
                 isAssistantLogoSaving={isAssistantLogoSaving}
                 assistantSettingsError={assistantSettingsError}
+                sourceList={sourceList}
+                isSourceListLoading={isSourceListLoading}
+                sourceListError={sourceListError}
                 channelsTabHref={channelsTabHref}
                 websiteEmbedAvailable={editionController.canUseWebsiteEmbed()}
                 humanContactConfigured={Boolean(humanContactSettings?.enabled && humanContactSettings?.configured)}

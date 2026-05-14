@@ -5,6 +5,7 @@ import type {
   DocumentCreateResponse,
   DocumentDetails,
   DocumentListResponse,
+  DocumentSourceListResponse,
   DocumentSearchHistoryListResponse,
   DocumentSearchResponse,
   WebsiteCrawlEnqueueResponse,
@@ -33,6 +34,12 @@ export const documentsApi = {
       cursor: input?.cursor,
     }), {
       method: "GET",
+    }, { withApiToken: true })
+  },
+
+  async listSources(): Promise<DocumentSourceListResponse> {
+    return request<DocumentSourceListResponse>('/document/sources', {
+      method: 'GET',
     }, { withApiToken: true })
   },
 

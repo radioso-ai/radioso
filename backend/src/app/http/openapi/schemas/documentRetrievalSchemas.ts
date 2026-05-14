@@ -27,6 +27,27 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       externalId: z.string().nullable(),
     }),
   );
+
+  const DocumentSourceListItemSchema = registry.register(
+    "DocumentSourceListItem",
+    z.object({
+      id: z.string().uuid(),
+      kind: z.enum(["website", "api", "connector", "upload"]),
+      name: z.string(),
+      externalId: z.string().nullable(),
+      documentCount: z.number().int().min(0),
+      createdAt: z.string().datetime(),
+      updatedAt: z.string().datetime(),
+    }),
+  );
+
+  const DocumentSourceListResponseSchema = registry.register(
+    "DocumentSourceListResponse",
+    z.object({
+      sources: z.array(DocumentSourceListItemSchema),
+    }),
+  );
+
   const DocumentImportRequestSchema = registry.register(
     "DocumentImportRequest",
     z.object({
@@ -458,6 +479,8 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     RagStatusSchema,
     DocumentCreateRequestSchema,
     DocumentSourceSummarySchema,
+    DocumentSourceListItemSchema,
+    DocumentSourceListResponseSchema,
     DocumentImportRequestSchema,
     DocumentOperationResponseSchema,
     DocumentSummarySchema,

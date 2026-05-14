@@ -36,6 +36,7 @@ describe("settings services", () => {
     suggestedQuestionsEnabled: true,
     customInstruction: "",
     retrievalEnabled: true,
+    sourceScope: { mode: "all" },
     logo: null,
     theme: {
       brand: "#0f172a",

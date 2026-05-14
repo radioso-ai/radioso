@@ -12,6 +12,10 @@ import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../contracts/storage.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import {
+  toDocumentSourceSummary,
+  type DocumentSourceRepositoryPort,
+} from "../../../db/repositories/documentSourceRepository.js";
+import {
   NoopUsageLimitPolicy,
   type UsageLimitPolicy,
   type UsageLimitReservation,
@@ -44,6 +48,7 @@ export class DocumentImportService {
     private readonly jobRepository?: Pick<DocumentProcessingJobRepositoryPort, "findByDocumentRevision">,
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
+    private readonly documentSourceRepository?: DocumentSourceRepositoryPort,
   ) {}
 
   async importDocument(input: DocumentImportInput): Promise<{ documentId: string; status: string }> {
@@ -95,12 +100,15 @@ export class DocumentImportService {
         buffer: input.buffer,
       });
       const title = input.title?.trim() || deriveTitleFromFilename(input.filename) || "Imported document";
+      const source = await this.resolveUploadSource(input.workspaceId);
       document = await this.documentRepository.createAndQueue({
         workspaceId: input.workspaceId,
         title,
         sourceContent: "",
         markdownContent: "",
         metadata: {},
+        sourceId: source?.id ?? null,
+        source: source ? toDocumentSourceSummary(source) : null,
         sourceKind: "uploaded_file",
         sourceFilename: input.filename,
         sourceMimeType: input.mimeType,
@@ -177,6 +185,20 @@ export class DocumentImportService {
       // Queue-depth metadata is best-effort observability and must not change import outcomes.
       return {};
     }
+  }
+
+  private async resolveUploadSource(workspaceId: string) {
+    if (!this.documentSourceRepository) {
+      return null;
+    }
+    return this.documentSourceRepository.upsertByExternalId({
+      workspaceId,
+      kind: "upload",
+      name: "Uploads",
+      externalId: "workspace-uploads",
+      config: {},
+      metadata: {},
+    });
   }
 
   private async dispatchQueuedDocumentJob(input: {

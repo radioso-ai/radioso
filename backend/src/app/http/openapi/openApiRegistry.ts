@@ -26,6 +26,7 @@ export interface OpenApiSchemaCatalog {
   accountSwitchSchema: z.ZodTypeAny;
   AccountUserSchema: z.ZodTypeAny;
   AccountUsersResponseSchema: z.ZodTypeAny;
+  AgentSourceScopeSchema: z.ZodTypeAny;
   AgentListResponseSchema: z.ZodTypeAny;
   AgentLogoSchema: z.ZodTypeAny;
   AgentParamsSchema: RouteParameterSchema;
@@ -77,6 +78,8 @@ export interface OpenApiSchemaCatalog {
   DocumentSearchResponseSchema: z.ZodTypeAny;
   DocumentSearchResultSchema: z.ZodTypeAny;
   DocumentSourceSummarySchema: z.ZodTypeAny;
+  DocumentSourceListItemSchema: z.ZodTypeAny;
+  DocumentSourceListResponseSchema: z.ZodTypeAny;
   DocumentStatusSchema: z.ZodTypeAny;
   DocumentSummarySchema: z.ZodTypeAny;
   ErrorResponseSchema: z.ZodTypeAny;

@@ -160,6 +160,33 @@ export const registerDocumentsPaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/document/sources",
+    tags: ["Documents"],
+    summary: "List document sources for the authenticated workspace",
+    operationId: "listDocumentSources",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    responses: {
+      200: {
+        description: "Document sources returned",
+        content: {
+          "application/json": {
+            schema: schemas.DocumentSourceListResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/document/",
     tags: ["Documents"],

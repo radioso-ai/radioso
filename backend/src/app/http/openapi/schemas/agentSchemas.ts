@@ -44,6 +44,19 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  const AgentSourceScopeSchema = registry.register(
+    "AgentSourceScope",
+    z.discriminatedUnion("mode", [
+      z.object({
+        mode: z.literal("all"),
+      }),
+      z.object({
+        mode: z.literal("sources"),
+        sourceIds: z.array(z.string().uuid()),
+      }),
+    ]),
+  );
+
   const ConversationAgentSchema = registry.register(
     "ConversationAgent",
     AgentSchema.extend({
@@ -57,6 +70,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         text: z.string(),
       }),
       retrievalEnabled: z.boolean(),
+      sourceScope: AgentSourceScopeSchema,
       logo: schemas.AgentLogoSchema,
       greetingInstruction: z.string(),
       assistantDefaultLocale: z.string().nullable(),
@@ -86,6 +100,15 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         text: z.string().optional(),
       }).optional(),
       retrievalEnabled: z.boolean().optional(),
+      sourceScope: z.discriminatedUnion("mode", [
+        z.object({
+          mode: z.literal("all"),
+        }),
+        z.object({
+          mode: z.literal("sources"),
+          sourceIds: z.array(z.string().uuid()),
+        }),
+      ]).optional(),
       greetingInstruction: z.string().max(200).optional(),
       assistantDefaultLocale: z.string().max(35).nullable().optional(),
       proactiveGreetingEnabled: z.boolean().optional(),
@@ -158,6 +181,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
   Object.assign(schemas, {
     AgentSchema,
     ConversationAgentSurfaceSettingsSchema,
+    AgentSourceScopeSchema,
     ConversationAgentSchema,
     AgentListResponseSchema,
     ConversationAgentRequestSchema,

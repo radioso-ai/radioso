@@ -159,6 +159,12 @@ export interface DocumentRepositoryPort {
     queuedDocuments: Array<{ documentId: string; revision: number }>;
   }>;
   deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean>;
+  listSummaryPageBySourceId(
+    workspaceId: string,
+    sourceId: string | null,
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
+  deleteBySourceIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<number>;
 }
 
 export interface DocumentWorkspaceSummaryRecord {
@@ -194,6 +200,7 @@ export interface DocumentSummary {
   sourceKind: DocumentSourceKind;
   sourceFilename?: string | null;
   sourceMimeType?: string | null;
+  contentSize?: number | null;
 }
 
 export interface DocumentListPage {
@@ -219,6 +226,7 @@ export interface DocumentSummaryRecord extends DocumentSourceRecord {
   sourceId?: string | null;
   source?: DocumentSourceSummary | null;
   externalDocumentId?: string | null;
+  contentSize?: number | null;
 }
 
 export class DocumentIngestionService {
@@ -518,6 +526,45 @@ export class DocumentIngestionService {
     };
   }
 
+  async listForSource(
+    workspaceId: string,
+    sourceId: string | null,
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<DocumentListPage> {
+    const { documents, total, nextCursor, hasMore } = await this.documentRepository.listSummaryPageBySourceId(
+      workspaceId,
+      sourceId,
+      input,
+    );
+    return {
+      documents: documents.map((document) => this.toSummary(document)),
+      total,
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  async deleteSourceWithDocuments(input: {
+    workspaceId: string;
+    sourceId: string;
+  }): Promise<{ deletedDocumentCount: number }> {
+    const deletedDocumentCount = await this.documentRepository.deleteBySourceIdAndWorkspaceId(
+      input.sourceId,
+      input.workspaceId,
+    );
+    await this.documentSourceRepository?.deleteByIdAndWorkspaceId(input.sourceId, input.workspaceId);
+    await this.auditService.record({
+      workspaceId: input.workspaceId,
+      eventType: "document.source.delete",
+      eventStatus: "success",
+      metadata: {
+        sourceId: input.sourceId,
+        deletedDocumentCount,
+      },
+    });
+    return { deletedDocumentCount };
+  }
+
   private toSummary(document: DocumentSummaryRecord): DocumentSummary {
     return {
       id: document.id,
@@ -534,6 +581,7 @@ export class DocumentIngestionService {
       sourceKind: document.sourceKind,
       sourceFilename: document.sourceFilename ?? null,
       sourceMimeType: document.sourceMimeType ?? null,
+      contentSize: document.contentSize ?? null,
     };
   }
 

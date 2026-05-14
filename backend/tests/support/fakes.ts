@@ -1209,6 +1209,15 @@ export class InMemoryDocumentSourceRepository implements DocumentSourceRepositor
       updatedAt: new Date(),
     });
   }
+
+  async deleteByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<boolean> {
+    const source = await this.findByIdAndWorkspaceId(sourceId, workspaceId);
+    if (!source) {
+      return false;
+    }
+    this.items.delete(sourceId);
+    return true;
+  }
 }
 
 export class InMemoryDocumentRepository implements DocumentRepositoryPort {
@@ -1663,6 +1672,31 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
 
     this.items.delete(documentId);
     return true;
+  }
+
+  async listSummaryPageBySourceId(
+    workspaceId: string,
+    sourceId: string | null,
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
+    const filtered = [...this.items.values()]
+      .filter((item) => item.workspaceId === workspaceId && (sourceId === null ? !item.sourceId : item.sourceId === sourceId))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id));
+    const offset = input.offset ?? 0;
+    const sliced = filtered.slice(offset, offset + input.limit + 1);
+    const documents: DocumentSummaryRecord[] = sliced.slice(0, input.limit);
+    return { documents, total: filtered.length, nextCursor: null, hasMore: sliced.length > input.limit };
+  }
+
+  async deleteBySourceIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<number> {
+    let count = 0;
+    for (const [id, doc] of this.items.entries()) {
+      if (doc.sourceId === sourceId && doc.workspaceId === workspaceId) {
+        this.items.delete(id);
+        count += 1;
+      }
+    }
+    return count;
   }
 }
 

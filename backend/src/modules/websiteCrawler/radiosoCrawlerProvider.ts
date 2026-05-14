@@ -30,6 +30,29 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
       pages: pages.map(toWebsiteCrawlPage),
     };
   }
+
+  async crawlStream(
+    request: { url: string; limit: number; signal?: AbortSignal },
+    onPage: (page: WebsiteCrawlPage) => Promise<void>,
+  ): Promise<Omit<WebsiteCrawlResult, "pages">> {
+    const { crawlSiteStream } = await import("@radioso/crawler");
+    const config = resolveWebsiteCrawlerConfig();
+    await crawlSiteStream({
+      baseUrl: request.url,
+      pageLimit: request.limit,
+      pageConcurrency: DEFAULT_PAGE_CONCURRENCY,
+      userAgent: config.userAgent,
+      signal: request.signal,
+      onResult: async (page) => {
+        await onPage(toWebsiteCrawlPage(page));
+      },
+    });
+
+    return {
+      provider: PROVIDER_NAME,
+      status: "completed",
+    };
+  }
 }
 
 const toWebsiteCrawlPage = (page: CrawledPageResult): WebsiteCrawlPage => ({

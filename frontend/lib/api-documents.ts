@@ -85,11 +85,12 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async listCrawlJobs(input?: { status?: WebsiteCrawlJobStatus; sinceMinutes?: number; limit?: number }): Promise<WebsiteCrawlJobListResponse> {
+  async listCrawlJobs(input?: { status?: WebsiteCrawlJobStatus; sinceMinutes?: number; limit?: number; sourceId?: string }): Promise<WebsiteCrawlJobListResponse> {
     return request<WebsiteCrawlJobListResponse>(withQuery('/document/crawl/jobs', {
       status: input?.status,
       sinceMinutes: input?.sinceMinutes,
       limit: input?.limit,
+      sourceId: input?.sourceId,
     }), {
       method: "GET",
     }, { withApiToken: true })
@@ -97,6 +98,28 @@ export const documentsApi = {
 
   async deleteCrawlJob(jobId: string): Promise<void> {
     await request<void>(`/document/crawl/jobs/${encodeURIComponent(jobId)}`, {
+      method: "DELETE",
+    }, { withApiToken: true })
+  },
+
+  async listSourceDocuments(sourceId: string, input?: { limit?: number; offset?: number; cursor?: string }): Promise<DocumentListResponse> {
+    return request<DocumentListResponse>(withQuery(`/document/sources/${encodeURIComponent(sourceId)}/documents`, {
+      limit: input?.limit,
+      offset: input?.offset,
+      cursor: input?.cursor,
+    }), {
+      method: "GET",
+    }, { withApiToken: true })
+  },
+
+  async recrawlSource(sourceId: string): Promise<WebsiteCrawlEnqueueResponse> {
+    return request<WebsiteCrawlEnqueueResponse>(`/document/sources/${encodeURIComponent(sourceId)}/recrawl`, {
+      method: "POST",
+    }, { withApiToken: true })
+  },
+
+  async deleteSource(sourceId: string): Promise<void> {
+    await request<void>(`/document/sources/${encodeURIComponent(sourceId)}`, {
       method: "DELETE",
     }, { withApiToken: true })
   },

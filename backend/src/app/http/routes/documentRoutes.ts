@@ -9,9 +9,14 @@ import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest, notFound, payloadTooLarge } from "../../../shared/domain/errors.js";
 import { createWebsiteCrawlerRoutes } from "../../../modules/websiteCrawler/routes.js";
+import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/domain/sourceConstants.js";
 
 const MAX_DOCUMENT_LIST_LIMIT = 100;
+
+const sourceParamsSchema = z.object({
+  sourceId: z.string().uuid(),
+});
 
 const documentSourceSchema = z.union([
   z.object({
@@ -170,6 +175,80 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
           documentCount: source.documentCount,
         })),
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/sources/:sourceId/documents", workspaceSession, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { sourceId } = sourceParamsSchema.parse(req.params);
+      const parsedQuery = documentListQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
+      const resolvedSourceId = sourceId === MANUALLY_ADDED_DOCUMENTS_SOURCE_ID ? null : sourceId;
+      if (resolvedSourceId !== null) {
+        const source = await dependencies.documentSourceRepository.findByIdAndWorkspaceId(resolvedSourceId, workspaceId);
+        if (!source) {
+          throw notFound("Source not found");
+        }
+      }
+      const page = await dependencies.documentIngestionService.listForSource(workspaceId, resolvedSourceId, parsedQuery.data);
+      res.status(200).json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/sources/:sourceId/recrawl", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (req, res, next) => {
+    try {
+      const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
+      const { sourceId } = sourceParamsSchema.parse(req.params);
+      const source = await dependencies.documentSourceRepository.findByIdAndWorkspaceId(sourceId, workspaceId);
+      if (!source) {
+        throw notFound("Source not found");
+      }
+      if (source.kind !== "website") {
+        throw badRequest("Only website sources can be recrawled");
+      }
+      const url = typeof source.config.url === "string" ? source.config.url : null;
+      if (!url) {
+        throw badRequest("Source has no configured URL");
+      }
+      const config = resolveWebsiteCrawlerConfig();
+      const previousLimit = typeof source.config.limit === "number" ? source.config.limit : config.defaultLimit;
+      const limit = Math.min(previousLimit, config.maxLimit);
+      const result = await dependencies.websiteCrawlJobService.enqueue({
+        accountId,
+        workspaceId,
+        url,
+        limit,
+      });
+      res.status(202).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/sources/:sourceId", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { sourceId } = sourceParamsSchema.parse(req.params);
+      if (sourceId === MANUALLY_ADDED_DOCUMENTS_SOURCE_ID) {
+        throw badRequest("The manually added documents source cannot be deleted");
+      }
+      const source = await dependencies.documentSourceRepository.findByIdAndWorkspaceId(sourceId, workspaceId);
+      if (!source) {
+        throw notFound("Source not found");
+      }
+      await dependencies.documentIngestionService.deleteSourceWithDocuments({
+        workspaceId,
+        sourceId,
+      });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

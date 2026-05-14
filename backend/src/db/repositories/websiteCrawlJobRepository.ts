@@ -85,6 +85,7 @@ export interface WebsiteCrawlJobListOptions {
   status?: WebsiteCrawlJobStatus;
   since?: Date;
   limit?: number;
+  sourceId?: string;
 }
 
 export interface WebsiteCrawlJobRepositoryPort {
@@ -169,15 +170,17 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
     const status = options.status ?? null;
     const since = options.since ?? null;
+    const sourceId = options.sourceId ?? null;
     const rows = await this.database.query<WebsiteCrawlJobRow>(
       `SELECT ${selectWebsiteCrawlJob}
        FROM website_crawl_jobs
        WHERE workspace_id = $1
          AND ($2::text IS NULL OR status = $2)
          AND ($3::timestamptz IS NULL OR created_at >= $3)
+         AND ($5::uuid IS NULL OR source_id = $5)
        ORDER BY created_at DESC
        LIMIT $4`,
-      [workspaceId, status, since, limit],
+      [workspaceId, status, since, limit, sourceId],
     );
 
     return rows.map(mapWebsiteCrawlJob);

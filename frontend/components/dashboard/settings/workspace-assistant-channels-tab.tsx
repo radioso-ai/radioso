@@ -86,6 +86,15 @@ const normalizeAssistantBehaviorSettingsByAgent = (agentId: string | undefined, 
   sourceScope: agentId ? settings.sourceScope ?? { mode: 'all' } : undefined,
 })
 
+const getAssistantBehaviorSourceScopeKey = (settings: AssistantBehaviorSettings) => {
+  const sourceScope = settings.sourceScope ?? { mode: 'all' as const }
+  if (sourceScope.mode === 'all') {
+    return 'all'
+  }
+
+  return `selected:${[...new Set(sourceScope.sourceIds)].sort().join('\0')}`
+}
+
 export function WorkspaceAssistantChannelsTab({
   accountId,
   mode,
@@ -509,12 +518,14 @@ export function WorkspaceAssistantChannelsTab({
   const hasAssistantBehaviorChanges =
     assistantBehaviorSettings && savedAssistantBehaviorSettings
       ? (
-	          assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction ||
-	          assistantBehaviorSettings.suggestedQuestionsEnabled !== savedAssistantBehaviorSettings.suggestedQuestionsEnabled ||
-            JSON.stringify(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) !==
-              JSON.stringify(savedAssistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME)
-	        )
-	      : false
+          assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction ||
+          assistantBehaviorSettings.suggestedQuestionsEnabled !== savedAssistantBehaviorSettings.suggestedQuestionsEnabled ||
+          getAssistantBehaviorSourceScopeKey(assistantBehaviorSettings) !==
+            getAssistantBehaviorSourceScopeKey(savedAssistantBehaviorSettings) ||
+          JSON.stringify(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) !==
+            JSON.stringify(savedAssistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME)
+        )
+      : false
 
   const hasHumanContactChanges =
     humanContactSettings && savedHumanContactSettings

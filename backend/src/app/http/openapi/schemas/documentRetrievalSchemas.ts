@@ -142,7 +142,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       query: z.string(),
       createdAt: z.string().datetime(),
       resultCount: z.number().int().min(0),
-      traceAvailable: z.boolean(),
+      activityTraceAvailable: z.boolean(),
       previewTopTitles: z.array(z.string()),
     }),
   );
@@ -310,9 +310,18 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     }),
   );
 
-  const RetrievalInfoSchema = registry.register(
-    "RetrievalInfo",
+  const ActivitySummarySchema = registry.register(
+    "ActivitySummary",
     z.object({
+      traceId: z.string().optional(),
+      skillName: z.string().optional(),
+      surface: z.string().optional(),
+      path: z.string().optional(),
+      status: z.enum(["success", "skipped", "blocked", "failed", "fallback", "pending"]).optional(),
+      outcome: z.string().optional(),
+      primaryCounts: z.record(z.number()).optional(),
+      assistant: z.record(z.unknown()).optional(),
+      contact: z.record(z.unknown()).optional(),
       execution: RetrievalExecutionMetadataSchema.optional(),
       parsedQuery: ParsedQuerySchema.optional(),
       retrievalSubqueries: z.array(RetrievalSubquerySchema).optional(),
@@ -323,10 +332,10 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       intentConfidence: z.number().min(0).max(1).optional(),
       intentFallbackApplied: z.boolean().optional(),
       responseLanguagePolicy: z.enum(["match_user_question"]).optional(),
-      candidateCounts: CandidateCountsSchema,
+      candidateCounts: CandidateCountsSchema.optional(),
       appliedConstraints: z.array(AppliedConstraintSchema).optional(),
-      fallbackApplied: z.boolean(),
-      rerankStatus: z.enum(["skipped", "applied", "fallback"]),
+      fallbackApplied: z.boolean().optional(),
+      rerankStatus: z.enum(["skipped", "applied", "fallback"]).optional(),
       rewrite: RewriteInfoSchema.optional(),
       triggerAnalysis: schemas.TriggerAnalysisSchema.optional(),
       triggerBackoff: schemas.TriggerBackoffSchema.optional(),
@@ -352,8 +361,8 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     }),
   );
 
-  const RetrievalTraceStageSchema = registry.register(
-    "RetrievalTraceStage",
+  const ActivityStageSchema = registry.register(
+    "ActivityStage",
     z.object({
       stageId: z.string(),
       kind: z.string(),
@@ -369,8 +378,8 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     }),
   );
 
-  const RetrievalTraceLinkSchema = registry.register(
-    "RetrievalTraceLink",
+  const ActivityLinkSchema = registry.register(
+    "ActivityLink",
     z.object({
       fromStageId: z.string(),
       toStageId: z.string(),
@@ -378,16 +387,16 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     }),
   );
 
-  const RetrievalTraceSchema = registry.register(
-    "RetrievalTrace",
+  const ActivityTraceSchema = registry.register(
+    "ActivityTrace",
     z.object({
       traceId: z.string(),
       startedAt: z.string().datetime(),
       completedAt: z.string().datetime().optional(),
       totalDurationMs: z.number().int().min(0).optional(),
-      stages: z.array(RetrievalTraceStageSchema),
-      links: z.array(RetrievalTraceLinkSchema),
-      summary: RetrievalInfoSchema.optional(),
+      stages: z.array(ActivityStageSchema),
+      links: z.array(ActivityLinkSchema),
+      summary: ActivitySummarySchema.optional(),
     }),
   );
 
@@ -399,7 +408,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       query: z.string(),
       resultCount: z.number().int().min(0),
       results: z.array(DocumentSearchResultSchema),
-      retrievalTrace: RetrievalTraceSchema.optional(),
+      activityTrace: ActivityTraceSchema.optional(),
     }),
   );
 
@@ -427,8 +436,8 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
         lexical: z.string(),
       }),
       results: z.array(RetrievalSearchEvidenceSchema),
-      retrievalInfo: RetrievalInfoSchema,
-      retrievalTrace: RetrievalTraceSchema,
+      activitySummary: ActivitySummarySchema,
+      activityTrace: ActivityTraceSchema,
     }),
   );
 
@@ -453,8 +462,8 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       validation: z.object({
         status: z.enum(["supported", "unsupported", "not_checked"]),
       }),
-      retrievalInfo: RetrievalInfoSchema,
-      retrievalTrace: RetrievalTraceSchema,
+      activitySummary: ActivitySummarySchema,
+      activityTrace: ActivityTraceSchema,
     }),
   );
 
@@ -508,10 +517,10 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     AppliedConstraintSchema,
     RewriteInfoSchema,
     RetrievalExecutionMetadataSchema,
-    RetrievalInfoSchema,
-    RetrievalTraceStageSchema,
-    RetrievalTraceLinkSchema,
-    RetrievalTraceSchema,
+    ActivitySummarySchema,
+    ActivityStageSchema,
+    ActivityLinkSchema,
+    ActivityTraceSchema,
     DocumentSearchResponseSchema,
     RetrievalSearchRequestSchema,
     RetrievalAnswerRequestSchema,

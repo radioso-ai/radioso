@@ -80,8 +80,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     citations: z.array(schemas.CitationSchema).optional(),
     answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),
     suggestions: z.array(ChatSuggestionSchema).optional(),
-    retrievalInfo: schemas.RetrievalInfoSchema,
-    retrievalTrace: schemas.RetrievalTraceSchema,
+    activitySummary: schemas.ActivitySummarySchema,
+    activityTrace: schemas.ActivityTraceSchema,
   };
 
   const ChatResponseSchema = registry.register(
@@ -230,8 +230,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       answerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal", "non_retrieval_response"]).optional(),
       route: AssistantRouteDiagnosticsSchema.optional(),
       validation: ValidationDebugSchema.optional(),
-      retrievalInfo: schemas.RetrievalInfoSchema.optional(),
-      retrievalTrace: schemas.RetrievalTraceSchema.optional(),
+      activitySummary: schemas.ActivitySummarySchema.optional(),
+      activityTrace: schemas.ActivityTraceSchema.optional(),
       errorMessage: z.string().nullable().optional(),
     }),
   );

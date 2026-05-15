@@ -3,10 +3,10 @@ import { randomUUID } from "node:crypto";
 import type {
   RetrievalExecutionDiagnostics,
   RetrievalAnswerShapeSelection,
-  RetrievalTrace,
-  RetrievalTraceStageStatus,
+  ActivityTrace,
+  ActivityStageStatus,
 } from "../domain/retrievalPipelineTypes.js";
-import { RetrievalTraceAssembler } from "./retrievalTraceAssembler.js";
+import { ActivityTraceAssembler } from "./retrievalActivityTraceAssembler.js";
 import type {
   PromptAssemblyStageResult,
   QueryInterpretationStageResult,
@@ -20,7 +20,7 @@ interface MeasuredStage<T> {
   durationMs: number;
 }
 
-export interface RetrievalTraceSourceStages {
+export interface ActivityTraceSourceStages {
   traceStartedAtMs: number;
   context: MeasuredStage<RetrievalContextStageResult>;
   interpretation: MeasuredStage<QueryInterpretationStageResult>;
@@ -32,7 +32,7 @@ export interface RetrievalTraceSourceStages {
   diagnostics: MeasuredStage<RetrievalExecutionDiagnostics>;
 }
 
-export interface NonRetrievalTraceSourceStages {
+export interface NonActivityTraceSourceStages {
   request: RetrievalPipelineRequest;
   traceStartedAtMs: number;
   context: MeasuredStage<RetrievalContextStageResult>;
@@ -41,7 +41,7 @@ export interface NonRetrievalTraceSourceStages {
 
 const toIso = (value: number): string => new Date(value).toISOString();
 
-const toInterpretationStatus = (value: string): RetrievalTraceStageStatus => {
+const toInterpretationStatus = (value: string): ActivityStageStatus => {
   if (value === "fallback" || value === "rejected" || value === "skipped") {
     return value;
   }
@@ -49,15 +49,15 @@ const toInterpretationStatus = (value: string): RetrievalTraceStageStatus => {
   return "applied";
 };
 
-export class RetrievalPipelineTraceBuilder {
-  private readonly retrievalTraceAssembler = new RetrievalTraceAssembler();
+export class RetrievalPipelineActivityTraceBuilder {
+  private readonly activityTraceAssembler = new ActivityTraceAssembler();
 
-  buildRetrievalTrace(stages: RetrievalTraceSourceStages): RetrievalTrace {
+  buildActivityTrace(stages: ActivityTraceSourceStages): ActivityTrace {
     const traceCompletedAtMs = Date.now();
     const lexicalDurationMs = Math.max(0, Math.round(stages.retrieval.durationMs * 0.35));
     const semanticDurationMs = Math.max(0, stages.retrieval.durationMs - lexicalDurationMs);
 
-    return this.retrievalTraceAssembler.assemble({
+    return this.activityTraceAssembler.assemble({
       prompt: stages.prompt.result,
       diagnostics: stages.diagnostics.result,
       timings: {
@@ -106,10 +106,10 @@ export class RetrievalPipelineTraceBuilder {
     });
   }
 
-  buildNonRetrievalTrace(
-    stages: NonRetrievalTraceSourceStages,
+  buildNonActivityTrace(
+    stages: NonActivityTraceSourceStages,
     diagnostics: RetrievalExecutionDiagnostics,
-  ): RetrievalTrace {
+  ): ActivityTrace {
     const traceCompletedAtMs = Date.now();
 
     return {
@@ -137,9 +137,9 @@ export class RetrievalPipelineTraceBuilder {
           },
         },
         {
-          stageId: "interpretation",
-          kind: "query_interpretation",
-          label: "Query interpretation",
+          stageId: "routing",
+          kind: "routing",
+          label: "Routing",
           status: toInterpretationStatus(stages.interpretation.result.rewrittenQuery.status),
           startedAt: toIso(stages.interpretation.startedAt),
           durationMs: stages.interpretation.durationMs,
@@ -158,23 +158,9 @@ export class RetrievalPipelineTraceBuilder {
           },
           reason: "Retrieval was intentionally skipped for a non-retrieval chat turn.",
         },
-        {
-          stageId: "diagnostics",
-          kind: "diagnostics",
-          label: "Diagnostics",
-          status: "skipped",
-          startedAt: toIso(traceCompletedAtMs),
-          durationMs: 0,
-          outputs: {
-            responseIntent: diagnostics.responseIntent,
-            retrievalSkipped: diagnostics.retrievalSkipped,
-            continuityDecision: diagnostics.continuityDecision,
-          },
-        },
       ],
       links: [
-        { fromStageId: "context", toStageId: "interpretation", kind: "sequence" },
-        { fromStageId: "interpretation", toStageId: "diagnostics", kind: "sequence" },
+        { fromStageId: "context", toStageId: "routing", kind: "sequence" },
       ],
     };
   }

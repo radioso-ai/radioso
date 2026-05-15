@@ -26,7 +26,7 @@ const groundedMissResponseComposer: GroundedMissResponseComposer = {
   },
 };
 
-const asChatRetrievalPipeline = (pipeline: Record<string, unknown>) => {
+const asChatActivityPipeline = (pipeline: Record<string, unknown>) => {
   if (
     typeof pipeline.interpret === "function"
     && typeof pipeline.runInterpreted === "function"
@@ -273,7 +273,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -312,7 +312,7 @@ describe("chat service streaming", () => {
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer", citationIndices: [0] }],
       suggestions: undefined,
-      retrievalInfo: expect.objectContaining({
+      activitySummary: expect.objectContaining({
         parsedQuery: expect.objectContaining({
           originalQuery: "page do",
           semanticQuery: "page do",
@@ -333,7 +333,7 @@ describe("chat service streaming", () => {
           ran: false,
         }),
       }),
-      retrievalTrace: expect.objectContaining({
+      activityTrace: expect.objectContaining({
         stages: expect.arrayContaining([
           expect.objectContaining({
             stageId: "answer",
@@ -412,7 +412,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -472,7 +472,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -512,7 +512,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -550,7 +550,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -597,7 +597,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -644,7 +644,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -718,7 +718,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -796,7 +796,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       fallbackComposer,
@@ -880,7 +880,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -967,7 +967,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1036,7 +1036,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1066,7 +1066,7 @@ describe("chat service streaming", () => {
       answer: "full answer  marker",
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer  marker", citationIndices: [0] }],
-      retrievalInfo: expect.objectContaining({
+      activitySummary: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
           lexical: 1,
@@ -1074,7 +1074,7 @@ describe("chat service streaming", () => {
           final: 1,
         },
       }),
-      retrievalTrace: expect.objectContaining({
+      activityTrace: expect.objectContaining({
         stages: expect.arrayContaining([
           expect.objectContaining({
             stageId: "answer",
@@ -1141,7 +1141,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1181,7 +1181,7 @@ describe("chat service streaming", () => {
         { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
       ],
       suggestions: undefined,
-      retrievalInfo: expect.objectContaining({
+      activitySummary: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
           lexical: 1,
@@ -1189,7 +1189,7 @@ describe("chat service streaming", () => {
           final: 1,
         },
       }),
-      retrievalTrace: expect.objectContaining({
+      activityTrace: expect.objectContaining({
         stages: expect.arrayContaining([
           expect.objectContaining({
             stageId: "answer",
@@ -1253,7 +1253,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1296,7 +1296,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
     );
@@ -1361,7 +1361,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
     );
@@ -1438,7 +1438,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
     );
@@ -1451,7 +1451,7 @@ describe("chat service streaming", () => {
     });
 
     expect(response.answer).toContain("24/7 phone support");
-    expect(response.retrievalTrace.stages).toEqual(expect.arrayContaining([
+    expect(response.activityTrace.stages).toEqual(expect.arrayContaining([
       expect.objectContaining({
         stageId: "answer",
         outputs: expect.objectContaining({
@@ -1524,7 +1524,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
     );
@@ -1547,7 +1547,7 @@ describe("chat service streaming", () => {
         },
       }),
     ]);
-    expect(response.retrievalTrace.stages).toEqual(expect.arrayContaining([
+    expect(response.activityTrace.stages).toEqual(expect.arrayContaining([
       expect.objectContaining({
         stageId: "answer",
         outputs: expect.objectContaining({
@@ -1611,7 +1611,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1691,7 +1691,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
     );
@@ -1786,7 +1786,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
     );
@@ -1811,7 +1811,7 @@ describe("chat service streaming", () => {
       expect.objectContaining({
         type: "done",
         answer: expect.any(String),
-        retrievalTrace: expect.objectContaining({
+        activityTrace: expect.objectContaining({
           stages: expect.arrayContaining([
             expect.objectContaining({
               stageId: "answer",
@@ -1885,7 +1885,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1979,7 +1979,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2083,7 +2083,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2178,7 +2178,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2264,7 +2264,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2356,7 +2356,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2450,7 +2450,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2608,7 +2608,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2709,7 +2709,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2807,7 +2807,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2912,7 +2912,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3004,7 +3004,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3088,7 +3088,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       fallbackComposer,
@@ -3164,7 +3164,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3341,7 +3341,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       fallbackComposer,
@@ -3359,12 +3359,12 @@ describe("chat service streaming", () => {
       reason: "social_only",
     });
     expect(response.citations).toBeUndefined();
-    expect(response.retrievalInfo).toMatchObject({
+    expect(response.activitySummary).toMatchObject({
       responseIntent: "social_only",
       retrievalSkipped: true,
       intentConfidence: 0.96,
     });
-    expect(response.retrievalTrace.stages).toEqual(
+    expect(response.activityTrace.stages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           stageId: "answer",
@@ -3535,7 +3535,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3552,7 +3552,7 @@ describe("chat service streaming", () => {
       type: "direct",
       reason: "assistant_identity",
     });
-    expect(response.retrievalInfo).toMatchObject({
+    expect(response.activitySummary).toMatchObject({
       responseIntent: "assistant_identity",
       retrievalSkipped: true,
     });
@@ -3582,7 +3582,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatRetrievalPipeline(retrievalPipeline) as never,
+      asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,

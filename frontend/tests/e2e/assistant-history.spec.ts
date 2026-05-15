@@ -86,7 +86,7 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
             nonSubstantiveSegmentCount: 0,
             segmentResults: [],
           },
-          retrievalInfo: {
+          activitySummary: {
             execution: {
               surface: "assistant",
               path: "assistant_retrieval",
@@ -107,7 +107,7 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
               materialDisagreement: false,
             },
           },
-          retrievalTrace: {
+          activityTrace: {
             traceId: "trace-1",
             startedAt: nowIso,
             completedAt: nowIso,
@@ -127,8 +127,46 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
               fallbackApplied: false,
               rerankStatus: "skipped",
             },
-            stages: [],
-            links: [],
+            stages: [
+              {
+                stageId: "context",
+                kind: "context",
+                label: "Context",
+                status: "applied",
+                metrics: { selectedHistoryCount: 1 },
+              },
+              {
+                stageId: "routing",
+                kind: "routing",
+                label: "Routing",
+                status: "applied",
+                outputs: {
+                  responseIntent: "retrieval",
+                  retrievalInvoked: true,
+                  retrievalSkipped: false,
+                },
+                reason: "evidence_required",
+              },
+              {
+                stageId: "generation",
+                kind: "generation",
+                label: "Generation",
+                status: "applied",
+                metrics: { latencyMs: 12 },
+              },
+              {
+                stageId: "answer",
+                kind: "answer_outcome",
+                label: "Answer outcome",
+                status: "applied",
+                outputs: { outcome: "grounded_success" },
+              },
+            ],
+            links: [
+              { fromStageId: "context", toStageId: "routing", kind: "sequence" },
+              { fromStageId: "routing", toStageId: "generation", kind: "sequence" },
+              { fromStageId: "generation", toStageId: "answer", kind: "sequence" },
+            ],
           },
           route: {
             generator: "assistant",
@@ -160,6 +198,9 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
 
   await expect(page).toHaveURL(/itemKind=chat/);
   await expect(page.getByText("Response route")).toBeVisible();
+  await expect(page.getByText("Trace graph")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Context/ })).toBeVisible();
+  await expect(page.getByText("Selected: Context")).toBeVisible();
   await expect(page.getByText("assistant").first()).toBeVisible();
   await expect(page.getByText("retrieval").first()).toBeVisible();
   await expect(page.getByText("evidence required")).toBeVisible();

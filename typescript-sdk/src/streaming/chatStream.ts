@@ -91,8 +91,8 @@ const parseFrame = (frame: string): RadiosoChatStreamEvent | null => {
       ...(Array.isArray(payload.citations) ? { citations: payload.citations } : {}),
       ...(Array.isArray(payload.answerSegments) ? { answerSegments: payload.answerSegments } : {}),
       ...(Array.isArray(payload.suggestions) ? { suggestions: payload.suggestions } : {}),
-      retrievalInfo: payload.retrievalInfo,
-      retrievalTrace: payload.retrievalTrace,
+      activitySummary: payload.activitySummary,
+      activityTrace: payload.activityTrace,
     } as RadiosoChatStreamEvent;
   }
 

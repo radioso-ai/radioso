@@ -3,7 +3,7 @@ export interface DocumentSearchHistoryEntry {
   query: string;
   createdAt: string;
   resultCount: number;
-  traceAvailable: boolean;
+  activityTraceAvailable: boolean;
   previewTopTitles: string[];
 }
 

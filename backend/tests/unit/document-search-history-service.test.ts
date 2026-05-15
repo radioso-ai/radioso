@@ -19,7 +19,7 @@ describe("document search history service", () => {
       metadata: {
         searchId: "search-1",
         results: "invalid-results-shape",
-        retrievalTrace: "invalid-trace-shape",
+        activityTrace: "invalid-trace-shape",
       } as unknown as Record<string, unknown>,
     });
 
@@ -33,7 +33,7 @@ describe("document search history service", () => {
           query: "Legacy search",
           createdAt: expect.any(String),
           resultCount: 0,
-          traceAvailable: false,
+          activityTraceAvailable: false,
           previewTopTitles: [],
         },
       ],
@@ -47,7 +47,7 @@ describe("document search history service", () => {
       query: "Legacy search",
       resultCount: 0,
       results: [],
-      retrievalTrace: undefined,
+      activityTrace: undefined,
     });
   });
 });

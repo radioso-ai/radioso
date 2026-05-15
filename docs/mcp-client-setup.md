@@ -1,11 +1,33 @@
 # MCP Client Setup
 
+## Deployment Modes
+
+Radioso supports three MCP deployment modes:
+
+- **Same-host backend MCP**: set `RADIOSO_MCP_ENABLED=true` and leave `RADIOSO_MCP_STANDALONE=false`. The backend serves MCP at `RADIOSO_MCP_MOUNT_PATH` (default `/mcp`). Clients use the workspace API token directly as the bearer token.
+- **Standalone-only**: run `packages/radioso-mcp-server` as a separate HTTP process. Clients first exchange a workspace API token for a short-lived MCP access token.
+- **Hybrid**: enable merged mode on the backend and also run a standalone MCP server for public connector traffic. Use `RADIOSO_MCP_REDIS_URL` on both when approval and session state must be shared.
+
+Use merged mode for simple self-hosted installs where the backend and MCP endpoint have the same exposure. Use standalone mode when MCP is public but the main backend should stay internal or behind a different network policy.
+
 ## Cursor On Localhost
 
 Cursor can connect to Radioso in two ways:
 
+- **Same-host merged mode**: Cursor connects to the backend MCP route, such as `http://localhost:8080/mcp`, and sends `Authorization: Bearer <workspace API token>`.
 - **Remote HTTP (URL mode)**: Cursor connects to a local HTTP MCP server at `http://127.0.0.1:8787/mcp`. Point your local Cursor MCP config at that URL and pass a short-lived bearer token in `RADIOSO_MCP_ACCESS_TOKEN`.
 - **Local stdio (stdio mode)**: Cursor launches the MCP server process itself (no separate HTTP daemon). This uses `RADIOSO_BASE_URL` and `RADIOSO_API_TOKEN` directly.
+
+### Same-Host Merged Mode
+
+1. Start the backend with `RADIOSO_MCP_ENABLED=true` and `RADIOSO_MCP_STANDALONE=false`.
+2. Configure Cursor to connect to `http://localhost:8080/mcp`, or your deployed backend origin plus `/mcp`.
+3. Use the workspace API token directly in `Authorization: Bearer <workspace API token>`.
+4. Ask Cursor to list tools or query workspace documents.
+
+No `/v1/auth/exchange` call is needed in merged mode.
+
+### Standalone HTTP Mode
 
 1. Start the Radioso backend and the remote MCP server.
 2. Exchange a Radioso workspace token for an MCP access token:
@@ -21,6 +43,14 @@ source <(
 4. Ask Cursor to list tools or query workspace documents.
 
 The exchange helper emits a short-lived token. Rerun it when the MCP session expires.
+
+## Security Notes
+
+Same-host backend MCP exposes MCP anywhere the backend is reachable. This is convenient for self-hosted installs, but it means public backend deployments also expose `/mcp` unless you restrict it at the reverse proxy or keep `RADIOSO_MCP_ENABLED=false`.
+
+Standalone mode keeps a separate public surface. It is the better fit when cloud connectors need public HTTPS access but the main backend should remain private.
+
+The merged route has separate CORS configuration through `RADIOSO_MCP_MERGED_CORS_ORIGINS`. The default is `*` without credentials, because MCP clients use bearer tokens rather than dashboard cookies.
 
 ## Endpoint Model
 

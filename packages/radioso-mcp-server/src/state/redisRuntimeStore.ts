@@ -214,7 +214,15 @@ export const createRedisClientHandle = async ({
       };
 
       const ttlSeconds = ttlSecondsFromDate(session.expiresAt);
-      await client.multi()
+      const previousStored = await client.get(sessionIdKey(keyPrefix, session.sessionId));
+      const transaction = client.multi();
+
+      if (previousStored) {
+        const previousSession = deserializeSession(previousStored, signingSecret);
+        transaction.del(sessionTokenKey(keyPrefix, previousSession.accessTokenHash));
+      }
+
+      await transaction
         .set(sessionIdKey(keyPrefix, session.sessionId), serializeSession(session, signingSecret), { EX: ttlSeconds })
         .set(sessionTokenKey(keyPrefix, session.accessTokenHash), session.sessionId, { EX: ttlSeconds })
         .exec();
@@ -331,7 +339,10 @@ export const createRedisClientHandle = async ({
             continue;
           }
 
-          if (grant.sessionId !== input.sessionId) {
+          if (
+            grant.sessionId !== input.sessionId &&
+            (!grant.upstreamApiTokenHash || grant.upstreamApiTokenHash !== input.upstreamApiTokenHash)
+          ) {
             await isolatedClient.unwatch();
             return {
               grant: cloneApproval(grant),
@@ -449,6 +460,7 @@ export const createRedisClientHandle = async ({
         remainingUses: input.remainingUses,
         resourceHints: input.resourceHints ? [...input.resourceHints] : undefined,
         sessionId: input.sessionId,
+        upstreamApiTokenHash: input.upstreamApiTokenHash,
       };
 
       const ttlSeconds = ttlSecondsFromDate(grant.expiresAt);

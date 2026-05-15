@@ -112,6 +112,13 @@ variable "public_chat_session_secret" {
   sensitive   = true
 }
 
+variable "radioso_mcp_signing_secret" {
+  description = "MCP session signing secret for live."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
 variable "connector_encryption_key" {
   description = "Connector encryption key for live."
   type        = string
@@ -176,6 +183,18 @@ variable "metrics_enabled" {
 
 variable "connector_public_base_url" {
   description = "Optional connector callback base URL."
+  type        = string
+  default     = null
+}
+
+variable "radioso_mcp_enabled" {
+  description = "Whether to expose backend-hosted MCP in live."
+  type        = bool
+  default     = false
+}
+
+variable "radioso_mcp_base_url_override" {
+  description = "Optional backend base URL used by the hosted MCP runtime."
   type        = string
   default     = null
 }

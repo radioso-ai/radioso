@@ -10,6 +10,7 @@ export interface ApprovalGrantRecord {
   remainingUses?: number;
   resourceHints?: string[];
   sessionId: string;
+  upstreamApiTokenHash?: string;
 }
 
 export type ApprovalConsumeResult =
@@ -22,7 +23,7 @@ export interface ApprovalStore {
   consumeByToken(approvalToken: string, now?: Date): Promise<ApprovalGrantRecord | null>;
   consumeForSessionTool(
     approvalToken: string,
-    input: { sessionId: string; toolName: string },
+    input: { sessionId: string; toolName: string; upstreamApiTokenHash?: string },
     now?: Date,
   ): Promise<ApprovalConsumeResult>;
   getByToken(approvalToken: string, now?: Date): Promise<ApprovalGrantRecord | null>;
@@ -37,6 +38,7 @@ export interface ApprovalStore {
     remainingUses?: number;
     resourceHints?: string[];
     sessionId: string;
+    upstreamApiTokenHash?: string;
   }): Promise<ApprovalGrantRecord>;
 }
 
@@ -117,7 +119,10 @@ export const createInMemoryApprovalStore = (): ApprovalStore => {
         return { status: "missing" };
       }
 
-      if (grant.sessionId !== input.sessionId) {
+      if (
+        grant.sessionId !== input.sessionId &&
+        (!grant.upstreamApiTokenHash || grant.upstreamApiTokenHash !== input.upstreamApiTokenHash)
+      ) {
         return {
           grant,
           status: "session_mismatch",
@@ -184,6 +189,7 @@ export const createInMemoryApprovalStore = (): ApprovalStore => {
         remainingUses: input.remainingUses,
         resourceHints: input.resourceHints ? [...input.resourceHints] : undefined,
         sessionId: input.sessionId,
+        upstreamApiTokenHash: input.upstreamApiTokenHash,
       };
 
       grantsById.set(grant.approvalId, grant);

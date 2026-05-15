@@ -2,7 +2,7 @@
 
 **Feature Branch**: `mcp-deployment-modes`
 **Created**: 2026-05-15
-**Status**: Draft
+**Status**: Approved
 **Input**: User description: "Allow the MCP server to be mounted onto the main Radioso backend so a single host can serve `radioso.example.com/mcp`, while keeping the standalone deployment available for SaaS / hardened public-host setups."
 
 ## Background
@@ -77,7 +77,7 @@ An operator can run merged MCP for internal users (dashboard, internal scripts) 
 - Database MUST be PostgreSQL with `pgvector`; this feature MUST NOT introduce a new persistence layer.
 - Backend development MUST follow TDD: tests written and failing before implementation.
 - Frontend user-visible behavior MUST prefer Playwright coverage; frontend unit tests MUST stay focused on non-visual logic.
-- Secrets MUST be stored in `.env` and never committed; `.env.example` MUST be updated for new configuration knobs (`RADIOSO_MCP_MODE`, etc.).
+- Secrets MUST be stored in `.env` and never committed; `.env.example` MUST be updated for new configuration knobs (`RADIOSO_MCP_ENABLED` and `RADIOSO_MCP_STANDALONE`, etc.).
 - Features MUST preserve modular boundaries between transport, orchestration, domain logic, and persistence.
 - This feature MUST NOT introduce new runtime dependencies on the backend without an explicit dependency-review note in the plan.
 
@@ -87,7 +87,7 @@ An operator can run merged MCP for internal users (dashboard, internal scripts) 
 - **Encapsulation Rule**: The shared package MUST expose a request-handler factory that is transport-agnostic (it takes a request and returns a response) so the standalone CLI and the backend Express mount call into the same code path. The CLI MUST become a thin adapter; the backend mount MUST be a thin Express middleware adapter.
 - **New Seams Required**:
   - `packages/radioso-mcp-server`: a `createMcpRequestHandler(config)` factory that returns a framework-agnostic handler plus a small Express adapter helper.
-  - `backend/`: a composition-level registration that mounts the handler at `POST /mcp` (and the SSE counterpart) when `RADIOSO_MCP_MODE` includes `merged`.
+  - `backend/`: a composition-level registration that mounts the handler at `POST /mcp` (and the SSE counterpart) when `RADIOSO_MCP_ENABLED=true` and `RADIOSO_MCP_STANDALONE=false`.
   - Shared config schema for MCP configuration so the backend reads the same env vars the standalone package already uses.
 - **Auth Seam**: The handler factory MUST accept a pluggable token verifier so merged mode can verify workspace API tokens directly (no exchange) and standalone mode can keep verifying exchanged short-lived tokens. The verifier is the only mode-specific surface; everything downstream (tool execution, approvals, audits) is shared.
 - **Anti-Goals**:
@@ -101,7 +101,7 @@ An operator can run merged MCP for internal users (dashboard, internal scripts) 
 ### Functional Requirements
 
 - **FR-001**: `packages/radioso-mcp-server` MUST expose a transport-agnostic `createMcpRequestHandler(config)` factory plus an Express adapter helper, with parity for the existing standalone CLI behavior.
-- **FR-002**: The backend MUST support a new `RADIOSO_MCP_MODE` env var with values `disabled` (default), `merged`, and `standalone-only`. `merged` mounts the MCP handler in-process; `standalone-only` skips the mount (current behavior); `disabled` returns 404 on `/mcp`.
+- **FR-002**: The backend MUST support `RADIOSO_MCP_ENABLED` and `RADIOSO_MCP_STANDALONE` env vars. Both default to `false`. `RADIOSO_MCP_ENABLED=true` with `RADIOSO_MCP_STANDALONE=false` mounts the MCP handler in-process; `RADIOSO_MCP_STANDALONE=true` skips the backend mount for standalone deployments; `RADIOSO_MCP_ENABLED=false` returns 404 on `/mcp`.
 - **FR-003**: In merged mode, the auth verifier MUST accept `Authorization: Bearer <workspace-api-token>` directly and resolve workspace identity from the workspace token record, with no exchange step.
 - **FR-004**: In standalone mode, the existing `/v1/auth/exchange` flow MUST continue to work unchanged.
 - **FR-005**: In merged mode, the MCP route MUST be mounted at `POST /mcp` (plus matching SSE response handling per the MCP Streamable HTTP transport spec) and MUST NOT live under `/api/v1/`.
@@ -109,13 +109,14 @@ An operator can run merged MCP for internal users (dashboard, internal scripts) 
 - **FR-007**: The backend MUST emit MCP-attributed chat traffic with the same signed-header verification that exists today, so history attribution remains correct in both modes.
 - **FR-008**: CORS policy for `/mcp` MUST be configurable independently from the dashboard's session CORS policy, including a sensible default that accepts bearer auth from any origin while rejecting cookie-bearing requests.
 - **FR-009**: The dashboard's MCP channel card MUST detect "merged" mode when `NEXT_PUBLIC_MCP_URL` resolves to the same origin as the dashboard, and switch its instructions to "paste your workspace API token directly" without the exchange step. When the origins differ, it MUST keep the current exchange-required instructions.
-- **FR-010**: Documentation MUST cover all three deployment modes (`merged`, `standalone-only`, hybrid), the env-var matrix, when to choose each, and the security implications (e.g. exposing `/mcp` publicly when the backend is also public).
+- **FR-010**: Documentation MUST cover all three deployment modes (same-host backend MCP, standalone, hybrid), the env-var matrix, when to choose each, and the security implications (e.g. exposing `/mcp` publicly when the backend is also public).
 - **FR-011**: Existing standalone-mode integration tests MUST continue to pass without modification; new integration tests MUST cover the merged mount end-to-end including approval and audit flows.
 - **FR-012**: Health and readiness probes MUST report MCP mount status in merged mode so operators can verify the route is live.
 
 ### Configuration Surface
 
-- `RADIOSO_MCP_MODE`: `disabled` | `merged` | `standalone-only` (default: `disabled`)
+- `RADIOSO_MCP_ENABLED`: boolean, default `false`
+- `RADIOSO_MCP_STANDALONE`: boolean, default `false`
 - `RADIOSO_MCP_MOUNT_PATH`: default `/mcp`, overridable for operators with reverse-proxy conventions.
 - `RADIOSO_MCP_MERGED_CORS_ORIGINS`: comma-separated allowlist, default `*` with credentials disabled.
 - Existing standalone env vars (`RADIOSO_MCP_BIND_HOST`, `RADIOSO_MCP_BIND_PORT`, signing secret, TTLs, policy path, audit path, Redis URL, etc.) MUST be reused verbatim by merged mode where applicable — operators MUST NOT need to duplicate config.
@@ -135,12 +136,12 @@ An operator can run merged MCP for internal users (dashboard, internal scripts) 
 
 ### Measurable Outcomes
 
-- **SC-001**: In validation, a backend started with `RADIOSO_MCP_MODE=merged` serves a successful MCP `tools/list` call at `POST /mcp` authenticated with a plain workspace API token, end-to-end, without invoking `/v1/auth/exchange`.
+- **SC-001**: In validation, a backend started with `RADIOSO_MCP_ENABLED=true` and `RADIOSO_MCP_STANDALONE=false` serves a successful MCP `tools/list` call at `POST /mcp` authenticated with a plain workspace API token, end-to-end, without invoking `/v1/auth/exchange`.
 - **SC-002**: In validation, the standalone MCP HTTP server continues to pass its existing `smoke:http` and `smoke:redis` suites without code changes.
 - **SC-003**: In validation, approval-required write tools in merged mode follow the same approval lifecycle states as in standalone mode (pending → approved → executed → audited).
 - **SC-004**: In validation, the MCP channel card in a merged deployment shows the simplified two-step instructions (paste URL + paste workspace token) instead of the three-step exchange instructions.
 - **SC-005**: In validation, hybrid deployments with a shared Redis store demonstrate consistent session and approval state across both entry points.
-- **SC-006**: In validation, disabling MCP entirely (`RADIOSO_MCP_MODE=disabled`) results in `404` on `/mcp` and the channel card surfaces a clear "MCP is not enabled on this deployment" empty state.
+- **SC-006**: In validation, disabling MCP entirely (`RADIOSO_MCP_ENABLED=false`) results in `404` on `/mcp` and the channel card surfaces a clear "MCP is not enabled on this deployment" empty state.
 
 ## Out of Scope
 

@@ -17,6 +17,7 @@ export const createHttpServer = ({ authService, auditLogger, config }: RemoteHtt
     authService,
     auditLogger,
     config,
+    entryPoint: "standalone",
   });
   const handleExchange = createAuthExchangeHandler({ auditLogger, authService });
   const handleApproval = createApprovalHandler({ auditLogger, authService });
@@ -47,6 +48,7 @@ export const createHttpServer = ({ authService, auditLogger, config }: RemoteHtt
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${config.bindHost}:${config.bindPort}`}`);
 
       if (req.method === "GET" && url.pathname === "/healthz") {
+        res.setHeader("Access-Control-Allow-Origin", "*");
         writeJson(res, 200, {
           serverName: config.serverName,
           status: "ok",

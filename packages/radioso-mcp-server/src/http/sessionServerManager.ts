@@ -30,12 +30,14 @@ export interface SessionServerManagerDependencies {
   authService: AuthService;
   auditLogger?: AuditLogger;
   config: RadiosoMcpConfig;
+  entryPoint?: "merged" | "standalone";
 }
 
 export const createSessionMcpServerManager = ({
   authService,
   auditLogger,
   config,
+  entryPoint = "standalone",
 }: SessionServerManagerDependencies): SessionMcpServerManager => {
   const sessionHandles = new Map<string, SessionMcpServerHandle>();
   const toToolCatalogKey = (grantedTools: string[]) => [...grantedTools].sort().join("\u0000");
@@ -62,6 +64,7 @@ export const createSessionMcpServerManager = ({
           metadata: {
             code: error.code,
             details: error.details,
+            entryPoint,
             requiresApproval: requiresApproval(
               tool.name,
               context?.authInfo?.approvalRequiredTools ?? session.approvalRequiredTools,
@@ -83,6 +86,7 @@ export const createSessionMcpServerManager = ({
         await auditLogger.emit({
           eventType: "tool.executed",
           metadata: {
+            entryPoint,
             requiresApproval: requiresApproval(
               tool.name,
               context.authInfo?.approvalRequiredTools ?? session.approvalRequiredTools,

@@ -37,6 +37,7 @@ jobs:
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       APP_BASE_URL: ${{ vars.APP_BASE_URL }}
       PUBLIC_CHAT_BASE_URL: ${{ vars.PUBLIC_CHAT_BASE_URL }}
+      RADIOSO_MCP_ENABLED: ${{ vars.RADIOSO_MCP_ENABLED }}
       TF_IN_AUTOMATION: true
       TF_VAR_connector_encryption_key: ${{ secrets.CONNECTOR_ENCRYPTION_KEY }}
       TF_VAR_ee_mail_from_email: ${{ vars.EE_MAIL_FROM_EMAIL }}
@@ -87,6 +88,7 @@ jobs:
         env:
           EE_MAIL_FROM_NAME: ${{ vars.EE_MAIL_FROM_NAME }}
           METRICS_AUTH_TOKEN: ${{ secrets.METRICS_AUTH_TOKEN }}
+          RADIOSO_MCP_SIGNING_SECRET: ${{ secrets.RADIOSO_MCP_SIGNING_SECRET }}
         run: |
           if [ -n "${METRICS_AUTH_TOKEN}" ]; then
             echo "TF_VAR_metrics_auth_token=${METRICS_AUTH_TOKEN}" >> "$GITHUB_ENV"
@@ -94,6 +96,14 @@ jobs:
 
           if [ -n "${EE_MAIL_FROM_NAME}" ]; then
             echo "TF_VAR_ee_mail_from_name=${EE_MAIL_FROM_NAME}" >> "$GITHUB_ENV"
+          fi
+
+          if [ "${RADIOSO_MCP_ENABLED}" = "true" ]; then
+            if [ -z "${RADIOSO_MCP_SIGNING_SECRET}" ]; then
+              echo "Missing required GitHub environment value: RADIOSO_MCP_SIGNING_SECRET" >&2
+              exit 1
+            fi
+            echo "TF_VAR_radioso_mcp_signing_secret=${RADIOSO_MCP_SIGNING_SECRET}" >> "$GITHUB_ENV"
           fi
 
       - name: Capture current deployment values
@@ -104,6 +114,7 @@ jobs:
 
           BACKEND_IMAGE="$(gcloud run services describe "${SERVICE_PREFIX}-backend" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(spec.template.spec.containers[0].image)')"
           FRONTEND_IMAGE="$(gcloud run services describe "${SERVICE_PREFIX}-frontend" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(spec.template.spec.containers[0].image)')"
+          BACKEND_URL="$(gcloud run services describe "${SERVICE_PREFIX}-backend" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
           FRONTEND_URL="$(gcloud run services describe "${SERVICE_PREFIX}-frontend" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
           WORKER_URL="$(gcloud run services describe "${SERVICE_PREFIX}-worker" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
           APP_BASE_URL_OVERRIDE="${APP_BASE_URL:-$FRONTEND_URL}"
@@ -111,6 +122,8 @@ jobs:
 
           echo "TF_VAR_backend_image=${BACKEND_IMAGE}" >> "$GITHUB_ENV"
           echo "TF_VAR_frontend_image=${FRONTEND_IMAGE}" >> "$GITHUB_ENV"
+          echo "TF_VAR_radioso_mcp_enabled=${RADIOSO_MCP_ENABLED:-false}" >> "$GITHUB_ENV"
+          echo "TF_VAR_radioso_mcp_base_url_override=${BACKEND_URL}" >> "$GITHUB_ENV"
           echo "TF_VAR_app_base_url_override=${APP_BASE_URL_OVERRIDE}" >> "$GITHUB_ENV"
           echo "TF_VAR_public_chat_base_url_override=${PUBLIC_CHAT_BASE_URL_OVERRIDE}" >> "$GITHUB_ENV"
           echo "TF_VAR_worker_tasks_service_url_override=${WORKER_URL}" >> "$GITHUB_ENV"

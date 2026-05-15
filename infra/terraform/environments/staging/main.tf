@@ -62,6 +62,7 @@ module "radioso" {
   session_cookie_secret                 = var.session_cookie_secret
   workspace_token_secret                = var.workspace_token_secret
   public_chat_session_secret            = var.public_chat_session_secret
+  radioso_mcp_signing_secret            = var.radioso_mcp_signing_secret
   connector_encryption_key              = var.connector_encryption_key
   resend_mail_api_key                   = var.resend_mail_api_key
   ee_mail_from_email                    = var.ee_mail_from_email
@@ -73,6 +74,8 @@ module "radioso" {
   session_ttl_hours                     = var.session_ttl_hours
   metrics_enabled                       = var.metrics_enabled
   connector_public_base_url             = var.connector_public_base_url
+  radioso_mcp_enabled                   = var.radioso_mcp_enabled
+  radioso_mcp_base_url_override         = var.radioso_mcp_base_url_override
   app_base_url_override                 = var.app_base_url_override
   public_chat_base_url_override         = var.public_chat_base_url_override
   worker_tasks_service_url_override     = var.worker_tasks_service_url_override

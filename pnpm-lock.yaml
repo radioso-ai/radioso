@@ -28,6 +28,9 @@ importers:
       '@radioso/document-parser':
         specifier: workspace:*
         version: link:../packages/document-parser
+      '@radioso/mcp-server':
+        specifier: workspace:*
+        version: link:../packages/radioso-mcp-server
       '@types/swagger-ui-express':
         specifier: ^4.1.8
         version: 4.1.8

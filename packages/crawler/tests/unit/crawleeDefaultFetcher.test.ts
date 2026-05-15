@@ -183,6 +183,129 @@ describe("default Crawlee fetcher", () => {
     expect(pages[0].text).toContain("We build large-scale software solutions");
   });
 
+  it("keeps primary content inside containers with page chrome layout classes", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html>
+            <head><title>Clinic</title></head>
+            <body class="header-width-full tweak-fixed-header-style-basic">
+              <div class="page-shell header-overlay-alignment-center">
+                <div class="site-header"><a href="/contact">Contact</a></div>
+                <main>
+                  <h1>A simple, clinically reliable headache diary.</h1>
+                  <p>Headache App helps patients record headache episodes quickly.</p>
+                </main>
+              </div>
+            </body>
+          </html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1
+    });
+
+    expect(pages[0].text).toContain("A simple, clinically reliable headache diary.");
+    expect(pages[0].text).toContain("Headache App helps patients record headache episodes quickly.");
+    expect(pages[0].text).not.toContain("Contact");
+  });
+
+  it("still strips non-semantic page chrome blocks with high-confidence classes", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html>
+            <head><title>Clinic</title></head>
+            <body>
+              <div class="site-header"><article><a href="/hidden">Hidden navigation</a></article></div>
+              <main><p>Visible clinical content.</p></main>
+              <div id="footer-wrapper">Legal footer copy</div>
+            </body>
+          </html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1
+    });
+
+    expect(pages[0].text).toBe("Visible clinical content.");
+  });
+
+  it("strips multi-part non-semantic chrome classes without matching layout classes", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html>
+            <head><title>Clinic</title></head>
+            <body class="header-width-full">
+              <div class="mobile-menu-search">Search menu copy</div>
+              <div class="header-overlay-bar-style">Overlay menu copy</div>
+              <main><p>Clinical content remains available.</p></main>
+            </body>
+          </html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1
+    });
+
+    expect(pages[0].text).toBe("Clinical content remains available.");
+  });
+
+  it("strips prefix-only non-semantic chrome classes before body fallback extraction", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html>
+            <head><title>Clinic</title></head>
+            <body>
+              <div class="site-header">Header navigation copy</div>
+              <div class="desktop-menu">Desktop menu copy</div>
+              <div class="mobile-footer">Mobile footer copy</div>
+              <section><p>Body fallback content remains readable.</p></section>
+            </body>
+          </html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1
+    });
+
+    expect(pages[0].text).toBe("Body fallback content remains readable.");
+  });
+
   it("keeps link-card content inside the main page content", async () => {
     const { server, baseUrl } = await listen((req, res) => {
       if (req.url === "/robots.txt") {

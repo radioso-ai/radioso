@@ -244,6 +244,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       if (!source) {
         throw notFound("Source not found");
       }
+      await dependencies.websiteCrawlJobService.cancelJobsForSource({ workspaceId, sourceId });
       await dependencies.documentIngestionService.deleteSourceWithDocuments({
         workspaceId,
         sourceId,

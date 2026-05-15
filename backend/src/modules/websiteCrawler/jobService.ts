@@ -169,6 +169,10 @@ export class WebsiteCrawlJobService {
     }
   }
 
+  async cancelJobsForSource(input: { workspaceId: string; sourceId: string }): Promise<number> {
+    return this.dependencies.repository.cancelBySourceId(input.sourceId, input.workspaceId);
+  }
+
   async listForWorkspace(
     workspaceId: string,
     options: { status?: WebsiteCrawlJobStatus; sinceMinutes?: number; limit?: number; sourceId?: string } = {},

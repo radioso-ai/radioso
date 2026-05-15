@@ -99,6 +99,7 @@ export interface WebsiteCrawlJobRepositoryPort {
   findById(jobId: string): Promise<WebsiteCrawlJobRecord | null>;
   listForWorkspace(workspaceId: string, options?: WebsiteCrawlJobListOptions): Promise<WebsiteCrawlJobRecord[]>;
   deleteById(jobId: string, workspaceId: string): Promise<boolean>;
+  cancelBySourceId(sourceId: string, workspaceId: string): Promise<number>;
   claimNext(now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   claimById(jobId: string, now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean>;
@@ -161,6 +162,16 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       [jobId, workspaceId],
     );
     return rowCount > 0;
+  }
+
+  async cancelBySourceId(sourceId: string, workspaceId: string): Promise<number> {
+    return this.database.execute(
+      `DELETE FROM website_crawl_jobs
+       WHERE source_id = $1
+         AND workspace_id = $2
+         AND status IN ('queued', 'processing')`,
+      [sourceId, workspaceId],
+    );
   }
 
   async listForWorkspace(

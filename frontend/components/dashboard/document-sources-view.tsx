@@ -302,6 +302,14 @@ export function DocumentSourcesView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId, isWorkspaceLoading])
 
+  useEffect(() => {
+    if (crawlingSourceIds.size === 0) return
+    const interval = setInterval(() => {
+      refreshCrawlingStatus()
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [crawlingSourceIds.size, refreshCrawlingStatus])
+
   const handleRecrawl = async (source: DocumentSourceListItem) => {
     setRecrawlingSourceId(source.id)
     try {

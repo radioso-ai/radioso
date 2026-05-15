@@ -10,6 +10,8 @@ const baseJob = (overrides: Partial<WebsiteCrawlJobSummary>): WebsiteCrawlJobSum
   limit: 10,
   sourceId: null,
   documentCount: null,
+  failedPageCount: null,
+  failures: [],
   lastError: null,
   createdAt: '2026-05-11T10:00:00.000Z',
   updatedAt: '2026-05-11T10:00:00.000Z',

@@ -77,10 +77,12 @@ export interface OpenApiSchemaCatalog {
   DocumentSearchRequestSchema: z.ZodTypeAny;
   DocumentSearchResponseSchema: z.ZodTypeAny;
   DocumentSearchResultSchema: z.ZodTypeAny;
+  DocumentSourceDocumentsQuerySchema: RouteParameterSchema;
   DocumentSourceSummarySchema: z.ZodTypeAny;
   DocumentSourceListItemSchema: z.ZodTypeAny;
   DocumentSourceListResponseSchema: z.ZodTypeAny;
   DocumentStatusSchema: z.ZodTypeAny;
+  sourceParamsSchema: RouteParameterSchema;
   DocumentSummarySchema: z.ZodTypeAny;
   ErrorResponseSchema: z.ZodTypeAny;
   FlatErrorResponseSchema: z.ZodTypeAny;
@@ -151,6 +153,7 @@ export interface OpenApiSchemaCatalog {
   WebsiteCrawlJobListResponseSchema: z.ZodTypeAny;
   WebsiteCrawlJobResponseSchema: z.ZodTypeAny;
   WebsiteCrawlJobStatusSchema: z.ZodTypeAny;
+  CrawlPageFailureSchema: z.ZodTypeAny;
   WebsiteCrawlJobSummarySchema: z.ZodTypeAny;
   WebsiteCrawlPublicationResponseSchema: z.ZodTypeAny;
   WebsiteCrawlRequestSchema: z.ZodTypeAny;

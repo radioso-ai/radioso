@@ -10,6 +10,11 @@ import { normalizeBaseUrl } from "./service.js";
 import { assertPublicWebsiteUrl } from "./urlPolicy.js";
 import type { WebsiteCrawlerDocumentIngestionPort } from "./service.js";
 
+export interface CrawlPageFailure {
+  sourceUrl: string;
+  reason: string;
+}
+
 export interface WebsiteCrawlJobSummary {
   id: string;
   requestedUrl: string;
@@ -17,6 +22,8 @@ export interface WebsiteCrawlJobSummary {
   limit: number;
   sourceId: string | null;
   documentCount: number | null;
+  failedPageCount: number | null;
+  failures: CrawlPageFailure[];
   lastError: string | null;
   createdAt: string;
   updatedAt: string;
@@ -37,6 +44,34 @@ const extractDocumentCount = (result: Record<string, unknown> | null): number | 
   return null;
 };
 
+const extractFailedPageCount = (result: Record<string, unknown> | null): number | null => {
+  if (!result) {
+    return null;
+  }
+  const typed = result as { failed?: unknown };
+  if (typeof typed.failed === "number" && Number.isFinite(typed.failed)) {
+    return typed.failed;
+  }
+  return null;
+};
+
+const extractFailures = (result: Record<string, unknown> | null): CrawlPageFailure[] => {
+  if (!result) {
+    return [];
+  }
+  const typed = result as { failures?: unknown };
+  if (!Array.isArray(typed.failures)) {
+    return [];
+  }
+  return typed.failures
+    .filter((entry): entry is { sourceUrl: string; reason: string } =>
+      typeof entry === "object" && entry !== null &&
+      typeof (entry as Record<string, unknown>).sourceUrl === "string" &&
+      typeof (entry as Record<string, unknown>).reason === "string",
+    )
+    .map((entry) => ({ sourceUrl: entry.sourceUrl, reason: entry.reason }));
+};
+
 const toJobSummary = (record: WebsiteCrawlJobRecord): WebsiteCrawlJobSummary => ({
   id: record.id,
   requestedUrl: record.requestedUrl,
@@ -44,6 +79,8 @@ const toJobSummary = (record: WebsiteCrawlJobRecord): WebsiteCrawlJobSummary => 
   limit: record.limit,
   sourceId: record.sourceId,
   documentCount: extractDocumentCount(record.result),
+  failedPageCount: extractFailedPageCount(record.result),
+  failures: extractFailures(record.result),
   lastError: record.lastError,
   createdAt: record.createdAt.toISOString(),
   updatedAt: record.updatedAt.toISOString(),
@@ -132,9 +169,13 @@ export class WebsiteCrawlJobService {
     }
   }
 
+  async cancelJobsForSource(input: { workspaceId: string; sourceId: string }): Promise<number> {
+    return this.dependencies.repository.cancelBySourceId(input.sourceId, input.workspaceId);
+  }
+
   async listForWorkspace(
     workspaceId: string,
-    options: { status?: WebsiteCrawlJobStatus; sinceMinutes?: number; limit?: number } = {},
+    options: { status?: WebsiteCrawlJobStatus; sinceMinutes?: number; limit?: number; sourceId?: string } = {},
   ): Promise<WebsiteCrawlJobSummary[]> {
     const sinceMinutes = options.sinceMinutes;
     const since = typeof sinceMinutes === "number"
@@ -144,6 +185,7 @@ export class WebsiteCrawlJobService {
       status: options.status,
       since,
       limit: options.limit,
+      sourceId: options.sourceId,
     });
     return records.map(toJobSummary);
   }

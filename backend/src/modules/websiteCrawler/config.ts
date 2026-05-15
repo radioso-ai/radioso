@@ -13,8 +13,8 @@ export type WebsiteCrawlerEnv = Partial<Record<
   string | undefined
 >>;
 
-const DEFAULT_LIMIT = 10;
-const DEFAULT_MAX_LIMIT = 100;
+const DEFAULT_LIMIT = 1000;
+const DEFAULT_MAX_LIMIT = 1000;
 export const DEFAULT_WEBSITE_CRAWLER_USER_AGENT = "RadiosoCrawler/1.0";
 
 const readInteger = (

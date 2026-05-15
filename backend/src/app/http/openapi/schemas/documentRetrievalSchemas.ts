@@ -89,6 +89,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       sourceKind: z.enum(["inline_text", "uploaded_file"]),
       sourceFilename: z.string().nullable().optional(),
       sourceMimeType: z.string().nullable().optional(),
+      contentSize: z.number().int().min(0).nullable().optional(),
     }),
   );
 
@@ -195,6 +196,14 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     z.enum(["queued", "processing", "completed", "failed"]),
   );
 
+  const CrawlPageFailureSchema = registry.register(
+    "CrawlPageFailure",
+    z.object({
+      sourceUrl: z.string(),
+      reason: z.string(),
+    }),
+  );
+
   const WebsiteCrawlJobSummarySchema = registry.register(
     "WebsiteCrawlJobSummary",
     z.object({
@@ -204,6 +213,8 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       limit: z.number().int().min(1),
       sourceId: z.string().uuid().nullable(),
       documentCount: z.number().int().min(0).nullable(),
+      failedPageCount: z.number().int().min(0).nullable(),
+      failures: z.array(CrawlPageFailureSchema),
       lastError: z.string().nullable(),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
@@ -222,6 +233,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     status: WebsiteCrawlJobStatusSchema.optional(),
     sinceMinutes: z.coerce.number().int().min(1).max(1440).optional(),
     limit: z.coerce.number().int().min(1).max(200).optional(),
+    sourceId: z.string().uuid().optional(),
   });
 
   const CitationSchema = registry.register(
@@ -473,10 +485,22 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     z.union([RetrievalAnswerSuccessSchema, RetrievalAnswerUnsupportedSchema]),
   );
 
+  const sourceParamsSchema = z.object({
+    sourceId: z.string().uuid(),
+  });
+
+  const DocumentSourceDocumentsQuerySchema = z.object({
+    limit: z.number().int().min(1).max(100).optional(),
+    offset: z.number().int().min(0).optional(),
+    cursor: z.string().min(1).optional(),
+  });
+
   Object.assign(schemas, {
     documentParamsSchema,
     documentSchema,
     documentSearchHistoryParamsSchema,
+    sourceParamsSchema,
+    DocumentSourceDocumentsQuerySchema,
     DocumentStatusSchema,
     RagStatusSchema,
     DocumentCreateRequestSchema,
@@ -494,6 +518,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     DocumentSearchHistoryListResponseSchema,
     DocumentSearchRequestSchema,
     WebsiteCrawlRequestSchema,
+    CrawlPageFailureSchema,
     WebsiteCrawlJobResponseSchema,
     WebsiteCrawlPublicationResponseSchema,
     WebsiteCrawlJobStatusSchema,

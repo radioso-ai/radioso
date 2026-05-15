@@ -49,6 +49,7 @@ export interface DocumentSourceRepositoryPort {
     status: string;
     syncedAt?: Date | null;
   }): Promise<void>;
+  deleteByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<boolean>;
 }
 
 interface DocumentSourceRow {
@@ -235,5 +236,15 @@ export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
        WHERE id = $1 AND workspace_id = $2`,
       [input.sourceId, input.workspaceId, input.status, input.syncedAt ?? null],
     );
+  }
+
+  async deleteByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<boolean> {
+    const rows = await this.database.query<{ id: string }>(
+      `DELETE FROM document_sources
+       WHERE id = $1 AND workspace_id = $2
+       RETURNING id`,
+      [sourceId, workspaceId],
+    );
+    return rows.length > 0;
   }
 }

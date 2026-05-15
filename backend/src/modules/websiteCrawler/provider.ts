@@ -23,4 +23,5 @@ export interface WebsiteCrawlResult {
 export interface WebsiteCrawlerProvider {
   name: string;
   crawl(request: WebsiteCrawlRequest): Promise<WebsiteCrawlResult>;
+  crawlStream?(request: WebsiteCrawlRequest, onPage: (page: WebsiteCrawlPage) => Promise<void>): Promise<Omit<WebsiteCrawlResult, "pages">>;
 }

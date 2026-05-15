@@ -7,8 +7,8 @@ import {
 describe("website crawler config", () => {
   it("uses generic crawler limits when no env is configured", () => {
     expect(resolveWebsiteCrawlerConfig({})).toEqual({
-      defaultLimit: 10,
-      maxLimit: 100,
+      defaultLimit: 1000,
+      maxLimit: 1000,
       userAgent: "RadiosoCrawler/1.0",
     });
   });

@@ -46,7 +46,7 @@ describe("retrieval answer contract", () => {
       validation: expect.objectContaining({
         status: expect.any(String),
       }),
-      retrievalInfo: expect.objectContaining({
+      activitySummary: expect.objectContaining({
         candidateCounts: expect.any(Object),
         execution: {
           surface: "retrieval",
@@ -54,7 +54,7 @@ describe("retrieval answer contract", () => {
           retrievalInvoked: true,
         },
       }),
-      retrievalTrace: expect.objectContaining({
+      activityTrace: expect.objectContaining({
         traceId: expect.any(String),
         summary: expect.objectContaining({
           execution: {
@@ -77,7 +77,7 @@ describe("retrieval answer contract", () => {
         }),
       }),
     });
-    expect(response.body.retrievalTrace.stages).toEqual(
+    expect(response.body.activityTrace.stages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           stageId: "shape_selection",
@@ -117,14 +117,14 @@ describe("retrieval answer contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       outcome: "answer",
-      retrievalInfo: {
+      activitySummary: {
         execution: {
           surface: "mcp_capability",
           path: "mcp_grounded_answer",
           retrievalInvoked: true,
         },
       },
-      retrievalTrace: {
+      activityTrace: {
         summary: {
           execution: {
             surface: "mcp_capability",

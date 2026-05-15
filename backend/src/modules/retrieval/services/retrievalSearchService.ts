@@ -1,11 +1,11 @@
-import { RetrievalInfoPresenter } from "./retrievalInfoPresenter.js";
-import { RetrievalTracePresenter } from "./retrievalTracePresenter.js";
+import { ActivitySummaryPresenter } from "./activitySummaryPresenter.js";
+import { ActivityTracePresenter } from "./activityTracePresenter.js";
 import type { RetrievalPipelineService } from "./retrievalPipelineService.js";
 import type { RetrievalSearchRequest, RetrievalSearchResult } from "../domain/retrievalCapabilityTypes.js";
 
 export class RetrievalSearchService {
-  private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
-  private readonly retrievalTracePresenter = new RetrievalTracePresenter();
+  private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
+  private readonly activityTracePresenter = new ActivityTracePresenter();
 
   constructor(private readonly retrievalPipeline: RetrievalPipelineService) {}
 
@@ -17,7 +17,7 @@ export class RetrievalSearchService {
       responseIdentity: null,
       metadataFilter: input.metadataFilter,
     });
-    const retrievalInfo = this.retrievalInfoPresenter.present(result.diagnostics, {
+    const activitySummary = this.activitySummaryPresenter.present(result.diagnostics, {
       execution: {
         surface: input.executionSurface ?? "retrieval",
         path: "retrieval_search",
@@ -41,8 +41,8 @@ export class RetrievalSearchService {
           metadata: context.metadata,
           score: context.relevanceScore ?? context.similarity,
         })),
-      retrievalInfo,
-      retrievalTrace: this.retrievalTracePresenter.present(result.trace, retrievalInfo),
+      activitySummary,
+      activityTrace: this.activityTracePresenter.present(result.trace, activitySummary),
     };
   }
 }

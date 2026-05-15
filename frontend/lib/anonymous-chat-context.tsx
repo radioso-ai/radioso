@@ -33,8 +33,8 @@ import {
   type ChatStreamCompletion,
   type ChatUserInputMetadata,
   type ErrorResponse,
-  type RetrievalInfo,
-  type RetrievalTrace,
+  type ActivitySummary,
+  type ActivityTrace,
   type WebsiteEmbedPageContext,
   type WebsiteEmbedThemeSettings,
 } from '@/lib/api'
@@ -91,8 +91,8 @@ export interface ChatMessage {
   suggestions?: ChatSuggestion[]
   answerFeedback?: AnswerFeedbackState
   answerFeedbackEntries?: AnswerFeedbackEntry[]
-  retrievalInfo?: RetrievalInfo
-  retrievalTrace?: RetrievalTrace
+  activitySummary?: ActivitySummary
+  activityTrace?: ActivityTrace
   persistedAssistantMessageId?: string
   status: 'complete' | 'streaming' | 'error'
 }
@@ -192,8 +192,8 @@ const toChatMessages = (
         ? resolveOwnFeedback(message.answerFeedbackEntries, anonymousSessionId)
         : undefined,
       answerFeedbackEntries: message.role === 'assistant' ? message.answerFeedbackEntries : undefined,
-      retrievalInfo: message.debug?.retrievalInfo,
-      retrievalTrace: message.debug?.retrievalTrace,
+      activitySummary: message.debug?.activitySummary,
+      activityTrace: message.debug?.activityTrace,
       persistedAssistantMessageId: message.role === 'assistant' ? message.id : undefined,
       status: 'complete' as const,
     }))
@@ -407,8 +407,8 @@ export function AnonymousChatProvider({
                 createdAt: new Date().toISOString(),
                 citations: bootstrap.citations,
                 answerSegments: bootstrap.answerSegments,
-                retrievalInfo: bootstrap.retrievalInfo,
-                retrievalTrace: bootstrap.retrievalTrace,
+                activitySummary: bootstrap.activitySummary,
+                activityTrace: bootstrap.activityTrace,
                 persistedAssistantMessageId: bootstrap.assistantMessageId,
                 status: 'complete',
               },
@@ -469,8 +469,8 @@ export function AnonymousChatProvider({
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
                 suggestions: completion.suggestions,
-                retrievalInfo: completion.retrievalInfo,
-                retrievalTrace: completion.retrievalTrace,
+                activitySummary: completion.activitySummary,
+                activityTrace: completion.activityTrace,
                 status: 'complete' as const,
               }
             : message,
@@ -508,8 +508,8 @@ export function AnonymousChatProvider({
                 suggestions: assistantMessage.suggestions,
                 answerFeedback: assistantMessage.answerFeedback,
                 answerFeedbackEntries: assistantMessage.answerFeedbackEntries,
-                retrievalInfo: assistantMessage.retrievalInfo,
-                retrievalTrace: assistantMessage.retrievalTrace,
+                activitySummary: assistantMessage.activitySummary,
+                activityTrace: assistantMessage.activityTrace,
                 persistedAssistantMessageId: assistantMessage.persistedAssistantMessageId ?? assistantMessage.id,
                 status: 'complete' as const,
               }
@@ -625,7 +625,7 @@ export function AnonymousChatProvider({
             citations: completion.citations,
             answerSegments: completion.answerSegments,
             suggestions: completion.suggestions,
-            retrievalInfo: completion.retrievalInfo,
+            activitySummary: completion.activitySummary,
           })
         }
       } catch (error) {

@@ -6,7 +6,7 @@ import type {
   ResponseLanguagePolicy,
   RetrievalExecutionDiagnostics,
   RetrievalSourceScope,
-  RetrievalTrace,
+  ActivityTrace,
 } from "./domain/retrievalPipelineTypes.js";
 
 export {
@@ -35,11 +35,11 @@ export type {
   RetrievalSourceFilter,
   RetrievalSourceScope,
   RetrievalSubquery,
-  RetrievalTrace,
-  RetrievalTraceLink,
-  RetrievalTraceStage,
-  RetrievalTraceStageStatus,
-  RetrievalTraceSummary,
+  ActivityTrace,
+  ActivityLink,
+  ActivityStage,
+  ActivityStageStatus,
+  ActivitySummary,
   RetrievedCandidate,
   RewriteContinuityState,
   RewriteStatus,
@@ -96,14 +96,13 @@ export {
   OpenAISemanticRerankGateway,
 } from "./services/rerankService.js";
 export {
-  RetrievalInfoPresenter,
-  type RetrievalInfo,
-  type RetrievalInfoPresenterOptions,
-} from "./services/retrievalInfoPresenter.js";
+  ActivitySummaryPresenter,
+  type ActivitySummaryPresenterOptions,
+} from "./services/activitySummaryPresenter.js";
 export {
-  RetrievalTracePresenter,
+  ActivityTracePresenter,
   type AnswerOutcomeInput,
-} from "./services/retrievalTracePresenter.js";
+} from "./services/activityTracePresenter.js";
 export {
   renderMetadataSearchText,
   renderSearchText,
@@ -147,7 +146,7 @@ export interface RetrievalPipelineResult {
     responseLanguagePolicy?: ResponseLanguagePolicy;
   };
   diagnostics: RetrievalExecutionDiagnostics;
-  trace: RetrievalTrace;
+  trace: ActivityTrace;
 }
 
 export interface RetrievalPipelineInterpretationResult {

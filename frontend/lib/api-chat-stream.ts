@@ -8,8 +8,8 @@ import type {
   ChatStreamSuggestions,
   ChatSuggestion,
   Citation,
-  RetrievalInfo,
-  RetrievalTrace,
+  ActivitySummary,
+  ActivityTrace,
 } from './api-types'
 
 const parseSseEvent = (rawEvent: string) => {
@@ -54,8 +54,8 @@ export const streamChatEvents = async (
   let assistantMessageId: string | undefined
   let agentId: string | undefined
   let agentName: string | undefined
-  let retrievalInfo: RetrievalInfo | undefined
-  let retrievalTrace: RetrievalTrace | undefined
+  let activitySummary: ActivitySummary | undefined
+  let activityTrace: ActivityTrace | undefined
   let route: ChatResponse['route'] | undefined
 
   const flushEvent = (rawEvent: string) => {
@@ -104,8 +104,8 @@ export const streamChatEvents = async (
       citations = completionPayload.citations
       answerSegments = completionPayload.answerSegments
       suggestions = completionPayload.suggestions
-      retrievalInfo = completionPayload.retrievalInfo
-      retrievalTrace = completionPayload.retrievalTrace
+      activitySummary = completionPayload.activitySummary
+      activityTrace = completionPayload.activityTrace
       route = completionPayload.route
       handlers.onDone?.({
         conversationId,
@@ -117,8 +117,8 @@ export const streamChatEvents = async (
         citations,
         answerSegments,
         suggestions,
-        retrievalInfo,
-        retrievalTrace,
+        activitySummary,
+        activityTrace,
       })
       return
     }
@@ -165,7 +165,7 @@ export const streamChatEvents = async (
     citations,
     answerSegments,
     suggestions,
-    retrievalInfo: retrievalInfo!,
-    retrievalTrace: retrievalTrace!,
+    activitySummary: activitySummary!,
+    activityTrace: activityTrace!,
   }
 }

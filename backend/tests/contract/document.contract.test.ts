@@ -107,7 +107,7 @@ describe("document contract", () => {
           ]),
         }),
       ],
-      retrievalTrace: expect.objectContaining({
+      activityTrace: expect.objectContaining({
         traceId: expect.any(String),
       }),
     });
@@ -143,7 +143,7 @@ describe("document contract", () => {
         searchId: searchResponse.body.searchId,
         query: "onboarding fails",
         resultCount: 1,
-        traceAvailable: true,
+        activityTraceAvailable: true,
       }),
     ]);
     expect(listResponse.body.nextCursor).toBeNull();
@@ -164,7 +164,7 @@ describe("document contract", () => {
           title: "Troubleshooting Guide",
         }),
       ],
-      retrievalTrace: expect.objectContaining({
+      activityTrace: expect.objectContaining({
         traceId: expect.any(String),
       }),
     });

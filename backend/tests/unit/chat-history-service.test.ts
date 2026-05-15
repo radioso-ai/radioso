@@ -59,7 +59,7 @@ class InMemoryContactHistoryProvider implements ContactHistoryProviderPort {
 }
 
 describe("chat history service", () => {
-  it("replays retrieval trace metadata for assistant turns", async () => {
+  it("replays activity trace metadata for assistant turns", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 
     const conversation = await conversationRepository.create("workspace-1");
@@ -123,7 +123,7 @@ describe("chat history service", () => {
             restoredCandidateCount: 1,
           },
         },
-        retrievalTrace: {
+        activityTrace: {
           traceId: "trace-1",
           startedAt: "2026-03-23T00:00:00.000Z",
           stages: [
@@ -186,26 +186,26 @@ describe("chat history service", () => {
     const assistantMessage = detail.messages.find((message) => message.role === "assistant");
     const debug = assistantMessage?.debug;
 
-    expect(debug?.retrievalInfo?.candidateCounts).toMatchObject({
+    expect(debug?.activitySummary?.candidateCounts).toMatchObject({
       semantic: 1,
       lexical: 1,
       merged: 1,
       final: 1,
     });
-    expect(debug?.retrievalInfo?.triggerAnalysis).toMatchObject({
+    expect(debug?.activitySummary?.triggerAnalysis).toMatchObject({
       matchedRuleIds: ["events-only"],
       matchCount: 1,
     });
-    expect(debug?.retrievalInfo?.triggerBackoff).toMatchObject({
+    expect(debug?.activitySummary?.triggerBackoff).toMatchObject({
       applied: true,
       relaxedRuleIds: ["events-only"],
     });
-    expect(debug?.retrievalInfo?.execution).toEqual({
+    expect(debug?.activitySummary?.execution).toEqual({
       surface: "assistant",
       path: "assistant_retrieval",
       retrievalInvoked: true,
     });
-    expect(debug?.retrievalTrace).toMatchObject({
+    expect(debug?.activityTrace).toMatchObject({
       traceId: "trace-1",
       stages: [
         expect.objectContaining({ stageId: "trigger_analysis" }),
@@ -256,6 +256,103 @@ describe("chat history service", () => {
         },
       ],
     });
+  });
+
+  it("reconstructs an activity trace for historical assistant turns that only stored retrieval diagnostics", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+
+    const conversation = await conversationRepository.create("workspace-1");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "sqrt(5) and tell me about kriya",
+    });
+    const assistant = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "I can tell you about Kriya Yoga.",
+    });
+
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        assistantMessageId: assistant.id,
+        citationCount: 0,
+        route: {
+          generator: "assistant",
+          routeType: "retrieval",
+          routeReason: "evidence_required",
+          retrievalInvoked: true,
+        },
+        retrieval: {
+          rewriteStatus: "applied",
+          rerankStatus: "skipped",
+          originalCandidateCount: 13,
+          rewrittenCandidateCount: 50,
+          lexicalCandidateCount: 0,
+          normalizedCandidateCount: 50,
+          finalContextCount: 5,
+          candidateFallbackApplied: false,
+          fallbackApplied: false,
+          responseIntent: "retrieval",
+          retrievalSkipped: false,
+          triggerAnalysis: {
+            status: "applied",
+            consideredRules: [
+              {
+                ruleId: "events-only",
+                matched: false,
+                matchStrength: 0.09,
+                reason: "Query asks about sqrt(5) and kriya, not a time-bound course, celebration, or event.",
+                triggerInstructionPreview: "enact when the user is asking about courses, celebrations or events that are time-bound",
+              },
+            ],
+            matchedRuleIds: [],
+            unmatchedRuleIds: ["events-only"],
+            matchCount: 0,
+            matcherVersion: "test",
+          },
+          shapeSelection: {
+            shapeName: "default_hybrid",
+            queryShape: "general_grounding",
+            selectionMode: "deterministic",
+            callerSurface: "assistant",
+            resolvedRun: {
+              skillName: "retrieval.answer",
+              resolvedSteps: [],
+            },
+          },
+        },
+        answerOutcome: "grounded_success",
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+    const debug = detail.messages.find((message) => message.role === "assistant")?.debug;
+
+    expect(debug?.activitySummary?.candidateCounts).toEqual({
+      semantic: 63,
+      lexical: 0,
+      merged: 50,
+      final: 5,
+    });
+    expect(debug?.activityTrace).toMatchObject({
+      traceId: expect.stringMatching(/^reconstructed-/),
+      stages: [
+        expect.objectContaining({ stageId: "routing", kind: "routing" }),
+        expect.objectContaining({ stageId: "interpretation", kind: "query_interpretation" }),
+        expect.objectContaining({ stageId: "trigger_analysis", kind: "trigger_analysis" }),
+        expect.objectContaining({ stageId: "shape_selection", kind: "shape_selection" }),
+        expect.objectContaining({ stageId: "candidate_summary", kind: "diagnostics" }),
+        expect.objectContaining({ stageId: "answer", kind: "answer_outcome" }),
+      ],
+    });
+    expect(debug?.activityTrace?.links).toHaveLength(5);
   });
 
   it("normalizes legacy stored suggestions without kind as deeper suggestions", async () => {
@@ -362,7 +459,7 @@ describe("chat history service", () => {
             sourceKind: "inline_text",
           },
         ],
-        retrievalTrace: {
+        activityTrace: {
           traceId: "trace-1",
           startedAt: "2026-04-21T10:00:00.000Z",
           stages: [],
@@ -401,7 +498,7 @@ describe("chat history service", () => {
       search: {
         query: "course calendar",
         resultCount: 2,
-        traceAvailable: true,
+        activityTraceAvailable: true,
         previewTopTitles: ["Course Calendar", "Workshop Notes"],
       },
     });

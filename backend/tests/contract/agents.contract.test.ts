@@ -194,7 +194,7 @@ describe("agents contract", () => {
       .send({ agentId: scopedAgent.body.id, message: "Alpha meditation", stream: false })
       .expect(200);
 
-    expect(scopedChat.body.retrievalInfo.candidateCounts.final).toBe(0);
+    expect(scopedChat.body.activitySummary.candidateCounts.final).toBe(0);
     expect(scopedChat.body.citations ?? []).toEqual([]);
 
     await request(app)
@@ -214,7 +214,7 @@ describe("agents contract", () => {
       .send({ agentId: scopedAgent.body.id, message: "Alpha meditation", stream: false })
       .expect(200);
 
-    expect(allowedChat.body.retrievalInfo.candidateCounts.final).toBeGreaterThan(0);
+    expect(allowedChat.body.activitySummary.candidateCounts.final).toBeGreaterThan(0);
     expect(allowedChat.body.answer).toContain("Alpha meditation retreat details.");
   });
 
@@ -259,12 +259,12 @@ describe("agents contract", () => {
     expect(chat.body).toMatchObject({
       agentId: agent.body.id,
       agentName: "Direct agent",
-      retrievalInfo: expect.objectContaining({
+      activitySummary: expect.objectContaining({
         retrievalSkipped: true,
       }),
     });
     expect(chat.body.citations ?? []).toEqual([]);
-    expect(chat.body.retrievalInfo.candidateCounts).toMatchObject({
+    expect(chat.body.activitySummary.candidateCounts).toMatchObject({
       semantic: 0,
       lexical: 0,
       final: 0,

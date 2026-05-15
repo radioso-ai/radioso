@@ -75,8 +75,8 @@ export const chatApi = {
         citations: payload.citations,
         answerSegments: payload.answerSegments,
         suggestions: payload.suggestions,
-        retrievalInfo: payload.retrievalInfo,
-        retrievalTrace: payload.retrievalTrace,
+        activitySummary: payload.activitySummary,
+        activityTrace: payload.activityTrace,
       })
       return payload
     }

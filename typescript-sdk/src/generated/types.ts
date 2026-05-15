@@ -748,6 +748,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/document/sources/{sourceId}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List documents belonging to a source */
+        get: operations["listDocumentsBySource"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}/recrawl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-crawl a website source using its stored configuration */
+        post: operations["recrawlDocumentSource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a source and all its documents */
+        delete: operations["deleteDocumentSource"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/document/import": {
         parameters: {
             query?: never;
@@ -2030,6 +2081,7 @@ export interface components {
             sourceKind: "inline_text" | "uploaded_file";
             sourceFilename?: string | null;
             sourceMimeType?: string | null;
+            contentSize?: number | null;
         };
         DocumentDetails: components["schemas"]["DocumentSummary"] & {
             content: string;
@@ -2122,6 +2174,10 @@ export interface components {
         };
         /** @enum {string} */
         WebsiteCrawlJobStatus: "queued" | "processing" | "completed" | "failed";
+        CrawlPageFailure: {
+            sourceUrl: string;
+            reason: string;
+        };
         WebsiteCrawlJobSummary: {
             /** Format: uuid */
             id: string;
@@ -2132,6 +2188,8 @@ export interface components {
             /** Format: uuid */
             sourceId: string | null;
             documentCount: number | null;
+            failedPageCount: number | null;
+            failures: components["schemas"]["CrawlPageFailure"][];
             lastError: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -5013,6 +5071,146 @@ export interface operations {
             };
         };
     };
+    listDocumentsBySource: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Documents returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    recrawlDocumentSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Crawl job accepted for asynchronous processing */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebsiteCrawlJobResponse"];
+                };
+            };
+            /** @description Source is not a website or has no configured URL */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteDocumentSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Source and documents deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Source cannot be deleted */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     importDocument: {
         parameters: {
             query?: never;
@@ -5148,6 +5346,7 @@ export interface operations {
                 status?: components["schemas"]["WebsiteCrawlJobStatus"];
                 sinceMinutes?: number;
                 limit?: number;
+                sourceId?: string;
             };
             header?: never;
             path?: never;

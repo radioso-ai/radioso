@@ -593,6 +593,108 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return rows.length > 0;
   }
 
+  async listSummaryPageBySourceId(
+    workspaceId: string,
+    sourceId: string | null,
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
+    const sourceFilter = sourceId === null
+      ? "AND source_id IS NULL"
+      : "AND source_id = $2";
+    const sourceParams: string[] = sourceId === null ? [workspaceId] : [workspaceId, sourceId];
+
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
+    const total = cursor?.totalSnapshot !== undefined
+      ? Number(cursor.totalSnapshot)
+      : Number((await this.database.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+           FROM documents
+           WHERE workspace_id = $1
+           ${sourceFilter}`,
+          sourceParams,
+        ))[0]?.count ?? "0");
+
+    const params: Array<string | number> = [...sourceParams];
+    let cursorClause = "";
+
+    if (cursor) {
+      const p1 = params.length + 1;
+      const p2 = params.length + 2;
+      params.push(cursor.keys.createdAt, cursor.keys.id);
+      cursorClause = `
+         AND (
+           created_at < $${p1}::timestamptz
+           OR (created_at = $${p1}::timestamptz AND id < $${p2}::uuid)
+         )`;
+    }
+
+    const limitParam = params.length + 1;
+    params.push(input.limit + 1);
+
+    let offsetClause = "";
+    if (!cursor) {
+      offsetClause = `OFFSET $${params.length + 1}`;
+      params.push(input.offset ?? 0);
+    }
+
+    const rows = await this.database.query<DocumentRow>(
+      `SELECT ${documentSummarySelect}
+       FROM documents
+       WHERE workspace_id = $1
+       ${sourceFilter}
+       ${cursorClause}
+       ORDER BY created_at DESC, id DESC
+       LIMIT $${limitParam}
+       ${offsetClause}`,
+      params,
+    );
+
+    const documents = rows.slice(0, input.limit).map(mapDocumentSummary);
+    const hasMore = rows.length > input.limit;
+    const lastDocument = documents.at(-1);
+
+    return {
+      documents,
+      total,
+      nextCursor: hasMore && lastDocument
+        ? encodeCursor({
+            createdAt: lastDocument.createdAt.toISOString(),
+            id: lastDocument.id,
+          }, total)
+        : null,
+      hasMore,
+    };
+  }
+
+  async deleteBySourceIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<{
+    count: number;
+    storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }>;
+  }> {
+    const rows = await this.database.query<{
+      id: string;
+      source_kind: string;
+      source_storage_bucket: string | null;
+      source_storage_object: string | null;
+      source_storage_generation: string | null;
+    }>(
+      `DELETE FROM documents
+       WHERE source_id = $1 AND workspace_id = $2
+       RETURNING id, source_kind, source_storage_bucket, source_storage_object, source_storage_generation`,
+      [sourceId, workspaceId],
+    );
+    const storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }> = [];
+    for (const row of rows) {
+      if (row.source_kind === "uploaded_file" && row.source_storage_bucket && row.source_storage_object) {
+        storageRefs.push({
+          bucket: row.source_storage_bucket,
+          objectPath: row.source_storage_object,
+          generation: row.source_storage_generation ?? null,
+        });
+      }
+    }
+    return { count: rows.length, storageRefs };
+  }
+
   private mapDocumentConflict(error: unknown): unknown {
     if (
       typeof error === "object" &&

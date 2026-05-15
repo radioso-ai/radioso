@@ -36,9 +36,9 @@ describe("WebsiteCrawlJobRepository.listForWorkspace", () => {
     expect(query).toHaveBeenCalledTimes(1);
     const [sql, params] = query.mock.calls[0];
     expect(sql.replace(/\s+/g, " ")).toMatch(
-      /WHERE workspace_id = \$1\s+AND \(\$2::text IS NULL OR status = \$2\)\s+AND \(\$3::timestamptz IS NULL OR created_at >= \$3\)\s+ORDER BY created_at DESC\s+LIMIT \$4/,
+      /WHERE workspace_id = \$1\s+AND \(\$2::text IS NULL OR status = \$2\)\s+AND \(\$3::timestamptz IS NULL OR created_at >= \$3\)\s+AND \(\$5::uuid IS NULL OR source_id = \$5\)\s+ORDER BY created_at DESC\s+LIMIT \$4/,
     );
-    expect(params).toEqual(["workspace-1", "processing", since, 25]);
+    expect(params).toEqual(["workspace-1", "processing", since, 25, null]);
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ id: "11111111-1111-4111-8111-111111111111", status: "queued" });
   });
@@ -49,7 +49,7 @@ describe("WebsiteCrawlJobRepository.listForWorkspace", () => {
 
     await repository.listForWorkspace("workspace-1");
 
-    expect(query.mock.calls[0][1]).toEqual(["workspace-1", null, null, 50]);
+    expect(query.mock.calls[0][1]).toEqual(["workspace-1", null, null, 50, null]);
   });
 
   it("clamps limit to the [1, 200] range", async () => {

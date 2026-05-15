@@ -52,6 +52,7 @@ const crawlJobsQuerySchema = z.object({
   status: z.enum(["queued", "processing", "completed", "failed"]).optional(),
   sinceMinutes: z.coerce.number().int().min(1).max(1440).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
+  sourceId: z.string().uuid().optional(),
 });
 
 const crawlJobParamsSchema = z.object({
@@ -109,8 +110,9 @@ export const createWebsiteCrawlerRoutes = (
         res.locals.workspaceId as string,
         {
           status: query.status,
-          sinceMinutes: query.sinceMinutes ?? 30,
+          sinceMinutes: query.sourceId ? undefined : (query.sinceMinutes ?? 30),
           limit: query.limit,
+          sourceId: query.sourceId,
         },
       );
       res.status(200).json({ jobs });

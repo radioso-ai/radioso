@@ -187,6 +187,132 @@ export const registerDocumentsPaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/document/sources/{sourceId}/documents",
+    tags: ["Documents"],
+    summary: "List documents belonging to a source",
+    operationId: "listDocumentsBySource",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.sourceParamsSchema,
+      query: schemas.DocumentSourceDocumentsQuerySchema,
+    },
+    responses: {
+      200: {
+        description: "Documents returned",
+        content: {
+          "application/json": {
+            schema: schemas.DocumentListResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Source not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/document/sources/{sourceId}/recrawl",
+    tags: ["Documents"],
+    summary: "Re-crawl a website source using its stored configuration",
+    operationId: "recrawlDocumentSource",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.sourceParamsSchema,
+    },
+    responses: {
+      202: {
+        description: "Crawl job accepted for asynchronous processing",
+        content: {
+          "application/json": {
+            schema: schemas.WebsiteCrawlJobResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Source is not a website or has no configured URL",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Source not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/document/sources/{sourceId}",
+    tags: ["Documents"],
+    summary: "Delete a source and all its documents",
+    operationId: "deleteDocumentSource",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.sourceParamsSchema,
+    },
+    responses: {
+      204: {
+        description: "Source and documents deleted",
+      },
+      400: {
+        description: "Source cannot be deleted",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Source not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/document/",
     tags: ["Documents"],

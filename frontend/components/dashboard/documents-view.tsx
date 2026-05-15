@@ -1,7 +1,7 @@
 'use client'
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FileText, Globe, Plus } from 'lucide-react'
+import { ChevronDown, FileUp, Globe, Pencil, Plus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 import { DocumentCrawlDialog } from '@/components/dashboard/documents/document-crawl-dialog'
@@ -20,6 +20,12 @@ import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { useDocumentSearch } from '@/components/dashboard/use-document-search'
 import { Button } from '@/components/ui/button'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   type DocumentSummary,
   type WebsiteCrawlJobSummary,
   documentsApi,
@@ -32,8 +38,7 @@ import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 
 const PAGE_SIZE = 100
 const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.docx,.xlsx'
-const CRAWL_DEFAULT_LIMIT = 10
-const CRAWL_MAX_LIMIT = 100
+const CRAWL_MAX_LIMIT = 1000
 const CRAWL_JOBS_SINCE_MINUTES = 30
 
 const EMPTY_FORM: DocumentEditorValues = {
@@ -108,7 +113,6 @@ export function DocumentsView({
   const [isCrawlDialogOpen, setIsCrawlDialogOpen] = useState(false)
   const [isCrawling, setIsCrawling] = useState(false)
   const [crawlUrl, setCrawlUrl] = useState('')
-  const [crawlLimit, setCrawlLimit] = useState('')
   const [crawlError, setCrawlError] = useState<string | null>(null)
   const [crawlJobs, setCrawlJobs] = useState<WebsiteCrawlJobSummary[]>([])
   const [dismissedCrawlJobIds, setDismissedCrawlJobIds] = useState<Set<string>>(new Set())
@@ -356,7 +360,6 @@ export function DocumentsView({
 
   const resetCrawlDialog = useCallback(() => {
     setCrawlUrl('')
-    setCrawlLimit('')
     setCrawlError(null)
   }, [])
 
@@ -515,7 +518,7 @@ export function DocumentsView({
 
   const handleCrawlSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    const parsed = parseCrawlForm({ url: crawlUrl, limit: crawlLimit, maxLimit: CRAWL_MAX_LIMIT })
+    const parsed = parseCrawlForm({ url: crawlUrl, limit: '', maxLimit: CRAWL_MAX_LIMIT })
     if (!parsed.ok) {
       setCrawlError(parsed.error)
       return
@@ -527,15 +530,16 @@ export function DocumentsView({
     try {
       const response = await documentsApi.crawlWebsite({
         url: parsed.url,
-        ...(parsed.limit !== undefined ? { limit: parsed.limit } : {}),
       })
       const optimisticJob: WebsiteCrawlJobSummary = {
         id: response.jobId,
         requestedUrl: response.requestedUrl,
         status: 'queued',
-        limit: parsed.limit ?? CRAWL_DEFAULT_LIMIT,
+        limit: CRAWL_MAX_LIMIT,
         sourceId: response.sourceId,
         documentCount: null,
+        failedPageCount: null,
+        failures: [],
         lastError: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -761,19 +765,13 @@ export function DocumentsView({
         <DocumentCrawlDialog
           open={isCrawlDialogOpen}
           url={crawlUrl}
-          limit={crawlLimit}
           crawlError={crawlError}
           isCrawling={isCrawling}
-          defaultLimit={CRAWL_DEFAULT_LIMIT}
           maxLimit={CRAWL_MAX_LIMIT}
           onOpenChange={handleCrawlDialogChange}
           onSubmit={handleCrawlSubmit}
           onUrlChange={(value) => {
             setCrawlUrl(value)
-            setCrawlError(null)
-          }}
-          onLimitChange={(value) => {
-            setCrawlLimit(value)
             setCrawlError(null)
           }}
         />
@@ -834,22 +832,31 @@ export function DocumentsView({
                 onClear={documentSearch.clearSearch}
                 isSearching={documentSearch.isSearching}
               />
-              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-                {websiteCrawlerEnabled ? (
-                  <Button size="sm" variant="outline" className="h-10 px-3.5" onClick={openCrawlDialog}>
-                    <Globe className="mr-2 h-4 w-4" />
-                    Crawl Website
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" className="h-10 px-3.5">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add
+                    <ChevronDown className="ml-1.5 h-3.5 w-3.5 opacity-60" />
                   </Button>
-                ) : null}
-                <Button size="sm" variant="outline" className="h-10 px-3.5" onClick={openImportDialog}>
-                  <FileText className="mr-2 h-4 w-4" />
-                  Import File
-                </Button>
-                <Button size="sm" className="h-10 px-3.5" onClick={openCreateDialog}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Document
-                </Button>
-              </div>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {websiteCrawlerEnabled ? (
+                    <DropdownMenuItem onClick={openCrawlDialog}>
+                      <Globe className="mr-2 h-4 w-4" />
+                      Crawl website
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuItem onClick={openImportDialog}>
+                    <FileUp className="mr-2 h-4 w-4" />
+                    Import file
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={openCreateDialog}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Write document
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           }
           actions={navigation}

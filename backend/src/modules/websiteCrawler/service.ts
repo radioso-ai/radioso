@@ -10,6 +10,11 @@ import type {
 } from "./provider.js";
 import { assertPublicWebsiteUrl } from "./urlPolicy.js";
 
+// Pages exceeding this character count are skipped during ingestion to avoid
+// embedding auto-generated dumps, log outputs, or other oversized content that
+// would degrade retrieval quality and consume disproportionate resources.
+const MAX_PAGE_CONTENT_LENGTH = 500_000;
+
 export interface WebsiteCrawlerDocumentIngestionPort {
   ingest(input: {
     accountId?: string | null;
@@ -108,50 +113,26 @@ export class WebsiteCrawlerService {
       }
       throw error;
     }
-    let providerResult: WebsiteCrawlResult;
-    try {
-      this.throwIfAborted(input.signal);
-      providerResult = await this.crawlProvider({
-        url: websiteBaseUrl,
-        limit: input.limit,
-        signal: input.signal,
-      });
-      this.throwIfAborted(input.signal);
-    } catch (error) {
-      await this.auditCrawlFailure(input, safeWebsiteBaseUrl, error);
-      if (documentSource) {
-        await this.safeUpdateSourceSyncState({
-          workspaceId: input.workspaceId,
-          sourceId: documentSource.id,
-          status: "failure",
-        });
-      }
-      throw error;
-    }
 
     const result: WebsiteCrawlPublicationResult = {
-      provider: providerResult.provider,
-      runId: providerResult.runId ?? null,
-      status: providerResult.status ?? null,
+      provider: this.dependencies.provider.name,
+      runId: null,
+      status: null,
       requestedUrl: safeWebsiteBaseUrl,
       accepted: 0,
       failed: 0,
       documents: [],
       failures: [],
     };
-    if (providerResult.invalidPages && providerResult.invalidPages > 0) {
-      result.failed += providerResult.invalidPages;
-      for (let index = 0; index < providerResult.invalidPages; index += 1) {
-        result.failures.push({
-          sourceUrl: "invalid-provider-page",
-          reason: "Provider returned an invalid page result",
-        });
-      }
-    }
 
-    const pages = preparePages(providerResult.pages, input.limit, result);
     const assertCrawlUrlAllowed = this.dependencies.assertCrawlUrlAllowed ?? assertPublicWebsiteUrl;
-    for (const page of pages) {
+    const seen = new Set<string>();
+    let pageCount = 0;
+
+    const ingestPage = async (page: WebsiteCrawlPage): Promise<void> => {
+      if (pageCount >= input.limit) return;
+      pageCount += 1;
+
       this.throwIfAborted(input.signal);
       const content = page.content.trim();
       if (!content) {
@@ -160,8 +141,32 @@ export class WebsiteCrawlerService {
           sourceUrl: safeFailureSourceUrl(page.sourceUrl),
           reason: "Page did not contain crawlable content",
         });
-        continue;
+        return;
       }
+
+      if (content.length > MAX_PAGE_CONTENT_LENGTH) {
+        result.failed += 1;
+        result.failures.push({
+          sourceUrl: safeFailureSourceUrl(page.sourceUrl),
+          reason: `Page content exceeds maximum length (${MAX_PAGE_CONTENT_LENGTH.toLocaleString()} characters)`,
+        });
+        return;
+      }
+
+      let canonicalKey: string;
+      try {
+        const sourceUrl = normalizePageUrl(page.sourceUrl);
+        canonicalKey = normalizePageUrl(page.canonicalUrl || sourceUrl);
+      } catch {
+        result.failed += 1;
+        result.failures.push({
+          sourceUrl: safeFailureSourceUrl(page.sourceUrl),
+          reason: "Page URL was invalid",
+        });
+        return;
+      }
+      if (seen.has(canonicalKey)) return;
+      seen.add(canonicalKey);
 
       try {
         const sourceUrl = normalizePageUrl(page.sourceUrl);
@@ -189,7 +194,7 @@ export class WebsiteCrawlerService {
             },
             metadata: {
               requestedUrl: safeWebsiteBaseUrl,
-              provider: providerResult.provider,
+              provider: this.dependencies.provider.name,
             },
           },
           metadata: buildDocumentMetadata({
@@ -206,13 +211,58 @@ export class WebsiteCrawlerService {
           sourceUrl: safeSourceUrl,
           canonicalUrl: safeCanonicalUrl,
         });
-      } catch (error) {
+      } catch {
         result.failed += 1;
         result.failures.push({
           sourceUrl: safeFailureSourceUrl(page.sourceUrl),
           reason: "Failed to publish crawled page",
         });
       }
+    };
+
+    try {
+      this.throwIfAborted(input.signal);
+      if (this.dependencies.provider.crawlStream) {
+        const streamResult = await this.dependencies.provider.crawlStream(
+          { url: websiteBaseUrl, limit: input.limit, signal: input.signal },
+          ingestPage,
+        );
+        result.provider = streamResult.provider;
+        result.status = streamResult.status ?? null;
+        result.runId = streamResult.runId ?? null;
+      } else {
+        const providerResult = await this.crawlProvider({
+          url: websiteBaseUrl,
+          limit: input.limit,
+          signal: input.signal,
+        });
+        result.provider = providerResult.provider;
+        result.status = providerResult.status ?? null;
+        result.runId = providerResult.runId ?? null;
+        if (providerResult.invalidPages && providerResult.invalidPages > 0) {
+          result.failed += providerResult.invalidPages;
+          for (let index = 0; index < providerResult.invalidPages; index += 1) {
+            result.failures.push({
+              sourceUrl: "invalid-provider-page",
+              reason: "Provider returned an invalid page result",
+            });
+          }
+        }
+        for (const page of providerResult.pages) {
+          await ingestPage(page);
+        }
+      }
+      this.throwIfAborted(input.signal);
+    } catch (error) {
+      await this.auditCrawlFailure(input, safeWebsiteBaseUrl, error);
+      if (documentSource) {
+        await this.safeUpdateSourceSyncState({
+          workspaceId: input.workspaceId,
+          sourceId: documentSource.id,
+          status: "failure",
+        });
+      }
+      throw error;
     }
 
     await this.auditResult(input, result);
@@ -376,43 +426,6 @@ const buildDocumentMetadata = (input: {
   canonicalUrl: input.canonicalUrl || input.sourceUrl,
   ...pickAllowedProviderMetadata(input.page.metadata ?? {}),
 });
-
-const preparePages = (
-  pages: WebsiteCrawlPage[],
-  limit: number,
-  publicationResult: Pick<WebsiteCrawlPublicationResult, "failed" | "failures">,
-): WebsiteCrawlPage[] => {
-  const seen = new Set<string>();
-  const result: WebsiteCrawlPage[] = [];
-  let inspected = 0;
-  for (const page of pages) {
-    if (inspected >= limit) {
-      break;
-    }
-    inspected += 1;
-    let key: string;
-    try {
-      const sourceUrl = normalizePageUrl(page.sourceUrl);
-      key = normalizePageUrl(page.canonicalUrl || sourceUrl);
-    } catch {
-      publicationResult.failed += 1;
-      publicationResult.failures.push({
-        sourceUrl: safeFailureSourceUrl(page.sourceUrl),
-        reason: "Page URL was invalid",
-      });
-      continue;
-    }
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    result.push(page);
-    if (result.length >= limit) {
-      break;
-    }
-  }
-  return result;
-};
 
 const SENSITIVE_QUERY_PARAM_PATTERNS = [
   /secret/i,

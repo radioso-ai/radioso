@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { ThumbsDown, ThumbsUp, UserRound } from 'lucide-react'
+import { Check, Copy, ThumbsDown, ThumbsUp, UserRound } from 'lucide-react'
 import type { WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { editionController } from '@/lib/edition-controller'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
@@ -51,6 +51,54 @@ type FeedbackHandler = (input: {
   value: AnswerFeedbackValue
   comment?: string | null
 }) => Promise<AnswerFeedbackState | void> | AnswerFeedbackState | void
+
+function MessageCopyButton({
+  content,
+  theme,
+}: {
+  content: string
+  theme?: WebsiteEmbedTheme | null
+}) {
+  const [copied, setCopied] = useState(false)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current)
+      }
+    },
+    [],
+  )
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current)
+      }
+      timeoutRef.current = setTimeout(() => {
+        timeoutRef.current = null
+        setCopied(false)
+      }, 1500)
+    } catch {
+      // Clipboard write may fail in insecure contexts; intentional silent fail.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      aria-label={copied ? 'Copied' : 'Copy message'}
+      className="inline-flex size-5 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+      style={theme ? { color: theme.mutedForeground } : undefined}
+    >
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+    </button>
+  )
+}
 
 export function ChatMessageThread({
   messages,
@@ -229,7 +277,12 @@ export function ChatMessageThread({
           message.status !== 'streaming'
 
         return (
-          <div key={message.id} className="space-y-2">
+          <div
+            key={message.id}
+            data-message-id={message.id}
+            data-message-role={message.role}
+            className="group/message space-y-2"
+          >
             {showDayDivider ? (
               <div className="flex justify-center">
                 <div
@@ -308,6 +361,7 @@ export function ChatMessageThread({
                               answerSegments={message.answerSegments}
                               onOpenDocument={onOpenDocument}
                               theme={theme}
+                              isStreaming={message.status === 'streaming'}
                             />
                           </div>
                         )}
@@ -361,41 +415,48 @@ export function ChatMessageThread({
                           </div>
                         ) : null
                       })()}
+                      {message.status === 'streaming' ? null : (
                       <div className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
                         <p style={theme ? { color: theme.mutedForeground } : undefined}>
                           {timeFormatter.format(new Date(message.createdAt))}
                         </p>
-                        {canSubmitFeedback && assistantMessageId ? (
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              type="button"
-                              className="group inline-flex size-5 items-center justify-center text-muted-foreground transition-colors disabled:pointer-events-none disabled:opacity-50"
-                              style={theme ? { color: theme.mutedForeground } : undefined}
-                              disabled={pendingFeedbackId === assistantMessageId}
-                              aria-pressed={feedbackState?.value === 'up'}
-                              aria-label="Thumbs up"
-                              onClick={() => void handleFeedbackClick(message, assistantMessageId, 'up')}
-                            >
-                              <ThumbsUp
-                                className={`size-3.5 fill-transparent group-hover:stroke-[#ffc720] ${feedbackState?.value === 'up' ? 'stroke-[#ffc720]' : ''}`}
-                              />
-                            </button>
-                            <button
-                              type="button"
-                              className="group inline-flex size-5 items-center justify-center text-muted-foreground transition-colors disabled:pointer-events-none disabled:opacity-50"
-                              style={theme ? { color: theme.mutedForeground } : undefined}
-                              disabled={pendingFeedbackId === assistantMessageId}
-                              aria-pressed={feedbackState?.value === 'down'}
-                              aria-label="Thumbs down"
-                              onClick={() => void handleFeedbackClick(message, assistantMessageId, 'down')}
-                            >
-                              <ThumbsDown
-                                className={`size-3.5 fill-transparent group-hover:stroke-[#ffc720] ${feedbackState?.value === 'down' ? 'stroke-[#ffc720]' : ''}`}
-                              />
-                            </button>
-                          </div>
-                        ) : null}
+                        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100">
+                          {message.content ? (
+                            <MessageCopyButton content={message.content} theme={theme} />
+                          ) : null}
+                          {canSubmitFeedback && assistantMessageId ? (
+                            <>
+                              <button
+                                type="button"
+                                className="group inline-flex size-5 items-center justify-center text-muted-foreground transition-colors disabled:pointer-events-none disabled:opacity-50"
+                                style={theme ? { color: theme.mutedForeground } : undefined}
+                                disabled={pendingFeedbackId === assistantMessageId}
+                                aria-pressed={feedbackState?.value === 'up'}
+                                aria-label="Thumbs up"
+                                onClick={() => void handleFeedbackClick(message, assistantMessageId, 'up')}
+                              >
+                                <ThumbsUp
+                                  className={`size-3.5 fill-transparent group-hover:stroke-[#ffc720] ${feedbackState?.value === 'up' ? 'stroke-[#ffc720]' : ''}`}
+                                />
+                              </button>
+                              <button
+                                type="button"
+                                className="group inline-flex size-5 items-center justify-center text-muted-foreground transition-colors disabled:pointer-events-none disabled:opacity-50"
+                                style={theme ? { color: theme.mutedForeground } : undefined}
+                                disabled={pendingFeedbackId === assistantMessageId}
+                                aria-pressed={feedbackState?.value === 'down'}
+                                aria-label="Thumbs down"
+                                onClick={() => void handleFeedbackClick(message, assistantMessageId, 'down')}
+                              >
+                                <ThumbsDown
+                                  className={`size-3.5 fill-transparent group-hover:stroke-[#ffc720] ${feedbackState?.value === 'down' ? 'stroke-[#ffc720]' : ''}`}
+                                />
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
                       </div>
+                      )}
                       {canSubmitFeedback && assistantMessageId ? (
                         <div className="flex flex-col gap-2 px-1">
                           {downvoteComposer?.assistantMessageId === assistantMessageId ? (

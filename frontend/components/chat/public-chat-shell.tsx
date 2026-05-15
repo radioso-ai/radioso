@@ -26,6 +26,8 @@ import {
   HumanContactInlineComposer,
   type HumanContactInlineRequest,
 } from '@/components/chat/human-contact-inline-composer'
+import { ScrollToBottomButton } from '@/components/chat/scroll-to-bottom-button'
+import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 import {
   answerFeedbackApi,
@@ -334,6 +336,7 @@ function PublicChatCenteredIntro({
                 answerSegments={greetingMessage!.answerSegments}
                 onOpenDocument={async () => 'unavailable'}
                 theme={theme}
+                isStreaming={greetingMessage!.status === 'streaming'}
               />
             )}
           </div>
@@ -444,21 +447,12 @@ function PublicChatContent({
   const useCenteredIntro = !hasUserMessage && !isCompactKeyboardLayout && !isNarrowLayout
   const greetingMessage = visibleMessages.find((message) => message.role === 'assistant') ?? null
 
-  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
-    if (messagesScrollRef.current) {
-      messagesScrollRef.current.scrollTo({
-        top: messagesScrollRef.current.scrollHeight,
-        behavior,
-      })
-      return
-    }
-
-    messagesEndRef.current?.scrollIntoView({ behavior })
-  }
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [contactConfirmation, isLoading, messages])
+  const { isAtBottom, scrollToBottom, scrollToLatestTurn } = useChatScroll({
+    messages: visibleMessages,
+    containerRef: messagesScrollRef,
+    sentinelRef: messagesEndRef,
+    pinUserMessage: !isCompactKeyboardLayout,
+  })
 
   useEffect(() => {
     if (surface !== 'public' || typeof document === 'undefined') {
@@ -492,7 +486,7 @@ function PublicChatContent({
       window.cancelAnimationFrame(animationFrame)
       window.clearTimeout(delayedScroll)
     }
-  }, [isCompactKeyboardLayout, messages.length])
+  }, [isCompactKeyboardLayout, messages.length, scrollToBottom])
 
   useEffect(() => {
     if (!workspaceName) {
@@ -862,37 +856,49 @@ function PublicChatContent({
             </div>
           ) : null}
 
-          <PublicChatBubbleComposerSurface theme={theme} compact={isCompactKeyboardLayout}>
-            {!isCompactKeyboardLayout ? (
-              <PublicChatBubbleDisclaimer
-                theme={theme}
-                copy={copy}
-                workspaceName={resolvedWorkspaceName}
-              />
+          <div className="relative">
+            {!isAtBottom && visibleMessages.length > 0 ? (
+              <div className="pointer-events-none absolute inset-x-0 bottom-full z-10 mb-2 px-4">
+                <div className="mx-auto flex max-w-3xl justify-end">
+                  <ScrollToBottomButton
+                    theme={theme}
+                    onClick={() => scrollToLatestTurn()}
+                  />
+                </div>
+              </div>
             ) : null}
-            {editionController.canUseHumanContact() && contactRequest ? (
-              <HumanContactInlineComposer
-                request={contactRequest}
-                publicChatToken={publicChatToken}
-                onCancel={() => setContactRequest(null)}
-                onSubmitted={handleContactSubmitted}
-                theme={theme}
-                compact={isCompactKeyboardLayout}
-              />
-            ) : (
-              <PublicChatBubbleComposerForm
-                theme={theme}
-                copy={copy}
-                value={input}
-                onChange={setInput}
-                onKeyDown={handleKeyDown}
-                onSubmit={handleSubmit}
-                inputRef={inputRef}
-                isLoading={isLoading}
-                compact={isCompactKeyboardLayout}
-              />
-            )}
-          </PublicChatBubbleComposerSurface>
+            <PublicChatBubbleComposerSurface theme={theme} compact={isCompactKeyboardLayout}>
+              {!isCompactKeyboardLayout ? (
+                <PublicChatBubbleDisclaimer
+                  theme={theme}
+                  copy={copy}
+                  workspaceName={resolvedWorkspaceName}
+                />
+              ) : null}
+              {editionController.canUseHumanContact() && contactRequest ? (
+                <HumanContactInlineComposer
+                  request={contactRequest}
+                  publicChatToken={publicChatToken}
+                  onCancel={() => setContactRequest(null)}
+                  onSubmitted={handleContactSubmitted}
+                  theme={theme}
+                  compact={isCompactKeyboardLayout}
+                />
+              ) : (
+                <PublicChatBubbleComposerForm
+                  theme={theme}
+                  copy={copy}
+                  value={input}
+                  onChange={setInput}
+                  onKeyDown={handleKeyDown}
+                  onSubmit={handleSubmit}
+                  inputRef={inputRef}
+                  isLoading={isLoading}
+                  compact={isCompactKeyboardLayout}
+                />
+              )}
+            </PublicChatBubbleComposerSurface>
+          </div>
         </>
       )}
     </div>

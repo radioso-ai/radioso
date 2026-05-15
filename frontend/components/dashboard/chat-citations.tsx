@@ -56,6 +56,7 @@ interface AssistantMessageContentProps {
   answerSegments?: AnswerSegment[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
   theme?: WebsiteEmbedTheme | null
+  isStreaming?: boolean
 }
 
 const getCitationLabel = (citation: Citation, index: number) =>
@@ -159,6 +160,7 @@ export function AssistantMessageContent({
   answerSegments,
   onOpenDocument,
   theme,
+  isStreaming = false,
 }: AssistantMessageContentProps) {
   const [citationNotice, setCitationNotice] = useState<{ scope: string; message: string } | null>(null)
   const noticeScope = `${content}|${citations.length}|${answerSegments?.length ?? 0}`
@@ -270,7 +272,13 @@ export function AssistantMessageContent({
 
   return (
     <div className="space-y-2" style={contentThemeVars}>
-      <div className="text-sm break-words leading-6">
+      <div
+        className={
+          isStreaming
+            ? 'radioso-streaming-content text-sm break-words leading-6'
+            : 'text-sm break-words leading-6'
+        }
+      >
         {contentNodes}
       </div>
       {citationNotice && citationNotice.scope === noticeScope ? (

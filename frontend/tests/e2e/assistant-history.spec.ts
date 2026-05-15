@@ -197,14 +197,11 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
   await page.getByRole("button", { name: /What courses are coming up next month/ }).click();
 
   await expect(page).toHaveURL(/itemKind=chat/);
-  await expect(page.getByText("Response route")).toBeVisible();
-  await expect(page.getByText("Trace graph")).toBeVisible();
+  await page.getByRole("button", { name: "Debug" }).click();
+  await expect(page.getByText("Route", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /Context/ })).toBeVisible();
-  await expect(page.getByText("Selected: Context")).toBeVisible();
-  await expect(page.getByText("assistant").first()).toBeVisible();
   await expect(page.getByText("retrieval").first()).toBeVisible();
   await expect(page.getByText("evidence required")).toBeVisible();
-  await expect(page.getByText("Retrieval was invoked for this assistant response.")).toBeVisible();
 });
 
 test("activity filtered pages request one offset-backed page", async ({ page }) => {

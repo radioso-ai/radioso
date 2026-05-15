@@ -122,7 +122,7 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('Ananda Yoga in silenzio - 3 Giorni')
   })
 
-  it('renders suggestion actions as buttons when selection is enabled', () => {
+  it('renders text suggestions as buttons when selection is enabled', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread
         messages={[

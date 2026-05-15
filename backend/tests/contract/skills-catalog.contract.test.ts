@@ -114,5 +114,8 @@ describe("skills catalog contract", () => {
     expect(spec).toContain("SkillCatalogEntry:");
     expect(spec).toContain("SkillDiagnosticDefinition:");
     expect(spec).toContain("schemaReferences:");
+    expect(spec).toContain("intake:");
+    expect(spec).toContain("execution:");
+    expect(spec).toContain("pause_and_resume");
   });
 });

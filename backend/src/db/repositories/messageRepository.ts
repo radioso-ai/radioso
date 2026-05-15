@@ -9,6 +9,7 @@ export interface MessageRecord {
   workspaceId: string;
   role: "user" | "assistant" | "system";
   content: string;
+  metadata?: Record<string, unknown>;
   inputMetadata?: UserMessageInputMetadata;
   createdAt: Date;
 }
@@ -45,6 +46,7 @@ export interface MessageRepositoryPort {
     role: "user" | "assistant" | "system";
     content: string;
     inputMetadata?: UserMessageInputMetadata;
+    metadata?: Record<string, unknown>;
   }): Promise<MessageRecord>;
 }
 
@@ -83,6 +85,9 @@ const mapMessage = (row: MessageRow): MessageRecord => ({
   workspaceId: row.workspace_id,
   role: row.role,
   content: row.content,
+  metadata: row.metadata_json && typeof row.metadata_json === "object" && !Array.isArray(row.metadata_json)
+    ? row.metadata_json as Record<string, unknown>
+    : undefined,
   inputMetadata: row.role === "user" ? mapInputMetadata(row.metadata_json) : undefined,
   createdAt: new Date(row.created_at),
 });
@@ -247,6 +252,7 @@ export class MessageRepository implements MessageRepositoryPort {
     role: "user" | "assistant" | "system";
     content: string;
     inputMetadata?: UserMessageInputMetadata;
+    metadata?: Record<string, unknown>;
   }): Promise<MessageRecord> {
     const [row] = await this.database.query<MessageRow>(
       `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json)
@@ -258,7 +264,7 @@ export class MessageRepository implements MessageRepositoryPort {
         input.workspaceId,
         input.role,
         input.content,
-        JSON.stringify(input.inputMetadata ?? {}),
+        JSON.stringify(input.metadata ?? input.inputMetadata ?? {}),
       ],
     );
 

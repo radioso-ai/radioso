@@ -219,6 +219,55 @@ describeIfDatabase("persistence integration", () => {
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 
+  it("enforces a single open skill intake state for concurrent starts in one conversation", async () => {
+    const accountRepository = new AccountRepository(database);
+    const conversationRepository = new ConversationRepository(database);
+    const account = await accountRepository.create({
+      name: "Concurrent Intake Organization",
+      email: `concurrent-intake-${randomUUID()}@example.com`,
+      passwordHash: "hash-intake",
+    });
+    const workspace = await workspaceRepository.create(account.id, "Concurrent Intake Workspace");
+    const conversation = await conversationRepository.create(workspace.id);
+    const skillName = `test.concurrent.${randomUUID()}`;
+    const insertOpenState = () => database.query(
+      `INSERT INTO skill_intake_states (
+         id,
+         workspace_id,
+         conversation_id,
+         skill_name,
+         status,
+         collected,
+         invalid,
+         missing,
+         expires_at,
+         last_prompted_field
+       )
+       VALUES ($1, $2, $3, $4, 'active', '{}'::jsonb, '{}'::jsonb, ARRAY['email']::text[], NOW() + INTERVAL '15 minutes', 'email')`,
+      [randomUUID(), workspace.id, conversation.id, skillName],
+    );
+
+    const results = await Promise.allSettled([insertOpenState(), insertOpenState()]);
+    const activeRows = await database.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM skill_intake_states
+       WHERE workspace_id = $1
+         AND conversation_id = $2
+         AND skill_name = $3
+         AND status IN ('active', 'paused', 'awaiting_confirmation', 'awaiting_tool')`,
+      [workspace.id, conversation.id, skillName],
+    );
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(activeRows[0]?.count).toBe("1");
+
+    await database.query("DELETE FROM skill_intake_states WHERE workspace_id = $1", [workspace.id]);
+    await database.query("DELETE FROM conversations WHERE workspace_id = $1", [workspace.id]);
+    await database.query("DELETE FROM workspaces WHERE account_id = $1", [account.id]);
+    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
+  });
+
   it("paginates conversations without skipping rows when updated_at ties", async () => {
     const accountRepository = new AccountRepository(database);
     const conversationRepository = new ConversationRepository(database);

@@ -158,7 +158,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         surface: z.string(),
         text: z.string(),
       }).optional(),
-      actions: z.record(z.unknown()).optional(),
       expiresAt: z.string().datetime(),
     }),
   );

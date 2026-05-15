@@ -127,36 +127,6 @@ export type ChatSuggestion = Omit<ApiSchemas['ChatSuggestion'], 'kind'> & {
   kind?: ChatSuggestionKind
 }
 
-export type HumanContactTriggerSource =
-  | 'manual'
-  | 'assistant_suggestion'
-  | 'no_context_refusal'
-  | 'grounded_degraded_unsupported_segments'
-  | 'explicit_user_request'
-  | 'llm_classifier'
-
-export interface HumanContactDraftResponse {
-  draftMessage: string
-  defaultEmail?: string | null
-  activitySummary?: ActivitySummary
-  activityTrace?: ActivityTrace
-}
-
-export interface HumanContactSubmitResponse {
-  requestId: string
-  activitySummary?: ActivitySummary
-  activityTrace?: ActivityTrace
-}
-
-export interface HumanContactSubmitInput {
-  conversationId: string
-  assistantMessageId?: string
-  email: string
-  message: string
-  triggerSource: HumanContactTriggerSource
-  triggerReason?: string
-}
-
 export interface HumanContactAvailability {
   enabled: boolean
   configured: boolean

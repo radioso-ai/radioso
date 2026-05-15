@@ -68,7 +68,11 @@ import type { AppDependencies } from "../../src/app/server/types.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
-import { NoopChatActionProvider } from "../../src/modules/chat/services/chatActionProvider.js";
+import {
+  ChainedChatIntakeProvider,
+  NoopChatIntakeProvider,
+  type ChatIntakeProviderPort,
+} from "../../src/modules/chat/services/chatIntakeProvider.js";
 import { NoopContactHistoryProvider } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { AnswerFeedbackHistoryProviderPort } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
 import {
@@ -167,6 +171,7 @@ export const createTestEnv = (): Env => ({
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
   WEBSITE_CRAWLER_ENABLED: true,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
+  RADIOSO_APPLICATION_MODULES: undefined,
   SUPPORT_STAFF_EMAILS: "support@example.com,approver@example.com",
 });
 
@@ -215,6 +220,7 @@ export const createTestDependencies = (overrides: {
   groundedMissResponseComposer?: GroundedMissResponseComposer;
   usageLimitPolicy?: UsageLimitPolicy;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
+  chatIntakeProvider?: ChatIntakeProviderPort;
   applicationRouteMounts?: ApplicationRouteMount[];
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = {
@@ -613,6 +619,14 @@ export const createTestDependencies = (overrides: {
     new NoopContactHistoryProvider(),
     overrides.answerFeedbackHistoryProvider,
   );
+  const chatIntakeProviders = [
+    ...(overrides.chatIntakeProvider ? [overrides.chatIntakeProvider] : []),
+  ];
+  const chatIntakeProvider = chatIntakeProviders.length === 0
+    ? new NoopChatIntakeProvider()
+    : chatIntakeProviders.length === 1
+      ? chatIntakeProviders[0]!
+      : new ChainedChatIntakeProvider(chatIntakeProviders);
   const chatService = new ChatService(
     conversationRepository,
     messageRepository,
@@ -623,8 +637,8 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     workspaceRepository,
     usageLimitPolicy,
-    new NoopChatActionProvider(),
     agentService,
+    chatIntakeProvider,
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -664,7 +678,7 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     capabilityPolicy,
     usageLimitPolicy,
-    chatActionProvider: new NoopChatActionProvider(),
+    chatIntakeProvider,
     contactHistoryProvider: new NoopContactHistoryProvider(),
     applicationRouteMounts: overrides.applicationRouteMounts ?? [],
     applicationModules: new ApplicationModuleCoordinator({
@@ -772,6 +786,7 @@ export const createTestApp = (overrides: {
   groundedMissResponseComposer?: GroundedMissResponseComposer;
   usageLimitPolicy?: UsageLimitPolicy;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
+  chatIntakeProvider?: ChatIntakeProviderPort;
   applicationRouteMounts?: ApplicationRouteMount[];
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);

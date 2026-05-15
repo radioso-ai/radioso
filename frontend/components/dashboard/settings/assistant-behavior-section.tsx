@@ -79,7 +79,6 @@ export interface AssistantBehaviorSectionProps {
   sourceListError?: string | null
   channelsTabHref?: string
   websiteEmbedAvailable?: boolean
-  humanContactConfigured?: boolean
 }
 
 export function AssistantBehaviorSection({
@@ -99,7 +98,6 @@ export function AssistantBehaviorSection({
   sourceListError = null,
   channelsTabHref,
   websiteEmbedAvailable = false,
-  humanContactConfigured = false,
 }: AssistantBehaviorSectionProps) {
   const theme = assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME
   const surfaceMode = getSurfaceMode(theme)
@@ -542,7 +540,6 @@ export function AssistantBehaviorSection({
             logoUrl={anonSettings.assistantLogoUrl ?? null}
             showSuggestedQuestions={assistantBehaviorSettings.suggestedQuestionsEnabled}
             showProactiveGreeting={anonSettings.proactiveGreetingEnabled}
-            showHumanContactSuggestion={humanContactConfigured}
           />
           <div className="space-y-2">
             <ThemeContrastWarning theme={theme} />

@@ -67,6 +67,7 @@ export const humanContactMigrator: ApplicationDatabaseMigrator = {
         generated_summary TEXT NOT NULL,
         trigger_source TEXT NOT NULL,
         trigger_reason TEXT,
+        idempotency_key TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
         attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
         next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -81,7 +82,14 @@ export const humanContactMigrator: ApplicationDatabaseMigrator = {
 
     await database.query(`
       ALTER TABLE ee_contact_requests
-        ADD COLUMN IF NOT EXISTS activity_trace JSONB
+        ADD COLUMN IF NOT EXISTS activity_trace JSONB,
+        ADD COLUMN IF NOT EXISTS idempotency_key TEXT
+    `);
+
+    await database.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS ee_contact_requests_idempotency_key_idx
+        ON ee_contact_requests (workspace_id, idempotency_key)
+        WHERE idempotency_key IS NOT NULL
     `);
 
     await database.query(`

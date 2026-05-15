@@ -61,14 +61,12 @@ export function ChatPreview({
   logoUrl,
   showSuggestedQuestions,
   showProactiveGreeting,
-  showHumanContactSuggestion = false,
 }: {
   themeSettings: WebsiteEmbedThemeSettings
   assistantName: string
   logoUrl: string | null
   showSuggestedQuestions: boolean
   showProactiveGreeting: boolean
-  showHumanContactSuggestion?: boolean
 }) {
   const displayName = assistantName.trim() || 'Assistant'
   const resolvedLogo = logoUrl ?? '/radioso-icon.svg'
@@ -105,9 +103,6 @@ export function ChatPreview({
           { text: 'Read me the welcome email we send new customers' },
         )
       }
-      if (showHumanContactSuggestion) {
-        suggestions.push({ text: 'Talk to a human', action: { kind: 'contact_human' } })
-      }
       const assistantReply: ChatThreadMessage = {
         id: 'preview-assistant-2',
         role: 'assistant',
@@ -121,7 +116,7 @@ export function ChatPreview({
         ? [greeting, userQuestion, assistantReply]
         : [userQuestion, assistantReply]
     },
-    [showProactiveGreeting, showSuggestedQuestions, showHumanContactSuggestion],
+    [showProactiveGreeting, showSuggestedQuestions],
   )
 
   const surfaceVars = useMemo(

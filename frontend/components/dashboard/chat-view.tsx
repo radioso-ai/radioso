@@ -3,7 +3,7 @@
 import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { FileText, MoreHorizontal, RotateCcw, Send, UserRound } from 'lucide-react'
+import { FileText, MoreHorizontal, RotateCcw, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import {
@@ -18,24 +18,16 @@ import { type CitationOpenResult } from './chat-citations'
 import {
   answerFeedbackApi,
   documentsApi,
-  humanContactApi,
   type AnswerFeedbackState,
   type AnswerFeedbackValue,
   type ChatSuggestion,
-  type HumanContactTriggerSource,
 } from '@/lib/api'
 import { useChatSession } from '@/lib/chat-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
-import { HUMAN_CONTACT_REQUEST_TRIGGER_REASON, isHumanContactRequest } from '@/lib/human-contact-intent'
-import { createClientId } from '@/lib/client-id'
 import { editionController } from '@/lib/edition-controller'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { useWorkspace } from '@/lib/workspace-context'
-import {
-  HumanContactInlineComposer,
-  type HumanContactInlineRequest,
-} from '@/components/chat/human-contact-inline-composer'
-import { ChatMessageThread, type ChatThreadMessage } from './chat-message-thread'
+import { ChatMessageThread } from './chat-message-thread'
 
 interface ChatViewProps {
   accountId: string
@@ -51,7 +43,6 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
   const chatSessionKey = `agent-chat:v3:${activeWorkspaceId ?? accountId}:${agentId ?? 'default-agent'}`
   const {
-    conversationId,
     messages,
     isLoading,
     isInitialized,
@@ -60,12 +51,9 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
     sendMessage,
     startNewChat,
   } = useChatSession(chatSessionKey, agentId)
-  const [contactAvailable, setContactAvailable] = useState(false)
-  const [contactRequest, setContactRequest] = useState<HumanContactInlineRequest | null>(null)
-  const [contactConfirmation, setContactConfirmation] = useState<ChatThreadMessage | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isInitializingView = (onboarding.isLoading || isBootstrapping || !isInitialized) && messages.length === 0
-  const visibleMessages = contactConfirmation ? [...messages, contactConfirmation] : messages
+  const visibleMessages = messages
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -73,7 +61,7 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
 
   useEffect(() => {
     scrollToBottom()
-  }, [contactConfirmation, isLoading, messages])
+  }, [isLoading, messages])
 
   useEffect(() => {
     const userExpectedLocale =
@@ -82,50 +70,12 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
     void initializeSession(userExpectedLocale)
   }, [initializeSession])
 
-  useEffect(() => {
-    let active = true
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Workspace changes must clear stale Enterprise-only contact availability before probing the current workspace.
-    setContactAvailable(false)
-
-    const loadContactAvailability = async () => {
-      try {
-        const settings = await humanContactApi.getSettings()
-        if (active) {
-          setContactAvailable(settings.configured)
-        }
-      } catch {
-        if (active) {
-          setContactAvailable(false)
-        }
-      }
-    }
-
-    if (editionController.canUseHumanContact() && activeWorkspaceId) {
-      void loadContactAvailability()
-    }
-
-    return () => {
-      active = false
-    }
-  }, [activeWorkspaceId])
-
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading || isBootstrapping) return
 
     const nextInput = input.trim()
-    if (editionController.canUseHumanContact() && contactAvailable && conversationId && latestAssistantMessage && isHumanContactRequest(nextInput)) {
-      setInput('')
-      openContactComposer({
-        assistantMessageId: latestAssistantMessage.persistedAssistantMessageId ?? latestAssistantMessage.id,
-        triggerSource: 'explicit_user_request',
-        triggerReason: HUMAN_CONTACT_REQUEST_TRIGGER_REASON,
-      })
-      return
-    }
-
     setInput('')
-    setContactConfirmation(null)
     await sendMessage(nextInput, { method: 'typed' })
   }
 
@@ -141,8 +91,6 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
       typeof navigator !== 'undefined' ? navigator.languages?.[0] ?? navigator.language : undefined
 
     setInput('')
-    setContactRequest(null)
-    setContactConfirmation(null)
     await startNewChat(userExpectedLocale)
   }
 
@@ -168,68 +116,14 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
     }
   }
 
-  const latestAssistantMessage = [...messages].reverse().find((message) => message.role === 'assistant')
-
-  const openContactComposer = (input: {
-    assistantMessageId?: string
-    triggerSource: HumanContactTriggerSource
-    triggerReason?: string
-  }) => {
-    if (!conversationId || !latestAssistantMessage) {
-      return
-    }
-
-    setContactConfirmation(null)
-    setContactRequest({
-      conversationId,
-      assistantMessageId: input.assistantMessageId ?? latestAssistantMessage.id,
-      triggerSource: input.triggerSource,
-      triggerReason: input.triggerReason,
-    })
-  }
-
-  const handleManualContact = () => {
-    if (!latestAssistantMessage) {
-      return
-    }
-    openContactComposer({
-      assistantMessageId: latestAssistantMessage.persistedAssistantMessageId ?? latestAssistantMessage.id,
-      triggerSource: 'manual',
-    })
-  }
-
   const handleSuggestionSelect = (suggestion: ChatSuggestion, messageId: string) => {
     if (isLoading || isBootstrapping) {
-      return
-    }
-
-    if (editionController.isHumanContactSuggestion(suggestion)) {
-      const payload = suggestion.action.payload ?? {}
-      const triggerSource = typeof payload.triggerSource === 'string'
-        ? payload.triggerSource as HumanContactTriggerSource
-        : 'assistant_suggestion'
-      const assistantMessageId = typeof payload.assistantMessageId === 'string'
-        ? payload.assistantMessageId
-        : messageId
-      const triggerReason = typeof payload.triggerReason === 'string' ? payload.triggerReason : undefined
-      openContactComposer({ assistantMessageId, triggerSource, triggerReason })
       return
     }
 
     void sendMessage(suggestion.text, {
       method: 'suggestion_click',
       suggestionSourceMessageId: messageId,
-    })
-  }
-
-  const handleContactSubmitted = (content: string) => {
-    setContactRequest(null)
-    setContactConfirmation({
-      id: createClientId('contact-confirmation'),
-      role: 'assistant',
-      content,
-      createdAt: new Date().toISOString(),
-      status: 'complete',
     })
   }
 
@@ -316,25 +210,10 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
               <RotateCcw className="mr-2 h-4 w-4" />
               Clear chat
             </DropdownMenuItem>
-            {editionController.canUseHumanContact() && contactAvailable ? (
-              <DropdownMenuItem
-                disabled={isLoading || isBootstrapping || isInitializingView || !conversationId || !latestAssistantMessage}
-                onSelect={handleManualContact}
-              >
-                <UserRound className="mr-2 h-4 w-4" />
-                Talk to a human
-              </DropdownMenuItem>
-            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       }
-      footer={isInitializingView ? null : editionController.canUseHumanContact() && contactRequest ? (
-        <HumanContactInlineComposer
-          request={contactRequest}
-          onCancel={() => setContactRequest(null)}
-          onSubmitted={handleContactSubmitted}
-        />
-      ) : (
+      footer={isInitializingView ? null : (
         <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
           <div className="flex items-end gap-1 rounded-3xl border border-input bg-input/40 px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0">
             <Textarea

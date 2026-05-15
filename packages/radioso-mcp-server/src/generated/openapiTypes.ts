@@ -1969,9 +1969,6 @@ export interface components {
                 surface: string;
                 text: string;
             };
-            actions?: {
-                [key: string]: unknown;
-            };
             /** Format: date-time */
             expiresAt: string;
         };
@@ -2580,6 +2577,51 @@ export interface components {
                 inputSchemaRef: string;
                 settingsSchemaRef?: string;
             };
+            intake?: {
+                enabled: boolean;
+                supportedCallers: ("assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed")[];
+                intent: {
+                    description: string;
+                    examples: string[];
+                };
+                fields: {
+                    name: string;
+                    displayName: string;
+                    /** @enum {string} */
+                    type: "string" | "email" | "phone" | "number" | "date" | "enum";
+                    required: boolean;
+                    sensitive?: boolean;
+                    ttlSeconds?: number;
+                    pattern?: string;
+                    enumValues?: string[];
+                    maxLength?: number;
+                    extractionHint?: string;
+                }[];
+                /** @enum {string} */
+                confirmation: "none" | "before_execute" | "always";
+                /** @enum {string} */
+                interruptionPolicy: "pause_and_resume" | "cancel_on_topic_change";
+            };
+            execution?: {
+                /** @enum {string} */
+                kind: "internal";
+                adapter: string;
+                enqueue?: boolean;
+            } | {
+                /** @enum {string} */
+                kind: "webhook";
+                /** @enum {string} */
+                provider: "make" | "zapier" | "custom";
+                endpointId: string;
+                enqueue: boolean;
+                timeoutMs?: number;
+            } | {
+                /** @enum {string} */
+                kind: "delivery_pipeline";
+                adapter: string;
+                destinations: ("email" | "webhook")[];
+                enqueue: boolean;
+            };
             diagnostics: components["schemas"]["SkillDiagnosticsSummary"];
             steps?: {
                 name: string;
@@ -2601,12 +2643,6 @@ export interface components {
             text: string;
             kind: string;
             citation?: components["schemas"]["Citation"];
-            action?: {
-                kind: string;
-                payload?: {
-                    [key: string]: unknown;
-                };
-            };
         };
         AssistantRoute: {
             /** @enum {string} */

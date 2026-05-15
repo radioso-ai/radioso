@@ -57,7 +57,6 @@ type BootstrapState =
       status: 'ready'
       publicChatToken: string
       workspaceName?: string | null
-      actions?: Record<string, unknown>
       pageContext?: WebsiteEmbedPageContext | null
     }
 
@@ -181,23 +180,17 @@ export function EmbeddedChatFrame({
 
         isBootstrappedRef.current = true
         stopHandshake()
-        const actions =
-          session.actions && typeof session.actions === 'object' && !Array.isArray(session.actions)
-            ? session.actions
-            : {}
         storeEmbedBootstrapSession(token, {
           workspaceName: session.workspaceName,
           publicChatToken: session.publicChatToken,
           publicSessionId: session.publicSessionId,
           publicSessionToken: session.publicSessionToken,
-          actions,
           expiresAt: typeof session.expiresAt === 'string' ? session.expiresAt : new Date(Date.now() + 60_000).toISOString(),
         })
         setState({
           status: 'ready',
           publicChatToken: session.publicChatToken,
           workspaceName: session.workspaceName,
-          actions,
           pageContext: sanitizePageContext(event.data.pageContext),
         })
         return
@@ -301,7 +294,6 @@ export function EmbeddedChatFrame({
       themeOverrides={themeOverrides}
       surface="embed"
       pageContext={state.pageContext}
-      initialActions={state.actions}
     />
   )
 }

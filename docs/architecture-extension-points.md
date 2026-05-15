@@ -25,7 +25,7 @@ Default composition must build and run without optional modules or deployment-sp
 | Worker dispatch | Documents module | Job dispatcher and consumer adapter selection helpers | No-op polling, configured Cloud Tasks dispatch, or configured AMQP dispatch follows environment behavior | Do not make queue-provider logic part of ingestion orchestration |
 | Website crawler provider | Documents module | Website crawler provider registration through application composition | No provider is registered, so crawl requests return unavailable | Do not make a hosted or vendor-specific crawler part of the default OSS runtime |
 | Retrieval construction | Retrieval module | Stage and strategy construction helpers | Existing vector, lexical, rewrite, rerank, and prompt assembly behavior remains the default | Do not add retrieval ranking behavior to HTTP routes |
-| Chat suggestion actions | Chat module | Generic chat action provider registration through application composition | Default provider is a no-op and emits no action suggestions | Do not add Enterprise-specific action kinds, persistence, or route contracts to OSS chat services |
+| Chat skill intake | Chat module | Intake provider registration through application composition | Default provider is a no-op and produces no intake turn | Do not use suggestions as an action transport or add Enterprise-specific route contracts to OSS chat services |
 
 ## Capability Policy
 
@@ -44,6 +44,12 @@ Product services coordinate workflows. They may call stable contracts such as ca
 Composition code assembles defaults and optional modules. This is where adapter selection and module registration belong.
 
 Persistence and integration adapters talk to databases, queues, object storage, external telemetry targets, and similar systems. Their details stay behind focused ports.
+
+Chat suggestions are text-only prompts that clients may send back as normal chat
+messages. They are not an execution transport. Stateful workflows that need
+typed inputs, validation, permissions, durable side effects, or audit records
+should register a chat skill intake provider and expose only the provider
+contract to the rest of the application.
 
 Worker dispatch has two parts. The dispatcher publishes a wake-up notification after a durable document processing job exists. The optional consumer listens for broker deliveries in worker runtimes and delegates back to the worker's job-by-id processing path. The PostgreSQL job table remains authoritative for status, retries, leases, and recovery. AMQP dispatch intentionally keeps the worker polling loop active; broker messages improve wake-up latency, while polling preserves recovery and scheduled retry behavior through `available_at`.
 

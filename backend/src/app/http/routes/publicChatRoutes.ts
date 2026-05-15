@@ -97,7 +97,6 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "agentSurfaceExtensions"
   | "assistantChatService"
   | "auditService"
-  | "chatActionProvider"
   | "chatHistoryService"
   | "conversationRepository"
   | "documentStorage"
@@ -125,10 +124,6 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     } catch {
       return null;
     }
-  };
-  const resolvePublicSessionActions = async (workspaceId: string) => {
-    const actions = await dependencies.chatActionProvider.getPublicSessionActions?.({ workspaceId });
-    return actions && Object.keys(actions).length > 0 ? actions : undefined;
   };
   const buildAssistantLogoUrl = (req: { get(name: string): string | undefined }, token: string, hasLogo: boolean) =>
     buildPublicAssistantLogoUrl({
@@ -270,7 +265,6 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           assistantBootstrapActive: isAgentBootstrapActive(agent),
           assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
           theme: agent.theme,
-          actions: await resolvePublicSessionActions(workspace.id),
           expiresAt: session.expiresAt,
         });
         return;
@@ -409,7 +403,6 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         assistantBootstrapActive: isAgentBootstrapActive(agent),
         assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
         theme: agent.theme,
-        actions: await resolvePublicSessionActions(workspace.id),
         expiresAt: session.expiresAt,
       });
     } catch (error) {

@@ -42,10 +42,6 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       text: z.string(),
       kind: z.string(),
       citation: schemas.CitationSchema.optional(),
-      action: z.object({
-        kind: z.string(),
-        payload: z.record(z.unknown()).optional(),
-      }).optional(),
     }),
   );
 

@@ -6,7 +6,7 @@ export interface ApplicationModuleRegistrationContext {
   registerRouteMount(mount: ApplicationRouteMount): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHandler): void;
-  registerChatActionProvider(provider: ApplicationChatActionProviderRegistration): void;
+  registerChatIntakeProvider?(provider: ApplicationChatIntakeProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillDefinition?(definition: SkillDefinition): void;
@@ -60,6 +60,47 @@ export interface SkillDefinition {
     method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     path: string;
   }>;
+  intake?: {
+    enabled: boolean;
+    supportedCallers: Array<"assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed">;
+    intent: {
+      description: string;
+      examples: string[];
+    };
+    fields: Array<{
+      name: string;
+      displayName: string;
+      type: "string" | "email" | "phone" | "number" | "date" | "enum";
+      required: boolean;
+      sensitive?: boolean;
+      ttlSeconds?: number;
+      pattern?: string;
+      enumValues?: string[];
+      maxLength?: number;
+      extractionHint?: string;
+    }>;
+    confirmation: "none" | "before_execute" | "always";
+    interruptionPolicy: "pause_and_resume" | "cancel_on_topic_change";
+  };
+  execution?:
+    | {
+        kind: "internal";
+        adapter: string;
+        enqueue?: boolean;
+      }
+    | {
+        kind: "webhook";
+        provider: "make" | "zapier" | "custom";
+        endpointId: string;
+        enqueue: boolean;
+        timeoutMs?: number;
+      }
+    | {
+        kind: "delivery_pipeline";
+        adapter: string;
+        destinations: Array<"email" | "webhook">;
+        enqueue: boolean;
+      };
   diagnostics: {
     defined: boolean;
     shapeAware: boolean;
@@ -197,15 +238,6 @@ export type ApplicationUsageLimitPolicyRegistration =
       };
     }) => UsageLimitPolicy);
 
-export interface ChatActionSuggestion {
-  text: string;
-  kind: string;
-  action: {
-    kind: string;
-    payload?: Record<string, unknown>;
-  };
-}
-
 export type ActivityStageStatus = "applied" | "skipped" | "fallback" | "rejected" | "unavailable" | "failed";
 
 export interface ActivityStage {
@@ -250,26 +282,45 @@ export interface ActivityTrace {
   summary?: ActivitySummary;
 }
 
-export interface ChatActionProvider {
-  evaluate(input: {
-    workspaceId: string;
-    accountId?: string | null;
-    conversationId: string;
-    assistantMessageId: string;
-    query: string;
-    answer: string;
-    answerOutcome: string;
-    sourceChannel?: string | null;
-    sourceOrigin?: string | null;
-  }): Promise<ChatActionSuggestion | null>;
-  getPublicSessionActions?(input: { workspaceId: string }): Promise<Record<string, unknown> | null | undefined>;
+export interface ChatIntakeResult {
+  skillName: string;
+  status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+  stateId?: string;
+  answer: string;
+  activitySummary: ActivitySummary;
+  activityTrace: ActivityTrace;
 }
 
-export type ApplicationChatActionProviderRegistration =
-  | ChatActionProvider
+export interface ChatIntakeProvider {
+  handle(input: {
+    workspaceId: string;
+    accountId?: string | null;
+    agentId?: string | null;
+    conversationId: string;
+    userMessageId: string;
+    query: string;
+    history: Array<{
+      id: string;
+      role: "user" | "assistant" | "system";
+      content: string;
+      createdAt: Date;
+    }>;
+    sourceChannel?: string | null;
+    sourceOrigin?: string | null;
+    anonymousSessionId?: string | null;
+    userExpectedLocale?: string | null;
+  }): Promise<ChatIntakeResult | null>;
+}
+
+export interface ChatGateway {
+  answer(input: { query: string; history: Array<{ role: string; content: string }>; prompt: string; systemPrompt?: string }): Promise<string>;
+}
+
+export type ApplicationChatIntakeProviderRegistration =
+  | ChatIntakeProvider
   | ((context: {
       database: UsageLimitDatabasePort;
-      chatGateway?: unknown;
+      chatGateway: ChatGateway;
       logger: {
         info?(entry: unknown, message?: string): void;
         warn?(entry: unknown, message?: string): void;
@@ -317,7 +368,7 @@ export type ApplicationChatActionProviderRegistration =
           blockMs?: number;
         }): Promise<void>;
       };
-    }) => ChatActionProvider);
+    }) => ChatIntakeProvider);
 
 export interface ContactHistorySummary {
   id: string;

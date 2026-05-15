@@ -5,9 +5,8 @@ import { useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { ThumbsDown, ThumbsUp, UserRound } from 'lucide-react'
+import { ThumbsDown, ThumbsUp } from 'lucide-react'
 import type { WebsiteEmbedTheme } from '@/lib/embed-widget'
-import { editionController } from '@/lib/edition-controller'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
 import type {
   AnswerFeedbackEntry,
@@ -313,13 +312,12 @@ export function ChatMessageThread({
                         )}
                       </div>
                       {(() => {
-                        const visibleSuggestions = editionController.filterChatSuggestions(message.suggestions)
+                        const visibleSuggestions = message.suggestions ?? []
                         return visibleSuggestions.length > 0 ? (
                           <div className="flex flex-wrap gap-1.5">
                             {visibleSuggestions
                               .filter((suggestion) => suggestion.text.trim())
                               .map((suggestion, suggestionIndex) => {
-                              const isContactAction = suggestion.action?.kind === 'contact_human'
                               return onSuggestionSelect ? (
                                 <Button
                                   key={`${message.id}-suggestion-${suggestionIndex}`}
@@ -337,7 +335,6 @@ export function ChatMessageThread({
                                     onSuggestionSelect(suggestion, message.id)
                                   }}
                                 >
-                                  {isContactAction ? <UserRound className="mr-1.5 h-3.5 w-3.5 shrink-0" /> : null}
                                   {suggestion.text}
                                 </Button>
                               ) : (

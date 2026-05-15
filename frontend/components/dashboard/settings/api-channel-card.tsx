@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 
 const API_BASE_PATH = process.env.NEXT_PUBLIC_API_BASE_PATH ?? '/backend/api/v1'
+const SDK_BASE_PATH = API_BASE_PATH.replace(/\/api\/v1\/?$/, '')
 const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'http://localhost:3001'
 const PLACEHOLDER_ORIGIN = 'https://your-radioso-host'
 
@@ -36,7 +37,7 @@ const buildAskQuestionCurl = (origin: string, apiToken: string | null) => `curl 
 const buildCreateDocumentTypeScript = (origin: string, apiToken: string | null) => `import { createRadiosoClient } from '@radioso/typescript-sdk'
 
 const client = createRadiosoClient({
-  baseUrl: '${origin}',
+  baseUrl: '${origin}${SDK_BASE_PATH}',
   apiToken: ${tokenLiteral(apiToken)},
 })
 

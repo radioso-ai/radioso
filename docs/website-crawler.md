@@ -19,13 +19,15 @@ The request body is:
 }
 ```
 
-`limit` is optional. The backend caps it with:
+`limit` is optional. When omitted the backend uses the configured maximum. Environment variables:
 
 ```bash
-WEBSITE_CRAWLER_DEFAULT_LIMIT=10
-WEBSITE_CRAWLER_MAX_LIMIT=100
+WEBSITE_CRAWLER_DEFAULT_LIMIT=1000
+WEBSITE_CRAWLER_MAX_LIMIT=1000
 WEBSITE_CRAWLER_USER_AGENT=RadiosoCrawler/1.0
 ```
+
+Pages whose content exceeds 500,000 characters are skipped during ingestion with a failure reason recorded in the crawl job result.
 
 Cookie-session requests select the workspace with `x-workspace-id`. Bearer-token requests use the workspace already bound to the API token.
 
@@ -71,8 +73,9 @@ Query parameters are all optional:
 | Parameter | Type | Default | Notes |
 |-----------|------|---------|-------|
 | `status` | `queued` \| `processing` \| `completed` \| `failed` | unset (any) | Filter to a single status. |
-| `sinceMinutes` | integer 1-1440 | `30` | Only return jobs created in this window. |
+| `sinceMinutes` | integer 1-1440 | `30` | Only return jobs created in this window. Ignored when `sourceId` is set. |
 | `limit` | integer 1-200 | `50` | Maximum number of jobs to return. |
+| `sourceId` | UUID | unset | Filter to jobs linked to a specific document source. |
 
 Response shape:
 
@@ -86,6 +89,13 @@ Response shape:
       "limit": 10,
       "sourceId": "22222222-2222-4222-8222-222222222222",
       "documentCount": 7,
+      "failedPageCount": 1,
+      "failures": [
+        {
+          "sourceUrl": "https://example.com/docs/large-dump",
+          "reason": "Page content exceeds maximum length (500,000 characters)"
+        }
+      ],
       "lastError": null,
       "createdAt": "2026-05-11T10:00:00.000Z",
       "updatedAt": "2026-05-11T10:05:00.000Z",
@@ -95,7 +105,7 @@ Response shape:
 }
 ```
 
-`documentCount` is derived from the worker result (`accepted` pages). It is `null` for jobs that have not completed yet. `lastError` is populated for failed jobs and is `null` otherwise.
+`documentCount` is derived from the worker result (`accepted` pages). It is `null` for jobs that have not completed yet. `failedPageCount` is the number of pages skipped during ingestion. `failures` contains the URL and reason for each skipped page. `lastError` is populated for failed jobs and is `null` otherwise.
 
 ### Deleting a finished crawl job
 
@@ -113,6 +123,36 @@ The endpoint only accepts terminal jobs:
 
 The dashboard banner uses this endpoint when the user clicks the dismiss button on a completed or failed row. For in-flight jobs the dismiss button only hides the row in local state, since the job is genuinely still running.
 
+### Listing documents for a source
+
+```text
+GET /api/v1/document/sources/{sourceId}/documents
+```
+
+Returns a paginated list of documents belonging to a source. Supports the same `limit`, `offset`, and `cursor` query parameters as `GET /api/v1/document/`. The synthetic "Manually added documents" source ID (`00000000-0000-0000-0000-000000000001`) returns documents with no source.
+
+### Re-crawling a website source
+
+```text
+POST /api/v1/document/sources/{sourceId}/recrawl
+```
+
+Enqueues a new crawl job using the URL and limit stored in the source's `config`. Only works for sources with `kind: "website"`. Returns the same `202` response as `POST /api/v1/document/crawl`.
+
+Duplicate pages are handled by the existing `externalDocumentId` upsert — unchanged pages update the existing document rather than creating a new one.
+
+### Deleting a source
+
+```text
+DELETE /api/v1/document/sources/{sourceId}
+```
+
+Deletes the source row, all documents linked to it, and any uploaded-file storage objects for those documents. Queued or in-progress crawl jobs for the source are cancelled first to prevent the worker from recreating the source after deletion.
+
+- `204` — source and documents deleted.
+- `400` — the synthetic "Manually added documents" source cannot be deleted.
+- `404` — source does not exist or belongs to another workspace.
+
 ## Provider Contract
 
 A provider receives a normalized crawl request and returns pages:
@@ -124,22 +164,17 @@ interface WebsiteCrawlerProvider {
     url: string;
     limit: number;
     signal?: AbortSignal;
-  }): Promise<{
-    provider: string;
-    runId?: string | null;
-    status?: string | null;
-    pages: Array<{
-      sourceUrl: string;
-      canonicalUrl?: string | null;
-      title?: string | null;
-      content: string;
-      metadata?: Record<string, unknown>;
-    }>;
-  }>;
+  }): Promise<WebsiteCrawlResult>;
+  crawlStream?(
+    request: { url: string; limit: number; signal?: AbortSignal },
+    onPage: (page: WebsiteCrawlPage) => Promise<void>,
+  ): Promise<Omit<WebsiteCrawlResult, "pages">>;
 }
 ```
 
-Radioso validates returned page URLs, removes duplicate canonical URLs, skips empty content, redacts sensitive provider details, and rejects crawl targets that resolve to localhost or private network addresses.
+When `crawlStream` is implemented, the service calls it instead of `crawl`, ingesting each page as soon as the crawler discovers it rather than waiting for the entire crawl to finish. The batch `crawl` method is used as a fallback for providers that do not support streaming.
+
+Radioso validates returned page URLs, removes duplicate canonical URLs, skips empty content and oversized pages, redacts sensitive provider details, and rejects crawl targets that resolve to localhost or private network addresses.
 
 ## Deployment topology
 

@@ -49,6 +49,7 @@ export class WebsiteCrawlWorker {
   }
 
   async runOnce(now: Date = new Date()): Promise<boolean> {
+    await this.releaseStaleJobs(now);
     // The whole claim+process tick is tracked so stop() can await it. Tracking
     // only the process half would leave a window where claimNext just returned
     // a job but processing has not yet started — stop() would not see anything
@@ -123,6 +124,25 @@ export class WebsiteCrawlWorker {
         this.scheduleNextTick();
       }
     }, delayMs);
+  }
+
+  private async releaseStaleJobs(now: Date): Promise<void> {
+    try {
+      const leaseMs = this.dependencies.jobLeaseMs ?? 300_000;
+      const cutoff = new Date(now.getTime() - leaseMs);
+      const released = await this.dependencies.repository.releaseAllTimedOutClaims(cutoff, "claim_expired");
+      if (released > 0) {
+        this.dependencies.logger.warn(
+          { role: "website-crawl-worker", releasedCount: released },
+          "Released stale processing crawl jobs back to queue",
+        );
+      }
+    } catch (error) {
+      this.dependencies.logger.error(
+        { role: "website-crawl-worker", error: error instanceof Error ? error.message : String(error) },
+        "Failed to release stale crawl jobs",
+      );
+    }
   }
 
   private async processClaimedJob(job: WebsiteCrawlJobRecord): Promise<void> {

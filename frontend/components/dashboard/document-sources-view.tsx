@@ -261,9 +261,16 @@ export function DocumentSourcesView() {
       .listCrawlJobs({ sinceMinutes: 60 })
       .then((response) => {
         const active = new Set<string>()
+        const staleThresholdMs = 10 * 60 * 1000
         for (const job of response.jobs) {
-          if ((job.status === 'queued' || job.status === 'processing') && job.sourceId) {
+          if (!job.sourceId) continue
+          if (job.status === 'queued') {
             active.add(job.sourceId)
+          } else if (job.status === 'processing') {
+            const age = Date.now() - new Date(job.updatedAt).getTime()
+            if (age < staleThresholdMs) {
+              active.add(job.sourceId)
+            }
           }
         }
         setCrawlingSourceIds(active)

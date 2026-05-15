@@ -932,4 +932,102 @@ describe("document contract", () => {
       },
     });
   });
+
+  it("lists documents belonging to a specific source", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "source-docs@example.com");
+
+    const docResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Crawled page",
+        content: "Page content.",
+        source: { kind: "website", url: "https://list-source.example.com" },
+      })
+      .expect(202);
+
+    const sourcesResponse = await request(app)
+      .get("/api/v1/document/sources")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    const source = sourcesResponse.body.sources.find(
+      (s: { kind: string }) => s.kind === "website",
+    );
+    expect(source).toBeDefined();
+
+    const listResponse = await request(app)
+      .get(`/api/v1/document/sources/${source.id}/documents`)
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    expect(listResponse.body.total).toBe(1);
+    expect(listResponse.body.documents[0].id).toBe(docResponse.body.documentId);
+  });
+
+  it("returns 404 when listing documents for a non-existent source", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "source-404@example.com");
+
+    await request(app)
+      .get("/api/v1/document/sources/00000000-0000-4000-8000-000000000099/documents")
+      .set(adminSessionHeaders(session))
+      .expect(404);
+  });
+
+  it("deletes a source and all its documents", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "source-delete@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Deletable page",
+        content: "Will be removed.",
+        source: { kind: "website", url: "https://delete-source.example.com" },
+      })
+      .expect(202);
+
+    const sourcesResponse = await request(app)
+      .get("/api/v1/document/sources")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    const source = sourcesResponse.body.sources.find(
+      (s: { kind: string }) => s.kind === "website",
+    );
+
+    await request(app)
+      .delete(`/api/v1/document/sources/${source.id}`)
+      .set(adminSessionHeaders(session))
+      .expect(204);
+
+    const afterResponse = await request(app)
+      .get("/api/v1/document/sources")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    expect(afterResponse.body.sources.filter(
+      (s: { kind: string }) => s.kind === "website",
+    )).toHaveLength(0);
+
+    const docsResponse = await request(app)
+      .get("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    expect(docsResponse.body.documents).toHaveLength(0);
+  });
+
+  it("rejects deleting the synthetic manually-added source", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "source-synthetic@example.com");
+
+    await request(app)
+      .delete("/api/v1/document/sources/00000000-0000-0000-0000-000000000001")
+      .set(adminSessionHeaders(session))
+      .expect(400);
+  });
 });

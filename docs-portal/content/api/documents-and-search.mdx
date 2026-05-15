@@ -19,6 +19,10 @@ GET    /api/v1/document/{documentId}
 PUT    /api/v1/document/{documentId}
 DELETE /api/v1/document/{documentId}
 POST   /api/v1/document/{documentId}/reprocess
+GET    /api/v1/document/sources
+GET    /api/v1/document/sources/{sourceId}/documents
+POST   /api/v1/document/sources/{sourceId}/recrawl
+DELETE /api/v1/document/sources/{sourceId}
 POST   /api/v1/document/search
 GET    /api/v1/document/search/history
 GET    /api/v1/document/search/history/{searchId}

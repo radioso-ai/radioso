@@ -13,6 +13,7 @@ export function SettingsCard({
   className,
   contentClassName,
   iconClassName,
+  headerEnd,
 }: {
   id?: string
   eyebrow?: string
@@ -23,6 +24,7 @@ export function SettingsCard({
   className?: string
   contentClassName?: string
   iconClassName?: string
+  headerEnd?: ReactNode
 }) {
   return (
     <section
@@ -40,14 +42,17 @@ export function SettingsCard({
       >
         {icon}
       </div>
-      <div className="min-w-0">
-        {eyebrow ? (
-          <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground">
-            {eyebrow}
-          </p>
-        ) : null}
-        <h3 className="font-medium text-foreground">{title}</h3>
-        <p className="text-sm text-muted-foreground">{description}</p>
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          {eyebrow ? (
+            <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground">
+              {eyebrow}
+            </p>
+          ) : null}
+          <h3 className="font-medium text-foreground">{title}</h3>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </div>
+        {headerEnd ? <div className="shrink-0">{headerEnd}</div> : null}
       </div>
       <div className={cn('min-w-0', contentClassName)}>{children}</div>
     </section>

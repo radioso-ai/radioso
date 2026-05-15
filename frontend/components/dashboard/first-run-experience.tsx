@@ -1,15 +1,19 @@
 'use client'
 
-import { type ReactNode, useEffect, useState } from 'react'
-import { Check, Code2, Copy, FileText, LoaderCircle, MessageSquareText } from 'lucide-react'
+import { type ReactNode, useState } from 'react'
+import { Check, Code2, FileText, LoaderCircle, MessageSquareText } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
+import {
+  CodeSnippet,
+  ExampleSelector,
+  type ExampleLanguage,
+  useInlineWorkspaceToken,
+} from '@/components/shared/api-snippets'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Spinner } from '@/components/ui/spinner'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
-import { getApiErrorMessage } from '@/lib/api-error'
-import { accountApi } from '@/lib/api'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { useWorkspace } from '@/lib/workspace-context'
 import { cn } from '@/lib/utils'
@@ -83,71 +87,6 @@ function ProgressHeader({
   )
 }
 
-function CodeSnippet({
-  label,
-  code,
-}: {
-  label: string
-  code: string
-}) {
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(code)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1500)
-  }
-
-  return (
-    <section className="space-y-2">
-      <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
-      <div className="relative">
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="absolute right-2 top-2 z-10 h-7 w-7 bg-background/90"
-          onClick={() => void handleCopy()}
-        >
-          {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-          <span className="sr-only">Copy {label.toLowerCase()} instruction</span>
-        </Button>
-        <code className="block max-h-[420px] overflow-auto whitespace-pre rounded-md border border-border bg-muted/40 p-4 pr-12 font-mono text-sm leading-6 text-foreground">
-          {code}
-        </code>
-      </div>
-    </section>
-  )
-}
-
-type ExampleLanguage = 'curl' | 'typescript'
-
-function ExampleSelector({
-  value,
-  onChange,
-}: {
-  value: ExampleLanguage
-  onChange: (value: ExampleLanguage) => void
-}) {
-  return (
-    <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5">
-      {(['curl', 'typescript'] as const).map((language) => (
-        <Button
-          key={language}
-          type="button"
-          size="sm"
-          variant={value === language ? 'secondary' : 'ghost'}
-          className="h-7 px-2.5 text-xs"
-          aria-pressed={value === language}
-          onClick={() => onChange(language)}
-        >
-          {language === 'curl' ? 'curl' : 'TypeScript'}
-        </Button>
-      ))}
-    </div>
-  )
-}
-
 const apiTokenLiteral = (apiToken: string | null) => (apiToken ? JSON.stringify(apiToken) : "'radioso_...'")
 const curlApiToken = (apiToken: string | null) => apiToken ?? '$RADIOSO_API_TOKEN'
 
@@ -179,45 +118,6 @@ const buildAskQuestionCurlSnippet = (apiToken: string | null) => `curl -sS -X PO
   -H "Authorization: Bearer ${curlApiToken(apiToken)}" \\
   -H "Content-Type: application/json" \\
   -d '{"message":"What does the handbook say about refunds?","stream":false}'`
-
-function useInlineWorkspaceToken(workspaceId: string | null | undefined) {
-  const [apiTokenState, setApiTokenState] = useState<{ workspaceId: string; token: string } | null>(null)
-  const [apiTokenErrorState, setApiTokenErrorState] = useState<{ workspaceId: string; error: string } | null>(null)
-
-  useEffect(() => {
-    let isCurrent = true
-
-    if (!workspaceId) {
-      return undefined
-    }
-
-    void accountApi.getWorkspaceToken(workspaceId)
-      .then((response) => {
-        if (isCurrent) {
-          setApiTokenState({ workspaceId, token: response.token })
-        }
-      })
-      .catch((error) => {
-        if (isCurrent) {
-          setApiTokenErrorState({ workspaceId, error: getApiErrorMessage(error, 'Unable to load API token.') })
-        }
-      })
-
-    return () => {
-      isCurrent = false
-    }
-  }, [workspaceId])
-
-  const apiToken = workspaceId && apiTokenState?.workspaceId === workspaceId ? apiTokenState.token : null
-  const apiTokenError = workspaceId && apiTokenErrorState?.workspaceId === workspaceId ? apiTokenErrorState.error : null
-  const isApiTokenLoading = Boolean(workspaceId) && !apiToken && !apiTokenError
-
-  return {
-    apiToken,
-    apiTokenError: workspaceId ? apiTokenError : 'Select a workspace before viewing its API token.',
-    isApiTokenLoading,
-  }
-}
 
 function DeveloperUploadInstructions({
   apiToken,

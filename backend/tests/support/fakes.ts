@@ -1688,15 +1688,26 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return { documents, total: filtered.length, nextCursor: null, hasMore: sliced.length > input.limit };
   }
 
-  async deleteBySourceIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<number> {
+  async deleteBySourceIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<{
+    count: number;
+    storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }>;
+  }> {
     let count = 0;
+    const storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }> = [];
     for (const [id, doc] of this.items.entries()) {
       if (doc.sourceId === sourceId && doc.workspaceId === workspaceId) {
+        if (doc.sourceKind === "uploaded_file" && doc.sourceStorageBucket && doc.sourceStorageObject) {
+          storageRefs.push({
+            bucket: doc.sourceStorageBucket,
+            objectPath: doc.sourceStorageObject,
+            generation: doc.sourceStorageGeneration ?? null,
+          });
+        }
         this.items.delete(id);
         count += 1;
       }
     }
-    return count;
+    return { count, storageRefs };
   }
 }
 

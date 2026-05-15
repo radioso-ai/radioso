@@ -76,6 +76,7 @@ type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "documentSourceRepository"
   | "documentSearchHistoryService"
   | "documentSearchService"
+  | "documentStorage"
   | "websiteCrawlJobService"
   | "websiteCrawlerProvider"
   | "usageLimitPolicy"
@@ -248,6 +249,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       await dependencies.documentIngestionService.deleteSourceWithDocuments({
         workspaceId,
         sourceId,
+        documentStorage: dependencies.documentStorage,
       });
       res.status(204).send();
     } catch (error) {

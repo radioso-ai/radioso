@@ -666,14 +666,33 @@ export class DocumentRepository implements DocumentRepositoryPort {
     };
   }
 
-  async deleteBySourceIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<number> {
-    const rows = await this.database.query<{ id: string }>(
+  async deleteBySourceIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<{
+    count: number;
+    storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }>;
+  }> {
+    const rows = await this.database.query<{
+      id: string;
+      source_kind: string;
+      source_storage_bucket: string | null;
+      source_storage_object: string | null;
+      source_storage_generation: string | null;
+    }>(
       `DELETE FROM documents
        WHERE source_id = $1 AND workspace_id = $2
-       RETURNING id`,
+       RETURNING id, source_kind, source_storage_bucket, source_storage_object, source_storage_generation`,
       [sourceId, workspaceId],
     );
-    return rows.length;
+    const storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }> = [];
+    for (const row of rows) {
+      if (row.source_kind === "uploaded_file" && row.source_storage_bucket && row.source_storage_object) {
+        storageRefs.push({
+          bucket: row.source_storage_bucket,
+          objectPath: row.source_storage_object,
+          generation: row.source_storage_generation ?? null,
+        });
+      }
+    }
+    return { count: rows.length, storageRefs };
   }
 
   private mapDocumentConflict(error: unknown): unknown {

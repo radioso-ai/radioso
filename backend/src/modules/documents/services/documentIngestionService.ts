@@ -164,7 +164,10 @@ export interface DocumentRepositoryPort {
     sourceId: string | null,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
-  deleteBySourceIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<number>;
+  deleteBySourceIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<{
+    count: number;
+    storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }>;
+  }>;
 }
 
 export interface DocumentWorkspaceSummaryRecord {
@@ -547,11 +550,17 @@ export class DocumentIngestionService {
   async deleteSourceWithDocuments(input: {
     workspaceId: string;
     sourceId: string;
+    documentStorage?: { delete(input: { bucket: string; objectPath: string; generation: string | null }): Promise<void> };
   }): Promise<{ deletedDocumentCount: number }> {
-    const deletedDocumentCount = await this.documentRepository.deleteBySourceIdAndWorkspaceId(
+    const { count: deletedDocumentCount, storageRefs } = await this.documentRepository.deleteBySourceIdAndWorkspaceId(
       input.sourceId,
       input.workspaceId,
     );
+    if (input.documentStorage && storageRefs.length > 0) {
+      await Promise.allSettled(
+        storageRefs.map((ref) => input.documentStorage!.delete(ref)),
+      );
+    }
     await this.documentSourceRepository?.deleteByIdAndWorkspaceId(input.sourceId, input.workspaceId);
     await this.auditService.record({
       workspaceId: input.workspaceId,

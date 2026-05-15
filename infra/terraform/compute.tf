@@ -269,7 +269,7 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
-        for_each = var.radioso_mcp_enabled && var.radioso_mcp_signing_secret != null ? [google_secret_manager_secret.secrets["radioso-mcp-signing-secret"].secret_id] : []
+        for_each = var.radioso_mcp_enabled && local.radioso_mcp_signing_secret_configured ? [google_secret_manager_secret.secrets["radioso-mcp-signing-secret"].secret_id] : []
         content {
           name = "RADIOSO_MCP_SIGNING_SECRET"
           value_source {
@@ -305,7 +305,7 @@ resource "google_cloud_run_v2_service" "backend" {
     }
 
     precondition {
-      condition     = !var.radioso_mcp_enabled || var.radioso_mcp_signing_secret != null && length(trimspace(nonsensitive(var.radioso_mcp_signing_secret))) > 0
+      condition     = !var.radioso_mcp_enabled || local.radioso_mcp_signing_secret_configured
       error_message = "radioso_mcp_signing_secret must be set when radioso_mcp_enabled is true."
     }
 

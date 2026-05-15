@@ -1,4 +1,6 @@
 locals {
+  radioso_mcp_signing_secret_configured = try(length(trimspace(nonsensitive(var.radioso_mcp_signing_secret))) > 0, false)
+
   secret_values = merge(
     {
       "database-password"          = random_password.db_password.result
@@ -8,7 +10,7 @@ locals {
       "public-chat-session-secret" = var.public_chat_session_secret
       "connector-encryption-key"   = var.connector_encryption_key
     },
-    var.radioso_mcp_enabled && var.radioso_mcp_signing_secret != null ? {
+    var.radioso_mcp_enabled && local.radioso_mcp_signing_secret_configured ? {
       "radioso-mcp-signing-secret" = var.radioso_mcp_signing_secret
     } : {},
     var.radioso_edition == "enterprise" ? {
@@ -28,7 +30,7 @@ locals {
       "public-chat-session-secret" = true
       "connector-encryption-key"   = true
     },
-    var.radioso_mcp_enabled && var.radioso_mcp_signing_secret != null ? {
+    var.radioso_mcp_enabled && local.radioso_mcp_signing_secret_configured ? {
       "radioso-mcp-signing-secret" = true
     } : {},
     var.radioso_edition == "enterprise" ? {

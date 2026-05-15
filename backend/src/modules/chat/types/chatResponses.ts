@@ -1,5 +1,5 @@
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
-import type { RetrievalInfo, RetrievalTrace } from "../../retrieval/public.js";
+import type { ActivitySummary, ActivityTrace } from "../../retrieval/public.js";
 
 export type ChatSuggestionKind = string;
 
@@ -28,8 +28,8 @@ export interface ChatResponse {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
-  retrievalInfo: RetrievalInfo;
-  retrievalTrace: RetrievalTrace;
+  activitySummary: ActivitySummary;
+  activityTrace: ActivityTrace;
 }
 
 export type ChatBootstrapResponse = Omit<ChatResponse, "conversationId" | "assistantMessageId"> & {

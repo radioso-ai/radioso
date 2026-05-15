@@ -71,11 +71,17 @@ export const humanContactMigrator: ApplicationDatabaseMigrator = {
         attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
         next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         final_delivery_error TEXT,
+        activity_trace JSONB,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         CONSTRAINT ee_contact_requests_status_check
           CHECK (status IN ('pending', 'delivering', 'delivered', 'failed'))
       )
+    `);
+
+    await database.query(`
+      ALTER TABLE ee_contact_requests
+        ADD COLUMN IF NOT EXISTS activity_trace JSONB
     `);
 
     await database.query(`

@@ -3804,7 +3804,7 @@
             "type": "integer",
             "minimum": 0
           },
-          "traceAvailable": {
+          "activityTraceAvailable": {
             "type": "boolean"
           },
           "previewTopTitles": {
@@ -3819,7 +3819,7 @@
           "query",
           "createdAt",
           "resultCount",
-          "traceAvailable",
+          "activityTraceAvailable",
           "previewTopTitles"
         ]
       },
@@ -4362,9 +4362,49 @@
           "retrievalInvoked"
         ]
       },
-      "RetrievalInfo": {
+      "ActivitySummary": {
         "type": "object",
         "properties": {
+          "traceId": {
+            "type": "string"
+          },
+          "skillName": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "success",
+              "skipped",
+              "blocked",
+              "failed",
+              "fallback",
+              "pending"
+            ]
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "primaryCounts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "assistant": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "contact": {
+            "type": "object",
+            "additionalProperties": {}
+          },
           "execution": {
             "$ref": "#/components/schemas/RetrievalExecutionMetadata"
           },
@@ -4625,14 +4665,9 @@
               "outcome"
             ]
           }
-        },
-        "required": [
-          "candidateCounts",
-          "fallbackApplied",
-          "rerankStatus"
-        ]
+        }
       },
-      "RetrievalTraceStage": {
+      "ActivityStage": {
         "type": "object",
         "properties": {
           "stageId": {
@@ -4692,7 +4727,7 @@
           "status"
         ]
       },
-      "RetrievalTraceLink": {
+      "ActivityLink": {
         "type": "object",
         "properties": {
           "fromStageId": {
@@ -4716,7 +4751,7 @@
           "kind"
         ]
       },
-      "RetrievalTrace": {
+      "ActivityTrace": {
         "type": "object",
         "properties": {
           "traceId": {
@@ -4737,17 +4772,17 @@
           "stages": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/RetrievalTraceStage"
+              "$ref": "#/components/schemas/ActivityStage"
             }
           },
           "links": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/RetrievalTraceLink"
+              "$ref": "#/components/schemas/ActivityLink"
             }
           },
           "summary": {
-            "$ref": "#/components/schemas/RetrievalInfo"
+            "$ref": "#/components/schemas/ActivitySummary"
           }
         },
         "required": [
@@ -4784,8 +4819,8 @@
               "$ref": "#/components/schemas/DocumentSearchResult"
             }
           },
-          "retrievalTrace": {
-            "$ref": "#/components/schemas/RetrievalTrace"
+          "activityTrace": {
+            "$ref": "#/components/schemas/ActivityTrace"
           }
         },
         "required": [
@@ -4920,19 +4955,19 @@
               "$ref": "#/components/schemas/RetrievalSearchEvidence"
             }
           },
-          "retrievalInfo": {
-            "$ref": "#/components/schemas/RetrievalInfo"
+          "activitySummary": {
+            "$ref": "#/components/schemas/ActivitySummary"
           },
-          "retrievalTrace": {
-            "$ref": "#/components/schemas/RetrievalTrace"
+          "activityTrace": {
+            "$ref": "#/components/schemas/ActivityTrace"
           }
         },
         "required": [
           "outcome",
           "rewrittenQuery",
           "results",
-          "retrievalInfo",
-          "retrievalTrace"
+          "activitySummary",
+          "activityTrace"
         ]
       },
       "RetrievalAnswerEvidence": {
@@ -5004,11 +5039,11 @@
               "status"
             ]
           },
-          "retrievalInfo": {
-            "$ref": "#/components/schemas/RetrievalInfo"
+          "activitySummary": {
+            "$ref": "#/components/schemas/ActivitySummary"
           },
-          "retrievalTrace": {
-            "$ref": "#/components/schemas/RetrievalTrace"
+          "activityTrace": {
+            "$ref": "#/components/schemas/ActivityTrace"
           }
         },
         "required": [
@@ -5016,8 +5051,8 @@
           "answer",
           "evidence",
           "validation",
-          "retrievalInfo",
-          "retrievalTrace"
+          "activitySummary",
+          "activityTrace"
         ]
       },
       "RetrievalAnswerUnsupported": {
@@ -5650,11 +5685,11 @@
               "$ref": "#/components/schemas/ChatSuggestion"
             }
           },
-          "retrievalInfo": {
-            "$ref": "#/components/schemas/RetrievalInfo"
+          "activitySummary": {
+            "$ref": "#/components/schemas/ActivitySummary"
           },
-          "retrievalTrace": {
-            "$ref": "#/components/schemas/RetrievalTrace"
+          "activityTrace": {
+            "$ref": "#/components/schemas/ActivityTrace"
           },
           "route": {
             "$ref": "#/components/schemas/AssistantRoute"
@@ -5664,8 +5699,8 @@
           "conversationId",
           "assistantMessageId",
           "answer",
-          "retrievalInfo",
-          "retrievalTrace",
+          "activitySummary",
+          "activityTrace",
           "route"
         ]
       },
@@ -5704,11 +5739,11 @@
               "$ref": "#/components/schemas/ChatSuggestion"
             }
           },
-          "retrievalInfo": {
-            "$ref": "#/components/schemas/RetrievalInfo"
+          "activitySummary": {
+            "$ref": "#/components/schemas/ActivitySummary"
           },
-          "retrievalTrace": {
-            "$ref": "#/components/schemas/RetrievalTrace"
+          "activityTrace": {
+            "$ref": "#/components/schemas/ActivityTrace"
           },
           "route": {
             "$ref": "#/components/schemas/AssistantRoute"
@@ -5716,8 +5751,8 @@
         },
         "required": [
           "answer",
-          "retrievalInfo",
-          "retrievalTrace",
+          "activitySummary",
+          "activityTrace",
           "route"
         ],
         "description": "Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn."
@@ -6253,11 +6288,11 @@
           "validation": {
             "$ref": "#/components/schemas/ValidationDebug"
           },
-          "retrievalInfo": {
-            "$ref": "#/components/schemas/RetrievalInfo"
+          "activitySummary": {
+            "$ref": "#/components/schemas/ActivitySummary"
           },
-          "retrievalTrace": {
-            "$ref": "#/components/schemas/RetrievalTrace"
+          "activityTrace": {
+            "$ref": "#/components/schemas/ActivityTrace"
           },
           "errorMessage": {
             "type": [

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { RetrievalTracePresenter } from "../../src/modules/retrieval/services/retrievalTracePresenter.js";
-import type { RetrievalTrace } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
+import { ActivityTracePresenter } from "../../src/modules/retrieval/services/activityTracePresenter.js";
+import type { ActivityTrace } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 
-describe("retrieval trace presenter", () => {
+describe("activity trace presenter", () => {
   it("appends an answer stage and summary to a trace", () => {
-    const presenter = new RetrievalTracePresenter();
-    const trace: RetrievalTrace = {
+    const presenter = new ActivityTracePresenter();
+    const trace: ActivityTrace = {
       traceId: "trace-1",
       startedAt: "2026-03-23T00:00:00.000Z",
       stages: [
@@ -40,7 +40,7 @@ describe("retrieval trace presenter", () => {
       },
     });
 
-    expect(result.summary?.candidateCounts.final).toBe(1);
+    expect(result.summary?.candidateCounts?.final).toBe(1);
     expect(result.stages.at(-1)).toMatchObject({
       stageId: "answer",
       kind: "answer_outcome",
@@ -48,14 +48,14 @@ describe("retrieval trace presenter", () => {
       durationMs: 12,
     });
     expect(result.links.at(-1)).toEqual({
-      fromStageId: "diagnostics",
+      fromStageId: "generation",
       toStageId: "answer",
       kind: "sequence",
     });
   });
 
   it("creates a bounded fallback trace when no base trace exists", () => {
-    const presenter = new RetrievalTracePresenter();
+    const presenter = new ActivityTracePresenter();
 
     const result = presenter.appendAnswerOutcome({
       summary: {
@@ -77,16 +77,16 @@ describe("retrieval trace presenter", () => {
     });
 
     expect(result.traceId).toBe("unavailable-trace");
-    expect(result.stages).toHaveLength(1);
-    expect(result.stages[0]).toMatchObject({
+    expect(result.stages).toHaveLength(2);
+    expect(result.stages.at(-1)).toMatchObject({
       stageId: "answer",
       status: "fallback",
     });
-    expect((result.stages[0].outputs as { answerPreview: string }).answerPreview.length).toBeLessThanOrEqual(240);
+    expect((result.stages[0]?.outputs as { answerPreview: string }).answerPreview.length).toBeLessThanOrEqual(240);
   });
 
   it("records hidden support usage in the answer stage outputs", () => {
-    const presenter = new RetrievalTracePresenter();
+    const presenter = new ActivityTracePresenter();
 
     const result = presenter.appendAnswerOutcome({
       summary: {
@@ -126,7 +126,7 @@ describe("retrieval trace presenter", () => {
   });
 
   it("preserves execution metadata in the trace summary", () => {
-    const presenter = new RetrievalTracePresenter();
+    const presenter = new ActivityTracePresenter();
 
     const result = presenter.appendAnswerOutcome({
       summary: {

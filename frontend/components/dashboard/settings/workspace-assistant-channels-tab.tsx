@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Building2, CheckCircle2, CircleAlert, ExternalLink, FolderOpen, KeyRound, Link as LinkIcon, Mail, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook } from 'lucide-react'
 
+import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
+import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import {
   getAssistantLocaleLabel,
   NO_GREETING_LOCALE_LABEL,
@@ -1174,53 +1176,55 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'channels' && !isAnonLoading ? (
           <section id="public-chat-link" className="space-y-6 scroll-mt-24">
             {anonSettings ? (
-              <section className="scroll-mt-24 rounded-2xl border border-border bg-card/95 p-5 shadow-sm">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
-                      <LinkIcon className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="font-medium text-foreground">Public chat link</h3>
-                      <p className="text-sm text-muted-foreground">
-                        A shareable URL anyone can open without signing in.
-                      </p>
-                    </div>
-                  </div>
+              <SettingsCard
+                icon={<LinkIcon className="h-5 w-5 text-primary" />}
+                title="Public chat link"
+                description="A shareable URL anyone can open without signing in."
+                headerEnd={
                   <Switch
                     id="anonChatToggle"
                     checked={anonSettings.anonymousChatEnabled}
                     onCheckedChange={handleAnonToggle}
                     disabled={isAnonSaving}
-                    className="sm:mt-3"
                   />
-                </div>
-
+                }
+              >
                 {anonSettings.anonymousChatEnabled && anonSettings.anonymousChatUrl ? (
-                  <div className="mt-5 space-y-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                      <CopyValueField
-                        value={anonSettings.anonymousChatUrl}
-                        ariaLabel="Copy public chat link"
-                        className="min-w-0 flex-1"
-                        wrap
-                      />
-                      <Button asChild className="bg-blue-600 text-white hover:bg-blue-500 sm:self-start">
+                  <div className="space-y-3 rounded-xl bg-muted/50 p-4">
+                    <div className="flex items-center gap-2 text-foreground">
+                      <LinkIcon className="h-4 w-4" />
+                      <Label className="text-foreground">Share this link</Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Send this URL to anyone who needs the chat. They can open it without signing in.
+                    </p>
+                    <CopyValueField
+                      value={anonSettings.anonymousChatUrl}
+                      ariaLabel="Copy public chat link"
+                      className="w-full"
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleAnonymousChatTokenRotate}
+                        disabled={isAnonSaving}
+                        className="text-muted-foreground hover:text-foreground"
+                        title="Generates a new public chat URL. The current link will stop working."
+                      >
+                        {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                        Generate new link
+                      </Button>
+                      <Button asChild variant="default">
                         <a href={anonSettings.anonymousChatUrl} target="_blank" rel="noreferrer">
-                          <ExternalLink className="w-4 h-4" />
+                          <ExternalLink className="mr-2 h-4 w-4" />
                           Try the chat
                         </a>
                       </Button>
                     </div>
-                    <div className="flex justify-end">
-                      <Button variant="outline" onClick={handleAnonymousChatTokenRotate} disabled={isAnonSaving}>
-                        {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                        Reset link
-                      </Button>
-                    </div>
                   </div>
                 ) : null}
-              </section>
+              </SettingsCard>
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load public chat link settings.</p>
             )}
@@ -1243,6 +1247,18 @@ export function WorkspaceAssistantChannelsTab({
             setSaveState={setSaveState}
             setSaveError={setSaveError}
           />
+
+          {mode === 'channels' && !isAnonLoading ? (
+          <section id="api-channel" className="space-y-6 scroll-mt-24">
+            <ApiChannelCard workspaceId={activeWorkspaceId} />
+          </section>
+          ) : null}
+
+          {mode === 'channels' && !isAnonLoading ? (
+          <section id="mcp-channel" className="space-y-6 scroll-mt-24">
+            <McpChannelCard workspaceId={activeWorkspaceId} />
+          </section>
+          ) : null}
 
           {mode === 'workspace' ? (
           <section>

@@ -15,7 +15,6 @@ import { IngestionSettingsRepository } from "../../db/repositories/ingestionSett
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSettingsRepository.js";
 import { SessionRepository } from "../../db/repositories/sessionRepository.js";
-import { SupportImpersonationRepository } from "../../db/repositories/supportImpersonationRepository.js";
 import { UserRepository } from "../../db/repositories/userRepository.js";
 import { WebsiteCrawlJobRepository } from "../../db/repositories/websiteCrawlJobRepository.js";
 import { WorkspaceGrantRepository } from "../../db/repositories/workspaceGrantRepository.js";
@@ -81,7 +80,6 @@ import {
   RetrievalSettingsService,
 } from "../../modules/settings/composition.js";
 import { SkillCatalogService } from "../../modules/skills/public.js";
-import { SupportImpersonationService } from "../../modules/support/services/supportImpersonationService.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
@@ -189,7 +187,6 @@ export const buildRepositories = (
   messageRepository: new MessageRepository(database),
   retrievalSettingsRepository: new RetrievalSettingsRepository(database),
   sessionRepository: new SessionRepository(database),
-  supportImpersonationRepository: new SupportImpersonationRepository(database),
   userRepository: new UserRepository(database),
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database),
   workspaceGrantRepository: new WorkspaceGrantRepository(database),
@@ -201,16 +198,9 @@ export const buildRepositories = (
 
 export const buildAccessServices = (input: {
   auditService: AuditService;
-  env: Env;
   repositories: ReturnType<typeof buildRepositories>;
 }) => {
-  const { auditService, env, repositories } = input;
-  const supportImpersonationService = new SupportImpersonationService(
-    repositories.supportImpersonationRepository,
-    repositories.userRepository,
-    auditService,
-    env,
-  );
+  const { auditService, repositories } = input;
   const accountAccessService = new AccountAccessService(
     repositories.accountMembershipRepository,
     auditService,
@@ -227,7 +217,6 @@ export const buildAccessServices = (input: {
   return {
     accountAccessService,
     accountInvitationService,
-    supportImpersonationService,
   };
 };
 

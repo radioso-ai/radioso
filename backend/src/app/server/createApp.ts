@@ -8,6 +8,7 @@ import { badRequest, payloadTooLarge } from "../../shared/domain/errors.js";
 import { createErrorHandler } from "../http/middleware/errorHandler.js";
 import { createOpenApiDocument } from "../http/openapi/openApiDocument.js";
 import { createApiRouter } from "../http/routes/index.js";
+import { mountMergedMcp } from "./mcpMount.js";
 import type { AppDependencies } from "./types.js";
 
 export const createApp = (dependencies: AppDependencies) => {
@@ -16,6 +17,7 @@ export const createApp = (dependencies: AppDependencies) => {
   app.disable("x-powered-by");
   app.use(createHttpLogger(dependencies.logger));
   app.use(createRequestTelemetryMiddleware(dependencies.telemetryService));
+  mountMergedMcp(app, dependencies);
   app.use(async (req, _res, next) => {
     const contentType = req.headers["content-type"];
     if (typeof contentType !== "string" || !/^application\/json\b/i.test(contentType)) {

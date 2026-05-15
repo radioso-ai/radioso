@@ -50,7 +50,6 @@ import type { SkillCatalogService } from "../../modules/skills/public.js";
 import type { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type { DocumentSourceRepositoryPort } from "../../db/repositories/documentSourceRepository.js";
-import type { SupportImpersonationService } from "../../modules/support/services/supportImpersonationService.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import type { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
@@ -71,7 +70,6 @@ export interface AppDependencies {
   authService: AuthService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
-  supportImpersonationService: SupportImpersonationService;
   workspaceSessionService: WorkspaceSessionService;
   abuseControlService: AbuseControlService;
   auditService: AuditService;

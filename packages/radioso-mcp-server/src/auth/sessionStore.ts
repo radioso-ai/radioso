@@ -108,6 +108,11 @@ export const createInMemorySessionStore = (): SessionStore => {
         workspaceName: input.workspaceName,
       };
 
+      const previousSession = sessionsById.get(session.sessionId);
+      if (previousSession) {
+        sessionIdsByAccessTokenHash.delete(previousSession.accessTokenHash);
+      }
+
       sessionsById.set(session.sessionId, session);
       sessionIdsByAccessTokenHash.set(session.accessTokenHash, session.sessionId);
 

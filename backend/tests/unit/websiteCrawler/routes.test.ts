@@ -40,11 +40,6 @@ const createApp = (dependencies: Partial<Record<keyof RouteDependencies, unknown
     env: {
       SESSION_COOKIE_NAME: "radioso_session",
     },
-    supportImpersonationService: {
-      async authenticateActive() {
-        throw unauthorized();
-      },
-    },
     authService: {
       async authenticateSession(token: string) {
         if (token !== "valid-session") {

@@ -14,10 +14,6 @@ import {
   workspaceGrantSchema,
 } from "../../routes/accountUserRoutes.js";
 import {
-  approveSupportImpersonationSchema,
-  supportImpersonationParamsSchema,
-} from "../../routes/supportRoutes.js";
-import {
   createWorkspaceSchema,
   renameWorkspaceSchema,
   workspaceKeyParamsSchema,
@@ -118,10 +114,6 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
   const AccountInvitationCreateRequestSchema = registry.register("AccountInvitationCreateRequest", createAccountInvitationSchema);
   const AccountMembershipRoleUpdateRequestSchema = registry.register("AccountMembershipRoleUpdateRequest", updateMembershipRoleSchema);
   const WorkspaceGrantRequestSchema = registry.register("WorkspaceGrantRequest", workspaceGrantSchema);
-  const SupportImpersonationApproveRequestSchema = registry.register(
-    "SupportImpersonationApproveRequest",
-    approveSupportImpersonationSchema,
-  );
   const WorkspaceCreateRequestSchema = registry.register("WorkspaceCreateRequest", createWorkspaceSchema);
   const WorkspaceRenameRequestSchema = registry.register("WorkspaceRenameRequest", renameWorkspaceSchema);
 
@@ -161,23 +153,6 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     }),
   );
 
-  const SupportImpersonationSchema = registry.register(
-    "SupportImpersonation",
-    z.object({
-      id: z.string().uuid(),
-      accountId: z.string().uuid(),
-      staffUserId: z.string().uuid(),
-      approverUserId: z.string().uuid(),
-      reason: z.string(),
-      status: z.enum(["approved", "active", "ended", "expired", "revoked"]),
-      approvedAt: z.string().datetime(),
-      startedAt: z.string().datetime().nullable(),
-      expiresAt: z.string().datetime(),
-      endedAt: z.string().datetime().nullable(),
-      active: z.boolean(),
-    }),
-  );
-
   const AccountUsersResponseSchema = registry.register(
     "AccountUsersResponse",
     z.object({
@@ -186,7 +161,6 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
       users: z.array(AccountUserSchema),
       invitations: z.array(AccountInvitationSchema),
       workspaceGrants: z.array(WorkspaceGrantSchema),
-      supportImpersonations: z.array(SupportImpersonationSchema),
     }),
   );
 
@@ -244,20 +218,17 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     AccountInvitationCreateRequestSchema,
     AccountMembershipRoleUpdateRequestSchema,
     WorkspaceGrantRequestSchema,
-    SupportImpersonationApproveRequestSchema,
     WorkspaceCreateRequestSchema,
     WorkspaceRenameRequestSchema,
     AccountUserSchema,
     AccountInvitationSchema,
     WorkspaceGrantSchema,
-    SupportImpersonationSchema,
     AccountUsersResponseSchema,
     AccessibleAccountSchema,
     AccessibleAccountsResponseSchema,
     CreateAccountInvitationResponseSchema,
     InvitationDetailsResponseSchema,
     invitationTokenParamsSchema,
-    supportImpersonationParamsSchema,
     workspaceGrantParamsSchema,
     workspaceKeyParamsSchema,
     workspaceParamsSchema,

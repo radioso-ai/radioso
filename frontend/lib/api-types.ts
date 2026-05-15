@@ -357,7 +357,6 @@ export type WorkspaceGrantRole = ApiSchemas['WorkspaceGrant']['role']
 export type AccountInvitationSummary = ApiSchemas['AccountInvitation']
 export type WorkspaceGrantSummary = ApiSchemas['WorkspaceGrant']
 
-export type SupportImpersonationSummary = ApiSchemas['SupportImpersonation']
 
 export type AccountUsersResponse = ApiSchemas['AccountUsersResponse']
 export type AccessibleAccountSummary = ApiSchemas['AccessibleAccount']

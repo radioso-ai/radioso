@@ -193,57 +193,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/support/impersonations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Approve a support impersonation session */
-        post: operations["approveSupportImpersonation"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/support/impersonations/{id}/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Start an approved support impersonation session */
-        post: operations["startSupportImpersonation"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/support/impersonations/{id}/end": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** End a support impersonation session */
-        post: operations["endSupportImpersonation"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/account/switch": {
         parameters: {
             query?: never;
@@ -1274,13 +1223,6 @@ export interface components {
             /** @enum {string} */
             role: "admin" | "member";
         };
-        SupportImpersonationApproveRequest: {
-            /** Format: uuid */
-            accountId: string;
-            /** Format: uuid */
-            staffUserId?: string;
-            reason: string;
-        };
         WorkspaceCreateRequest: {
             name: string;
         };
@@ -1329,28 +1271,6 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
-        SupportImpersonation: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            accountId: string;
-            /** Format: uuid */
-            staffUserId: string;
-            /** Format: uuid */
-            approverUserId: string;
-            reason: string;
-            /** @enum {string} */
-            status: "approved" | "active" | "ended" | "expired" | "revoked";
-            /** Format: date-time */
-            approvedAt: string;
-            /** Format: date-time */
-            startedAt: string | null;
-            /** Format: date-time */
-            expiresAt: string;
-            /** Format: date-time */
-            endedAt: string | null;
-            active: boolean;
-        };
         AccountUsersResponse: {
             /** Format: uuid */
             accountId: string;
@@ -1359,7 +1279,6 @@ export interface components {
             users: components["schemas"]["AccountUser"][];
             invitations: components["schemas"]["AccountInvitation"][];
             workspaceGrants: components["schemas"]["WorkspaceGrant"][];
-            supportImpersonations: components["schemas"]["SupportImpersonation"][];
         };
         AccessibleAccount: {
             /** Format: uuid */
@@ -3464,74 +3383,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    approveSupportImpersonation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SupportImpersonationApproveRequest"];
-            };
-        };
-        responses: {
-            /** @description Support impersonation approved */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SupportImpersonation"];
-                };
-            };
-        };
-    };
-    startSupportImpersonation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Support impersonation started */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SupportImpersonation"];
-                };
-            };
-        };
-    };
-    endSupportImpersonation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Support impersonation ended */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SupportImpersonation"];
-                };
             };
         };
     };

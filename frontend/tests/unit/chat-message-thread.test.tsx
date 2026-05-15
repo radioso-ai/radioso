@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest'
 
 import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
 
+const UTILITY_BUTTON_LABELS = /aria-label="(Copy message|Copied|Thumbs up|Thumbs down)"/
+
+const countSuggestionButtons = (html: string) =>
+  (html.match(/<button[^>]*>/g) ?? []).filter((tag) => !UTILITY_BUTTON_LABELS.test(tag)).length
+
 describe('ChatMessageThread', () => {
   it('does not render assistant message selection as a nested button when citations are present', () => {
     const html = renderToStaticMarkup(
@@ -57,7 +62,7 @@ describe('ChatMessageThread', () => {
     )
 
     expect(html).toContain('Answer text')
-    expect(html.match(/<button/g)?.length).toBeUndefined()
+    expect(countSuggestionButtons(html)).toBe(0)
   })
 
   it('renders legacy flat suggestions for history compatibility', () => {
@@ -79,7 +84,7 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html.match(/<button/g)?.length).toBeUndefined()
+    expect(countSuggestionButtons(html)).toBe(0)
   })
 
   it('renders suggestions even when only broader items are provided', () => {
@@ -139,7 +144,7 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html.match(/<button/g)?.length).toBe(1)
+    expect(countSuggestionButtons(html)).toBe(1)
   })
 
   it('can hide assistant message avatars for narrow embedded chat layouts', () => {
@@ -185,7 +190,7 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html.match(/<button/g)?.length).toBe(1)
+    expect(countSuggestionButtons(html)).toBe(1)
   })
 
   it('renders inline pseudo-lists as markdown lists for assistant messages', () => {

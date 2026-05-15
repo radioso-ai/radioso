@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { Clock, Info, Plus, UserPlus } from 'lucide-react'
 
-import { accountApi, workspaceApi, type AccountInvitationSummary, type AccountUserSummary, type AssignableAccountRole, type SupportImpersonationSummary, type Workspace, type WorkspaceGrantSummary, type WorkspaceGrantRole } from '@/lib/api'
+import { accountApi, workspaceApi, type AccountInvitationSummary, type AccountUserSummary, type AssignableAccountRole, type Workspace, type WorkspaceGrantSummary, type WorkspaceGrantRole } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import {
@@ -36,7 +36,6 @@ export function UsersPanel() {
   const [invitations, setInvitations] = useState<AccountInvitationSummary[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [workspaceGrants, setWorkspaceGrants] = useState<WorkspaceGrantSummary[]>([])
-  const [supportImpersonations, setSupportImpersonations] = useState<SupportImpersonationSummary[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -76,7 +75,6 @@ export function UsersPanel() {
         setInvitations(response.invitations)
         setWorkspaces(workspaceList)
         setWorkspaceGrants(response.workspaceGrants ?? [])
-        setSupportImpersonations(response.supportImpersonations ?? [])
         setCurrentUserId(response.currentUserId)
       } catch (nextError) {
         if (!active) return
@@ -550,44 +548,6 @@ export function UsersPanel() {
           </section>
         )}
 
-        {supportImpersonations.length > 0 ? (
-          <section className="space-y-3">
-            <div>
-              <h2 className="text-lg font-medium text-foreground">Support access</h2>
-              <p className="text-sm text-muted-foreground">
-                {supportImpersonations.some((session) => session.active)
-                  ? 'Radioso support currently has active access.'
-                  : 'Recent Radioso support access is listed here.'}
-              </p>
-            </div>
-            <DashboardTable minWidth="min-w-[760px]">
-              <DashboardTableHead>
-                <DashboardTableHeader>Session</DashboardTableHeader>
-                <DashboardTableHeader>Reason</DashboardTableHeader>
-                <DashboardTableHeader className="w-32">Status</DashboardTableHeader>
-                <DashboardTableHeader className="w-52">Expires</DashboardTableHeader>
-              </DashboardTableHead>
-              <DashboardTableBody>
-                {supportImpersonations.map((session) => (
-                  <DashboardTableRow key={session.id}>
-                    <DashboardTableCell>
-                      <span className="font-medium">
-                        {session.active ? 'Active support session' : 'Support session'}
-                      </span>
-                    </DashboardTableCell>
-                    <DashboardTableCell>
-                      <span className="block truncate text-muted-foreground">{session.reason}</span>
-                    </DashboardTableCell>
-                    <DashboardTableCell className="capitalize text-muted-foreground">{session.status}</DashboardTableCell>
-                    <DashboardTableCell className="text-muted-foreground">
-                      {new Date(session.expiresAt).toLocaleString()}
-                    </DashboardTableCell>
-                  </DashboardTableRow>
-                ))}
-              </DashboardTableBody>
-            </DashboardTable>
-          </section>
-        ) : null}
         </>
       )}
     </div>

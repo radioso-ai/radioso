@@ -500,28 +500,6 @@
           "role"
         ]
       },
-      "SupportImpersonationApproveRequest": {
-        "type": "object",
-        "properties": {
-          "accountId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "staffUserId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1000
-          }
-        },
-        "required": [
-          "accountId",
-          "reason"
-        ]
-      },
       "WorkspaceCreateRequest": {
         "type": "object",
         "properties": {
@@ -679,78 +657,6 @@
           "updatedAt"
         ]
       },
-      "SupportImpersonation": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "accountId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "staffUserId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "approverUserId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "approved",
-              "active",
-              "ended",
-              "expired",
-              "revoked"
-            ]
-          },
-          "approvedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "startedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "endedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          },
-          "active": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "id",
-          "accountId",
-          "staffUserId",
-          "approverUserId",
-          "reason",
-          "status",
-          "approvedAt",
-          "startedAt",
-          "expiresAt",
-          "endedAt",
-          "active"
-        ]
-      },
       "AccountUsersResponse": {
         "type": "object",
         "properties": {
@@ -779,12 +685,6 @@
             "items": {
               "$ref": "#/components/schemas/WorkspaceGrant"
             }
-          },
-          "supportImpersonations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SupportImpersonation"
-            }
           }
         },
         "required": [
@@ -792,8 +692,7 @@
           "currentUserId",
           "users",
           "invitations",
-          "workspaceGrants",
-          "supportImpersonations"
+          "workspaceGrants"
         ]
       },
       "AccessibleAccount": {
@@ -7465,116 +7364,6 @@
         "responses": {
           "204": {
             "description": "Workspace grant removed"
-          }
-        }
-      }
-    },
-    "/api/v1/support/impersonations": {
-      "post": {
-        "tags": [
-          "Support"
-        ],
-        "summary": "Approve a support impersonation session",
-        "operationId": "approveSupportImpersonation",
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SupportImpersonationApproveRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Support impersonation approved",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SupportImpersonation"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/support/impersonations/{id}/start": {
-      "post": {
-        "tags": [
-          "Support"
-        ],
-        "summary": "Start an approved support impersonation session",
-        "operationId": "startSupportImpersonation",
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Support impersonation started",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SupportImpersonation"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/support/impersonations/{id}/end": {
-      "post": {
-        "tags": [
-          "Support"
-        ],
-        "summary": "End a support impersonation session",
-        "operationId": "endSupportImpersonation",
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Support impersonation ended",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SupportImpersonation"
-                }
-              }
-            }
           }
         }
       }

@@ -1,6 +1,6 @@
 # Radioso MCP Server
 
-Standalone MCP server package for workspace-scoped Radioso reads and writes.
+MCP server package for workspace-scoped Radioso reads and writes.
 
 ## What It Does
 
@@ -11,11 +11,16 @@ The package connects to an existing Radioso deployment over its public HTTP API 
 - document create, update, delete, and reprocess
 - retrieval settings reads and partial updates
 
-The package owns its own remote HTTP surface, token exchange, approval-gated write flow, and audit logging. It does not import backend domain modules and does not access the database directly.
+The package owns MCP protocol handling, token verification seams, approval-gated write flow, policy enforcement, and audit logging. It does not import backend domain modules and does not access the database directly.
 
 ## Remote Runtime
 
-The remote HTTP server is the primary product surface.
+The package supports two HTTP runtimes:
+
+- **Standalone**: run the package as its own process. Clients exchange a workspace API token for a short-lived MCP access token.
+- **Merged**: the backend imports the package's public HTTP runtime contract and mounts MCP at its own `/mcp` route. Clients use the workspace API token directly.
+
+Standalone remains the recommended shape for public connector surfaces. Merged mode is intended for same-host self-hosted installs.
 
 ### Required Environment Variables
 
@@ -39,6 +44,9 @@ The target Radioso backend must also have the same `RADIOSO_MCP_SIGNING_SECRET` 
 - `RADIOSO_MCP_REDIS_URL` enables a shared runtime store for sessions and approvals
 - `RADIOSO_MCP_REDIS_KEY_PREFIX` default `radioso-mcp`
 - `RADIOSO_MCP_WORKSPACE_POLICIES_PATH` path to a JSON file with workspace-specific policy overrides
+- `RADIOSO_MCP_ENABLED` and `RADIOSO_MCP_STANDALONE` are read by the backend, not the standalone package. Use `RADIOSO_MCP_ENABLED=true` with `RADIOSO_MCP_STANDALONE=false` to mount the backend route.
+- `RADIOSO_MCP_MOUNT_PATH` backend merged route path, default `/mcp`
+- `RADIOSO_MCP_MERGED_CORS_ORIGINS` backend merged CORS allowlist, default `*`
 
 If the tool allowlists are omitted, the package enables the full current read/write catalog and requires approval for all write tools.
 

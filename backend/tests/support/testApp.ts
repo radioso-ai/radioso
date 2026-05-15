@@ -706,6 +706,7 @@ export const createTestDependencies = (overrides: {
         requestedUrl: "https://example.com",
         status: "queued" as const,
       }),
+      cancelJobsForSource: async () => 0,
     } as any,
     websiteCrawlWorker: {
       start: async () => undefined,

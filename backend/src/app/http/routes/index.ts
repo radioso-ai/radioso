@@ -16,7 +16,6 @@ import { createRetrievalRoutes } from "./retrievalRoutes.js";
 import { createConnectorRoutes } from "../../../modules/connectors/http/connectorRoutes.js";
 import { createPublicChatRoutes } from "./publicChatRoutes.js";
 import { createSkillRoutes } from "./skillRoutes.js";
-import { createSupportRoutes } from "./supportRoutes.js";
 
 export const createApiRouter = (dependencies: AppDependencies): Router => {
   const router = Router();
@@ -35,7 +34,6 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
     );
   }
   router.use("/api/v1/auth", createAuthRoutes(dependencies));
-  router.use("/api/v1/support", createSupportRoutes(dependencies));
   router.use("/api/v1/account", createAccountRoutes(dependencies));
   router.use("/api/v1/account", createAccountUserRoutes(dependencies));
   router.use("/api/v1/workspace", createWorkspaceRoutes(dependencies));

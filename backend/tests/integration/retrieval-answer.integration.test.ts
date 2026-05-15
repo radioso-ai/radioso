@@ -30,14 +30,14 @@ describe("retrieval answer integration", () => {
     expect(response.body).toMatchObject({
       outcome: "answer",
       answer: expect.any(String),
-      retrievalInfo: {
+      activitySummary: {
         execution: {
           surface: "retrieval",
           path: "retrieval_answer",
           retrievalInvoked: true,
         },
       },
-      retrievalTrace: {
+      activityTrace: {
         summary: {
           execution: {
             surface: "retrieval",
@@ -116,7 +116,7 @@ describe("retrieval answer integration", () => {
     ]);
     expect(response.body).toMatchObject({
       outcome: "answer",
-      retrievalInfo: {
+      activitySummary: {
         parsedQuery: {
           originalQuery: "What about that one?",
           semanticQuery: "advanced workshop next month returning students",
@@ -207,12 +207,12 @@ describe("retrieval answer integration", () => {
       })
       .expect(200);
 
-    expect(response.body.retrievalInfo.execution).toMatchObject({
+    expect(response.body.activitySummary.execution).toMatchObject({
       surface: "mcp_capability",
       path: "mcp_grounded_answer",
       retrievalInvoked: true,
     });
-    expect(response.body.retrievalTrace.summary.execution).toMatchObject({
+    expect(response.body.activityTrace.summary.execution).toMatchObject({
       surface: "mcp_capability",
       path: "mcp_grounded_answer",
       retrievalInvoked: true,

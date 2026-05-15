@@ -86,8 +86,8 @@ describe("sdk client integration", () => {
         new Response(JSON.stringify({
           conversationId: "c1",
           answer: "hello",
-          retrievalInfo: {},
-          retrievalTrace: {},
+          activitySummary: {},
+          activityTrace: {},
         }), {
           status: 200,
           headers: { "content-type": "application/json" },

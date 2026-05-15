@@ -42,5 +42,9 @@ export const formatConversationSource = (sourceChannel: string | null, sourceOri
     return 'MCP'
   }
 
+  if (sourceChannel === 'authenticated_chat') {
+    return null
+  }
+
   return sourceChannel
 }

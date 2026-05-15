@@ -23,7 +23,7 @@ import { PromptAssemblyStageService } from "./promptAssemblyStage.js";
 import { QueryInterpretationStageService } from "./queryInterpretationStage.js";
 import { RetrievalContextStageService } from "./retrievalContextStage.js";
 import { RetrievalDiagnosticsStageService } from "./retrievalDiagnosticsStage.js";
-import { RetrievalPipelineTraceBuilder } from "./retrievalPipelineTraceBuilder.js";
+import { RetrievalPipelineActivityTraceBuilder } from "./retrievalPipelineActivityTraceBuilder.js";
 import { MetadataRuleScoringService } from "./metadataRuleScoringService.js";
 import { selectRetrievalAnswerShape } from "./retrievalShapeResolver.js";
 import type {
@@ -55,7 +55,7 @@ export interface RetrievalPipelineResult {
     responseLanguagePolicy?: import("../domain/retrievalPipelineTypes.js").ResponseLanguagePolicy;
   };
   diagnostics: RetrievalExecutionDiagnostics;
-  trace: import("../domain/retrievalPipelineTypes.js").RetrievalTrace;
+  trace: import("../domain/retrievalPipelineTypes.js").ActivityTrace;
 }
 
 interface MeasuredStage<T> {
@@ -79,7 +79,7 @@ export class RetrievalPipelineService {
   private readonly contextSelectionStage: ContextSelectionStage;
   private readonly promptAssemblyStage: PromptAssemblyStage;
   private readonly retrievalDiagnosticsStage: RetrievalDiagnosticsStage;
-  private readonly retrievalTraceBuilder = new RetrievalPipelineTraceBuilder();
+  private readonly activityTraceBuilder = new RetrievalPipelineActivityTraceBuilder();
 
   constructor(
     retrievalSettingsService: RetrievalSettingsService,
@@ -156,7 +156,7 @@ export class RetrievalPipelineService {
     const selection = await this.measure(() => this.contextSelectionStage.execute(prepared.result));
     const prompt = await this.measure(() => this.promptAssemblyStage.execute(selection.result));
     const diagnostics = await this.measure(() => this.retrievalDiagnosticsStage.execute(prompt.result));
-    const trace = this.retrievalTraceBuilder.buildRetrievalTrace({
+    const trace = this.activityTraceBuilder.buildActivityTrace({
       traceStartedAtMs: input.traceStartedAtMs,
       context: input.context,
       interpretation,
@@ -224,7 +224,7 @@ export class RetrievalPipelineService {
         matcherVersion: "non_retrieval",
       },
     };
-    const trace = this.retrievalTraceBuilder.buildNonRetrievalTrace({
+    const trace = this.activityTraceBuilder.buildNonActivityTrace({
       request: input.request,
       traceStartedAtMs: input.traceStartedAtMs,
       context: input.context,

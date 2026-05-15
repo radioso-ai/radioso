@@ -1,4 +1,4 @@
-import type { RetrievalInfo, RetrievalTrace } from "../../retrieval/public.js";
+import type { ActivitySummary, ActivityTrace } from "../../retrieval/public.js";
 import type { AnswerSegment, ChatCitation } from "./answerTypes.js";
 import type { ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
 
@@ -20,7 +20,7 @@ export type ChatStreamEvent =
       citations?: ChatCitation[];
       answerSegments?: AnswerSegment[];
       suggestions?: ChatSuggestion[];
-      retrievalInfo: RetrievalInfo;
-      retrievalTrace: RetrievalTrace;
+      activitySummary: ActivitySummary;
+      activityTrace: ActivityTrace;
       route: ChatRoute;
     };

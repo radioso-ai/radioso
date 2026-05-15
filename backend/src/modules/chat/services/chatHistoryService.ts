@@ -11,10 +11,10 @@ import type { HistoryItemsRepositoryPort } from "../../../db/repositories/histor
 import type { DocumentSearchHistoryEntry } from "../../documents/contracts/index.js";
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import {
-  RetrievalInfoPresenter,
+  ActivitySummaryPresenter,
   type RetrievalExecutionDiagnostics,
-  type RetrievalInfo,
-  type RetrievalTrace,
+  type ActivitySummary,
+  type ActivityTrace,
 } from "../../retrieval/public.js";
 import type { AssistantTurnOutcome, HiddenSupportEvidence, ValidationDisposition } from "./answerSupportValidationTypes.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
@@ -71,8 +71,8 @@ export interface ChatConversationTurnDebug {
       citationIndices?: number[];
     }>;
   };
-  retrievalInfo?: RetrievalInfo;
-  retrievalTrace?: RetrievalTrace;
+  activitySummary?: ActivitySummary;
+  activityTrace?: ActivityTrace;
   errorMessage?: string | null;
   route?: {
     generator: string;
@@ -198,7 +198,7 @@ interface ChatAuditMetadata {
     }>;
   };
   retrieval?: unknown;
-  retrievalTrace?: RetrievalTrace;
+  activityTrace?: ActivityTrace;
   errorMessage?: string;
   route?: {
     generator?: unknown;
@@ -304,7 +304,7 @@ const normalizeRouteDiagnostics = (
 
 const toRetrievalExecutionPath = (
   route: ChatConversationTurnDebug["route"] | undefined,
-): RetrievalInfo["execution"] | undefined => {
+): ActivitySummary["execution"] | undefined => {
   if (!route || route.generator !== "assistant") {
     return undefined;
   }
@@ -316,8 +316,153 @@ const toRetrievalExecutionPath = (
   };
 };
 
+const reconstructActivityTrace = (input: {
+  eventId: string;
+  startedAt: string;
+  route: ChatConversationTurnDebug["route"] | undefined;
+  summary: ActivitySummary | undefined;
+  diagnostics: RetrievalExecutionDiagnostics;
+  answerOutcome?: AssistantTurnOutcome;
+}): ActivityTrace => {
+  const execution = input.summary?.execution ?? toRetrievalExecutionPath(input.route);
+  const stages: ActivityTrace["stages"] = [
+    {
+      stageId: "routing",
+      kind: "routing",
+      label: "Routing",
+      status: input.route?.retrievalInvoked ? "applied" : "skipped",
+      startedAt: input.startedAt,
+      inputs: {
+        surface: execution?.surface,
+      },
+      outputs: {
+        responseIntent: input.diagnostics.responseIntent,
+        retrievalInvoked: input.route?.retrievalInvoked,
+        retrievalSkipped: input.diagnostics.retrievalSkipped,
+      },
+      reason: input.route?.routeReason,
+    },
+  ];
+
+  if (input.diagnostics.parsedQuery || input.diagnostics.rewriteStatus || input.diagnostics.retrievalSubqueries?.length) {
+    stages.push({
+      stageId: "interpretation",
+      kind: "query_interpretation",
+      label: "Query interpretation",
+      status: input.diagnostics.rewriteStatus === "fallback"
+        ? "fallback"
+        : input.diagnostics.rewriteStatus === "rejected"
+          ? "rejected"
+          : input.diagnostics.rewriteStatus === "applied"
+            ? "applied"
+            : "skipped",
+      startedAt: input.startedAt,
+      outputs: {
+        originalQuery: input.diagnostics.parsedQuery?.originalQuery,
+        semanticQuery: input.diagnostics.parsedQuery?.semanticQuery,
+        lexicalQuery: input.diagnostics.parsedQuery?.lexicalQuery,
+        responseIntent: input.diagnostics.responseIntent,
+        retrievalSubqueries: input.diagnostics.retrievalSubqueries,
+        rewriteEligible: input.diagnostics.rewriteEligible,
+        rewriteRan: input.diagnostics.rewriteRan,
+        continuityDecision: input.diagnostics.continuityDecision,
+      },
+      metrics: typeof input.diagnostics.intentConfidence === "number"
+        ? { rewriteConfidence: input.diagnostics.intentConfidence }
+        : undefined,
+      reason: input.diagnostics.rejectionReason ?? input.diagnostics.fallbackReason,
+    });
+  }
+
+  if (input.diagnostics.triggerAnalysis) {
+    stages.push({
+      stageId: "trigger_analysis",
+      kind: "trigger_analysis",
+      label: "Trigger analysis",
+      status: input.diagnostics.triggerAnalysis.status === "fallback"
+        ? "fallback"
+        : input.diagnostics.triggerAnalysis.status === "applied"
+          ? "applied"
+          : "skipped",
+      startedAt: input.startedAt,
+      outputs: {
+        consideredRules: input.diagnostics.triggerAnalysis.consideredRules,
+        matchedRuleIds: input.diagnostics.triggerAnalysis.matchedRuleIds,
+        unmatchedRuleIds: input.diagnostics.triggerAnalysis.unmatchedRuleIds,
+        backoffDecision: input.diagnostics.triggerBackoff,
+      },
+      metrics: {
+        consideredRuleCount: input.diagnostics.triggerAnalysis.consideredRules.length,
+        matchCount: input.diagnostics.triggerAnalysis.matchCount,
+      },
+      reason: input.diagnostics.triggerAnalysis.failureReason,
+    });
+  }
+
+  if (input.diagnostics.shapeSelection || input.summary?.shapeName || input.summary?.skillDiagnostic) {
+    stages.push({
+      stageId: "shape_selection",
+      kind: "shape_selection",
+      label: "Shape selection",
+      status: "applied",
+      startedAt: input.startedAt,
+      outputs: {
+        skillName: input.summary?.skillDiagnostic?.skillName,
+        shapeName: input.summary?.shapeName,
+        queryShape: input.summary?.queryShape,
+        resolvedSteps: input.summary?.resolvedSteps,
+      },
+      reason: input.summary?.skillDiagnostic?.selectionReason,
+    });
+  }
+
+  stages.push(
+    {
+      stageId: "candidate_summary",
+      kind: "diagnostics",
+      label: "Candidate summary",
+      status: input.diagnostics.fallbackApplied ? "fallback" : "applied",
+      startedAt: input.startedAt,
+      outputs: {
+        fallbackApplied: input.diagnostics.fallbackApplied,
+        continuityDecision: input.diagnostics.continuityDecision,
+      },
+      metrics: {
+        semanticCandidateCount: input.diagnostics.originalCandidateCount + input.diagnostics.rewrittenCandidateCount,
+        lexicalCandidateCount: input.diagnostics.lexicalCandidateCount ?? 0,
+        mergedCandidateCount: input.diagnostics.normalizedCandidateCount,
+        finalContextCount: input.diagnostics.finalContextCount,
+      },
+    },
+    {
+      stageId: "answer",
+      kind: "answer_outcome",
+      label: "Answer outcome",
+      status: input.answerOutcome?.includes("unsupported") ? "fallback" : "applied",
+      startedAt: input.startedAt,
+      outputs: {
+        outcome: input.answerOutcome,
+      },
+    },
+  );
+
+  return {
+    traceId: `reconstructed-${input.eventId}`,
+    startedAt: input.startedAt,
+    completedAt: input.startedAt,
+    totalDurationMs: 0,
+    stages,
+    links: stages.slice(0, -1).map((stage, index) => ({
+      fromStageId: stage.stageId,
+      toStageId: stages[index + 1]?.stageId ?? stage.stageId,
+      kind: "sequence",
+    })),
+    summary: input.summary,
+  };
+};
+
 export class ChatHistoryService {
-  private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
+  private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
 
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
@@ -535,6 +680,27 @@ export class ChatHistoryService {
       }
 
       const route = normalizeRouteDiagnostics(metadata.route);
+      const activitySummary = metadata.activityTrace?.summary
+        ?? (
+          metadata.retrieval
+            ? this.activitySummaryPresenter.present(metadata.retrieval as RetrievalExecutionDiagnostics, {
+                execution: toRetrievalExecutionPath(route),
+              })
+            : undefined
+        );
+      const activityTrace = metadata.activityTrace
+        ?? (
+          metadata.retrieval
+            ? reconstructActivityTrace({
+                eventId: event.id,
+                startedAt: toIsoString(event.createdAt),
+                route,
+                summary: activitySummary,
+                diagnostics: metadata.retrieval as RetrievalExecutionDiagnostics,
+                answerOutcome: metadata.answerOutcome,
+              })
+            : undefined
+        );
       index.set(metadata.assistantMessageId, {
         eventStatus: event.eventStatus === "failure" ? "failure" : "success",
         recordedAt: toIsoString(event.createdAt),
@@ -574,15 +740,8 @@ export class ChatHistoryService {
               })),
             }
           : undefined,
-        retrievalInfo: metadata.retrievalTrace?.summary
-          ?? (
-            metadata.retrieval
-              ? this.retrievalInfoPresenter.present(metadata.retrieval as RetrievalExecutionDiagnostics, {
-                  execution: toRetrievalExecutionPath(route),
-                })
-              : undefined
-          ),
-        retrievalTrace: metadata.retrievalTrace,
+        activitySummary,
+        activityTrace,
         errorMessage: metadata.errorMessage ?? null,
         route,
       });

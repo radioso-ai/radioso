@@ -1,3 +1,5 @@
+import type { ActivitySummary, ActivityTrace } from "../../retrieval/public.js";
+
 export interface ContactHistorySummary {
   id: string;
   sortAt: string;
@@ -14,11 +16,13 @@ export interface ContactHistorySummary {
   attempts: number;
   createdAt: string;
   updatedAt: string;
+  activitySummary?: ActivitySummary;
 }
 
 export interface ContactHistoryDetail extends ContactHistorySummary {
   message: string;
   finalDeliveryError: string | null;
+  activityTrace?: ActivityTrace;
 }
 
 export interface ContactHistoryPage {

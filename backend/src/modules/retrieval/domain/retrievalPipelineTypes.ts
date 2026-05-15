@@ -174,7 +174,7 @@ export interface FinalPromptContext extends RerankedCandidate {
 }
 
 export type RerankStatus = "skipped" | "applied" | "fallback";
-export type RetrievalTraceStageStatus = "applied" | "skipped" | "fallback" | "rejected" | "unavailable" | "failed";
+export type ActivityStageStatus = "applied" | "skipped" | "fallback" | "rejected" | "unavailable" | "failed";
 export type RetrievalExecutionSurface = "assistant" | "retrieval" | "mcp_capability";
 export type RetrievalExecutionPath =
   | "assistant_direct"
@@ -220,7 +220,16 @@ export interface RetrievalAnswerShapeSelection {
   resolvedRun: ResolvedSkillRun;
 }
 
-export interface RetrievalTraceSummary {
+export interface ActivitySummary {
+  traceId?: string;
+  skillName?: string;
+  surface?: string;
+  path?: string;
+  status?: "success" | "skipped" | "blocked" | "failed" | "fallback" | "pending";
+  outcome?: string;
+  primaryCounts?: Record<string, number>;
+  assistant?: Record<string, unknown>;
+  contact?: Record<string, unknown>;
   execution?: RetrievalExecutionMetadata;
   parsedQuery?: {
     originalQuery: string;
@@ -241,15 +250,15 @@ export interface RetrievalTraceSummary {
   intentConfidence?: number;
   intentFallbackApplied?: boolean;
   responseLanguagePolicy?: ResponseLanguagePolicy;
-  candidateCounts: {
+  candidateCounts?: {
     semantic: number;
     lexical: number;
     merged: number;
     final: number;
   };
   appliedConstraints?: AppliedConstraint[];
-  fallbackApplied: boolean;
-  rerankStatus: RerankStatus;
+  fallbackApplied?: boolean;
+  rerankStatus?: RerankStatus;
   rewrite?: {
     status: RewriteStatus;
     eligible: boolean;
@@ -267,11 +276,11 @@ export interface RetrievalTraceSummary {
   skillDiagnostic?: SkillDiagnostic;
 }
 
-export interface RetrievalTraceStage {
+export interface ActivityStage {
   stageId: string;
   kind: string;
   label: string;
-  status: RetrievalTraceStageStatus;
+  status: ActivityStageStatus;
   startedAt?: string;
   durationMs?: number;
   settings?: Record<string, unknown>;
@@ -281,20 +290,20 @@ export interface RetrievalTraceStage {
   reason?: string;
 }
 
-export interface RetrievalTraceLink {
+export interface ActivityLink {
   fromStageId: string;
   toStageId: string;
   kind: "sequence" | "branch" | "converge";
 }
 
-export interface RetrievalTrace {
+export interface ActivityTrace {
   traceId: string;
   startedAt: string;
   completedAt?: string;
   totalDurationMs?: number;
-  stages: RetrievalTraceStage[];
-  links: RetrievalTraceLink[];
-  summary?: RetrievalTraceSummary;
+  stages: ActivityStage[];
+  links: ActivityLink[];
+  summary?: ActivitySummary;
 }
 
 export interface RetrievalExecutionDiagnostics {

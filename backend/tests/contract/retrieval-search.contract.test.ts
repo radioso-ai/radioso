@@ -42,7 +42,7 @@ describe("retrieval search contract", () => {
           content: expect.stringContaining("advanced workshop"),
         }),
       ],
-      retrievalInfo: expect.objectContaining({
+      activitySummary: expect.objectContaining({
         candidateCounts: expect.any(Object),
         execution: {
           surface: "retrieval",
@@ -50,7 +50,7 @@ describe("retrieval search contract", () => {
           retrievalInvoked: true,
         },
       }),
-      retrievalTrace: expect.objectContaining({
+      activityTrace: expect.objectContaining({
         traceId: expect.any(String),
         summary: expect.objectContaining({
           execution: {
@@ -61,8 +61,8 @@ describe("retrieval search contract", () => {
         }),
       }),
     });
-    expect(response.body.retrievalTrace.summary).not.toHaveProperty("skillDiagnostic");
-    expect(response.body.retrievalTrace.stages).not.toEqual(
+    expect(response.body.activityTrace.summary).not.toHaveProperty("skillDiagnostic");
+    expect(response.body.activityTrace.stages).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           stageId: "shape_selection",

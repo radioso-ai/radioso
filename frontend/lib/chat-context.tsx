@@ -19,8 +19,8 @@ import {
   type ChatSuggestion,
   type ChatStreamCompletion,
   type ChatUserInputMetadata,
-  type RetrievalInfo,
-  type RetrievalTrace,
+  type ActivitySummary,
+  type ActivityTrace,
 } from '@/lib/api'
 import { createClientId } from '@/lib/client-id'
 
@@ -34,8 +34,8 @@ export interface ChatMessage {
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
   answerFeedback?: AnswerFeedbackState
-  retrievalInfo?: RetrievalInfo
-  retrievalTrace?: RetrievalTrace
+  activitySummary?: ActivitySummary
+  activityTrace?: ActivityTrace
   persistedAssistantMessageId?: string
   status: 'complete' | 'streaming' | 'error'
 }
@@ -196,8 +196,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
                 suggestions: completion.suggestions,
-                retrievalInfo: completion.retrievalInfo,
-                retrievalTrace: completion.retrievalTrace,
+                activitySummary: completion.activitySummary,
+                activityTrace: completion.activityTrace,
                 status: 'complete',
               }
             : message,
@@ -314,8 +314,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             citations: completion.citations,
             answerSegments: completion.answerSegments,
             suggestions: completion.suggestions,
-            retrievalInfo: completion.retrievalInfo,
-            retrievalTrace: completion.retrievalTrace,
+            activitySummary: completion.activitySummary,
+            activityTrace: completion.activityTrace,
           })
         }
 
@@ -415,8 +415,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     citations: bootstrap.citations,
                     answerSegments: bootstrap.answerSegments,
                     suggestions: bootstrap.suggestions,
-                    retrievalInfo: bootstrap.retrievalInfo,
-                    retrievalTrace: bootstrap.retrievalTrace,
+                    activitySummary: bootstrap.activitySummary,
+                    activityTrace: bootstrap.activityTrace,
                     persistedAssistantMessageId: bootstrap.assistantMessageId,
                     status: 'complete' as const,
                   },
@@ -486,8 +486,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               createdAt: new Date().toISOString(),
               citations: bootstrap.citations,
               answerSegments: bootstrap.answerSegments,
-              retrievalInfo: bootstrap.retrievalInfo,
-              retrievalTrace: bootstrap.retrievalTrace,
+              activitySummary: bootstrap.activitySummary,
+              activityTrace: bootstrap.activityTrace,
               persistedAssistantMessageId: bootstrap.assistantMessageId,
               status: 'complete',
             },

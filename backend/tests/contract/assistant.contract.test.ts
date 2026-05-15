@@ -42,10 +42,10 @@ describe("assistant contract", () => {
       answer: expect.any(String),
       citations: expect.any(Array),
       answerSegments: expect.any(Array),
-      retrievalInfo: expect.objectContaining({
+      activitySummary: expect.objectContaining({
         candidateCounts: expect.any(Object),
       }),
-      retrievalTrace: expect.objectContaining({
+      activityTrace: expect.objectContaining({
         traceId: expect.any(String),
         stages: expect.any(Array),
       }),
@@ -88,7 +88,7 @@ describe("assistant contract", () => {
       answer: expect.any(String),
       citations: [],
       answerSegments: expect.any(Array),
-      retrievalInfo: expect.objectContaining({
+      activitySummary: expect.objectContaining({
         retrievalSkipped: true,
       }),
     });

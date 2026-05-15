@@ -1,6 +1,6 @@
 import type { ChatCitation } from "../../chat/contracts/answerTypes.js";
-import type { RetrievalInfo } from "../services/retrievalInfoPresenter.js";
-import type { RetrievalExecutionSurface, RetrievalTrace, ResponseIntent } from "./retrievalPipelineTypes.js";
+import type { RetrievalExecutionSurface, ActivityTrace, ResponseIntent } from "./retrievalPipelineTypes.js";
+import type { ActivitySummary } from "./retrievalPipelineTypes.js";
 
 export interface RetrievalConversationContext {
   previousUserMessages?: string[];
@@ -30,8 +30,8 @@ export interface RetrievalSearchResult {
     metadata?: Record<string, unknown>;
     score?: number;
   }>;
-  retrievalInfo: RetrievalInfo;
-  retrievalTrace: RetrievalTrace;
+  activitySummary: ActivitySummary;
+  activityTrace: ActivityTrace;
 }
 
 export interface RetrievalAnswerRequest {
@@ -56,8 +56,8 @@ export interface RetrievalAnswerSuccess {
   validation: {
     status: "supported" | "unsupported" | "not_checked";
   };
-  retrievalInfo: RetrievalInfo;
-  retrievalTrace: RetrievalTrace;
+  activitySummary: ActivitySummary;
+  activityTrace: ActivityTrace;
 }
 
 export interface RetrievalAnswerUnsupported {

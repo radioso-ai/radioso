@@ -1,25 +1,24 @@
 import type {
-  RerankStatus,
   RetrievalExecutionDiagnostics,
   RetrievalExecutionMetadata,
-  RetrievalTraceSummary,
+  ActivitySummary,
 } from "../domain/retrievalPipelineTypes.js";
-import type { AppliedConstraint } from "../domain/queryConstraintTypes.js";
 import { summarizeResolvedSteps } from "./retrievalShapeResolver.js";
 
-export interface RetrievalInfo extends RetrievalTraceSummary {
-  rerankStatus: RerankStatus;
-  appliedConstraints?: AppliedConstraint[];
-}
-
-export interface RetrievalInfoPresenterOptions {
+export interface ActivitySummaryPresenterOptions {
   execution?: RetrievalExecutionMetadata;
 }
 
-export class RetrievalInfoPresenter {
-  present(input: RetrievalExecutionDiagnostics, options: RetrievalInfoPresenterOptions = {}): RetrievalInfo {
+export class ActivitySummaryPresenter {
+  present(input: RetrievalExecutionDiagnostics, options: ActivitySummaryPresenterOptions = {}): ActivitySummary {
+    const execution = options.execution ?? input.execution;
     return {
-      execution: options.execution ?? input.execution,
+      skillName: input.skillDiagnostic?.skillName,
+      surface: execution?.surface,
+      path: execution?.path,
+      status: input.fallbackApplied ? "fallback" : input.retrievalSkipped ? "skipped" : "success",
+      outcome: input.retrievalSkipped ? "retrieval_skipped" : "retrieval_completed",
+      execution,
       parsedQuery: input.parsedQuery
         ? {
             originalQuery: input.parsedQuery.originalQuery ?? input.parsedQuery.semanticQuery,

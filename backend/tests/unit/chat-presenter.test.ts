@@ -64,7 +64,7 @@ describe("chat presenter", () => {
             },
           },
         ],
-        retrievalInfo: {
+        activitySummary: {
           candidateCounts: { semantic: 0, lexical: 0, merged: 0, final: 0 },
           fallbackApplied: false,
           rerankStatus: "skipped",
@@ -75,7 +75,7 @@ describe("chat presenter", () => {
             materialDisagreement: false,
           },
         },
-        retrievalTrace: {
+        activityTrace: {
           traceId: "trace-1",
           startedAt: new Date().toISOString(),
           stages: [],

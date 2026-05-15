@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentRepositoryPort, DocumentSummaryRecord } from "./documentIngestionService.js";
-import type { RetrievalPipelineService, RetrievalTrace } from "../../retrieval/public.js";
+import type { RetrievalPipelineService, ActivityTrace } from "../../retrieval/public.js";
 
 export type DocumentSearchActionType =
   | "open_document"
@@ -36,7 +36,7 @@ export interface DocumentSearchResponse {
   query: string;
   resultCount: number;
   results: DocumentSearchResult[];
-  retrievalTrace?: RetrievalTrace;
+  activityTrace?: ActivityTrace;
 }
 
 interface DocumentSearchAuditMetadata extends Record<string, unknown> {
@@ -44,7 +44,7 @@ interface DocumentSearchAuditMetadata extends Record<string, unknown> {
   query: string;
   resultCount: number;
   results: DocumentSearchResult[];
-  retrievalTrace?: RetrievalTrace;
+  activityTrace?: ActivityTrace;
 }
 
 export class DocumentSearchService {
@@ -99,7 +99,7 @@ export class DocumentSearchService {
       query: input.query,
       resultCount: results.length,
       results,
-      retrievalTrace: retrieval.trace,
+      activityTrace: retrieval.trace,
     };
 
     const metadata: DocumentSearchAuditMetadata = {
@@ -107,7 +107,7 @@ export class DocumentSearchService {
       query: response.query,
       resultCount: response.resultCount,
       results: response.results,
-      retrievalTrace: response.retrievalTrace,
+      activityTrace: response.activityTrace,
     };
 
     await this.auditService.record({

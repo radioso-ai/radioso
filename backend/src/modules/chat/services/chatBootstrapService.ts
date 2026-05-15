@@ -28,7 +28,7 @@ const emptyChatResponse = (answer: string): ChatBootstrapResponse => ({
   answer,
   citations: [],
   answerSegments: answer ? [{ text: answer }] : [],
-  retrievalInfo: {
+  activitySummary: {
     candidateCounts: {
       semantic: 0,
       lexical: 0,
@@ -45,7 +45,7 @@ const emptyChatResponse = (answer: string): ChatBootstrapResponse => ({
       materialDisagreement: false,
     },
   },
-  retrievalTrace: {
+  activityTrace: {
     traceId: `bootstrap-${randomUUID()}`,
     startedAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),

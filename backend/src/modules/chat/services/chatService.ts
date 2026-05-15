@@ -6,10 +6,10 @@ import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositor
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AgentService } from "../../agents/public.js";
 import {
-  RetrievalInfoPresenter,
-  RetrievalTracePresenter,
+  ActivitySummaryPresenter,
+  ActivityTracePresenter,
   type RetrievalPipelineService,
-  type RetrievalTrace,
+  type ActivityTrace,
   type RewriteContinuityState,
 } from "../../retrieval/public.js";
 import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
@@ -87,8 +87,8 @@ export class ModelChatGateway implements ChatGateway {
 export class OpenAIChatGateway extends ModelChatGateway {}
 
 export class ChatService {
-  private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
-  private readonly retrievalTracePresenter = new RetrievalTracePresenter();
+  private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
+  private readonly activityTracePresenter = new ActivityTracePresenter();
   private readonly assistantInstructionBuilder = new AssistantInstructionBuilder();
   private readonly chatAnswerPresenter: ChatAnswerPresenter;
   private readonly chatSessionPreparer: ChatSessionPreparer;
@@ -266,16 +266,16 @@ export class ChatService {
       const answerStartedAt = Date.now();
       const presentation = await this.generateAnswerPresentation(session, input.query, input.userExpectedLocale);
       const route = this.getRoute(session);
-      const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics, {
+      const activitySummary = this.activitySummaryPresenter.present(session.retrieval.diagnostics, {
         execution: {
           surface: "assistant",
           path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
           retrievalInvoked: route.type === "retrieval",
         },
       });
-      const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
+      const activityTrace = this.activityTracePresenter.appendAnswerOutcome({
         trace: session.retrieval.trace,
-        summary: retrievalInfo,
+        summary: activitySummary,
         outcome: {
           answer: presentation.answer,
           stream: input.stream,
@@ -286,7 +286,7 @@ export class ChatService {
           validation: presentation.validation,
         },
       });
-      const resolvedRetrievalInfo = retrievalTrace.summary ?? retrievalInfo;
+      const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
 
       const assistantMessage = await this.messageRepository.create({
         conversationId: session.conversation.id,
@@ -321,7 +321,7 @@ export class ChatService {
         suggestions,
         priorRewriteContinuityState: session.priorRewriteContinuityState,
         diagnostics: session.retrieval.diagnostics,
-        retrievalTrace,
+        activityTrace,
         route,
         stream: input.stream,
       });
@@ -337,8 +337,8 @@ export class ChatService {
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
         suggestions,
-        retrievalInfo: resolvedRetrievalInfo,
-        retrievalTrace,
+        activitySummary: resolvedActivitySummary,
+        activityTrace,
       };
     } catch (error) {
       await usageReservation.release();
@@ -474,16 +474,16 @@ export class ChatService {
       };
 
       const route = this.getRoute(session);
-      const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics, {
+      const activitySummary = this.activitySummaryPresenter.present(session.retrieval.diagnostics, {
         execution: {
           surface: "assistant",
           path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
           retrievalInvoked: route.type === "retrieval",
         },
       });
-      const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
+      const activityTrace = this.activityTracePresenter.appendAnswerOutcome({
         trace: session.retrieval.trace,
-        summary: retrievalInfo,
+        summary: activitySummary,
         outcome: {
           answer: presentation.answer,
           stream: input.stream,
@@ -494,7 +494,7 @@ export class ChatService {
           validation: presentation.validation,
         },
       });
-      const resolvedRetrievalInfo = retrievalTrace.summary ?? retrievalInfo;
+      const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
 
       const assistantMessage = await this.messageRepository.create({
         conversationId: session.conversation.id,
@@ -529,7 +529,7 @@ export class ChatService {
         suggestions: actionSuggestions,
         priorRewriteContinuityState: session.priorRewriteContinuityState,
         diagnostics: session.retrieval.diagnostics,
-        retrievalTrace,
+        activityTrace,
         route,
         stream: input.stream,
       });
@@ -547,8 +547,8 @@ export class ChatService {
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
         suggestions: actionSuggestions,
-        retrievalInfo: resolvedRetrievalInfo,
-        retrievalTrace,
+        activitySummary: resolvedActivitySummary,
+        activityTrace,
       };
 
     } catch (error) {
@@ -638,7 +638,7 @@ export class ChatService {
     suggestions?: ChatSuggestion[];
     priorRewriteContinuityState?: RewriteContinuityState;
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
-    retrievalTrace: RetrievalTrace;
+    activityTrace: ActivityTrace;
     route: ChatRoute;
     stream: boolean;
   }): Promise<void> {
@@ -684,7 +684,7 @@ export class ChatService {
           citations: input.citations,
         }),
         retrieval: input.diagnostics,
-        retrievalTrace: input.retrievalTrace,
+        activityTrace: input.activityTrace,
       },
     });
     try {
@@ -764,10 +764,10 @@ export class ChatService {
         stream: input.stream,
         citationCount: 0,
         retrieval: session?.retrieval.diagnostics,
-        retrievalTrace: session?.retrieval.trace
-          ? this.retrievalTracePresenter.appendAnswerOutcome({
+        activityTrace: session?.retrieval.trace
+          ? this.activityTracePresenter.appendAnswerOutcome({
               trace: session.retrieval.trace,
-              summary: this.retrievalInfoPresenter.present(session.retrieval.diagnostics, {
+              summary: this.activitySummaryPresenter.present(session.retrieval.diagnostics, {
                 execution: {
                   surface: "assistant",
                   path: this.getRoute(session).type === "direct" ? "assistant_direct" : "assistant_retrieval",

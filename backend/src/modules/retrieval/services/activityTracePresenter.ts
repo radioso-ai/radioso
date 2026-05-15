@@ -1,8 +1,8 @@
 import type {
-  RetrievalTrace,
-  RetrievalTraceStage,
-  RetrievalTraceStageStatus,
-  RetrievalTraceSummary,
+  ActivityTrace,
+  ActivityStage,
+  ActivityStageStatus,
+  ActivitySummary,
 } from "../domain/retrievalPipelineTypes.js";
 
 export interface AnswerOutcomeInput {
@@ -23,7 +23,7 @@ export interface AnswerOutcomeInput {
   };
 }
 
-const ALLOWED_STATUSES = new Set<RetrievalTraceStageStatus>([
+const ALLOWED_STATUSES = new Set<ActivityStageStatus>([
   "applied",
   "skipped",
   "fallback",
@@ -49,7 +49,7 @@ const summarizeValue = (value: unknown): unknown => {
   return value;
 };
 
-const sanitizeStage = (stage: RetrievalTraceStage): RetrievalTraceStage => ({
+const sanitizeStage = (stage: ActivityStage): ActivityStage => ({
   ...stage,
   status: ALLOWED_STATUSES.has(stage.status) ? stage.status : "applied",
   settings: stage.settings ? (summarizeValue(stage.settings) as Record<string, unknown>) : undefined,
@@ -70,9 +70,9 @@ const toSupportStatus = (
 };
 
 const withAnswerSupportDiagnostic = (
-  summary: RetrievalTraceSummary,
+  summary: ActivitySummary,
   outcome: AnswerOutcomeInput,
-): RetrievalTraceSummary => {
+): ActivitySummary => {
   if (!summary.skillDiagnostic?.evidence) {
     return summary;
   }
@@ -90,28 +90,48 @@ const withAnswerSupportDiagnostic = (
   };
 };
 
-export class RetrievalTracePresenter {
-  present(input: RetrievalTrace, summary: RetrievalTraceSummary): RetrievalTrace {
+export class ActivityTracePresenter {
+  present(input: ActivityTrace, summary: ActivitySummary): ActivityTrace {
+    const sanitizedStages = input.stages.map((stage) => sanitizeStage(stage));
     return {
       ...input,
-      stages: input.stages.map((stage) => sanitizeStage(stage)),
-      summary,
+      stages: sanitizedStages,
+      summary: {
+        traceId: input.traceId,
+        ...summary,
+      },
     };
   }
 
   appendAnswerOutcome(input: {
-    trace?: RetrievalTrace;
-    summary: RetrievalTraceSummary;
+    trace?: ActivityTrace;
+    summary: ActivitySummary;
     outcome: AnswerOutcomeInput;
-  }): RetrievalTrace {
-    const baseTrace: RetrievalTrace = input.trace ?? {
+  }): ActivityTrace {
+    const baseTrace: ActivityTrace = input.trace ?? {
       traceId: "unavailable-trace",
       startedAt: new Date().toISOString(),
       stages: [],
       links: [],
     };
     const retrievalSkipped = Boolean(input.outcome.retrievalSkipped);
-    const answerStage: RetrievalTraceStage = {
+    const generationStage: ActivityStage = {
+      stageId: "generation",
+      kind: "generation",
+      label: "Generation",
+      status: "applied",
+      durationMs: input.outcome.durationMs,
+      outputs: {
+        stream: input.outcome.stream,
+        answerPreview: summarizeValue(input.outcome.answer),
+        validationRan: input.outcome.validation?.ran,
+        answerModified: input.outcome.validation?.answerModified,
+      },
+      metrics: {
+        answerLength: input.outcome.answer.length,
+      },
+    };
+    const answerStage: ActivityStage = {
       stageId: "answer",
       kind: "answer_outcome",
       label: "Answer outcome",
@@ -126,8 +146,6 @@ export class RetrievalTracePresenter {
                 ? "grounded_answer"
                 : "no_context"
           ),
-        stream: input.outcome.stream,
-        answerPreview: summarizeValue(input.outcome.answer),
         retrievalSkipped,
         validationRan: input.outcome.validation?.ran,
         answerModified: input.outcome.validation?.answerModified,
@@ -146,14 +164,23 @@ export class RetrievalTracePresenter {
           ? undefined
           : "No relevant contexts were available for grounded answer generation.",
     };
+    const hasGenerationStage = baseTrace.stages.some((stage) => stage.stageId === generationStage.stageId);
+    const previousStageId = baseTrace.stages.some((stage) => stage.stageId === "diagnostics")
+      ? "diagnostics"
+      : baseTrace.stages.at(-1)?.stageId;
+    const generationLink = previousStageId && !hasGenerationStage
+      ? [{ fromStageId: previousStageId, toStageId: generationStage.stageId, kind: "sequence" as const }]
+      : [];
 
     return this.present(
       {
         ...baseTrace,
-        stages: [...baseTrace.stages, answerStage],
-        links: baseTrace.stages.some((stage) => stage.stageId === "diagnostics")
-          ? [...baseTrace.links, { fromStageId: "diagnostics", toStageId: "answer", kind: "sequence" }]
-          : baseTrace.links,
+        stages: hasGenerationStage ? [...baseTrace.stages, answerStage] : [...baseTrace.stages, generationStage, answerStage],
+        links: [
+          ...baseTrace.links,
+          ...generationLink,
+          { fromStageId: generationStage.stageId, toStageId: "answer", kind: "sequence" },
+        ],
       },
       withAnswerSupportDiagnostic(input.summary, input.outcome),
     );

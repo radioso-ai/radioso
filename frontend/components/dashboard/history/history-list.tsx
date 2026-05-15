@@ -243,7 +243,7 @@ function SearchRow({
       <DashboardTableCell className="w-48 text-sm text-muted-foreground">
         <span className="block truncate">
           Authenticated - {resultLabel}
-          {search.traceAvailable ? ' - trace available' : ''}
+          {search.activityTraceAvailable ? ' - trace available' : ''}
         </span>
       </DashboardTableCell>
       <DashboardTableCell className="w-48 text-sm text-muted-foreground">

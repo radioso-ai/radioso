@@ -24,10 +24,10 @@ const bootstrapPayload = {
   answer: 'Hello, how can I help?',
   citations: [],
   answerSegments: [{ text: 'Hello, how can I help?' }],
-  retrievalInfo: {
+  activitySummary: {
     retrievalSkipped: true,
   },
-  retrievalTrace: {
+  activityTrace: {
     traceId: 'trace-1',
     startedAt: '2026-05-05T10:00:00.000Z',
     stages: [],

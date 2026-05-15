@@ -9,8 +9,8 @@ import {
   type ChatGateway,
 } from "../../chat/retrievalSupport.js";
 import type { RetrievalPipelineService } from "./retrievalPipelineService.js";
-import { RetrievalInfoPresenter } from "./retrievalInfoPresenter.js";
-import { RetrievalTracePresenter } from "./retrievalTracePresenter.js";
+import { ActivitySummaryPresenter } from "./activitySummaryPresenter.js";
+import { ActivityTracePresenter } from "./activityTracePresenter.js";
 import { RESPONSE_INTENT } from "../domain/retrievalPipelineTypes.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import type {
@@ -29,8 +29,8 @@ export class RetrievalAnswerService {
   private readonly answerPresentationService = new AnswerPresentationService();
   private readonly answerSupportValidator = new AnswerSupportValidator();
   private readonly groundedMissResponseComposer = new MissingGroundedMissResponseComposer();
-  private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
-  private readonly retrievalTracePresenter = new RetrievalTracePresenter();
+  private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
+  private readonly activityTracePresenter = new ActivityTracePresenter();
 
   constructor(private readonly dependencies: RetrievalAnswerServiceDependencies) {}
 
@@ -61,7 +61,7 @@ export class RetrievalAnswerService {
     }
 
     const retrieval = await this.dependencies.retrievalPipeline.runInterpreted(interpretation);
-    const retrievalInfo = this.retrievalInfoPresenter.present(retrieval.diagnostics, {
+    const activitySummary = this.activitySummaryPresenter.present(retrieval.diagnostics, {
       execution,
     });
     const answerStartedAt = Date.now();
@@ -122,9 +122,9 @@ export class RetrievalAnswerService {
             groundedMissResponseComposer: this.groundedMissResponseComposer,
             unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
           });
-      const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
+      const activityTrace = this.activityTracePresenter.appendAnswerOutcome({
         trace: retrieval.trace,
-        summary: retrievalInfo,
+        summary: activitySummary,
         outcome: {
           answer: validated.answer,
           stream: false,
@@ -134,7 +134,7 @@ export class RetrievalAnswerService {
           validation: validated.validation,
         },
       });
-      const resolvedRetrievalInfo = retrievalTrace.summary ?? retrievalInfo;
+      const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
 
       await usageReservation.commit();
       return {
@@ -155,8 +155,8 @@ export class RetrievalAnswerService {
               : "unsupported"
             : "not_checked",
         },
-        retrievalInfo: resolvedRetrievalInfo,
-        retrievalTrace,
+        activitySummary: resolvedActivitySummary,
+        activityTrace,
       };
     } catch (error) {
       await usageReservation.release();

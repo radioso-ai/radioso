@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { RetrievalInfoPresenter } from "../../src/modules/retrieval/services/retrievalInfoPresenter.js";
+import { ActivitySummaryPresenter } from "../../src/modules/retrieval/services/activitySummaryPresenter.js";
 
-describe("hybrid retrieval info", () => {
-  it("shapes bounded retrieval information from execution diagnostics", () => {
-    const presenter = new RetrievalInfoPresenter();
+describe("hybrid activity summary", () => {
+  it("shapes bounded activity summary information from execution diagnostics", () => {
+    const presenter = new ActivitySummaryPresenter();
 
     const result = presenter.present({
       rewriteStatus: "applied",
@@ -117,7 +117,7 @@ describe("hybrid retrieval info", () => {
   });
 
   it("includes execution metadata when a caller supplies the capability surface", () => {
-    const presenter = new RetrievalInfoPresenter();
+    const presenter = new ActivitySummaryPresenter();
 
     const result = presenter.present(
       {

@@ -15,15 +15,15 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer'
-import { ActionButton } from '@/components/ui/action-button'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import { LogoSpinner } from '@/components/ui/spinner'
-import { ChatRetrievalInfo } from './chat-retrieval-info'
-import { ChatRetrievalTraceGraph } from './chat-retrieval-trace-graph'
+import { ActivityTraceDetail } from './activity-trace-detail'
+import { ActivityTraceGraph } from './activity-trace-graph'
 import { ChatMessageThread } from './chat-message-thread'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
-import { Search, X } from 'lucide-react'
+import { Bug, Check, Copy, Search, X } from 'lucide-react'
 import {
   HistoryList,
 } from '@/components/dashboard/history/history-list'
@@ -38,11 +38,30 @@ import {
   useHistoryListState,
 } from '@/components/dashboard/history/use-chat-history-state'
 
-const HIDDEN_SUPPORT_LABELS = {
-  assistant_name: 'Assistant name',
-} as const
-
 const formatDiagnosticLabel = (value: string) => value.replaceAll('_', ' ')
+
+function CompactIdField({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(value)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void handleCopy()}
+      className="flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs transition hover:bg-muted/50"
+      title={`Copy ${label} ID: ${value}`}
+    >
+      <span className="shrink-0 font-medium text-muted-foreground">{label}</span>
+      <code className="min-w-0 truncate font-mono text-foreground">{value}</code>
+      {copied ? <Check className="h-3 w-3 shrink-0 text-green-500" /> : <Copy className="h-3 w-3 shrink-0 text-muted-foreground" />}
+    </button>
+  )
+}
 
 const contactStatusLabels: Record<ContactHistoryDetail['status'], string> = {
   pending: 'Pending',
@@ -154,7 +173,7 @@ export function ChatHistoryView({
     selectedThreadMessage,
     selectedThreadMessageId,
     selectedDiagnosticsAssistantMessage,
-    selectedDiagnosticsTrace,
+    activeTrace,
     activeInitialStageId,
     selectedStageId,
     setSelectedStageId,
@@ -223,55 +242,61 @@ export function ChatHistoryView({
         handleOnly
       >
         <DrawerContent
-          className={`h-full transition-[width,max-width] duration-300 ease-in-out data-[vaul-drawer-direction=right]:w-[96vw] sm:data-[vaul-drawer-direction=right]:max-w-[96vw] ${
+          className={`h-full !w-[96vw] !max-w-[96vw] transition-[width,max-width] duration-300 ease-in-out ${
             showGraph
-              ? 'lg:data-[vaul-drawer-direction=right]:w-[94vw] lg:data-[vaul-drawer-direction=right]:max-w-[94vw]'
-              : 'lg:data-[vaul-drawer-direction=right]:w-[88vw] lg:data-[vaul-drawer-direction=right]:max-w-[88vw]'
+              ? 'lg:!w-[94vw] lg:!max-w-[94vw]'
+              : 'lg:!w-[56vw] lg:!max-w-[56vw]'
           }`}
         >
-          <DrawerHeader className="border-b border-border">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <DrawerTitle className="sr-only">
-                  {selectedItem?.kind === 'chat'
-                    ? 'Conversation details'
-                    : selectedItem?.kind === 'contact'
-                      ? 'Talk to a human request details'
-                      : 'Search details'}
-                </DrawerTitle>
+          <DrawerHeader className="border-b border-border py-3">
+            <div className="flex items-center justify-between gap-4">
+              <DrawerTitle className="sr-only">
+                {selectedItem?.kind === 'chat'
+                  ? 'Conversation details'
+                  : selectedItem?.kind === 'contact'
+                    ? 'Talk to a human request details'
+                    : 'Search details'}
+              </DrawerTitle>
+              <div className="flex min-w-0 items-center gap-3">
                 {selectedItem ? (
-                  <div className="space-y-1">
-                    <CopyValueField
-                      label={selectedItem.kind === 'chat'
-                        ? 'Conversation ID:'
-                        : selectedItem.kind === 'contact'
-                          ? 'Talk to a human request ID:'
-                          : 'Search ID:'}
-                      value={selectedItem.id}
-                      copyValue={selectedItem.id}
-                      ariaLabel={selectedItem.kind === 'chat'
-                        ? 'Copy conversation ID'
-                        : selectedItem.kind === 'contact'
-                          ? 'Copy Talk to a human request ID'
-                          : 'Copy search ID'}
-                      compact
-                      wrap
-                      fitContent
-                      inlineLabel
-                    />
-                    {(selectedItem.kind === 'chat' || selectedItem.kind === 'contact') && conversationDetail ? (
-                      <p className="text-xs text-muted-foreground">
-                        {formatConversationSource(conversationDetail.sourceChannel, conversationDetail.sourceOrigin) ?? 'Direct chat'}
-                      </p>
-                    ) : null}
-                  </div>
+                  <CompactIdField
+                    label={selectedItem.kind === 'chat' ? 'Conversation' : selectedItem.kind === 'contact' ? 'Contact' : 'Search'}
+                    value={selectedItem.id}
+                  />
                 ) : null}
-                <DrawerDescription className="sr-only">Activity details panel</DrawerDescription>
+                {(selectedItem?.kind === 'chat' || selectedItem?.kind === 'contact') && conversationDetail ? (() => {
+                  const source = formatConversationSource(conversationDetail.sourceChannel, conversationDetail.sourceOrigin)
+                  return source ? (
+                    <span className="shrink-0 rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">{source}</span>
+                  ) : null
+                })() : null}
               </div>
-              <DrawerClose className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-              </DrawerClose>
+              <div className="flex items-center gap-2">
+                {activeTrace ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={showGraph ? 'secondary' : 'outline'}
+                    className="gap-1.5"
+                    onClick={() => {
+                      if (showGraph) {
+                        setShowGraph(false)
+                        setSelectedStageId(activeInitialStageId)
+                      } else {
+                        setShowGraph(true)
+                      }
+                    }}
+                  >
+                    <Bug className="h-3.5 w-3.5" />
+                    {showGraph ? 'Close' : 'Debug'}
+                  </Button>
+                ) : null}
+                <DrawerClose className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </DrawerClose>
+              </div>
             </div>
+            <DrawerDescription className="sr-only">Activity details panel</DrawerDescription>
           </DrawerHeader>
 
           <div className="min-h-0 flex-1 overflow-hidden p-4">
@@ -284,7 +309,7 @@ export function ChatHistoryView({
                 {detailError}
               </div>
             ) : (selectedItem?.kind === 'chat' || selectedItem?.kind === 'contact') && conversationDetail ? (
-              <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(640px,1.1fr)]">
+              <div className={`grid h-full min-h-0 gap-4 ${showGraph ? 'xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]' : ''}`}>
                 <div className="min-h-0 overflow-y-auto pr-1">
                   {selectedItem.kind === 'contact' && contactDetail ? (
                     <ContactRequestPanel contact={contactDetail.contact} className="mb-4" />
@@ -310,41 +335,32 @@ export function ChatHistoryView({
                   />
                 </div>
 
-                <div className="min-h-0 overflow-y-auto rounded-xl border border-border/70 bg-background/50 p-4">
-                  <ChatDiagnosticsPanel
-                    selectedMessage={selectedThreadMessage}
-                    diagnosticsMessage={selectedDiagnosticsAssistantMessage}
-                    showGraph={showGraph}
-                    onShowGraph={() => {
-                      if (selectedDiagnosticsAssistantMessage?.debug?.retrievalTrace) {
-                        setShowGraph(true)
-                      }
-                    }}
-                    onHideGraph={() => {
-                      setShowGraph(false)
-                      setSelectedStageId(activeInitialStageId)
-                    }}
-                    selectedStageId={selectedStageId}
-                    graphPane={
-                      showGraph ? (
-                        selectedDiagnosticsTrace ? (
-                          <ChatRetrievalTraceGraph
-                            retrievalTrace={selectedDiagnosticsTrace}
-                            selectedStageId={selectedStageId ?? selectedDiagnosticsTrace.stages[0]?.stageId ?? ''}
+                {showGraph ? (
+                  <div className="min-h-0 overflow-y-auto rounded-xl border border-border/70 bg-background/50 p-4">
+                    <ChatDiagnosticsPanel
+                      selectedMessage={selectedThreadMessage}
+                      diagnosticsMessage={selectedDiagnosticsAssistantMessage}
+                      activityTrace={activeTrace}
+                      selectedStageId={selectedStageId}
+                      graphPane={
+                        activeTrace ? (
+                          <ActivityTraceGraph
+                            activityTrace={activeTrace}
+                            selectedStageId={selectedStageId ?? activeTrace?.stages[0]?.stageId ?? ''}
                             onSelectStage={setSelectedStageId}
                           />
                         ) : (
                           <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-                            Detailed retrieval trace unavailable for this assistant turn. Trigger-analysis details only appear when the backend captured replayable diagnostics.
+                            Activity trace unavailable for this turn.
                           </div>
                         )
-                      ) : null
-                    }
-                  />
-                </div>
+                      }
+                    />
+                  </div>
+                ) : null}
               </div>
             ) : selectedItem?.kind === 'search' && searchDetail ? (
-              <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
+              <div className={`grid h-full min-h-0 gap-4 ${showGraph ? 'xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]' : ''}`}>
                 <div className="min-h-0 overflow-y-auto pr-1">
                   <div className="space-y-4">
                     <div>
@@ -390,31 +406,21 @@ export function ChatHistoryView({
                   </div>
                 </div>
 
-                <div className="min-h-0 overflow-y-auto rounded-xl border border-border/70 bg-background/50 p-4">
-                  <SearchDiagnosticsPanel
-                    search={searchDetail}
-                    showGraph={showGraph}
-                    onShowGraph={() => {
-                      if (searchDetail.retrievalTrace) {
-                        setShowGraph(true)
-                      }
-                    }}
-                    onHideGraph={() => {
-                      setShowGraph(false)
-                      setSelectedStageId(activeInitialStageId)
-                    }}
-                    selectedStageId={selectedStageId}
-                    graphPane={
-                      showGraph ? (
-                        <ChatRetrievalTraceGraph
-                          retrievalTrace={searchDetail.retrievalTrace!}
-                          selectedStageId={selectedStageId ?? searchDetail.retrievalTrace?.stages[0]?.stageId ?? ''}
+                {showGraph && searchDetail.activityTrace ? (
+                  <div className="min-h-0 overflow-y-auto rounded-xl border border-border/70 bg-background/50 p-4">
+                    <SearchDiagnosticsPanel
+                      search={searchDetail}
+                      selectedStageId={selectedStageId}
+                      graphPane={
+                        <ActivityTraceGraph
+                          activityTrace={searchDetail.activityTrace}
+                          selectedStageId={selectedStageId ?? searchDetail.activityTrace.stages[0]?.stageId ?? ''}
                           onSelectStage={setSelectedStageId}
                         />
-                      ) : null
-                    }
-                  />
-                </div>
+                      }
+                    />
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -439,27 +445,16 @@ export function ChatHistoryView({
 function ChatDiagnosticsPanel({
   selectedMessage,
   diagnosticsMessage,
-  showGraph,
-  onShowGraph,
-  onHideGraph,
+  activityTrace,
   selectedStageId,
   graphPane,
 }: {
   selectedMessage: ChatConversationTurn | null
   diagnosticsMessage: ChatConversationTurn | null
-  showGraph: boolean
-  onShowGraph: () => void
-  onHideGraph: () => void
+  activityTrace?: NonNullable<ChatConversationTurn['debug']>['activityTrace']
   selectedStageId?: string
   graphPane: ReactNode
 }) {
-  const inputMethodLabel =
-    selectedMessage?.inputMetadata?.method === 'suggestion_click'
-      ? 'Suggested question'
-      : selectedMessage?.inputMetadata?.method === 'typed'
-        ? 'Typed'
-        : null
-
   if (!selectedMessage) {
     return (
       <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
@@ -470,179 +465,63 @@ function ChatDiagnosticsPanel({
 
   const diagnosticsDebug =
     diagnosticsMessage?.role === 'assistant' ? diagnosticsMessage.debug : undefined
-  const hasDiagnostics = Boolean(diagnosticsDebug)
+  const resolvedActivityTrace = activityTrace ?? diagnosticsDebug?.activityTrace
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-4">
-        <div className="flex min-w-0 flex-1 items-start gap-4">
-          <p className="pt-2 text-sm font-medium text-foreground whitespace-nowrap">Message ID:</p>
-          <div className="min-w-0 flex-1">
-            <CopyValueField
-              value={selectedMessage.id}
-              copyValue={selectedMessage.id}
-              ariaLabel={`Copy ${selectedMessage.role} message ID`}
-              compact
-              wrap
-            />
-          </div>
-        </div>
-        {diagnosticsDebug?.retrievalTrace ? (
-          <div className="shrink-0">
-            <ActionButton
-              type="button"
-              size="sm"
-              theme="yellow"
-              className="h-9 px-4 text-sm"
-              onClick={showGraph ? onHideGraph : onShowGraph}
-            >
-            {showGraph ? 'Hide graph' : 'Show graph'}
-            </ActionButton>
-          </div>
-        ) : null}
-      </div>
-
-      {selectedMessage.role === 'user' && inputMethodLabel ? (
-        <div className="rounded-lg border border-border/70 bg-background/70 p-4">
-          <p className="text-sm font-medium text-foreground">Input method</p>
-          <p className="mt-1 text-sm text-muted-foreground">{inputMethodLabel}</p>
-        </div>
-      ) : null}
-
-      {!hasDiagnostics ? (
-        <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-          No diagnostics are available for this message yet.
-        </div>
-      ) : null}
+      <CompactIdField label="Message" value={selectedMessage.id} />
 
       {diagnosticsDebug?.errorMessage ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-          {diagnosticsDebug?.errorMessage}
+          {diagnosticsDebug.errorMessage}
         </div>
       ) : null}
 
       {diagnosticsDebug?.route ? (
-        <div className="rounded-lg border border-border/70 bg-background/70 p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium text-foreground">Response route</p>
-            <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              {formatDiagnosticLabel(diagnosticsDebug.route.generator)}
-            </span>
-            <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-muted-foreground">
-              {formatDiagnosticLabel(diagnosticsDebug.route.routeType)}
-            </span>
-            <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-muted-foreground">
-              {formatDiagnosticLabel(diagnosticsDebug.route.routeReason)}
-            </span>
-          </div>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Retrieval {diagnosticsDebug.route.retrievalInvoked ? 'was invoked for this assistant response.' : 'was skipped for this assistant response.'}
-          </p>
-        </div>
-      ) : null}
-
-      {diagnosticsDebug?.validation ? (
-          <div className="rounded-lg border border-border/70 bg-background/70 p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium text-foreground">Validation</p>
-            <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-muted-foreground">
-              {diagnosticsDebug.validation.answerModified ? 'Answer modified' : 'Answer unchanged'}
-            </span>
-            {diagnosticsDebug.validation.hiddenSupportUsed ? (
-              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">
-                Hidden support used
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Supported segments: {diagnosticsDebug.validation.supportedSegmentCount}. Unsupported segments:{' '}
-            {diagnosticsDebug.validation.unsupportedSegmentCount}. Non-substantive segments:{' '}
-            {diagnosticsDebug.validation.nonSubstantiveSegmentCount}.
-          </p>
-          {diagnosticsDebug.validation.hiddenSupportUsed ? (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Route</span>
+          <span className="rounded-full bg-muted px-2 py-0.5">{formatDiagnosticLabel(diagnosticsDebug.route.routeType)}</span>
+          <span className="rounded-full bg-muted px-2 py-0.5">{formatDiagnosticLabel(diagnosticsDebug.route.routeReason)}</span>
+          {diagnosticsDebug.validation ? (
             <>
-              <p className="mt-2 text-sm text-muted-foreground">
-                This turn used non-citable setup evidence during validation. Document citations remain unchanged.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(diagnosticsDebug.validation.hiddenSupportKindsUsed ?? []).map((kind) => (
-                  <span
-                    key={kind}
-                    className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300"
-                  >
-                    {HIDDEN_SUPPORT_LABELS[kind]}
-                  </span>
-                ))}
-              </div>
+              <span className="text-border">|</span>
+              <span className="font-medium text-foreground">Validation</span>
+              <span className="rounded-full bg-muted px-2 py-0.5">
+                {diagnosticsDebug.validation.answerModified ? 'modified' : 'unchanged'}
+              </span>
+              {diagnosticsDebug.validation.hiddenSupportUsed ? (
+                <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-700 dark:text-amber-300">hidden support</span>
+              ) : null}
             </>
           ) : null}
         </div>
       ) : null}
 
-      {hasDiagnostics ? (
-        <div
-          className="grid gap-4 overflow-hidden"
-          style={{
-            gridTemplateColumns: showGraph ? 'minmax(380px,1fr) minmax(0,1.1fr)' : '0px minmax(0,1fr)',
-            transition: 'grid-template-columns 300ms ease',
-          }}
-        >
-          <div
-            className="overflow-hidden rounded-xl border border-border/70 bg-background/60 p-4"
-            style={{
-              opacity: showGraph ? 1 : 0,
-              transform: showGraph ? 'translateX(0)' : 'translateX(12px)',
-              transition: 'opacity 300ms ease, transform 300ms ease',
-              pointerEvents: showGraph ? 'auto' : 'none',
-            }}
-          >
-            <div className="mb-3">
-              <p className="text-sm font-medium text-foreground">Trace graph</p>
-              <p className="text-xs text-muted-foreground">
-                Top-down retrieval flow for the selected assistant turn.
-              </p>
-            </div>
-            {graphPane}
-          </div>
-
-          <div>
-            {showGraph ? (
-              <ChatRetrievalInfo
-                retrievalInfo={diagnosticsDebug?.retrievalInfo}
-                retrievalTrace={diagnosticsDebug?.retrievalTrace}
-                selectedStageId={selectedStageId}
-                graphMode
-              />
-            ) : (
-              <ChatRetrievalInfo
-                retrievalInfo={diagnosticsDebug?.retrievalInfo}
-                retrievalTrace={diagnosticsDebug?.retrievalTrace}
-                selectedStageId={undefined}
-              />
-            )}
-          </div>
+      <div className="grid grid-cols-[minmax(180px,220px)_1fr] gap-4">
+        <div className="sticky top-0 self-start overflow-y-auto rounded-lg border border-border/50 bg-muted/20 p-2">
+          {graphPane}
         </div>
-      ) : null}
+        <div className="min-h-0">
+          <ActivityTraceDetail
+            activityTrace={resolvedActivityTrace}
+            selectedStageId={selectedStageId}
+          />
+        </div>
+      </div>
     </div>
   )
 }
 
 function SearchDiagnosticsPanel({
   search,
-  showGraph,
-  onShowGraph,
-  onHideGraph,
   selectedStageId,
   graphPane,
 }: {
   search: DocumentSearchResponse
-  showGraph: boolean
-  onShowGraph: () => void
-  onHideGraph: () => void
   selectedStageId?: string
   graphPane: ReactNode
 }) {
-  if (!search.retrievalTrace) {
+  if (!search.activityTrace) {
     return (
       <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
         Diagnostics are unavailable for this search.
@@ -652,64 +531,15 @@ function SearchDiagnosticsPanel({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-medium text-foreground">Diagnostics</p>
-          <p className="text-xs text-muted-foreground">
-            Shared retrieval diagnostics for this search run.
-          </p>
-        </div>
-        <ActionButton
-          type="button"
-          size="sm"
-          theme="yellow"
-          className="h-9 px-4 text-sm"
-          onClick={showGraph ? onHideGraph : onShowGraph}
-        >
-          {showGraph ? 'Hide graph' : 'Show graph'}
-        </ActionButton>
-      </div>
-
-      <div
-        className="grid gap-4 overflow-hidden"
-        style={{
-          gridTemplateColumns: showGraph ? 'minmax(380px,1fr) minmax(0,1.1fr)' : '0px minmax(0,1fr)',
-          transition: 'grid-template-columns 300ms ease',
-        }}
-      >
-        <div
-          className="overflow-hidden rounded-xl border border-border/70 bg-background/60 p-4"
-          style={{
-            opacity: showGraph ? 1 : 0,
-            transform: showGraph ? 'translateX(0)' : 'translateX(12px)',
-            transition: 'opacity 300ms ease, transform 300ms ease',
-            pointerEvents: showGraph ? 'auto' : 'none',
-          }}
-        >
-          <div className="mb-3">
-            <p className="text-sm font-medium text-foreground">Trace graph</p>
-            <p className="text-xs text-muted-foreground">
-              Top-down retrieval flow for this search run.
-            </p>
-          </div>
+      <div className="grid grid-cols-[minmax(180px,220px)_1fr] gap-4">
+        <div className="sticky top-0 self-start overflow-y-auto rounded-lg border border-border/50 bg-muted/20 p-2">
           {graphPane}
         </div>
-
-        <div>
-          {showGraph ? (
-            <ChatRetrievalInfo
-              retrievalInfo={search.retrievalTrace.summary}
-              retrievalTrace={search.retrievalTrace}
-              selectedStageId={selectedStageId}
-              graphMode
-            />
-          ) : (
-            <ChatRetrievalInfo
-              retrievalInfo={search.retrievalTrace.summary}
-              retrievalTrace={search.retrievalTrace}
-              selectedStageId={undefined}
-            />
-          )}
+        <div className="min-h-0">
+          <ActivityTraceDetail
+            activityTrace={search.activityTrace}
+            selectedStageId={selectedStageId}
+          />
         </div>
       </div>
     </div>

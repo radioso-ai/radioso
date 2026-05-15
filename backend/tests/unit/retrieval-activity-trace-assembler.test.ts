@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { RetrievalTraceAssembler } from "../../src/modules/retrieval/services/retrievalTraceAssembler.js";
+import { ActivityTraceAssembler } from "../../src/modules/retrieval/services/retrievalActivityTraceAssembler.js";
 
-describe("retrieval trace assembler", () => {
+describe("activity trace assembler", () => {
   it("emits branch stages for decomposed retrieval subqueries", () => {
-    const assembler = new RetrievalTraceAssembler();
+    const assembler = new ActivityTraceAssembler();
 
     const trace = assembler.assemble({
       prompt: {

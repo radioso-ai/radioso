@@ -2123,7 +2123,7 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             resultCount: number;
-            traceAvailable: boolean;
+            activityTraceAvailable: boolean;
             previewTopTitles: string[];
         };
         DocumentSearchHistoryListResponse: {
@@ -2256,7 +2256,23 @@ export interface components {
             path: "assistant_direct" | "assistant_retrieval" | "retrieval_search" | "retrieval_answer" | "mcp_grounded_answer";
             retrievalInvoked: boolean;
         };
-        RetrievalInfo: {
+        ActivitySummary: {
+            traceId?: string;
+            skillName?: string;
+            surface?: string;
+            path?: string;
+            /** @enum {string} */
+            status?: "success" | "skipped" | "blocked" | "failed" | "fallback" | "pending";
+            outcome?: string;
+            primaryCounts?: {
+                [key: string]: number;
+            };
+            assistant?: {
+                [key: string]: unknown;
+            };
+            contact?: {
+                [key: string]: unknown;
+            };
             execution?: components["schemas"]["RetrievalExecutionMetadata"];
             parsedQuery?: components["schemas"]["ParsedQuery"];
             retrievalSubqueries?: components["schemas"]["RetrievalSubquery"][];
@@ -2270,11 +2286,11 @@ export interface components {
             intentFallbackApplied?: boolean;
             /** @enum {string} */
             responseLanguagePolicy?: "match_user_question";
-            candidateCounts: components["schemas"]["CandidateCounts"];
+            candidateCounts?: components["schemas"]["CandidateCounts"];
             appliedConstraints?: components["schemas"]["AppliedConstraint"][];
-            fallbackApplied: boolean;
+            fallbackApplied?: boolean;
             /** @enum {string} */
-            rerankStatus: "skipped" | "applied" | "fallback";
+            rerankStatus?: "skipped" | "applied" | "fallback";
             rewrite?: components["schemas"]["RewriteInfo"];
             triggerAnalysis?: components["schemas"]["TriggerAnalysis"];
             triggerBackoff?: components["schemas"]["TriggerBackoff"];
@@ -2335,7 +2351,7 @@ export interface components {
                 };
             };
         };
-        RetrievalTraceStage: {
+        ActivityStage: {
             stageId: string;
             kind: string;
             label: string;
@@ -2358,22 +2374,22 @@ export interface components {
             };
             reason?: string;
         };
-        RetrievalTraceLink: {
+        ActivityLink: {
             fromStageId: string;
             toStageId: string;
             /** @enum {string} */
             kind: "sequence" | "branch" | "converge";
         };
-        RetrievalTrace: {
+        ActivityTrace: {
             traceId: string;
             /** Format: date-time */
             startedAt: string;
             /** Format: date-time */
             completedAt?: string;
             totalDurationMs?: number;
-            stages: components["schemas"]["RetrievalTraceStage"][];
-            links: components["schemas"]["RetrievalTraceLink"][];
-            summary?: components["schemas"]["RetrievalInfo"];
+            stages: components["schemas"]["ActivityStage"][];
+            links: components["schemas"]["ActivityLink"][];
+            summary?: components["schemas"]["ActivitySummary"];
         };
         DocumentSearchResponse: {
             /** Format: uuid */
@@ -2383,7 +2399,7 @@ export interface components {
             query: string;
             resultCount: number;
             results: components["schemas"]["DocumentSearchResult"][];
-            retrievalTrace?: components["schemas"]["RetrievalTrace"];
+            activityTrace?: components["schemas"]["ActivityTrace"];
         };
         RetrievalSearchRequest: {
             query: string;
@@ -2423,8 +2439,8 @@ export interface components {
                 lexical: string;
             };
             results: components["schemas"]["RetrievalSearchEvidence"][];
-            retrievalInfo: components["schemas"]["RetrievalInfo"];
-            retrievalTrace: components["schemas"]["RetrievalTrace"];
+            activitySummary: components["schemas"]["ActivitySummary"];
+            activityTrace: components["schemas"]["ActivityTrace"];
         };
         RetrievalAnswerEvidence: {
             /** Format: uuid */
@@ -2447,8 +2463,8 @@ export interface components {
                 /** @enum {string} */
                 status: "supported" | "unsupported" | "not_checked";
             };
-            retrievalInfo: components["schemas"]["RetrievalInfo"];
-            retrievalTrace: components["schemas"]["RetrievalTrace"];
+            activitySummary: components["schemas"]["ActivitySummary"];
+            activityTrace: components["schemas"]["ActivityTrace"];
         };
         RetrievalAnswerUnsupported: {
             /** @enum {string} */
@@ -2628,8 +2644,8 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
-            retrievalInfo: components["schemas"]["RetrievalInfo"];
-            retrievalTrace: components["schemas"]["RetrievalTrace"];
+            activitySummary: components["schemas"]["ActivitySummary"];
+            activityTrace: components["schemas"]["ActivityTrace"];
             route: components["schemas"]["AssistantRoute"];
         };
         /** @description Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn. */
@@ -2643,8 +2659,8 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
-            retrievalInfo: components["schemas"]["RetrievalInfo"];
-            retrievalTrace: components["schemas"]["RetrievalTrace"];
+            activitySummary: components["schemas"]["ActivitySummary"];
+            activityTrace: components["schemas"]["ActivityTrace"];
             route: components["schemas"]["AssistantRoute"];
         };
         AssistantChatResponse: components["schemas"]["ChatResponse"] | components["schemas"]["ChatBootstrapResponse"];
@@ -2786,8 +2802,8 @@ export interface components {
             answerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
             route?: components["schemas"]["AssistantRouteDiagnostics"];
             validation?: components["schemas"]["ValidationDebug"];
-            retrievalInfo?: components["schemas"]["RetrievalInfo"];
-            retrievalTrace?: components["schemas"]["RetrievalTrace"];
+            activitySummary?: components["schemas"]["ActivitySummary"];
+            activityTrace?: components["schemas"]["ActivityTrace"];
             errorMessage?: string | null;
         };
         ChatConversationMessage: {

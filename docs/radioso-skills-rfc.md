@@ -104,7 +104,7 @@ Example shapes for `retrieval.answer`:
 
 These shapes should not become user-facing promises until the contracts and diagnostics are ready. They are an internal execution model first.
 
-In the first shape-aware slice, `retrieval.answer` selects one of these shapes from language-neutral structured query interpretation metadata and existing continuity metadata, then resolves the skill steps by merging default step clauses with the selected shape's partial overrides. The selected shape and safe resolved-step summary are exposed through the existing `retrievalTrace` response and the activity/debug graph. There is no new generic skill execution endpoint and no separate trace store.
+In the first shape-aware slice, `retrieval.answer` selects one of these shapes from language-neutral structured query interpretation metadata and existing continuity metadata, then resolves the skill steps by merging default step clauses with the selected shape's partial overrides. The selected shape and safe resolved-step summary are exposed through the `activityTrace` response, `activitySummary`, and the activity/debug graph. There is no new generic skill execution endpoint and no separate trace store.
 
 ## Skill Diagnostics
 
@@ -125,7 +125,7 @@ At minimum, diagnostics should include:
 
 Diagnostics are part of the product value. They keep expansion from becoming opaque.
 
-For retrieval answer, the operator-facing diagnostic surface is the existing retrieval trace graph. New runs include a `shape_selection` stage and summary fields such as `shapeName`, `queryShape`, `resolvedSteps`, and `skillDiagnostic`. The same trace is stored in the existing audit-backed chat or search history metadata when those surfaces already persist retrieval debug data.
+For retrieval answer, the operator-facing diagnostic surface is the shared activity trace graph. New runs include a `shape_selection` stage and summary fields such as `shapeName`, `queryShape`, `resolvedSteps`, and `skillDiagnostic`. The same trace is stored in the existing audit-backed chat or search history metadata when those surfaces already persist activity debug data.
 
 ## Skill Catalog
 

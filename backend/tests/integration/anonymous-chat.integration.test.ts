@@ -173,7 +173,7 @@ describe("anonymous chat bootstrap integration", () => {
       type: "retrieval",
       reason: "evidence_required",
     });
-    expect(response.body.retrievalInfo.execution).toMatchObject({
+    expect(response.body.activitySummary.execution).toMatchObject({
       surface: "assistant",
       path: "assistant_retrieval",
       retrievalInvoked: true,

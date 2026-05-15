@@ -21,7 +21,7 @@ describe("chat stream", () => {
             'event: conversation\ndata: {"conversationId":"c1"}\n\n',
             'event: chunk\ndata: {"text":"hello"}\n\n',
             'event: suggestions\ndata: {"conversationId":"c1","suggestions":[{"text":"What next?"}]}\n\n',
-            'event: done\ndata: {"conversationId":"c1","route":{"type":"retrieval","reason":"evidence_required"},"answer":"hello","suggestions":[{"text":"What next?"}],"retrievalInfo":{},"retrievalTrace":{}}\n\n',
+            'event: done\ndata: {"conversationId":"c1","route":{"type":"retrieval","reason":"evidence_required"},"answer":"hello","suggestions":[{"text":"What next?"}],"activitySummary":{},"activityTrace":{}}\n\n',
           ].join(""),
         ),
         {
@@ -56,8 +56,8 @@ describe("chat stream", () => {
         route: { type: "retrieval", reason: "evidence_required" },
         answer: "hello",
         suggestions: [{ text: "What next?" }],
-        retrievalInfo: {},
-        retrievalTrace: {},
+        activitySummary: {},
+        activityTrace: {},
       },
     ]);
   });

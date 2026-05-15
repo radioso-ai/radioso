@@ -9,7 +9,7 @@ interface DocumentSearchAuditMetadata extends Record<string, unknown> {
   query: string;
   resultCount: number;
   results: DocumentSearchResult[];
-  retrievalTrace?: import("../../retrieval/public.js").RetrievalTrace;
+  activityTrace?: import("../../retrieval/public.js").ActivityTrace;
 }
 
 export const toDocumentSearchHistoryEntry = (event: { id: string; metadata: unknown; createdAt: Date }): DocumentSearchHistoryEntry => {
@@ -19,7 +19,7 @@ export const toDocumentSearchHistoryEntry = (event: { id: string; metadata: unkn
     query: metadata.query,
     createdAt: event.createdAt.toISOString(),
     resultCount: metadata.resultCount,
-    traceAvailable: Boolean(metadata.retrievalTrace),
+    activityTraceAvailable: Boolean(metadata.activityTrace),
     previewTopTitles: metadata.results.slice(0, 3).map((result) => result.title),
   };
 };
@@ -70,7 +70,7 @@ export class DocumentSearchHistoryService {
       query: metadata.query,
       resultCount: metadata.resultCount,
       results,
-      retrievalTrace: metadata.retrievalTrace,
+      activityTrace: metadata.activityTrace,
     };
   }
 }
@@ -126,8 +126,8 @@ const normalizeAuditMetadata = (metadata: unknown, fallbackSearchId: string): Do
     query: asString(safeMetadata.query) ?? LEGACY_QUERY_LABEL,
     resultCount: asNumber(safeMetadata.resultCount) ?? results.length,
     results,
-    retrievalTrace: isRecord(safeMetadata.retrievalTrace)
-      ? (safeMetadata.retrievalTrace as unknown as DocumentSearchAuditMetadata["retrievalTrace"])
+    activityTrace: isRecord(safeMetadata.activityTrace)
+      ? (safeMetadata.activityTrace as unknown as DocumentSearchAuditMetadata["activityTrace"])
       : undefined,
   };
 };

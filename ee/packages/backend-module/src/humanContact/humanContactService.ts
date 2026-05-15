@@ -3,6 +3,10 @@ import { createHmac, randomUUID, randomBytes } from "node:crypto";
 import type {
   ChatActionProvider,
   ChatActionSuggestion,
+  ActivityStage,
+  ActivityStageStatus,
+  ActivitySummary,
+  ActivityTrace,
   ContactHistoryDetail,
   ContactHistorySummary,
   UsageLimitDatabaseClient,
@@ -99,6 +103,7 @@ interface HumanContactRequestRow {
   trigger_source: string;
   trigger_reason: string | null;
   attempts: number;
+  activity_trace: ActivityTrace | null;
   created_at: Date;
 }
 
@@ -116,6 +121,7 @@ interface HumanContactHistoryRow {
   status: "pending" | "delivering" | "delivered" | "failed";
   attempts: number;
   final_delivery_error: string | null;
+  activity_trace: ActivityTrace | null;
   created_at: Date;
   updated_at: Date;
   total_count?: string;
@@ -148,6 +154,9 @@ const serializeDate = (value: Date | string): string =>
 
 const normalizePreview = (value: string): string => value.replace(/\s+/g, " ").trim().slice(0, 180);
 
+const summarizeContactTrace = (trace: ActivityTrace | null | undefined): ActivitySummary | undefined =>
+  trace?.summary ?? undefined;
+
 const mapContactHistorySummary = (row: HumanContactHistoryRow): ContactHistorySummary => ({
   id: row.id,
   sortAt: serializeDate(row.created_at),
@@ -164,12 +173,14 @@ const mapContactHistorySummary = (row: HumanContactHistoryRow): ContactHistorySu
   attempts: row.attempts,
   createdAt: serializeDate(row.created_at),
   updatedAt: serializeDate(row.updated_at),
+  activitySummary: summarizeContactTrace(row.activity_trace),
 });
 
 const mapContactHistoryDetail = (row: HumanContactHistoryRow): ContactHistoryDetail => ({
   ...mapContactHistorySummary(row),
   message: row.message,
   finalDeliveryError: row.final_delivery_error,
+  activityTrace: row.activity_trace ?? undefined,
 });
 
 const mapSettings = (row: HumanContactSettingsRow | undefined | null) => {
@@ -200,6 +211,77 @@ const parseClassifierDecision = (value: string): boolean => {
   } catch {
     return false;
   }
+};
+
+const buildContactStage = (
+  stageId: string,
+  kind: string,
+  label: string,
+  status: ActivityStageStatus,
+  fields: Omit<ActivityStage, "stageId" | "kind" | "label" | "status"> = {},
+): ActivityStage => ({
+  stageId,
+  kind,
+  label,
+  status,
+  startedAt: fields.startedAt ?? new Date().toISOString(),
+  ...fields,
+});
+
+const summarizeContact = (trace: ActivityTrace, outcome: string, status: ActivitySummary["status"]): ActivitySummary => ({
+  traceId: trace.traceId,
+  skillName: "human_contact.request",
+  surface: "assistant",
+  path: "human_contact.request",
+  status,
+  outcome,
+  fallbackApplied: false,
+  contact: {
+    stageCount: trace.stages.length,
+  },
+});
+
+const buildContactTrace = (
+  stages: ActivityStage[],
+  outcome: string,
+  status: ActivitySummary["status"] = "success",
+): ActivityTrace => {
+  const startedAt = stages[0]?.startedAt ?? new Date().toISOString();
+  const completedAt = new Date().toISOString();
+  const trace: ActivityTrace = {
+    traceId: randomUUID(),
+    startedAt,
+    completedAt,
+    totalDurationMs: Math.max(0, Date.parse(completedAt) - Date.parse(startedAt)),
+    stages,
+    links: stages.slice(0, -1).map((stage, index) => ({
+      fromStageId: stage.stageId,
+      toStageId: stages[index + 1]?.stageId ?? stage.stageId,
+      kind: "sequence",
+    })),
+  };
+  return {
+    ...trace,
+    summary: summarizeContact(trace, outcome, status),
+  };
+};
+
+const replaceContactTraceStage = (
+  trace: ActivityTrace | null | undefined,
+  replacement: ActivityStage,
+  outcome: string,
+  status: ActivitySummary["status"],
+): ActivityTrace | undefined => {
+  if (!trace) {
+    return undefined;
+  }
+  const stages = trace.stages.map((stage) => stage.stageId === replacement.stageId ? replacement : stage);
+  return {
+    ...trace,
+    completedAt: new Date().toISOString(),
+    stages,
+    summary: summarizeContact({ ...trace, stages }, outcome, status),
+  };
 };
 
 export class EnterpriseHumanContactService implements ChatActionProvider {
@@ -270,6 +352,7 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
          status,
          attempts,
          final_delivery_error,
+         activity_trace,
          created_at,
          updated_at
        FROM ee_contact_requests
@@ -307,6 +390,7 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
          status,
          attempts,
          final_delivery_error,
+         activity_trace,
          created_at,
          updated_at
        FROM ee_contact_requests
@@ -459,7 +543,29 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
     await this.requireConfigured(input.workspaceId);
     await this.ensureConversationAccess(input);
     const messages = await this.input.messageRepository.listRecentByConversationId(input.workspaceId, input.conversationId, 12);
-    return this.buildFallbackDraft(messages);
+    const draft = this.buildFallbackDraft(messages);
+    const activityTrace = buildContactTrace([
+      buildContactStage("availability_check", "availability_check", "Availability check", "applied", {
+        outputs: {
+          configured: true,
+        },
+      }),
+      buildContactStage("draft_build", "draft_build", "Draft build", "applied", {
+        inputs: {
+          conversationId: input.conversationId,
+          assistantMessageId: input.assistantMessageId ?? null,
+          recentMessageCount: messages.length,
+        },
+        metrics: {
+          draftLength: draft.draftMessage.length,
+        },
+      }),
+    ], "draft_ready");
+    return {
+      ...draft,
+      activityTrace,
+      activitySummary: activityTrace.summary,
+    };
   }
 
   async submit(input: {
@@ -495,6 +601,38 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
       conversationId: input.conversationId,
       assistantMessageId: input.assistantMessageId,
     });
+    const activityTrace = buildContactTrace([
+      buildContactStage("availability_check", "availability_check", "Availability check", "applied", {
+        outputs: {
+          configured: true,
+        },
+      }),
+      buildContactStage("trigger_evaluation", "trigger_evaluation", "Trigger evaluation", "applied", {
+        outputs: {
+          triggerSource: input.triggerSource,
+          triggerReason: input.triggerReason ?? null,
+        },
+      }),
+      buildContactStage("request_submit", "request_submit", "Request submit", "applied", {
+        outputs: {
+          requestId,
+          conversationId: input.conversationId,
+          assistantMessageId,
+          sourceChannel: input.sourceChannel ?? null,
+        },
+      }),
+      buildContactStage("delivery_dispatch", "delivery_dispatch", "Delivery dispatch", "skipped", {
+        reason: "Delivery is queued for background dispatch.",
+        outputs: {
+          status: "pending",
+        },
+      }),
+      buildContactStage("audit_record", "audit_record", "Audit record", "applied", {
+        outputs: {
+          eventType: "human_contact.request_received",
+        },
+      }),
+    ], "request_queued", "pending");
 
     await queryRows(
       this.input.database,
@@ -512,9 +650,10 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
          trigger_source,
          trigger_reason,
          status,
-         next_retry_at
+         next_retry_at,
+         activity_trace
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', NOW())`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', NOW(), $13::jsonb)`,
       [
         requestId,
         input.accountId ?? null,
@@ -528,6 +667,7 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
         summary,
         input.triggerSource,
         input.triggerReason ?? null,
+        activityTrace,
       ],
     );
 
@@ -545,7 +685,7 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
     });
 
     void this.processDueDeliveries(1).catch(() => undefined);
-    return { requestId };
+    return { requestId, activityTrace, activitySummary: activityTrace.summary };
   }
 
   async processDueDeliveries(limit = 25): Promise<number> {
@@ -566,7 +706,7 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
        )
        RETURNING id, account_id, workspace_id, conversation_id, assistant_message_id,
          source_channel, source_origin, user_email, message,
-         trigger_source, trigger_reason, attempts, created_at`,
+         trigger_source, trigger_reason, attempts, activity_trace, created_at`,
       [MAX_ATTEMPTS, limit],
     );
 
@@ -791,15 +931,31 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
     }
 
     if (errors.length === 0) {
+      const activityTrace = replaceContactTraceStage(
+        row.activity_trace,
+        buildContactStage("delivery_dispatch", "delivery_dispatch", "Delivery dispatch", "applied", {
+          outputs: {
+            status: "delivered",
+            emailDeliveryAttempted: Boolean(settings.email_enabled && settings.default_email),
+            webhookDeliveryAttempted: Boolean(settings.webhook_enabled && settings.webhook_url),
+          },
+          metrics: {
+            attempt: row.attempts + 1,
+          },
+        }),
+        "delivered",
+        "success",
+      );
       await queryRows(
         this.input.database,
         `UPDATE ee_contact_requests
          SET status = 'delivered',
              attempts = attempts + 1,
              final_delivery_error = NULL,
+             activity_trace = COALESCE($2::jsonb, activity_trace),
              updated_at = NOW()
          WHERE id = $1`,
-        [row.id],
+        [row.id, activityTrace],
       );
       return;
     }
@@ -811,6 +967,22 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
     const nextAttempt = row.attempts + 1;
     const terminal = nextAttempt >= MAX_ATTEMPTS;
     const delaySeconds = Math.min(60 * 60, 2 ** Math.max(nextAttempt - 1, 0) * 30);
+    const activityTrace = replaceContactTraceStage(
+      row.activity_trace,
+      buildContactStage("delivery_dispatch", "delivery_dispatch", "Delivery dispatch", terminal ? "failed" : "fallback", {
+        reason,
+        outputs: {
+          status: terminal ? "failed" : "pending",
+          retryScheduled: !terminal,
+          finalDeliveryError: reason.slice(0, 1000),
+        },
+        metrics: {
+          attempt: nextAttempt,
+        },
+      }),
+      terminal ? "delivery_failed" : "delivery_retry_scheduled",
+      terminal ? "failed" : "fallback",
+    );
     await queryRows(
       this.input.database,
       `UPDATE ee_contact_requests
@@ -818,9 +990,10 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
            attempts = attempts + 1,
            next_retry_at = CASE WHEN $2 = 'pending' THEN NOW() + ($3::text || ' seconds')::interval ELSE next_retry_at END,
            final_delivery_error = $4,
+           activity_trace = COALESCE($5::jsonb, activity_trace),
            updated_at = NOW()
        WHERE id = $1`,
-      [row.id, terminal ? "failed" : "pending", delaySeconds, reason.slice(0, 1000)],
+      [row.id, terminal ? "failed" : "pending", delaySeconds, reason.slice(0, 1000), activityTrace],
     );
     this.input.logger.warn?.(
       {

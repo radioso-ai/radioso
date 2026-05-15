@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import { ChevronDown, CircleCheck, CircleX } from 'lucide-react'
 
-import type { RetrievalTrace, RetrievalTraceStage } from '@/lib/api'
+import type { ActivityTrace, ActivityStage } from '@/lib/api'
 
 const formatJson = (value: unknown) => JSON.stringify(value, null, 2)
 
@@ -151,7 +151,7 @@ function RawBlock({
   )
 }
 
-const getSelectedStage = (trace: RetrievalTrace, selectedStageId: string): RetrievalTraceStage | undefined =>
+const getSelectedStage = (trace: ActivityTrace, selectedStageId: string): ActivityStage | undefined =>
   trace.stages.find((stage) => stage.stageId === selectedStageId)
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -174,13 +174,119 @@ const asChunkList = (value: unknown): ChunkRef[] =>
       )
     : []
 
-function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
+const truncateText = (text: string, max: number): string =>
+  text.length > max ? `${text.slice(0, max)}…` : text
+
+const deriveExplanation = (stage: ActivityStage): string | null => {
+  const outputs = (stage.outputs ?? {}) as Record<string, unknown>
+  const inputs = (stage.inputs ?? {}) as Record<string, unknown>
+  const metrics = stage.metrics ?? {}
+
+  switch (stage.kind) {
+    case 'routing': {
+      const intent = outputs.responseIntent as string | undefined
+      if (intent === 'retrieval') return 'Classified as a knowledge question — routing to document search.'
+      if (intent === 'social_only') return 'Classified as conversational — responding without document search.'
+      if (intent === 'assistant_identity') return 'Classified as a question about the assistant itself.'
+      return outputs.retrievalInvoked ? 'Routed to the retrieval pipeline.' : 'Responding without retrieval.'
+    }
+    case 'context': {
+      const count = metrics.selectedHistoryCount ?? (outputs.selectedHistoryCount as number | undefined)
+      const truncated = outputs.historyTruncated as boolean | undefined
+      if (typeof count === 'number') {
+        return `Selected ${count} conversation message${count === 1 ? '' : 's'} as context${truncated ? ' (truncated to fit)' : ''}.`
+      }
+      return 'Gathered conversation history for context.'
+    }
+    case 'query_interpretation': {
+      const effective = outputs.effectiveQuery as string | undefined
+      const original = inputs.originalQuery as string | undefined
+      const rewritten = outputs.rewriteRan as boolean | undefined
+      if (rewritten && effective && original && effective !== original) {
+        return `Rewrote the query for better search: "${truncateText(effective, 80)}"`
+      }
+      return effective ? `Searching for: "${truncateText(effective, 80)}"` : 'Analyzed the user query.'
+    }
+    case 'trigger_analysis': {
+      const matchCount = metrics.matchCount
+      const considered = metrics.consideredRuleCount
+      if (typeof matchCount === 'number' && typeof considered === 'number') {
+        return matchCount === 0
+          ? `Checked ${considered} trigger rule${considered === 1 ? '' : 's'} — none matched.`
+          : `${matchCount} of ${considered} trigger rule${considered === 1 ? '' : 's'} matched.`
+      }
+      if (stage.status === 'skipped') return 'Trigger matching was skipped.'
+      return null
+    }
+    case 'shape_selection': {
+      const shapeName = (outputs.shapeName as string | undefined)?.replaceAll('_', ' ')
+      return shapeName ? `Using "${shapeName}" answer strategy.` : null
+    }
+    case 'semantic_original':
+    case 'semantic_rewritten': {
+      const query = inputs.query as string | undefined
+      const count = metrics.candidateCount
+      if (query && typeof count === 'number') {
+        return `Searched by meaning for "${truncateText(query, 60)}" — found ${count} passage${count === 1 ? '' : 's'}.`
+      }
+      return typeof count === 'number' ? `Found ${count} passage${count === 1 ? '' : 's'} via semantic search.` : null
+    }
+    case 'lexical': {
+      const query = (inputs.query as string | undefined) ?? ((stage.settings ?? {}) as Record<string, unknown>).query as string | undefined
+      const count = metrics.candidateCount
+      if (query && typeof count === 'number') {
+        return `Searched by keywords for "${truncateText(query, 60)}" — found ${count} passage${count === 1 ? '' : 's'}.`
+      }
+      return typeof count === 'number' ? `Found ${count} passage${count === 1 ? '' : 's'} via keyword search.` : null
+    }
+    case 'candidate_preparation': {
+      const merged = metrics.mergedCount
+      const scored = metrics.scoredCount
+      if (typeof merged === 'number' && typeof scored === 'number') {
+        return `Merged results from all search paths into ${merged} passages, ${scored} after scoring.`
+      }
+      return typeof merged === 'number' ? `Combined into ${merged} candidate passages.` : null
+    }
+    case 'context_selection': {
+      const final = metrics.finalContextCount
+      const rerankEnabled = ((stage.settings ?? {}) as Record<string, unknown>).rerankEnabled as boolean | undefined
+      if (typeof final === 'number') {
+        return `${rerankEnabled ? 'Reranked and selected' : 'Selected'} the top ${final} passage${final === 1 ? '' : 's'} for the answer.`
+      }
+      return null
+    }
+    case 'prompt_assembly': {
+      const citations = metrics.citationCount
+      return typeof citations === 'number'
+        ? `Built the prompt with ${citations} citation${citations === 1 ? '' : 's'}.`
+        : 'Assembled the prompt for answer generation.'
+    }
+    case 'diagnostics':
+      return outputs.fallbackApplied
+        ? 'Quality check detected issues — fallback behavior was applied.'
+        : 'Quality check passed — no fallback needed.'
+    case 'answer_outcome': {
+      const outcome = (outputs.outcome as string | undefined)?.replaceAll('_', ' ')
+      return outcome ? `Outcome: ${outcome}.` : null
+    }
+    case 'generation': {
+      const model = inputs.model as string | undefined
+      const latency = metrics.latencyMs
+      if (model) return `Generated using ${model}${typeof latency === 'number' ? ` in ${latency}ms` : ''}.`
+      return typeof latency === 'number' ? `Generated in ${latency}ms.` : null
+    }
+    default:
+      return stage.reason ?? null
+  }
+}
+
+function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
   const inputs = asRecord(stage.inputs)
   const outputs = asRecord(stage.outputs)
   const metrics = asRecord(stage.metrics)
   const settings = asRecord(stage.settings)
 
-  if (stage.stageId === 'context') {
+  if (stage.kind === 'context') {
     return (
       <>
         <CollapsibleSection title="Context">
@@ -210,7 +316,7 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
     )
   }
 
-  if (stage.stageId === 'interpretation') {
+  if (stage.kind === 'query_interpretation') {
     return (
       <>
         <Section title="Interpretation">
@@ -235,7 +341,7 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
     )
   }
 
-  if (stage.stageId === 'trigger_analysis') {
+  if (stage.kind === 'trigger_analysis') {
     const consideredRules = Array.isArray(outputs.consideredRules) ? outputs.consideredRules : []
     const matchedRuleIds = asStringList(outputs.matchedRuleIds)
     const unmatchedRuleIds = asStringList(outputs.unmatchedRuleIds)
@@ -291,7 +397,7 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
     )
   }
 
-  if (stage.stageId === 'shape_selection') {
+  if (stage.kind === 'shape_selection') {
     return (
       <Section title="Shape selection">
         <KeyValueList
@@ -332,7 +438,7 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
     )
   }
 
-  if (stage.stageId === 'preparation') {
+  if (stage.kind === 'candidate_preparation') {
     return (
       <>
         <Section title="Candidate preparation">
@@ -350,7 +456,7 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
     )
   }
 
-  if (stage.stageId === 'selection') {
+  if (stage.kind === 'context_selection') {
     return (
       <>
         <Section title="Context selection">
@@ -368,7 +474,7 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
     )
   }
 
-  if (stage.stageId === 'prompt') {
+  if (stage.kind === 'prompt_assembly') {
     return (
       <>
         <Section title="Prompt assembly">
@@ -385,24 +491,34 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
     )
   }
 
-  if (stage.stageId === 'diagnostics') {
+  if (stage.kind === 'diagnostics') {
     return (
-      <Section title="Diagnostics">
-        <KeyValueList
-          rows={[
-            { label: 'Fallback applied', value: outputs.fallbackApplied as boolean | undefined },
-            { label: 'Continuity decision', value: outputs.continuityDecision as string | undefined },
-            { label: 'Semantic candidates', value: metrics.semanticCandidateCount as number | undefined },
-            { label: 'Lexical candidates', value: metrics.lexicalCandidateCount as number | undefined },
-            { label: 'Merged candidates', value: metrics.mergedCandidateCount as number | undefined },
-            { label: 'Final contexts', value: metrics.finalContextCount as number | undefined },
-          ]}
-        />
-      </Section>
+      <>
+        {outputs.fallbackApplied ? (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Fallback was applied</p>
+            {outputs.continuityDecision ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Continuity: {String(outputs.continuityDecision).replaceAll('_', ' ')}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        <CollapsibleSection title="Candidate counts">
+          <KeyValueList
+            rows={[
+              { label: 'Semantic', value: metrics.semanticCandidateCount as number | undefined },
+              { label: 'Lexical', value: metrics.lexicalCandidateCount as number | undefined },
+              { label: 'Merged', value: metrics.mergedCandidateCount as number | undefined },
+              { label: 'Final', value: metrics.finalContextCount as number | undefined },
+            ]}
+          />
+        </CollapsibleSection>
+      </>
     )
   }
 
-  if (stage.stageId === 'answer') {
+  if (stage.kind === 'answer_outcome') {
     return (
       <>
         <Section title="Answer outcome">
@@ -439,23 +555,183 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
   )
 }
 
-export function ChatRetrievalTraceDetail({
-  retrievalTrace,
+function RoutingStageOverview({ stage }: { stage: ActivityStage }) {
+  const inputs = asRecord(stage.inputs)
+  const outputs = asRecord(stage.outputs)
+  const metrics = asRecord(stage.metrics)
+
+  return (
+    <>
+      <Section title="Routing">
+        <KeyValueList
+          rows={[
+            { label: 'Surface', value: inputs.surface as string | undefined },
+            { label: 'Response intent', value: outputs.responseIntent as string | undefined },
+            { label: 'Retrieval invoked', value: outputs.retrievalInvoked as boolean | undefined },
+            { label: 'Retrieval skipped', value: outputs.retrievalSkipped as boolean | undefined },
+            { label: 'Route reason', value: stage.reason },
+            { label: 'Latency', value: metrics.latencyMs as number | undefined },
+          ]}
+        />
+      </Section>
+      <RawBlock label="Routing outputs" value={stage.outputs} />
+    </>
+  )
+}
+
+function GenerationStageOverview({ stage }: { stage: ActivityStage }) {
+  const inputs = asRecord(stage.inputs)
+  const outputs = asRecord(stage.outputs)
+  const metrics = asRecord(stage.metrics)
+
+  return (
+    <Section title="Generation">
+      <KeyValueList
+        rows={[
+          { label: 'Provider', value: inputs.provider as string | undefined },
+          { label: 'Model', value: inputs.model as string | undefined },
+          { label: 'Latency', value: metrics.latencyMs as number | undefined },
+          { label: 'Input tokens', value: metrics.inputTokens as number | undefined },
+          { label: 'Output tokens', value: metrics.outputTokens as number | undefined },
+          { label: 'Output format', value: outputs.outputFormat as string | undefined },
+          { label: 'Output length', value: outputs.outputLength as number | undefined },
+        ]}
+      />
+    </Section>
+  )
+}
+
+function ContactStageOverview({ stage }: { stage: ActivityStage }) {
+  return (
+    <>
+      <Section title={stage.label}>
+        <KeyValueList
+          rows={[
+            { label: 'Status', value: stage.status },
+            { label: 'Reason', value: stage.reason },
+            { label: 'Duration', value: stage.durationMs },
+          ]}
+        />
+      </Section>
+      <RawBlock label="Metrics" value={stage.metrics} />
+      <RawBlock label="Inputs" value={stage.inputs} />
+      <RawBlock label="Outputs" value={stage.outputs} />
+    </>
+  )
+}
+
+function GenericStageOverview({ stage }: { stage: ActivityStage }) {
+  return (
+    <>
+      <RawBlock label="Metrics" value={stage.metrics} />
+      <RawBlock label="Settings" value={stage.settings} />
+      <RawBlock label="Inputs" value={stage.inputs} />
+      <RawBlock label="Outputs" value={stage.outputs} />
+    </>
+  )
+}
+
+type StageRenderer = (props: { stage: ActivityStage }) => ReactNode
+
+const STAGE_RENDERERS: Record<string, StageRenderer> = {
+  context: SpecializedStageOverview,
+  query_interpretation: SpecializedStageOverview,
+  trigger_analysis: SpecializedStageOverview,
+  shape_selection: SpecializedStageOverview,
+  semantic_original: SpecializedStageOverview,
+  semantic_rewritten: SpecializedStageOverview,
+  lexical: SpecializedStageOverview,
+  candidate_preparation: SpecializedStageOverview,
+  context_selection: SpecializedStageOverview,
+  prompt_assembly: SpecializedStageOverview,
+  diagnostics: SpecializedStageOverview,
+  answer_outcome: SpecializedStageOverview,
+  routing: RoutingStageOverview,
+  generation: GenerationStageOverview,
+  availability_check: ContactStageOverview,
+  trigger_evaluation: ContactStageOverview,
+  draft_build: ContactStageOverview,
+  request_submit: ContactStageOverview,
+  delivery_dispatch: ContactStageOverview,
+  audit_record: ContactStageOverview,
+}
+
+function extractFinalPassages(stage: ActivityStage, trace?: ActivityTrace): ChunkRef[] {
+  if (stage.kind !== 'diagnostics' && stage.kind !== 'answer_outcome') return []
+  if (!trace) return []
+
+  const stageOutputs = (s: ActivityStage) => (s.outputs ?? {}) as Record<string, unknown>
+
+  const ownChunks = asChunkList(stageOutputs(stage).finalContexts)
+  if (ownChunks.length) return ownChunks
+
+  const selectionStage = trace.stages.find((s) => s.kind === 'context_selection')
+  if (selectionStage) {
+    const chunks = asChunkList(stageOutputs(selectionStage).finalContexts)
+    if (chunks.length) return chunks
+  }
+
+  const promptStage = trace.stages.find((s) => s.kind === 'prompt_assembly')
+  if (promptStage) {
+    const chunks = asChunkList(stageOutputs(promptStage).citations)
+    if (chunks.length) return chunks
+  }
+
+  const prepStage = trace.stages.find((s) => s.kind === 'candidate_preparation')
+  if (prepStage) {
+    const chunks = asChunkList(stageOutputs(prepStage).topCandidates)
+    if (chunks.length) return chunks
+  }
+
+  const searchChunks: ChunkRef[] = []
+  for (const s of trace.stages) {
+    if (s.kind === 'semantic_original' || s.kind === 'semantic_rewritten' || s.kind === 'lexical') {
+      searchChunks.push(...asChunkList(stageOutputs(s).chunks))
+    }
+  }
+  return searchChunks
+}
+
+function StageOverview({ stage, trace }: { stage: ActivityStage; trace?: ActivityTrace }) {
+  const Renderer = STAGE_RENDERERS[stage.kind] ?? GenericStageOverview
+  const explanation = deriveExplanation(stage)
+  const passages = extractFinalPassages(stage, trace)
+
+  return (
+    <>
+      {explanation ? (
+        <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
+          <p className="text-sm text-foreground">{explanation}</p>
+          {typeof stage.durationMs === 'number' ? (
+            <p className="mt-1 text-xs text-muted-foreground">{stage.durationMs}ms</p>
+          ) : null}
+        </div>
+      ) : null}
+      {passages.length > 0 ? (
+        <ChunkList label={`Selected passages (${passages.length})`} chunks={passages} />
+      ) : null}
+      <Renderer stage={stage} />
+    </>
+  )
+}
+
+export function ActivityTraceDetail({
+  activityTrace,
   selectedStageId,
 }: {
-  retrievalTrace?: RetrievalTrace
+  activityTrace?: ActivityTrace
   selectedStageId?: string
 }) {
-  if (!retrievalTrace) {
+  if (!activityTrace) {
     return (
       <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-        Detailed retrieval trace unavailable for this answer.
+        Detailed activity trace unavailable for this answer.
       </div>
     )
   }
 
   const selectedStage =
-    (selectedStageId ? getSelectedStage(retrievalTrace, selectedStageId) : undefined) ?? retrievalTrace.stages[0]
+    (selectedStageId ? getSelectedStage(activityTrace, selectedStageId) : undefined) ?? activityTrace.stages[0]
 
   if (!selectedStage) {
     return (
@@ -467,7 +743,7 @@ export function ChatRetrievalTraceDetail({
 
   return (
     <div className="space-y-4 select-text">
-      <StageOverview stage={selectedStage} />
+      <StageOverview stage={selectedStage} trace={activityTrace} />
 
       <details className="group rounded-lg border border-border/70 bg-background/60 p-3 text-xs text-muted-foreground">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-medium text-foreground">
@@ -488,7 +764,7 @@ export function ChatRetrievalTraceDetail({
           <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
         </summary>
         <pre className="mt-3 overflow-x-auto rounded-lg border border-border/70 bg-background/70 p-3 text-[11px]">
-          {formatJson(retrievalTrace)}
+          {formatJson(activityTrace)}
         </pre>
       </details>
     </div>

@@ -445,7 +445,8 @@ export function useHistoryDetailState({
               .find((message) => message.role === 'assistant' && message.debug) ?? null
           setSelectedThreadMessageId(traceBearingMessage?.id ?? null)
           setSelectedAssistantMessageId(traceBearingMessage?.id ?? null)
-          setSelectedStageId(traceBearingMessage?.debug?.retrievalTrace?.stages[0]?.stageId)
+          const trace = traceBearingMessage?.debug?.activityTrace
+          setSelectedStageId(trace?.stages[0]?.stageId)
           setShowGraph(false)
           return
         }
@@ -465,7 +466,8 @@ export function useHistoryDetailState({
               : [...detail.conversation.messages].reverse().find((message) => message.role === 'assistant') ?? null
           setSelectedThreadMessageId(selectedAssistant?.id ?? null)
           setSelectedAssistantMessageId(selectedAssistant?.role === 'assistant' ? selectedAssistant.id : null)
-          setSelectedStageId(selectedAssistant?.role === 'assistant' ? selectedAssistant.debug?.retrievalTrace?.stages[0]?.stageId : undefined)
+          const trace = detail.contact.activityTrace ?? (selectedAssistant?.role === 'assistant' ? selectedAssistant.debug?.activityTrace : undefined)
+          setSelectedStageId(trace?.stages[0]?.stageId)
           setShowGraph(false)
           return
         }
@@ -475,7 +477,7 @@ export function useHistoryDetailState({
           return
         }
         setSearchDetail(detail)
-        setSelectedStageId(detail.retrievalTrace?.stages[0]?.stageId)
+        setSelectedStageId(detail.activityTrace?.stages[0]?.stageId)
         setShowGraph(false)
       } catch (error) {
         if (!isActive) {
@@ -550,10 +552,18 @@ export function useHistoryDetailState({
 
   const selectedDiagnosticsDebug =
     selectedDiagnosticsAssistantMessage?.role === 'assistant' ? selectedDiagnosticsAssistantMessage.debug : undefined
-  const selectedDiagnosticsTrace = selectedDiagnosticsDebug?.retrievalTrace
-  const activeTrace = selectedItem?.kind === 'chat' || selectedItem?.kind === 'contact' ? selectedDiagnosticsTrace : searchDetail?.retrievalTrace
+  const selectedDiagnosticsTrace = selectedDiagnosticsDebug?.activityTrace
+  const contactTrace = contactDetail?.contact.activityTrace
+  const activeTrace = selectedItem?.kind === 'contact'
+    ? contactTrace ?? selectedDiagnosticsTrace
+    : selectedItem?.kind === 'chat'
+      ? selectedDiagnosticsTrace
+      : searchDetail?.activityTrace
   const activeTraceId = activeTrace?.traceId
   const activeInitialStageId = activeTrace?.stages[0]?.stageId
+  const activeSummary = selectedItem?.kind === 'contact'
+    ? contactDetail?.contact.activitySummary ?? selectedDiagnosticsDebug?.activitySummary
+    : selectedDiagnosticsDebug?.activitySummary
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Active trace changes reset the selected diagnostics stage.
@@ -586,7 +596,7 @@ export function useHistoryDetailState({
       }
 
       setSelectedAssistantMessageId(targetAssistant.id)
-      setSelectedStageId(targetAssistant.debug?.retrievalTrace?.stages[0]?.stageId)
+      setSelectedStageId(targetAssistant.debug?.activityTrace?.stages[0]?.stageId)
     },
     [conversationDetail],
   )
@@ -641,6 +651,8 @@ export function useHistoryDetailState({
     selectedThreadMessageId,
     selectedDiagnosticsAssistantMessage: selectedDiagnosticsAssistantMessage as ChatConversationTurn | null,
     selectedDiagnosticsTrace,
+    activeTrace,
+    activeSummary,
     activeInitialStageId,
     selectedStageId,
     setSelectedStageId,

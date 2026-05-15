@@ -16,6 +16,7 @@
   const TEASER_AUTO_HIDE_MS = 25000
   const PANEL_HANDLE_WIDTH = 56
   const DESKTOP_PANEL_CONTENT_WIDTH = 560
+  const DESKTOP_BUBBLE_MAX_HEIGHT = 720
   const NARROW_VIEWPORT_MAX_WIDTH = 640
   const MAX_PAGE_CONTEXT_CONTENT_CHARS = 6000
   const defaultCopy = {
@@ -496,7 +497,7 @@
 
     panel.style.width = `min(${DESKTOP_PANEL_CONTENT_WIDTH}px, calc(100vw - 2rem))`
     panel.style.height = '100%'
-    panel.style.maxHeight = 'calc(100vh - 2rem)'
+    panel.style.maxHeight = `min(${DESKTOP_BUBBLE_MAX_HEIGHT}px, calc(100vh - 2rem))`
     panel.style.borderRadius = '28px'
     panel.style.display = 'none'
     return panel
@@ -923,7 +924,7 @@
 
       panel.style.width = `min(${DESKTOP_PANEL_CONTENT_WIDTH}px, calc(100vw - 2rem))`
       panel.style.height = '100%'
-      panel.style.maxHeight = 'calc(100vh - 2rem)'
+      panel.style.maxHeight = `min(${DESKTOP_BUBBLE_MAX_HEIGHT}px, calc(100vh - 2rem))`
       panel.style.borderRadius = '28px'
       panel.style.left = ''
       panel.style.right = ''

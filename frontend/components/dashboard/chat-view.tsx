@@ -35,6 +35,8 @@ import {
   HumanContactInlineComposer,
   type HumanContactInlineRequest,
 } from '@/components/chat/human-contact-inline-composer'
+import { ScrollToBottomButton } from '@/components/chat/scroll-to-bottom-button'
+import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { ChatMessageThread, type ChatThreadMessage } from './chat-message-thread'
 
 interface ChatViewProps {
@@ -66,14 +68,10 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isInitializingView = (onboarding.isLoading || isBootstrapping || !isInitialized) && messages.length === 0
   const visibleMessages = contactConfirmation ? [...messages, contactConfirmation] : messages
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [contactConfirmation, isLoading, messages])
+  const { isAtBottom, scrollToLatestTurn } = useChatScroll({
+    messages: visibleMessages,
+    sentinelRef: messagesEndRef,
+  })
 
   useEffect(() => {
     const userExpectedLocale =
@@ -328,28 +326,40 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
           </DropdownMenuContent>
         </DropdownMenu>
       }
-      footer={isInitializingView ? null : editionController.canUseHumanContact() && contactRequest ? (
-        <HumanContactInlineComposer
-          request={contactRequest}
-          onCancel={() => setContactRequest(null)}
-          onSubmitted={handleContactSubmitted}
-        />
-      ) : (
-        <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
-          <div className="flex items-end gap-1 rounded-3xl border border-input bg-input/40 px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask a question..."
-              className="min-h-[36px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
+      footerClassName="relative"
+      footer={isInitializingView ? null : (
+        <>
+          {!isAtBottom && messages.length > 0 ? (
+            <div className="pointer-events-none absolute inset-x-0 bottom-full mb-2 px-4">
+              <div className="mx-auto flex max-w-3xl justify-end">
+                <ScrollToBottomButton onClick={() => scrollToLatestTurn()} />
+              </div>
+            </div>
+          ) : null}
+          {editionController.canUseHumanContact() && contactRequest ? (
+            <HumanContactInlineComposer
+              request={contactRequest}
+              onCancel={() => setContactRequest(null)}
+              onSubmitted={handleContactSubmitted}
             />
-            <Button type="submit" size="icon" className="h-9 w-9 shrink-0 rounded-full" disabled={isLoading || isBootstrapping || !input.trim()}>
-              <Send className="w-4 h-4" />
-              <span className="sr-only">Send message</span>
-            </Button>
-          </div>
-        </form>
+          ) : (
+            <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
+              <div className="flex items-end gap-1 rounded-3xl border border-input bg-input/40 px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0">
+                <Textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask a question..."
+                  className="min-h-[36px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
+                />
+                <Button type="submit" size="icon" className="h-9 w-9 shrink-0 rounded-full" disabled={isLoading || isBootstrapping || !input.trim()}>
+                  <Send className="w-4 h-4" />
+                  <span className="sr-only">Send message</span>
+                </Button>
+              </div>
+            </form>
+          )}
+        </>
       )}
     >
         {isInitializingView ? (

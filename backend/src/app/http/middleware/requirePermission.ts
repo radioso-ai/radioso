@@ -10,16 +10,14 @@ export const requireAccountPermission = (
   permission: AccountPermission,
 ): RequestHandler => async (_req, res, next) => {
   try {
-    const { accountId, userId, supportImpersonationId } = res.locals as {
+    const { accountId, userId } = res.locals as {
       accountId: string;
       userId?: string;
-      supportImpersonationId?: string;
     };
     await dependencies.accountAccessService.requirePermission({
       accountId,
       userId,
       permission,
-      supportImpersonationId,
     });
     next();
   } catch (error) {
@@ -33,11 +31,10 @@ export const requireWorkspacePermission = (
   resolveWorkspaceId?: (req: Request, res: Response) => string | null | undefined,
 ): RequestHandler => async (req, res, next) => {
   try {
-    const { accountId, userId, workspaceId, supportImpersonationId } = res.locals as {
+    const { accountId, userId, workspaceId } = res.locals as {
       accountId: string;
       userId?: string;
       workspaceId?: string;
-      supportImpersonationId?: string;
       authMode?: string;
     };
     if (res.locals.authMode === "bearer" && permission.startsWith("workspace.") && !permission.startsWith("workspace.token.")) {
@@ -49,7 +46,6 @@ export const requireWorkspacePermission = (
       userId,
       permission,
       workspaceId: resolveWorkspaceId?.(req, res) ?? workspaceId,
-      supportImpersonationId,
     });
     next();
   } catch (error) {

@@ -19,10 +19,6 @@ import type {
   WorkspaceGrantRole,
 } from "../../src/db/repositories/workspaceGrantRepository.js";
 import type {
-  SupportImpersonationRecord,
-  SupportImpersonationRepositoryPort,
-} from "../../src/db/repositories/supportImpersonationRepository.js";
-import type {
   AccountRecord,
   AccountRepositoryPort,
   SessionRecord,
@@ -491,75 +487,6 @@ export class InMemoryWorkspaceGrantRepository implements WorkspaceGrantRepositor
       return false;
     }
     return this.items.delete(existing.id);
-  }
-}
-
-export class InMemorySupportImpersonationRepository implements SupportImpersonationRepositoryPort {
-  private readonly items = new Map<string, SupportImpersonationRecord>();
-
-  async createApproved(input: {
-    accountId: string;
-    staffUserId: string;
-    approverUserId: string;
-    reason: string;
-    expiresAt: Date;
-  }): Promise<SupportImpersonationRecord> {
-    const now = new Date();
-    const record: SupportImpersonationRecord = {
-      id: randomUUID(),
-      accountId: input.accountId,
-      staffUserId: input.staffUserId,
-      approverUserId: input.approverUserId,
-      reason: input.reason,
-      status: "approved",
-      approvedAt: now,
-      startedAt: null,
-      expiresAt: input.expiresAt,
-      endedAt: null,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.items.set(record.id, record);
-    return record;
-  }
-
-  async findById(id: string): Promise<SupportImpersonationRecord | null> {
-    return this.items.get(id) ?? null;
-  }
-
-  async listByAccount(accountId: string, now: Date): Promise<SupportImpersonationRecord[]> {
-    void now;
-    return [...this.items.values()].filter((item) => item.accountId === accountId);
-  }
-
-  async markStarted(id: string, startedAt: Date): Promise<SupportImpersonationRecord> {
-    const existing = this.items.get(id);
-    if (!existing) {
-      throw notFound("Support impersonation session not found");
-    }
-    const updated: SupportImpersonationRecord = {
-      ...existing,
-      status: "active",
-      startedAt: existing.startedAt ?? startedAt,
-      updatedAt: new Date(),
-    };
-    this.items.set(id, updated);
-    return updated;
-  }
-
-  async end(id: string, status: "ended" | "expired" | "revoked", endedAt: Date): Promise<SupportImpersonationRecord> {
-    const existing = this.items.get(id);
-    if (!existing) {
-      throw notFound("Support impersonation session not found");
-    }
-    const updated: SupportImpersonationRecord = {
-      ...existing,
-      status,
-      endedAt: existing.endedAt ?? endedAt,
-      updatedAt: new Date(),
-    };
-    this.items.set(id, updated);
-    return updated;
   }
 }
 

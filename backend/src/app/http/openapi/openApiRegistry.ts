@@ -135,9 +135,6 @@ export interface OpenApiSchemaCatalog {
   SkillDiagnosticEvidenceSchema: z.ZodTypeAny;
   SkillDiagnosticsSummarySchema: z.ZodTypeAny;
   SkillParamsSchema: RouteParameterSchema;
-  SupportImpersonationApproveRequestSchema: z.ZodTypeAny;
-  supportImpersonationParamsSchema: RouteParameterSchema;
-  SupportImpersonationSchema: z.ZodTypeAny;
   tokenPathParamsSchema: z.AnyZodObject;
   TriggerAnalysisRuleSchema: z.ZodTypeAny;
   TriggerAnalysisSchema: z.ZodTypeAny;

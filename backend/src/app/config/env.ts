@@ -99,7 +99,6 @@ const envSchema = z.object({
   APP_BASE_URL: emptyStringToUndefined(z.string().url()),
   PUBLIC_CHAT_BASE_URL: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_APPLICATION_MODULES: emptyStringToUndefined(z.string().min(1)),
-  SUPPORT_STAFF_EMAILS: z.string().default(""),
 }).superRefine((value, ctx) => {
   const invalidAnalyticsSinks = findInvalidConfiguredSinks(value.PRODUCT_ANALYTICS_SINKS, ["audit", "posthog"]);
   if (invalidAnalyticsSinks.length > 0) {

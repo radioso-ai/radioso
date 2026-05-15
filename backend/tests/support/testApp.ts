@@ -7,7 +7,6 @@ import { randomUUID } from "node:crypto";
 
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
-import { SupportImpersonationService } from "../../src/modules/support/services/supportImpersonationService.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
@@ -84,7 +83,6 @@ import {
   InMemoryAccountRepository,
   InMemoryAccountInvitationRepository,
   InMemoryAccountMembershipRepository,
-  InMemorySupportImpersonationRepository,
   InMemoryUserRepository,
   InMemoryWorkspaceGrantRepository,
   InMemoryWorkspaceTokenRepository,
@@ -167,7 +165,6 @@ export const createTestEnv = (): Env => ({
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
   WEBSITE_CRAWLER_ENABLED: true,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
-  SUPPORT_STAFF_EMAILS: "support@example.com,approver@example.com",
 });
 
 interface TestRepositories {
@@ -261,12 +258,6 @@ export const createTestDependencies = (overrides: {
   accountMembershipRepository.setUserRepository(userRepository);
   const workspaceRepository = new InMemoryWorkspaceRepository();
   const workspaceGrantRepository = new InMemoryWorkspaceGrantRepository();
-  const supportImpersonationService = new SupportImpersonationService(
-    new InMemorySupportImpersonationRepository(),
-    userRepository,
-    auditService,
-    env,
-  );
   const accountAccessService = new AccountAccessService(
     accountMembershipRepository,
     auditService,
@@ -674,7 +665,6 @@ export const createTestDependencies = (overrides: {
     auditService,
     accountAccessService,
     accountInvitationService,
-    supportImpersonationService,
     workspaceSessionService,
     abuseControlService,
     authService: new AuthService({

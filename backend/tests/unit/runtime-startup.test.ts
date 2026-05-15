@@ -72,7 +72,6 @@ const createEnv = (): Env => ({
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
   WEBSITE_CRAWLER_ENABLED: true,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
-  SUPPORT_STAFF_EMAILS: "",
 });
 
 const createLogger = () => {

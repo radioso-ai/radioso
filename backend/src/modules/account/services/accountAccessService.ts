@@ -325,7 +325,6 @@ export class AccountAccessService {
     userId?: string | null;
     permission: AccountPermission;
     workspaceId?: string | null;
-    supportImpersonationId?: string | null;
   }): Promise<void> {
     if (input.workspaceId && !(await this.workspaceBelongsToAccount(input.accountId, input.workspaceId))) {
       throw notFound("Workspace not found");
@@ -343,7 +342,6 @@ export class AccountAccessService {
       metadata: {
         userId: input.userId ?? null,
         permission: input.permission,
-        supportImpersonationId: input.supportImpersonationId ?? null,
         reason: "permission_denied",
       },
     });
@@ -355,11 +353,7 @@ export class AccountAccessService {
     userId?: string | null;
     permission: AccountPermission;
     workspaceId?: string | null;
-    supportImpersonationId?: string | null;
   }): Promise<boolean> {
-    if (input.supportImpersonationId) {
-      return this.supportRoleAllows(input.permission);
-    }
     if (!input.userId) {
       return false;
     }
@@ -428,11 +422,4 @@ export class AccountAccessService {
     ].includes(permission);
   }
 
-  private supportRoleAllows(permission: AccountPermission): boolean {
-    return [
-      "workspace.create",
-      "workspace.settings.manage",
-      "workspace.documents.manage",
-    ].includes(permission);
-  }
 }

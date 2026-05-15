@@ -103,6 +103,7 @@ export interface WebsiteCrawlJobRepositoryPort {
   claimNext(now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   claimById(jobId: string, now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean>;
+  releaseAllTimedOutClaims(claimedAtOrBefore: Date, errorMessage: string): Promise<number>;
   markCompleted(jobId: string, result: Record<string, unknown>): Promise<void>;
   markFailed(jobId: string, errorMessage: string): Promise<void>;
 }
@@ -255,6 +256,19 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     );
 
     return rowCount > 0;
+  }
+
+  async releaseAllTimedOutClaims(claimedAtOrBefore: Date, errorMessage: string): Promise<number> {
+    return this.database.execute(
+      `UPDATE website_crawl_jobs
+       SET status = 'queued',
+           claimed_at = NULL,
+           last_error = $2,
+           updated_at = NOW()
+       WHERE status = 'processing'
+         AND claimed_at <= $1`,
+      [claimedAtOrBefore, errorMessage],
+    );
   }
 
   async markCompleted(jobId: string, result: Record<string, unknown>): Promise<void> {

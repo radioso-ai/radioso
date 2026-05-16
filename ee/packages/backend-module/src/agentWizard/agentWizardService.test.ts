@@ -374,6 +374,30 @@ describe("AgentWizardService", () => {
     expect(validations.some((u) => u.includes("169.254"))).toBe(true);
   });
 
+  it("propagates HTTP 401 from the crawler fallback as authentication_required", async () => {
+    const crawler = createCrawler({
+      isBrowserTransportAvailable: vi.fn().mockResolvedValue(false),
+      crawlSite: vi.fn().mockResolvedValueOnce([
+        {
+          url: "https://example.com",
+          title: null,
+          text: "",
+          status: "failed",
+          httpStatus: 401,
+          error: "401 Unauthorized",
+        },
+      ]),
+    });
+    const { service } = createService({ crawlerProvider: crawler });
+
+    await expect(
+      service.analyzeWebsite({
+        url: "https://example.com",
+        workspaceId: "workspace-1",
+      }),
+    ).rejects.toMatchObject({ code: "authentication_required" });
+  });
+
   it("propagates authentication_required from Playwright instead of HTTP-fallback", async () => {
     const fetchPageWithScreenshot = vi.fn().mockRejectedValue(
       new Error("Blocked by status code 401"),

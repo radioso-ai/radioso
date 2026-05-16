@@ -133,6 +133,8 @@ export interface AppDependencies {
       text: string;
       status: string;
       links?: string[];
+      httpStatus?: number | null;
+      error?: string | null;
     }>>;
     isBrowserTransportAvailable(): Promise<boolean>;
   };

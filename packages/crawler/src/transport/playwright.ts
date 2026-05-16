@@ -162,22 +162,23 @@ const fetchWithPlaywright = async (
         // Intercept every request and validate the URL before it's allowed
         // onto the wire. Aborting the route prevents the request from ever
         // contacting the target, so SSRF redirects can't reach private hosts
-        // even briefly.
+        // even briefly. This applies to BOTH document navigations and
+        // subresources (images, scripts, stylesheets, fetch/XHR): a page
+        // with <img src="http://169.254.169.254/..."> would otherwise force
+        // the headless browser to fetch that internal URL.
         await context.route("**/*", async (route: any) => {
           const request = route.request();
-          // Only validate top-level document navigations; subresource
-          // requests (images, stylesheets, scripts) are fetched by the
-          // browser as part of rendering and would otherwise explode the
-          // validation cost. The redirect chain we care about lives on the
-          // main frame.
-          if (request.resourceType() !== "document") {
-            await route.continue();
-            return;
-          }
+          const isDocument = request.resourceType() === "document";
           try {
             await validator(request.url());
           } catch (error) {
-            validationError = error;
+            if (isDocument) {
+              // A blocked document navigation kills the whole page load —
+              // record the error so it surfaces as the goto() failure.
+              validationError = error;
+            }
+            // Subresource failures just drop that one resource; the page
+            // still renders without it, which is the safer default.
             await route.abort();
             return;
           }

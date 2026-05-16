@@ -118,6 +118,8 @@ export interface CrawlerPort {
     text: string;
     status: string;
     links?: string[];
+    httpStatus?: number | null;
+    error?: string | null;
   }>>;
   isBrowserTransportAvailable(): Promise<boolean>;
 }
@@ -675,7 +677,13 @@ Return a fresh alternative for agentName, customInstruction, greetingMessage, ch
     });
     const first = httpPages[0];
     if (!first || first.status !== "success") {
-      throw classifyFetchError(first?.status ?? upstreamError ?? new Error("HTTP fetch failed"));
+      // Pass full failure metadata (httpStatus + error message) to the
+      // classifier so a 401/403/429 from the HTTP path surfaces as
+      // authentication_required instead of generic site_unreachable.
+      const failureSignal = first
+        ? { httpStatus: first.httpStatus ?? undefined, status: first.httpStatus, message: first.error ?? `HTTP fetch ${first.status}` }
+        : upstreamError ?? new Error("HTTP fetch failed");
+      throw classifyFetchError(failureSignal);
     }
     return {
       url: first.url,

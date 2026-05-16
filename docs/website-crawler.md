@@ -56,6 +56,22 @@ By default, outbound crawler requests identify as `RadiosoCrawler/1.0`. Self-hos
 
 Radioso does not rotate user agents or proxies to bypass blocks. If a page returns `401`, `403`, or `429`, the crawler records that page as failed instead of ingesting the block page as content. For `429` responses, `Retry-After` is preserved in the failure message when the site sends it.
 
+### When a site blocks the crawler
+
+Some websites use Cloudflare, other web application firewalls, login gates, or bot-detection rules that block automated fetches. In that case the crawl job will usually show failed pages with reasons such as `403`, `401`, `429`, `Blocked by robots.txt`, or a network error.
+
+Radioso does not try to bypass those controls. It does not solve CAPTCHA challenges, rotate proxies, spoof browsers, or keep retrying with different identities. The site owner needs to allow the crawler or provide content through another path.
+
+In practice, use one of these options:
+
+1. Ask the site owner to allowlist the crawler's user agent and source IP range, if the deployment has stable egress IPs.
+2. Set `WEBSITE_CRAWLER_USER_AGENT` to an identifiable value with a contact URL or email, such as `ExampleDocsCrawler/1.0 (+https://example.com/crawler)`, then ask the site owner to allow that user agent.
+3. If the site is behind Cloudflare or another WAF that challenges all automated traffic, create a WAF rule that skips the challenge for the crawler identity or IP range.
+4. If the content requires authentication, export the pages or upload the source documents directly. The bundled crawler does not crawl authenticated browser sessions.
+5. Reduce the crawl scope with `includeUrlPatterns` and `excludeUrlPatterns` so the site does not see a broad scan. This can help with rate limits, but it will not bypass an explicit block.
+
+After changing the site's allow rules, re-run the crawl. If the job has both accepted and failed pages, inspect `failedPageCount` and `failures` in `GET /api/v1/document/crawl/jobs` to confirm which URLs still need attention.
+
 ### Document and source metadata
 
 Per-document metadata is intentionally narrow:
@@ -91,7 +107,7 @@ Query parameters are all optional:
 | Parameter | Type | Default | Notes |
 |-----------|------|---------|-------|
 | `status` | `queued` \| `processing` \| `paused` \| `completed` \| `failed` | unset (any) | Filter to a single status. |
-| `sinceMinutes` | integer 1-1440 | `30` | Only return jobs created in this window. Ignored when `sourceId` is set or when filtering `status=paused`. |
+| `sinceMinutes` | integer 1-1440 | `30` | Only return jobs updated in this window. Ignored when `sourceId` is set or when filtering `status=paused`. |
 | `limit` | integer 1-200 | `50` | Maximum number of jobs to return. |
 | `sourceId` | UUID | unset | Filter to jobs linked to a specific document source. |
 

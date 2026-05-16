@@ -40,7 +40,7 @@ When it finishes successfully, open:
 
 - App: `http://localhost:3000`
 - API: `http://localhost:8080`
-- Embed test harness: `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`
+- Enterprise embed test harness: `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`
 
 For Enterprise Edition embed development, use `./run-ee-dev.sh` instead. It builds the commercial packages from `ee/packages`, generates the local EE frontend routes, configures the local backend, starts the same app and API URLs, and starts the embed test harness automatically. The normal `./run-dev.sh` path removes those generated routes before starting the OSS stack.
 
@@ -55,9 +55,9 @@ Open the app, create an account or sign in, upload a document, and ask a questio
 
 Use the local backend to register, log in, reveal a workspace token, and call document or chat routes directly.
 
-### Goal 3: test the website embed
+### Goal 3: test the Enterprise website widget
 
-Start the local embed harness and verify both an approved origin and a blocked origin.
+Start the local embed harness and verify both an approved origin and a blocked origin. The hosted widget routes are available when Enterprise Edition routes have been generated.
 </Steps>
 
 ## Verify first success in the app

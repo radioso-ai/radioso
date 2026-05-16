@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter, JetBrains_Mono } from 'next/font/google'
+import Script from 'next/script'
 import 'nextra-theme-docs/style.css'
 
 import { ThemeProvider } from '@/components/theme-provider'
@@ -47,6 +48,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {children}
         </ThemeProvider>
+        <Script
+          src="https://platform.radioso.dev/embed-widget.js"
+          data-radioso-token="--kUGFPoIm-fe1Mg2Lvrlw"
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   )

@@ -1,19 +1,19 @@
 ---
 title: Authentication
-description: Session, API token, and embed-facing access patterns in Radioso.
+description: Session, API token, public-chat, and Enterprise embed access patterns in Radioso.
 ---
 
 import { Steps } from 'nextra/components'
 
 # Authentication
 
-Radioso supports more than one authentication model because the product serves more than one surface. The web app, API, and public embed flows do not use the same credentials.
+Radioso supports more than one authentication model because the product serves more than one surface. The web app, API, public chat, and Enterprise embed flows do not use the same credentials.
 
 ## Main access modes
 
 - Session-based access for the product UI
 - Workspace API tokens for backend-to-backend or developer automation
-- Public embed and anonymous chat flows for customer-facing chat experiences
+- Anonymous public chat and Enterprise embed flows for customer-facing agent experiences
 
 ## Session-based access
 
@@ -51,13 +51,13 @@ Workspace tokens are high-value credentials. If one leaks, rotate it from worksp
 
 Public website chat does not use a normal operator session. Instead, it relies on workspace-controlled public settings, public chat tokens, or embed session flows that are scoped to the workspace configuration.
 
-This is the right model for customer-facing support widgets, not for operator automation.
+This is the right model for customer-facing agents, not for operator automation. The hosted website widget is an Enterprise Edition surface; anonymous public chat uses the same public-session model without the widget routes.
 
 ## Choose the right mode
 
 - Use sessions for humans in the app.
 - Use workspace bearer tokens for automation.
-- Use public chat or embed flows for customer-facing widgets.
+- Use public chat or Enterprise embed flows for customer-facing agents.
 
 ## Start points
 

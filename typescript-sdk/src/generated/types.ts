@@ -5196,6 +5196,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         resumedJobCount: number;
+                        resumeDispatchFailureCount: number;
                     };
                 };
             };

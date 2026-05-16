@@ -110,17 +110,19 @@ export function getCrawlPageIssueSummaries(
 export function applySourceResumeResult({
   sourceId,
   resumedJobCount,
+  pendingResumeJobCount,
   pausedSourceIds,
   crawlingSourceIds,
 }: {
   sourceId: string
   resumedJobCount: number
+  pendingResumeJobCount?: number | null
   pausedSourceIds: ReadonlySet<string>
   crawlingSourceIds: ReadonlySet<string>
 }): { pausedSourceIds: Set<string>; crawlingSourceIds: Set<string> } {
   const nextPaused = new Set(pausedSourceIds)
   const nextCrawling = new Set(crawlingSourceIds)
-  if (resumedJobCount > 0) {
+  if (resumedJobCount > 0 || (pendingResumeJobCount ?? 0) > 0) {
     nextPaused.delete(sourceId)
     nextCrawling.add(sourceId)
   }

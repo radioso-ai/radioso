@@ -5,7 +5,7 @@ import { AuthServiceError, type AuthService } from "../auth/authService.js";
 import type { AuditLogger } from "../audit/auditLogger.js";
 import { CapabilityPolicyError } from "../policy/capabilityPolicy.js";
 import { RadiosoApiError } from "../radiosoApiAdapter.js";
-import { readJsonBody, writeJson } from "./nodeHttp.js";
+import { isRequestBodyTooLargeError, readJsonBody, writeJson } from "./nodeHttp.js";
 
 const exchangeSchema = z.object({
   clientName: z.string().trim().min(1).optional(),
@@ -43,6 +43,11 @@ const writeError = (res: ServerResponse, statusCode: number, code: string, messa
 };
 
 const handleRouteError = (res: ServerResponse, error: unknown): void => {
+  if (isRequestBodyTooLargeError(error)) {
+    writeError(res, 413, error.code, "Request body is too large.", { maxBytes: error.maxBytes });
+    return;
+  }
+
   if (error instanceof ZodError) {
     writeError(res, 400, "invalid_arguments", "Request body failed validation.", error.flatten());
     return;
@@ -100,6 +105,15 @@ const toAuditableRouteFailure = (
       code: "invalid_arguments",
       details: error.flatten(),
       message: "Request body failed validation.",
+      outcome: "denied",
+    };
+  }
+
+  if (isRequestBodyTooLargeError(error)) {
+    return {
+      code: error.code,
+      details: { maxBytes: error.maxBytes },
+      message: "Request body is too large.",
       outcome: "denied",
     };
   }

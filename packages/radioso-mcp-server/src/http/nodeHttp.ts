@@ -2,11 +2,42 @@ import { once } from "node:events";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 
-export const readRequestBody = async (req: IncomingMessage): Promise<Buffer> => {
+export const DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+
+export class RequestBodyTooLargeError extends Error {
+  readonly code = "payload_too_large";
+  readonly maxBytes: number;
+
+  constructor(maxBytes: number) {
+    super(`Request body exceeds the ${maxBytes} byte limit.`);
+    this.name = "RequestBodyTooLargeError";
+    this.maxBytes = maxBytes;
+  }
+}
+
+export const isRequestBodyTooLargeError = (error: unknown): error is RequestBodyTooLargeError =>
+  error instanceof RequestBodyTooLargeError;
+
+export const readRequestBody = async (
+  req: IncomingMessage,
+  options: { maxBytes?: number } = {},
+): Promise<Buffer> => {
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES;
+  const contentLength = req.headers["content-length"];
+  if (typeof contentLength === "string" && Number.isFinite(Number(contentLength)) && Number(contentLength) > maxBytes) {
+    throw new RequestBodyTooLargeError(maxBytes);
+  }
+
   const chunks: Buffer[] = [];
+  let size = 0;
 
   for await (const chunk of req) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    size += buffer.length;
+    if (size > maxBytes) {
+      throw new RequestBodyTooLargeError(maxBytes);
+    }
+    chunks.push(buffer);
   }
 
   return Buffer.concat(chunks);

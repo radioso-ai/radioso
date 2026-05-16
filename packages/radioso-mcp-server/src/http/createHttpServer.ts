@@ -4,7 +4,7 @@ import type { RemoteHttpDependencies } from "./types.js";
 import { createApprovalHandler, createAuthExchangeHandler } from "./authRoutes.js";
 import { createMcpRouteHandler } from "./mcpRoutes.js";
 import { createSessionMcpServerManager } from "./sessionServerManager.js";
-import { writeJson, writeJsonRpcError } from "./nodeHttp.js";
+import { isRequestBodyTooLargeError, writeJson, writeJsonRpcError } from "./nodeHttp.js";
 
 export interface RadiosoRemoteHttpServer {
   close(): Promise<void>;
@@ -27,7 +27,26 @@ export const createHttpServer = ({ authService, auditLogger, config }: RemoteHtt
     serverManager: sessionServerManager,
   });
 
-  const writeUnhandledError = (req: IncomingMessage, res: ServerResponse, _error: unknown) => {
+  const writeUnhandledError = (req: IncomingMessage, res: ServerResponse, error: unknown) => {
+    if (isRequestBodyTooLargeError(error)) {
+      if ((req.url ?? "").startsWith("/mcp")) {
+        writeJsonRpcError(res, 413, -32000, "Request body is too large.", {
+          code: error.code,
+          maxBytes: error.maxBytes,
+        });
+        return;
+      }
+
+      writeJson(res, 413, {
+        error: {
+          code: error.code,
+          message: "Request body is too large.",
+          maxBytes: error.maxBytes,
+        },
+      });
+      return;
+    }
+
     if ((req.url ?? "").startsWith("/mcp")) {
       writeJsonRpcError(res, 500, -32603, "Internal error", {
         code: "internal_error",

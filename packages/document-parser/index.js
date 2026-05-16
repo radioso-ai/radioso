@@ -2,6 +2,7 @@ import { parseDocx } from "./parsers/docx.js";
 import { parsePdf } from "./parsers/pdf.js";
 import { parseTxt } from "./parsers/txt.js";
 import { parseXlsx } from "./parsers/xlsx.js";
+import { DocumentParserError } from "./errors.js";
 
 export const SUPPORTED_DOCUMENT_TYPES = ["pdf", "txt", "docx", "xlsx"];
 
@@ -26,13 +27,7 @@ const PARSERS = {
   xlsx: parseXlsx,
 };
 
-export class DocumentParserError extends Error {
-  constructor(code, message) {
-    super(message);
-    this.name = "DocumentParserError";
-    this.code = code;
-  }
-}
+export { DocumentParserError };
 
 const normalizeLineEndings = (value) => value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 

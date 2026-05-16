@@ -6,7 +6,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { sendChatSse } from "../presenters/chatPresenter.js";
 import { AppError, badRequest, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
-import { anonymousRateLimiters, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
+import { anonymousRateLimiters, publicChatSessionExchangeRateLimiter, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
@@ -127,6 +127,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     dependencies.agentService,
   );
   const rateLimitAnonymousChat = anonymousRateLimiters(dependencies);
+  const rateLimitPublicChatSessionExchange = publicChatSessionExchangeRateLimiter(dependencies);
   const resolveOrigin = (value: string | undefined) => {
     if (!value) {
       return null;
@@ -233,7 +234,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   });
 
   // POST /api/v1/public/chat/:token/sessions — exchange a public launch token for a chat session
-  router.post("/:token/sessions", validateBody(publicChatSessionSchema), async (req, res, next) => {
+  router.post("/:token/sessions", validateBody(publicChatSessionSchema), rateLimitPublicChatSessionExchange, async (req, res, next) => {
     try {
       const sessionSecret = publicChatSessionSecret;
       if (!sessionSecret) {

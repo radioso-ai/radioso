@@ -6,6 +6,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "check:api-contracts": "pnpm --dir backend run generate:openapi && node scripts/check-api-contracts.mjs"
+    "check:api-contracts": "pnpm --dir backend run generate:openapi && node scripts/check-api-contracts.mjs",
+    "ci:local": "bash scripts/local-ci-checks.sh"
   }
 }

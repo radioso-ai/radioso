@@ -98,4 +98,29 @@ describe("RadiosoCrawlerProvider", () => {
       userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)",
     }));
   });
+
+  it("does not seed already-processed checkpoint URLs back into the crawler", async () => {
+    mocks.crawlSite.mockResolvedValue([]);
+
+    const provider = new RadiosoCrawlerProvider();
+    await provider.crawl({
+      url: "https://example.com",
+      limit: 1,
+      checkpoint: {
+        discoveredUrls: ["https://example.com/docs"],
+        queuedUrls: ["https://example.com/docs", "https://example.com/next"],
+        processingUrls: ["https://example.com/current"],
+        processedCanonicalUrls: ["https://example.com/docs", "https://example.com/current"],
+        accepted: 1,
+        skipped: 0,
+        failed: 0,
+        lastProcessedAt: "2026-05-11T10:00:00.000Z",
+      },
+    });
+
+    expect(mocks.crawlSite).toHaveBeenCalledWith(expect.objectContaining({
+      seedPendingUrls: ["https://example.com/next"],
+      includeBaseUrl: false,
+    }));
+  });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { WebsiteCrawlJobStatus, WebsiteCrawlJobSummary } from '@/lib/api'
-import { getCrawlPageIssueSummaries, mergeCrawlJobs, parseCrawlForm } from '@/lib/crawl-jobs'
+import { applySourceResumeResult, getCrawlPageIssueSummaries, mergeCrawlJobs, parseCrawlForm } from '@/lib/crawl-jobs'
 
 const baseJob = (overrides: Partial<WebsiteCrawlJobSummary>): WebsiteCrawlJobSummary => ({
   id: 'j-1',
@@ -214,5 +214,31 @@ describe('getCrawlPageIssueSummaries', () => {
       failedPageCount: 0,
       skippedPageCount: null,
     }))).toEqual([])
+  })
+})
+
+describe('applySourceResumeResult', () => {
+  it('keeps a paused source paused when the backend did not resume any job', () => {
+    const result = applySourceResumeResult({
+      sourceId: 'source-1',
+      resumedJobCount: 0,
+      pausedSourceIds: new Set(['source-1']),
+      crawlingSourceIds: new Set<string>(),
+    })
+
+    expect([...result.pausedSourceIds]).toEqual(['source-1'])
+    expect([...result.crawlingSourceIds]).toEqual([])
+  })
+
+  it('moves the source from paused to crawling after a job is resumed', () => {
+    const result = applySourceResumeResult({
+      sourceId: 'source-1',
+      resumedJobCount: 1,
+      pausedSourceIds: new Set(['source-1']),
+      crawlingSourceIds: new Set<string>(),
+    })
+
+    expect([...result.pausedSourceIds]).toEqual([])
+    expect([...result.crawlingSourceIds]).toEqual(['source-1'])
   })
 })

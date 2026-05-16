@@ -30,7 +30,7 @@ import {
   type DocumentSummary,
   type WebsiteCrawlJobSummary,
 } from '@/lib/api'
-import { getCrawlPageIssueSummaries } from '@/lib/crawl-jobs'
+import { applySourceResumeResult, getCrawlPageIssueSummaries } from '@/lib/crawl-jobs'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const MANUALLY_ADDED_SOURCE_ID = '00000000-0000-0000-0000-000000000001'
@@ -378,13 +378,19 @@ export function DocumentSourcesView() {
   const handleResume = async (source: DocumentSourceListItem) => {
     setResumingSourceId(source.id)
     try {
-      await documentsApi.resumeSourceCrawl(source.id)
-      setPausedSourceIds((prev) => {
-        const next = new Set(prev)
-        next.delete(source.id)
-        return next
-      })
-      setCrawlingSourceIds((prev) => new Set([...prev, source.id]))
+      const result = await documentsApi.resumeSourceCrawl(source.id)
+      setPausedSourceIds((prev) => applySourceResumeResult({
+        sourceId: source.id,
+        resumedJobCount: result.resumedJobCount,
+        pausedSourceIds: prev,
+        crawlingSourceIds: new Set(),
+      }).pausedSourceIds)
+      setCrawlingSourceIds((prev) => applySourceResumeResult({
+        sourceId: source.id,
+        resumedJobCount: result.resumedJobCount,
+        pausedSourceIds: new Set(),
+        crawlingSourceIds: prev,
+      }).crawlingSourceIds)
       refreshCrawlingStatus()
       void loadSources()
     } finally {

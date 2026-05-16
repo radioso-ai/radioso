@@ -648,10 +648,9 @@ const fetchPageWithPlainFetch = async (
   let currentUrl = new URL(url).toString();
   let response: Response | null = null;
 
-  await assertPlainFetchAllowedByRobots(currentUrl, options);
-
   for (let redirectCount = 0; redirectCount <= 10; redirectCount += 1) {
     assertInScope(currentUrl);
+    await assertPlainFetchAllowedByRobots(currentUrl, options);
     response = await fetch(currentUrl, {
       redirect: "manual",
       signal: fetchSignal,

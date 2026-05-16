@@ -163,6 +163,51 @@ describe("default Crawlee fetcher", () => {
     }));
   });
 
+  it("does not use the plain fetch fallback to bypass robots.txt after redirects", async () => {
+    let startAttempts = 0;
+    let privateHits = 0;
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res
+          .writeHead(200, { "content-type": "text/plain; charset=utf-8" })
+          .end("User-agent: ExampleDocsCrawler/1.0\nAllow: /start\nDisallow: /start/private\n");
+        return;
+      }
+      if (req.url === "/start") {
+        startAttempts += 1;
+        if (startAttempts === 1) {
+          req.socket.destroy();
+          return;
+        }
+        res.writeHead(302, { location: "/start/private" }).end();
+        return;
+      }
+      if (req.url === "/start/private") {
+        privateHits += 1;
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end("<html><head><title>Private</title></head><body><main><p>Private content.</p></main></body></html>");
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl: `${baseUrl}/start`,
+      pageLimit: 1,
+      userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)"
+    });
+
+    expect(startAttempts).toBe(2);
+    expect(privateHits).toBe(0);
+    expect(pages[0]).toEqual(expect.objectContaining({
+      status: "failed",
+      text: "",
+      error: "Blocked by robots.txt"
+    }));
+  });
+
   it("stores decoded readable text with structural line breaks", async () => {
     const { server, baseUrl } = await listen((req, res) => {
       if (req.url === "/robots.txt") {

@@ -106,6 +106,29 @@ export function getCrawlPageIssueSummaries(
   return summaries
 }
 
+export function applySourceResumeResult({
+  sourceId,
+  resumedJobCount,
+  pausedSourceIds,
+  crawlingSourceIds,
+}: {
+  sourceId: string
+  resumedJobCount: number
+  pausedSourceIds: ReadonlySet<string>
+  crawlingSourceIds: ReadonlySet<string>
+}): { pausedSourceIds: Set<string>; crawlingSourceIds: Set<string> } {
+  const nextPaused = new Set(pausedSourceIds)
+  const nextCrawling = new Set(crawlingSourceIds)
+  if (resumedJobCount > 0) {
+    nextPaused.delete(sourceId)
+    nextCrawling.add(sourceId)
+  }
+  return {
+    pausedSourceIds: nextPaused,
+    crawlingSourceIds: nextCrawling,
+  }
+}
+
 export function mergeCrawlJobs({
   current,
   incoming,

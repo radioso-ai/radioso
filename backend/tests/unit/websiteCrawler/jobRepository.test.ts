@@ -105,7 +105,7 @@ describe("WebsiteCrawlJobRepository.create", () => {
 });
 
 describe("WebsiteCrawlJobRepository.listForWorkspace", () => {
-  it("filters by workspace, status, and since with a default limit cap", async () => {
+  it("filters recent jobs by updated_at so resumed old jobs stay visible", async () => {
     const query = vi.fn().mockResolvedValue([sampleRow()]);
     const repository = new WebsiteCrawlJobRepository({ query } as never);
     const since = new Date("2026-05-11T09:30:00.000Z");
@@ -119,7 +119,7 @@ describe("WebsiteCrawlJobRepository.listForWorkspace", () => {
     expect(query).toHaveBeenCalledTimes(1);
     const [sql, params] = query.mock.calls[0];
     expect(sql.replace(/\s+/g, " ")).toMatch(
-      /WHERE workspace_id = \$1\s+AND \(\$2::text IS NULL OR status = \$2\)\s+AND \(\$3::timestamptz IS NULL OR created_at >= \$3\)\s+AND \(\$5::uuid IS NULL OR source_id = \$5\)\s+ORDER BY created_at DESC\s+LIMIT \$4/,
+      /WHERE workspace_id = \$1\s+AND \(\$2::text IS NULL OR status = \$2\)\s+AND \(\$3::timestamptz IS NULL OR updated_at >= \$3\)\s+AND \(\$5::uuid IS NULL OR source_id = \$5\)\s+ORDER BY updated_at DESC\s+LIMIT \$4/,
     );
     expect(params).toEqual(["workspace-1", "processing", since, 25, null]);
     expect(result).toHaveLength(1);

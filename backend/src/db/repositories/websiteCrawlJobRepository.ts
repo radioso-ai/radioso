@@ -258,9 +258,9 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
        FROM website_crawl_jobs
        WHERE workspace_id = $1
          AND ($2::text IS NULL OR status = $2)
-         AND ($3::timestamptz IS NULL OR created_at >= $3)
+         AND ($3::timestamptz IS NULL OR updated_at >= $3)
          AND ($5::uuid IS NULL OR source_id = $5)
-       ORDER BY created_at DESC
+       ORDER BY updated_at DESC
        LIMIT $4`,
       [workspaceId, status, since, limit, sourceId],
     );

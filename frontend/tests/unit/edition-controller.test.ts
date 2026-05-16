@@ -28,6 +28,7 @@ describe('editionController', () => {
 
     expect(controller.canUseHumanContact()).toBe(false)
     expect(controller.canUseAssistantAnswerFeedback()).toBe(false)
+    expect(controller.canUseAgentCreationExtensions()).toBe(false)
     expect(controller.shouldLoadHumanContactSettings('assistant')).toBe(false)
     expect(controller.canUseWebsiteEmbed()).toBe(false)
     expect(controller.shouldRenderWebsiteEmbedSettings('channels')).toBe(false)
@@ -41,6 +42,7 @@ describe('editionController', () => {
 
     expect(controller.canUseHumanContact()).toBe(true)
     expect(controller.canUseAssistantAnswerFeedback()).toBe(true)
+    expect(controller.canUseAgentCreationExtensions()).toBe(true)
     expect(controller.shouldLoadHumanContactSettings('assistant')).toBe(true)
     expect(controller.shouldLoadHumanContactSettings('channels')).toBe(false)
     expect(controller.canUseWebsiteEmbed()).toBe(true)

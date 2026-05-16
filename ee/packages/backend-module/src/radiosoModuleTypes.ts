@@ -218,7 +218,111 @@ export interface ApplicationRouteMount {
         };
       } | null>;
     };
+    agentService?: AgentWizardAgentServicePort;
+    ingestionSettingsService?: AgentWizardIngestionSettingsPort;
+    documentStorage?: AgentWizardDocumentStoragePort;
+    websiteCrawlJobService?: AgentWizardWebsiteCrawlerPort;
+    chatTextGenerationClient?: AgentWizardTextGenerationPort;
+    crawlerProvider?: AgentWizardCrawlerPort;
+    assertPublicWebsiteUrl?: AgentWizardUrlPolicy;
+    websiteCrawlerLimits?: AgentWizardCrawlerLimits;
   }): Router;
+}
+
+export type AgentWizardUrlPolicy = (url: string) => Promise<void>;
+
+export interface AgentWizardCrawlerLimits {
+  defaultLimit: number;
+  maxLimit: number;
+}
+
+export interface AgentWizardCrawlerPort {
+  fetchPageWithScreenshot(
+    url: string,
+    options?: {
+      signal?: AbortSignal;
+      /**
+       * Called before every top-level navigation request (including
+       * redirects). Throw to abort. This is the SSRF gate: the wizard
+       * service injects assertSafeUrl here so a public input URL that
+       * redirects to localhost / RFC1918 / cloud metadata is rejected
+       * before any request reaches the wire. Adapters MUST honor this.
+       */
+      validateNavigationUrl?: (url: string) => Promise<void> | void;
+    },
+  ): Promise<{
+    url: string;
+    title: string | null;
+    text: string;
+    links: string[];
+    screenshot: Uint8Array | null;
+    faviconUrl: string | null;
+  }>;
+  crawlSite(
+    params: {
+      baseUrl: string;
+      pageLimit: number;
+      seedPendingUrls?: string[];
+      includeBaseUrl?: boolean;
+      signal?: AbortSignal;
+    },
+  ): Promise<Array<{
+    url: string;
+    title: string | null;
+    text: string;
+    status: string;
+    links?: string[];
+    httpStatus?: number | null;
+    error?: string | null;
+  }>>;
+  isBrowserTransportAvailable(): Promise<boolean>;
+}
+
+export interface AgentWizardAgentServicePort {
+  create(workspaceId: string, input: {
+    name: string;
+    customInstruction?: string;
+    greetingInstruction?: string;
+    retrievalEnabled?: boolean;
+  }): Promise<{ id: string; name: string }>;
+  update(workspaceId: string, agentId: string, input: Record<string, unknown>): Promise<{ id: string }>;
+}
+
+export interface AgentWizardIngestionSettingsPort {
+  updateForWorkspace(workspaceId: string, input: {
+    chunkingStrategy?: string;
+    fixedWindowChunkSize?: number;
+    fixedWindowChunkOverlap?: number;
+    structuredMinChunkSize?: number;
+    structuredMaxChunkSize?: number;
+  }): Promise<void>;
+}
+
+export interface AgentWizardDocumentStoragePort {
+  upload(input: {
+    key: string;
+    body: Uint8Array | NodeJS.ReadableStream;
+    contentType: string;
+  }): Promise<{ bucket: string; key: string; generation?: string | null }>;
+}
+
+export interface AgentWizardWebsiteCrawlerPort {
+  enqueue(input: {
+    accountId?: string | null;
+    workspaceId: string;
+    url: string;
+    limit: number;
+  }): Promise<{ jobId: string; sourceId: string | null }>;
+}
+
+export interface AgentWizardTextGenerationPort {
+  complete(input: {
+    prompt: string;
+    systemPrompt?: string;
+    temperature?: number;
+    maxOutputTokens?: number;
+    signal?: AbortSignal;
+  }): Promise<string>;
 }
 
 export interface UsageLimitDatabaseClient {

@@ -15,6 +15,7 @@ export const editionController = {
   canUseWebsiteEmbed: () => isEnterprise,
   canUseHumanContact: () => isEnterprise,
   canUseAssistantAnswerFeedback: () => isEnterprise,
+  canUseAgentCreationExtensions: () => isEnterprise,
 
   shouldLoadHumanContactSettings: (mode: 'workspace' | 'assistant' | 'channels') =>
     isEnterprise && mode === 'assistant',

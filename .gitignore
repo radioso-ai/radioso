@@ -28,6 +28,8 @@ frontend/app/embed-test/
 frontend/app/radioso-embed.js/
 frontend/app/reset-password/
 frontend/app/verify-email/
+frontend/public/agent-creation-actions.json
+frontend/public/enterprise-agent-creation-actions.json
 
 # Editor and OS files
 .idea/

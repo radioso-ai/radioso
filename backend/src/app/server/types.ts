@@ -53,6 +53,7 @@ import type { DocumentSourceRepositoryPort } from "../../db/repositories/documen
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import type { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
+import type { TextGenerationClient } from "../../shared/infra/llm/providerTypes.js";
 
 export interface AppDependencies {
   env: Env;
@@ -111,4 +112,40 @@ export interface AppDependencies {
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;
   connectorDb: Database;
+  chatTextGenerationClient: TextGenerationClient;
+  crawlerProvider: {
+    fetchPageWithScreenshot(url: string, options?: {
+      signal?: AbortSignal;
+      validateNavigationUrl?: (url: string) => Promise<void> | void;
+      [key: string]: unknown;
+    }): Promise<{
+      url: string;
+      title: string | null;
+      text: string;
+      links: string[];
+      screenshot: Uint8Array | null;
+      faviconUrl: string | null;
+    }>;
+    crawlSite(params: {
+      baseUrl: string;
+      pageLimit: number;
+      seedPendingUrls?: string[];
+      includeBaseUrl?: boolean;
+      signal?: AbortSignal;
+    }): Promise<Array<{
+      url: string;
+      title: string | null;
+      text: string;
+      status: string;
+      links?: string[];
+      httpStatus?: number | null;
+      error?: string | null;
+    }>>;
+    isBrowserTransportAvailable(): Promise<boolean>;
+  };
+  assertPublicWebsiteUrl: (url: string) => Promise<void>;
+  websiteCrawlerLimits: {
+    defaultLimit: number;
+    maxLimit: number;
+  };
 }

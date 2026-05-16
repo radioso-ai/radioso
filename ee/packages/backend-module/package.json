@@ -15,9 +15,13 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-prompts.mjs",
     "test": "vitest run --passWithNoTests --testTimeout 20000"
   },
+  "files": [
+    "dist",
+    "prompts"
+  ],
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "express": "^4.22.1",

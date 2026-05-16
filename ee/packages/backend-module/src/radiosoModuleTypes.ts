@@ -291,6 +291,22 @@ export interface ChatIntakeResult {
   activityTrace: ActivityTrace;
 }
 
+export interface PublicChatIntakeAction {
+  skillName: string;
+  intentName: string;
+}
+
+export interface ChatInputIntentMetadata {
+  skillName: string;
+  intentName?: string;
+}
+
+export interface ChatInputMetadata {
+  method: "typed" | "suggestion_click" | "intent_click";
+  suggestionSourceMessageId?: string;
+  intent?: ChatInputIntentMetadata;
+}
+
 export interface ChatIntakeProvider {
   handle(input: {
     workspaceId: string;
@@ -309,7 +325,13 @@ export interface ChatIntakeProvider {
     sourceOrigin?: string | null;
     anonymousSessionId?: string | null;
     userExpectedLocale?: string | null;
+    inputMetadata?: ChatInputMetadata;
   }): Promise<ChatIntakeResult | null>;
+  getPublicIntakeActions?(input: {
+    workspaceId: string;
+    agentId?: string | null;
+    sourceChannel?: string | null;
+  }): Promise<PublicChatIntakeAction[]>;
 }
 
 export interface ChatGateway {

@@ -73,6 +73,7 @@ export class EnterpriseHumanContactService {
   asChatIntakeProvider(): ChatIntakeProvider {
     return {
       handle: (input) => this.intakeProvider.handle(input),
+      getPublicIntakeActions: (input) => this.intakeProvider.getPublicIntakeActions(input),
     };
   }
 

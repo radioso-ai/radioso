@@ -2035,6 +2035,18 @@ components:
             - brandText
             - surface
             - text
+        intakeActions:
+          type: array
+          items:
+            type: object
+            properties:
+              skillName:
+                type: string
+              intentName:
+                type: string
+            required:
+              - skillName
+              - intentName
         expiresAt:
           type: string
           format: date-time
@@ -3961,9 +3973,23 @@ components:
               enum:
                 - typed
                 - suggestion_click
+                - intent_click
             suggestionSourceMessageId:
               type: string
               format: uuid
+            intent:
+              type: object
+              properties:
+                skillName:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                intentName:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+              required:
+                - skillName
           required:
             - method
         sourceContext:
@@ -4037,9 +4063,23 @@ components:
               enum:
                 - typed
                 - suggestion_click
+                - intent_click
             suggestionSourceMessageId:
               type: string
               format: uuid
+            intent:
+              type: object
+              properties:
+                skillName:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                intentName:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+              required:
+                - skillName
           required:
             - method
       description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`."
@@ -4133,6 +4173,18 @@ components:
             - brandText
             - surface
             - text
+        intakeActions:
+          type: array
+          items:
+            type: object
+            properties:
+              skillName:
+                type: string
+              intentName:
+                type: string
+            required:
+              - skillName
+              - intentName
         total:
           type: integer
           minimum: 0
@@ -4340,9 +4392,19 @@ components:
               enum:
                 - typed
                 - suggestion_click
+                - intent_click
             suggestionSourceMessageId:
               type: string
               format: uuid
+            intent:
+              type: object
+              properties:
+                skillName:
+                  type: string
+                intentName:
+                  type: string
+              required:
+                - skillName
           required:
             - method
         citations:

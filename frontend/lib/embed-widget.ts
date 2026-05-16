@@ -29,6 +29,8 @@ export interface WebsiteEmbedCopy {
   publicChatUnavailableMessage: string
   publicChatLoadOlderMessages: string
   publicChatSendMessageLabel: string
+  publicChatContactHumanLabel: string
+  publicChatContactHumanMessage: string
   publicChatNewChatLabel: string
   publicChatCollapseLabel: string
   publicChatDisclaimerTemplate: string
@@ -88,6 +90,8 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatUnavailableMessage: 'This chat link is no longer active. Please contact the workspace administrator for access.',
   publicChatLoadOlderMessages: 'Load older messages',
   publicChatSendMessageLabel: 'Send message',
+  publicChatContactHumanLabel: 'Talk to a human',
+  publicChatContactHumanMessage: 'I want to talk to a human.',
   publicChatNewChatLabel: 'Clear chat',
   publicChatCollapseLabel: 'Collapse chat',
   publicChatDisclaimerTemplate: '{name} uses AI and can make mistakes.',
@@ -131,6 +135,8 @@ const COPY_OVERRIDE_KEYS = [
   'publicChatUnavailableMessage',
   'publicChatLoadOlderMessages',
   'publicChatSendMessageLabel',
+  'publicChatContactHumanLabel',
+  'publicChatContactHumanMessage',
   'publicChatNewChatLabel',
   'publicChatCollapseLabel',
   'publicChatDisclaimerTemplate',

@@ -150,6 +150,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         surface: z.string(),
         text: z.string(),
       }).optional(),
+      intakeActions: z.array(z.object({
+        skillName: z.string(),
+        intentName: z.string(),
+      })).optional(),
       total: z.number().int().min(0),
       nextCursor: z.string().nullable(),
       hasMore: z.boolean(),
@@ -240,8 +244,12 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       content: z.string(),
       createdAt: z.string().datetime(),
       inputMetadata: z.object({
-        method: z.enum(["typed", "suggestion_click"]),
+        method: z.enum(["typed", "suggestion_click", "intent_click"]),
         suggestionSourceMessageId: z.string().uuid().optional(),
+        intent: z.object({
+          skillName: z.string(),
+          intentName: z.string().optional(),
+        }).optional(),
       }).optional(),
       citations: z.array(schemas.CitationSchema).optional(),
       answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),

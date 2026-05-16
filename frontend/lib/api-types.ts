@@ -86,7 +86,13 @@ export interface ChatRequest {
 }
 
 export type WebsiteEmbedPageContext = NonNullable<ApiSchemas['PublicChatSessionRequest']['pageContext']>
-export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse']
+export interface PublicChatIntakeAction {
+  skillName: string
+  intentName?: string
+}
+export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse'] & {
+  intakeActions?: PublicChatIntakeAction[]
+}
 
 export const toAssistantChatPayload = (data: ChatRequest) => ({
   agentId: data.agentId,
@@ -117,9 +123,13 @@ export const toGeneralSettings = (settings: PlatformSettings): GeneralSettings =
   assistantLogoUrl: settings.assistant.assistantLogoUrl,
 })
 
-export type ChatUserInputMetadata = NonNullable<
+type GeneratedChatUserInputMetadata = NonNullable<
   Extract<ApiSchemas['AssistantChatRequest'], { inputMetadata?: unknown }>['inputMetadata']
 >
+export type ChatUserInputMetadata = Omit<GeneratedChatUserInputMetadata, 'method' | 'intent'> & {
+  method: 'typed' | 'suggestion_click' | 'intent_click'
+  intent?: PublicChatIntakeAction
+}
 export type Citation = ApiSchemas['Citation']
 export type AnswerSegment = ApiSchemas['AnswerSegment']
 export type ChatSuggestionKind = ApiSchemas['ChatSuggestion']['kind']
@@ -259,6 +269,7 @@ export interface ContactHistoryDetailResponse {
 export type ChatHistoryListResponse = ApiSchemas['ChatHistoryListResponse'] & {
   workspaceName?: string
   assistantBootstrapActive?: boolean
+  intakeActions?: PublicChatIntakeAction[]
 }
 
 export type HistoryItem =

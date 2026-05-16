@@ -20,6 +20,7 @@ export type {
   ContactHistoryProviderPort,
   ContactHistorySummary,
 } from "../services/contactHistoryProvider.js";
+export type { PublicChatIntakeAction } from "../services/chatIntakeProvider.js";
 export type {
   ChatBootstrapResponse,
   ChatResponse,

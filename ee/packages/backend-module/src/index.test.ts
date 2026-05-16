@@ -135,6 +135,7 @@ describe("Enterprise backend module aggregation", () => {
 
     expect(provider).toEqual({
       handle: expect.any(Function),
+      getPublicIntakeActions: expect.any(Function),
     });
     expect(provider).not.toHaveProperty("stop");
   });

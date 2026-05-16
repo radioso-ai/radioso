@@ -473,6 +473,66 @@ describe("enterprise human contact service", () => {
     expect(database.requests.size).toBe(0);
   });
 
+  it("starts contact intake from structured intent metadata without English intent matching", async () => {
+    const prompts: string[] = [];
+    const responses = [
+      "{}",
+      "¿Qué correo electrónico debería usar el equipo para responder?",
+    ];
+    const { service, database } = createService({
+      chatGateway: {
+        async answer(input) {
+          prompts.push(input.prompt);
+          return responses.shift() ?? "{}";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      webhookEnabled: true,
+      webhookUrl: "https://hooks.example.com/radioso",
+      signingSecret: "secret-value-for-tests",
+    });
+
+    const result = await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-1",
+      query: "Quiero hablar con una persona.",
+      history: [
+        {
+          id: "user-message-1",
+          role: "user",
+          content: "Quiero hablar con una persona.",
+          createdAt: new Date("2026-05-04T10:00:00.000Z"),
+        },
+      ],
+      sourceChannel: "website_embed",
+      inputMetadata: {
+        method: "intent_click",
+        intent: {
+          skillName: "human_contact.request",
+          intentName: "explicit_contact_request",
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      skillName: "human_contact.request",
+      status: "active",
+      answer: "¿Qué correo electrónico debería usar el equipo para responder?",
+    });
+    expect(prompts.join("\n")).not.toContain("should start the configured skill intake");
+    expect([...database.intakeStates.values()]).toEqual([
+      expect.objectContaining({
+        status: "active",
+        missing: ["email"],
+      }),
+    ]);
+  });
+
   it("expires stale open intake rows before starting a new intake for the same conversation", async () => {
     const database = new FakeHumanContactDatabase();
     database.intakeStates.set("expired-state", {

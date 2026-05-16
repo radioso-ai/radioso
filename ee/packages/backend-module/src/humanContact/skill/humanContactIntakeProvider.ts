@@ -119,6 +119,11 @@ const failedContactTrace = (reason: string) =>
 
 const submittedFallbackAnswer = "Your request was received and will be sent to the team.";
 const failedFallbackAnswer = "Your request could not be submitted right now. Please try again later.";
+const EXPLICIT_CONTACT_INTENT_NAME = "explicit_contact_request";
+
+const hasHumanContactIntent = (input: ChatIntakeInput): boolean =>
+  input.inputMetadata?.method === "intent_click" &&
+  input.inputMetadata.intent?.skillName === HUMAN_CONTACT_SKILL_NAME;
 
 export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
   private readonly intakePrompts: DefinitionBackedIntakePrompts;
@@ -147,7 +152,8 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       return this.continueIntake(existingState, input);
     }
 
-    if (!await this.intakePrompts.shouldStart(input.query)) {
+    const requestedByIntent = hasHumanContactIntent(input);
+    if (!requestedByIntent && !await this.intakePrompts.shouldStart(input.query)) {
       return null;
     }
 
@@ -168,7 +174,9 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
         email,
         message,
         triggerSource: "explicit_user_request",
-        triggerReason: "The configured contact intake was started from the user message.",
+        triggerReason: requestedByIntent
+          ? "The configured contact intake was started from a structured user intent."
+          : "The configured contact intake was started from the user message.",
         idempotencyKey: directSubmitIdempotencyKey({
           conversationId: input.conversationId,
           email,
@@ -266,11 +274,13 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
     input: ChatIntakeInput,
   ): Promise<ChatIntakeResult | null> {
     const collected = normalizeCollected(state.collected);
+    const requestedByIntent = hasHumanContactIntent(input);
     const email = await this.extractEmailSlot(input.query);
     if (
       email &&
       !normalizeEmailField(input.query) &&
       asksAboutEmbeddedEmail(input.query) &&
+      !requestedByIntent &&
       !await this.requireIntakePrompts().shouldStart(input.query)
     ) {
       await this.updateIntakeState(state.id, {
@@ -281,7 +291,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       });
       return null;
     }
-    if (state.status === "paused" && email && !await this.requireIntakePrompts().shouldStart(input.query)) {
+    if (state.status === "paused" && email && !requestedByIntent && !await this.requireIntakePrompts().shouldStart(input.query)) {
       return null;
     }
 
@@ -318,7 +328,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
         };
       }
 
-      if (await this.requireIntakePrompts().shouldStart(input.query)) {
+      if (requestedByIntent || await this.requireIntakePrompts().shouldStart(input.query)) {
         await this.updateIntakeState(state.id, {
           status: "active",
           collected,
@@ -449,6 +459,16 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
 
   private requireIntakePrompts(): DefinitionBackedIntakePrompts {
     return this.intakePrompts;
+  }
+
+  async getPublicIntakeActions(input: { workspaceId: string }) {
+    const settings = await this.input.settingsService.findSettings(input.workspaceId);
+    return settings.configured
+      ? [{
+          skillName: HUMAN_CONTACT_SKILL_NAME,
+          intentName: EXPLICIT_CONTACT_INTENT_NAME,
+        }]
+      : [];
   }
 
   private async composeAnswerOrFallback(

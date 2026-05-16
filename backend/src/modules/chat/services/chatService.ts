@@ -646,6 +646,7 @@ export class ChatService {
       sourceChannel?: string | null;
       anonymousSessionId?: string | null;
       sourceOrigin?: string | null;
+      inputMetadata?: UserMessageInputMetadata;
     },
     session: PreparedSession,
   ): Promise<ChatIntakeResult | null> {
@@ -662,6 +663,7 @@ export class ChatService {
         sourceOrigin: input.sourceOrigin,
         anonymousSessionId: input.anonymousSessionId,
         userExpectedLocale: input.userExpectedLocale,
+        inputMetadata: input.inputMetadata,
       });
     } catch (error) {
       try {

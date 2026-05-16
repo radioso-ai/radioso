@@ -122,7 +122,10 @@ describe("human contact application module", () => {
     const provider = providerFactory(createChatIntakeDependencies());
 
     expect(stop).toHaveBeenCalledOnce();
-    expect(provider).toEqual({ handle: expect.any(Function) });
+    expect(provider).toEqual({
+      handle: expect.any(Function),
+      getPublicIntakeActions: expect.any(Function),
+    });
     expect(state.service).not.toBe(previousService);
 
     await module.shutdown?.();

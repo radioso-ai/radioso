@@ -44,6 +44,8 @@ const COPY_FIELDS = [
   ['publicChatEmptyMessage', 'Empty-state message', 'Ask a question and get an AI-powered answer.'],
   ['startPrompt', 'Composer placeholder', 'Ask a question...'],
   ['publicChatNewChatLabel', 'New chat button', 'Clear chat'],
+  ['publicChatContactHumanLabel', 'Contact-human button', 'Talk to a human'],
+  ['publicChatContactHumanMessage', 'Contact-human message', 'I want to talk to a human.'],
   ['publicChatDisclaimerTemplate', 'Disclaimer', '{name} uses AI and can make mistakes.'],
 ] as const
 

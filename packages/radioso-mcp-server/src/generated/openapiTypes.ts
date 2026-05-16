@@ -1888,6 +1888,10 @@ export interface components {
                 surface: string;
                 text: string;
             };
+            intakeActions?: {
+                skillName: string;
+                intentName: string;
+            }[];
             /** Format: date-time */
             expiresAt: string;
         };
@@ -2633,9 +2637,13 @@ export interface components {
             userExpectedLocale?: string;
             inputMetadata?: {
                 /** @enum {string} */
-                method: "typed" | "suggestion_click";
+                method: "typed" | "suggestion_click" | "intent_click";
                 /** Format: uuid */
                 suggestionSourceMessageId?: string;
+                intent?: {
+                    skillName: string;
+                    intentName?: string;
+                };
             };
             sourceContext?: {
                 /** @enum {string} */
@@ -2664,9 +2672,13 @@ export interface components {
             };
             inputMetadata?: {
                 /** @enum {string} */
-                method: "typed" | "suggestion_click";
+                method: "typed" | "suggestion_click" | "intent_click";
                 /** Format: uuid */
                 suggestionSourceMessageId?: string;
+                intent?: {
+                    skillName: string;
+                    intentName?: string;
+                };
             };
         };
         ChatConversationSummary: {
@@ -2698,6 +2710,10 @@ export interface components {
                 surface: string;
                 text: string;
             };
+            intakeActions?: {
+                skillName: string;
+                intentName: string;
+            }[];
             total: number;
             nextCursor: string | null;
             hasMore: boolean;
@@ -2771,9 +2787,13 @@ export interface components {
             createdAt: string;
             inputMetadata?: {
                 /** @enum {string} */
-                method: "typed" | "suggestion_click";
+                method: "typed" | "suggestion_click" | "intent_click";
                 /** Format: uuid */
                 suggestionSourceMessageId?: string;
+                intent?: {
+                    skillName: string;
+                    intentName?: string;
+                };
             };
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];

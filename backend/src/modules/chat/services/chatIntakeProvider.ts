@@ -20,6 +20,11 @@ export interface ChatIntakeResult {
   activityTrace: ActivityTrace;
 }
 
+export interface PublicChatIntakeAction {
+  skillName: string;
+  intentName: string;
+}
+
 export interface ChatIntakeProviderPort {
   handle(input: {
     workspaceId: string;
@@ -33,7 +38,13 @@ export interface ChatIntakeProviderPort {
     sourceOrigin?: string | null;
     anonymousSessionId?: string | null;
     userExpectedLocale?: string | null;
+    inputMetadata?: MessageRecord["inputMetadata"];
   }): Promise<ChatIntakeResult | null>;
+  getPublicIntakeActions?(input: {
+    workspaceId: string;
+    agentId?: string | null;
+    sourceChannel?: string | null;
+  }): Promise<PublicChatIntakeAction[]>;
 }
 
 export class NoopChatIntakeProvider implements ChatIntakeProviderPort {
@@ -54,5 +65,20 @@ export class ChainedChatIntakeProvider implements ChatIntakeProviderPort {
     }
 
     return null;
+  }
+
+  async getPublicIntakeActions(input: Parameters<NonNullable<ChatIntakeProviderPort["getPublicIntakeActions"]>>[0]): Promise<PublicChatIntakeAction[]> {
+    const actions = await Promise.all(
+      this.providers.map((provider) => provider.getPublicIntakeActions?.(input) ?? Promise.resolve([])),
+    );
+    const seen = new Set<string>();
+    return actions.flat().filter((action) => {
+      const key = `${action.skillName}:${action.intentName}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
   }
 }

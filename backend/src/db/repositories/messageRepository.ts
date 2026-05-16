@@ -14,11 +14,15 @@ export interface MessageRecord {
   createdAt: Date;
 }
 
-export type UserMessageInputMethod = "typed" | "suggestion_click";
+export type UserMessageInputMethod = "typed" | "suggestion_click" | "intent_click";
 
 export interface UserMessageInputMetadata {
   method: UserMessageInputMethod;
   suggestionSourceMessageId?: string;
+  intent?: {
+    skillName: string;
+    intentName?: string;
+  };
 }
 
 export interface ConversationMessageSummary {
@@ -65,10 +69,13 @@ const mapInputMetadata = (value: unknown): UserMessageInputMetadata | undefined 
     return undefined;
   }
 
-  const candidate = value as { method?: unknown; suggestionSourceMessageId?: unknown };
-  if (candidate.method !== "typed" && candidate.method !== "suggestion_click") {
+  const candidate = value as { method?: unknown; suggestionSourceMessageId?: unknown; intent?: unknown };
+  if (candidate.method !== "typed" && candidate.method !== "suggestion_click" && candidate.method !== "intent_click") {
     return undefined;
   }
+  const intent = candidate.intent && typeof candidate.intent === "object" && !Array.isArray(candidate.intent)
+    ? candidate.intent as { skillName?: unknown; intentName?: unknown }
+    : null;
 
   return {
     method: candidate.method,
@@ -76,6 +83,12 @@ const mapInputMetadata = (value: unknown): UserMessageInputMetadata | undefined 
       typeof candidate.suggestionSourceMessageId === "string" && candidate.suggestionSourceMessageId.length > 0
         ? candidate.suggestionSourceMessageId
         : undefined,
+    intent: typeof intent?.skillName === "string" && intent.skillName.length > 0
+      ? {
+          skillName: intent.skillName,
+          intentName: typeof intent.intentName === "string" && intent.intentName.length > 0 ? intent.intentName : undefined,
+        }
+      : undefined,
   };
 };
 

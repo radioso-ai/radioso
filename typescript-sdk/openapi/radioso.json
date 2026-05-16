@@ -3084,6 +3084,24 @@
               "text"
             ]
           },
+          "intakeActions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skillName": {
+                  "type": "string"
+                },
+                "intentName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "skillName",
+                "intentName"
+              ]
+            }
+          },
           "expiresAt": {
             "type": "string",
             "format": "date-time"
@@ -5895,12 +5913,31 @@
                 "type": "string",
                 "enum": [
                   "typed",
-                  "suggestion_click"
+                  "suggestion_click",
+                  "intent_click"
                 ]
               },
               "suggestionSourceMessageId": {
                 "type": "string",
                 "format": "uuid"
+              },
+              "intent": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "intentName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "skillName"
+                ]
               }
             },
             "required": [
@@ -6003,12 +6040,31 @@
                 "type": "string",
                 "enum": [
                   "typed",
-                  "suggestion_click"
+                  "suggestion_click",
+                  "intent_click"
                 ]
               },
               "suggestionSourceMessageId": {
                 "type": "string",
                 "format": "uuid"
+              },
+              "intent": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "intentName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "skillName"
+                ]
               }
             },
             "required": [
@@ -6141,6 +6197,24 @@
               "surface",
               "text"
             ]
+          },
+          "intakeActions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skillName": {
+                  "type": "string"
+                },
+                "intentName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "skillName",
+                "intentName"
+              ]
+            }
           },
           "total": {
             "type": "integer",
@@ -6431,12 +6505,27 @@
                 "type": "string",
                 "enum": [
                   "typed",
-                  "suggestion_click"
+                  "suggestion_click",
+                  "intent_click"
                 ]
               },
               "suggestionSourceMessageId": {
                 "type": "string",
                 "format": "uuid"
+              },
+              "intent": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string"
+                  },
+                  "intentName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "skillName"
+                ]
               }
             },
             "required": [

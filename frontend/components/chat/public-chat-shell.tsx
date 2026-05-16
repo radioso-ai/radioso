@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
-import { MoreHorizontal, RotateCcw, X } from 'lucide-react'
+import { MoreHorizontal, RotateCcw, UserRound, X } from 'lucide-react'
 
 import {
   AssistantAvatar,
@@ -46,6 +46,8 @@ import {
 } from '@/lib/embed-widget'
 
 type PublicChatSurface = 'public' | 'embed'
+const HUMAN_CONTACT_SKILL_NAME = 'human_contact.request'
+const HUMAN_CONTACT_INTENT_NAME = 'explicit_contact_request'
 
 const isEditableElement = (element: Element | null) => {
   if (!element) {
@@ -214,14 +216,20 @@ function RateLimitBanner({
 function PublicChatOptionsMenu({
   copy,
   theme,
+  contactAvailable,
+  contactDisabled,
   clearDisabled,
+  onContact,
   onClear,
   className = 'h-8 w-8 hover:opacity-90',
   iconColor,
 }: {
   copy: ReturnType<typeof getWebsiteEmbedCopy>
   theme: ReturnType<typeof getWebsiteEmbedTheme>
+  contactAvailable: boolean
+  contactDisabled: boolean
   clearDisabled: boolean
+  onContact: () => void
   onClear: () => void
   className?: string
   iconColor?: string
@@ -250,6 +258,17 @@ function PublicChatOptionsMenu({
           <RotateCcw className="mr-2 h-4 w-4" />
           {copy.publicChatNewChatLabel}
         </DropdownMenuItem>
+        {contactAvailable ? (
+          <DropdownMenuItem
+            disabled={contactDisabled}
+            onSelect={() => {
+              onContact()
+            }}
+          >
+            <UserRound className="mr-2 h-4 w-4" />
+            {copy.publicChatContactHumanLabel}
+          </DropdownMenuItem>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -382,6 +401,7 @@ function PublicChatContent({
     workspaceName,
     assistantAvatarUrl,
     assistantTheme,
+    intakeActions,
     isLoading,
     isHydrating,
     isLoadingOlderMessages,
@@ -400,6 +420,10 @@ function PublicChatContent({
   const resolvedAvatarUrl = assistantAvatarUrl ?? avatarUrl
   const resolvedThemeOverrides = assistantTheme ?? themeOverrides
   const theme = getWebsiteEmbedTheme(resolvedThemeOverrides)
+  const contactAvailable =
+    editionController.canUseHumanContact() &&
+    intakeActions.some((action) => action.skillName === HUMAN_CONTACT_SKILL_NAME)
+  const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages
   const clearDisabled = isLoading || isHydrating || isLoadingOlderMessages
   const visibleMessages = messages
   const hasUserMessage = visibleMessages.some((message) => message.role === 'user')
@@ -521,6 +545,18 @@ function PublicChatContent({
     })
   }
 
+  const handleManualContact = () => {
+    if (!contactAvailable || contactDisabled) return
+
+    void sendMessage(copy.publicChatContactHumanMessage, {
+      method: 'intent_click',
+      intent: {
+        skillName: HUMAN_CONTACT_SKILL_NAME,
+        intentName: HUMAN_CONTACT_INTENT_NAME,
+      },
+    })
+  }
+
   const handleStartNewChat = async () => {
     setInput('')
     if (onStartNewChat) {
@@ -583,7 +619,10 @@ function PublicChatContent({
           <PublicChatOptionsMenu
             copy={copy}
             theme={theme}
+            contactAvailable={contactAvailable}
+            contactDisabled={contactDisabled}
             clearDisabled={clearDisabled}
+            onContact={handleManualContact}
             onClear={() => void handleStartNewChat()}
           />
           {onRequestCollapse ? (
@@ -614,7 +653,10 @@ function PublicChatContent({
               <PublicChatOptionsMenu
                 copy={copy}
                 theme={theme}
+                contactAvailable={contactAvailable}
+                contactDisabled={contactDisabled}
                 clearDisabled={clearDisabled}
+                onContact={handleManualContact}
                 onClear={() => void handleStartNewChat()}
                 iconColor={theme.accentForeground}
               />

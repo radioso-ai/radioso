@@ -176,6 +176,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       status: z.string().nullable(),
       requestedUrl: z.string(),
       accepted: z.number().int().min(0),
+      skipped: z.number().int().min(0),
       failed: z.number().int().min(0),
       documents: z.array(z.object({
         externalDocumentId: z.string(),
@@ -193,7 +194,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
 
   const WebsiteCrawlJobStatusSchema = registry.register(
     "WebsiteCrawlJobStatus",
-    z.enum(["queued", "processing", "completed", "failed"]),
+    z.enum(["queued", "processing", "paused", "completed", "failed"]),
   );
 
   const CrawlPageFailureSchema = registry.register(
@@ -214,6 +215,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       sourceId: z.string().uuid().nullable(),
       documentCount: z.number().int().min(0).nullable(),
       failedPageCount: z.number().int().min(0).nullable(),
+      skippedPageCount: z.number().int().min(0).nullable(),
       failures: z.array(CrawlPageFailureSchema),
       lastError: z.string().nullable(),
       createdAt: z.string().datetime(),

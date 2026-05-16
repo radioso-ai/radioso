@@ -136,6 +136,7 @@ const fetchWithPlaywright = async (
     lastModified?: string | null;
     scopeBaseUrl?: string | null;
     userAgent?: string;
+    preserveContentLinks?: boolean;
     signal?: AbortSignal;
     captureScreenshot?: boolean;
     /**
@@ -262,7 +263,11 @@ const fetchWithPlaywright = async (
 
         const text = extractStructuredTextWithFallback({
           cleanedHtml: html,
-          originalHtml: html
+          originalHtml: html,
+          baseUrl: loadedUrl,
+          options: {
+            preserveContentLinks: options?.preserveContentLinks
+          }
         });
 
         let screenshot: Uint8Array | null = null;

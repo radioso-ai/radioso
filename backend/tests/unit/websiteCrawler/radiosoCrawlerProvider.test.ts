@@ -45,13 +45,15 @@ describe("RadiosoCrawlerProvider", () => {
       limit: 5,
     });
 
-    expect(mocks.crawlSite).toHaveBeenCalledWith({
+    expect(mocks.crawlSite).toHaveBeenCalledWith(expect.objectContaining({
       baseUrl: "https://example.com",
       pageLimit: 5,
       pageConcurrency: 1,
       userAgent: "RadiosoCrawler/1.0",
       signal: undefined,
-    });
+      seedPendingUrls: [],
+      includeBaseUrl: true,
+    }));
     expect(result).toEqual({
       provider: "radioso-crawler",
       status: "completed",
@@ -71,6 +73,11 @@ describe("RadiosoCrawlerProvider", () => {
           browserAttempted: false,
           browserFallbackReason: null,
           httpQualityScore: 0.95,
+          pageType: null,
+          qualityScore: null,
+          skipReason: null,
+          extractedContainer: null,
+          normalizedContentHash: null,
           error: null,
         },
       }],
@@ -89,6 +96,31 @@ describe("RadiosoCrawlerProvider", () => {
 
     expect(mocks.crawlSite).toHaveBeenCalledWith(expect.objectContaining({
       userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)",
+    }));
+  });
+
+  it("does not seed already-processed checkpoint URLs back into the crawler", async () => {
+    mocks.crawlSite.mockResolvedValue([]);
+
+    const provider = new RadiosoCrawlerProvider();
+    await provider.crawl({
+      url: "https://example.com",
+      limit: 1,
+      checkpoint: {
+        discoveredUrls: ["https://example.com/docs"],
+        queuedUrls: ["https://example.com/docs", "https://example.com/next"],
+        processingUrls: ["https://example.com/current"],
+        processedCanonicalUrls: ["https://example.com/docs", "https://example.com/current"],
+        accepted: 1,
+        skipped: 0,
+        failed: 0,
+        lastProcessedAt: "2026-05-11T10:00:00.000Z",
+      },
+    });
+
+    expect(mocks.crawlSite).toHaveBeenCalledWith(expect.objectContaining({
+      seedPendingUrls: ["https://example.com/next"],
+      includeBaseUrl: false,
     }));
   });
 });

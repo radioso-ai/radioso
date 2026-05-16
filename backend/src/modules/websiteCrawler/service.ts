@@ -4,11 +4,19 @@ import {
   redactSensitiveText,
 } from "./errors.js";
 import type {
+  WebsiteCrawlCheckpointEvent,
   WebsiteCrawlPage,
   WebsiteCrawlResult,
   WebsiteCrawlerProvider,
 } from "./provider.js";
 import { assertPublicWebsiteUrl } from "./urlPolicy.js";
+import {
+  emptyWebsiteCrawlCheckpoint,
+  normalizeWebsiteCrawlCheckpoint,
+  normalizeWebsiteCrawlPolicy,
+  type WebsiteCrawlCheckpoint,
+  type WebsiteCrawlPolicy,
+} from "./policy.js";
 
 // Pages exceeding this character count are skipped during ingestion to avoid
 // embedding auto-generated dumps, log outputs, or other oversized content that
@@ -53,6 +61,7 @@ export interface WebsiteCrawlPublicationResult {
   status: string | null;
   requestedUrl: string;
   accepted: number;
+  skipped: number;
   failed: number;
   documents: Array<{
     externalDocumentId: string;
@@ -81,9 +90,45 @@ export class WebsiteCrawlerService {
     url: string;
     limit: number;
     signal?: AbortSignal;
+    policy?: Partial<WebsiteCrawlPolicy>;
+    checkpoint?: WebsiteCrawlCheckpoint | null;
+    onCheckpoint?: (checkpoint: WebsiteCrawlCheckpoint) => Promise<void>;
   }): Promise<WebsiteCrawlPublicationResult> {
     const websiteBaseUrl = normalizeBaseUrl(input.url);
     const safeWebsiteBaseUrl = redactWebsiteCrawlerUrl(websiteBaseUrl);
+    const policy = normalizeWebsiteCrawlPolicy(input.policy ?? {});
+    const checkpoint = normalizeWebsiteCrawlCheckpoint(input.checkpoint ?? emptyWebsiteCrawlCheckpoint());
+    const checkpointSets = {
+      discovered: new Set(checkpoint.discoveredUrls),
+      queued: new Set(checkpoint.queuedUrls),
+      processing: new Set(checkpoint.processingUrls),
+      processed: new Set(checkpoint.processedCanonicalUrls),
+      contentHashes: new Set(checkpoint.processedContentHashes ?? []),
+    };
+    const persistCheckpoint = async () => {
+      checkpoint.discoveredUrls = [...checkpointSets.discovered];
+      checkpoint.queuedUrls = [...checkpointSets.queued];
+      checkpoint.processingUrls = [...checkpointSets.processing];
+      checkpoint.processedCanonicalUrls = [...checkpointSets.processed];
+      checkpoint.processedContentHashes = [...checkpointSets.contentHashes];
+      await input.onCheckpoint?.({ ...checkpoint });
+    };
+    const recordCheckpointEvent = async (event: WebsiteCrawlCheckpointEvent) => {
+      const canonical = event.canonicalUrl ?? event.url;
+      if (event.type === "discovered") {
+        checkpointSets.discovered.add(canonical);
+        checkpointSets.queued.add(event.url);
+      } else if (event.type === "processing") {
+        checkpointSets.queued.delete(event.url);
+        checkpointSets.processing.add(event.url);
+      } else {
+        checkpointSets.queued.delete(event.url);
+        checkpointSets.processing.delete(event.url);
+        checkpointSets.processed.add(canonical);
+        checkpoint.lastProcessedAt = new Date().toISOString();
+      }
+      await persistCheckpoint();
+    };
     let documentSource: { id: string } | null = null;
     try {
       await (this.dependencies.assertCrawlUrlAllowed ?? assertPublicWebsiteUrl)(websiteBaseUrl);
@@ -95,6 +140,7 @@ export class WebsiteCrawlerService {
           config: {
             url: safeWebsiteBaseUrl,
             limit: input.limit,
+            policy,
           },
           metadata: {
             requestedUrl: safeWebsiteBaseUrl,
@@ -119,37 +165,56 @@ export class WebsiteCrawlerService {
       runId: null,
       status: null,
       requestedUrl: safeWebsiteBaseUrl,
-      accepted: 0,
-      failed: 0,
+      accepted: checkpoint.accepted,
+      skipped: checkpoint.skipped,
+      failed: checkpoint.failed,
       documents: [],
       failures: [],
     };
 
     const assertCrawlUrlAllowed = this.dependencies.assertCrawlUrlAllowed ?? assertPublicWebsiteUrl;
     const seen = new Set<string>();
+    const completedPageCount = checkpoint.accepted + checkpoint.skipped + checkpoint.failed;
+    const remainingLimit = Math.max(input.limit - completedPageCount, 0);
     let pageCount = 0;
 
     const ingestPage = async (page: WebsiteCrawlPage): Promise<void> => {
-      if (pageCount >= input.limit) return;
+      if (pageCount >= remainingLimit) return;
       pageCount += 1;
 
       this.throwIfAborted(input.signal);
+      const providerFailureReason = getProviderFailureReason(page);
+      if (providerFailureReason) {
+        result.failed += 1;
+        checkpoint.failed += 1;
+        result.failures.push({
+          sourceUrl: safeFailureSourceUrl(page.sourceUrl),
+          reason: providerFailureReason,
+        });
+        await persistCheckpoint();
+        return;
+      }
+
       const content = page.content.trim();
       if (!content) {
-        result.failed += 1;
+        result.skipped += 1;
+        checkpoint.skipped += 1;
         result.failures.push({
           sourceUrl: safeFailureSourceUrl(page.sourceUrl),
           reason: "Page did not contain crawlable content",
         });
+        await persistCheckpoint();
         return;
       }
 
       if (content.length > MAX_PAGE_CONTENT_LENGTH) {
-        result.failed += 1;
+        result.skipped += 1;
+        checkpoint.skipped += 1;
         result.failures.push({
           sourceUrl: safeFailureSourceUrl(page.sourceUrl),
           reason: `Page content exceeds maximum length (${MAX_PAGE_CONTENT_LENGTH.toLocaleString()} characters)`,
         });
+        await persistCheckpoint();
         return;
       }
 
@@ -159,14 +224,43 @@ export class WebsiteCrawlerService {
         canonicalKey = normalizePageUrl(page.canonicalUrl || sourceUrl);
       } catch {
         result.failed += 1;
+        checkpoint.failed += 1;
         result.failures.push({
           sourceUrl: safeFailureSourceUrl(page.sourceUrl),
           reason: "Page URL was invalid",
         });
+        await persistCheckpoint();
         return;
       }
       if (seen.has(canonicalKey)) return;
+      if (checkpointSets.processed.has(canonicalKey)) return;
       seen.add(canonicalKey);
+      const contentHash = typeof page.metadata?.normalizedContentHash === "string"
+        ? page.metadata.normalizedContentHash.trim()
+        : "";
+      if (contentHash && checkpointSets.contentHashes.has(contentHash)) {
+        checkpointSets.processed.add(canonicalKey);
+        result.skipped += 1;
+        checkpoint.skipped += 1;
+        result.failures.push({
+          sourceUrl: safeFailureSourceUrl(page.sourceUrl),
+          reason: "Duplicate normalized content",
+        });
+        await persistCheckpoint();
+        return;
+      }
+      const providerSkipReason = getProviderSkipReason(page, policy);
+      if (providerSkipReason) {
+        checkpointSets.processed.add(canonicalKey);
+        result.skipped += 1;
+        checkpoint.skipped += 1;
+        result.failures.push({
+          sourceUrl: safeFailureSourceUrl(page.sourceUrl),
+          reason: providerSkipReason,
+        });
+        await persistCheckpoint();
+        return;
+      }
 
       try {
         const sourceUrl = normalizePageUrl(page.sourceUrl);
@@ -191,6 +285,7 @@ export class WebsiteCrawlerService {
             config: {
               url: safeWebsiteBaseUrl,
               limit: input.limit,
+              policy,
             },
             metadata: {
               requestedUrl: safeWebsiteBaseUrl,
@@ -204,6 +299,11 @@ export class WebsiteCrawlerService {
           }),
         });
         result.accepted += 1;
+        checkpoint.accepted += 1;
+        checkpointSets.processed.add(canonicalKey);
+        if (contentHash) {
+          checkpointSets.contentHashes.add(contentHash);
+        }
         result.documents.push({
           externalDocumentId,
           documentId: document.documentId,
@@ -211,20 +311,32 @@ export class WebsiteCrawlerService {
           sourceUrl: safeSourceUrl,
           canonicalUrl: safeCanonicalUrl,
         });
+        await persistCheckpoint();
       } catch {
         result.failed += 1;
+        checkpoint.failed += 1;
         result.failures.push({
           sourceUrl: safeFailureSourceUrl(page.sourceUrl),
           reason: "Failed to publish crawled page",
         });
+        await persistCheckpoint();
       }
     };
 
     try {
       this.throwIfAborted(input.signal);
-      if (this.dependencies.provider.crawlStream) {
+      if (remainingLimit === 0) {
+        result.status = "completed";
+      } else if (this.dependencies.provider.crawlStream) {
         const streamResult = await this.dependencies.provider.crawlStream(
-          { url: websiteBaseUrl, limit: input.limit, signal: input.signal },
+          {
+            url: websiteBaseUrl,
+            limit: remainingLimit,
+            signal: input.signal,
+            policy,
+            checkpoint,
+            onCheckpointEvent: recordCheckpointEvent,
+          },
           ingestPage,
         );
         result.provider = streamResult.provider;
@@ -233,20 +345,25 @@ export class WebsiteCrawlerService {
       } else {
         const providerResult = await this.crawlProvider({
           url: websiteBaseUrl,
-          limit: input.limit,
+          limit: remainingLimit,
           signal: input.signal,
+          policy,
+          checkpoint,
+          onCheckpointEvent: recordCheckpointEvent,
         });
         result.provider = providerResult.provider;
         result.status = providerResult.status ?? null;
         result.runId = providerResult.runId ?? null;
         if (providerResult.invalidPages && providerResult.invalidPages > 0) {
           result.failed += providerResult.invalidPages;
+          checkpoint.failed += providerResult.invalidPages;
           for (let index = 0; index < providerResult.invalidPages; index += 1) {
             result.failures.push({
               sourceUrl: "invalid-provider-page",
               reason: "Provider returned an invalid page result",
             });
           }
+          await persistCheckpoint();
         }
         for (const page of providerResult.pages) {
           await ingestPage(page);
@@ -277,7 +394,14 @@ export class WebsiteCrawlerService {
     return result;
   }
 
-  private async crawlProvider(input: { url: string; limit: number; signal?: AbortSignal }) {
+  private async crawlProvider(input: {
+    url: string;
+    limit: number;
+    signal?: AbortSignal;
+    policy?: WebsiteCrawlPolicy;
+    checkpoint?: WebsiteCrawlCheckpoint;
+    onCheckpointEvent?: (event: WebsiteCrawlCheckpointEvent) => Promise<void>;
+  }) {
     try {
       return normalizeProviderResult(
         await this.dependencies.provider.crawl(input),
@@ -323,6 +447,7 @@ export class WebsiteCrawlerService {
         provider: redactSensitiveText(this.dependencies.provider.name),
         requestedUrl,
         accepted: 0,
+        skipped: 0,
         failed: 0,
         failureCode: failure.code,
         ...(failure.statusCode ? { failureStatusCode: failure.statusCode } : {}),
@@ -347,6 +472,7 @@ export class WebsiteCrawlerService {
         runId: result.runId,
         requestedUrl: result.requestedUrl,
         accepted: result.accepted,
+        skipped: result.skipped,
         failed: result.failed,
       },
     });
@@ -375,7 +501,15 @@ export const buildWebsiteExternalDocumentId = (input: {
 // (e.g. prototype-pollution payloads) into the JSONB column.
 const PROVIDER_METADATA_STRING_MAX_LENGTH = 1024;
 
-type ProviderMetadataKey = "httpStatus" | "etag" | "lastModified";
+type ProviderMetadataKey =
+  | "httpStatus"
+  | "etag"
+  | "lastModified"
+  | "pageType"
+  | "skipReason"
+  | "extractedContainer"
+  | "normalizedContentHash"
+  | "qualityScore";
 type ProviderMetadataValueType = "number" | "string";
 
 const PROVIDER_DOCUMENT_METADATA_ALLOWLIST: ReadonlyArray<{
@@ -385,6 +519,11 @@ const PROVIDER_DOCUMENT_METADATA_ALLOWLIST: ReadonlyArray<{
   { key: "httpStatus", type: "number" },
   { key: "etag", type: "string" },
   { key: "lastModified", type: "string" },
+  { key: "pageType", type: "string" },
+  { key: "skipReason", type: "string" },
+  { key: "extractedContainer", type: "string" },
+  { key: "normalizedContentHash", type: "string" },
+  { key: "qualityScore", type: "number" },
 ];
 
 const coerceAllowedValue = (
@@ -426,6 +565,32 @@ const buildDocumentMetadata = (input: {
   canonicalUrl: input.canonicalUrl || input.sourceUrl,
   ...pickAllowedProviderMetadata(input.page.metadata ?? {}),
 });
+
+const getProviderSkipReason = (
+  page: WebsiteCrawlPage,
+  _policy: WebsiteCrawlPolicy,
+): string | null => {
+  const metadata = page.metadata ?? {};
+  const skipReason = typeof metadata.skipReason === "string" ? metadata.skipReason.trim() : "";
+  if (skipReason) {
+    return skipReason;
+  }
+  const pageType = typeof metadata.pageType === "string" ? metadata.pageType : "";
+  if (pageType === "listing" || pageType === "search" || pageType === "feed" || pageType === "asset") {
+    return `Skipped ${pageType} page`;
+  }
+  return null;
+};
+
+const getProviderFailureReason = (page: WebsiteCrawlPage): string | null => {
+  const metadata = page.metadata ?? {};
+  const crawlerStatus = typeof metadata.crawlerStatus === "string" ? metadata.crawlerStatus : "";
+  if (crawlerStatus !== "failed") {
+    return null;
+  }
+  const error = typeof metadata.error === "string" ? metadata.error.trim() : "";
+  return error ? `Crawler failed: ${redactSensitiveText(error)}` : "Crawler failed to fetch page";
+};
 
 const SENSITIVE_QUERY_PARAM_PATTERNS = [
   /secret/i,

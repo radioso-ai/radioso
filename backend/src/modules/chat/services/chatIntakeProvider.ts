@@ -11,6 +11,17 @@ export type ChatIntakeStatus =
   | "expired"
   | "failed";
 
+export interface ChatIntakeReceiptField {
+  name: string;
+  displayName: string;
+  value: string;
+}
+
+export interface ChatIntakeReceipt {
+  fields: ChatIntakeReceiptField[];
+  statusLabel?: string;
+}
+
 export interface ChatIntakeResult {
   skillName: string;
   status: ChatIntakeStatus;
@@ -18,6 +29,7 @@ export interface ChatIntakeResult {
   answer: string;
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;
+  receipt?: ChatIntakeReceipt;
 }
 
 export interface PublicChatIntakeAction {

@@ -72,6 +72,18 @@ export const sendChatSse = (
       return;
     }
 
+    if (event.type === "skill") {
+      res.write("event: skill\n");
+      res.write(`data: ${JSON.stringify({
+        conversationId: event.conversationId,
+        skillName: event.skillName,
+        phase: event.phase,
+        localizedTitle: event.localizedTitle,
+        receipt: event.receipt,
+      })}\n\n`);
+      return;
+    }
+
     res.write("event: done\n");
     res.write(`data: ${JSON.stringify({
       conversationId: event.conversationId,
@@ -85,6 +97,7 @@ export const sendChatSse = (
       suggestions: event.suggestions,
       activitySummary: event.activitySummary,
       activityTrace: event.activityTrace,
+      skill: event.skill,
     })}\n\n`);
   };
 

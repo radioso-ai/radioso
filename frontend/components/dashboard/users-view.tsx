@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { isValidEmailAddress } from '@/lib/validation'
 
 export function UsersPanel() {
   const [accessView, setAccessView] = useState<'members' | 'workspaces'>('members')
@@ -55,7 +56,7 @@ export function UsersPanel() {
     invitation.status === 'pending' && !activeUserEmails.has(invitation.email.toLowerCase())
   ))
   const trimmedEmail = email.trim()
-  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)
+  const isEmailValid = isValidEmailAddress(trimmedEmail)
   const showEmailError = emailTouched && trimmedEmail.length > 0 && !isEmailValid
 
   useEffect(() => {

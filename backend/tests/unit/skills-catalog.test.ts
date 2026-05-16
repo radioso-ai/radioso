@@ -4,12 +4,14 @@ import {
   createDefaultSkillCatalogRegistry,
   SkillCatalogService,
   skillDiagnosticFieldNames,
+  skillExecutionSchema,
+  skillIntakeDefinitionSchema,
   validateSkillDiagnostic,
 } from "../../src/modules/skills/public.js";
 import { capabilityNames, StrictCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 
 describe("skills catalog", () => {
-  it("lists stable built-in skill metadata without generic execution contracts", async () => {
+  it("lists stable built-in skill metadata with shared intake and execution contracts", async () => {
     const service = new SkillCatalogService({
       capabilityPolicy: new StrictCapabilityPolicy({ deniedCapabilities: [] }),
       registry: createDefaultSkillCatalogRegistry(),
@@ -51,6 +53,16 @@ describe("skills catalog", () => {
       schemaReferences: {
         inputSchemaRef: "RetrievalAnswerRequest",
         settingsSchemaRef: "RetrievalSettingsOverride",
+      },
+      intake: expect.objectContaining({
+        fields: expect.arrayContaining([
+          expect.objectContaining({ name: "query", type: "string", required: true }),
+        ]),
+      }),
+      execution: {
+        kind: "internal",
+        adapter: "retrieval_answer",
+        enqueue: false,
       },
       steps: expect.arrayContaining([
         expect.objectContaining({ name: "context_selection", kind: "context_selection" }),
@@ -176,5 +188,102 @@ describe("skills catalog", () => {
       error: { code: "unsupported_query_type" },
       fallback: { used: false },
     }).success).toBe(true);
+  });
+
+  it("validates shared intake and execution metadata without treating it as a generic endpoint", () => {
+    const registry = createDefaultSkillCatalogRegistry([
+      {
+        name: "appointments.schedule",
+        displayName: "Appointment schedule",
+        description: "Schedule an appointment through a configured delivery adapter.",
+        owner: "platform",
+        executionClass: "interactive",
+        supportedCallers: ["assistant", "public_embed"],
+        requiredCapabilities: [],
+        contractReferences: [
+          {
+            kind: "documentation",
+            label: "Appointment scheduling setup",
+            path: "docs/appointment-scheduling.md",
+          },
+        ],
+        diagnostics: {
+          defined: true,
+          shapeAware: false,
+          strategyAware: false,
+        },
+        intake: {
+          enabled: true,
+          supportedCallers: ["assistant", "public_embed"],
+          intent: {
+            description: "Schedule an appointment using an email address and preferred date.",
+            examples: ["Schedule a demo", "Book an appointment for tomorrow"],
+          },
+          fields: [
+            {
+              name: "email",
+              displayName: "email address",
+              type: "email",
+              required: true,
+              sensitive: true,
+              ttlSeconds: 900,
+            },
+            {
+              name: "preferred_date",
+              displayName: "preferred date",
+              type: "date",
+              required: true,
+            },
+          ],
+          confirmation: "none",
+          interruptionPolicy: "pause_and_resume",
+        },
+        execution: {
+          kind: "webhook",
+          provider: "make",
+          endpointId: "appointment_schedule",
+          enqueue: false,
+          timeoutMs: 15_000,
+        },
+      },
+    ]);
+    const entry = registry.get("appointments.schedule");
+
+    expect(skillIntakeDefinitionSchema.safeParse(entry?.intake).success).toBe(true);
+    expect(skillExecutionSchema.safeParse(entry?.execution).success).toBe(true);
+    expect(entry?.intake).toMatchObject({
+      enabled: true,
+      fields: expect.arrayContaining([
+        expect.objectContaining({ name: "email", type: "email", sensitive: true }),
+        expect.objectContaining({ name: "preferred_date", type: "date" }),
+      ]),
+    });
+    expect(entry?.execution).toMatchObject({
+      kind: "webhook",
+      provider: "make",
+      endpointId: "appointment_schedule",
+      enqueue: false,
+      timeoutMs: 15_000,
+    });
+    expect(entry?.contractReferences).not.toContainEqual(expect.objectContaining({
+      path: expect.stringContaining("/skills/"),
+    }));
+  });
+
+  it("uses the same interface for retrieval and contact-style skill definitions", () => {
+    const retrieval = createDefaultSkillCatalogRegistry().get("retrieval.answer");
+
+    expect(retrieval).toMatchObject({
+      intake: expect.objectContaining({
+        fields: expect.arrayContaining([
+          expect.objectContaining({ name: "query", required: true }),
+        ]),
+      }),
+      execution: {
+        kind: "internal",
+        adapter: "retrieval_answer",
+        enqueue: false,
+      },
+    });
   });
 });

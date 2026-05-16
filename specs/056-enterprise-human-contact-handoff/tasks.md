@@ -10,10 +10,10 @@
 
 ## Phase 2: Backend Foundation
 
-- [x] T003 Add backend tests for OSS chat suggestion action typing without EE-specific action names.
-- [x] T004 Add shared chat-action provider contracts, disabled implementation, draft/submit schemas, and error mapping.
-- [x] T005 Wire default no-op chat-action provider through composition.
-- [x] T006 Update assistant/public chat response contracts and OpenAPI registry for action suggestions and draft/submit endpoints.
+- [x] T003 Add backend tests for OSS text suggestion typing without EE-specific action names.
+- [x] T004 Add shared chat-intake provider contracts, disabled implementation, and error mapping.
+- [x] T005 Wire default no-op chat-intake provider through composition.
+- [x] T006 Update assistant/public chat response contracts and OpenAPI registry for intake metadata.
 
 ## Phase 3: Enterprise Backend
 
@@ -26,14 +26,14 @@
 
 ## Phase 4: Frontend And Embed
 
-- [x] T013 Keep OSS frontend API helpers/types generic; contact settings, draft, and submit are EE-owned routes.
-- [x] T014 Add contact-human inline composer with loading, validation, success, and failure states.
-- [x] T015 Wire dashboard chat action/manual entry to inline composer without sending a message.
-- [x] T016 Wire public chat and embed action/manual entry to inline composer responsively.
+- [x] T013 Keep OSS frontend API helpers/types generic; contact settings are EE-owned routes.
+- [x] T014 Add contact-human chat intake with loading, validation, success, and failure states.
+- [x] T015 Wire dashboard chat through the server-side intake without an inline composer.
+- [x] T016 Wire public chat and embed through the server-side intake responsively.
 - [x] T017 Add Enterprise settings controls for enablement, webhook URL, masked secret, and rotation.
-- [x] T018 Add focused frontend tests for action handling and inline composer validation where existing harness supports it.
-- [x] T023 Amend the spec for the inline handoff composer and visible explicit-contact intent behavior.
-- [x] T024 Enact explicit typed contact requests through the visible inline composer when the contact action is available.
+- [x] T018 Add focused frontend tests for settings and chat behavior where existing harness supports it.
+- [x] T023 Amend the spec for the skill-intake handoff and visible explicit-contact intent behavior.
+- [x] T024 Enact explicit typed contact requests through the human-contact skill intake when contact delivery is configured.
 - [x] T025 Add contact requests to Activity list/detail through an EE-backed history provider.
 - [x] T026 Rename the admin/chat surface to Talk to a human, add email delivery settings, and use reveal/copy/rotate signing-token controls for webhook delivery.
 

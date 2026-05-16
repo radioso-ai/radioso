@@ -3,14 +3,25 @@ import { z } from "zod";
 const localeHintSchema = z.string().trim().max(35);
 
 const userInputMetadataSchema = z.object({
-  method: z.enum(["typed", "suggestion_click"]),
+  method: z.enum(["typed", "suggestion_click", "intent_click"]),
   suggestionSourceMessageId: z.string().uuid().optional(),
+  intent: z.object({
+    skillName: z.string().trim().min(1).max(120),
+    intentName: z.string().trim().min(1).max(120).optional(),
+  }).optional(),
 }).superRefine((value, ctx) => {
   if (value.method === "suggestion_click" && !value.suggestionSourceMessageId) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: "suggestionSourceMessageId is required for suggestion_click",
       path: ["suggestionSourceMessageId"],
+    });
+  }
+  if (value.method === "intent_click" && !value.intent) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "intent is required for intent_click",
+      path: ["intent"],
     });
   }
 });

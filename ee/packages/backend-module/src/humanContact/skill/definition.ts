@@ -17,26 +17,52 @@ const supportedDiagnosticFields = [
 
 export const humanContactRequestSkillDefinition: SkillDefinition = {
   name: "human_contact.request",
-  displayName: "Human contact request",
-  description: "Let a chat user request follow-up from a person through configured Enterprise contact delivery.",
+  displayName: "Contact handoff request",
+  description: "Let a chat user request follow-up through configured Enterprise contact delivery.",
   owner: "contact",
   executionClass: "deferred",
   supportedCallers: ["assistant", "dashboard", "public_embed"],
   requiredCapabilities: ["human_contact.request"],
-  contractReferences: [
-    {
-      kind: "http",
-      label: "Enterprise contact submit API",
-      method: "POST",
-      path: "/api/v1/ee/contact/submit",
+  contractReferences: [],
+  intake: {
+    enabled: true,
+    supportedCallers: ["assistant", "dashboard", "public_embed"],
+    intent: {
+      description: "Start when the user wants to talk to a human, contact a person, reach the team, or have someone follow up.",
+      examples: [
+        "I want to talk to a human.",
+        "Can someone from the team contact me?",
+        "Please connect me with a person.",
+      ],
     },
-    {
-      kind: "http",
-      label: "Enterprise public contact submit API",
-      method: "POST",
-      path: "/api/v1/ee/contact/public/chat/{token}/submit",
-    },
-  ],
+    fields: [
+      {
+        name: "email",
+        displayName: "email address",
+        type: "email",
+        required: true,
+        sensitive: true,
+        ttlSeconds: 900,
+        extractionHint: "The email address where follow-up should be sent.",
+      },
+      {
+        name: "message",
+        displayName: "message",
+        type: "string",
+        required: true,
+        maxLength: 6000,
+        extractionHint: "A concise summary of what the user wants help with.",
+      },
+    ],
+    confirmation: "none",
+    interruptionPolicy: "pause_and_resume",
+  },
+  execution: {
+    kind: "delivery_pipeline",
+    adapter: "human_contact",
+    destinations: ["email", "webhook"],
+    enqueue: true,
+  },
   diagnostics: {
     defined: true,
     shapeAware: true,
@@ -59,11 +85,10 @@ export const humanContactRequestSkillDefinition: SkillDefinition = {
       displayName: "Trigger evaluation",
       clauses: {
         deterministicSources: [
-          "no_context_refusal",
-          "grounded_degraded_unsupported_segments",
+          "explicit_user_request",
         ],
         explicitActionSource: "explicit_user_request",
-        classifier: "bounded",
+        classifier: "intake_start",
       },
     },
     {
@@ -108,13 +133,7 @@ export const humanContactRequestSkillDefinition: SkillDefinition = {
     {
       name: "explicit_contact_request",
       displayName: "Explicit contact request",
-      description: "The user selected or submitted a contact action explicitly.",
-      stepOverrides: {},
-    },
-    {
-      name: "assistant_suggested_contact",
-      displayName: "Assistant suggested contact",
-      description: "The assistant offered contact based on grounded answer outcome or classifier output.",
+      description: "The user asked for human follow-up in chat and completed the intake.",
       stepOverrides: {},
     },
     {

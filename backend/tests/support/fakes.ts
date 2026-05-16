@@ -2213,18 +2213,20 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
   async create(input: {
     conversationId: string;
     workspaceId: string;
-    role: "user" | "assistant" | "system";
-    content: string;
-    inputMetadata?: MessageRecord["inputMetadata"];
-  }): Promise<MessageRecord> {
+	    role: "user" | "assistant" | "system";
+	    content: string;
+	    inputMetadata?: MessageRecord["inputMetadata"];
+	    metadata?: Record<string, unknown>;
+	  }): Promise<MessageRecord> {
     const record: MessageRecord = {
       id: randomUUID(),
       conversationId: input.conversationId,
       workspaceId: input.workspaceId,
-      role: input.role,
-      content: input.content,
-      inputMetadata: input.inputMetadata,
-      createdAt: new Date(),
+	      role: input.role,
+	      content: input.content,
+	      metadata: input.metadata ?? (input.inputMetadata ? { ...input.inputMetadata } : undefined),
+	      inputMetadata: input.inputMetadata,
+	      createdAt: new Date(),
     };
     const items = this.items.get(input.conversationId) ?? [];
     items.push(record);

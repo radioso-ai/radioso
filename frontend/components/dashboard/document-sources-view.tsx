@@ -30,6 +30,7 @@ import {
   type DocumentSummary,
   type WebsiteCrawlJobSummary,
 } from '@/lib/api'
+import { getCrawlPageIssueSummaries } from '@/lib/crawl-jobs'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const MANUALLY_ADDED_SOURCE_ID = '00000000-0000-0000-0000-000000000001'
@@ -140,7 +141,7 @@ function SourceDocumentList({ sourceId, sourceKind }: { sourceId: string; source
   const failedDocCount = documents.filter((d) => d.status === 'failed').length
   const crawlInProgress = crawlJob?.status === 'queued' || crawlJob?.status === 'processing'
   const crawlPaused = crawlJob?.status === 'paused'
-  const crawlFailedPages = crawlJob?.failedPageCount ?? 0
+  const crawlPageIssueSummaries = getCrawlPageIssueSummaries(crawlJob)
   const crawlFailures = crawlJob?.failures ?? []
   const crawlFailed = crawlJob?.status === 'failed'
 
@@ -166,9 +167,14 @@ function SourceDocumentList({ sourceId, sourceKind }: { sourceId: string; source
         {failedDocCount > 0 ? (
           <span className="text-destructive">{failedDocCount} failed</span>
         ) : null}
-        {crawlFailedPages > 0 ? (
-          <span className="text-destructive">{crawlFailedPages} skipped during crawl</span>
-        ) : null}
+        {crawlPageIssueSummaries.map((summary) => (
+          <span
+            key={summary.kind}
+            className={summary.kind === 'failed' ? 'text-destructive' : undefined}
+          >
+            {summary.label}
+          </span>
+        ))}
         {crawlFailed && crawlJob?.lastError ? (
           <span className="text-destructive">Crawl failed: {crawlJob.lastError}</span>
         ) : null}

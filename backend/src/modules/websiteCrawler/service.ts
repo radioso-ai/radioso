@@ -183,6 +183,18 @@ export class WebsiteCrawlerService {
       pageCount += 1;
 
       this.throwIfAborted(input.signal);
+      const providerFailureReason = getProviderFailureReason(page);
+      if (providerFailureReason) {
+        result.failed += 1;
+        checkpoint.failed += 1;
+        result.failures.push({
+          sourceUrl: safeFailureSourceUrl(page.sourceUrl),
+          reason: providerFailureReason,
+        });
+        await persistCheckpoint();
+        return;
+      }
+
       const content = page.content.trim();
       if (!content) {
         result.skipped += 1;
@@ -568,6 +580,16 @@ const getProviderSkipReason = (
     return `Skipped ${pageType} page`;
   }
   return null;
+};
+
+const getProviderFailureReason = (page: WebsiteCrawlPage): string | null => {
+  const metadata = page.metadata ?? {};
+  const crawlerStatus = typeof metadata.crawlerStatus === "string" ? metadata.crawlerStatus : "";
+  if (crawlerStatus !== "failed") {
+    return null;
+  }
+  const error = typeof metadata.error === "string" ? metadata.error.trim() : "";
+  return error ? `Crawler failed: ${redactSensitiveText(error)}` : "Crawler failed to fetch page";
 };
 
 const SENSITIVE_QUERY_PARAM_PATTERNS = [

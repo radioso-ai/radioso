@@ -225,6 +225,22 @@ describe("WebsiteCrawlJobRepository.releasePausedClaim", () => {
   });
 });
 
+describe("WebsiteCrawlJobRepository.releaseAllTimedOutClaims", () => {
+  it("requeues expired processing claims and only clears expired paused claims", async () => {
+    const execute = vi.fn().mockResolvedValue(2);
+    const repository = new WebsiteCrawlJobRepository({ execute } as never);
+    const cutoff = new Date("2026-05-11T19:30:00.000Z");
+
+    await expect(repository.releaseAllTimedOutClaims(cutoff, "claim_expired")).resolves.toBe(2);
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0].replace(/\s+/g, " ")).toMatch(
+      /SET status = CASE WHEN status = 'processing' THEN 'queued' ELSE status END,\s+claimed_at = NULL,\s+last_error = CASE WHEN status = 'processing' THEN \$2 ELSE last_error END.*WHERE status IN \('processing', 'paused'\)\s+AND claimed_at <= \$1/s,
+    );
+    expect(execute.mock.calls[0][1]).toEqual([cutoff, "claim_expired"]);
+  });
+});
+
 describe("WebsiteCrawlJobRepository.deleteById", () => {
   it("only deletes terminal rows scoped to the workspace and reports whether a row was removed", async () => {
     const execute = vi.fn().mockResolvedValue(1);

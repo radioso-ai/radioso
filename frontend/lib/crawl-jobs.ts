@@ -91,6 +91,21 @@ export interface CrawlJobMergeResult {
   deletedJobIdsToForget: string[]
 }
 
+export function getCrawlPageIssueSummaries(
+  job: Pick<WebsiteCrawlJobSummary, 'failedPageCount' | 'skippedPageCount'> | null | undefined,
+): Array<{ kind: 'failed' | 'skipped'; label: string }> {
+  const summaries: Array<{ kind: 'failed' | 'skipped'; label: string }> = []
+  const failedPageCount = job?.failedPageCount ?? 0
+  const skippedPageCount = job?.skippedPageCount ?? 0
+  if (failedPageCount > 0) {
+    summaries.push({ kind: 'failed', label: `${failedPageCount} failed during crawl` })
+  }
+  if (skippedPageCount > 0) {
+    summaries.push({ kind: 'skipped', label: `${skippedPageCount} skipped during crawl` })
+  }
+  return summaries
+}
+
 export function mergeCrawlJobs({
   current,
   incoming,

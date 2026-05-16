@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { WebsiteCrawlJobStatus, WebsiteCrawlJobSummary } from '@/lib/api'
-import { mergeCrawlJobs, parseCrawlForm } from '@/lib/crawl-jobs'
+import { getCrawlPageIssueSummaries, mergeCrawlJobs, parseCrawlForm } from '@/lib/crawl-jobs'
 
 const baseJob = (overrides: Partial<WebsiteCrawlJobSummary>): WebsiteCrawlJobSummary => ({
   id: 'j-1',
@@ -195,5 +195,24 @@ describe('mergeCrawlJobs', () => {
 
     expect(result.jobs).toEqual([real])
     expect(result.completedJobIds).toEqual([])
+  })
+})
+
+describe('getCrawlPageIssueSummaries', () => {
+  it('labels failed and skipped crawl pages separately', () => {
+    expect(getCrawlPageIssueSummaries(baseJob({
+      failedPageCount: 2,
+      skippedPageCount: 3,
+    }))).toEqual([
+      { kind: 'failed', label: '2 failed during crawl' },
+      { kind: 'skipped', label: '3 skipped during crawl' },
+    ])
+  })
+
+  it('omits zero and null page issue counts', () => {
+    expect(getCrawlPageIssueSummaries(baseJob({
+      failedPageCount: 0,
+      skippedPageCount: null,
+    }))).toEqual([])
   })
 })

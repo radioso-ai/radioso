@@ -331,11 +331,11 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
   async releaseAllTimedOutClaims(claimedAtOrBefore: Date, errorMessage: string): Promise<number> {
     return this.database.execute(
       `UPDATE website_crawl_jobs
-       SET status = 'queued',
+       SET status = CASE WHEN status = 'processing' THEN 'queued' ELSE status END,
            claimed_at = NULL,
-           last_error = $2,
+           last_error = CASE WHEN status = 'processing' THEN $2 ELSE last_error END,
            updated_at = NOW()
-       WHERE status = 'processing'
+       WHERE status IN ('processing', 'paused')
          AND claimed_at <= $1`,
       [claimedAtOrBefore, errorMessage],
     );

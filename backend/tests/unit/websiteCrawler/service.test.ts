@@ -770,6 +770,49 @@ describe("website crawler service", () => {
     expect(ingest).toHaveBeenCalledTimes(1);
   });
 
+  it("counts crawler transport failures as failed pages before empty-content skips", async () => {
+    const ingest = vi.fn();
+    const resolveSource = vi.fn().mockResolvedValue({ id: "source-1" });
+    const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([
+        {
+          sourceUrl: "https://example.com/blocked",
+          title: null,
+          content: "",
+          metadata: {
+            crawlerStatus: "failed",
+            error: "Blocked by status code 403 token=crawler-secret",
+            httpStatus: 403,
+          },
+        },
+      ]),
+      documentIngestionService: { ingest, resolveSource, updateSourceSyncState },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    const result = await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 1,
+    });
+
+    expect(result.accepted).toBe(0);
+    expect(result.skipped).toBe(0);
+    expect(result.failed).toBe(1);
+    expect(result.failures).toEqual([{
+      sourceUrl: "https://example.com/blocked",
+      reason: "Crawler failed: Blocked by status code 403 [redacted]",
+    }]);
+    expect(ingest).not.toHaveBeenCalled();
+    expect(updateSourceSyncState).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+      status: "failure",
+    }));
+  });
+
   it("enforces local page limits and accounts for malformed provider page URLs", async () => {
     const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
     const service = new WebsiteCrawlerService({

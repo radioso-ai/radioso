@@ -194,7 +194,7 @@ const main = async () => {
   const enterpriseAgentWizardFrontendPackage = path.join(eeRoot, "packages/agent-wizard-frontend");
   const appOrigin = process.env.RADIOSO_EE_APP_ORIGIN ?? "http://localhost:3000";
 
-  for (const requiredPath of [eeRoot, enterpriseAuthFrontendPackage, enterpriseBackendPackage, enterpriseWidgetPackage]) {
+  for (const requiredPath of [eeRoot, enterpriseAuthFrontendPackage, enterpriseBackendPackage, enterpriseWidgetPackage, enterpriseAgentWizardFrontendPackage]) {
     if (!(await pathExists(requiredPath))) {
       throw new Error(`Missing Enterprise Edition path: ${requiredPath}`);
     }

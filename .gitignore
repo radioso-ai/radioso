@@ -26,7 +26,6 @@ frontend/app/api/embed/
 frontend/app/embed/
 frontend/app/embed-test/
 frontend/app/radioso-embed.js/
-frontend/app/account/\[accountId\]/w/\[workspacePublicRouteKey\]/agent-wizard/
 frontend/app/reset-password/
 frontend/app/verify-email/
 frontend/public/enterprise-agent-creation-actions.json

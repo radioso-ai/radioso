@@ -126,6 +126,14 @@ pnpm run build
 pnpm test
 ```
 
+Before creating or updating a pull request, run local CI because GitHub CI is manual:
+
+```bash
+pnpm run ci:local -- origin/main
+```
+
+Use `pnpm run ci:local -- --all` for broad changes, and include the result in the PR body.
+
 ## Code Style
 
 - Prefer small, named modules over large orchestration files. If a service mixes persistence, orchestration, audit, analytics, and formatting concerns, extract the most self-contained concern first.

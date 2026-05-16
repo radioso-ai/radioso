@@ -14,8 +14,13 @@ import type {
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(moduleDirectory, "../..");
+// Look for prompts in both the package root (source/workspace mode) and
+// inside dist/ (copied by scripts/copy-prompts.mjs during build). This keeps
+// the wizard working in Docker stages that ship only dist/, in published
+// packages that omit prompts/ from `files`, and in the dev workspace.
 const enterprisePromptDirectories = [
   path.join(packageRoot, "prompts"),
+  path.join(packageRoot, "dist", "prompts"),
 ].filter((value): value is string => value.length > 0);
 const promptCache = new Map<string, string>();
 

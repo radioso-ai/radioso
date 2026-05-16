@@ -146,69 +146,6 @@ describe("AgentWizardService", () => {
     expect(prompt).toContain("verified contact path");
   });
 
-  it("regenerates instructions from a cached analysis without crawling again", async () => {
-    const crawler = createCrawler();
-    const complete = vi.fn()
-      .mockResolvedValueOnce(JSON.stringify({
-        agentName: "Example Support",
-        customInstruction: "Original instruction.",
-        greetingMessage: "Original greeting.",
-        contentType: "mixed",
-        chunkingStrategy: "structured_semantic",
-        chunkingRationale: "Structured.",
-      }))
-      .mockResolvedValueOnce(JSON.stringify({
-        agentName: "Example Guide",
-        customInstruction: "Fresh instruction.",
-        greetingMessage: "Fresh greeting.",
-        contentType: "mixed",
-        chunkingStrategy: "fixed_window",
-        chunkingRationale: "Fresh prose.",
-      }));
-    const { service } = createService({ crawlerProvider: crawler, complete });
-    const initial = await service.analyzeWebsite({
-      url: "https://example.com",
-      workspaceId: "workspace-1",
-    });
-
-    const regenerated = await service.regenerateInstructions({
-      workspaceId: "workspace-1",
-      analysisRunId: initial.analysisRunId,
-    });
-
-    expect(regenerated).toMatchObject({
-      suggestedName: "Example Guide",
-      suggestedCustomInstruction: "Fresh instruction.",
-      suggestedGreetingMessage: "Fresh greeting.",
-      suggestedChunkingStrategy: { strategy: "fixed_window" },
-    });
-    expect(crawler.fetchPageWithScreenshot).toHaveBeenCalledOnce();
-    expect(crawler.crawlSite).toHaveBeenCalledOnce();
-    expect(complete).toHaveBeenCalledTimes(2);
-  });
-
-  it("expires cached analysis runs after the TTL", async () => {
-    const crawler = createCrawler();
-    const { service } = createService({ crawlerProvider: crawler });
-    const initial = await service.analyzeWebsite({
-      url: "https://example.com",
-      workspaceId: "workspace-1",
-    });
-
-    const realNow = Date.now;
-    try {
-      Date.now = () => realNow() + 31 * 60 * 1000;
-      await expect(
-        service.regenerateInstructions({
-          workspaceId: "workspace-1",
-          analysisRunId: initial.analysisRunId,
-        }),
-      ).rejects.toMatchObject({ code: "analysis_not_found", statusCode: 404 });
-    } finally {
-      Date.now = realNow;
-    }
-  });
-
   it("skips the browser transport when Playwright is not available", async () => {
     const fetchPageWithScreenshot = vi.fn();
     const longText = "Example helps support teams resolve customer questions across many channels. ".repeat(20);

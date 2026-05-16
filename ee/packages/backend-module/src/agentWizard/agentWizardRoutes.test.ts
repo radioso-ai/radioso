@@ -60,16 +60,6 @@ const createService = (overrides: Partial<AgentWizardService> = {}): AgentWizard
     faviconUrl: null,
     pagesAnalyzed: [{ url: "https://example.com", title: "Example" }],
     sourceUrl: "https://example.com",
-    analysisRunId: "11111111-1111-4111-8111-111111111111",
-  }),
-  regenerateInstructions: vi.fn().mockResolvedValue({
-    suggestedName: "Example Support",
-    suggestedCustomInstruction: "Help visitors understand Example.",
-    suggestedGreetingMessage: "Hi! I can help with Example.",
-    suggestedChunkingStrategy: {
-      strategy: "structured_semantic",
-      reasoning: "Structured pages.",
-    },
   }),
   createAgentFromWizard: vi.fn().mockResolvedValue({ agentId: "agent-1", crawlJobId: "crawl-1" }),
   ...overrides,
@@ -171,7 +161,6 @@ describe("agent wizard routes", () => {
           faviconUrl: null,
           pagesAnalyzed: [{ url: "https://example.com", title: "Example" }],
           sourceUrl: "https://example.com",
-          analysisRunId: "11111111-1111-4111-8111-111111111111",
         };
       }),
     });

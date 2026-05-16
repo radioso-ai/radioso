@@ -8,7 +8,6 @@ import type {
   WizardAnalysisResult,
   WizardCreateInput,
   WizardCreateResult,
-  WizardInstructionSuggestion,
   WizardProgressEvent,
 } from "./types.js";
 
@@ -124,14 +123,6 @@ export const wizardApi = {
         message: "Analysis stream ended before returning a result.",
       },
     };
-  },
-
-  regenerateInstructions(analysisRunId: string): Promise<WizardInstructionSuggestion> {
-    requireActiveWorkspaceId();
-    return request<WizardInstructionSuggestion>("/ee/agent-wizard/regenerate-instructions", {
-      method: "POST",
-      body: JSON.stringify({ analysisRunId }),
-    }, { withSession: true });
   },
 
   createFromWizard(input: WizardCreateInput): Promise<WizardCreateResult> {

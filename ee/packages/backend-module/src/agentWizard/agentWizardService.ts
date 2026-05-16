@@ -54,7 +54,6 @@ const renderEnterprisePromptTemplate = (
   });
 
 export interface WizardAnalysisResult {
-  analysisRunId: string;
   suggestedName: string;
   suggestedCustomInstruction: string;
   suggestedGreetingMessage: string;
@@ -67,16 +66,6 @@ export interface WizardAnalysisResult {
   faviconUrl: string | null;
   pagesAnalyzed: Array<{ url: string; title: string | null }>;
   sourceUrl: string;
-}
-
-export interface WizardInstructionSuggestion {
-  suggestedName: string;
-  suggestedCustomInstruction: string;
-  suggestedGreetingMessage: string;
-  suggestedChunkingStrategy: {
-    strategy: "fixed_window" | "structured_semantic";
-    reasoning: string;
-  };
 }
 
 export interface WizardCreateInput {
@@ -181,16 +170,8 @@ interface AgentWizardDependencies {
   fetchImpl?: typeof fetch;
 }
 
-interface CachedAnalysisRun {
-  workspaceId: string;
-  prompt: string;
-  createdAt: number;
-}
-
 const MAX_CONTENT_LENGTH = 30_000;
 const MAX_ANALYSIS_PAGES = 10;
-const ANALYSIS_RUN_TTL_MS = 30 * 60 * 1000;
-const ANALYSIS_RUN_MAX_ENTRIES = 200;
 
 const selectKeyPageUrls = (links: string[], baseUrl: string, limit: number): string[] => {
   const baseOrigin = new URL(baseUrl).origin;
@@ -345,8 +326,6 @@ const parseLlmResponse = (raw: string): LlmAnalysisResponse | null => {
 };
 
 export class AgentWizardService {
-  private readonly analysisRuns = new Map<string, CachedAnalysisRun>();
-
   constructor(private readonly dependencies: AgentWizardDependencies) {}
 
   async analyzeWebsite(input: {
@@ -531,16 +510,7 @@ export class AgentWizardService {
         },
       }).catch(() => {});
 
-      const analysisRunId = crypto.randomUUID();
-      this.pruneAnalysisRuns();
-      this.analysisRuns.set(analysisRunId, {
-        workspaceId: input.workspaceId,
-        prompt,
-        createdAt: Date.now(),
-      });
-
       const resultPayload = {
-        analysisRunId,
         suggestedName: result.agentName.slice(0, 200),
         suggestedCustomInstruction: result.customInstruction.slice(0, 2000),
         suggestedGreetingMessage: result.greetingMessage.slice(0, 200),
@@ -559,47 +529,6 @@ export class AgentWizardService {
     } finally {
       analysisSignal.cleanup();
     }
-  }
-
-  async regenerateInstructions(input: {
-    workspaceId: string;
-    analysisRunId: string;
-    signal?: AbortSignal;
-  }): Promise<WizardInstructionSuggestion> {
-    const cached = this.analysisRuns.get(input.analysisRunId);
-    const isExpired = cached !== undefined && Date.now() - cached.createdAt > ANALYSIS_RUN_TTL_MS;
-    if (isExpired) {
-      this.analysisRuns.delete(input.analysisRunId);
-    }
-    if (!cached || isExpired || cached.workspaceId !== input.workspaceId) {
-      throw new AgentWizardError(
-        "analysis_not_found",
-        "The previous analysis is no longer available. Re-run the website analysis before regenerating instructions.",
-        404,
-      );
-    }
-
-    const prompt = `${cached.prompt}
-
-Return a fresh alternative for agentName, customInstruction, greetingMessage, chunkingStrategy, and chunkingRationale. Preserve factual grounding in the analyzed website content.`;
-    const analysis = await this.callLlm(prompt, input.signal ?? new AbortController().signal);
-    if (!analysis) {
-      throw new AgentWizardError(
-        "llm_unavailable",
-        "Could not regenerate assistant settings. Try again in a few minutes.",
-        503,
-      );
-    }
-    const chunkingStrategy = analysis.chunkingStrategy === "fixed_window" ? "fixed_window" as const : "structured_semantic" as const;
-    return {
-      suggestedName: analysis.agentName.slice(0, 200),
-      suggestedCustomInstruction: analysis.customInstruction.slice(0, 2000),
-      suggestedGreetingMessage: analysis.greetingMessage.slice(0, 200),
-      suggestedChunkingStrategy: {
-        strategy: chunkingStrategy,
-        reasoning: analysis.chunkingRationale ?? "",
-      },
-    };
   }
 
   async createAgentFromWizard(input: {
@@ -698,20 +627,6 @@ Return a fresh alternative for agentName, customInstruction, greetingMessage, ch
       screenshot: null,
       faviconUrl: null,
     };
-  }
-
-  private pruneAnalysisRuns(): void {
-    const now = Date.now();
-    for (const [id, run] of this.analysisRuns) {
-      if (now - run.createdAt > ANALYSIS_RUN_TTL_MS) {
-        this.analysisRuns.delete(id);
-      }
-    }
-    while (this.analysisRuns.size >= ANALYSIS_RUN_MAX_ENTRIES) {
-      const oldestId = this.analysisRuns.keys().next().value;
-      if (!oldestId) break;
-      this.analysisRuns.delete(oldestId);
-    }
   }
 
   private async assertSafeUrl(value: string): Promise<void> {

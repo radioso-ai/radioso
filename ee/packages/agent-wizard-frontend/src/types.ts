@@ -1,5 +1,4 @@
 export interface WizardAnalysisResult {
-  analysisRunId: string;
   suggestedName: string;
   suggestedCustomInstruction: string;
   suggestedGreetingMessage: string;
@@ -12,16 +11,6 @@ export interface WizardAnalysisResult {
   faviconUrl: string | null;
   pagesAnalyzed: Array<{ url: string; title: string | null }>;
   sourceUrl: string;
-}
-
-export interface WizardInstructionSuggestion {
-  suggestedName: string;
-  suggestedCustomInstruction: string;
-  suggestedGreetingMessage: string;
-  suggestedChunkingStrategy: {
-    strategy: "fixed_window" | "structured_semantic";
-    reasoning: string;
-  };
 }
 
 export type WizardProgressStep = "crawling" | "analyzing" | "generating" | "complete";

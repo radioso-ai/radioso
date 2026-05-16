@@ -20,10 +20,6 @@ const analyzeWebsiteSchema = z.object({
   url: httpUrlSchema,
 });
 
-const regenerateInstructionsSchema = z.object({
-  analysisRunId: z.string().uuid(),
-});
-
 const createFromWizardSchema = z.object({
   websiteUrl: httpUrlSchema,
   name: z.string().trim().min(1).max(200),
@@ -174,24 +170,6 @@ export const createAgentWizardRoutes = (
       const message = error instanceof Error ? error.message : "Website analysis failed";
       writeSseEvent(res, "error", { code, message, statusCode });
       res.end();
-    }
-  });
-
-  router.post("/regenerate-instructions", workspaceSession, async (req, res) => {
-    try {
-      const body = parseBody(regenerateInstructionsSchema, req.body);
-      const { workspaceId } = res.locals as { workspaceId: string };
-      await enforceAnalysisRateLimit(dependencies, res.locals);
-      const controller = new AbortController();
-      req.on("aborted", () => controller.abort());
-      const result = await service.regenerateInstructions({
-        workspaceId,
-        analysisRunId: body.analysisRunId,
-        signal: controller.signal,
-      });
-      res.status(200).json(result);
-    } catch (error) {
-      sendError(res, error);
     }
   });
 

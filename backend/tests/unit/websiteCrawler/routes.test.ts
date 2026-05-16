@@ -361,6 +361,26 @@ describe("website crawler routes", () => {
     });
   });
 
+  it("keeps the recent window for source-scoped active status polling", async () => {
+    const listForWorkspace = vi.fn().mockResolvedValue([]);
+    const sourceId = "22222222-2222-4222-8222-222222222222";
+
+    await request(createApp({
+      websiteCrawlJobService: { enqueue: vi.fn(), listForWorkspace },
+    }))
+      .get(`/api/v1/document/crawl/jobs?sourceId=${sourceId}&status=processing&sinceMinutes=10`)
+      .set("Cookie", "radioso_session=valid-session")
+      .set("x-workspace-id", "workspace-1")
+      .expect(200);
+
+    expect(listForWorkspace).toHaveBeenCalledWith("workspace-1", {
+      status: "processing",
+      sinceMinutes: 10,
+      limit: undefined,
+      sourceId,
+    });
+  });
+
   it("accepts paused as a crawl job list status", async () => {
     const listForWorkspace = vi.fn().mockResolvedValue([]);
 

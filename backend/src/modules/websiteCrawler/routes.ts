@@ -109,11 +109,12 @@ export const createWebsiteCrawlerRoutes = (
   router.get("/jobs", workspaceSession, crawlJobReadRateLimit, async (req, res, next) => {
     try {
       const query = parseRequest(crawlJobsQuerySchema, req.query, "Invalid crawl jobs query");
+      const useUnboundedWindow = query.status === "paused" || (Boolean(query.sourceId) && query.status === undefined);
       const jobs = await dependencies.websiteCrawlJobService.listForWorkspace(
         res.locals.workspaceId as string,
         {
           status: query.status,
-          sinceMinutes: query.sourceId || query.status === "paused" ? undefined : (query.sinceMinutes ?? 30),
+          sinceMinutes: useUnboundedWindow ? undefined : (query.sinceMinutes ?? 30),
           limit: query.limit,
           sourceId: query.sourceId,
         },

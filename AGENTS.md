@@ -134,6 +134,8 @@ pnpm run ci:local -- origin/main
 
 Use `pnpm run ci:local -- --all` for broad changes, and include the result in the PR body.
 
+Use Conventional Commits for commit messages, such as `feat: add retrieval setting` or `fix: handle empty uploads`.
+
 ## Code Style
 
 - Prefer small, named modules over large orchestration files. If a service mixes persistence, orchestration, audit, analytics, and formatting concerns, extract the most self-contained concern first.

@@ -6,15 +6,17 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "pnpm run sync:openapi && next dev --webpack --port 3001",
-    "build": "pnpm run sync:openapi && next build --webpack",
+    "dev": "pnpm run sync && next dev --webpack --port 3001",
+    "build": "pnpm run sync && next build --webpack",
     "start": "next start --port 3000",
     "lint": "eslint .",
-    "sync:openapi": "node ./scripts/sync-openapi.mjs"
+    "sync": "pnpm run sync:openapi && pnpm run sync:stoplight",
+    "sync:openapi": "node ./scripts/sync-openapi.mjs",
+    "sync:stoplight": "node ./scripts/sync-stoplight.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",
-    "@scalar/nextjs-api-reference": "^0.10.9",
+    "@stoplight/elements": "^9.0.19",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.564.0",

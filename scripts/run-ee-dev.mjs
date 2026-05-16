@@ -191,9 +191,10 @@ const main = async () => {
   const enterpriseAuthFrontendPackage = path.join(eeRoot, "packages/auth-frontend");
   const enterpriseBackendPackage = path.join(eeRoot, "packages/backend-module");
   const enterpriseWidgetPackage = path.join(eeRoot, "packages/embed-widget");
+  const enterpriseAgentWizardFrontendPackage = path.join(eeRoot, "packages/agent-wizard-frontend");
   const appOrigin = process.env.RADIOSO_EE_APP_ORIGIN ?? "http://localhost:3000";
 
-  for (const requiredPath of [eeRoot, enterpriseAuthFrontendPackage, enterpriseBackendPackage, enterpriseWidgetPackage]) {
+  for (const requiredPath of [eeRoot, enterpriseAuthFrontendPackage, enterpriseBackendPackage, enterpriseWidgetPackage, enterpriseAgentWizardFrontendPackage]) {
     if (!(await pathExists(requiredPath))) {
       throw new Error(`Missing Enterprise Edition path: ${requiredPath}`);
     }
@@ -242,6 +243,8 @@ const main = async () => {
     "@radioso/enterprise-embed-widget...",
     "--filter",
     "@radioso/enterprise-auth-frontend...",
+    "--filter",
+    "@radioso/enterprise-agent-wizard-frontend...",
   ]);
   await command("pnpm", ["run", "build"], { cwd: eeRoot });
 
@@ -261,10 +264,13 @@ const main = async () => {
     "@radioso/enterprise-embed-widget...",
     "--filter",
     "@radioso/enterprise-auth-frontend...",
+    "--filter",
+    "@radioso/enterprise-agent-wizard-frontend...",
   ]);
   await linkPackage(backendDir, "@radioso/enterprise-backend-module", enterpriseBackendPackage);
   await linkPackage(frontendDir, "@radioso/enterprise-embed-widget", enterpriseWidgetPackage);
   await linkPackage(frontendDir, "@radioso/enterprise-auth-frontend", enterpriseAuthFrontendPackage);
+  await linkPackage(frontendDir, "@radioso/enterprise-agent-wizard-frontend", enterpriseAgentWizardFrontendPackage);
 
   console.log("Generating Enterprise Edition frontend routes...");
   await command("node", ["scripts/sync-ee-frontend-routes.mjs", "enable"]);
@@ -296,6 +302,10 @@ const main = async () => {
       env: enterpriseBackendEnv,
     }),
     spawnService("worker", "pnpm", ["run", "dev:worker"], {
+      cwd: backendDir,
+      env: enterpriseBackendEnv,
+    }),
+    spawnService("crawler-worker", "pnpm", ["run", "dev:crawler-worker"], {
       cwd: backendDir,
       env: enterpriseBackendEnv,
     }),

@@ -7,6 +7,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const manifestModulePaths = [
   "ee/packages/auth-frontend/feature-manifest.mjs",
   "ee/packages/embed-widget/feature-manifest.mjs",
+  "ee/packages/agent-wizard-frontend/feature-manifest.mjs",
 ];
 
 export const loadEnterpriseFeatureManifests = async () => {
@@ -21,6 +22,12 @@ export const loadEnterpriseFeatureManifests = async () => {
 
 export const collectFrontendRouteContributions = (manifests) =>
   manifests.flatMap((manifest) => manifest.frontendRoutes ?? []);
+
+export const collectFrontendComponentContributions = (manifests) =>
+  manifests.flatMap((manifest) => manifest.frontendComponents ?? []);
+
+export const collectFrontendAgentCreationActionContributions = (manifests) =>
+  manifests.flatMap((manifest) => manifest.frontendAgentCreationActions ?? []);
 
 export const collectGeneratedDirectories = (routes) => {
   const directories = new Set();
@@ -91,6 +98,53 @@ export const validateFeatureManifests = async (manifests, options = {}) => {
         routes.set(relativePath, manifest.id);
       }
     }
+
+    for (const action of manifest.frontendAgentCreationActions ?? []) {
+      const actionLabel = typeof action?.id === "string" && action.id.length > 0
+        ? action.id
+        : "<missing>";
+      if (typeof action?.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/.test(action.id)) {
+        errors.push(`Feature "${manifest.id}" agent creation action "${actionLabel}" must declare a kebab-case id`);
+      }
+      if (typeof action?.label !== "string" || action.label.length === 0) {
+        errors.push(`Feature "${manifest.id}" agent creation action "${actionLabel}" must declare label`);
+      }
+      if (action?.icon !== "globe") {
+        errors.push(`Feature "${manifest.id}" agent creation action "${actionLabel}" must use a supported icon`);
+      }
+      const kind = typeof action?.kind === "string" ? action.kind : "route";
+      if (kind === "route") {
+        if (typeof action?.hrefTemplate !== "string" || !action.hrefTemplate.startsWith("/")) {
+          errors.push(`Feature "${manifest.id}" agent creation action "${actionLabel}" must declare a root-relative hrefTemplate`);
+        }
+      } else if (kind !== "wizard-dialog") {
+        errors.push(`Feature "${manifest.id}" agent creation action "${actionLabel}" has unsupported kind "${kind}"`);
+      }
+    }
+
+    for (const component of manifest.frontendComponents ?? []) {
+      const componentLabel = typeof component?.relativePath === "string" && component.relativePath.length > 0
+        ? component.relativePath
+        : "<missing>";
+      if (typeof component?.relativePath !== "string" || !component.relativePath.startsWith("lib/") || !/\.(ts|tsx)$/.test(component.relativePath)) {
+        errors.push(`Feature "${manifest.id}" component "${componentLabel}" must be a generated lib file`);
+      }
+      if (typeof component?.packageName !== "string" || !component.packageName.startsWith("@radioso/enterprise-")) {
+        errors.push(`Feature "${manifest.id}" component "${componentLabel}" must use an Enterprise package`);
+      }
+      if (typeof component?.exportPath !== "string" || component.exportPath.length === 0) {
+        errors.push(`Feature "${manifest.id}" component "${componentLabel}" must declare exportPath`);
+      }
+      if (!Array.isArray(component?.exports) || component.exports.length === 0) {
+        errors.push(`Feature "${manifest.id}" component "${componentLabel}" must declare at least one export`);
+      }
+      const exportedPaths = typeof component?.packageName === "string" && typeof component?.exportPath === "string"
+        ? packageExports.get(component.packageName)
+        : undefined;
+      if (exportedPaths && !exportedPaths.has(`./${component.exportPath}`)) {
+        errors.push(`Feature "${manifest.id}" component "${componentLabel}" references missing package export "${component.packageName}/${component.exportPath}"`);
+      }
+    }
   }
 
   return { valid: errors.length === 0, errors };
@@ -101,6 +155,7 @@ const readEnterprisePackageExports = async () => {
   for (const packageJsonPath of [
     "ee/packages/auth-frontend/package.json",
     "ee/packages/embed-widget/package.json",
+    "ee/packages/agent-wizard-frontend/package.json",
   ]) {
     try {
       const packageJson = JSON.parse(await fs.readFile(path.join(repoRoot, packageJsonPath), "utf8"));

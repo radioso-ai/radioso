@@ -21,5 +21,8 @@
   },
   "dependencies": {
     "crawlee": "^3.16.0"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.60.0"
   }
 }

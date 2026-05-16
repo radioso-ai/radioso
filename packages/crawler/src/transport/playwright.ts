@@ -105,7 +105,15 @@ const extractFaviconUrl = async (page: any, baseUrl: string): Promise<string | n
 
   try {
     const fallback = new URL("/favicon.ico", baseUrl).toString();
-    const response = await page.context().request.head(fallback).catch(() => null);
+    // Disable redirects on the probe. Playwright's API request context
+    // doesn't go through context.route(), so a 301 here could send a request
+    // to a private host before our SSRF validator ever sees it. If the
+    // favicon needs a redirect to resolve, we'd rather return null and have
+    // the agent be logoless than risk an unvalidated server-side request.
+    const response = await page
+      .context()
+      .request.head(fallback, { maxRedirects: 0 })
+      .catch(() => null);
     if (response && response.ok()) {
       return fallback;
     }

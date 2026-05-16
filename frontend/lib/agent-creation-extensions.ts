@@ -21,7 +21,38 @@ export interface AgentCreationActionContext {
   workspacePublicRouteKey?: string | null
 }
 
-const agentCreationActionsConfigPath = '/enterprise-agent-creation-actions.json'
+const agentCreationActionsConfigFilename = 'enterprise-agent-creation-actions.json'
+
+const normalizeBasePath = (value: string): string => {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed === '/') return ''
+  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  return withLeadingSlash.endsWith('/') ? withLeadingSlash.slice(0, -1) : withLeadingSlash
+}
+
+const inferAppBasePath = (): string => {
+  const configured = process.env.NEXT_PUBLIC_BASE_PATH
+  if (configured) {
+    return normalizeBasePath(configured)
+  }
+
+  const nextScript = document.querySelector<HTMLScriptElement>('script[src*="/_next/"]')
+  const scriptSrc = nextScript?.getAttribute('src')
+  if (!scriptSrc) {
+    return ''
+  }
+
+  try {
+    const pathname = new URL(scriptSrc, window.location.href).pathname
+    const nextIndex = pathname.indexOf('/_next/')
+    return nextIndex > 0 ? pathname.slice(0, nextIndex) : ''
+  } catch {
+    return ''
+  }
+}
+
+export const getAgentCreationActionsConfigPath = (): string =>
+  `${inferAppBasePath()}/${agentCreationActionsConfigFilename}`
 
 export const parseAgentCreationActionDefinitions = (payload: unknown): AgentCreationActionDefinition[] => {
   const actions = payload && typeof payload === 'object' && 'actions' in payload
@@ -54,7 +85,7 @@ export const loadAgentCreationActionDefinitions = async (): Promise<AgentCreatio
     return []
   }
   try {
-    const response = await fetch(agentCreationActionsConfigPath, { cache: 'no-store' })
+    const response = await fetch(getAgentCreationActionsConfigPath(), { cache: 'no-store' })
     if (!response.ok) {
       return []
     }

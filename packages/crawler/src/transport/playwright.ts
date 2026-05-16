@@ -126,6 +126,9 @@ const extractFaviconUrl = async (page: any, baseUrl: string): Promise<string | n
 
 const BLOCKED_HTTP_STATUS_CODES = new Set([401, 403, 429]);
 
+const NETWORK_PROTOCOLS = new Set(["http:", "https:"]);
+const LOCAL_BROWSER_PROTOCOLS = new Set(["about:", "blob:", "data:"]);
+
 const fetchWithPlaywright = async (
   url: string,
   options?: {
@@ -167,18 +170,38 @@ const fetchWithPlaywright = async (
       let validationError: unknown = null;
       if (options?.validateNavigationUrl) {
         const validator = options.validateNavigationUrl;
-        // Intercept every request and validate the URL before it's allowed
-        // onto the wire. Aborting the route prevents the request from ever
-        // contacting the target, so SSRF redirects can't reach private hosts
-        // even briefly. This applies to BOTH document navigations and
-        // subresources (images, scripts, stylesheets, fetch/XHR): a page
-        // with <img src="http://169.254.169.254/..."> would otherwise force
-        // the headless browser to fetch that internal URL.
+        // Intercept network requests and validate HTTP(S) URLs before
+        // they're allowed onto the wire. Local browser schemes are not
+        // website navigations, so they bypass the public-host validator.
         await context.route("**/*", async (route: any) => {
           const request = route.request();
           const isDocument = request.resourceType() === "document";
+          let requestUrl: URL;
           try {
-            await validator(request.url());
+            requestUrl = new URL(request.url());
+          } catch (error) {
+            if (isDocument) {
+              validationError = error;
+            }
+            await route.abort();
+            return;
+          }
+
+          if (LOCAL_BROWSER_PROTOCOLS.has(requestUrl.protocol)) {
+            await route.continue();
+            return;
+          }
+
+          if (!NETWORK_PROTOCOLS.has(requestUrl.protocol)) {
+            if (isDocument) {
+              validationError = new Error(`Blocked unsupported browser request protocol: ${requestUrl.protocol}`);
+            }
+            await route.abort();
+            return;
+          }
+
+          try {
+            await validator(requestUrl.toString());
           } catch (error) {
             if (isDocument) {
               // A blocked document navigation kills the whole page load —

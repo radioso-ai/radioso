@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
+  getAgentCreationActionsConfigPath,
   parseAgentCreationActionDefinitions,
   resolveAgentCreationActions,
 } from '@/lib/agent-creation-extensions'
@@ -96,5 +97,14 @@ describe('agent creation extensions', () => {
         kind: 'wizard-dialog',
       },
     ])
+  })
+
+  it('resolves the generated action config under a configured app base path', () => {
+    vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/radioso/')
+    try {
+      expect(getAgentCreationActionsConfigPath()).toBe('/radioso/enterprise-agent-creation-actions.json')
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })

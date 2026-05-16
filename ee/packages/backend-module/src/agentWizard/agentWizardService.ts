@@ -673,6 +673,7 @@ export class AgentWizardService {
     workspaceId: string,
     agentId: string,
     faviconUrl: string,
+    signal?: AbortSignal,
   ): Promise<void> {
     // Favicon hosts often redirect (CDNs, default /favicon.ico). We can't
     // use redirect:"follow" because the browser would issue a request to a
@@ -689,8 +690,9 @@ export class AgentWizardService {
       } catch {
         return;
       }
+      const timeoutSignal = AbortSignal.timeout(10_000);
       response = await fetchFn(currentUrl, {
-        signal: AbortSignal.timeout(10_000),
+        signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
         redirect: "manual",
       });
       if (response.status >= 300 && response.status < 400) {
@@ -724,9 +726,7 @@ export class AgentWizardService {
     const uploadResult = await this.dependencies.documentStorage.upload({
       key: objectPath,
       body: buffer,
-      contentType: contentType.startsWith("image/x-icon") || contentType.startsWith("image/vnd.microsoft.icon")
-        ? "image/png"
-        : contentType,
+      contentType,
     });
 
     await this.dependencies.agentService.update(workspaceId, agentId, {

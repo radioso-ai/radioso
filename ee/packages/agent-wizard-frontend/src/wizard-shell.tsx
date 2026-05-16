@@ -114,6 +114,11 @@ export function WizardShell({ agentSettingsHrefBuilder }: WizardShellProps) {
 
   const handleCancelAnalysis = useCallback(() => {
     analysisAbortRef.current?.abort();
+    analysisAbortRef.current = null;
+    setProgressEvents([]);
+    progressEventsRef.current = [];
+    setError(null);
+    setStep("url-input");
   }, []);
 
   const handleRetryAnalysis = useCallback(() => {

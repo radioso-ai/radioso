@@ -13,6 +13,7 @@ jobs:
       github_environment: live
       artifact_repository: radioso-live
       backend_service: radioso-live-backend
+      crawler_worker_service: radioso-live-crawler-worker
       frontend_service: radioso-live-frontend
       worker_service: radioso-live-worker
       require_main_branch: true

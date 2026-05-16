@@ -8,16 +8,16 @@ description: How the Radioso API is organized, which auth mode to use, and where
 The Radioso API has three access patterns.
 
 - Session routes manage accounts, users, invitations, and workspaces.
-- Workspace token routes handle documents, chat, search, settings, and connectors.
-- Public token routes handle anonymous chat and website embed flows.
+- Workspace token routes handle agents, skills, documents, chat, search, settings, and connectors.
+- Public token routes handle anonymous chat and Enterprise website embed flows.
 
 In practice, that split matters more than the endpoint count. It tells you which credential to use and where state is stored.
 
 ## Start with the right path
 
 - If you are signing users into the product, start with [Auth and sessions](/api/auth-and-sessions).
-- If you are automating documents and chat from your backend, start with [Workspaces and tokens](/api/workspaces-and-tokens), then move to [Documents and search](/api/documents-and-search) and [Chat and history](/api/chat-and-history).
-- If you are embedding anonymous chat on a website, start with [Public chat and embed](/api/public-chat-and-embed).
+- If you are automating documents and chat from your backend, start with [Workspaces and tokens](/api/workspaces-and-tokens), then move to [Agents and skills](/api/agents-and-skills), [Documents and search](/api/documents-and-search), and [Chat and history](/api/chat-and-history).
+- If you are adding customer-facing public chat or the Enterprise website widget, start with [Public chat and embed](/api/public-chat-and-embed).
 - If you are tuning workspace behavior, use [Settings](/api/settings).
 - If you are managing external ingestion or messaging systems, use [Connectors and webhooks](/api/connectors-and-webhooks).
 

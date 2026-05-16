@@ -7,7 +7,11 @@ import { Callout, Steps } from 'nextra/components'
 
 # Embed on your website
 
-Use this path when you want customer-facing chat on a public site. The important idea is that Radioso does not trust any site that knows the embed token. The launch also has to come from an approved origin.
+<span style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid rgba(79, 70, 229, 0.35)', borderRadius: '999px', padding: '0.125rem 0.55rem', fontSize: '0.72rem', fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#4f46e5', background: 'rgba(79, 70, 229, 0.08)' }}>Enterprise Edition</span>
+
+Use this path when you want the hosted Radioso website widget on a public site. The widget is an Enterprise Edition surface. Open-source Radioso still includes public chat APIs and the backend extension points, but it does not ship the hosted widget routes.
+
+The important idea is that Radioso does not trust any site that knows the embed token. The launch also has to come from an approved origin.
 
 ## The happy path
 
@@ -20,7 +24,7 @@ The shortest route to first success is:
 
 ## What the embed flow does
 
-The hosted embed script launches a widget, asks the frontend for an embed session, and the frontend forwards that bootstrap request to the backend. The backend then checks three things:
+The Enterprise embed script launches a widget, asks the frontend for an embed session, and the frontend forwards that bootstrap request to the backend. The backend then checks three things:
 
 1. the workspace embed token exists
 2. website embed is enabled for that workspace
@@ -53,7 +57,7 @@ Those two URLs intentionally differ only by host. That is enough to prove that o
 
 ## Example launcher snippet
 
-In production, the launcher is a normal script include with the embed token. Branding, copy, locale text, theme colors, and expert overrides are stored in Radioso settings.
+In production, the Enterprise launcher is a normal script include with the embed token. Branding, copy, locale text, theme colors, and expert overrides are stored in Radioso settings.
 
 ```html
 <script

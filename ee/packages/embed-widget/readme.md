@@ -15,7 +15,9 @@ It provides:
 
 - `/radioso-embed.js` route implementation
 - `/embed/:token` page implementation
+- `/embed-test` page implementation
 - `/api/embed/session/:token` route implementation
+- `/api/embed/config/:token` route implementation
 - the embedded chat frame
 
 The package does not run a separate server.

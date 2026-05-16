@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Book, ChevronDown, ChevronRight, Code2, Database, FileText, Search, Settings2, Shield, Workflow } from 'lucide-react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
@@ -148,12 +149,12 @@ export function DocsSidebar({
     <aside className="sticky top-0 hidden h-screen w-80 overflow-y-auto border-r border-border bg-sidebar xl:block">
       <div className="border-b border-border p-6">
         <div className="mb-5 flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-            <Database className="h-5 w-5" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground text-background shadow-sm">
+            <Image src="/radioso-icon.svg" alt="" width={32} height={32} priority className="h-8 w-8" />
           </div>
           <div>
             <div className="text-xl font-semibold text-foreground">Radioso Docs</div>
-            <div className="text-sm text-muted-foreground">Grounded chat platform</div>
+            <div className="text-sm text-muted-foreground">Knowledge agents platform</div>
           </div>
         </div>
         <div className="relative">

@@ -8,5 +8,11 @@
   "scripts": {
     "check:api-contracts": "pnpm --dir backend run generate:openapi && node scripts/check-api-contracts.mjs",
     "ci:local": "bash scripts/local-ci-checks.sh"
+  },
+  "pnpm": {
+    "overrides": {
+      "@types/react": "19.2.14",
+      "@types/react-dom": "19.2.2"
+    }
   }
 }

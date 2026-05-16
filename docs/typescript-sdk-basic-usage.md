@@ -286,5 +286,5 @@ try {
 - Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history. `retrieval.answer` responses expose shape and resolved-step diagnostics through `activityTrace`; callers do not select shapes directly.
 - Shared workspace settings are exposed by the REST platform settings resource, `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
 - Workspace creation, rename, and deletion are not exposed because those routes are currently session-authenticated rather than token-authenticated.
-- Run `pnpm run sync` in [`typescript-sdk/`](/Users/dm/conductor/workspaces/radioso/typescript-sdk/typescript-sdk) after backend API changes so the generated types stay up to date.
+- Run `pnpm run sync` in [`typescript-sdk/`](../typescript-sdk/) after backend API changes so the generated types stay up to date.
 - Search and answer settings are documented separately in [Retrieval Settings](./typescript-sdk-retrieval-settings.md).

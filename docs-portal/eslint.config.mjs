@@ -5,7 +5,7 @@ const eslintConfig = [
   ...nextCoreWebVitals,
   ...nextTypescript,
   {
-    ignores: ['.next/**', 'next-env.d.ts', 'public/openapi.json'],
+    ignores: ['.next/**', 'next-env.d.ts', 'public/openapi.json', 'public/vendor/**'],
   },
 ]
 

@@ -13,7 +13,7 @@ Before creating or revising documentation in this repo, read [Document Writer Pr
 - [Architecture Extension Points](./architecture-extension-points.md) - supported module boundaries, default composition, and extension rules
 - [API Contract Workflow](./api-contract-workflow.md) - backend OpenAPI, SDK, and MCP generated artifact update flow
 - [Website Crawler Provider](./website-crawler.md) - OSS crawler provider port and document crawl API
-- [Radioso Skills RFC](./radioso-skills-rfc.md) - draft vocabulary and direction for skills, capabilities, intents, strategies, and agents
+- [Radioso Skills RFC](./radioso-skills-rfc.md) - vocabulary and direction behind the implemented read-only skills catalog
 - [MCP Client Setup](./mcp-client-setup.md) - current MCP client connection patterns and constraints
 
 ## TypeScript SDK

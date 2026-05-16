@@ -32,6 +32,7 @@ await client.settings.updateRetrieval({
   similarityThreshold: 0.2,
   rerankTopK: 20,
   citationDisplayEnabled: true,
+  answerSupportValidationEnabled: true,
   metadataRules: [],
   customInstruction: '',
 })
@@ -47,6 +48,7 @@ For most teams:
 - `similarityThreshold: 0.2`
 - `rerankTopK: 20`
 - `citationDisplayEnabled: true`
+- `answerSupportValidationEnabled: true`
 
 This is a safe default: look for a good set of matches, reorder them, show citations, and stay conservative when the system is not confident.
 
@@ -57,3 +59,4 @@ This is a safe default: look for a good set of matches, reorder them, show citat
 - Prefer small adjustments before large jumps.
 - If search results are poor, inspect the documents and chunking before over-tuning search settings.
 - If answers are going beyond what the documents actually say, adjust `similarityThreshold` first.
+- If the answer contains unsupported claims even when citations look plausible, keep answer support validation enabled and inspect the response diagnostics.

@@ -116,6 +116,8 @@ const extractFaviconUrl = async (page: any, baseUrl: string): Promise<string | n
   return null;
 };
 
+const BLOCKED_HTTP_STATUS_CODES = new Set([401, 403, 429]);
+
 const fetchWithPlaywright = async (
   url: string,
   options?: {
@@ -125,6 +127,12 @@ const fetchWithPlaywright = async (
     userAgent?: string;
     signal?: AbortSignal;
     captureScreenshot?: boolean;
+    /**
+     * Called before every top-level navigation request (including redirects).
+     * Throw to abort the request. This runs before the request is sent to the
+     * network, so it's safe to use for SSRF policy enforcement.
+     */
+    validateNavigationUrl?: (url: string) => Promise<void> | void;
   }
 ): Promise<FetchedPageWithScreenshot> => {
   const pw = await loadPlaywright();
@@ -148,11 +156,57 @@ const fetchWithPlaywright = async (
       };
       options?.signal?.addEventListener("abort", abortHandler, { once: true });
 
-      try {
-        const response = await page.goto(url, {
-          waitUntil: "networkidle",
-          timeout: NAVIGATION_TIMEOUT
+      let validationError: unknown = null;
+      if (options?.validateNavigationUrl) {
+        const validator = options.validateNavigationUrl;
+        // Intercept every request and validate the URL before it's allowed
+        // onto the wire. Aborting the route prevents the request from ever
+        // contacting the target, so SSRF redirects can't reach private hosts
+        // even briefly.
+        await context.route("**/*", async (route: any) => {
+          const request = route.request();
+          // Only validate top-level document navigations; subresource
+          // requests (images, stylesheets, scripts) are fetched by the
+          // browser as part of rendering and would otherwise explode the
+          // validation cost. The redirect chain we care about lives on the
+          // main frame.
+          if (request.resourceType() !== "document") {
+            await route.continue();
+            return;
+          }
+          try {
+            await validator(request.url());
+          } catch (error) {
+            validationError = error;
+            await route.abort();
+            return;
+          }
+          await route.continue();
         });
+      }
+
+      try {
+        let response: any;
+        try {
+          response = await page.goto(url, {
+            waitUntil: "networkidle",
+            timeout: NAVIGATION_TIMEOUT
+          });
+        } catch (error) {
+          if (validationError) {
+            throw validationError;
+          }
+          throw error;
+        }
+
+        if (validationError) {
+          throw validationError;
+        }
+
+        const status = response?.status() ?? null;
+        if (typeof status === "number" && BLOCKED_HTTP_STATUS_CODES.has(status)) {
+          throw new Error(`Blocked by status code ${status}`);
+        }
 
         const loadedUrl = page.url();
         if (options?.scopeBaseUrl) {

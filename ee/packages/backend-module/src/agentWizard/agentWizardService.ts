@@ -92,7 +92,10 @@ export interface WizardCreateResult {
 export interface CrawlerPort {
   fetchPageWithScreenshot(
     url: string,
-    options?: { signal?: AbortSignal },
+    options?: {
+      signal?: AbortSignal;
+      validateNavigationUrl?: (url: string) => Promise<void> | void;
+    },
   ): Promise<{
     url: string;
     title: string | null;
@@ -380,12 +383,28 @@ export class AgentWizardService {
       const browserAvailable = await crawler.isBrowserTransportAvailable();
       if (browserAvailable) {
         try {
-          homepage = await crawler.fetchPageWithScreenshot(input.url, { signal: analysisSignal.signal });
+          homepage = await crawler.fetchPageWithScreenshot(input.url, {
+            signal: analysisSignal.signal,
+            // Validate every navigation URL before the browser hits the wire,
+            // so a redirect to localhost / RFC1918 / cloud metadata is aborted
+            // before any request reaches the target.
+            validateNavigationUrl: (hopUrl: string) => this.assertSafeUrl(hopUrl),
+          });
         } catch (error) {
           throwIfAborted();
+          // Don't fall back for terminal classifications (auth-required,
+          // SSRF policy, abort). HTTP would either repeat the same failure
+          // or be wrong (e.g. authentication_required → "site_unreachable").
+          if (error instanceof AgentWizardError) {
+            throw error;
+          }
+          const classified = classifyFetchError(error);
+          if (classified.code === "authentication_required" || classified.code === "invalid_url") {
+            throw classified;
+          }
           // Browser was available but navigation failed at runtime (timeout,
-          // navigation error, captcha, etc.). Fall back to HTTP so a single
-          // page-load failure doesn't kill the whole wizard.
+          // network error, etc.). Fall back to HTTP so a single page-load
+          // failure doesn't kill the whole wizard.
           screenshotUnavailableReason = "browser_navigation_failed";
           homepage = await this.fetchHomepageViaHttp(crawler, input.url, analysisSignal.signal, error);
         }
@@ -719,23 +738,38 @@ Return a fresh alternative for agentName, customInstruction, greetingMessage, ch
     agentId: string,
     faviconUrl: string,
   ): Promise<void> {
-    const response = await (this.dependencies.fetchImpl ?? fetch)(faviconUrl, {
-      signal: AbortSignal.timeout(10_000),
-      redirect: "follow",
-    });
-    if (!response.ok) return;
-    // Favicon hosts often redirect (CDNs, default /favicon.ico). The initial
-    // URL passed assertPublicWebsiteUrl, but the redirect chain might end at
-    // localhost or RFC1918, so re-validate the final response.url before
-    // reading and storing the body. Bail silently on policy failures since
-    // the favicon is optional for agent creation.
-    if (response.url && response.url !== faviconUrl) {
+    // Favicon hosts often redirect (CDNs, default /favicon.ico). We can't
+    // use redirect:"follow" because the browser would issue a request to a
+    // private host on a redirect before we get a chance to validate. Instead,
+    // walk the redirect chain manually: validate each URL before fetching,
+    // and bail silently on policy failures (favicon is optional).
+    const fetchFn = this.dependencies.fetchImpl ?? fetch;
+    const MAX_HOPS = 5;
+    let currentUrl = faviconUrl;
+    let response: Response | null = null;
+    for (let hop = 0; hop < MAX_HOPS; hop++) {
       try {
-        await this.assertSafeUrl(response.url);
+        await this.assertSafeUrl(currentUrl);
       } catch {
         return;
       }
+      response = await fetchFn(currentUrl, {
+        signal: AbortSignal.timeout(10_000),
+        redirect: "manual",
+      });
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        if (!location) return;
+        try {
+          currentUrl = new URL(location, currentUrl).toString();
+        } catch {
+          return;
+        }
+        continue;
+      }
+      break;
     }
+    if (!response || !response.ok) return;
 
     const contentType = response.headers.get("content-type") ?? "image/png";
     const allowedTypes = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/x-icon", "image/vnd.microsoft.icon"];

@@ -334,6 +334,63 @@ describe("AgentWizardService", () => {
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ limit: 250 }));
   });
 
+  it("validates every navigation hop before the browser hits the wire", async () => {
+    const validations: string[] = [];
+    const fetchPageWithScreenshot = vi.fn(async (url: string, options?: {
+      validateNavigationUrl?: (url: string) => Promise<void> | void;
+    }) => {
+      // Simulate the browser receiving the validator and exercising it for
+      // the initial URL plus a redirect target. Aborting one would prevent
+      // the request from reaching the network.
+      if (options?.validateNavigationUrl) {
+        await options.validateNavigationUrl(url);
+        await options.validateNavigationUrl("http://169.254.169.254/latest/meta-data/");
+      }
+      return {
+        url,
+        title: "Example",
+        text: "Example helps support teams. ".repeat(20),
+        links: [],
+        screenshot: null,
+        faviconUrl: null,
+      };
+    });
+    const crawler = createCrawler({ fetchPageWithScreenshot });
+    const assertPublicWebsiteUrl = vi.fn(async (url: string) => {
+      validations.push(url);
+      if (url.includes("169.254")) {
+        throw new Error("Website URL must resolve to a publicly routable host");
+      }
+    });
+    const { service } = createService({ crawlerProvider: crawler, assertPublicWebsiteUrl });
+
+    await expect(
+      service.analyzeWebsite({
+        url: "https://example.com",
+        workspaceId: "workspace-1",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_url", statusCode: 400 });
+    expect(validations).toContain("https://example.com/");
+    expect(validations.some((u) => u.includes("169.254"))).toBe(true);
+  });
+
+  it("propagates authentication_required from Playwright instead of HTTP-fallback", async () => {
+    const fetchPageWithScreenshot = vi.fn().mockRejectedValue(
+      new Error("Blocked by status code 401"),
+    );
+    const crawlSite = vi.fn();
+    const crawler = createCrawler({ fetchPageWithScreenshot, crawlSite });
+    const { service } = createService({ crawlerProvider: crawler });
+
+    await expect(
+      service.analyzeWebsite({
+        url: "https://example.com",
+        workspaceId: "workspace-1",
+      }),
+    ).rejects.toMatchObject({ code: "authentication_required" });
+    expect(crawlSite).not.toHaveBeenCalled();
+  });
+
   it("re-validates the loaded URL when Playwright follows a redirect", async () => {
     const longText = "Example helps support teams resolve customer questions across many channels. ".repeat(20);
     const crawler = createCrawler({
@@ -430,11 +487,13 @@ describe("AgentWizardService", () => {
         throw new Error("Website URL must resolve to a publicly routable host");
       }
     });
-    const fetchImpl = vi.fn().mockResolvedValue({
-      ok: true,
-      url: "http://169.254.169.254/logo.png",
-      headers: { get: () => "image/png" },
-      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    // First hop returns a 301 to a private host. The validator must reject
+    // the redirect target before the second fetch is issued.
+    const fetchImpl = vi.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 301,
+      headers: { get: (name: string) => name === "location" ? "http://169.254.169.254/logo.png" : null },
+      arrayBuffer: async () => new Uint8Array().buffer,
     }) as unknown as typeof fetch;
     const documentStorage = { upload: vi.fn().mockResolvedValue({ bucket: "logos", key: "k" }) };
     const agentService = {

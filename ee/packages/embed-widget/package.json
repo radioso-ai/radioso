@@ -43,7 +43,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "lucide-react": "^0.564.0",
+    "lucide-react": "^1.16.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

@@ -54,6 +54,7 @@ import type { SupportImpersonationService } from "../../modules/support/services
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import type { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
+import type { TextGenerationClient } from "../../shared/infra/llm/providerTypes.js";
 
 export interface AppDependencies {
   env: Env;
@@ -113,4 +114,32 @@ export interface AppDependencies {
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;
   connectorDb: Database;
+  chatTextGenerationClient: TextGenerationClient;
+  crawlerProvider: {
+    fetchPageWithScreenshot(url: string, options?: Record<string, unknown>): Promise<{
+      url: string;
+      title: string | null;
+      text: string;
+      links: string[];
+      screenshot: Uint8Array | null;
+      faviconUrl: string | null;
+    }>;
+    crawlSite(params: {
+      baseUrl: string;
+      pageLimit: number;
+      seedPendingUrls?: string[];
+      includeBaseUrl?: boolean;
+    }): Promise<Array<{
+      url: string;
+      title: string | null;
+      text: string;
+      status: string;
+      links?: string[];
+    }>>;
+  };
+  assertPublicWebsiteUrl: (url: string) => Promise<void>;
+  websiteCrawlerLimits: {
+    defaultLimit: number;
+    maxLimit: number;
+  };
 }

@@ -1,6 +1,15 @@
 import { z } from "zod";
 
 import type { ChatGateway, SkillDefinition } from "../../radiosoModuleTypes.js";
+import {
+  loadPromptTemplate,
+  renderPromptSection,
+  renderPromptTemplate,
+} from "../../shared/promptLoader.js";
+
+const INTENT_CHECK_TEMPLATE = "humanContact/intake-intent-check.md";
+const FIELD_EXTRACTION_TEMPLATE = "humanContact/intake-field-extraction.md";
+const ANSWER_TEMPLATE = "humanContact/intake-answer.md";
 
 const DEFAULT_INTAKE_PROMPT_TIMEOUT_MS = 5_000;
 
@@ -75,19 +84,17 @@ export class DefinitionBackedIntakePrompts {
 
   async shouldStart(query: string): Promise<boolean> {
     try {
+      const prompt = renderPromptTemplate(loadPromptTemplate(INTENT_CHECK_TEMPLATE), {
+        skill_name: this.input.skill.name,
+        skill_description: this.input.skill.description,
+        intent_description: this.requireIntake().intent.description,
+        intent_examples: JSON.stringify(this.requireIntake().intent.examples),
+        user_message: query.slice(0, 1000),
+      });
       const response = await withTimeout(this.input.chatGateway.answer({
         query,
         history: [],
-        prompt: [
-          "Decide whether the user's message should start the configured skill intake.",
-          "The user's message may be in any language. Match the user's meaning, not English keywords.",
-          "Return compact JSON only: {\"shouldStart\": boolean}.",
-          `Skill name: ${this.input.skill.name}`,
-          `Skill description: ${this.input.skill.description}`,
-          `Intent description: ${this.requireIntake().intent.description}`,
-          `Intent examples: ${JSON.stringify(this.requireIntake().intent.examples)}`,
-          `User message: ${query.slice(0, 1000)}`,
-        ].join("\n"),
+        prompt,
       }), this.timeoutMs, `Skill intake ${this.input.skill.name} intent prompt`);
       return parseIntakeStartDecision(response);
     } catch {
@@ -97,22 +104,21 @@ export class DefinitionBackedIntakePrompts {
 
   async extractFields(query: string): Promise<Record<string, unknown>> {
     try {
+      const fields = this.requireIntake().fields.map((field) => ({
+        name: field.name,
+        type: field.type,
+        required: field.required,
+        extractionHint: field.extractionHint,
+      }));
+      const prompt = renderPromptTemplate(loadPromptTemplate(FIELD_EXTRACTION_TEMPLATE), {
+        skill_name: this.input.skill.name,
+        fields: JSON.stringify(fields),
+        user_message: query.slice(0, 1000),
+      });
       const response = await withTimeout(this.input.chatGateway.answer({
         query,
         history: [],
-        prompt: [
-          "Extract any available field values from the user message for this skill intake.",
-          "The user's message may be in any language. Extract by field meaning and format.",
-          "Return compact JSON only: {\"fields\": {}}. Do not invent values.",
-          `Skill name: ${this.input.skill.name}`,
-          `Fields: ${JSON.stringify(this.requireIntake().fields.map((field) => ({
-            name: field.name,
-            type: field.type,
-            required: field.required,
-            extractionHint: field.extractionHint,
-          })))}`,
-          `User message: ${query.slice(0, 1000)}`,
-        ].join("\n"),
+        prompt,
       }), this.timeoutMs, `Skill intake ${this.input.skill.name} extraction prompt`);
       return parseExtractedFieldMap(response);
     } catch {
@@ -130,28 +136,59 @@ export class DefinitionBackedIntakePrompts {
       ? this.requireIntake().fields.find((candidate) => candidate.name === input.fieldName)
       : null;
     const fieldDisplayName = field?.displayName ?? input.fieldName ?? "field";
-    const instruction = input.kind === "missing"
-      ? `Ask the user for the missing field "${fieldDisplayName}". Ask only for that one field.`
-      : input.kind === "invalid"
-        ? `Tell the user that the "${fieldDisplayName}" value did not pass validation and ask them to send a valid value. Ask only for that one field.`
-        : input.kind === "failed"
-          ? "Tell the user that the request could not be submitted right now and they can try again later."
-          : "Tell the user that the request was received and will be sent to the team.";
+
+    const kindInstruction = renderPromptSection(ANSWER_TEMPLATE, `kind.${input.kind}`, {
+      field_display_name: fieldDisplayName,
+    });
+
+    let languageInstruction: string;
+    if (input.languageContext) {
+      languageInstruction = renderPromptSection(ANSWER_TEMPLATE, "language.with_context", {
+        anchor_message: input.languageContext.slice(0, 500),
+      });
+    } else if (input.userExpectedLocale) {
+      languageInstruction = renderPromptSection(ANSWER_TEMPLATE, "language.with_locale", {
+        user_expected_locale: input.userExpectedLocale,
+      });
+    } else {
+      languageInstruction = renderPromptSection(ANSWER_TEMPLATE, "language.default", {});
+    }
+
+    const localeFallback = input.languageContext && input.userExpectedLocale
+      ? renderPromptSection(ANSWER_TEMPLATE, "locale_fallback", {
+          user_expected_locale: input.userExpectedLocale,
+        })
+      : "";
+
+    const needsReceiptTag = input.kind === "submitted" || input.kind === "failed";
+    const receiptInstruction = needsReceiptTag
+      ? renderPromptSection(ANSWER_TEMPLATE, "receipt_block", {
+          receipt_status_hint: renderPromptSection(
+            ANSWER_TEMPLATE,
+            `receipt.status.${input.kind}`,
+            {},
+          ),
+          receipt_field_names_json: JSON.stringify(
+            this.requireIntake().fields.map((entry) => entry.name),
+          ),
+          receipt_field_examples_json: JSON.stringify(
+            this.requireIntake().fields.map((entry) => entry.displayName),
+          ),
+        })
+      : "";
+
+    const prompt = renderPromptSection(ANSWER_TEMPLATE, "prompt", {
+      kind_instruction: kindInstruction,
+      language_instruction: languageInstruction,
+      locale_fallback: localeFallback,
+      receipt_instruction: receiptInstruction,
+      skill_display_name: this.input.skill.displayName,
+    });
+
     const response = await withTimeout(this.input.chatGateway.answer({
       query: input.languageContext ?? input.kind,
       history: [],
-      prompt: [
-        instruction,
-        "Use one concise sentence.",
-        input.userExpectedLocale
-          ? `Reply in locale ${input.userExpectedLocale}.`
-          : input.languageContext
-            ? "Reply in the same language as the language context."
-            : "Reply in the same language as the user's most recent message when possible.",
-        input.languageContext
-          ? `Language context: ${input.languageContext.slice(0, 1000)}`
-          : null,
-      ].filter((line): line is string => Boolean(line)).join("\n"),
+      prompt,
     }), this.timeoutMs, `Skill intake ${this.input.skill.name} answer prompt`);
     const trimmed = response.trim();
     if (!trimmed) {

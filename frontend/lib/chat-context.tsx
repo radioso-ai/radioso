@@ -21,6 +21,7 @@ import {
   type ChatUserInputMetadata,
   type ActivitySummary,
   type ActivityTrace,
+  type SkillStreamPayload,
 } from '@/lib/api'
 import { createClientId } from '@/lib/client-id'
 
@@ -38,6 +39,7 @@ export interface ChatMessage {
   activityTrace?: ActivityTrace
   persistedAssistantMessageId?: string
   status: 'complete' | 'streaming' | 'error'
+  skill?: SkillStreamPayload
 }
 
 interface ChatSession {
@@ -198,6 +200,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 suggestions: completion.suggestions,
                 activitySummary: completion.activitySummary,
                 activityTrace: completion.activityTrace,
+                skill: completion.skill ?? message.skill,
                 status: 'complete',
               }
             : message,
@@ -295,6 +298,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     ? {
                         ...message,
                         suggestions,
+                      }
+                    : message,
+                ),
+              }))
+            },
+            onSkill: (skillPayload) => {
+              updateSession(accountId, agentId, (session) => ({
+                ...session,
+                messages: session.messages.map((message) =>
+                  message.id === assistantMessageId
+                    ? {
+                        ...message,
+                        skill: {
+                          skillName: skillPayload.skillName,
+                          phase: skillPayload.phase,
+                          localizedTitle: skillPayload.localizedTitle,
+                          receipt: skillPayload.receipt,
+                        },
                       }
                     : message,
                 ),

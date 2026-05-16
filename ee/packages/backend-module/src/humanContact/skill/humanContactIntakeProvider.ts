@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type {
   ChatIntakeProvider,
+  ChatIntakeReceipt,
   ChatIntakeResult,
 } from "../../radiosoModuleTypes.js";
 import { humanContactRequestSkillDefinition } from "./definition.js";
@@ -36,9 +37,13 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const normalizeCollected = (value: unknown): Record<string, unknown> =>
   isObject(value) ? value : {};
 
-const resolveLanguageContext = (input: ChatIntakeInput, collected?: Record<string, unknown>): string => {
-  const collectedMessage = typeof collected?.message === "string" ? collected.message.trim() : "";
-  return collectedMessage || input.query;
+export const resolveLanguageContext = (input: ChatIntakeInput, _collected?: Record<string, unknown>): string => {
+  // Anchor language on the user's earliest natural-language message in this conversation.
+  // We deliberately ignore `collected.message` because it is the auto-built contact-request draft
+  // ("Contact request:\n...") whose English boilerplate would mislead the LLM on follow-up turns,
+  // and we ignore short answer-only turns like "test@test" that carry no language signal.
+  const earliestUserMessage = input.history.find((message) => message.role === "user")?.content?.trim();
+  return earliestUserMessage || input.query;
 };
 
 const buildFallbackDraft = (input: ChatIntakeInput): { draftMessage: string } => {
@@ -108,6 +113,16 @@ const directSubmitIdempotencyKey = (input: {
 const completedCollected = (requestId: string): Record<string, unknown> => ({
   submitted: true,
   requestId,
+});
+
+const buildContactReceipt = (input: { email: string }): ChatIntakeReceipt => ({
+  fields: [
+    {
+      name: "email",
+      displayName: "email address",
+      value: input.email,
+    },
+  ],
 });
 
 const failedContactTrace = (reason: string) =>
@@ -230,6 +245,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
         answer,
         activityTrace: submitResult.activityTrace,
         activitySummary: submitResult.activityTrace.summary!,
+        receipt: buildContactReceipt({ email }),
       };
     }
 
@@ -445,6 +461,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       answer,
       activityTrace: submitResult.activityTrace,
       activitySummary: submitResult.activityTrace.summary!,
+      receipt: buildContactReceipt({ email }),
     };
   }
 

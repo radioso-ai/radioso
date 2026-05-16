@@ -17,25 +17,48 @@ import {
 import { agentsApi, type AgentSettings } from '@/lib/api'
 import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
 import {
-  clearAgentCreationHandoff,
-  readAgentCreationHandoff,
-  type AgentCreationHandoff,
-} from '@/lib/agent-creation-handoff'
+  clearAgentCreationHandoff as rawClearAgentCreationHandoff,
+  readAgentCreationHandoff as rawReadAgentCreationHandoff,
+  WizardDialog as RawWizardDialog,
+} from '@/lib/agent-creation-contributions'
 import {
   loadAgentCreationActionDefinitions,
   resolveAgentCreationActions,
   type AgentCreationActionDefinition,
 } from '@/lib/agent-creation-extensions'
-import { WizardDialog as RawWizardDialog } from '@/lib/enterprise-bridge/agent-wizard-dialog'
+import { editionController } from '@/lib/edition-controller'
 import { useWorkspace } from '@/lib/workspace-context'
+import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 
 type WizardDialogComponent = (props: {
   open: boolean
   onOpenChange: (open: boolean) => void
   agentSettingsHrefBuilder: (agentId: string) => string
 }) => React.ReactElement | null
-const WizardDialog = RawWizardDialog as unknown as WizardDialogComponent | null
-import { type WorkspaceOnboardingState } from '@/lib/onboarding'
+interface AgentCreationHandoffItem {
+  title: string | null
+  url: string
+}
+
+interface AgentCreationHandoff {
+  agentId: string
+  title: string
+  description: string
+  items: AgentCreationHandoffItem[]
+  createdAt: number
+}
+
+type ReadAgentCreationHandoff = (agentId: string | undefined) => AgentCreationHandoff | null
+const agentCreationExtensionsEnabled = editionController.canUseAgentCreationExtensions()
+const WizardDialog = agentCreationExtensionsEnabled
+  ? RawWizardDialog as unknown as WizardDialogComponent | null
+  : null
+const readAgentCreationHandoff: ReadAgentCreationHandoff = agentCreationExtensionsEnabled
+  ? rawReadAgentCreationHandoff as ReadAgentCreationHandoff
+  : () => null
+const clearAgentCreationHandoff: () => void = agentCreationExtensionsEnabled
+  ? rawClearAgentCreationHandoff as () => void
+  : () => {}
 
 const agentTabSummaries: Record<AgentTab, string> = {
   chat: 'Test the selected agent against this workspace knowledge.',
@@ -107,10 +130,12 @@ export function AgentView({
   const [agentCreationActionDefinitions, setAgentCreationActionDefinitions] = useState<AgentCreationActionDefinition[]>([])
   const [wizardOpen, setWizardOpen] = useState(false)
   const agentCreationActions = useMemo(
-    () => resolveAgentCreationActions(agentCreationActionDefinitions, {
-      accountId,
-      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-    }),
+    () => agentCreationExtensionsEnabled
+      ? resolveAgentCreationActions(agentCreationActionDefinitions, {
+        accountId,
+        workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+      })
+      : [],
     [accountId, agentCreationActionDefinitions, activeWorkspace?.publicRouteKey],
   )
 
@@ -142,6 +167,10 @@ export function AgentView({
   }, [loadAgents, routeState.agentId])
 
   useEffect(() => {
+    if (!agentCreationExtensionsEnabled) {
+      return
+    }
+
     let active = true
     void loadAgentCreationActionDefinitions().then((definitions) => {
       if (active) {
@@ -201,6 +230,10 @@ export function AgentView({
   }, [activeWorkspaceId, selectedAgentId])
 
   useEffect(() => {
+    if (!agentCreationExtensionsEnabled) {
+      return
+    }
+
     const timeout = window.setTimeout(() => {
       setAgentCreationHandoff(readAgentCreationHandoff(selectedAgentId))
     }, 0)

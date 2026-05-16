@@ -105,10 +105,6 @@ declare module '@/lib/api-client' {
   export function request<T>(path: string, init?: RequestInit, options?: { withSession?: boolean; withApiToken?: boolean }): Promise<T>
 }
 
-declare module '@/lib/agent-creation-handoff' {
-  export const AGENT_CREATION_HANDOFF_STORAGE_KEY: string
-}
-
 declare module '@/lib/dashboard-routes' {
   export function buildDashboardHref(accountId: string, input: {
     section: string

@@ -1,8 +1,5 @@
 @import 'tailwindcss';
-
-/* Scan Enterprise frontend packages for Tailwind utility classes. */
-@source '../../ee/packages/agent-wizard-frontend/src/**/*.{ts,tsx}';
-@source '../../ee/packages/auth-frontend/src/**/*.{ts,tsx}';
+@import './edition-tailwind-sources.css';
 
 @keyframes typing-bounce {
   0%, 60%, 100% {

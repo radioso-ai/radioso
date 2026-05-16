@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AGENT_CREATION_HANDOFF_STORAGE_KEY } from "@/lib/agent-creation-handoff";
+import { AGENT_CREATION_HANDOFF_STORAGE_KEY } from "./handoff.js";
 import { wizardApi } from "./api.js";
 import type { WizardProgressEvent, WizardStep } from "./types.js";
 import { UrlInputStep } from "./steps/url-input-step.js";

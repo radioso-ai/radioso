@@ -102,7 +102,7 @@ describe('agent creation extensions', () => {
   it('resolves the generated action config under a configured app base path', () => {
     vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/radioso/')
     try {
-      expect(getAgentCreationActionsConfigPath()).toBe('/radioso/enterprise-agent-creation-actions.json')
+      expect(getAgentCreationActionsConfigPath()).toBe('/radioso/agent-creation-actions.json')
     } finally {
       vi.unstubAllEnvs()
     }

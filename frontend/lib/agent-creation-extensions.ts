@@ -21,7 +21,7 @@ export interface AgentCreationActionContext {
   workspacePublicRouteKey?: string | null
 }
 
-const agentCreationActionsConfigFilename = 'enterprise-agent-creation-actions.json'
+const agentCreationActionsConfigFilename = 'agent-creation-actions.json'
 
 const normalizeBasePath = (value: string): string => {
   const trimmed = value.trim()

@@ -40,7 +40,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { WizardDialog as RawWizardDialog } from '@/lib/enterprise-bridge/agent-wizard-dialog'
+import { WizardDialog as RawWizardDialog } from '@/lib/agent-creation-contributions'
 import { useAuth } from '@/lib/auth-context'
 import { useTheme } from '@/components/theme-provider'
 import {
@@ -74,13 +74,17 @@ import {
   resolveAgentCreationActions,
   type AgentCreationActionDefinition,
 } from '@/lib/agent-creation-extensions'
+import { editionController } from '@/lib/edition-controller'
 
 type WizardDialogComponent = (props: {
   open: boolean
   onOpenChange: (open: boolean) => void
   agentSettingsHrefBuilder: (agentId: string) => string
 }) => React.ReactElement | null
-const WizardDialog = RawWizardDialog as unknown as WizardDialogComponent | null
+const agentCreationExtensionsEnabled = editionController.canUseAgentCreationExtensions()
+const WizardDialog = agentCreationExtensionsEnabled
+  ? RawWizardDialog as unknown as WizardDialogComponent | null
+  : null
 
 interface AppSidebarProps {
   accountId: string
@@ -141,10 +145,12 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
   const userDisplayName = user?.email?.split('@')[0] || 'User'
   const userInitial = userDisplayName.charAt(0).toUpperCase() || 'U'
   const agentCreationActions = useMemo(
-    () => resolveAgentCreationActions(agentCreationActionDefinitions, {
-      accountId,
-      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-    }),
+    () => agentCreationExtensionsEnabled
+      ? resolveAgentCreationActions(agentCreationActionDefinitions, {
+        accountId,
+        workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+      })
+      : [],
     [accountId, agentCreationActionDefinitions, activeWorkspace?.publicRouteKey],
   )
 
@@ -207,6 +213,10 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
   }, [activeWorkspaceId, preferredAgentId, workspaceCacheKey])
 
   useEffect(() => {
+    if (!agentCreationExtensionsEnabled) {
+      return
+    }
+
     let active = true
     void loadAgentCreationActionDefinitions().then((definitions) => {
       if (active) {

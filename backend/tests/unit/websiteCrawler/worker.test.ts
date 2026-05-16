@@ -12,6 +12,21 @@ const createJob = (): WebsiteCrawlJobRecord => ({
   limit: 2,
   status: "processing",
   attemptCount: 1,
+  policy: {
+    includeUrlPatterns: [],
+    excludeUrlPatterns: [],
+    preserveContentLinks: true,
+  },
+  checkpoint: {
+    discoveredUrls: [],
+    queuedUrls: [],
+    processingUrls: [],
+    processedCanonicalUrls: [],
+    accepted: 0,
+    skipped: 0,
+    failed: 0,
+    lastProcessedAt: null,
+  },
   result: null,
   lastError: null,
   availableAt: new Date(),
@@ -20,6 +35,19 @@ const createJob = (): WebsiteCrawlJobRecord => ({
   createdAt: new Date(),
   updatedAt: new Date(),
 });
+
+const waitFor = async (
+  predicate: () => boolean,
+  timeoutMs = 200,
+): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) {
+      throw new Error("Timed out waiting for condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+};
 
 describe("website crawl worker", () => {
   it("claims one crawl job and publishes provider pages through document ingestion", async () => {
@@ -31,6 +59,8 @@ describe("website crawl worker", () => {
         claimNext: vi.fn().mockResolvedValue(job),
         markCompleted,
         markFailed: vi.fn(),
+        updateCheckpoint: vi.fn().mockResolvedValue(undefined),
+        releasePausedClaim: vi.fn().mockResolvedValue(undefined),
       } as never,
       provider: {
         name: "test-crawler",
@@ -83,6 +113,8 @@ describe("website crawl worker", () => {
         claimNext: vi.fn().mockResolvedValue(job),
         markCompleted,
         markFailed: vi.fn(),
+        updateCheckpoint: vi.fn().mockResolvedValue(undefined),
+        releasePausedClaim: vi.fn().mockResolvedValue(undefined),
       } as never,
       provider: {
         name: "test-crawler",
@@ -133,7 +165,13 @@ describe("website crawl worker", () => {
     }));
 
     const worker = new WebsiteCrawlWorker({
-      repository: { claimNext, markCompleted, markFailed: vi.fn() } as never,
+      repository: {
+        claimNext,
+        markCompleted,
+        markFailed: vi.fn(),
+        updateCheckpoint: vi.fn().mockResolvedValue(undefined),
+        releasePausedClaim: vi.fn().mockResolvedValue(undefined),
+      } as never,
       provider: {
         name: "test-crawler",
         crawl: vi.fn().mockResolvedValue({
@@ -171,6 +209,138 @@ describe("website crawl worker", () => {
     await stopPromise;
     expect(stopResolved).toBe(true);
     expect(markCompleted).toHaveBeenCalledOnce();
+  });
+
+  it("aborts an in-flight crawl when the claimed job row is deleted", async () => {
+    const job = createJob();
+    const markCompleted = vi.fn().mockResolvedValue(undefined);
+    const markFailed = vi.fn().mockResolvedValue(undefined);
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    let providerStarted = false;
+    const repository = {
+      releaseAllTimedOutClaims: vi.fn().mockResolvedValue(0),
+      claimNext: vi.fn().mockResolvedValue(job),
+      findById: vi.fn().mockImplementation(async () => (providerStarted ? null : job)),
+      markCompleted,
+      markFailed,
+      updateCheckpoint: vi.fn().mockResolvedValue(undefined),
+      releasePausedClaim: vi.fn().mockResolvedValue(undefined),
+    };
+    const provider = {
+      name: "test-crawler",
+      crawl: vi.fn().mockImplementation(({ signal }: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          providerStarted = true;
+          signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        }),
+      ),
+    };
+
+    const worker = new WebsiteCrawlWorker({
+      repository: repository as never,
+      provider,
+      documentIngestionService: { ingest: vi.fn() } as never,
+      logger: logger as never,
+      pollIntervalMs: 10_000,
+      cancellationPollMs: 1,
+    });
+
+    await expect(worker.runOnce()).resolves.toBe(true);
+
+    await waitFor(() => repository.findById.mock.calls.length >= 1);
+    expect(provider.crawl).toHaveBeenCalledWith(expect.objectContaining({
+      signal: expect.objectContaining({ aborted: true }),
+    }));
+    expect(markCompleted).not.toHaveBeenCalled();
+    expect(markFailed).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "Website crawl job failed",
+    );
+    expect(repository.releasePausedClaim).toHaveBeenCalledWith(job.id);
+  });
+
+  it("releases a paused claim when a pause wins before completion is observed", async () => {
+    const job = createJob();
+    const releasePausedClaim = vi.fn().mockResolvedValue(undefined);
+    const markCompleted = vi.fn().mockResolvedValue(undefined);
+    const worker = new WebsiteCrawlWorker({
+      repository: {
+        releaseAllTimedOutClaims: vi.fn().mockResolvedValue(0),
+        claimNext: vi.fn().mockResolvedValue(job),
+        markCompleted,
+        markFailed: vi.fn(),
+        updateCheckpoint: vi.fn().mockResolvedValue(undefined),
+        releasePausedClaim,
+      } as never,
+      provider: {
+        name: "test-crawler",
+        crawl: vi.fn().mockResolvedValue({
+          provider: "test-crawler",
+          runId: "run-1",
+          pages: [{ sourceUrl: "https://example.com/a", title: "A", content: "Alpha" }],
+        }),
+      },
+      documentIngestionService: {
+        ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
+      } as never,
+      logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
+      pollIntervalMs: 10_000,
+    });
+
+    await expect(worker.runOnce()).resolves.toBe(true);
+
+    expect(markCompleted).toHaveBeenCalledOnce();
+    expect(releasePausedClaim).toHaveBeenCalledWith(job.id);
+  });
+
+  it("does not complete a job after cancellation was observed even if the provider resolves", async () => {
+    const job = createJob();
+    const pausedJob = { ...job, status: "paused" as const };
+    const markCompleted = vi.fn().mockResolvedValue(undefined);
+    const repository = {
+      releaseAllTimedOutClaims: vi.fn().mockResolvedValue(0),
+      claimNext: vi.fn().mockResolvedValue(job),
+      findById: vi.fn().mockResolvedValue(pausedJob),
+      markCompleted,
+      markFailed: vi.fn().mockResolvedValue(undefined),
+      updateCheckpoint: vi.fn().mockResolvedValue(undefined),
+      releasePausedClaim: vi.fn().mockResolvedValue(undefined),
+    };
+    const provider = {
+      name: "test-crawler",
+      crawl: vi.fn().mockImplementation(({ signal }: { signal?: AbortSignal }) =>
+        new Promise((resolve) => {
+          signal?.addEventListener("abort", () => {
+            resolve({
+              provider: "test-crawler",
+              runId: "run-1",
+              pages: [{ sourceUrl: "https://example.com/a", title: "A", content: "Alpha" }],
+            });
+          }, { once: true });
+        }),
+      ),
+    };
+
+    const worker = new WebsiteCrawlWorker({
+      repository: repository as never,
+      provider,
+      documentIngestionService: {
+        ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
+      } as never,
+      logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
+      pollIntervalMs: 10_000,
+      cancellationPollMs: 1,
+    });
+
+    await expect(worker.runOnce()).resolves.toBe(true);
+
+    expect(markCompleted).not.toHaveBeenCalled();
+    expect(repository.releasePausedClaim).toHaveBeenCalledWith(job.id);
   });
 
   it("returns busy when another worker owns a fresh claim", async () => {

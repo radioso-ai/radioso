@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import type { WebsiteCrawlJobStatus, WebsiteCrawlJobSummary } from '@/lib/api'
-import { mergeCrawlJobs, parseCrawlForm } from '@/lib/crawl-jobs'
+import {
+  applySourceResumeResult,
+  getCrawlPageIssueSummaries,
+  getResumeDispatchWarning,
+  mergeCrawlJobs,
+  parseCrawlForm,
+  runSourceCrawlAction,
+} from '@/lib/crawl-jobs'
 
 const baseJob = (overrides: Partial<WebsiteCrawlJobSummary>): WebsiteCrawlJobSummary => ({
   id: 'j-1',
@@ -11,6 +18,7 @@ const baseJob = (overrides: Partial<WebsiteCrawlJobSummary>): WebsiteCrawlJobSum
   sourceId: null,
   documentCount: null,
   failedPageCount: null,
+  skippedPageCount: null,
   failures: [],
   lastError: null,
   createdAt: '2026-05-11T10:00:00.000Z',
@@ -45,6 +53,9 @@ describe('parseCrawlForm', () => {
     expect(parseCrawlForm({ url: '  https://example.com  ', limit: '', maxLimit: 100 })).toEqual({
       ok: true,
       url: 'https://example.com',
+      includeUrlPatterns: [],
+      excludeUrlPatterns: [],
+      preserveContentLinks: true,
     })
   })
 
@@ -68,6 +79,9 @@ describe('parseCrawlForm', () => {
       ok: true,
       url: 'https://example.com',
       limit: 100,
+      includeUrlPatterns: [],
+      excludeUrlPatterns: [],
+      preserveContentLinks: true,
     })
   })
 
@@ -76,6 +90,26 @@ describe('parseCrawlForm', () => {
       ok: true,
       url: 'https://example.com',
       limit: 7,
+      includeUrlPatterns: [],
+      excludeUrlPatterns: [],
+      preserveContentLinks: true,
+    })
+  })
+
+  it('parses crawler policy fields', () => {
+    expect(parseCrawlForm({
+      url: 'https://example.com',
+      limit: '',
+      maxLimit: 100,
+      includeUrlPatterns: ' /docs/ \n/docs/\n/blog',
+      excludeUrlPatterns: '/tag\n/search',
+      preserveContentLinks: false,
+    })).toEqual({
+      ok: true,
+      url: 'https://example.com',
+      includeUrlPatterns: ['/docs/', '/blog'],
+      excludeUrlPatterns: ['/tag', '/search'],
+      preserveContentLinks: false,
     })
   })
 })
@@ -168,5 +202,99 @@ describe('mergeCrawlJobs', () => {
 
     expect(result.jobs).toEqual([real])
     expect(result.completedJobIds).toEqual([])
+  })
+})
+
+describe('getCrawlPageIssueSummaries', () => {
+  it('labels failed and skipped crawl pages separately', () => {
+    expect(getCrawlPageIssueSummaries(baseJob({
+      failedPageCount: 2,
+      skippedPageCount: 3,
+    }))).toEqual([
+      { kind: 'failed', label: '2 failed during crawl' },
+      { kind: 'skipped', label: '3 skipped during crawl' },
+    ])
+  })
+
+  it('omits zero and null page issue counts', () => {
+    expect(getCrawlPageIssueSummaries(baseJob({
+      failedPageCount: 0,
+      skippedPageCount: null,
+    }))).toEqual([])
+  })
+})
+
+describe('applySourceResumeResult', () => {
+  it('keeps a paused source paused when the backend did not resume any job', () => {
+    const result = applySourceResumeResult({
+      sourceId: 'source-1',
+      resumedJobCount: 0,
+      pausedSourceIds: new Set(['source-1']),
+      crawlingSourceIds: new Set<string>(),
+    })
+
+    expect([...result.pausedSourceIds]).toEqual(['source-1'])
+    expect([...result.crawlingSourceIds]).toEqual([])
+  })
+
+  it('moves the source from paused to crawling after a job is resumed', () => {
+    const result = applySourceResumeResult({
+      sourceId: 'source-1',
+      resumedJobCount: 1,
+      pausedSourceIds: new Set(['source-1']),
+      crawlingSourceIds: new Set<string>(),
+    })
+
+    expect([...result.pausedSourceIds]).toEqual([])
+    expect([...result.crawlingSourceIds]).toEqual(['source-1'])
+  })
+})
+
+describe('getResumeDispatchWarning', () => {
+  it('returns no warning when all resumed jobs were dispatched', () => {
+    expect(getResumeDispatchWarning({
+      resumedJobCount: 2,
+      resumeDispatchFailureCount: 0,
+    })).toBeNull()
+  })
+
+  it('explains when every resumed job failed to dispatch', () => {
+    expect(getResumeDispatchWarning({
+      resumedJobCount: 0,
+      resumeDispatchFailureCount: 1,
+    })).toBe('The crawl was queued in the database, but dispatch failed. Try resuming again in a moment.')
+  })
+
+  it('explains partial dispatch failures with singular and plural copy', () => {
+    expect(getResumeDispatchWarning({
+      resumedJobCount: 1,
+      resumeDispatchFailureCount: 1,
+    })).toBe('1 resumed crawl job was not dispatched. Database polling may still pick them up.')
+    expect(getResumeDispatchWarning({
+      resumedJobCount: 1,
+      resumeDispatchFailureCount: 2,
+    })).toBe('2 resumed crawl jobs were not dispatched. Database polling may still pick them up.')
+  })
+})
+
+describe('runSourceCrawlAction', () => {
+  it('returns an error result for rejected pause calls without throwing', async () => {
+    await expect(runSourceCrawlAction({
+      request: () => Promise.reject({ error: 'Pause is unavailable' }),
+      fallbackMessage: 'Failed to pause crawl.',
+    })).resolves.toEqual({
+      ok: false,
+      error: 'Pause is unavailable',
+    })
+  })
+
+  it('returns an error result for rejected resume calls without throwing', async () => {
+    await expect(runSourceCrawlAction({
+      request: () => Promise.reject(new Error('Resume is unavailable')),
+      fallbackMessage: 'Failed to resume crawl.',
+    })).resolves.toEqual({
+      ok: false,
+      error: 'Resume is unavailable',
+    })
   })
 })

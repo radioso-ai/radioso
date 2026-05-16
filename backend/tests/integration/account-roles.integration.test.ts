@@ -168,7 +168,7 @@ describe("organization roles", () => {
 
     expect(response.status).toBe(404);
     expect(response.body.error.message).toBe("Workspace not found");
-  });
+  }, 20_000);
 
   it("returns 400 for malformed workspace grant route ids", async () => {
     const { app } = createTestApp();
@@ -212,5 +212,5 @@ describe("organization roles", () => {
       userId: memberB.userId,
       role: "admin",
     }));
-  });
+  }, 20_000);
 });

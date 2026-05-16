@@ -21,6 +21,7 @@ export class WebsiteCrawlWorker {
     logger: AppLogger;
     pollIntervalMs?: number;
     jobLeaseMs?: number;
+    cancellationPollMs?: number;
   }) {}
 
   async start(): Promise<void> {
@@ -151,6 +152,13 @@ export class WebsiteCrawlWorker {
       return;
     }
 
+    const abortController = new AbortController();
+    let cancelled = false;
+    const cancellationMonitor = this.startCancellationMonitor(job, () => {
+      cancelled = true;
+      abortController.abort();
+    });
+
     try {
       const service = new WebsiteCrawlerService({
         provider: this.dependencies.provider,
@@ -162,9 +170,22 @@ export class WebsiteCrawlWorker {
         workspaceId: job.workspaceId,
         url: job.requestedUrl,
         limit: job.limit,
+        signal: abortController.signal,
+        policy: job.policy,
+        checkpoint: job.checkpoint,
+        onCheckpoint: async (checkpoint) => {
+          await this.dependencies.repository.updateCheckpoint(job.id, checkpoint);
+        },
       });
+      clearInterval(cancellationMonitor);
+      if (cancelled) {
+        return;
+      }
       await this.dependencies.repository.markCompleted(job.id, result as unknown as Record<string, unknown>);
     } catch (error) {
+      if (cancelled) {
+        return;
+      }
       await this.dependencies.repository.markFailed(
         job.id,
         error instanceof Error && error.message.trim() ? error.message : "Website crawl failed",
@@ -178,6 +199,41 @@ export class WebsiteCrawlWorker {
         },
         "Website crawl job failed",
       );
+    } finally {
+      clearInterval(cancellationMonitor);
+      await this.releasePausedClaim(job.id);
     }
+  }
+
+  private async releasePausedClaim(jobId: string): Promise<void> {
+    try {
+      await this.dependencies.repository.releasePausedClaim(jobId);
+    } catch (error) {
+      this.dependencies.logger.warn(
+        { role: "website-crawl-worker", jobId, error: error instanceof Error ? error.message : String(error) },
+        "Failed to release paused crawl job claim",
+      );
+    }
+  }
+
+  private startCancellationMonitor(
+    job: WebsiteCrawlJobRecord,
+    cancel: () => void,
+  ): NodeJS.Timeout {
+    const timer = setInterval(async () => {
+      try {
+        const current = await this.dependencies.repository.findById(job.id);
+        if (!current || current.workspaceId !== job.workspaceId || current.status !== "processing") {
+          cancel();
+        }
+      } catch (error) {
+        this.dependencies.logger.warn(
+          { role: "website-crawl-worker", jobId: job.id, error: error instanceof Error ? error.message : String(error) },
+          "Failed to check website crawl job cancellation state",
+        );
+      }
+    }, this.dependencies.cancellationPollMs ?? 1_000);
+    timer.unref?.();
+    return timer;
   }
 }

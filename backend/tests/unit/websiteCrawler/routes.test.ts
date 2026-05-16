@@ -196,8 +196,46 @@ describe("website crawler routes", () => {
       workspaceId: "workspace-1",
       url: "https://example.com",
       limit: 1,
+      policy: {
+        includeUrlPatterns: [],
+        excludeUrlPatterns: [],
+        preserveContentLinks: true,
+      },
     });
     expect(provider.crawl).not.toHaveBeenCalled();
+  });
+
+  it("validates and forwards crawl policy fields", async () => {
+    const provider = createProvider();
+    const enqueue = vi.fn().mockResolvedValue({
+      jobId: "11111111-1111-4111-8111-111111111111",
+      sourceId: "22222222-2222-4222-8222-222222222222",
+      requestedUrl: "https://example.com",
+      status: "queued",
+    });
+
+    await request(createApp({
+      websiteCrawlerProvider: provider,
+      websiteCrawlJobService: { enqueue },
+    }))
+      .post("/api/v1/document/crawl")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("x-workspace-id", "workspace-1")
+      .send({
+        url: "https://example.com",
+        includeUrlPatterns: ["/docs"],
+        excludeUrlPatterns: ["/tag"],
+        preserveContentLinks: false,
+      })
+      .expect(202);
+
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      policy: {
+        includeUrlPatterns: ["/docs"],
+        excludeUrlPatterns: ["/tag"],
+        preserveContentLinks: false,
+      },
+    }));
   });
 
   it("rate limits crawl requests before calling the provider", async () => {
@@ -321,6 +359,43 @@ describe("website crawler routes", () => {
       sinceMinutes: 15,
       limit: 10,
     });
+  });
+
+  it("keeps the recent window for source-scoped active status polling", async () => {
+    const listForWorkspace = vi.fn().mockResolvedValue([]);
+    const sourceId = "22222222-2222-4222-8222-222222222222";
+
+    await request(createApp({
+      websiteCrawlJobService: { enqueue: vi.fn(), listForWorkspace },
+    }))
+      .get(`/api/v1/document/crawl/jobs?sourceId=${sourceId}&status=processing&sinceMinutes=10`)
+      .set("Cookie", "radioso_session=valid-session")
+      .set("x-workspace-id", "workspace-1")
+      .expect(200);
+
+    expect(listForWorkspace).toHaveBeenCalledWith("workspace-1", {
+      status: "processing",
+      sinceMinutes: 10,
+      limit: undefined,
+      sourceId,
+    });
+  });
+
+  it("accepts paused as a crawl job list status", async () => {
+    const listForWorkspace = vi.fn().mockResolvedValue([]);
+
+    await request(createApp({
+      websiteCrawlJobService: { enqueue: vi.fn(), listForWorkspace },
+    }))
+      .get("/api/v1/document/crawl/jobs?status=paused")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("x-workspace-id", "workspace-1")
+      .expect(200);
+
+    expect(listForWorkspace).toHaveBeenCalledWith("workspace-1", expect.objectContaining({
+      status: "paused",
+      sinceMinutes: undefined,
+    }));
   });
 
   it("rejects invalid crawl job list queries", async () => {

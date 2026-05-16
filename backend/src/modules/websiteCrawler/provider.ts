@@ -1,8 +1,18 @@
+import type { WebsiteCrawlCheckpoint, WebsiteCrawlPolicy } from "./policy.js";
+
 export interface WebsiteCrawlRequest {
   url: string;
   limit: number;
   signal?: AbortSignal;
+  policy?: WebsiteCrawlPolicy;
+  checkpoint?: WebsiteCrawlCheckpoint;
+  onCheckpointEvent?: (event: WebsiteCrawlCheckpointEvent) => Promise<void>;
 }
+
+export type WebsiteCrawlCheckpointEvent =
+  | { type: "discovered"; url: string; canonicalUrl: string | null }
+  | { type: "processing"; url: string; canonicalUrl: string | null }
+  | { type: "processed"; url: string; canonicalUrl: string | null };
 
 export interface WebsiteCrawlPage {
   sourceUrl: string;
@@ -18,6 +28,7 @@ export interface WebsiteCrawlResult {
   status?: string | null;
   pages: WebsiteCrawlPage[];
   invalidPages?: number;
+  skipped?: number;
 }
 
 export interface WebsiteCrawlerProvider {

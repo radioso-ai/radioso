@@ -222,13 +222,53 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       const config = resolveWebsiteCrawlerConfig();
       const previousLimit = typeof source.config.limit === "number" ? source.config.limit : config.defaultLimit;
       const limit = Math.min(previousLimit, config.maxLimit);
+      const policy = source.config.policy && typeof source.config.policy === "object" && !Array.isArray(source.config.policy)
+        ? source.config.policy as Record<string, unknown>
+        : undefined;
       const result = await dependencies.websiteCrawlJobService.enqueue({
         accountId,
         workspaceId,
         url,
         limit,
+        policy,
       });
       res.status(202).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/sources/:sourceId/pause-crawl", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { sourceId } = sourceParamsSchema.parse(req.params);
+      const source = await dependencies.documentSourceRepository.findByIdAndWorkspaceId(sourceId, workspaceId);
+      if (!source) {
+        throw notFound("Source not found");
+      }
+      if (source.kind !== "website") {
+        throw badRequest("Only website sources can be paused");
+      }
+      const result = await dependencies.websiteCrawlJobService.pauseJobsForSource({ workspaceId, sourceId });
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/sources/:sourceId/resume-crawl", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { sourceId } = sourceParamsSchema.parse(req.params);
+      const source = await dependencies.documentSourceRepository.findByIdAndWorkspaceId(sourceId, workspaceId);
+      if (!source) {
+        throw notFound("Source not found");
+      }
+      if (source.kind !== "website") {
+        throw badRequest("Only website sources can be resumed");
+      }
+      const result = await dependencies.websiteCrawlJobService.resumeJobsForSource({ workspaceId, sourceId });
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

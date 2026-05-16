@@ -89,6 +89,125 @@ describe("default Crawlee fetcher", () => {
     );
   });
 
+  it("falls back to a plain fetch when the Crawlee HTTP client connection is reset before a response", async () => {
+    let pageAttempts = 0;
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      if (req.url === "/next") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end("<html><head><title>Next</title></head><body><main><p>Next page content.</p></main></body></html>");
+        return;
+      }
+      pageAttempts += 1;
+      if (pageAttempts === 1) {
+        req.socket.destroy();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>Fallback</title></head><body><main><p>Fallback content.</p><a href=\"/next\">Next</a></main></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 2,
+      userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)"
+    });
+
+    expect(pageAttempts).toBe(2);
+    expect(pages.map((page) => page.url).sort()).toEqual([
+      `${baseUrl}/`,
+      `${baseUrl}/next`,
+    ].sort());
+    expect(pages[0]).toEqual(expect.objectContaining({
+      status: "success",
+      text: `Fallback content.\n\n[Next](${baseUrl}/next)`,
+      httpAttempted: true,
+      transportUsed: "http"
+    }));
+  });
+
+  it("does not use the plain fetch fallback to bypass robots.txt", async () => {
+    let pageHits = 0;
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res
+          .writeHead(200, { "content-type": "text/plain; charset=utf-8" })
+          .end("User-agent: ExampleDocsCrawler/1.0\nDisallow: /\n");
+        return;
+      }
+      pageHits += 1;
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>Blocked</title></head><body><main><p>Robots-blocked content.</p></main></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1,
+      userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)"
+    });
+
+    expect(pageHits).toBe(0);
+    expect(pages[0]).toEqual(expect.objectContaining({
+      status: "failed",
+      text: "",
+      links: [],
+      error: "Blocked by robots.txt"
+    }));
+  });
+
+  it("does not use the plain fetch fallback to bypass robots.txt after redirects", async () => {
+    let startAttempts = 0;
+    let privateHits = 0;
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res
+          .writeHead(200, { "content-type": "text/plain; charset=utf-8" })
+          .end("User-agent: ExampleDocsCrawler/1.0\nAllow: /start\nDisallow: /start/private\n");
+        return;
+      }
+      if (req.url === "/start") {
+        startAttempts += 1;
+        if (startAttempts === 1) {
+          req.socket.destroy();
+          return;
+        }
+        res.writeHead(302, { location: "/start/private" }).end();
+        return;
+      }
+      if (req.url === "/start/private") {
+        privateHits += 1;
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end("<html><head><title>Private</title></head><body><main><p>Private content.</p></main></body></html>");
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl: `${baseUrl}/start`,
+      pageLimit: 1,
+      userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)"
+    });
+
+    expect(startAttempts).toBe(2);
+    expect(privateHits).toBe(0);
+    expect(pages[0]).toEqual(expect.objectContaining({
+      status: "failed",
+      text: "",
+      error: "Blocked by robots.txt"
+    }));
+  });
+
   it("stores decoded readable text with structural line breaks", async () => {
     const { server, baseUrl } = await listen((req, res) => {
       if (req.url === "/robots.txt") {
@@ -136,6 +255,216 @@ describe("default Crawlee fetcher", () => {
     expect(pages[0].text).not.toContain("Esimenesamm");
     expect(pages[0].text).not.toContain("&#xF5;");
     expect(pages[0].text).not.toContain("&auml;");
+  });
+
+  it("preserves content link and embedded video URLs in extracted text", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html>
+            <head><title>Lesson</title></head>
+            <body>
+              <header>
+                <a href="/menu">Menu</a>
+                <iframe src="https://www.youtube.com/embed/header-video"></iframe>
+              </header>
+              <main>
+                <h1>Lesson</h1>
+                <p>Read <a href="/resources/holy-science"><em>The Holy Science</em></a> before class.</p>
+                <iframe
+                  src="about:blank"
+                  data-lazy-src="https://www.youtube.com/embed/z1ktOP09oLM?rel=0&amp;autoplay=1"
+                ></iframe>
+                <p>Then watch <a href="https://youtu.be/follow-up">the follow-up video</a>.</p>
+              </main>
+            </body>
+          </html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1
+    });
+
+    expect(pages[0].text).toContain(`Read [The Holy Science](${baseUrl}/resources/holy-science) before class.`);
+    expect(pages[0].text).toContain("Video: https://www.youtube.com/watch?v=z1ktOP09oLM");
+    expect(pages[0].text).toContain("Then watch [the follow-up video](https://youtu.be/follow-up).");
+    expect(pages[0].text).not.toContain("header-video");
+    expect(pages[0].text).not.toContain("Menu");
+  });
+
+  it("can render content links as plain text while still dropping share and tracking links", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html>
+            <head><title>Lesson</title></head>
+            <body>
+              <main>
+                <p>Read <a href="/resources?utm_source=newsletter">the resource</a>.</p>
+                <p>Share <a href="https://facebook.com/sharer/sharer.php?u=https://example.com">Facebook</a>.</p>
+                <iframe src="https://www.youtube.com/embed/z1ktOP09oLM"></iframe>
+              </main>
+            </body>
+          </html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1,
+      preserveContentLinks: false
+    });
+
+    expect(pages[0].text).toContain("Read the resource.");
+    expect(pages[0].text).toContain("Share Facebook.");
+    expect(pages[0].text).not.toContain("utm_source");
+    expect(pages[0].text).not.toContain("facebook.com");
+    expect(pages[0].text).not.toContain("youtube.com");
+  });
+
+  it("applies include and exclude URL patterns with deny taking precedence", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      if (req.url === "/docs/keep") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end("<html><head><title>Keep</title></head><body><main><p>Keep documentation with enough practical explanation to pass quality scoring. This page describes setup steps, troubleshooting details, operational constraints, configuration ownership, release verification, support routing, and maintenance expectations for the documentation area. It also explains expected user permissions, migration order, rollback criteria, logging checks, and handoff notes so operators can use the material as durable reference content rather than a sparse navigation stub.</p></main></body></html>");
+        return;
+      }
+      if (req.url === "/docs/private" || req.url === "/blog/post") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end("<html><head><title>Denied</title></head><body><main><p>Denied content.</p></main></body></html>");
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html><head><title>Home</title></head><body><main>
+            <p>Home content.</p>
+            <a href="/docs/keep">Keep</a>
+            <a href="/docs/private">Private</a>
+            <a href="/blog/post">Blog</a>
+          </main></body></html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 4,
+      includeUrlPatterns: ["/docs/"],
+      excludeUrlPatterns: ["private"]
+    });
+
+    expect(pages.map((page) => page.url).sort()).toEqual([
+      `${baseUrl}/`,
+      `${baseUrl}/docs/keep`,
+    ].sort());
+    expect(pages.find((page) => page.url === `${baseUrl}/`)).toEqual(expect.objectContaining({
+      skipReason: "Skipped by include URL policy"
+    }));
+    expect(pages.find((page) => page.url === `${baseUrl}/docs/keep`)?.skipReason).toBeNull();
+    expect(pages.map((page) => page.text).join("\n")).not.toContain("Denied content");
+  });
+
+  it("marks structurally link-dense pages as discovery-only listing pages", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      if (req.url === "/indexes/news") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end(`
+            <html><head><title>News Index</title></head><body>
+              <a href="/news/story">A full story</a>
+              <a href="/news/second">Another story</a>
+              <a href="/news/third">Third story</a>
+              <a href="/news/fourth">Fourth story</a>
+              <a href="/news/fifth">Fifth story</a>
+              <a href="/news/sixth">Sixth story</a>
+              <a href="/news/seventh">Seventh story</a>
+              <a href="/news/eighth">Eighth story</a>
+            </body></html>
+          `);
+        return;
+      }
+      if (req.url === "/") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end("<html><head><title>Home</title></head><body><main><a href=\"/indexes/news\">News index</a></main></body></html>");
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>Story</title></head><body><article><p>Detailed story content with enough words to pass extraction scoring.</p></article></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 3
+    });
+    const listingPage = pages.find((page) => page.url === `${baseUrl}/indexes/news`);
+
+    expect(listingPage).toEqual(expect.objectContaining({
+      pageType: "listing",
+      skipReason: "Skipped listing page"
+    }));
+    expect(pages.map((page) => page.url)).toContain(`${baseUrl}/news/story`);
+  });
+
+  it("does not skip content only because the path contains index-like words", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      if (req.url === "/category/security-guide") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end(`
+            <html><head><title>Security Guide</title></head><body>
+              <article><p>This security guide explains how administrators should evaluate access boundaries, rotate operational credentials, document emergency procedures, and verify that monitoring covers the full deployment path. It includes practical guidance for rollout planning, maintenance windows, ownership checks, audit review, incident follow-up, and regular validation of assumptions across teams.</p></article>
+            </body></html>
+          `);
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>Home</title></head><body><main><a href=\"/category/security-guide\">Security guide</a></main></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 2
+    });
+    const contentPage = pages.find((page) => page.url === `${baseUrl}/category/security-guide`);
+
+    expect(contentPage).toEqual(expect.objectContaining({
+      pageType: "content",
+      skipReason: null
+    }));
   });
 
   it("keeps main content when utility classes contain navigation-like breakpoint names", async () => {

@@ -1,6 +1,6 @@
 'use client'
 
-import { CheckCircle2, Globe, Loader2, X, XCircle } from 'lucide-react'
+import { CheckCircle2, Globe, Loader2, Pause, X, XCircle } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/spinner'
@@ -9,6 +9,7 @@ import type { WebsiteCrawlJobSummary, WebsiteCrawlJobStatus } from '@/lib/api'
 const STATUS_LABELS: Record<WebsiteCrawlJobStatus, string> = {
   queued: 'Queued',
   processing: 'Crawling',
+  paused: 'Paused',
   completed: 'Completed',
   failed: 'Failed',
 }
@@ -34,6 +35,14 @@ function StatusBadge({ status }: { status: WebsiteCrawlJobStatus }) {
     return (
       <Badge variant="outline" className="border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-400">
         <CheckCircle2 className="h-3 w-3" />
+        {STATUS_LABELS[status]}
+      </Badge>
+    )
+  }
+  if (status === 'paused') {
+    return (
+      <Badge variant="outline" className="text-muted-foreground">
+        <Pause className="h-3 w-3" />
         {STATUS_LABELS[status]}
       </Badge>
     )

@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { type FormEvent, useEffect, useState } from 'react'
+import React, { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import {
@@ -40,13 +40,14 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+import { WizardDialog as RawWizardDialog } from '@/lib/enterprise-bridge/agent-wizard-dialog'
 import { useAuth } from '@/lib/auth-context'
 import { useTheme } from '@/components/theme-provider'
 import {
   Activity,
   Bot,
   BookOpen,
+  Globe,
   Settings,
   LogOut,
   Moon,
@@ -68,6 +69,18 @@ import { WorkspaceSwitcher } from './workspace-switcher'
 import { useWorkspace } from '@/lib/workspace-context'
 import { agentsApi, type AgentSettings } from '@/lib/api'
 import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
+import {
+  loadAgentCreationActionDefinitions,
+  resolveAgentCreationActions,
+  type AgentCreationActionDefinition,
+} from '@/lib/agent-creation-extensions'
+
+type WizardDialogComponent = (props: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  agentSettingsHrefBuilder: (agentId: string) => string
+}) => React.ReactElement | null
+const WizardDialog = RawWizardDialog as unknown as WizardDialogComponent | null
 
 interface AppSidebarProps {
   accountId: string
@@ -112,10 +125,11 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
   }))
   const [agentsMenuOpen, setAgentsMenuOpen] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [wizardOpen, setWizardOpen] = useState(false)
   const [newAgentName, setNewAgentName] = useState('')
-  const [newAgentInstructions, setNewAgentInstructions] = useState('')
   const [isCreatingAgent, setIsCreatingAgent] = useState(false)
   const [createAgentError, setCreateAgentError] = useState<string | null>(null)
+  const [agentCreationActionDefinitions, setAgentCreationActionDefinitions] = useState<AgentCreationActionDefinition[]>([])
   const agents = agentListState.workspaceCacheKey === workspaceCacheKey
     ? agentListState.agents
     : cachedAgents
@@ -126,6 +140,13 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
   const agentTooltip = `Agent: ${agentName}`
   const userDisplayName = user?.email?.split('@')[0] || 'User'
   const userInitial = userDisplayName.charAt(0).toUpperCase() || 'U'
+  const agentCreationActions = useMemo(
+    () => resolveAgentCreationActions(agentCreationActionDefinitions, {
+      accountId,
+      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+    }),
+    [accountId, agentCreationActionDefinitions, activeWorkspace?.publicRouteKey],
+  )
 
   useEffect(() => {
     let active = true
@@ -185,6 +206,18 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
     }
   }, [activeWorkspaceId, preferredAgentId, workspaceCacheKey])
 
+  useEffect(() => {
+    let active = true
+    void loadAgentCreationActionDefinitions().then((definitions) => {
+      if (active) {
+        setAgentCreationActionDefinitions(definitions)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
   const agentHref = buildDashboardHref(accountId, {
     section: 'agents',
     workspaceId: activeWorkspaceId ?? undefined,
@@ -217,7 +250,6 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
     try {
       const created = await agentsApi.createAgent({
         name,
-        customInstruction: newAgentInstructions.trim(),
       })
       const response = await agentsApi.listAgents()
       agentsByWorkspace.set(workspaceCacheKey, response.agents)
@@ -229,7 +261,6 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
       setLastSelectedAgentId(activeWorkspaceId, created.id)
       setCreateDialogOpen(false)
       setNewAgentName('')
-      setNewAgentInstructions('')
       setAgentsMenuOpen(true)
       window.dispatchEvent(new CustomEvent('radioso:agents-updated', {
         detail: { agentId: created.id },
@@ -445,13 +476,52 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
       </Sidebar>
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create agent</DialogTitle>
+            <DialogDescription>
+              Pick how you&apos;d like to set up your new agent.
+            </DialogDescription>
+          </DialogHeader>
+
+          {agentCreationActions[0] ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  const action = agentCreationActions[0]
+                  setCreateDialogOpen(false)
+                  if (action.kind === 'wizard-dialog' && WizardDialog) {
+                    setWizardOpen(true)
+                  } else if (action.href) {
+                    router.push(action.href)
+                  }
+                }}
+                className="group flex w-full items-start gap-4 rounded-lg border border-border bg-muted/20 p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/40"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <Globe className="h-5 w-5" />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{agentCreationActions[0].label}</span>
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                      Recommended
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    We&apos;ll read your site and configure name, tone, and instructions for you.
+                  </p>
+                </div>
+              </button>
+              <div className="flex items-center gap-3 text-xs uppercase tracking-wider text-muted-foreground">
+                <div className="h-px flex-1 bg-border" />
+                <span>or create manually</span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+            </>
+          ) : null}
+
           <form onSubmit={handleCreateAgent} className="space-y-4">
-            <DialogHeader>
-              <DialogTitle>Create agent</DialogTitle>
-              <DialogDescription>
-                Add a workspace agent with its own identity, instructions, and channel settings.
-              </DialogDescription>
-            </DialogHeader>
             <div className="space-y-2">
               <Label htmlFor="sidebarNewAgentName">Name</Label>
               <Input
@@ -459,17 +529,11 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
                 value={newAgentName}
                 onChange={(event) => setNewAgentName(event.target.value)}
                 maxLength={200}
-                autoFocus
+                placeholder="e.g. Acme Support"
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sidebarNewAgentInstructions">Instructions</Label>
-              <Textarea
-                id="sidebarNewAgentInstructions"
-                value={newAgentInstructions}
-                onChange={(event) => setNewAgentInstructions(event.target.value.slice(0, 2000))}
-                rows={4}
-              />
+              <p className="text-xs text-muted-foreground">
+                You can configure instructions, tone, and channels after creating the agent.
+              </p>
             </div>
             {createAgentError ? <p className="text-sm text-destructive">{createAgentError}</p> : null}
             <DialogFooter>
@@ -484,6 +548,22 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
           </form>
         </DialogContent>
       </Dialog>
+      {WizardDialog && activeWorkspace?.publicRouteKey ? (
+        <WizardDialog
+          open={wizardOpen}
+          onOpenChange={setWizardOpen}
+          agentSettingsHrefBuilder={(agentId) =>
+            buildDashboardHref(accountId, {
+              section: 'agents',
+              agentId,
+              agentTab: 'behavior',
+              anchor: 'assistant-identity',
+              workspaceId: activeWorkspaceId ?? undefined,
+              workspacePublicRouteKey: activeWorkspace.publicRouteKey,
+            })
+          }
+        />
+      ) : null}
     </>
   )
 }

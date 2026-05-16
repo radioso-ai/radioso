@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { RefreshCw } from 'lucide-react'
+import { Globe2, RefreshCw, X } from 'lucide-react'
 
 import { ChatView } from '@/components/dashboard/chat-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
@@ -16,13 +16,70 @@ import {
 } from '@/lib/dashboard-routes'
 import { agentsApi, type AgentSettings } from '@/lib/api'
 import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
+import {
+  clearAgentCreationHandoff,
+  readAgentCreationHandoff,
+  type AgentCreationHandoff,
+} from '@/lib/agent-creation-handoff'
+import {
+  loadAgentCreationActionDefinitions,
+  resolveAgentCreationActions,
+  type AgentCreationActionDefinition,
+} from '@/lib/agent-creation-extensions'
+import { WizardDialog as RawWizardDialog } from '@/lib/enterprise-bridge/agent-wizard-dialog'
 import { useWorkspace } from '@/lib/workspace-context'
+
+type WizardDialogComponent = (props: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  agentSettingsHrefBuilder: (agentId: string) => string
+}) => React.ReactElement | null
+const WizardDialog = RawWizardDialog as unknown as WizardDialogComponent | null
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 
 const agentTabSummaries: Record<AgentTab, string> = {
   chat: 'Test the selected agent against this workspace knowledge.',
   behavior: 'Identity, behavior, and escalation for the selected agent.',
   channels: 'Where users can access this agent.',
+}
+
+function AgentCreationHandoffBanner({
+  summary,
+  onDismiss,
+}: {
+  summary: AgentCreationHandoff
+  onDismiss: () => void
+}) {
+  return (
+    <div className="border-b border-border bg-background px-4 py-3 sm:px-6">
+      <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 space-y-3">
+            <div>
+              <p className="text-sm font-medium">{summary.title}</p>
+              <p className="mt-1 truncate text-sm text-muted-foreground">{summary.description}</p>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-primary" style={{ width: '100%' }} />
+            </div>
+            {summary.items.length > 0 ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {summary.items.slice(0, 6).map((item, index) => (
+                  <div key={`${item.url}-${index}`} className="min-w-0 rounded-md bg-muted/40 px-3 py-2">
+                    <p className="truncate text-xs font-medium">{item.title || 'Untitled page'}</p>
+                    <p className="truncate text-xs text-muted-foreground">{item.url}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <Button type="button" variant="ghost" size="icon" onClick={onDismiss} aria-label="Dismiss agent creation summary">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function AgentView({
@@ -37,7 +94,7 @@ export function AgentView({
   onOpenDocument: (documentId: string) => void
 }) {
   const router = useRouter()
-  const { activeWorkspaceId } = useWorkspace()
+  const { activeWorkspace, activeWorkspaceId } = useWorkspace()
   const activeTab = routeState.agentTab ?? 'chat'
   const [agents, setAgents] = useState<AgentSettings[]>([])
   const [agentsError, setAgentsError] = useState<string | null>(null)
@@ -46,6 +103,16 @@ export function AgentView({
     state: 'idle' | 'saved' | 'saving' | 'error'
     message?: string | null
   }>({ state: 'idle' })
+  const [agentCreationHandoff, setAgentCreationHandoff] = useState<AgentCreationHandoff | null>(null)
+  const [agentCreationActionDefinitions, setAgentCreationActionDefinitions] = useState<AgentCreationActionDefinition[]>([])
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const agentCreationActions = useMemo(
+    () => resolveAgentCreationActions(agentCreationActionDefinitions, {
+      accountId,
+      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+    }),
+    [accountId, agentCreationActionDefinitions, activeWorkspace?.publicRouteKey],
+  )
 
   const loadAgents = useCallback(async () => {
     if (!activeWorkspaceId) {
@@ -73,6 +140,18 @@ export function AgentView({
 
     return () => window.clearTimeout(timeout)
   }, [loadAgents, routeState.agentId])
+
+  useEffect(() => {
+    let active = true
+    void loadAgentCreationActionDefinitions().then((definitions) => {
+      if (active) {
+        setAgentCreationActionDefinitions(definitions)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     const handleAgentsUpdated = () => {
@@ -120,6 +199,19 @@ export function AgentView({
       setLastSelectedAgentId(activeWorkspaceId, selectedAgentId)
     }
   }, [activeWorkspaceId, selectedAgentId])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setAgentCreationHandoff(readAgentCreationHandoff(selectedAgentId))
+    }, 0)
+
+    return () => window.clearTimeout(timeout)
+  }, [selectedAgentId])
+
+  const dismissAgentCreationHandoff = useCallback(() => {
+    clearAgentCreationHandoff()
+    setAgentCreationHandoff(null)
+  }, [])
 
   useEffect(() => {
     if (isAgentsLoading || agentsError || !selectedAgentId || routeState.agentId === selectedAgentId) {
@@ -178,6 +270,33 @@ export function AgentView({
       <Button type="button" variant="outline" onClick={() => void loadAgents()}>
         Retry
       </Button>
+    </div>
+  ) : agents.length === 0 ? (
+    <div className="flex min-h-64 flex-col items-start justify-center gap-4 p-6">
+      <div className="max-w-xl">
+        <p className="font-medium text-foreground">Create your first agent</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Add an agent with its own identity, instructions, and channel settings.
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {agentCreationActions.map((action) => (
+          <Button
+            key={action.id}
+            type="button"
+            onClick={() => {
+              if (action.kind === 'wizard-dialog' && WizardDialog) {
+                setWizardOpen(true)
+              } else if (action.href) {
+                router.push(action.href)
+              }
+            }}
+          >
+            <Globe2 className="mr-2 h-4 w-4" />
+            {action.label}
+          </Button>
+        ))}
+      </div>
     </div>
   ) : (
     <div className="flex min-h-48 flex-col items-start justify-center gap-3 p-6">
@@ -274,6 +393,12 @@ export function AgentView({
             contentClassName="flex flex-col overflow-hidden p-0"
             contentScroll={false}
           >
+            {agentCreationHandoff ? (
+              <AgentCreationHandoffBanner
+                summary={agentCreationHandoff}
+                onDismiss={dismissAgentCreationHandoff}
+              />
+            ) : null}
             <WorkspaceAssistantChannelsTab accountId={accountId} mode="assistant" agentId={selectedAgentId} channelsTabHref={channelsTabHref} onSaveStateChange={setSaveState} />
           </DashboardPage>
         )}
@@ -295,6 +420,22 @@ export function AgentView({
           </DashboardPage>
         )}
       </TabsContent>
+      {WizardDialog && activeWorkspace?.publicRouteKey ? (
+        <WizardDialog
+          open={wizardOpen}
+          onOpenChange={setWizardOpen}
+          agentSettingsHrefBuilder={(agentId) =>
+            buildDashboardHref(accountId, {
+              section: 'agents',
+              agentId,
+              agentTab: 'behavior',
+              anchor: 'assistant-identity',
+              workspaceId: activeWorkspaceId ?? undefined,
+              workspacePublicRouteKey: activeWorkspace.publicRouteKey,
+            })
+          }
+        />
+      ) : null}
     </Tabs>
   )
 }

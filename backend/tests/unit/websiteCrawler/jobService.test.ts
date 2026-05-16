@@ -134,12 +134,47 @@ describe("website crawl job service", () => {
     await expect(service.resumeJobsForSource({
       workspaceId: "ws-1",
       sourceId: "source-1",
-    })).resolves.toEqual({ resumedJobCount: 1 });
+    })).resolves.toEqual({ resumedJobCount: 1, resumeDispatchFailureCount: 0 });
     expect(resumePausedBySourceId).toHaveBeenCalledWith("source-1", "ws-1");
     expect(dispatch).toHaveBeenCalledWith({
       jobId: "job-resumed",
       workspaceId: "ws-1",
     });
+  });
+
+  it("only counts resumed source jobs whose dispatch notification succeeds", async () => {
+    const warn = vi.fn();
+    const resumePausedBySourceId = vi.fn().mockResolvedValue([
+      {
+        id: "job-resumed",
+        workspaceId: "ws-1",
+        sourceId: "source-1",
+        status: "queued",
+      },
+      {
+        id: "job-not-dispatched",
+        workspaceId: "ws-1",
+        sourceId: "source-1",
+        status: "queued",
+      },
+    ]);
+    const dispatch = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("queue offline"));
+    const service = new WebsiteCrawlJobService({
+      repository: { resumePausedBySourceId } as never,
+      dispatcher: { dispatch },
+      documentIngestionService: {} as never,
+      logger: { warn } as never,
+    });
+
+    await expect(service.resumeJobsForSource({
+      workspaceId: "ws-1",
+      sourceId: "source-1",
+    })).resolves.toEqual({ resumedJobCount: 1, resumeDispatchFailureCount: 1 });
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledOnce();
   });
 
   it("lists without a since filter when sinceMinutes is omitted", async () => {

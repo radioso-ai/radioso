@@ -203,15 +203,22 @@ export class WebsiteCrawlJobService {
     return { pausedJobCount: jobs.length };
   }
 
-  async resumeJobsForSource(input: { workspaceId: string; sourceId: string }): Promise<{ resumedJobCount: number }> {
+  async resumeJobsForSource(input: { workspaceId: string; sourceId: string }): Promise<{
+    resumedJobCount: number;
+    resumeDispatchFailureCount: number;
+  }> {
     const jobs = await this.dependencies.repository.resumePausedBySourceId(input.sourceId, input.workspaceId);
+    let resumedJobCount = 0;
+    let resumeDispatchFailureCount = 0;
     for (const job of jobs) {
       try {
         await this.dependencies.dispatcher.dispatch({
           jobId: job.id,
           workspaceId: job.workspaceId,
         });
+        resumedJobCount += 1;
       } catch (error) {
+        resumeDispatchFailureCount += 1;
         this.dependencies.logger?.warn(
           {
             role: "website-crawl-job-service",
@@ -223,7 +230,7 @@ export class WebsiteCrawlJobService {
         );
       }
     }
-    return { resumedJobCount: jobs.length };
+    return { resumedJobCount, resumeDispatchFailureCount };
   }
 
   async listForWorkspace(

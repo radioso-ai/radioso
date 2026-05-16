@@ -30,7 +30,12 @@ import {
   type DocumentSummary,
   type WebsiteCrawlJobSummary,
 } from '@/lib/api'
-import { applySourceResumeResult, getCrawlPageIssueSummaries, runSourceCrawlAction } from '@/lib/crawl-jobs'
+import {
+  applySourceResumeResult,
+  getCrawlPageIssueSummaries,
+  getResumeDispatchWarning,
+  runSourceCrawlAction,
+} from '@/lib/crawl-jobs'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const MANUALLY_ADDED_SOURCE_ID = '00000000-0000-0000-0000-000000000001'
@@ -395,6 +400,10 @@ export function DocumentSourcesView() {
       if (!result.ok) {
         setCrawlActionError(result.error)
         return
+      }
+      const resumeDispatchWarning = getResumeDispatchWarning(result.result)
+      if (resumeDispatchWarning) {
+        setCrawlActionError(resumeDispatchWarning)
       }
       setPausedSourceIds((prev) => applySourceResumeResult({
         sourceId: source.id,

@@ -4,6 +4,7 @@ import type { WebsiteCrawlJobStatus, WebsiteCrawlJobSummary } from '@/lib/api'
 import {
   applySourceResumeResult,
   getCrawlPageIssueSummaries,
+  getResumeDispatchWarning,
   mergeCrawlJobs,
   parseCrawlForm,
   runSourceCrawlAction,
@@ -246,6 +247,33 @@ describe('applySourceResumeResult', () => {
 
     expect([...result.pausedSourceIds]).toEqual([])
     expect([...result.crawlingSourceIds]).toEqual(['source-1'])
+  })
+})
+
+describe('getResumeDispatchWarning', () => {
+  it('returns no warning when all resumed jobs were dispatched', () => {
+    expect(getResumeDispatchWarning({
+      resumedJobCount: 2,
+      resumeDispatchFailureCount: 0,
+    })).toBeNull()
+  })
+
+  it('explains when every resumed job failed to dispatch', () => {
+    expect(getResumeDispatchWarning({
+      resumedJobCount: 0,
+      resumeDispatchFailureCount: 1,
+    })).toBe('The crawl was queued in the database, but dispatch failed. Try resuming again in a moment.')
+  })
+
+  it('explains partial dispatch failures with singular and plural copy', () => {
+    expect(getResumeDispatchWarning({
+      resumedJobCount: 1,
+      resumeDispatchFailureCount: 1,
+    })).toBe('1 resumed crawl job was not dispatched. Database polling may still pick them up.')
+    expect(getResumeDispatchWarning({
+      resumedJobCount: 1,
+      resumeDispatchFailureCount: 2,
+    })).toBe('2 resumed crawl jobs were not dispatched. Database polling may still pick them up.')
   })
 })
 

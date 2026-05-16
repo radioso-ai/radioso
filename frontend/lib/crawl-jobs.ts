@@ -144,6 +144,20 @@ export async function runSourceCrawlAction<T>({
   }
 }
 
+export function getResumeDispatchWarning(result: {
+  resumedJobCount: number
+  resumeDispatchFailureCount?: number | null
+}): string | null {
+  const failureCount = result.resumeDispatchFailureCount ?? 0
+  if (failureCount <= 0) {
+    return null
+  }
+  if (result.resumedJobCount <= 0) {
+    return 'The crawl was queued in the database, but dispatch failed. Try resuming again in a moment.'
+  }
+  return `${failureCount} resumed crawl ${failureCount === 1 ? 'job was' : 'jobs were'} not dispatched. Database polling may still pick them up.`
+}
+
 export function mergeCrawlJobs({
   current,
   incoming,

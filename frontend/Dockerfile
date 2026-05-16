@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS base
+FROM node:26-bookworm-slim AS base
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -18,7 +18,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY frontend ./frontend
 RUN pnpm --dir frontend run build
 
-FROM node:24-bookworm-slim AS runner
+FROM node:26-bookworm-slim AS runner
 WORKDIR /app
 ARG BACKEND_INTERNAL_URL=http://backend:8080
 ENV NODE_ENV=production

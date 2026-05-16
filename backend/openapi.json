@@ -7101,6 +7101,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Public chat session exchange rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitExceededResponse"
+                }
+              }
+            }
           }
         }
       }

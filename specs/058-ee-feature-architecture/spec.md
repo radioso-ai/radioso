@@ -126,7 +126,7 @@ As a maintainer of the Enterprise frontend, I want generated route stubs to come
 ### Functional Requirements
 
 - **FR-001**: Enterprise backend registration MUST be decomposed so each existing Enterprise capability has a focused application module or feature module contribution.
-- **FR-002**: The Enterprise backend package MUST preserve the current externally observable behavior for existing Enterprise routes, migrators, account-created hooks, usage policies, chat action providers, contact history providers, website embed integration, lifecycle startup, and lifecycle shutdown.
+- **FR-002**: The Enterprise backend package MUST preserve the current externally observable behavior for existing Enterprise routes, migrators, account-created hooks, usage policies, chat intake providers, contact history providers, website embed integration, lifecycle startup, and lifecycle shutdown.
 - **FR-003**: The Enterprise backend package index MUST aggregate feature modules and exported public types without owning feature-specific transport, orchestration, domain, configuration, or provider logic.
 - **FR-004**: The system MUST provide automated import boundary validation that prevents OSS backend and frontend code from importing Enterprise implementation paths.
 - **FR-005**: The system MUST provide automated import boundary validation for at least one representative class of private cross-module backend imports.

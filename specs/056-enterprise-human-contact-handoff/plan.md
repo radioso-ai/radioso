@@ -5,7 +5,7 @@
 
 ## Summary
 
-Add an Enterprise-only human-contact handoff flow with a no-op OSS chat-action extension point, EE persistence/settings/routes, signed webhook retry delivery, contact-specific chat action suggestions, and an inline chat composer that can enact explicit visible contact requests.
+Add an Enterprise-only human-contact handoff flow with a no-op OSS chat-intake extension point, EE persistence/settings/routes, signed webhook retry delivery, and server-side chat intake that can enact explicit visible contact requests.
 
 ## Technical Context
 
@@ -43,7 +43,6 @@ backend/
 ├── src/app/http/routes/
 ├── src/app/http/schemas/
 ├── src/modules/chat/
-├── src/modules/chat/services/chatActionProvider.ts
 └── tests/
 
 ee/
@@ -60,18 +59,18 @@ docs-portal/
 typescript-sdk/
 ```
 
-**Structure Decision**: Shared OSS code owns contracts and a disabled extension point. EE code owns concrete storage/delivery/settings. Frontend owns inline composer presentation and API calls. OpenAPI and SDK artifacts are regenerated from backend contracts.
+**Structure Decision**: Shared OSS code owns contracts and a disabled intake extension point. EE code owns concrete storage/delivery/settings. Chat surfaces use the shared intake path instead of a separate inline composer. OpenAPI and SDK artifacts are regenerated from backend contracts.
 
 ## Module Ownership & Seams
 
 - **Transport Layer**: EE backend route modules translate authenticated and public requests into contact service calls and map errors to HTTP responses.
-- **Orchestration Layer**: Human-contact services coordinate settings checks, draft generation, request persistence, outbox enqueue, and delivery scheduling.
-- **Domain Layer**: Focused trigger rules, request validation, draft fallback, backoff, webhook payload construction, and HMAC signing.
+- **Orchestration Layer**: Human-contact services coordinate settings checks, intake state, request persistence, outbox enqueue, and delivery scheduling.
+- **Domain Layer**: Focused intent rules, request validation, draft fallback, backoff, webhook payload construction, and HMAC signing.
 - **Persistence/Integration Layer**: EE repositories store settings and requests; webhook client posts signed payloads.
-- **Application Composition**: `backend/src/app/composition/` wires the disabled OSS implementation by default and accepts EE module registration for concrete implementation and worker lifecycle.
-- **Files Kept Small**: Existing chat routes remain transport adapters; assistant chat services only attach action metadata and do not deliver requests; frontend chat views delegate form behavior to focused components/hooks.
-- **Planned Extractions**: `backend/src/modules/chat/services/chatActionProvider.ts*`, frontend inline contact composer/API helpers, and EE backend-module concrete repositories/services.
-- **Required Refactor Stories**: None identified before implementation; if existing chat components resist focused integration, extract inline contact composer behavior before wiring it into each surface.
+- **Application Composition**: `backend/src/app/composition/` wires the disabled OSS intake implementation by default and accepts EE module registration for concrete implementation and worker lifecycle.
+- **Files Kept Small**: Existing chat routes remain transport adapters; assistant chat services persist intake results and do not deliver requests directly.
+- **Planned Extractions**: Chat intake provider contracts and EE backend-module concrete repositories/services.
+- **Required Refactor Stories**: None identified before implementation.
 
 ## Complexity Tracking
 

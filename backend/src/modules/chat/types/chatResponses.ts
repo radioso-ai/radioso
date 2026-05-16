@@ -7,10 +7,6 @@ export interface ChatSuggestion {
   text: string;
   kind: ChatSuggestionKind;
   citation?: ChatCitation;
-  action?: {
-    kind: string;
-    payload?: Record<string, unknown>;
-  };
 }
 
 export interface ChatRoute {

@@ -31,8 +31,9 @@ import {
   ChatBootstrapService,
   ChatHistoryService,
   ChatService,
+  ChainedChatIntakeProvider,
   NoopAnswerFeedbackHistoryProvider,
-  NoopChatActionProvider,
+  NoopChatIntakeProvider,
   NoopContactHistoryProvider,
 } from "../../modules/chat/composition.js";
 import {
@@ -445,6 +446,7 @@ export const buildChatServices = (input: {
   composition: ApplicationComposition;
   conversationRepository: ConversationRepository;
   database: Database;
+  env: Env;
   historyItemsRepository: HistoryItemsRepository;
   llmRegistry: LlmProviderRegistry;
   logger: AppLogger;
@@ -456,10 +458,10 @@ export const buildChatServices = (input: {
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway();
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database));
-  const chatActionProvider = !input.composition.chatActionProviderRegistration
-    ? new NoopChatActionProvider()
-    : typeof input.composition.chatActionProviderRegistration === "function"
-      ? input.composition.chatActionProviderRegistration({
+  const registeredChatIntakeProvider = !input.composition.chatIntakeProviderRegistration
+    ? null
+    : typeof input.composition.chatIntakeProviderRegistration === "function"
+      ? input.composition.chatIntakeProviderRegistration({
           database: input.database,
           chatGateway,
           logger: input.logger,
@@ -468,7 +470,15 @@ export const buildChatServices = (input: {
           auditService: input.auditService,
           abuseControlService,
         })
-      : input.composition.chatActionProviderRegistration;
+      : input.composition.chatIntakeProviderRegistration;
+  const chatIntakeProviders = [
+    ...(registeredChatIntakeProvider ? [registeredChatIntakeProvider] : []),
+  ];
+  const chatIntakeProvider = chatIntakeProviders.length === 0
+    ? new NoopChatIntakeProvider()
+    : chatIntakeProviders.length === 1
+      ? chatIntakeProviders[0]!
+      : new ChainedChatIntakeProvider(chatIntakeProviders);
   const contactHistoryProvider = !input.composition.contactHistoryProviderRegistration
     ? new NoopContactHistoryProvider()
     : typeof input.composition.contactHistoryProviderRegistration === "function"
@@ -495,8 +505,8 @@ export const buildChatServices = (input: {
     input.productAnalyticsService,
     input.workspaceRepository,
     input.usageLimitPolicy,
-    chatActionProvider,
     input.agentService,
+    chatIntakeProvider,
   );
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,
@@ -526,7 +536,7 @@ export const buildChatServices = (input: {
     abuseControlService,
     assistantChatService: new AssistantChatService(chatService, chatBootstrapService),
     assistantHistoryService: new AssistantHistoryService(chatHistoryService),
-    chatActionProvider,
+    chatIntakeProvider,
     chatBootstrapService,
     chatGateway,
     chatHistoryService,

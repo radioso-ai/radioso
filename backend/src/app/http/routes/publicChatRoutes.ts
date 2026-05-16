@@ -32,14 +32,25 @@ export const anonymousChatSchema = z.object({
   userExpectedLocale: localeHintSchema.optional(),
   pageContext: pageContextSchema,
   inputMetadata: z.object({
-    method: z.enum(["typed", "suggestion_click"]),
+    method: z.enum(["typed", "suggestion_click", "intent_click"]),
     suggestionSourceMessageId: z.string().uuid().optional(),
+    intent: z.object({
+      skillName: z.string().trim().min(1).max(120),
+      intentName: z.string().trim().min(1).max(120).optional(),
+    }).optional(),
   }).superRefine((value, ctx) => {
     if (value.method === "suggestion_click" && !value.suggestionSourceMessageId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "suggestionSourceMessageId is required for suggestion_click",
         path: ["suggestionSourceMessageId"],
+      });
+    }
+    if (value.method === "intent_click" && !value.intent) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "intent is required for intent_click",
+        path: ["intent"],
       });
     }
   }).optional(),
@@ -97,10 +108,11 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "agentSurfaceExtensions"
   | "assistantChatService"
   | "auditService"
-  | "chatActionProvider"
+  | "chatIntakeProvider"
   | "chatHistoryService"
   | "conversationRepository"
   | "documentStorage"
+  | "logger"
   | "workspaceRepository"
 >;
 
@@ -126,10 +138,6 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       return null;
     }
   };
-  const resolvePublicSessionActions = async (workspaceId: string) => {
-    const actions = await dependencies.chatActionProvider.getPublicSessionActions?.({ workspaceId });
-    return actions && Object.keys(actions).length > 0 ? actions : undefined;
-  };
   const buildAssistantLogoUrl = (req: { get(name: string): string | undefined }, token: string, hasLogo: boolean) =>
     buildPublicAssistantLogoUrl({
       token,
@@ -147,6 +155,22 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       return embedAgent;
     }
     return null;
+  };
+  const resolvePublicIntakeActions = async (input: {
+    workspaceId: string;
+    agentId?: string | null;
+    sourceChannel?: string | null;
+  }) => {
+    try {
+      const actions = await dependencies.chatIntakeProvider.getPublicIntakeActions?.(input);
+      return actions && actions.length > 0 ? actions : undefined;
+    } catch (error) {
+      dependencies.logger.warn?.(
+        { err: error instanceof Error ? error.message : String(error), workspaceId: input.workspaceId },
+        "Failed to resolve public chat intake actions",
+      );
+      return undefined;
+    }
   };
 
   router.get("/:token/embed-config", requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"), async (req, res, next) => {
@@ -270,7 +294,11 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           assistantBootstrapActive: isAgentBootstrapActive(agent),
           assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
           theme: agent.theme,
-          actions: await resolvePublicSessionActions(workspace.id),
+          intakeActions: await resolvePublicIntakeActions({
+            workspaceId: workspace.id,
+            agentId: agent.id,
+            sourceChannel: "anonymous",
+          }),
           expiresAt: session.expiresAt,
         });
         return;
@@ -409,7 +437,11 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         assistantBootstrapActive: isAgentBootstrapActive(agent),
         assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
         theme: agent.theme,
-        actions: await resolvePublicSessionActions(workspace.id),
+        intakeActions: await resolvePublicIntakeActions({
+          workspaceId: workspace.id,
+          agentId: agent.id,
+          sourceChannel: "website_embed",
+        }),
         expiresAt: session.expiresAt,
       });
     } catch (error) {
@@ -507,6 +539,11 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         assistantAvatarUrl: buildAssistantLogoUrl(req, String(req.params.token), Boolean((res.locals as { assistantLogoAvailable?: boolean }).assistantLogoAvailable)),
         theme: (res.locals as { assistantTheme?: unknown }).assistantTheme,
         assistantBootstrapActive: Boolean((res.locals as { assistantBootstrapActive?: boolean }).assistantBootstrapActive),
+        intakeActions: await resolvePublicIntakeActions({
+          workspaceId,
+          agentId,
+          sourceChannel: (res.locals as { sourceChannel?: string | null }).sourceChannel,
+        }),
         ...page,
       });
     } catch (error) {

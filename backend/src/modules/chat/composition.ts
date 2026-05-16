@@ -7,9 +7,20 @@ export {
 export type { ChatGateway, ChatStreamEvent } from "./contracts/index.js";
 export { ChatHistoryService } from "./services/chatHistoryService.js";
 export {
-  NoopChatActionProvider,
-  type ChatActionProviderPort,
-} from "./services/chatActionProvider.js";
+  ChainedChatIntakeProvider,
+  NoopChatIntakeProvider,
+  type ChatIntakeProviderPort,
+  type ChatIntakeResult,
+  type ChatIntakeStatus,
+} from "./services/chatIntakeProvider.js";
+export {
+  ConfiguredSkillIntakeProvider,
+  DatabaseSkillIntakeStateStore,
+  InMemorySkillIntakeStateStore,
+  type ConfiguredSkillIntakeAdapter,
+  type SkillIntakeStateStore,
+  type SkillIntakeExecutionResult,
+} from "./services/configuredSkillIntakeProvider.js";
 export {
   NoopContactHistoryProvider,
   type ContactHistoryProviderPort,

@@ -15,9 +15,6 @@ import type {
   ChatResponse,
   ChatStreamHandlers,
   ChatUserInputMetadata,
-  HumanContactDraftResponse,
-  HumanContactSubmitInput,
-  HumanContactSubmitResponse,
   PublicChatSessionResponse,
   WebsiteEmbedPageContext,
 } from './api-types'
@@ -210,47 +207,4 @@ export const publicChatApi = {
     return response.json() as Promise<ChatConversationDetail>
   },
 
-  async draftHumanContact(
-    token: string,
-    input: { conversationId: string; assistantMessageId?: string },
-  ): Promise<HumanContactDraftResponse> {
-    const response = await fetch(`${API_BASE}/ee/contact/public/chat/${encodeURIComponent(token)}/draft`, {
-      method: 'POST',
-      cache: 'no-store',
-      credentials: 'include',
-      headers: attachAnonymousSessionHeader(token, {
-        'Content-Type': 'application/json',
-        'X-Forwarded-Prefix': '/backend',
-      }),
-      body: JSON.stringify(input),
-    })
-
-    if (!response.ok) {
-      throw await buildError(response)
-    }
-
-    return response.json() as Promise<HumanContactDraftResponse>
-  },
-
-  async submitHumanContact(
-    token: string,
-    input: HumanContactSubmitInput,
-  ): Promise<HumanContactSubmitResponse> {
-    const response = await fetch(`${API_BASE}/ee/contact/public/chat/${encodeURIComponent(token)}/submit`, {
-      method: 'POST',
-      cache: 'no-store',
-      credentials: 'include',
-      headers: attachAnonymousSessionHeader(token, {
-        'Content-Type': 'application/json',
-        'X-Forwarded-Prefix': '/backend',
-      }),
-      body: JSON.stringify(input),
-    })
-
-    if (!response.ok) {
-      throw await buildError(response)
-    }
-
-    return response.json() as Promise<HumanContactSubmitResponse>
-  },
 }

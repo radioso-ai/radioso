@@ -3084,9 +3084,23 @@
               "text"
             ]
           },
-          "actions": {
-            "type": "object",
-            "additionalProperties": {}
+          "intakeActions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skillName": {
+                  "type": "string"
+                },
+                "intentName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "skillName",
+                "intentName"
+              ]
+            }
           },
           "expiresAt": {
             "type": "string",
@@ -5367,6 +5381,220 @@
               "inputSchemaRef"
             ]
           },
+          "intake": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "supportedCallers": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "assistant",
+                    "retrieval_api",
+                    "sdk",
+                    "mcp",
+                    "dashboard",
+                    "public_embed"
+                  ]
+                }
+              },
+              "intent": {
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "type": "string"
+                  },
+                  "examples": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "description",
+                  "examples"
+                ]
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "string",
+                        "email",
+                        "phone",
+                        "number",
+                        "date",
+                        "enum"
+                      ]
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "sensitive": {
+                      "type": "boolean"
+                    },
+                    "ttlSeconds": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "pattern": {
+                      "type": "string"
+                    },
+                    "enumValues": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "maxLength": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "extractionHint": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "displayName",
+                    "type",
+                    "required"
+                  ]
+                }
+              },
+              "confirmation": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "before_execute",
+                  "always"
+                ]
+              },
+              "interruptionPolicy": {
+                "type": "string",
+                "enum": [
+                  "pause_and_resume",
+                  "cancel_on_topic_change"
+                ]
+              }
+            },
+            "required": [
+              "enabled",
+              "supportedCallers",
+              "intent",
+              "fields",
+              "confirmation",
+              "interruptionPolicy"
+            ]
+          },
+          "execution": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "internal"
+                    ]
+                  },
+                  "adapter": {
+                    "type": "string"
+                  },
+                  "enqueue": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "adapter"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "webhook"
+                    ]
+                  },
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "make",
+                      "zapier",
+                      "custom"
+                    ]
+                  },
+                  "endpointId": {
+                    "type": "string"
+                  },
+                  "enqueue": {
+                    "type": "boolean"
+                  },
+                  "timeoutMs": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "kind",
+                  "provider",
+                  "endpointId",
+                  "enqueue"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "delivery_pipeline"
+                    ]
+                  },
+                  "adapter": {
+                    "type": "string"
+                  },
+                  "destinations": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "email",
+                        "webhook"
+                      ]
+                    },
+                    "minItems": 1
+                  },
+                  "enqueue": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "adapter",
+                  "destinations",
+                  "enqueue"
+                ]
+              }
+            ]
+          },
           "diagnostics": {
             "$ref": "#/components/schemas/SkillDiagnosticsSummary"
           },
@@ -5459,21 +5687,6 @@
           },
           "citation": {
             "$ref": "#/components/schemas/Citation"
-          },
-          "action": {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string"
-              },
-              "payload": {
-                "type": "object",
-                "additionalProperties": {}
-              }
-            },
-            "required": [
-              "kind"
-            ]
           }
         },
         "required": [
@@ -5700,12 +5913,31 @@
                 "type": "string",
                 "enum": [
                   "typed",
-                  "suggestion_click"
+                  "suggestion_click",
+                  "intent_click"
                 ]
               },
               "suggestionSourceMessageId": {
                 "type": "string",
                 "format": "uuid"
+              },
+              "intent": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "intentName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "skillName"
+                ]
               }
             },
             "required": [
@@ -5808,12 +6040,31 @@
                 "type": "string",
                 "enum": [
                   "typed",
-                  "suggestion_click"
+                  "suggestion_click",
+                  "intent_click"
                 ]
               },
               "suggestionSourceMessageId": {
                 "type": "string",
                 "format": "uuid"
+              },
+              "intent": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "intentName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "skillName"
+                ]
               }
             },
             "required": [
@@ -5946,6 +6197,24 @@
               "surface",
               "text"
             ]
+          },
+          "intakeActions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skillName": {
+                  "type": "string"
+                },
+                "intentName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "skillName",
+                "intentName"
+              ]
+            }
           },
           "total": {
             "type": "integer",
@@ -6236,12 +6505,27 @@
                 "type": "string",
                 "enum": [
                   "typed",
-                  "suggestion_click"
+                  "suggestion_click",
+                  "intent_click"
                 ]
               },
               "suggestionSourceMessageId": {
                 "type": "string",
                 "format": "uuid"
+              },
+              "intent": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string"
+                  },
+                  "intentName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "skillName"
+                ]
               }
             },
             "required": [

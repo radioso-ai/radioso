@@ -7,7 +7,11 @@ export type {
   NormalizedPresentedAnswer,
   PresentedAnswer,
 } from "./answerTypes.js";
-export type { ChatActionProviderPort } from "../services/chatActionProvider.js";
+export type {
+  ChatIntakeProviderPort,
+  ChatIntakeResult,
+  ChatIntakeStatus,
+} from "../services/chatIntakeProvider.js";
 export type { ChatGateway } from "./chatGateway.js";
 export type { ChatStreamEvent } from "./streamEvents.js";
 export type {
@@ -16,6 +20,7 @@ export type {
   ContactHistoryProviderPort,
   ContactHistorySummary,
 } from "../services/contactHistoryProvider.js";
+export type { PublicChatIntakeAction } from "../services/chatIntakeProvider.js";
 export type {
   ChatBootstrapResponse,
   ChatResponse,

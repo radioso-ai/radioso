@@ -115,7 +115,7 @@ GET /api/v1/ee/usage-limits/me
 ## Talk to a human
 
 The Enterprise backend module adds workspace-level "Talk to a human" requests
-through Enterprise-only contact routes and a generic core chat action provider.
+through the chat skill intake runtime.
 
 Operators configure it with:
 
@@ -124,9 +124,10 @@ Operators configure it with:
 - optional webhook delivery with a webhook URL
 - an auto-generated signing token for webhook signatures
 
-When enabled and fully configured, chat can show a `contact_human` action in the
-generic suggestion action shape. Submit returns `202 Accepted` after the request
-is stored. Email and webhook delivery happen in the background.
+When enabled and fully configured, a user can ask for human follow-up in chat.
+The contact skill intake collects the required email address, builds the request
+from the conversation context, stores it, and dispatches delivery in the
+background.
 
 Routes are mounted by the Enterprise backend module:
 
@@ -134,11 +135,20 @@ Routes are mounted by the Enterprise backend module:
 GET  /api/v1/ee/contact/settings
 GET  /api/v1/ee/contact/settings/signing-secret
 PUT  /api/v1/ee/contact/settings
+```
+
+The legacy direct submission endpoints are retired:
+
+```text
 POST /api/v1/ee/contact/draft
 POST /api/v1/ee/contact/submit
 POST /api/v1/ee/contact/public/chat/{token}/draft
 POST /api/v1/ee/contact/public/chat/{token}/submit
 ```
+
+Integrations should send normal chat messages that express the human-contact
+intent. The assistant skill intake then collects required fields and submits the
+request through the same durable delivery pipeline.
 
 The module stores configuration in `ee_contact_settings` and durable delivery
 requests in `ee_contact_requests`.
@@ -155,9 +165,9 @@ Webhook requests are `POST` JSON payloads with:
   "sourceChannel": "authenticated_chat",
   "sourceOrigin": null,
   "email": "visitor@example.com",
-  "message": "Editable user message",
-  "triggerSource": "manual",
-  "triggerReason": "optional reason",
+  "message": "Conversation summary or user-provided follow-up request",
+  "triggerSource": "explicit_user_request",
+  "triggerReason": "The user completed a human-contact chat intake.",
   "createdAt": "2026-05-04T12:00:00.000Z"
 }
 ```

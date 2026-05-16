@@ -63,7 +63,7 @@ export interface ApplicationComposition {
   websiteCrawlerProvider?: ReturnType<typeof createApplicationExtensionRegistry>["websiteCrawlerProvider"];
   websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
-  chatActionProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["chatActionProviderRegistration"];
+  chatIntakeProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["chatIntakeProviderRegistration"];
   contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
   answerFeedbackHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["answerFeedbackHistoryProviderRegistration"];
   agentSurfaceExtensions: ReturnType<typeof createApplicationExtensionRegistry>["agentSurfaceExtensions"];
@@ -97,7 +97,7 @@ export const createDefaultApplicationComposition = (options: {
     websiteCrawlerProvider: registry.websiteCrawlerProvider,
     websiteEmbedIntegration: registry.websiteEmbedIntegration,
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
-    chatActionProviderRegistration: registry.chatActionProviderRegistration,
+    chatIntakeProviderRegistration: registry.chatIntakeProviderRegistration,
     contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
     answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,
     agentSurfaceExtensions: registry.agentSurfaceExtensions,

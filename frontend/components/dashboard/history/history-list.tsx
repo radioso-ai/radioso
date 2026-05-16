@@ -271,7 +271,7 @@ function ContactRow({
           onClick={() => onSelect({ kind: 'contact', id: contact.id })}
           className="block max-w-full text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <span className="block truncate">{contact.messagePreview || 'Talk to a human request'}</span>
+          <span className="block truncate">{contact.messagePreview || 'Contact request'}</span>
         </button>
         <p className="mt-1 truncate text-xs text-muted-foreground">{contact.messagePreview}</p>
       </DashboardTableCell>
@@ -456,7 +456,7 @@ export function HistoryList({
                   : activeFilter === 'search'
                     ? 'Document searches will appear here after someone runs a search.'
                     : editionController.canUseHumanContact() && activeFilter === 'contact'
-                      ? 'Talk to a human requests will appear here after someone asks for follow-up.'
+                      ? 'Contact requests will appear here after follow-up is requested.'
                     : onboarding.hasReadyDocuments
                       ? 'Your workspace is ready. Ask the first question or run a document search to start building activity.'
                       : 'Load content first, then ask one question or run a document search. Activity will appear here after that.'}
@@ -656,7 +656,7 @@ export function HistoryList({
                       sortAt: contact.sortAt,
                       contact,
                     }))}
-                    emptyMessage="No saved Talk to a human requests on this page."
+                    emptyMessage="No saved contact requests on this page."
                     onSelect={onSelectItem}
                   />
                 )}

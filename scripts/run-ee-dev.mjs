@@ -216,6 +216,7 @@ const main = async () => {
     "RADIOSO_APPLICATION_MODULES",
     "RADIOSO_ENTERPRISE_WIDGET_ORIGIN",
   ]);
+  const backendEnvFileValues = Object.fromEntries(await readEnvValues(envPath));
 
   console.log("Starting Postgres and freeing app ports from Compose containers...");
   await commandAllowFailure("docker", [
@@ -278,6 +279,7 @@ const main = async () => {
   console.log("Press Ctrl-C to stop backend, worker, frontend, and embed harness.\n");
 
   const enterpriseBackendEnv = {
+    ...backendEnvFileValues,
     ...process.env,
     RADIOSO_APPLICATION_MODULES: "@radioso/enterprise-backend-module",
     RADIOSO_ENTERPRISE_WIDGET_ORIGIN: appOrigin,

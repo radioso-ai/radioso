@@ -39,7 +39,7 @@ import {
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
-import { NoopChatActionProvider, type ChatActionProviderPort } from "./chatActionProvider.js";
+import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import { buildRewriteContinuityState } from "./rewriteContinuityState.js";
 import { ChatAnswerPresenter, type ChatPresentedAnswer } from "./chatAnswerPresenter.js";
@@ -102,8 +102,8 @@ export class ChatService {
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
     workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
-    private readonly chatActionProvider: ChatActionProviderPort = new NoopChatActionProvider(),
     agentService?: Pick<AgentService, "resolve">,
+    private readonly chatIntakeProvider: ChatIntakeProviderPort = new NoopChatIntakeProvider(),
   ) {
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
@@ -262,7 +262,20 @@ export class ChatService {
     });
 
     try {
-      session = await this.chatSessionPreparer.prepare(input);
+      session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
+      const intakeResult = await this.handleSkillIntake(input, session);
+      if (intakeResult) {
+        const response = await this.persistSkillIntakeTurn({
+          input,
+          session,
+          intakeResult,
+          stream: input.stream,
+        });
+        assistantMessageId = response.assistantMessageId;
+        await usageReservation.commit();
+        return response;
+      }
+      session = await this.chatSessionPreparer.prepareRetrieval(input, session);
       const answerStartedAt = Date.now();
       const presentation = await this.generateAnswerPresentation(session, input.query, input.userExpectedLocale);
       const route = this.getRoute(session);
@@ -295,18 +308,6 @@ export class ChatService {
         content: presentation.answer,
       });
       assistantMessageId = assistantMessage.id;
-      const suggestions = await this.applySuggestionActions({
-        workspaceId: input.workspaceId,
-        accountId: input.accountId,
-        conversationId: session.conversation.id,
-        assistantMessageId,
-        query: input.query,
-        answer: presentation.answer,
-        answerOutcome: presentation.answerOutcome,
-        sourceChannel: input.sourceChannel,
-        sourceOrigin: input.sourceOrigin,
-        suggestions: presentation.suggestions,
-      });
       await this.finalizeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
@@ -318,7 +319,7 @@ export class ChatService {
         segmentResults: presentation.segmentResults,
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
-        suggestions,
+        suggestions: presentation.suggestions,
         priorRewriteContinuityState: session.priorRewriteContinuityState,
         diagnostics: session.retrieval.diagnostics,
         activityTrace,
@@ -336,7 +337,7 @@ export class ChatService {
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
-        suggestions,
+        suggestions: presentation.suggestions,
         activitySummary: resolvedActivitySummary,
         activityTrace,
       };
@@ -385,13 +386,47 @@ export class ChatService {
     };
 
     try {
-      session = await this.chatSessionPreparer.prepare(input);
+      session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
 
       yield {
         type: "conversation",
         conversationId: session.conversation.id,
       };
 
+      const intakeResult = await this.handleSkillIntake(input, session);
+      if (intakeResult) {
+        yield {
+          type: "chunk",
+          text: intakeResult.answer,
+        };
+        const response = await this.persistSkillIntakeTurn({
+          input,
+          session,
+          intakeResult,
+          stream: input.stream,
+        });
+        assistantMessageId = response.assistantMessageId;
+        await usageReservation.commit();
+        usageReservationCommitted = true;
+
+        yield {
+          type: "done",
+          conversationId: response.conversationId,
+          agentId: response.agentId,
+          agentName: response.agentName,
+          assistantMessageId: response.assistantMessageId,
+          route: response.route,
+          answer: response.answer,
+          citations: response.citations,
+          answerSegments: response.answerSegments,
+          suggestions: response.suggestions,
+          activitySummary: response.activitySummary,
+          activityTrace: response.activityTrace,
+        };
+        return;
+      }
+
+      session = await this.chatSessionPreparer.prepareRetrieval(input, session);
       let rawAnswer = "";
       let noContextPresentation: ChatPresentedAnswer | null = null;
       const answerStartedAt = Date.now();
@@ -503,18 +538,6 @@ export class ChatService {
         content: presentation.answer,
       });
       assistantMessageId = assistantMessage.id;
-      const actionSuggestions = await this.applySuggestionActions({
-        workspaceId: input.workspaceId,
-        accountId: input.accountId,
-        conversationId: session.conversation.id,
-        assistantMessageId,
-        query: input.query,
-        answer: presentation.answer,
-        answerOutcome: presentation.answerOutcome,
-        sourceChannel: input.sourceChannel,
-        sourceOrigin: input.sourceOrigin,
-        suggestions: presentation.suggestions,
-      });
       await this.finalizeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
@@ -526,7 +549,7 @@ export class ChatService {
         segmentResults: presentation.segmentResults,
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
-        suggestions: actionSuggestions,
+        suggestions: presentation.suggestions,
         priorRewriteContinuityState: session.priorRewriteContinuityState,
         diagnostics: session.retrieval.diagnostics,
         activityTrace,
@@ -546,7 +569,7 @@ export class ChatService {
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
-        suggestions: actionSuggestions,
+        suggestions: presentation.suggestions,
         activitySummary: resolvedActivitySummary,
         activityTrace,
       };
@@ -563,18 +586,7 @@ export class ChatService {
     try {
       const lazySuggestions = await lazySuggestionsPromise;
       if (lazySuggestions.suggestions && lazySuggestions.suggestions.length > 0) {
-        const suggestions = (await this.applySuggestionActions({
-          workspaceId: input.workspaceId,
-          accountId: input.accountId,
-          conversationId: session.conversation.id,
-          assistantMessageId: assistantMessageId!,
-          query: input.query,
-          answer: "",
-          answerOutcome: ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS,
-          sourceChannel: input.sourceChannel,
-          sourceOrigin: input.sourceOrigin,
-          suggestions: lazySuggestions.suggestions,
-        })) ?? [];
+        const suggestions = lazySuggestions.suggestions ?? [];
         if (assistantMessageId) {
           await this.auditService.updateChatAnswerSuggestions({
             workspaceId: input.workspaceId,
@@ -624,6 +636,129 @@ export class ChatService {
     return this.chatAnswerPresenter.presentWithSuggestions(session, answer, query, userExpectedLocale);
   }
 
+  private async handleSkillIntake(
+    input: {
+      workspaceId: string;
+      accountId?: string;
+      query: string;
+      stream: boolean;
+      userExpectedLocale?: string | null;
+      sourceChannel?: string | null;
+      anonymousSessionId?: string | null;
+      sourceOrigin?: string | null;
+      inputMetadata?: UserMessageInputMetadata;
+    },
+    session: PreparedSession,
+  ): Promise<ChatIntakeResult | null> {
+    try {
+      return await this.chatIntakeProvider.handle({
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        agentId: session.agent.id,
+        conversationId: session.conversation.id,
+        userMessageId: session.userMessage.id,
+        query: input.query,
+        history: [...session.history, session.userMessage],
+        sourceChannel: input.sourceChannel,
+        sourceOrigin: input.sourceOrigin,
+        anonymousSessionId: input.anonymousSessionId,
+        userExpectedLocale: input.userExpectedLocale,
+        inputMetadata: input.inputMetadata,
+      });
+    } catch (error) {
+      try {
+        await this.auditService.record({
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          eventType: "chat.skill_intake",
+          eventStatus: "failure",
+          metadata: {
+            conversationId: session.conversation.id,
+            userMessageId: session.userMessage.id,
+            stream: input.stream,
+            errorMessage: error instanceof Error ? error.message : "Unknown error",
+          },
+        });
+      } catch {
+        // Intake failure reporting is best effort; the chat turn should remain recoverable.
+      }
+      return null;
+    }
+  }
+
+  private async persistSkillIntakeTurn(input: {
+    input: {
+      workspaceId: string;
+      accountId?: string;
+    };
+    session: PreparedSession;
+    intakeResult: ChatIntakeResult;
+    stream: boolean;
+  }): Promise<ChatResponse> {
+    const route: ChatRoute = {
+      type: "direct",
+      reason: "social_only",
+    };
+    const assistantMessage = await this.messageRepository.create({
+      conversationId: input.session.conversation.id,
+      workspaceId: input.input.workspaceId,
+      role: "assistant",
+      content: input.intakeResult.answer,
+      metadata: {
+        skillIntake: {
+          skillName: input.intakeResult.skillName,
+          status: input.intakeResult.status,
+          stateId: input.intakeResult.stateId,
+        },
+        activityTrace: input.intakeResult.activityTrace,
+      },
+    });
+    await this.finalizeAssistantTurn({
+      workspaceId: input.input.workspaceId,
+      accountId: input.input.accountId,
+      conversationId: input.session.conversation.id,
+      userMessageId: input.session.userMessage.id,
+      assistantMessageId: assistantMessage.id,
+      answerOutcome: ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE,
+      validation: {
+        ran: false,
+        answerModified: false,
+        unsupportedSegmentCount: 0,
+        substantiveUnsupportedSegmentCount: 0,
+        supportedSegmentCount: 0,
+        nonSubstantiveSegmentCount: 0,
+      },
+      segmentResults: [],
+      citations: [],
+      answerSegments: undefined,
+      suggestions: undefined,
+      priorRewriteContinuityState: input.session.priorRewriteContinuityState,
+      diagnostics: input.session.retrieval.diagnostics,
+      activityTrace: input.intakeResult.activityTrace,
+      route,
+      stream: input.stream,
+      skillIntake: {
+        skillName: input.intakeResult.skillName,
+        status: input.intakeResult.status,
+        stateId: input.intakeResult.stateId,
+      },
+    });
+
+    return {
+      conversationId: input.session.conversation.id,
+      agentId: input.session.agent.id,
+      agentName: input.session.agent.name,
+      assistantMessageId: assistantMessage.id,
+      route,
+      answer: input.intakeResult.answer,
+      citations: [],
+      answerSegments: undefined,
+      suggestions: undefined,
+      activitySummary: input.intakeResult.activitySummary,
+      activityTrace: input.intakeResult.activityTrace,
+    };
+  }
+
   private async finalizeAssistantTurn(input: {
     workspaceId: string;
     accountId?: string;
@@ -641,6 +776,11 @@ export class ChatService {
     activityTrace: ActivityTrace;
     route: ChatRoute;
     stream: boolean;
+    skillIntake?: {
+      skillName: string;
+      status: ChatIntakeResult["status"];
+      stateId?: string;
+    };
   }): Promise<void> {
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
     await this.conversationRepository.touch(input.conversationId, input.workspaceId);
@@ -678,6 +818,7 @@ export class ChatService {
         citations: input.citations,
         answerSegments: input.answerSegments,
         suggestions: input.suggestions,
+        skillIntake: input.skillIntake,
         rewriteContinuityState: buildRewriteContinuityState({
           previousState: input.priorRewriteContinuityState,
           diagnostics: input.diagnostics,
@@ -705,29 +846,6 @@ export class ChatService {
     } catch {
       // Analytics fan-out must not change successful chat behavior.
     }
-  }
-
-  private async applySuggestionActions(input: {
-    workspaceId: string;
-    accountId?: string;
-    conversationId: string;
-    assistantMessageId: string;
-    query: string;
-    answer: string;
-    answerOutcome: AssistantTurnOutcome;
-    sourceChannel?: string | null;
-    sourceOrigin?: string | null;
-    suggestions?: ChatSuggestion[];
-  }): Promise<ChatSuggestion[] | undefined> {
-    const action = await this.chatActionProvider.evaluate(input);
-    if (!action) {
-      return input.suggestions;
-    }
-    const suggestions = input.suggestions ?? [];
-    if (suggestions.some((suggestion) => suggestion.action?.kind === action.action?.kind || suggestion.kind === action.kind)) {
-      return suggestions;
-    }
-    return [...suggestions, action];
   }
 
   private async recordFailure(

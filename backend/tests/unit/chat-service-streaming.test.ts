@@ -6,6 +6,7 @@ import {
   type ChatGateway,
   type ChatStreamEvent,
 } from "../../src/modules/chat/services/chatService.js";
+import type { ChatIntakeProviderPort } from "../../src/modules/chat/services/chatIntakeProvider.js";
 import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
 import {
   createAuditService,
@@ -219,6 +220,134 @@ describe("chat service streaming", () => {
         },
       };
     },
+  });
+
+  it("handles skill intake before retrieval execution", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    let interpretCalls = 0;
+    const retrievalPipeline = {
+      async interpret() {
+        interpretCalls += 1;
+        throw new Error("retrieval unavailable");
+      },
+      async runInterpreted() {
+        throw new Error("runInterpreted should not be used for intake turns");
+      },
+      async runWithoutRetrieval() {
+        throw new Error("runWithoutRetrieval should not be used for intake turns");
+      },
+    };
+    const intakeProvider: ChatIntakeProviderPort = {
+      async handle() {
+        return {
+          skillName: "human_contact.request",
+          status: "completed",
+          answer: "Received.",
+          activitySummary: {
+            outcome: "request_queued",
+            status: "completed",
+          } as never,
+          activityTrace: {
+            traceId: "contact-trace",
+            startedAt: new Date().toISOString(),
+            stages: [],
+            links: [],
+            summary: {
+              outcome: "request_queued",
+              status: "completed",
+            },
+          } as never,
+        };
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      {
+        async answer() {
+          return "Normal answer.";
+        },
+        async *streamAnswer() {
+          yield "Normal answer.";
+        },
+      },
+      auditService,
+      groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      intakeProvider,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "Please contact me at alex@example.com.",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Received.");
+    expect(interpretCalls).toBe(0);
+    const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("continues the chat turn when a skill intake provider throws", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Normal answer.";
+      },
+      async *streamAnswer() {
+        yield "Normal answer.";
+      },
+    };
+    const failingIntakeProvider: ChatIntakeProviderPort = {
+      async handle() {
+        throw new Error("intake unavailable");
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      asChatActivityPipeline(createIntentRoutedNoContextPipeline({
+        query: "I need help",
+        responseIntent: "social_only",
+      })) as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      failingIntakeProvider,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "I need help",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Normal answer.");
+    const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "chat.skill_intake",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          errorMessage: "intake unavailable",
+          conversationId: response.conversationId,
+        }),
+      }),
+    );
   });
 
   it("persists the normalized assistant answer only after the stream completes", async () => {
@@ -1276,7 +1405,7 @@ describe("chat service streaming", () => {
     ]);
   });
 
-  it("does not create an empty conversation when retrieval fails before the first turn is persisted", async () => {
+  it("keeps the persisted user turn when retrieval fails after intake has declined", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -1307,7 +1436,12 @@ describe("chat service streaming", () => {
       stream: false,
     })).rejects.toThrow("retrieval failed");
 
-    expect(conversationRepository.items.size).toBe(0);
+    const [conversationId] = conversationRepository.items.keys();
+    expect(conversationId).toEqual(expect.any(String));
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
+      { role: "user", content: "What does this page do?" },
+    ]);
   });
 
   it("replaces unsupported substantive content before returning a non-streaming grounded answer", async () => {

@@ -32,6 +32,7 @@ import {
   type ChatConversationDetail,
   type ChatStreamCompletion,
   type ChatUserInputMetadata,
+  type PublicChatIntakeAction,
   type ErrorResponse,
   type ActivitySummary,
   type ActivityTrace,
@@ -104,7 +105,7 @@ interface AnonymousChatContextValue {
   workspaceName: string | null
   assistantAvatarUrl: string | null
   assistantTheme: WebsiteEmbedThemeOverrides | null
-  publicSessionActions: Record<string, unknown>
+  intakeActions: PublicChatIntakeAction[]
   isLoading: boolean
   isHydrating: boolean
   isLoadingOlderMessages: boolean
@@ -273,14 +274,12 @@ export const resolveAnonymousChatBootstrapLocale = ({
 export function AnonymousChatProvider({
   token,
   sessionChannel,
-  initialActions,
   localeOverride,
   pageContext,
   children,
 }: {
   token: string
   sessionChannel?: 'anonymous_link' | null
-  initialActions?: Record<string, unknown> | null
   localeOverride?: string | null
   pageContext?: WebsiteEmbedPageContext | null
   children: ReactNode
@@ -291,9 +290,7 @@ export function AnonymousChatProvider({
   const [workspaceName, setWorkspaceName] = useState<string | null>(null)
   const [assistantAvatarUrl, setAssistantAvatarUrl] = useState<string | null>(null)
   const [assistantTheme, setAssistantTheme] = useState<WebsiteEmbedThemeOverrides | null>(null)
-  const [publicSessionActions, setPublicSessionActions] = useState<Record<string, unknown>>(
-    initialActions && typeof initialActions === 'object' && !Array.isArray(initialActions) ? initialActions : {},
-  )
+  const [intakeActions, setIntakeActions] = useState<PublicChatIntakeAction[]>([])
   const [conversationId, setConversationId] = useState<string | undefined>()
   const [isLoading, setIsLoading] = useState(false)
   const [isHydrating, setIsHydrating] = useState(true)
@@ -320,7 +317,7 @@ export function AnonymousChatProvider({
       setEffectivePublicChatToken(session.publicChatToken)
       setAssistantAvatarUrl(session.assistantAvatarUrl ?? null)
       setAssistantTheme(deriveThemeOverridesFromModel(session.theme))
-      setPublicSessionActions(session.actions ?? {})
+      setIntakeActions(session.intakeActions ?? [])
       return session
     },
     [pageContext, sessionChannel],
@@ -362,9 +359,7 @@ export function AnonymousChatProvider({
     setWorkspaceName(null)
     setAssistantAvatarUrl(null)
     setAssistantTheme(null)
-    setPublicSessionActions(
-      initialActions && typeof initialActions === 'object' && !Array.isArray(initialActions) ? initialActions : {},
-    )
+    setIntakeActions([])
     setConversationId(undefined)
     setHasOlderMessages(false)
     setNextMessageCursor(null)
@@ -376,6 +371,7 @@ export function AnonymousChatProvider({
       setWorkspaceName(response.workspaceName ?? null)
       setAssistantAvatarUrl(response.assistantAvatarUrl ?? null)
       setAssistantTheme(deriveThemeOverridesFromModel(response.theme))
+      setIntakeActions(response.intakeActions ?? [])
 
       if (response.conversations.length === 0) {
         if (response.assistantBootstrapActive) {
@@ -438,7 +434,7 @@ export function AnonymousChatProvider({
     } finally {
       setIsHydrating(false)
     }
-  }, [initialActions, localeOverride, pageContext, withPublicSessionRetry])
+  }, [localeOverride, pageContext, withPublicSessionRetry])
 
   useEffect(() => {
     let cancelled = false
@@ -716,7 +712,7 @@ export function AnonymousChatProvider({
       workspaceName,
       assistantAvatarUrl,
       assistantTheme,
-      publicSessionActions,
+      intakeActions,
       isLoading,
       isHydrating,
       isLoadingOlderMessages,
@@ -735,7 +731,7 @@ export function AnonymousChatProvider({
       workspaceName,
       assistantAvatarUrl,
       assistantTheme,
-      publicSessionActions,
+      intakeActions,
       isLoading,
       isHydrating,
       isLoadingOlderMessages,

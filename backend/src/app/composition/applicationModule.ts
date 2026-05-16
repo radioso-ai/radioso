@@ -15,7 +15,8 @@ import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/contracts/websiteEmbedIntegration.js";
 import type {
-  ChatActionProviderPort,
+  ChatGateway,
+  ChatIntakeProviderPort,
   ContactHistoryProviderPort,
 } from "../../modules/chat/contracts/index.js";
 import type { AnswerFeedbackHistoryProviderPort } from "../../modules/chat/composition.js";
@@ -49,17 +50,17 @@ export type ApplicationUsageLimitPolicyRegistration =
       logger: AppLogger;
     }) => UsageLimitPolicy);
 
-export type ApplicationChatActionProviderRegistration =
-  | ChatActionProviderPort
+export type ApplicationChatIntakeProviderRegistration =
+  | ChatIntakeProviderPort
   | ((context: {
       database: ApplicationDatabasePort;
-      chatGateway?: unknown;
+      chatGateway: ChatGateway;
       logger: AppLogger;
       conversationRepository: ConversationRepositoryPort;
       messageRepository: MessageRepositoryPort;
       auditService: AuditService;
       abuseControlService: AbuseControlService;
-    }) => ChatActionProviderPort);
+    }) => ChatIntakeProviderPort);
 
 export type ApplicationContactHistoryProviderRegistration =
   | ContactHistoryProviderPort
@@ -96,7 +97,7 @@ export interface ApplicationExtensionRegistry {
   documentJobConsumer?: DocumentJobConsumerPort;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
-  chatActionProviderRegistration?: ApplicationChatActionProviderRegistration;
+  chatIntakeProviderRegistration?: ApplicationChatIntakeProviderRegistration;
   contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
   answerFeedbackHistoryProviderRegistration?: ApplicationAnswerFeedbackHistoryProviderRegistration;
   skillCatalogEntries: SkillCatalogEntryDefinition[];
@@ -119,7 +120,7 @@ export interface ApplicationModuleRegistrationContext {
   registerDocumentJobConsumer(consumer: DocumentJobConsumerPort): void;
   registerWebsiteCrawlerProvider(provider: WebsiteCrawlerProvider): void;
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
-  registerChatActionProvider(provider: ApplicationChatActionProviderRegistration): void;
+  registerChatIntakeProvider(provider: ApplicationChatIntakeProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillCatalogEntry(entry: SkillCatalogEntryDefinition): void;
@@ -191,8 +192,8 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   registerWebsiteEmbedIntegration(provider) {
     registry.websiteEmbedIntegration = provider;
   },
-  registerChatActionProvider(provider) {
-    registry.chatActionProviderRegistration = provider;
+  registerChatIntakeProvider(provider) {
+    registry.chatIntakeProviderRegistration = provider;
   },
   registerContactHistoryProvider(provider) {
     registry.contactHistoryProviderRegistration = provider;

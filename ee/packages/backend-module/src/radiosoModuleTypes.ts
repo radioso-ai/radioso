@@ -198,7 +198,17 @@ export interface AgentWizardCrawlerLimits {
 export interface AgentWizardCrawlerPort {
   fetchPageWithScreenshot(
     url: string,
-    options?: { signal?: AbortSignal },
+    options?: {
+      signal?: AbortSignal;
+      /**
+       * Called before every top-level navigation request (including
+       * redirects). Throw to abort. This is the SSRF gate: the wizard
+       * service injects assertSafeUrl here so a public input URL that
+       * redirects to localhost / RFC1918 / cloud metadata is rejected
+       * before any request reaches the wire. Adapters MUST honor this.
+       */
+      validateNavigationUrl?: (url: string) => Promise<void> | void;
+    },
   ): Promise<{
     url: string;
     title: string | null;
@@ -221,6 +231,8 @@ export interface AgentWizardCrawlerPort {
     text: string;
     status: string;
     links?: string[];
+    httpStatus?: number | null;
+    error?: string | null;
   }>>;
   isBrowserTransportAvailable(): Promise<boolean>;
 }

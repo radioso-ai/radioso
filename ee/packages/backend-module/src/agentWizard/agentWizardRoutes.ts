@@ -27,7 +27,6 @@ const createFromWizardSchema = z.object({
   greetingInstruction: z.string().max(200).default(""),
   chunkingStrategy: z.enum(["fixed_window", "structured_semantic"]).optional(),
   faviconUrl: httpUrlSchema.nullable().optional(),
-  screenshotBase64: z.string().max(2_000_000).nullable().optional(),
 });
 
 const ANALYSIS_RATE_LIMIT = {
@@ -131,6 +130,12 @@ export const createAgentWizardRoutes = (
       });
       res.status(200).json(result);
     } catch (error) {
+      // Client may have already disconnected (close handler aborted us).
+      // Don't try to write to a torn-down socket — that just adds noise to
+      // logs and risks "write after end" errors.
+      if (res.writableEnded || controller.signal.aborted) {
+        return;
+      }
       sendError(res, error);
     } finally {
       req.off("aborted", abort);

@@ -75,7 +75,6 @@ export interface WizardCreateInput {
   greetingInstruction?: string;
   chunkingStrategy?: "fixed_window" | "structured_semantic";
   faviconUrl?: string | null;
-  screenshotBase64?: string | null;
 }
 
 export interface WizardCreateResult {

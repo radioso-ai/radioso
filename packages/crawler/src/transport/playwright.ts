@@ -294,6 +294,14 @@ export const fetchPageWithScreenshot = async (
     scopeBaseUrl?: string | null;
     userAgent?: string;
     signal?: AbortSignal;
+    /**
+     * Called before every top-level navigation request (including
+     * redirects) — the SSRF gate. Throw to abort the request before it
+     * hits the wire. This must be in the public signature so callers can
+     * type-check that they're passing it; otherwise the validator would
+     * only reach fetchWithPlaywright by lucky runtime spread.
+     */
+    validateNavigationUrl?: (url: string) => Promise<void> | void;
   }
 ): Promise<FetchedPageWithScreenshot> => {
   return fetchWithPlaywright(url, {

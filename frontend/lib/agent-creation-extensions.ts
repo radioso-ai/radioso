@@ -22,7 +22,6 @@ export interface AgentCreationActionContext {
 }
 
 const agentCreationActionsConfigPath = '/enterprise-agent-creation-actions.json'
-let definitionsPromise: Promise<AgentCreationActionDefinition[]> | null = null
 
 export const parseAgentCreationActionDefinitions = (payload: unknown): AgentCreationActionDefinition[] => {
   const actions = payload && typeof payload === 'object' && 'actions' in payload
@@ -45,19 +44,24 @@ export const parseAgentCreationActionDefinitions = (payload: unknown): AgentCrea
   })
 }
 
+// Each call performs a fresh fetch with cache: 'no-store'. The previous
+// module-level singleton cached the first response for the lifetime of the
+// page, which meant transitioning OSS → EE (or changing the EE manifest)
+// required a hard reload. Caller-side memoization (in React hooks) is the
+// right scope for caching this; the loader stays stateless.
 export const loadAgentCreationActionDefinitions = async (): Promise<AgentCreationActionDefinition[]> => {
   if (typeof window === 'undefined') {
     return []
   }
-  definitionsPromise ??= fetch(agentCreationActionsConfigPath, { cache: 'no-store' })
-    .then(async (response) => {
-      if (!response.ok) {
-        return []
-      }
-      return parseAgentCreationActionDefinitions(await response.json())
-    })
-    .catch(() => [])
-  return definitionsPromise
+  try {
+    const response = await fetch(agentCreationActionsConfigPath, { cache: 'no-store' })
+    if (!response.ok) {
+      return []
+    }
+    return parseAgentCreationActionDefinitions(await response.json())
+  } catch {
+    return []
+  }
 }
 
 export const resolveAgentCreationActions = (

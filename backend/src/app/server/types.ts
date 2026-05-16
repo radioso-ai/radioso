@@ -114,7 +114,11 @@ export interface AppDependencies {
   connectorDb: Database;
   chatTextGenerationClient: TextGenerationClient;
   crawlerProvider: {
-    fetchPageWithScreenshot(url: string, options?: Record<string, unknown>): Promise<{
+    fetchPageWithScreenshot(url: string, options?: {
+      signal?: AbortSignal;
+      validateNavigationUrl?: (url: string) => Promise<void> | void;
+      [key: string]: unknown;
+    }): Promise<{
       url: string;
       title: string | null;
       text: string;

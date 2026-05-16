@@ -142,7 +142,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
 
   // Lazy-loaded crawler provider for EE agent wizard
   const crawlerProvider = {
-    async fetchPageWithScreenshot(url: string, options?: Record<string, unknown>) {
+    async fetchPageWithScreenshot(url: string, options?: {
+      signal?: AbortSignal;
+      validateNavigationUrl?: (url: string) => Promise<void> | void;
+      [key: string]: unknown;
+    }) {
       const { fetchPageWithScreenshot } = await import("@radioso/crawler");
       return fetchPageWithScreenshot(url, options);
     },

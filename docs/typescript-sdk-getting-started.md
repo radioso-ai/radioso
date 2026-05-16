@@ -43,7 +43,7 @@ const documents = await client.documents.list({ limit: 10 });
 
 ## Common Development Commands
 
-From [`typescript-sdk/`](/Users/dm/conductor/workspaces/radioso/typescript-sdk/typescript-sdk):
+From [`typescript-sdk/`](../typescript-sdk/):
 
 ```bash
 pnpm run sync
@@ -64,6 +64,15 @@ client.settings.reprocessIngestion()
 client.settings.getGeneral(...)
 client.settings.updateGeneral(...)
 
+client.workspace.getSummary()
+client.skills.list(...)
+client.skills.get(...)
+client.agents.list(...)
+client.agents.create(...)
+client.agents.get(...)
+client.agents.update(...)
+client.agents.setDefault(...)
+
 client.documents.list(...)
 client.documents.create(...)
 client.documents.importFile(...)
@@ -74,6 +83,12 @@ client.documents.search(...)
 client.documents.listHistory(...)
 client.documents.getHistory(...)
 client.documents.reprocess(...)
+
+client.history.list(...)
+client.history.listChats(...)
+client.history.listSearches(...)
+client.history.getChat(...)
+client.history.getSearch(...)
 
 client.chat.create(...)              // assistant chat
 client.chat.listHistory(...)

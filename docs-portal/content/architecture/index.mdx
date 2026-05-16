@@ -1,11 +1,11 @@
 ---
 title: Architecture overview
-description: High-level request, retrieval, and deployment structure for Radioso.
+description: High-level agent, retrieval, document-processing, and deployment structure for Radioso.
 ---
 
 # Architecture overview
 
-Radioso separates interactive chat from background document processing. That separation is part of the product contract and shows up both in the operator model and in the user experience.
+Radioso separates interactive knowledge-agent work from background document processing. That separation is part of the product contract and shows up both in the operator model and in the user experience.
 
 ## Main surfaces
 
@@ -13,7 +13,8 @@ Radioso separates interactive chat from background document processing. That sep
 - backend API
 - document worker
 - PostgreSQL
-- optional public embed surface
+- optional public chat surface
+- optional Enterprise website widget surface
 
 ## Assistant execution model
 
@@ -21,10 +22,11 @@ Radioso uses two assistant execution classes on purpose, even though only the in
 
 ### Live chat stays immediate
 
-Normal chat runs in the live request path. That includes:
+Normal agent chat runs in the live request path. That includes:
 
 - authenticated chat turns
-- anonymous or embedded chat turns
+- anonymous chat turns
+- Enterprise embedded widget chat turns
 - assistant bootstrap greetings for new conversations
 
 Users either get an immediate response, immediate streaming, or an explicit failure. Radioso does not silently convert normal chat into background work under load.

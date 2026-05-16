@@ -1,29 +1,63 @@
 ---
 title: Why Radioso
-description: Why Radioso exists, who it serves, and what differentiates it from generic chat-over-files tools.
+description: Ship grounded AI agents your team can actually debug.
 ---
 
 # Why Radioso
 
-Radioso is for teams that need more than a demo-grade “chat with your files” experience. It is designed around grounded answers, explicit citations, workspace-aware controls, and deployment shapes that work for real support and knowledge products.
+## Ship grounded AI agents your team can actually debug.
 
-## Who it is for
+Radioso is an open-source knowledge layer for teams that need their agents to answer from real documents, and need to fix the answer when it is wrong. One knowledge base, five surfaces, one debug loop.
 
-- Teams shipping customer-facing support assistants
-- Product and support organizations that need answer traceability
-- Developers who want both API-first and embedded paths
-- Operators who need tuning knobs for ingestion and retrieval
+<a href="/quickstarts/run-locally" className="inline-flex h-9 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground no-underline transition-colors hover:bg-primary/90">Run locally in 5 minutes →</a>
 
-## What makes it meaningfully different
+## Grounded by default
 
-- Grounding is a product contract, not a marketing claim
-- Citations are visible and configurable
-- Workspace-scoped settings make behavior tunable per tenant
-- Embed and anonymous chat are part of the system, not bolted on later
-- Operator-facing controls are first-class
+Most AI agents will answer anything you ask them, whether or not they actually know. Radioso does not. When the agent has evidence in your knowledge base, it answers and cites the source. When it does not, it says so.
 
-## What to do next
+This is not a marketing claim. It is the default behavior of every Radioso agent, and it works the same way across every surface: your website chat, your API, your MCP server, and your public link. If you can break it, we want the bug report.
 
-- Start with [Run locally in 5 minutes](/quickstarts/run-locally)
-- Or jump to [Embed on your website](/quickstarts/website-embed)
-- Or inspect the [API Reference](/api-reference)
+## Debug the agent, not the framework
+
+Every agent gets a wrong answer eventually. The question is whether you can find out why and fix it without paging an ML engineer.
+
+In Radioso, every answer shows you the retrieval steps that produced it: which documents were considered, which chunks ranked highest, and which made it into the final context. If the answer was wrong, you can edit the source document, replay the question against the updated corpus, and watch the next answer get better. No vendor ticket. No retraining. No guessing.
+
+## One knowledge base, every surface
+
+Your customers ask questions on your website. Your sales team wants the same answers in a shareable link. Your docs site needs an embedded ask-the-docs widget. Your support team queries through your API. Your engineers want the same knowledge in Cursor and Claude Desktop.
+
+Most teams build five different integrations against five different stacks to make this happen. With Radioso, you upload your documents once. Every surface reads from the same corpus, with the same retrieval quality, and the same debug loop when something goes wrong. Update a document, and every surface updates with it.
+
+<div className="my-6 rounded-2xl border border-border bg-card p-4 shadow-sm">
+  <div className="grid gap-3">
+    <div className="rounded-xl border border-secondary/30 bg-secondary/25 p-4 font-semibold text-foreground">Radioso knowledge base</div>
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="rounded-xl border border-border bg-background/70 p-4 font-medium text-foreground">Website widget</div>
+      <div className="rounded-xl border border-border bg-background/70 p-4 font-medium text-foreground">Public chat link</div>
+      <div className="rounded-xl border border-border bg-background/70 p-4 font-medium text-foreground">REST API</div>
+      <div className="rounded-xl border border-border bg-background/70 p-4 font-medium text-foreground">MCP server</div>
+      <div className="rounded-xl border border-border bg-background/70 p-4 font-medium text-foreground sm:col-span-2">Multiple agents with different personas</div>
+      </div>
+  </div>
+</div>
+
+## Who Radioso is not for
+
+We would rather lose a deal than win the wrong one. Some honest guidance:
+
+If you want your agent to know about your team's running internal conversation, such as Linear tickets, Confluence pages, or Slack threads, you probably want Confluence MCP or Linear MCP, not Radioso. We are built for curated knowledge bases, not systems of record.
+
+If you want to design complex multi-step AI workflows on a visual canvas with dozens of tool integrations, you probably want Dify. We are focused on one thing: grounded agents on your documents. We do not aim to be a general-purpose AI app builder.
+
+If you need an enterprise customer service platform with deep helpdesk integration, ticket routing, and a per-resolution pricing model, you probably want Intercom Fin or similar. We are built for teams who want to own their agent stack, not outsource it.
+
+If any of the above sounds wrong for you, or if you have already tried one of those tools and felt the limits, keep reading.
+
+## Get started
+
+<div className="mt-5 flex flex-wrap gap-3">
+  <a href="/quickstarts/run-locally" className="inline-flex h-9 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground no-underline transition-colors hover:bg-primary/90">Run locally in 5 minutes</a>
+  <a href="/quickstarts/website-embed" className="inline-flex h-9 items-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground no-underline transition-colors hover:bg-accent hover:text-accent-foreground">Embed on your website</a>
+  <a href="/api-reference" className="inline-flex h-9 items-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground no-underline transition-colors hover:bg-accent hover:text-accent-foreground">API reference</a>
+</div>

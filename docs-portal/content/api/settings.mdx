@@ -1,11 +1,11 @@
 ---
 title: Settings
-description: Read and update retrieval, ingestion, and general workspace settings, then requeue documents when ingestion behavior changes.
+description: Read and update agent, retrieval, ingestion, and public-surface settings, then requeue documents when ingestion behavior changes.
 ---
 
 # Settings
 
-Settings are workspace-scoped. They control how Radioso retrieves, processes, and presents information.
+Settings are workspace-scoped. They control how Radioso retrieves, processes, and presents information through the default workspace agent and public surfaces.
 
 ## Relevant endpoints
 
@@ -17,6 +17,8 @@ PUT /api/v1/settings/ingestion
 POST /api/v1/settings/ingestion/reprocess
 GET /api/v1/settings/general
 PUT /api/v1/settings/general
+GET /api/v1/settings
+PUT /api/v1/settings
 ```
 
 ## How it works
@@ -25,7 +27,8 @@ There are three setting groups:
 
 - retrieval settings for ranking, citations, rewrite behavior, and validation outcome
 - ingestion settings for chunking behavior
-- general settings for anonymous chat, assistant defaults, and website embed behavior
+- general settings for anonymous chat, assistant defaults, and Enterprise website widget behavior
+- platform settings that merge `assistant`, `retrieval`, and `channels` into one resource
 
 When ingestion settings change, you can requeue eligible documents so the new chunking behavior is applied to existing content.
 
@@ -41,6 +44,7 @@ This payload includes fields such as:
 - `similarityThreshold`
 - `rerankTopK`
 - `citationDisplayEnabled`
+- `answerSupportValidationEnabled`
 - `metadataRules`
 - `customInstruction`
 
@@ -78,6 +82,8 @@ This payload covers user-facing workspace behavior such as:
 - `websiteEmbedTheme`
 - `websiteEmbedCopy`
 - `websiteEmbedExpertOverrides`
+
+<span style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid rgba(79, 70, 229, 0.35)', borderRadius: '999px', padding: '0.125rem 0.55rem', fontSize: '0.72rem', fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#4f46e5', background: 'rgba(79, 70, 229, 0.08)' }}>Enterprise Edition</span> Website widget token rotation and hosted widget customization require the website-embed surface extension. Public chat settings remain separate from the hosted widget routes.
 
 Public link and embed token rotation use explicit endpoints:
 

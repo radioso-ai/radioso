@@ -148,23 +148,29 @@ describe("WebsiteCrawlJobRepository.listForWorkspace", () => {
 });
 
 describe("WebsiteCrawlJobRepository.pauseBySourceId/resumePausedBySourceId", () => {
-  it("marks active source jobs paused and resumes only paused jobs", async () => {
+  it("marks active source jobs paused and resumes only unclaimed paused jobs immediately", async () => {
     const query = vi
       .fn()
       .mockResolvedValueOnce([sampleRow({ status: "paused" })])
-      .mockResolvedValueOnce([sampleRow({ status: "queued" })]);
+      .mockResolvedValueOnce([
+        { ...sampleRow({ status: "queued", claimed_at: null }), resume_pending: false },
+        { ...sampleRow({ status: "paused", claimed_at: new Date("2026-05-11T10:00:30.000Z") }), resume_pending: true },
+      ]);
     const repository = new WebsiteCrawlJobRepository({ query } as never);
 
     await expect(repository.pauseBySourceId("source-1", "workspace-1")).resolves.toHaveLength(1);
-    await expect(repository.resumePausedBySourceId("source-1", "workspace-1")).resolves.toHaveLength(1);
+    await expect(repository.resumePausedBySourceId("source-1", "workspace-1")).resolves.toMatchObject({
+      resumedJobs: [expect.objectContaining({ status: "queued" })],
+      pendingResumeJobCount: 1,
+    });
 
     const pauseSql = query.mock.calls[0][0].replace(/\s+/g, " ");
     expect(pauseSql).toMatch(
-      /SET status = 'paused'.*claimed_at = CASE WHEN status = 'queued' THEN NULL ELSE claimed_at END.*WHERE source_id = \$1\s+AND workspace_id = \$2\s+AND status IN \('queued', 'processing'\).*RETURNING/s,
+      /SET status = 'paused'.*claimed_at = CASE WHEN status = 'queued' THEN NULL ELSE claimed_at END.*resume_requested_at = NULL.*WHERE source_id = \$1\s+AND workspace_id = \$2\s+AND \(\s+status IN \('queued', 'processing'\)\s+OR \(status = 'paused' AND resume_requested_at IS NOT NULL\)\s+\).*RETURNING/s,
     );
     expect(query.mock.calls[0][1]).toEqual(["source-1", "workspace-1"]);
     expect(query.mock.calls[1][0].replace(/\s+/g, " ")).toMatch(
-      /SET status = 'queued'.*WHERE source_id = \$1\s+AND workspace_id = \$2\s+AND status = 'paused'\s+AND claimed_at IS NULL.*RETURNING/s,
+      /WITH updated AS \(.*SET status = CASE WHEN claimed_at IS NULL THEN 'queued' ELSE status END,.*available_at = CASE WHEN claimed_at IS NULL THEN NOW\(\) ELSE available_at END,.*resume_requested_at = CASE WHEN claimed_at IS NULL THEN NULL ELSE NOW\(\) END,.*WHERE source_id = \$1\s+AND workspace_id = \$2\s+AND status = 'paused'.*RETURNING.*status = 'paused' AS resume_pending/s,
     );
     expect(query.mock.calls[1][1]).toEqual(["source-1", "workspace-1"]);
   });
@@ -219,14 +225,14 @@ describe("WebsiteCrawlJobRepository.releasePausedClaim", () => {
 
     expect(execute).toHaveBeenCalledTimes(1);
     expect(execute.mock.calls[0][0].replace(/\s+/g, " ")).toMatch(
-      /SET claimed_at = NULL.*WHERE id = \$1\s+AND status = 'paused'/s,
+      /SET status = CASE WHEN resume_requested_at IS NULL THEN 'paused' ELSE 'queued' END,.*available_at = CASE WHEN resume_requested_at IS NULL THEN available_at ELSE NOW\(\) END,.*claimed_at = NULL,.*resume_requested_at = NULL.*WHERE id = \$1\s+AND status = 'paused'/s,
     );
     expect(execute.mock.calls[0][1]).toEqual(["job-1"]);
   });
 });
 
 describe("WebsiteCrawlJobRepository.releaseAllTimedOutClaims", () => {
-  it("requeues expired processing claims and only clears expired paused claims", async () => {
+  it("requeues expired processing claims and expired paused resume requests", async () => {
     const execute = vi.fn().mockResolvedValue(2);
     const repository = new WebsiteCrawlJobRepository({ execute } as never);
     const cutoff = new Date("2026-05-11T19:30:00.000Z");
@@ -235,7 +241,7 @@ describe("WebsiteCrawlJobRepository.releaseAllTimedOutClaims", () => {
 
     expect(execute).toHaveBeenCalledTimes(1);
     expect(execute.mock.calls[0][0].replace(/\s+/g, " ")).toMatch(
-      /SET status = CASE WHEN status = 'processing' THEN 'queued' ELSE status END,\s+claimed_at = NULL,\s+last_error = CASE WHEN status = 'processing' THEN \$2 ELSE last_error END.*WHERE status IN \('processing', 'paused'\)\s+AND claimed_at <= \$1/s,
+      /SET status = CASE\s+WHEN status = 'processing' THEN 'queued'\s+WHEN status = 'paused' AND resume_requested_at IS NOT NULL THEN 'queued'\s+ELSE status\s+END,\s+available_at = CASE\s+WHEN status = 'processing' OR resume_requested_at IS NOT NULL THEN NOW\(\)\s+ELSE available_at\s+END,\s+claimed_at = NULL,\s+resume_requested_at = NULL,\s+last_error = CASE WHEN status = 'processing' THEN \$2 ELSE last_error END.*WHERE status IN \('processing', 'paused'\)\s+AND \(\s+\(status = 'processing' AND claimed_at <= \$1\)\s+OR \(status = 'paused' AND resume_requested_at IS NULL AND claimed_at <= \$1\)\s+OR \(status = 'paused' AND resume_requested_at IS NOT NULL AND resume_requested_at <= \$1\)\s+\)/s,
     );
     expect(execute.mock.calls[0][1]).toEqual([cutoff, "claim_expired"]);
   });

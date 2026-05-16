@@ -26,6 +26,35 @@
     "inputSchemaRef": "RetrievalAnswerRequest",
     "settingsSchemaRef": "RetrievalSettingsOverride"
   },
+  "intake": {
+    "enabled": true,
+    "supportedCallers": ["retrieval_api", "sdk", "mcp"],
+    "intent": {
+      "description": "Answer a user query from workspace evidence.",
+      "examples": [
+        "What does the policy say about refunds?",
+        "Summarize the onboarding document.",
+        "Which deadline is mentioned in the contract?"
+      ]
+    },
+    "fields": [
+      {
+        "name": "query",
+        "displayName": "query",
+        "type": "string",
+        "required": true,
+        "maxLength": 8000,
+        "extractionHint": "Use the current user query as the retrieval question."
+      }
+    ],
+    "confirmation": "none",
+    "interruptionPolicy": "cancel_on_topic_change"
+  },
+  "execution": {
+    "kind": "internal",
+    "adapter": "retrieval_answer",
+    "enqueue": false
+  },
   "diagnostics": {
     "defined": true,
     "shapeAware": true,

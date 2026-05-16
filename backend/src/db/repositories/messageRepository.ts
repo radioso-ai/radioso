@@ -9,15 +9,20 @@ export interface MessageRecord {
   workspaceId: string;
   role: "user" | "assistant" | "system";
   content: string;
+  metadata?: Record<string, unknown>;
   inputMetadata?: UserMessageInputMetadata;
   createdAt: Date;
 }
 
-export type UserMessageInputMethod = "typed" | "suggestion_click";
+export type UserMessageInputMethod = "typed" | "suggestion_click" | "intent_click";
 
 export interface UserMessageInputMetadata {
   method: UserMessageInputMethod;
   suggestionSourceMessageId?: string;
+  intent?: {
+    skillName: string;
+    intentName?: string;
+  };
 }
 
 export interface ConversationMessageSummary {
@@ -45,6 +50,7 @@ export interface MessageRepositoryPort {
     role: "user" | "assistant" | "system";
     content: string;
     inputMetadata?: UserMessageInputMetadata;
+    metadata?: Record<string, unknown>;
   }): Promise<MessageRecord>;
 }
 
@@ -63,10 +69,13 @@ const mapInputMetadata = (value: unknown): UserMessageInputMetadata | undefined 
     return undefined;
   }
 
-  const candidate = value as { method?: unknown; suggestionSourceMessageId?: unknown };
-  if (candidate.method !== "typed" && candidate.method !== "suggestion_click") {
+  const candidate = value as { method?: unknown; suggestionSourceMessageId?: unknown; intent?: unknown };
+  if (candidate.method !== "typed" && candidate.method !== "suggestion_click" && candidate.method !== "intent_click") {
     return undefined;
   }
+  const intent = candidate.intent && typeof candidate.intent === "object" && !Array.isArray(candidate.intent)
+    ? candidate.intent as { skillName?: unknown; intentName?: unknown }
+    : null;
 
   return {
     method: candidate.method,
@@ -74,6 +83,12 @@ const mapInputMetadata = (value: unknown): UserMessageInputMetadata | undefined 
       typeof candidate.suggestionSourceMessageId === "string" && candidate.suggestionSourceMessageId.length > 0
         ? candidate.suggestionSourceMessageId
         : undefined,
+    intent: typeof intent?.skillName === "string" && intent.skillName.length > 0
+      ? {
+          skillName: intent.skillName,
+          intentName: typeof intent.intentName === "string" && intent.intentName.length > 0 ? intent.intentName : undefined,
+        }
+      : undefined,
   };
 };
 
@@ -83,6 +98,9 @@ const mapMessage = (row: MessageRow): MessageRecord => ({
   workspaceId: row.workspace_id,
   role: row.role,
   content: row.content,
+  metadata: row.metadata_json && typeof row.metadata_json === "object" && !Array.isArray(row.metadata_json)
+    ? row.metadata_json as Record<string, unknown>
+    : undefined,
   inputMetadata: row.role === "user" ? mapInputMetadata(row.metadata_json) : undefined,
   createdAt: new Date(row.created_at),
 });
@@ -247,6 +265,7 @@ export class MessageRepository implements MessageRepositoryPort {
     role: "user" | "assistant" | "system";
     content: string;
     inputMetadata?: UserMessageInputMetadata;
+    metadata?: Record<string, unknown>;
   }): Promise<MessageRecord> {
     const [row] = await this.database.query<MessageRow>(
       `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json)
@@ -258,7 +277,7 @@ export class MessageRepository implements MessageRepositoryPort {
         input.workspaceId,
         input.role,
         input.content,
-        JSON.stringify(input.inputMetadata ?? {}),
+        JSON.stringify(input.metadata ?? input.inputMetadata ?? {}),
       ],
     );
 

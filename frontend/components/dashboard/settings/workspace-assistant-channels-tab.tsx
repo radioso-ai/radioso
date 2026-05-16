@@ -45,6 +45,7 @@ import {
   type HumanContactAvailability,
 } from '@/lib/api'
 import { editionController } from '@/lib/edition-controller'
+import { isValidEmailAddress } from '@/lib/validation'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const getOrganizationNameCacheKey = (accountId: string) => `radioso.organizationName:${accountId}`
@@ -80,7 +81,6 @@ const isValidHumanContactWebhookUrl = (value: string) => {
   }
 }
 
-const isValidHumanContactEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
 
 const normalizeAssistantBehaviorSettingsByAgent = (agentId: string | undefined, settings: AssistantBehaviorSettings) => ({
@@ -369,7 +369,7 @@ export function WorkspaceAssistantChannelsTab({
         if (!active) return
         setHumanContactSettings(null)
         setSavedHumanContactSettings(null)
-        setHumanContactError(getApiErrorMessage(error, 'Talk to a human is not available in this build.'))
+        setHumanContactError(getApiErrorMessage(error, 'Contact handoff is not available in this build.'))
       } finally {
         if (active) {
           setIsHumanContactLoading(false)
@@ -544,7 +544,7 @@ export function WorkspaceAssistantChannelsTab({
   const humanContactDefaultEmail = humanContactSettings?.defaultEmail ?? ''
   const humanContactDefaultEmailTrimmed = humanContactDefaultEmail.trim()
   const humanContactDefaultEmailInvalid =
-    humanContactDefaultEmailTrimmed.length > 0 && !isValidHumanContactEmail(humanContactDefaultEmailTrimmed)
+    humanContactDefaultEmailTrimmed.length > 0 && !isValidEmailAddress(humanContactDefaultEmailTrimmed)
   const humanContactMissingEmail =
     Boolean(humanContactSettings?.enabled) && humanContactEmailEnabled && humanContactDefaultEmailTrimmed.length === 0
   const humanContactWebhookEnabled = Boolean(humanContactSettings?.webhookEnabled)
@@ -556,7 +556,7 @@ export function WorkspaceAssistantChannelsTab({
     Boolean(humanContactSettings?.enabled) && humanContactWebhookEnabled && humanContactWebhookUrlTrimmed.length === 0
   const humanContactMissingDelivery =
     Boolean(humanContactSettings?.enabled) && !humanContactEmailEnabled && !humanContactWebhookEnabled
-  const updateHumanContactDraft = (patch: Partial<HumanContactAvailability>) => {
+  const updateHumanContactSettingsDraft = (patch: Partial<HumanContactAvailability>) => {
     humanContactDraftVersionRef.current += 1
     setHumanContactError(null)
     setHumanContactSettings((current) => (current ? { ...current, ...patch } : current))
@@ -828,7 +828,7 @@ export function WorkspaceAssistantChannelsTab({
       setHumanContactSigningSecret('')
       setSaveState('saved')
     } catch (error) {
-      console.error('Failed to rotate talk to a human signing token:', error)
+      console.error('Failed to rotate contact handoff signing token:', error)
       const message = getApiErrorMessage(error, 'Failed to rotate the signing token.')
       setHumanContactError(message)
       setSaveState('error')
@@ -849,7 +849,7 @@ export function WorkspaceAssistantChannelsTab({
       const response = await humanContactApi.revealSigningSecret()
       setHumanContactSigningSecret(response.signingSecret ?? '')
     } catch (error) {
-      console.error('Failed to reveal talk to a human signing token:', error)
+      console.error('Failed to reveal contact handoff signing token:', error)
       setHumanContactError(getApiErrorMessage(error, 'Failed to reveal the signing token.'))
     } finally {
       setIsHumanContactSecretLoading(false)
@@ -980,7 +980,6 @@ export function WorkspaceAssistantChannelsTab({
                 sourceListError={sourceListError}
                 channelsTabHref={channelsTabHref}
                 websiteEmbedAvailable={editionController.canUseWebsiteEmbed()}
-                humanContactConfigured={Boolean(humanContactSettings?.enabled && humanContactSettings?.configured)}
               />
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load assistant settings.</p>
@@ -998,7 +997,7 @@ export function WorkspaceAssistantChannelsTab({
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-medium text-foreground">Talk to a human</h3>
+                      <h3 className="font-medium text-foreground">Contact handoff</h3>
                       {humanContactSettings?.enabled && humanContactSettings.configured && !hasHumanContactChanges ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
                           <CheckCircle2 className="h-3 w-3" /> Ready
@@ -1006,14 +1005,14 @@ export function WorkspaceAssistantChannelsTab({
                       ) : null}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Handoff when a visitor asks for a person. Active in every channel.
+                      Route follow-up requests through the configured delivery channel.
                     </p>
                   </div>
                 </div>
                 <Switch
                   id="humanContactToggle"
                   checked={humanContactSettings?.enabled ?? false}
-                  onCheckedChange={(checked) => updateHumanContactDraft({ enabled: checked })}
+                  onCheckedChange={(checked) => updateHumanContactSettingsDraft({ enabled: checked })}
                   disabled={isHumanContactLoading || isHumanContactSaving || !humanContactSettings}
                   className="sm:mt-3"
                 />
@@ -1037,7 +1036,7 @@ export function WorkspaceAssistantChannelsTab({
                             <Switch
                               id="humanContactEmailToggle"
                               checked={humanContactEmailEnabled}
-                              onCheckedChange={(checked) => updateHumanContactDraft({ emailEnabled: checked })}
+                              onCheckedChange={(checked) => updateHumanContactSettingsDraft({ emailEnabled: checked })}
                               disabled={isHumanContactSaving}
                             />
                           </div>
@@ -1048,7 +1047,7 @@ export function WorkspaceAssistantChannelsTab({
                                 id="humanContactDefaultEmail"
                                 type="email"
                                 value={humanContactDefaultEmail}
-                                onChange={(event) => updateHumanContactDraft({ defaultEmail: event.target.value })}
+                                onChange={(event) => updateHumanContactSettingsDraft({ defaultEmail: event.target.value })}
                                 placeholder="support@example.com"
                                 disabled={isHumanContactSaving}
                               />
@@ -1076,7 +1075,7 @@ export function WorkspaceAssistantChannelsTab({
                             <Switch
                               id="humanContactWebhookToggle"
                               checked={humanContactWebhookEnabled}
-                              onCheckedChange={(checked) => updateHumanContactDraft({ webhookEnabled: checked })}
+                              onCheckedChange={(checked) => updateHumanContactSettingsDraft({ webhookEnabled: checked })}
                               disabled={isHumanContactSaving}
                             />
                           </div>
@@ -1088,8 +1087,8 @@ export function WorkspaceAssistantChannelsTab({
                                   id="humanContactWebhookUrl"
                                   type="url"
                                   value={humanContactWebhookUrl}
-                                  onChange={(event) => updateHumanContactDraft({ webhookUrl: event.target.value })}
-                                  placeholder="https://support.example.com/radioso/talk-to-human"
+                                  onChange={(event) => updateHumanContactSettingsDraft({ webhookUrl: event.target.value })}
+                                  placeholder="https://support.example.com/radioso/contact-handoff"
                                   disabled={isHumanContactSaving}
                                 />
                                 {humanContactWebhookUrlInvalid ? (
@@ -1158,7 +1157,7 @@ export function WorkspaceAssistantChannelsTab({
                 ) : null
               ) : (
                 <div className="mt-5 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-                  Talk to a human is unavailable in this build.
+                  Contact handoff is unavailable in this build.
                   {humanContactError ? (
                     <p className="mt-2 text-destructive" role="alert">{humanContactError}</p>
                   ) : null}

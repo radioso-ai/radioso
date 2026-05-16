@@ -82,7 +82,7 @@ function ContactRequestPanel({
       <div className="rounded-lg border border-border/70 bg-background/70 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-medium text-foreground">Talk to a human request</p>
+            <p className="text-sm font-medium text-foreground">Contact request</p>
             <p className="mt-1 text-xs text-muted-foreground">
               {contactStatusLabels[contact.status]} - {contact.triggerSource.replaceAll('_', ' ')}
             </p>
@@ -254,7 +254,7 @@ export function ChatHistoryView({
                 {selectedItem?.kind === 'chat'
                   ? 'Conversation details'
                   : selectedItem?.kind === 'contact'
-                    ? 'Talk to a human request details'
+                    ? 'Contact request details'
                     : 'Search details'}
               </DrawerTitle>
               <div className="flex min-w-0 items-center gap-3">

@@ -9,14 +9,14 @@ Add a shared MCP request-handler factory to `packages/radioso-mcp-server`, keep 
 
 ## Technical Context
 
-**Language/Version**: TypeScript on Node.js 24; React 19 / Next.js 16 for dashboard changes  
-**Primary Dependencies**: Express, `@modelcontextprotocol/server`, Zod, existing MCP package internals  
-**Storage**: Existing PostgreSQL backend state plus existing MCP in-memory/Redis runtime stores; no new persistence  
-**Testing**: Vitest, Supertest, existing MCP smoke suites, focused frontend unit tests for non-visual mode detection  
-**Target Platform**: Self-hosted Node backend and standalone MCP HTTP package  
-**Project Type**: Monorepo web app with backend, frontend, packages  
-**Performance Goals**: No new persistence calls beyond direct workspace token verification per merged request  
-**Constraints**: `/mcp` stays outside `/api/v1`; CORS for MCP is separate from cookie CORS; no new backend runtime dependency except the workspace MCP package  
+**Language/Version**: TypeScript on Node.js 24; React 19 / Next.js 16 for dashboard changes
+**Primary Dependencies**: Express, `@modelcontextprotocol/server`, Zod, existing MCP package internals
+**Storage**: Existing PostgreSQL backend state plus existing MCP in-memory/Redis runtime stores; no new persistence
+**Testing**: Vitest, Supertest, existing MCP smoke suites, focused frontend unit tests for non-visual mode detection
+**Target Platform**: Self-hosted Node backend and standalone MCP HTTP package
+**Project Type**: Monorepo web app with backend, frontend, packages
+**Performance Goals**: No new persistence calls beyond direct workspace token verification per merged request
+**Constraints**: `/mcp` stays outside `/api/v1`; CORS for MCP is separate from cookie CORS; no new backend runtime dependency except the workspace MCP package
 **Scale/Scope**: One backend mount path, existing standalone process, one dashboard channel card
 
 ## Constitution Check

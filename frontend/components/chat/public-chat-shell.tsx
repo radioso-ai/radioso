@@ -22,10 +22,6 @@ import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { ChatMessageThread, type ChatThreadMessage } from '@/components/dashboard/chat-message-thread'
 import { AssistantMessageContent } from '@/components/dashboard/chat-citations'
-import {
-  HumanContactInlineComposer,
-  type HumanContactInlineRequest,
-} from '@/components/chat/human-contact-inline-composer'
 import { ScrollToBottomButton } from '@/components/chat/scroll-to-bottom-button'
 import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
@@ -34,12 +30,9 @@ import {
   type AnswerFeedbackState,
   type AnswerFeedbackValue,
   type ChatSuggestion,
-  type HumanContactTriggerSource,
   type WebsiteEmbedPageContext,
 } from '@/lib/api'
-import { createClientId } from '@/lib/client-id'
 import { editionController } from '@/lib/edition-controller'
-import { HUMAN_CONTACT_REQUEST_TRIGGER_REASON, isHumanContactRequest } from '@/lib/human-contact-intent'
 import {
   buildWebsiteEmbedSurfaceCssVars,
   formatWebsiteEmbedStartingMessage,
@@ -53,6 +46,8 @@ import {
 } from '@/lib/embed-widget'
 
 type PublicChatSurface = 'public' | 'embed'
+const HUMAN_CONTACT_SKILL_NAME = 'human_contact.request'
+const HUMAN_CONTACT_INTENT_NAME = 'explicit_contact_request'
 
 const isEditableElement = (element: Element | null) => {
   if (!element) {
@@ -218,7 +213,7 @@ function RateLimitBanner({
   )
 }
 
-function PublicChatActionsMenu({
+function PublicChatOptionsMenu({
   copy,
   theme,
   contactAvailable,
@@ -271,7 +266,7 @@ function PublicChatActionsMenu({
             }}
           >
             <UserRound className="mr-2 h-4 w-4" />
-            Talk to a human
+            {copy.publicChatContactHumanLabel}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>
@@ -300,9 +295,7 @@ function PublicChatCenteredIntro({
   isLoading: boolean
   children: ReactNode
 }) {
-  const visibleSuggestions = greetingMessage
-    ? editionController.filterChatSuggestions(greetingMessage.suggestions)
-    : []
+  const visibleSuggestions = greetingMessage?.suggestions ?? []
   const showGreetingTyping = greetingMessage?.status === 'streaming' && !greetingMessage.content
   const hasGreetingContent = greetingMessage && (showGreetingTyping || greetingMessage.content)
 
@@ -350,7 +343,6 @@ function PublicChatCenteredIntro({
             {visibleSuggestions
               .filter((suggestion) => suggestion.text.trim())
               .map((suggestion, suggestionIndex) => {
-                const isContactAction = suggestion.action?.kind === 'contact_human'
                 return (
                   <Button
                     key={`centered-suggestion-${suggestionIndex}`}
@@ -366,7 +358,6 @@ function PublicChatCenteredIntro({
                     }}
                     onClick={() => onSuggestionSelect(suggestion, greetingMessage.id)}
                   >
-                    {isContactAction ? <UserRound className="mr-1.5 h-3.5 w-3.5 shrink-0" /> : null}
                     {suggestion.text}
                   </Button>
                 )
@@ -401,19 +392,16 @@ function PublicChatContent({
 }) {
   const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
   const [input, setInput] = useState('')
-  const [contactRequest, setContactRequest] = useState<HumanContactInlineRequest | null>(null)
-  const [contactConfirmation, setContactConfirmation] = useState<ChatThreadMessage | null>(null)
   const viewportLayout = useWebsiteEmbedViewportLayout()
   const isCompactKeyboardLayout = surface === 'embed' && viewportLayout.isCompactKeyboardLayout
   const isNarrowLayout = viewportLayout.isNarrowLayout
   const {
     publicChatToken,
-    conversationId,
     messages,
     workspaceName,
     assistantAvatarUrl,
     assistantTheme,
-    publicSessionActions,
+    intakeActions,
     isLoading,
     isHydrating,
     isLoadingOlderMessages,
@@ -432,17 +420,12 @@ function PublicChatContent({
   const resolvedAvatarUrl = assistantAvatarUrl ?? avatarUrl
   const resolvedThemeOverrides = assistantTheme ?? themeOverrides
   const theme = getWebsiteEmbedTheme(resolvedThemeOverrides)
-  const contactAction = publicSessionActions.contact
   const contactAvailable =
     editionController.canUseHumanContact() &&
-    Boolean(contactAction) &&
-    typeof contactAction === 'object' &&
-    !Array.isArray(contactAction) &&
-    (contactAction as { configured?: unknown }).configured === true
-  const latestAssistantMessage = [...messages].reverse().find((message) => message.role === 'assistant')
-  const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages || !conversationId || !latestAssistantMessage
+    intakeActions.some((action) => action.skillName === HUMAN_CONTACT_SKILL_NAME)
+  const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages
   const clearDisabled = isLoading || isHydrating || isLoadingOlderMessages
-  const visibleMessages = contactConfirmation ? [...messages, contactConfirmation] : messages
+  const visibleMessages = messages
   const hasUserMessage = visibleMessages.some((message) => message.role === 'user')
   const useCenteredIntro = !hasUserMessage && !isCompactKeyboardLayout && !isNarrowLayout
   const greetingMessage = visibleMessages.find((message) => message.role === 'assistant') ?? null
@@ -502,18 +485,7 @@ function PublicChatContent({
     if (!input.trim() || isLoading) return
 
     const nextInput = input.trim()
-    if (editionController.canUseHumanContact() && contactAvailable && conversationId && latestAssistantMessage && isHumanContactRequest(nextInput)) {
-      setInput('')
-      openContactComposer({
-        assistantMessageId: latestAssistantMessage.persistedAssistantMessageId ?? latestAssistantMessage.id,
-        triggerSource: 'explicit_user_request',
-        triggerReason: HUMAN_CONTACT_REQUEST_TRIGGER_REASON,
-      })
-      return
-    }
-
     setInput('')
-    setContactConfirmation(null)
     await sendMessage(nextInput, { method: 'typed' })
   }
 
@@ -564,49 +536,8 @@ function PublicChatContent({
     return () => window.removeEventListener('keydown', handleTypingShortcut)
   }, [input.length, isHydrating, isUnavailable, surface])
 
-  const openContactComposer = (input: {
-    assistantMessageId?: string
-    triggerSource: HumanContactTriggerSource
-    triggerReason?: string
-  }) => {
-    if (!conversationId || !latestAssistantMessage) {
-      return
-    }
-
-    setContactConfirmation(null)
-    setContactRequest({
-      conversationId,
-      assistantMessageId: input.assistantMessageId ?? latestAssistantMessage.id,
-      triggerSource: input.triggerSource,
-      triggerReason: input.triggerReason,
-    })
-  }
-
-  const handleManualContact = () => {
-    if (!latestAssistantMessage) {
-      return
-    }
-    openContactComposer({
-      assistantMessageId: latestAssistantMessage.persistedAssistantMessageId ?? latestAssistantMessage.id,
-      triggerSource: 'manual',
-    })
-  }
-
   const handleSuggestionSelect = (suggestion: ChatSuggestion, messageId: string) => {
     if (isLoading) return
-
-    if (editionController.isHumanContactSuggestion(suggestion)) {
-      const payload = suggestion.action.payload ?? {}
-      const triggerSource = typeof payload.triggerSource === 'string'
-        ? payload.triggerSource as HumanContactTriggerSource
-        : 'assistant_suggestion'
-      const assistantMessageId = typeof payload.assistantMessageId === 'string'
-        ? payload.assistantMessageId
-        : messageId
-      const triggerReason = typeof payload.triggerReason === 'string' ? payload.triggerReason : undefined
-      openContactComposer({ assistantMessageId, triggerSource, triggerReason })
-      return
-    }
 
     void sendMessage(suggestion.text, {
       method: 'suggestion_click',
@@ -614,17 +545,25 @@ function PublicChatContent({
     })
   }
 
+  const handleManualContact = () => {
+    if (!contactAvailable || contactDisabled) return
+
+    void sendMessage(copy.publicChatContactHumanMessage, {
+      method: 'intent_click',
+      intent: {
+        skillName: HUMAN_CONTACT_SKILL_NAME,
+        intentName: HUMAN_CONTACT_INTENT_NAME,
+      },
+    })
+  }
+
   const handleStartNewChat = async () => {
     setInput('')
     if (onStartNewChat) {
-      setContactRequest(null)
-      setContactConfirmation(null)
       await onStartNewChat()
       return
     }
 
-    setContactRequest(null)
-    setContactConfirmation(null)
     await startNewChat()
   }
 
@@ -639,17 +578,6 @@ function PublicChatContent({
 
   const handleClearAnswerFeedback = async (assistantMessageId: string) => {
     await answerFeedbackApi.clearPublic(publicChatToken, assistantMessageId)
-  }
-
-  const handleContactSubmitted = (content: string) => {
-    setContactRequest(null)
-    setContactConfirmation({
-      id: createClientId('contact-confirmation'),
-      role: 'assistant',
-      content,
-      createdAt: new Date().toISOString(),
-      status: 'complete',
-    })
   }
 
   if (isHydrating) {
@@ -688,7 +616,7 @@ function PublicChatContent({
     >
       {(isCompactKeyboardLayout && onRequestCollapse) || useCenteredIntro ? (
         <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
-          <PublicChatActionsMenu
+          <PublicChatOptionsMenu
             copy={copy}
             theme={theme}
             contactAvailable={contactAvailable}
@@ -722,7 +650,7 @@ function PublicChatContent({
           avatarUrl={resolvedAvatarUrl}
           actions={
             <>
-              <PublicChatActionsMenu
+              <PublicChatOptionsMenu
                 copy={copy}
                 theme={theme}
                 contactAvailable={contactAvailable}
@@ -761,29 +689,18 @@ function PublicChatContent({
           onSuggestionSelect={handleSuggestionSelect}
           isLoading={isLoading}
         >
-          {editionController.canUseHumanContact() && contactRequest ? (
-            <HumanContactInlineComposer
-              request={contactRequest}
-              publicChatToken={publicChatToken}
-              onCancel={() => setContactRequest(null)}
-              onSubmitted={handleContactSubmitted}
-              theme={theme}
-              compact={false}
-            />
-          ) : (
-            <PublicChatBubbleComposerForm
-              theme={theme}
-              copy={copy}
-              value={input}
-              onChange={setInput}
-              onKeyDown={handleKeyDown}
-              onSubmit={handleSubmit}
-              inputRef={inputRef}
-              isLoading={isLoading}
-              compact={false}
-              hero
-            />
-          )}
+          <PublicChatBubbleComposerForm
+            theme={theme}
+            copy={copy}
+            value={input}
+            onChange={setInput}
+            onKeyDown={handleKeyDown}
+            onSubmit={handleSubmit}
+            inputRef={inputRef}
+            isLoading={isLoading}
+            compact={false}
+            hero
+          />
         </PublicChatCenteredIntro>
       ) : (
         <>
@@ -875,28 +792,17 @@ function PublicChatContent({
                   workspaceName={resolvedWorkspaceName}
                 />
               ) : null}
-              {editionController.canUseHumanContact() && contactRequest ? (
-                <HumanContactInlineComposer
-                  request={contactRequest}
-                  publicChatToken={publicChatToken}
-                  onCancel={() => setContactRequest(null)}
-                  onSubmitted={handleContactSubmitted}
-                  theme={theme}
-                  compact={isCompactKeyboardLayout}
-                />
-              ) : (
-                <PublicChatBubbleComposerForm
-                  theme={theme}
-                  copy={copy}
-                  value={input}
-                  onChange={setInput}
-                  onKeyDown={handleKeyDown}
-                  onSubmit={handleSubmit}
-                  inputRef={inputRef}
-                  isLoading={isLoading}
-                  compact={isCompactKeyboardLayout}
-                />
-              )}
+              <PublicChatBubbleComposerForm
+                theme={theme}
+                copy={copy}
+                value={input}
+                onChange={setInput}
+                onKeyDown={handleKeyDown}
+                onSubmit={handleSubmit}
+                inputRef={inputRef}
+                isLoading={isLoading}
+                compact={isCompactKeyboardLayout}
+              />
             </PublicChatBubbleComposerSurface>
           </div>
         </>
@@ -916,7 +822,6 @@ export function PublicChatShell({
   themeOverrides,
   surface = 'public',
   pageContext,
-  initialActions,
 }: {
   token: string
   initialWorkspaceName?: string | null
@@ -928,7 +833,6 @@ export function PublicChatShell({
   themeOverrides?: WebsiteEmbedThemeOverrides | null
   surface?: PublicChatSurface
   pageContext?: WebsiteEmbedPageContext | null
-  initialActions?: Record<string, unknown> | null
 }) {
   const theme = getWebsiteEmbedTheme(themeOverrides)
 
@@ -937,7 +841,6 @@ export function PublicChatShell({
       key={token}
       token={token}
       sessionChannel={surface === 'public' ? 'anonymous_link' : null}
-      initialActions={initialActions}
       localeOverride={localeOverride}
       pageContext={pageContext}
     >

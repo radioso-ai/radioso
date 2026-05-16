@@ -18,11 +18,13 @@ export type AccountPermission =
   | "account.membership.remove"
   | "account.membership.role.update"
   | "account.organization.rename"
+  | "account.organization.delete"
   | "workspace.create"
   | "workspace.rename"
   | "workspace.delete"
   | "workspace.settings.manage"
   | "workspace.documents.manage"
+  | "workspace.agents.delete"
   | "workspace.token.read"
   | "workspace.token.rotate";
 
@@ -412,7 +414,8 @@ export class AccountAccessService {
     }
 
     if (role === "admin") {
-      return permission !== "account.membership.remove";
+      return permission !== "account.membership.remove"
+        && permission !== "account.organization.delete";
     }
 
     return [

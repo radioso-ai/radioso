@@ -773,6 +773,28 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     }
     this.defaultAgentIds.set(workspaceId, agentId);
   }
+
+  async deleteByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<boolean> {
+    const agent = await this.findByIdAndWorkspaceId(agentId, workspaceId);
+    if (!agent) {
+      return false;
+    }
+    this.items.delete(agentId);
+    if (this.defaultAgentIds.get(workspaceId) === agentId) {
+      this.defaultAgentIds.delete(workspaceId);
+    }
+    return true;
+  }
+
+  async countByWorkspaceId(workspaceId: string): Promise<number> {
+    let count = 0;
+    for (const item of this.items.values()) {
+      if (item.workspaceId === workspaceId) {
+        count += 1;
+      }
+    }
+    return count;
+  }
 }
 
 export class InMemoryBootstrapGreetingCacheRepository implements BootstrapGreetingCacheRepositoryPort {

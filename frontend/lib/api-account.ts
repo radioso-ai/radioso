@@ -127,6 +127,12 @@ export const accountApi = {
     }, { withSession: true })
   },
 
+  async deleteOrganization(): Promise<void> {
+    await request<void>('/account', {
+      method: 'DELETE',
+    }, { withSession: true })
+  },
+
   async getWorkspaceToken(workspaceId: string): Promise<WorkspaceTokenResponse> {
     const response = await request<WorkspaceTokenResponse>(`/account/workspaces/${workspaceId}/token`, {
       method: 'GET',

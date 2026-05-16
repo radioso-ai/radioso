@@ -8,6 +8,7 @@ if [ "${RADIOSO_EDITION:-oss}" != "enterprise" ]; then
 fi
 
 INSTALL_STATE_FILE="frontend/node_modules/.install-state"
+NEXT_CACHE_STATE_FILE="frontend/.next/.install-state"
 CURRENT_HASH="$(sha256sum pnpm-lock.yaml | awk '{print $1}')"
 NODE_VERSION="$(node -p 'process.version')"
 EXPECTED_SWC_PACKAGE="$(
@@ -76,10 +77,48 @@ EXPECTED_TAILWIND_OXIDE_PACKAGE="$(
 )"
 CURRENT_INSTALL_STATE="${CURRENT_HASH}:${NODE_VERSION}:${EXPECTED_SWC_PACKAGE}:${EXPECTED_LIGHTNINGCSS_PACKAGE}:${EXPECTED_TAILWIND_OXIDE_PACKAGE}"
 SAVED_INSTALL_STATE=""
+SAVED_NEXT_CACHE_STATE=""
 
 if [ -f "$INSTALL_STATE_FILE" ]; then
   SAVED_INSTALL_STATE="$(cat "$INSTALL_STATE_FILE")"
 fi
+
+if [ -f "$NEXT_CACHE_STATE_FILE" ]; then
+  SAVED_NEXT_CACHE_STATE="$(cat "$NEXT_CACHE_STATE_FILE")"
+fi
+
+clear_next_cache() {
+  echo "Clearing frontend Next.js dev cache..."
+  mkdir -p frontend/.next
+  find frontend/.next -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  SAVED_NEXT_CACHE_STATE=""
+}
+
+mark_next_cache_ready() {
+  mkdir -p frontend/.next
+  printf '%s' "$CURRENT_INSTALL_STATE" > "$NEXT_CACHE_STATE_FILE"
+  SAVED_NEXT_CACHE_STATE="$CURRENT_INSTALL_STATE"
+}
+
+next_cache_looks_incomplete() {
+  if [ -d frontend/.next/dev ] && [ ! -f frontend/.next/dev/routes-manifest.json ]; then
+    return 0
+  fi
+
+  return 1
+}
+
+next_cache_ready() {
+  if [ "$CURRENT_INSTALL_STATE" != "$SAVED_NEXT_CACHE_STATE" ]; then
+    return 1
+  fi
+
+  if next_cache_looks_incomplete; then
+    return 1
+  fi
+
+  return 0
+}
 
 module_is_ready() {
   node -e "require.resolve(process.argv[1], { paths: ['/app/frontend'] })" "$1" >/dev/null 2>&1
@@ -155,6 +194,11 @@ if ! frontend_dependencies_ready; then
       exit 1
     fi
   fi
+fi
+
+if ! next_cache_ready; then
+  clear_next_cache
+  mark_next_cache_ready
 fi
 
 cd frontend

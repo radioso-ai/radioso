@@ -195,6 +195,12 @@ export const createAgentWizardRoutes = (
   });
 
   router.post("/create", workspaceSession, async (req, res, next) => {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    req.on("aborted", abort);
+    res.on("close", () => {
+      if (!res.writableEnded) abort();
+    });
     try {
       const body = parseBody(createFromWizardSchema, req.body);
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
@@ -203,10 +209,19 @@ export const createAgentWizardRoutes = (
         workspaceId,
         accountId,
         config: body,
+        signal: controller.signal,
       });
+      if (res.writableEnded || controller.signal.aborted) {
+        return;
+      }
       res.status(201).json(result);
     } catch (error) {
+      if (res.writableEnded || controller.signal.aborted) {
+        return;
+      }
       next(error);
+    } finally {
+      req.off("aborted", abort);
     }
   });
 

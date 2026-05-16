@@ -287,9 +287,17 @@ const createAnalysisSignal = (
   };
 };
 
+// Strip characters that could be used to escape prompt structure when a
+// URL is interpolated outside the <untrusted_crawled_content> fence.
+// Valid HTTP URLs don't contain raw "<" or ">" — Node's URL constructor
+// percent-encodes them — but only the parsed form is safe. Be defensive
+// and strip them again at the prompt boundary.
+const sanitizeUrlForPrompt = (url: string): string =>
+  url.replace(/[<>"]/g, "");
+
 const buildAnalysisPrompt = (websiteUrl: string, pageCount: number, content: string): string => {
   return renderEnterprisePromptTemplate("agent-wizard/analyze-website.md", {
-    website_url: websiteUrl,
+    website_url: sanitizeUrlForPrompt(websiteUrl),
     page_count: String(pageCount),
     website_content: content,
   });
@@ -532,6 +540,7 @@ export class AgentWizardService {
     workspaceId: string;
     accountId?: string | null;
     config: WizardCreateInput;
+    signal?: AbortSignal;
   }): Promise<WizardCreateResult> {
     if (input.config.websiteUrl) {
       await this.assertSafeUrl(input.config.websiteUrl);
@@ -548,7 +557,7 @@ export class AgentWizardService {
     });
 
     if (input.config.faviconUrl) {
-      await this.uploadFaviconAsLogo(input.workspaceId, agent.id, input.config.faviconUrl).catch(() => {});
+      await this.uploadFaviconAsLogo(input.workspaceId, agent.id, input.config.faviconUrl, input.signal).catch(() => {});
     }
 
     // The LLM-suggested chunking strategy is captured in the audit event

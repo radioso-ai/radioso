@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS base
+FROM node:26-bookworm-slim AS base
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -16,7 +16,7 @@ COPY backend/openapi.yaml ./backend/openapi.yaml
 COPY docs-portal ./docs-portal
 RUN pnpm --dir docs-portal run build
 
-FROM node:24-bookworm-slim AS runner
+FROM node:26-bookworm-slim AS runner
 WORKDIR /app/docs-portal
 ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules

@@ -15,7 +15,7 @@ import {
 import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
-import type { ChatStreamEvent } from "../contracts/streamEvents.js";
+import type { ChatStreamEvent, SkillStreamPayload, SkillStreamPhase } from "../contracts/streamEvents.js";
 import {
   ASSISTANT_TURN_OUTCOME,
   type AnswerSegmentValidationResult,
@@ -85,6 +85,124 @@ export class ModelChatGateway implements ChatGateway {
 }
 
 export class OpenAIChatGateway extends ModelChatGateway {}
+
+const SKILL_CHIP_TAG_PATTERN = /<skill_chip>([\s\S]*?)<\/skill_chip>\s*/i;
+const SKILL_RECEIPT_TAG_PATTERN = /<skill_receipt>([\s\S]*?)<\/skill_receipt>\s*/i;
+
+export interface ExtractedSkillReceiptOverrides {
+  statusLabel?: string;
+  fieldLabels?: Record<string, string>;
+}
+
+export interface ExtractedSkillTags {
+  localizedTitle?: string;
+  receiptOverrides?: ExtractedSkillReceiptOverrides;
+  cleanedAnswer: string;
+}
+
+const parseReceiptOverrides = (raw: string): ExtractedSkillReceiptOverrides | undefined => {
+  try {
+    const parsed = JSON.parse(raw.trim()) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return undefined;
+    }
+    const record = parsed as Record<string, unknown>;
+    const statusLabel = typeof record.status === "string" && record.status.trim() ? record.status.trim() : undefined;
+    let fieldLabels: Record<string, string> | undefined;
+    if (record.fields && typeof record.fields === "object" && !Array.isArray(record.fields)) {
+      fieldLabels = {};
+      for (const [name, label] of Object.entries(record.fields as Record<string, unknown>)) {
+        if (typeof label === "string" && label.trim()) {
+          fieldLabels[name] = label.trim();
+        }
+      }
+      if (Object.keys(fieldLabels).length === 0) {
+        fieldLabels = undefined;
+      }
+    }
+    if (!statusLabel && !fieldLabels) {
+      return undefined;
+    }
+    return { statusLabel, fieldLabels };
+  } catch {
+    return undefined;
+  }
+};
+
+export const extractSkillTags = (answer: string): ExtractedSkillTags => {
+  let cleanedAnswer = answer;
+  let localizedTitle: string | undefined;
+  const chipMatch = cleanedAnswer.match(SKILL_CHIP_TAG_PATTERN);
+  if (chipMatch) {
+    const candidate = chipMatch[1].trim();
+    localizedTitle = candidate || undefined;
+    cleanedAnswer = cleanedAnswer.replace(SKILL_CHIP_TAG_PATTERN, "");
+  }
+  let receiptOverrides: ExtractedSkillReceiptOverrides | undefined;
+  const receiptMatch = cleanedAnswer.match(SKILL_RECEIPT_TAG_PATTERN);
+  if (receiptMatch) {
+    receiptOverrides = parseReceiptOverrides(receiptMatch[1]);
+    cleanedAnswer = cleanedAnswer.replace(SKILL_RECEIPT_TAG_PATTERN, "");
+  }
+  const trimmed = cleanedAnswer.trimStart();
+  return {
+    localizedTitle,
+    receiptOverrides,
+    cleanedAnswer: trimmed || answer,
+  };
+};
+
+// Kept for backward compatibility with any external callers; thin wrapper around extractSkillTags.
+export const extractSkillChipTitle = (answer: string): { localizedTitle?: string; cleanedAnswer: string } => {
+  const { localizedTitle, cleanedAnswer } = extractSkillTags(answer);
+  return { localizedTitle, cleanedAnswer };
+};
+
+const intakeStatusToSkillPhase = (status: ChatIntakeResult["status"]): SkillStreamPhase => {
+  if (status === "completed") {
+    return "completed";
+  }
+  if (status === "failed" || status === "cancelled" || status === "expired") {
+    return "failed";
+  }
+  return "active";
+};
+
+const applyReceiptOverrides = (
+  receipt: ChatIntakeResult["receipt"],
+  overrides: ExtractedSkillReceiptOverrides | undefined,
+): ChatIntakeResult["receipt"] => {
+  if (!overrides) {
+    return receipt;
+  }
+  if (!receipt) {
+    return overrides.statusLabel
+      ? { fields: [], statusLabel: overrides.statusLabel }
+      : undefined;
+  }
+  const fields = overrides.fieldLabels
+    ? receipt.fields.map((field) =>
+        overrides.fieldLabels && overrides.fieldLabels[field.name]
+          ? { ...field, displayName: overrides.fieldLabels[field.name] }
+          : field,
+      )
+    : receipt.fields;
+  return {
+    ...receipt,
+    fields,
+    statusLabel: overrides.statusLabel ?? receipt.statusLabel,
+  };
+};
+
+const buildSkillStreamPayload = (
+  intakeResult: ChatIntakeResult,
+  localizedTitle: string | undefined,
+): SkillStreamPayload => ({
+  skillName: intakeResult.skillName,
+  phase: intakeStatusToSkillPhase(intakeResult.status),
+  localizedTitle,
+  receipt: intakeResult.receipt,
+});
 
 export class ChatService {
   private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
@@ -265,10 +383,15 @@ export class ChatService {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
       const intakeResult = await this.handleSkillIntake(input, session);
       if (intakeResult) {
+        const { cleanedAnswer, receiptOverrides } = extractSkillTags(intakeResult.answer);
         const response = await this.persistSkillIntakeTurn({
           input,
           session,
-          intakeResult,
+          intakeResult: {
+            ...intakeResult,
+            answer: cleanedAnswer,
+            receipt: applyReceiptOverrides(intakeResult.receipt, receiptOverrides),
+          },
           stream: input.stream,
         });
         assistantMessageId = response.assistantMessageId;
@@ -395,14 +518,26 @@ export class ChatService {
 
       const intakeResult = await this.handleSkillIntake(input, session);
       if (intakeResult) {
+        const { localizedTitle, receiptOverrides, cleanedAnswer } = extractSkillTags(intakeResult.answer);
+        const cleanedIntakeResult: ChatIntakeResult = {
+          ...intakeResult,
+          answer: cleanedAnswer,
+          receipt: applyReceiptOverrides(intakeResult.receipt, receiptOverrides),
+        };
+        const skill = buildSkillStreamPayload(cleanedIntakeResult, localizedTitle);
+        yield {
+          type: "skill",
+          conversationId: session.conversation.id,
+          ...skill,
+        };
         yield {
           type: "chunk",
-          text: intakeResult.answer,
+          text: cleanedAnswer,
         };
         const response = await this.persistSkillIntakeTurn({
           input,
           session,
-          intakeResult,
+          intakeResult: cleanedIntakeResult,
           stream: input.stream,
         });
         assistantMessageId = response.assistantMessageId;
@@ -422,6 +557,7 @@ export class ChatService {
           suggestions: response.suggestions,
           activitySummary: response.activitySummary,
           activityTrace: response.activityTrace,
+          skill,
         };
         return;
       }

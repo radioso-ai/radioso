@@ -36,6 +36,7 @@ import {
   type ErrorResponse,
   type ActivitySummary,
   type ActivityTrace,
+  type SkillStreamPayload,
   type WebsiteEmbedPageContext,
   type WebsiteEmbedThemeSettings,
 } from '@/lib/api'
@@ -96,6 +97,7 @@ export interface ChatMessage {
   activityTrace?: ActivityTrace
   persistedAssistantMessageId?: string
   status: 'complete' | 'streaming' | 'error'
+  skill?: SkillStreamPayload
 }
 
 interface AnonymousChatContextValue {
@@ -467,6 +469,7 @@ export function AnonymousChatProvider({
                 suggestions: completion.suggestions,
                 activitySummary: completion.activitySummary,
                 activityTrace: completion.activityTrace,
+                skill: completion.skill ?? message.skill,
                 status: 'complete' as const,
               }
             : message,
@@ -595,6 +598,23 @@ export function AnonymousChatProvider({
                       ? {
                           ...message,
                           suggestions,
+                        }
+                      : message,
+                  ),
+                )
+              },
+              onSkill: (skillPayload) => {
+                setMessages((prev) =>
+                  prev.map((message) =>
+                    message.id === assistantMessageId
+                      ? {
+                          ...message,
+                          skill: {
+                            skillName: skillPayload.skillName,
+                            phase: skillPayload.phase,
+                            localizedTitle: skillPayload.localizedTitle,
+                            receipt: skillPayload.receipt,
+                          },
                         }
                       : message,
                   ),

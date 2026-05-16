@@ -310,4 +310,106 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('This missed the policy detail.')
   })
 
+  it('renders a skill chip with the localized title above the first message of a skill group', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Please share your email.',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            skill: {
+              skillName: 'human_contact.request',
+              phase: 'active',
+              localizedTitle: 'Связаться',
+            },
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('data-skill-chip')
+    expect(html).toContain('Связаться')
+  })
+
+  it('falls back to the registry title when the localized title is missing', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Please share your email.',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            skill: {
+              skillName: 'human_contact.request',
+              phase: 'active',
+            },
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('Contact us')
+  })
+
+  it('renders a receipt card with captured fields when the skill phase is completed', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Your request was received.',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            skill: {
+              skillName: 'human_contact.request',
+              phase: 'completed',
+              localizedTitle: 'Связаться',
+              receipt: {
+                fields: [
+                  {
+                    name: 'email',
+                    displayName: 'email address',
+                    value: 'alex@example.com',
+                  },
+                ],
+              },
+            },
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('data-skill-receipt')
+    expect(html).toContain('alex@example.com')
+    expect(html).toContain('Submitted')
+  })
+
+  it('does not render a receipt card while the skill is still active', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Please share your email.',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            skill: {
+              skillName: 'human_contact.request',
+              phase: 'active',
+            },
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).not.toContain('data-skill-receipt')
+  })
+
 })

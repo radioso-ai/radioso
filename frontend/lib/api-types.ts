@@ -206,6 +206,30 @@ export interface ChatStreamSuggestions {
   suggestions?: ChatSuggestion[]
 }
 
+export type SkillStreamPhase = 'active' | 'completed' | 'failed'
+
+export interface SkillReceiptField {
+  name: string
+  displayName: string
+  value: string
+}
+
+export interface SkillReceipt {
+  fields: SkillReceiptField[]
+  statusLabel?: string
+}
+
+export interface SkillStreamPayload {
+  skillName: string
+  phase: SkillStreamPhase
+  localizedTitle?: string
+  receipt?: SkillReceipt
+}
+
+export interface ChatStreamSkill extends SkillStreamPayload {
+  conversationId?: string
+}
+
 export interface ChatStreamCompletion {
   agentId?: string
   agentName?: string
@@ -218,6 +242,7 @@ export interface ChatStreamCompletion {
   suggestions?: ChatSuggestion[]
   activitySummary?: ActivitySummary
   activityTrace?: ActivityTrace
+  skill?: SkillStreamPayload
 }
 
 export type ChatConversationSummary = ApiSchemas['ChatConversationSummary']
@@ -351,6 +376,7 @@ export interface ChatStreamHandlers {
   onChunk?: (payload: ChatStreamChunk) => void
   onDone?: (payload: ChatStreamCompletion) => void
   onSuggestions?: (payload: ChatStreamSuggestions) => void
+  onSkill?: (payload: ChatStreamSkill) => void
 }
 
 export type ErrorResponse = ApiSchemas['ErrorResponse'] & {

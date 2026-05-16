@@ -5,6 +5,7 @@ import type {
   ChatStreamCompletion,
   ChatStreamConversation,
   ChatStreamHandlers,
+  ChatStreamSkill,
   ChatStreamSuggestions,
   ChatSuggestion,
   Citation,
@@ -73,6 +74,7 @@ export const streamChatEvents = async (
       | (ChatStreamConversation & { type?: 'conversation' })
       | (ChatStreamChunk & { type?: 'chunk' })
       | (ChatStreamSuggestions & { type?: 'suggestions' })
+      | (ChatStreamSkill & { type?: 'skill' })
       | (ChatStreamCompletion & { type?: 'done' })
 
     const normalizedEventName =
@@ -130,6 +132,19 @@ export const streamChatEvents = async (
       handlers.onSuggestions?.({
         conversationId,
         suggestions,
+      })
+      return
+    }
+
+    if (normalizedEventName === 'skill') {
+      const skillPayload = payload as ChatStreamSkill
+      conversationId = skillPayload.conversationId ?? conversationId
+      handlers.onSkill?.({
+        conversationId,
+        skillName: skillPayload.skillName,
+        phase: skillPayload.phase,
+        localizedTitle: skillPayload.localizedTitle,
+        receipt: skillPayload.receipt,
       })
     }
   }

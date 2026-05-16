@@ -6,6 +6,7 @@ import type { UsageLimitDatabaseClient, UsageLimitDatabasePort } from "../radios
 import { EnterpriseHumanContactService } from "./humanContactService.js";
 import { humanContactRequestSkillDefinition } from "./skill/definition.js";
 import { DefinitionBackedIntakePrompts } from "./skill/definitionBackedIntakePrompts.js";
+import { resolveLanguageContext } from "./skill/humanContactIntakeProvider.js";
 
 type RequestRow = {
   id: string;
@@ -312,6 +313,54 @@ const createService = (input: {
 
   return { service, database, auditEvents, sentEmails };
 };
+
+describe("resolveLanguageContext", () => {
+  const baseInput = {
+    workspaceId: "workspace-1",
+    conversationId: "conv-1",
+    userMessageId: "msg-current",
+    query: "test@test",
+    history: [],
+    sourceChannel: null,
+    sourceOrigin: null,
+    anonymousSessionId: null,
+    userExpectedLocale: null,
+  } as Parameters<typeof resolveLanguageContext>[0];
+
+  it("anchors language on the user's earliest message, ignoring follow-up answers like an email", () => {
+    const result = resolveLanguageContext({
+      ...baseInput,
+      query: "test@test",
+      history: [
+        { id: "u1", role: "user", content: "Я хочу поговорить с кем-нибудь.", createdAt: new Date() },
+        { id: "a1", role: "assistant", content: "Please share your email.", createdAt: new Date() },
+      ],
+    });
+    expect(result).toBe("Я хочу поговорить с кем-нибудь.");
+  });
+
+  it("ignores the auto-built collected.message draft when resolving language anchor", () => {
+    const result = resolveLanguageContext(
+      {
+        ...baseInput,
+        history: [
+          { id: "u1", role: "user", content: "私は人と話したいです。", createdAt: new Date() },
+        ],
+      },
+      { message: "Contact request:\n\nI need help." },
+    );
+    expect(result).toBe("私は人と話したいです。");
+  });
+
+  it("falls back to the current query when no prior user message exists", () => {
+    const result = resolveLanguageContext({
+      ...baseInput,
+      query: "Hello there",
+      history: [],
+    });
+    expect(result).toBe("Hello there");
+  });
+});
 
 describe("enterprise human contact service", () => {
   it("fails loudly when contact intake is constructed without a chat gateway", () => {
@@ -1026,8 +1075,8 @@ describe("enterprise human contact service", () => {
       status: "active",
       answer: "Quale indirizzo email dovrebbe usare il team per ricontattarti?",
     });
-    expect(prompts.at(-1)).toContain("Reply in the same language as the language context.");
-    expect(prompts.at(-1)).toContain("Language context: Contact request:\n\nVolevo parlare con una persona.");
+    expect(prompts.at(-1)).toContain("Reply in the same language the user wrote in.");
+    expect(prompts.at(-1)).toContain("The user's anchor message in this conversation was: Volevo parlare con una persona.");
   });
 
   it("resumes a paused chat intake when the user provides the missing email", async () => {

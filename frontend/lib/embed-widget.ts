@@ -35,6 +35,8 @@ export interface WebsiteEmbedCopy {
   publicChatCollapseLabel: string
   publicChatDisclaimerTemplate: string
   publicChatRateLimitRetryTemplate: string
+  skillReceiptSubmittedLabel: string
+  skillReceiptFailedLabel: string
 }
 
 export interface WebsiteEmbedTheme {
@@ -96,6 +98,8 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatCollapseLabel: 'Collapse chat',
   publicChatDisclaimerTemplate: '{name} uses AI and can make mistakes.',
   publicChatRateLimitRetryTemplate: 'Try again in {seconds}s.',
+  skillReceiptSubmittedLabel: 'Submitted',
+  skillReceiptFailedLabel: "Couldn't submit",
 }
 export const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
   launcherBackground: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
@@ -141,6 +145,8 @@ const COPY_OVERRIDE_KEYS = [
   'publicChatCollapseLabel',
   'publicChatDisclaimerTemplate',
   'publicChatRateLimitRetryTemplate',
+  'skillReceiptSubmittedLabel',
+  'skillReceiptFailedLabel',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
 
 const THEME_OVERRIDE_KEYS = [

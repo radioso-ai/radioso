@@ -57,6 +57,14 @@ export const registerAssistantSessionPaths = (
           },
         },
       },
+      429: {
+        description: "Public chat session exchange rate limit exceeded",
+        content: {
+          "application/json": {
+            schema: schemas.RateLimitExceededSchema,
+          },
+        },
+      },
     },
   });
 };

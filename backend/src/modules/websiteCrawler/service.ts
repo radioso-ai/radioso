@@ -174,10 +174,12 @@ export class WebsiteCrawlerService {
 
     const assertCrawlUrlAllowed = this.dependencies.assertCrawlUrlAllowed ?? assertPublicWebsiteUrl;
     const seen = new Set<string>();
+    const completedPageCount = checkpoint.accepted + checkpoint.skipped + checkpoint.failed;
+    const remainingLimit = Math.max(input.limit - completedPageCount, 0);
     let pageCount = 0;
 
     const ingestPage = async (page: WebsiteCrawlPage): Promise<void> => {
-      if (pageCount >= input.limit) return;
+      if (pageCount >= remainingLimit) return;
       pageCount += 1;
 
       this.throwIfAborted(input.signal);
@@ -311,11 +313,13 @@ export class WebsiteCrawlerService {
 
     try {
       this.throwIfAborted(input.signal);
-      if (this.dependencies.provider.crawlStream) {
+      if (remainingLimit === 0) {
+        result.status = "completed";
+      } else if (this.dependencies.provider.crawlStream) {
         const streamResult = await this.dependencies.provider.crawlStream(
           {
             url: websiteBaseUrl,
-            limit: input.limit,
+            limit: remainingLimit,
             signal: input.signal,
             policy,
             checkpoint,
@@ -329,7 +333,7 @@ export class WebsiteCrawlerService {
       } else {
         const providerResult = await this.crawlProvider({
           url: websiteBaseUrl,
-          limit: input.limit,
+          limit: remainingLimit,
           signal: input.signal,
           policy,
           checkpoint,

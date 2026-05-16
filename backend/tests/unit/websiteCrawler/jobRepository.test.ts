@@ -194,6 +194,21 @@ describe("WebsiteCrawlJobRepository.updateCheckpoint", () => {
   });
 });
 
+describe("WebsiteCrawlJobRepository.markCompleted", () => {
+  it("allows a just-paused processing job to finish as completed", async () => {
+    const execute = vi.fn().mockResolvedValue(1);
+    const repository = new WebsiteCrawlJobRepository({ execute } as never);
+
+    await repository.markCompleted("job-1", { accepted: 3 });
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0].replace(/\s+/g, " ")).toMatch(
+      /SET status = 'completed'.*WHERE id = \$1\s+AND status IN \('processing', 'paused'\)/s,
+    );
+    expect(execute.mock.calls[0][1]).toEqual(["job-1", { accepted: 3 }]);
+  });
+});
+
 describe("WebsiteCrawlJobRepository.deleteById", () => {
   it("only deletes terminal rows scoped to the workspace and reports whether a row was removed", async () => {
     const execute = vi.fn().mockResolvedValue(1);

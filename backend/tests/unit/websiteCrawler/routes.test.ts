@@ -374,6 +374,7 @@ describe("website crawler routes", () => {
 
     expect(listForWorkspace).toHaveBeenCalledWith("workspace-1", expect.objectContaining({
       status: "paused",
+      sinceMinutes: undefined,
     }));
   });
 

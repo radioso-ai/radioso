@@ -581,6 +581,77 @@ describe("website crawler service", () => {
     expect(result.requestedUrl).toBe("https://example.com/search?q=api");
   });
 
+  it("passes only the remaining page limit when resuming from a checkpoint", async () => {
+    const crawl = vi.fn().mockResolvedValue({
+      provider: "custom-crawler",
+      pages: [],
+    });
+    const service = new WebsiteCrawlerService({
+      provider: {
+        name: "custom-crawler",
+        crawl,
+      },
+      documentIngestionService: { ingest: vi.fn() },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 100,
+      checkpoint: {
+        discoveredUrls: [],
+        queuedUrls: [],
+        processingUrls: [],
+        processedCanonicalUrls: [],
+        accepted: 80,
+        skipped: 5,
+        failed: 3,
+        lastProcessedAt: null,
+      },
+    });
+
+    expect(crawl).toHaveBeenCalledWith(expect.objectContaining({
+      limit: 12,
+    }));
+  });
+
+  it("does not call the provider when a resumed checkpoint already reached the page limit", async () => {
+    const crawl = vi.fn();
+    const service = new WebsiteCrawlerService({
+      provider: {
+        name: "custom-crawler",
+        crawl,
+      },
+      documentIngestionService: { ingest: vi.fn() },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    const result = await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 100,
+      checkpoint: {
+        discoveredUrls: [],
+        queuedUrls: [],
+        processingUrls: [],
+        processedCanonicalUrls: [],
+        accepted: 80,
+        skipped: 15,
+        failed: 5,
+        lastProcessedAt: null,
+      },
+    });
+
+    expect(crawl).not.toHaveBeenCalled();
+    expect(result.accepted).toBe(80);
+    expect(result.skipped).toBe(15);
+    expect(result.failed).toBe(5);
+    expect(result.status).toBe("completed");
+  });
+
   it("passes request cancellation signals into the abstract provider", async () => {
     const signal = new AbortController().signal;
     const crawl = vi.fn().mockResolvedValue({

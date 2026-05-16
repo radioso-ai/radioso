@@ -760,6 +760,18 @@ export const createTestDependencies = (overrides: {
     messageRepository,
     connectorRegistry,
     connectorDb: connectorDb as any,
+    chatTextGenerationClient: {
+      metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
+      async complete() { return ""; },
+      async *stream() { yield ""; },
+    },
+    crawlerProvider: {
+      async fetchPageWithScreenshot() { return { url: "", title: null, text: "", links: [], screenshot: null, faviconUrl: null }; },
+      async crawlSite() { return []; },
+      async isBrowserTransportAvailable() { return false; },
+    },
+    assertPublicWebsiteUrl: async () => {},
+    websiteCrawlerLimits: { defaultLimit: 100, maxLimit: 1000 },
   };
 
   void connectorRegistry.initializeAll({

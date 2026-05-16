@@ -264,13 +264,19 @@ export function DocumentSourcesView() {
   const sectionShellClassName = 'w-full'
 
   const refreshCrawlingStatus = useCallback(() => {
-    void documentsApi
-      .listCrawlJobs({ sinceMinutes: 60 })
-      .then((response) => {
+    void Promise.all([
+      documentsApi.listCrawlJobs({ sinceMinutes: 60 }),
+      documentsApi.listCrawlJobs({ status: 'paused' }),
+    ])
+      .then(([recentResponse, pausedResponse]) => {
+        const jobsById = new Map(recentResponse.jobs.map((job) => [job.id, job]))
+        for (const job of pausedResponse.jobs) {
+          jobsById.set(job.id, job)
+        }
         const active = new Set<string>()
         const paused = new Set<string>()
         const staleThresholdMs = 10 * 60 * 1000
-        for (const job of response.jobs) {
+        for (const job of jobsById.values()) {
           if (!job.sourceId) continue
           if (job.status === 'queued') {
             active.add(job.sourceId)

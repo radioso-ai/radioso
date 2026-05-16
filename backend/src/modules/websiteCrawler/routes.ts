@@ -113,7 +113,7 @@ export const createWebsiteCrawlerRoutes = (
         res.locals.workspaceId as string,
         {
           status: query.status,
-          sinceMinutes: query.sourceId ? undefined : (query.sinceMinutes ?? 30),
+          sinceMinutes: query.sourceId || query.status === "paused" ? undefined : (query.sinceMinutes ?? 30),
           limit: query.limit,
           sourceId: query.sourceId,
         },

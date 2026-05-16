@@ -91,7 +91,7 @@ Query parameters are all optional:
 | Parameter | Type | Default | Notes |
 |-----------|------|---------|-------|
 | `status` | `queued` \| `processing` \| `paused` \| `completed` \| `failed` | unset (any) | Filter to a single status. |
-| `sinceMinutes` | integer 1-1440 | `30` | Only return jobs created in this window. Ignored when `sourceId` is set. |
+| `sinceMinutes` | integer 1-1440 | `30` | Only return jobs created in this window. Ignored when `sourceId` is set or when filtering `status=paused`. |
 | `limit` | integer 1-200 | `50` | Maximum number of jobs to return. |
 | `sourceId` | UUID | unset | Filter to jobs linked to a specific document source. |
 

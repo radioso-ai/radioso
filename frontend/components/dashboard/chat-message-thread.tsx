@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
-import type { WebsiteEmbedTheme } from '@/lib/embed-widget'
+import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
+import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
+import { getSkillDisplay } from '@/lib/skill-display'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
 import type {
   AnswerFeedbackEntry,
@@ -16,6 +18,7 @@ import type {
   ChatSuggestion,
   ChatUserInputMetadata,
   Citation,
+  SkillStreamPayload,
 } from '@/lib/api'
 
 const dayFormatter = new Intl.DateTimeFormat(undefined, {
@@ -43,6 +46,98 @@ export interface ChatThreadMessage {
   answerFeedbackEntries?: AnswerFeedbackEntry[]
   persistedAssistantMessageId?: string
   status?: 'streaming' | 'done' | 'complete' | 'error'
+  skill?: SkillStreamPayload
+}
+
+const SKILL_ACCENT_FALLBACK = '#0f172a'
+
+const accentTint = (accent: string | undefined, percent: number): string =>
+  `color-mix(in srgb, ${accent ?? SKILL_ACCENT_FALLBACK} ${percent}%, transparent)`
+
+function SkillChip({
+  skill,
+  theme,
+}: {
+  skill: SkillStreamPayload
+  theme?: WebsiteEmbedTheme | null
+}) {
+  const display = getSkillDisplay(skill.skillName)
+  const Icon = display.icon
+  const title = skill.localizedTitle?.trim() || display.fallbackTitle
+  const accent = theme?.accent ?? SKILL_ACCENT_FALLBACK
+  return (
+    <div
+      data-skill-chip
+      data-skill-name={skill.skillName}
+      className="inline-flex w-fit items-center gap-1.5 self-start rounded-full border px-2.5 py-1 text-xs font-medium"
+      style={{
+        background: accentTint(accent, 6),
+        borderColor: accentTint(accent, 18),
+        color: accent,
+      }}
+    >
+      <Icon className="size-3.5" aria-hidden style={{ color: accent }} />
+      <span>{title}</span>
+    </div>
+  )
+}
+
+function SkillReceiptCard({
+  skill,
+  theme,
+  copy,
+}: {
+  skill: SkillStreamPayload
+  theme?: WebsiteEmbedTheme | null
+  copy: WebsiteEmbedCopy
+}) {
+  const isFailed = skill.phase === 'failed'
+  const statusLabel = skill.receipt?.statusLabel?.trim()
+    || (isFailed ? copy.skillReceiptFailedLabel : copy.skillReceiptSubmittedLabel)
+  const fields = skill.receipt?.fields ?? []
+  const accent = theme?.accent ?? SKILL_ACCENT_FALLBACK
+  const accentForeground = theme?.assistantBubbleForeground ?? '#0f172a'
+  const mutedForeground = theme?.mutedForeground ?? '#64748b'
+  return (
+    <div
+      data-skill-receipt
+      data-skill-name={skill.skillName}
+      data-skill-phase={skill.phase}
+      className="w-fit max-w-full self-start rounded-2xl border px-4 py-3 text-sm"
+      style={{
+        background: theme?.assistantBubbleBackground ?? '#ffffff',
+        borderColor: accentTint(accent, 18),
+        color: accentForeground,
+      }}
+    >
+      <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: accent }}>
+        <span
+          className="inline-flex size-5 items-center justify-center rounded-full"
+          style={{ background: accentTint(accent, 12) }}
+        >
+          <Check className="size-3" aria-hidden />
+        </span>
+        <span>{statusLabel}</span>
+      </div>
+      {fields.length > 0 ? (
+        <dl className="mt-1.5 flex flex-col gap-1">
+          {fields.map((field) => (
+            <div key={field.name} className="flex flex-col">
+              <dt
+                className="text-[10px] font-medium uppercase tracking-wider"
+                style={{ color: mutedForeground }}
+              >
+                {field.displayName}
+              </dt>
+              <dd className="text-sm" style={{ color: accentForeground }}>
+                {field.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </div>
+  )
 }
 
 type FeedbackHandler = (input: {
@@ -110,6 +205,7 @@ export function ChatMessageThread({
   onAnswerFeedback,
   onClearAnswerFeedback,
   hideFeedbackEntries = false,
+  copy = DEFAULT_WEBSITE_EMBED_COPY,
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
@@ -124,7 +220,9 @@ export function ChatMessageThread({
   theme?: WebsiteEmbedTheme | null
   themedSuggestionButtons?: boolean
   hideFeedbackEntries?: boolean
+  copy?: WebsiteEmbedCopy
 }) {
+  const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
   const [localFeedback, setLocalFeedback] = useState<Record<string, AnswerFeedbackState | null | undefined>>({})
   const [pendingFeedbackId, setPendingFeedbackId] = useState<string | null>(null)
   const [feedbackError, setFeedbackError] = useState<Record<string, string | undefined>>({})
@@ -274,12 +372,18 @@ export function ChatMessageThread({
           Boolean(onAnswerFeedback && onClearAnswerFeedback && assistantMessageId) &&
           message.role === 'assistant' &&
           message.status !== 'streaming'
+        const groupInfo = skillGroupInfo[index]
+        const showReceipt =
+          groupInfo?.isGroupEnd
+          && groupInfo.skill
+          && (groupInfo.skill.phase === 'completed' || groupInfo.skill.phase === 'failed')
 
         return (
           <div
             key={message.id}
             data-message-id={message.id}
             data-message-role={message.role}
+            data-skill-group={groupInfo?.groupKey ?? undefined}
             className="group/message space-y-2"
           >
             {showDayDivider ? (
@@ -335,7 +439,10 @@ export function ChatMessageThread({
                   </>
                 ) : (
                   <div className="flex w-full items-start">
-                    <div className="min-w-0 flex-1 flex flex-col gap-2">
+                    <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+                      {groupInfo?.isGroupStart && groupInfo.skill ? (
+                        <SkillChip skill={groupInfo.skill} theme={theme} />
+                      ) : null}
                       <div
                         {...getSelectableMessageProps(message.id)}
                         className={`self-start w-fit max-w-full rounded-2xl rounded-tl-md bg-card px-4 py-3 text-left text-foreground animate-in fade-in-50 slide-in-from-bottom-2 duration-300 ${
@@ -365,6 +472,9 @@ export function ChatMessageThread({
                           </div>
                         )}
                       </div>
+                      {showReceipt && groupInfo.skill ? (
+                        <SkillReceiptCard skill={groupInfo.skill} theme={theme} copy={copy} />
+                      ) : null}
                       {(() => {
                         const visibleSuggestions = message.suggestions ?? []
                         return visibleSuggestions.length > 0 ? (

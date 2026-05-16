@@ -204,7 +204,15 @@ export function DocumentsView({
     const requestWorkspaceKey = `${accountId}:${routeState.workspaceId ?? ''}`
 
     try {
-      const response = await documentsApi.listCrawlJobs({ sinceMinutes: CRAWL_JOBS_SINCE_MINUTES })
+      const [recentResponse, pausedResponse] = await Promise.all([
+        documentsApi.listCrawlJobs({ sinceMinutes: CRAWL_JOBS_SINCE_MINUTES }),
+        documentsApi.listCrawlJobs({ status: 'paused' }),
+      ])
+      const jobsById = new Map(recentResponse.jobs.map((job) => [job.id, job]))
+      for (const job of pausedResponse.jobs) {
+        jobsById.set(job.id, job)
+      }
+      const jobs = [...jobsById.values()]
 
       if (
         crawlLoadRequestIdRef.current !== requestId ||
@@ -216,7 +224,7 @@ export function DocumentsView({
       setCrawlJobs((current) => {
         const merged = mergeCrawlJobs({
           current,
-          incoming: response.jobs,
+          incoming: jobs,
           previousStatuses: previousCrawlJobsRef.current,
           recentlyDeletedJobIds: recentlyDeletedRef.current,
         })

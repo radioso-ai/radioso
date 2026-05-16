@@ -72,3 +72,13 @@ export {
   type FetchPage,
   type FetchedPage
 } from "./transport/crawler.js";
+export {
+  fetchPageWithPlaywright,
+  fetchPageWithScreenshot,
+  type FetchedPageWithScreenshot
+} from "./transport/playwright.js";
+export {
+  extractStructuredTextWithFallback,
+  extractStructuredTextFromHtml,
+  normalizeText
+} from "./transport/htmlProcessing.js";

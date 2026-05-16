@@ -14,6 +14,11 @@ import {
   buildAcceptedCandidateDecision,
   buildRejectedCandidateDecision
 } from "./candidateDecision.js";
+import {
+  decodeEntities,
+  extractStructuredTextWithFallback,
+  normalizeText
+} from "./htmlProcessing.js";
 import { canonicalizeUrlIdentity, classifyCrawlCandidateUrl } from "./url.js";
 
 export type JsonValue =
@@ -136,41 +141,6 @@ const readHeader = (headers: unknown, name: string): string | null => {
   return typeof value === "string" ? value : null;
 };
 
-const HTML_ENTITY_LOOKUP: Record<string, string> = {
-  amp: "&",
-  apos: "'",
-  gt: ">",
-  lt: "<",
-  nbsp: " ",
-  quot: '"',
-  Auml: "Ä",
-  auml: "ä",
-  Ouml: "Ö",
-  ouml: "ö",
-  Otilde: "Õ",
-  otilde: "õ",
-  Uuml: "Ü",
-  uuml: "ü"
-};
-
-const isValidCodePoint = (value: number) =>
-  Number.isInteger(value) && value >= 0 && value <= 0x10ffff;
-
-const decodeEntities = (text: string): string =>
-  text.replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi, (match, entity: string) => {
-    if (entity.startsWith("#x") || entity.startsWith("#X")) {
-      const codePoint = Number.parseInt(entity.slice(2), 16);
-      return isValidCodePoint(codePoint) ? String.fromCodePoint(codePoint) : match;
-    }
-
-    if (entity.startsWith("#")) {
-      const codePoint = Number.parseInt(entity.slice(1), 10);
-      return isValidCodePoint(codePoint) ? String.fromCodePoint(codePoint) : match;
-    }
-
-    return HTML_ENTITY_LOOKUP[entity] ?? match;
-  });
-
 const unique = <T>(values: T[]): T[] => [...new Set(values)];
 
 const toOriginScopeUrl = (rawUrl: string): string => {
@@ -240,16 +210,6 @@ const fetchText = async (
     body: (isGzip ? gunzipSync(bytes) : bytes).toString("utf8")
   };
 };
-
-const normalizeText = (value: string): string =>
-  decodeEntities(value)
-    .replace(/\r\n?/g, "\n")
-    .replace(/[ \t\f\v]+/g, " ")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n[ \t]+/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/\n\n(?=- )/g, "\n")
-    .trim();
 
 const DEFAULT_NON_CONTENT_SELECTOR = [
   "script",
@@ -324,78 +284,6 @@ const removePageChrome = ($: any): void => {
       block.remove();
     }
   });
-};
-
-const extractMainContentHtml = (html: string): string => {
-  const cleaned = html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
-
-  const main = cleaned.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1];
-  if (main) return main;
-
-  const article = cleaned.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
-  if (article) return article;
-
-  return cleaned.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? cleaned;
-};
-
-const stripTags = (html: string): string =>
-  html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const renderBlockquote = (html: string): string => {
-  const text = stripTags(html);
-  if (!text) return "";
-  return `\n\n${text
-    .split(/\n+/)
-    .map((line) => `> ${line.trim()}`)
-    .join("\n")}\n\n`;
-};
-
-const formatHtmlAsMarkdown = (html: string): string =>
-  html
-    .replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_m, p1) => `\n\n\`\`\`\n${stripTags(p1)}\n\`\`\`\n\n`)
-    .replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, (_m, p1) => `\`${stripTags(p1)}\``)
-    .replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, level, p1) => `\n\n${"#".repeat(Number(level))} ${stripTags(p1)}\n\n`)
-    .replace(/<blockquote\b[^>]*>([\s\S]*?)<\/blockquote>/gi, (_m, p1) => renderBlockquote(p1))
-    .replace(/<p\b[^>]*>([\s\S]*?)<\/p>/gi, (_m, p1) => `\n\n${stripTags(p1)}\n\n`)
-    .replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, (_m, p1) => `\n- ${stripTags(p1)}`)
-    .replace(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi, (_m, p1) => `\n| ${stripTags(p1)} |`)
-    .replace(/<hr\b[^>]*>/gi, "\n\n---\n\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(address|article|aside|details|dialog|div|dl|fieldset|figcaption|figure|footer|form|header|main|nav|ol|section|table|tbody|tfoot|thead|ul)\b[^>]*>/gi, "\n\n")
-    .replace(/<\/(dd|dt)\b[^>]*>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/[ \t]+/g, " ")
-    .replace(/[ \t]*\n[ \t]*/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
-const extractStructuredTextFromHtml = (html: string): string =>
-  normalizeText(
-    formatHtmlAsMarkdown(extractMainContentHtml(html))
-  );
-
-const hasPrimaryContentContainer = (html: string): boolean =>
-  /<(main|article)\b/i.test(html) || /\brole\s*=\s*["']main["']/i.test(html);
-
-const extractStructuredTextWithFallback = (input: {
-  cleanedHtml: string;
-  originalHtml: string;
-}): string => {
-  const cleanedText = extractStructuredTextFromHtml(input.cleanedHtml);
-  if (cleanedText) {
-    return cleanedText;
-  }
-  if (!hasPrimaryContentContainer(input.originalHtml)) {
-    return "";
-  }
-  return extractStructuredTextFromHtml(input.originalHtml);
 };
 
 const extractLinks = ($: any, loadedUrl: string): string[] =>

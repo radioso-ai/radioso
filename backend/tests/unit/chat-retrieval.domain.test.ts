@@ -2061,6 +2061,16 @@ describe("chat retrieval domain", () => {
   });
 
   it("returns a retrieval-scoped unsupported result for non-retrieval intent", async () => {
+    const recordedEvents: Array<{ eventType: string; eventStatus: string; metadata: Record<string, unknown> }> = [];
+    const auditService = {
+      record: async (event: { eventType: string; eventStatus: string; metadata?: Record<string, unknown> }) => {
+        recordedEvents.push({
+          eventType: event.eventType,
+          eventStatus: event.eventStatus,
+          metadata: event.metadata ?? {},
+        });
+      },
+    };
     const service = new RetrievalAnswerService({
       retrievalPipeline: {
         async interpret() {
@@ -2081,6 +2091,7 @@ describe("chat retrieval domain", () => {
           throw new Error("answer generation must not run for unsupported retrieval intents");
         },
       },
+      auditService,
     } as never);
 
     await expect(service.answer({
@@ -2092,5 +2103,64 @@ describe("chat retrieval domain", () => {
       reason: "assistant_identity",
       message: "This request is outside retrieval scope.",
     });
+
+    expect(recordedEvents).toEqual([
+      expect.objectContaining({
+        eventType: "retrieval.answer",
+        eventStatus: "success",
+        metadata: expect.objectContaining({
+          outcome: "unsupported",
+          reason: "assistant_identity",
+          execution: expect.objectContaining({ surface: "retrieval", path: "retrieval_answer" }),
+        }),
+      }),
+    ]);
+  });
+
+  it("records a retrieval.answer failure when the retrieval pipeline throws", async () => {
+    const recordedEvents: Array<{ eventType: string; eventStatus: string; metadata: Record<string, unknown> }> = [];
+    const auditService = {
+      record: async (event: { eventType: string; eventStatus: string; metadata?: Record<string, unknown> }) => {
+        recordedEvents.push({
+          eventType: event.eventType,
+          eventStatus: event.eventStatus,
+          metadata: event.metadata ?? {},
+        });
+      },
+    };
+    const service = new RetrievalAnswerService({
+      retrievalPipeline: {
+        async interpret() {
+          throw new Error("interpret blew up");
+        },
+        async runInterpreted() {
+          throw new Error("not reached");
+        },
+      },
+      chatGateway: {
+        async answer() {
+          throw new Error("not reached");
+        },
+      },
+      auditService,
+    } as never);
+
+    await expect(service.answer({
+      workspaceId: "workspace-1",
+      query: "what is the workshop schedule?",
+      executionSurface: "mcp_capability",
+    })).rejects.toThrow("interpret blew up");
+
+    expect(recordedEvents).toEqual([
+      expect.objectContaining({
+        eventType: "retrieval.answer",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          outcome: "error",
+          execution: expect.objectContaining({ surface: "mcp_capability", path: "mcp_grounded_answer" }),
+          error: expect.objectContaining({ message: "interpret blew up" }),
+        }),
+      }),
+    ]);
   });
 });

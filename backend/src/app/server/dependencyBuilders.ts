@@ -519,6 +519,7 @@ export const buildChatServices = (input: {
     retrievalPipeline: input.retrievalPipeline,
     chatGateway,
     usageLimitPolicy: input.usageLimitPolicy,
+    auditService: input.auditService,
   });
 
   return {

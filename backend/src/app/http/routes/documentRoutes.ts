@@ -260,10 +260,12 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
   router.post("/search", workspaceSession, validateBody(documentSearchSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
+      const executionSurface = req.header("x-radioso-capability-client") === "mcp" ? "mcp_capability" : "documents";
       const result = await dependencies.documentSearchService.search({
         workspaceId,
         query: req.body.query,
         metadataFilter: req.body.metadataFilter,
+        executionSurface,
       });
       res.status(200).json(result);
     } catch (error) {

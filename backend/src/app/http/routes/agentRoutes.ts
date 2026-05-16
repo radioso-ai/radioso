@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
@@ -61,7 +62,7 @@ const agentBodySchema = z.object({
   surfaceSettings: surfaceSettingsSchema,
 });
 
-type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "agentService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
+type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "agentService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
 
 export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router => {
   const router = Router();
@@ -225,6 +226,22 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       next(error);
     }
   });
+
+  router.delete(
+    "/:agentId",
+    workspaceSession,
+    requireWorkspacePermission(dependencies, "workspace.agents.delete", (_req, res) => String(res.locals.workspaceId ?? "")),
+    async (req, res, next) => {
+      try {
+        const { workspaceId } = res.locals as { workspaceId: string };
+        const parsed = agentParamsSchema.parse(req.params);
+        await dependencies.agentService.delete(workspaceId, parsed.agentId);
+        res.status(204).end();
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.post("/:agentId/default", workspaceSession, async (req, res, next) => {
     try {

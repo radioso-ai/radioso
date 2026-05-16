@@ -1,5 +1,5 @@
 import type { Env } from "../../../app/config/env.js";
-import { conflict, serviceUnavailable, unauthorized } from "../../../shared/domain/errors.js";
+import { conflict, forbidden, serviceUnavailable, unauthorized } from "../../../shared/domain/errors.js";
 import type { AccountAccessService, AccountInvitationService } from "../../account/public.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { WorkspaceService } from "../../workspace/public.js";
@@ -433,6 +433,46 @@ export class AuthService {
       workspacePublicRouteKey: workspace.publicRouteKey,
       sessionCookie,
     };
+  }
+
+  async deleteOrganization(input: {
+    accountId: string;
+    userId: string;
+  }): Promise<{ accountId: string }> {
+    const membership = await this.dependencies.accountAccessService.requireActiveMembership(
+      input.accountId,
+      input.userId,
+    );
+    if (membership.role !== "owner") {
+      await this.dependencies.auditService.record({
+        accountId: input.accountId,
+        eventType: "account.delete",
+        eventStatus: "failure",
+        metadata: {
+          actorUserId: input.userId,
+          reason: "not_owner",
+        },
+      });
+      throw forbidden("Only the organization owner can delete the organization");
+    }
+
+    const account = await this.dependencies.accountRepository.findById(input.accountId);
+    const deleted = await this.dependencies.accountRepository.deleteById(input.accountId);
+    if (!deleted) {
+      throw conflict("Organization could not be deleted");
+    }
+
+    await this.dependencies.auditService.record({
+      accountId: input.accountId,
+      eventType: "account.delete",
+      eventStatus: "success",
+      metadata: {
+        actorUserId: input.userId,
+        organizationName: account?.name ?? null,
+      },
+    });
+
+    return { accountId: input.accountId };
   }
 
   async renameOrganization(input: {

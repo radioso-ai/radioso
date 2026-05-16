@@ -282,6 +282,17 @@ export interface ActivityTrace {
   summary?: ActivitySummary;
 }
 
+export interface ChatIntakeReceiptField {
+  name: string;
+  displayName: string;
+  value: string;
+}
+
+export interface ChatIntakeReceipt {
+  fields: ChatIntakeReceiptField[];
+  statusLabel?: string;
+}
+
 export interface ChatIntakeResult {
   skillName: string;
   status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
@@ -289,6 +300,7 @@ export interface ChatIntakeResult {
   answer: string;
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;
+  receipt?: ChatIntakeReceipt;
 }
 
 export interface PublicChatIntakeAction {

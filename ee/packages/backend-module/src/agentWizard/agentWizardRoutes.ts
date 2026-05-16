@@ -112,12 +112,16 @@ export const createAgentWizardRoutes = (
   const workspaceSession = requireWorkspaceSession(dependencies);
 
   router.post("/analyze-website", workspaceSession, async (req, res, next) => {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    req.on("aborted", abort);
+    res.on("close", () => {
+      if (!res.writableEnded) abort();
+    });
     try {
       const body = parseBody(analyzeWebsiteSchema, req.body);
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
       await enforceAnalysisRateLimit(dependencies, res.locals);
-      const controller = new AbortController();
-      req.on("aborted", () => controller.abort());
       const result = await service.analyzeWebsite({
         url: body.url,
         workspaceId,
@@ -128,17 +132,27 @@ export const createAgentWizardRoutes = (
       res.status(200).json(result);
     } catch (error) {
       sendError(res, error);
+    } finally {
+      req.off("aborted", abort);
     }
   });
 
   router.post("/analyze-website/stream", workspaceSession, async (req, res) => {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    // Listen to both signals: req.aborted fires for clean fetch aborts,
+    // res "close" fires when the underlying socket closes (tab close, fetch
+    // cancel, proxy disconnect). Without the close handler, the
+    // crawler/LLM work could keep running until the 90s server timeout
+    // even though no client is listening.
+    req.on("aborted", abort);
+    res.on("close", () => {
+      if (!res.writableEnded) abort();
+    });
     try {
       const body = parseBody(analyzeWebsiteSchema, req.body);
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
       await enforceAnalysisRateLimit(dependencies, res.locals);
-
-      const controller = new AbortController();
-      req.on("aborted", () => controller.abort());
 
       res.status(200);
       res.setHeader("Content-Type", "text/event-stream");
@@ -170,6 +184,8 @@ export const createAgentWizardRoutes = (
       const message = error instanceof Error ? error.message : "Website analysis failed";
       writeSseEvent(res, "error", { code, message, statusCode });
       res.end();
+    } finally {
+      req.off("aborted", abort);
     }
   });
 

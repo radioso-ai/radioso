@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AGENT_CREATION_HANDOFF_STORAGE_KEY } from "@/lib/agent-creation-handoff";
 import { wizardApi } from "./api.js";
 import type { WizardProgressEvent, WizardStep } from "./types.js";
@@ -34,6 +34,17 @@ export function WizardShell({ agentSettingsHrefBuilder }: WizardShellProps) {
   const analysisAbortRef = useRef<AbortController | null>(null);
   const progressEventsRef = useRef<WizardProgressEvent[]>([]);
 
+  // Abort any in-flight analysis when the shell unmounts (which happens
+  // when the dialog is closed via Esc, backdrop, or the X button). Without
+  // this, the pending promise can still resolve, call createFromWizard,
+  // and redirect the page to an agent the user dismissed.
+  useEffect(() => {
+    return () => {
+      analysisAbortRef.current?.abort();
+      analysisAbortRef.current = null;
+    };
+  }, []);
+
   const handleUrlSubmit = useCallback(async (submittedUrl: string) => {
     analysisAbortRef.current?.abort();
     const controller = new AbortController();
@@ -52,6 +63,11 @@ export function WizardShell({ agentSettingsHrefBuilder }: WizardShellProps) {
           setProgressEvents((current) => [...current, event]);
         },
       });
+      // Guard against the dialog being closed while analyzeWebsiteStream
+      // was in flight — don't create an agent the user abandoned.
+      if (controller.signal.aborted) {
+        return;
+      }
       setStep("creating");
       failureStep = "creating";
       const createResult = await wizardApi.createFromWizard({
@@ -62,6 +78,12 @@ export function WizardShell({ agentSettingsHrefBuilder }: WizardShellProps) {
         chunkingStrategy: result.suggestedChunkingStrategy.strategy,
         faviconUrl: result.faviconUrl,
       });
+      // Same guard for createFromWizard — if the user closed the dialog
+      // mid-create, the agent gets created server-side but we skip the
+      // navigation rather than yanking them somewhere they didn't ask for.
+      if (controller.signal.aborted) {
+        return;
+      }
       window.sessionStorage.setItem(AGENT_CREATION_HANDOFF_STORAGE_KEY, JSON.stringify({
         agentId: createResult.agentId,
         title: "Website analysis complete",
@@ -71,9 +93,10 @@ export function WizardShell({ agentSettingsHrefBuilder }: WizardShellProps) {
       }));
       window.location.href = agentSettingsHrefBuilder(createResult.agentId);
     } catch (err: unknown) {
-      const message = controller.signal.aborted
-        ? "Analysis cancelled."
-        : extractErrorMessage(err) ?? (failureStep === "creating" ? "Failed to create assistant" : "Analysis failed");
+      if (controller.signal.aborted) {
+        return;
+      }
+      const message = extractErrorMessage(err) ?? (failureStep === "creating" ? "Failed to create assistant" : "Analysis failed");
       setError(message);
       setStep(failureStep);
     } finally {

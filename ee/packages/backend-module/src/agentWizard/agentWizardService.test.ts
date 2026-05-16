@@ -424,6 +424,52 @@ describe("AgentWizardService", () => {
     expect(crawler.fetchPageWithScreenshot).not.toHaveBeenCalled();
   });
 
+  it("drops the favicon when its redirect chain ends at a private host", async () => {
+    const assertPublicWebsiteUrl = vi.fn(async (url: string) => {
+      if (url.includes("169.254")) {
+        throw new Error("Website URL must resolve to a publicly routable host");
+      }
+    });
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      url: "http://169.254.169.254/logo.png",
+      headers: { get: () => "image/png" },
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    }) as unknown as typeof fetch;
+    const documentStorage = { upload: vi.fn().mockResolvedValue({ bucket: "logos", key: "k" }) };
+    const agentService = {
+      create: vi.fn().mockResolvedValue({ id: "agent-1", name: "Example" }),
+      update: vi.fn(),
+    };
+
+    const service = new AgentWizardService({
+      textGenerationClient: { complete: vi.fn() },
+      agentService,
+      ingestionSettingsService: { updateForWorkspace: vi.fn().mockResolvedValue(undefined) },
+      documentStorage,
+      websiteCrawlJobService: { enqueue: vi.fn().mockResolvedValue({ jobId: "j", sourceId: null }) },
+      crawlerProvider: createCrawler(),
+      assertPublicWebsiteUrl,
+      crawlerLimits: { defaultLimit: 100, maxLimit: 1000 },
+      auditService: { record: vi.fn().mockResolvedValue(undefined) },
+      fetchImpl,
+    });
+
+    await service.createAgentFromWizard({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      config: {
+        websiteUrl: "https://example.com",
+        name: "Example",
+        faviconUrl: "https://example.com/favicon.ico",
+      },
+    });
+
+    expect(fetchImpl).toHaveBeenCalled();
+    expect(documentStorage.upload).not.toHaveBeenCalled();
+    expect(agentService.update).not.toHaveBeenCalled();
+  });
+
   it("rejects a private-network favicon URL during agent creation", async () => {
     const assertPublicWebsiteUrl = vi.fn(async (url: string) => {
       if (url.includes("169.254")) {

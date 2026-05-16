@@ -721,8 +721,21 @@ Return a fresh alternative for agentName, customInstruction, greetingMessage, ch
   ): Promise<void> {
     const response = await (this.dependencies.fetchImpl ?? fetch)(faviconUrl, {
       signal: AbortSignal.timeout(10_000),
+      redirect: "follow",
     });
     if (!response.ok) return;
+    // Favicon hosts often redirect (CDNs, default /favicon.ico). The initial
+    // URL passed assertPublicWebsiteUrl, but the redirect chain might end at
+    // localhost or RFC1918, so re-validate the final response.url before
+    // reading and storing the body. Bail silently on policy failures since
+    // the favicon is optional for agent creation.
+    if (response.url && response.url !== faviconUrl) {
+      try {
+        await this.assertSafeUrl(response.url);
+      } catch {
+        return;
+      }
+    }
 
     const contentType = response.headers.get("content-type") ?? "image/png";
     const allowedTypes = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/x-icon", "image/vnd.microsoft.icon"];

@@ -4,6 +4,21 @@ import { describe, expect, it } from "vitest";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("auth session integration", () => {
+  it("does not expose support impersonation endpoints", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "removed-support@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/support/impersonations")
+      .set("Cookie", session.cookie)
+      .send({
+        accountId: session.accountId,
+        reason: "Removed feature",
+      });
+
+    expect(response.status).toBe(404);
+  });
+
   it("supports switching between multiple workspaces through the session cookie and explicit workspace selection", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "session-multi@example.com");

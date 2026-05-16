@@ -215,6 +215,52 @@ describe("auth foundations", () => {
     });
   });
 
+  it("keeps repeated exchanges isolated while approvals can span the same workspace token", async () => {
+    const sessionStore = createInMemorySessionStore();
+    const auth = createAuthService({
+      approvalStore: createInMemoryApprovalStore(),
+      policy: createCapabilityPolicyRegistry({
+        allowedReadTools: ["search_documents"],
+        allowedWriteTools: ["create_document"],
+        approvalRequiredWriteTools: ["create_document"],
+      }),
+      sessionStore,
+      signingSecret: "dev-signing-secret",
+      validateWorkspaceToken: vi.fn().mockResolvedValue(defaultWorkspaceValidation),
+      now: () => new Date("2026-04-21T12:00:00.000Z"),
+    });
+
+    const first = await auth.exchangeWorkspaceToken({
+      radiosoApiToken: "radioso_test",
+      requestedTools: ["search_documents", "create_document"],
+    });
+    const second = await auth.exchangeWorkspaceToken({
+      radiosoApiToken: "radioso_test",
+      requestedTools: ["search_documents", "create_document"],
+    });
+
+    expect(first.accessToken).not.toBe(second.accessToken);
+    const approval = await auth.issueApproval({
+      accessToken: first.accessToken,
+      reason: "cross-entry approval",
+      tools: ["create_document"],
+    });
+
+    await expect(
+      sessionStore.getByAccessToken(first.accessToken, new Date("2026-04-21T12:05:00.000Z")),
+    ).resolves.toMatchObject({
+      grantedTools: ["search_documents", "create_document"],
+    });
+    await expect(
+      sessionStore.getByAccessToken(second.accessToken, new Date("2026-04-21T12:05:00.000Z")),
+    ).resolves.toMatchObject({
+      grantedTools: ["search_documents", "create_document"],
+    });
+    await expect(auth.verifyApproval(second.accessToken, approval.approvalToken, "create_document")).resolves.toMatchObject({
+      approvalId: approval.approvalId,
+    });
+  });
+
   it("emits audit events for denied exchange and approval requests", async () => {
     const { events, sink } = createInMemoryAuditSink();
     const auth = createAuthService({

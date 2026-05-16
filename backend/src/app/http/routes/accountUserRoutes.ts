@@ -53,7 +53,7 @@ const requireWorkspaceGrantParams = (params: unknown): z.infer<typeof workspaceG
 
 type AccountUserRouteDependencies = SessionDependencies & Pick<
   AppDependencies,
-  "accountInvitationService" | "supportImpersonationService"
+  "accountInvitationService"
 >;
 
 export const createAccountUserRoutes = (dependencies: AccountUserRouteDependencies): Router => {
@@ -64,13 +64,10 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
   router.get("/users", authenticatedSession, requireAccountPermission(dependencies, "account.users.manage"), async (_req, res, next) => {
     try {
       const { accountId, userId } = res.locals as { accountId: string; userId: string };
-      const [users, invitations] = await Promise.all([
+      const [users, invitations, workspaceGrants] = await Promise.all([
         dependencies.accountAccessService.listAccountUsers(accountId),
         dependencies.accountInvitationService.listForAccount(accountId),
-      ]);
-      const [workspaceGrants, supportImpersonations] = await Promise.all([
         dependencies.accountAccessService.listWorkspaceGrants(accountId),
-        dependencies.supportImpersonationService.listForAccount(accountId),
       ]);
 
       res.status(200).json({
@@ -86,7 +83,6 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
         })),
         invitations,
         workspaceGrants,
-        supportImpersonations,
       });
     } catch (error) {
       next(error);

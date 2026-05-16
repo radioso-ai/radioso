@@ -43,7 +43,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions });
   const access = buildAccessServices({
     auditService: infrastructure.auditService,
-    env,
     repositories,
   });
   const llmRegistry = buildLlmRegistry(env, logger);
@@ -174,7 +173,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     authService,
     accountAccessService: access.accountAccessService,
     accountInvitationService: access.accountInvitationService,
-    supportImpersonationService: access.supportImpersonationService,
     workspaceSessionService: workspace.workspaceSessionService,
     abuseControlService: chat.abuseControlService,
     auditService: infrastructure.auditService,

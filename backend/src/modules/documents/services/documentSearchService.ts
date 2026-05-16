@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentRepositoryPort, DocumentSummaryRecord } from "./documentIngestionService.js";
-import type { RetrievalPipelineService, RetrievalTrace } from "../../retrieval/public.js";
+import type { RetrievalPipelineService, ActivityTrace } from "../../retrieval/public.js";
 
 export type DocumentSearchActionType =
   | "open_document"
@@ -36,15 +36,18 @@ export interface DocumentSearchResponse {
   query: string;
   resultCount: number;
   results: DocumentSearchResult[];
-  retrievalTrace?: RetrievalTrace;
+  activityTrace?: ActivityTrace;
 }
+
+export type DocumentSearchExecutionSurface = "documents" | "mcp_capability";
 
 interface DocumentSearchAuditMetadata extends Record<string, unknown> {
   searchId: string;
   query: string;
   resultCount: number;
   results: DocumentSearchResult[];
-  retrievalTrace?: RetrievalTrace;
+  activityTrace?: ActivityTrace;
+  executionSurface: DocumentSearchExecutionSurface;
 }
 
 export class DocumentSearchService {
@@ -58,6 +61,7 @@ export class DocumentSearchService {
     workspaceId: string;
     query: string;
     metadataFilter?: Record<string, unknown>;
+    executionSurface?: DocumentSearchExecutionSurface;
   }): Promise<DocumentSearchResponse> {
     const retrieval = await this.retrievalPipeline.run({
       workspaceId: input.workspaceId,
@@ -99,7 +103,7 @@ export class DocumentSearchService {
       query: input.query,
       resultCount: results.length,
       results,
-      retrievalTrace: retrieval.trace,
+      activityTrace: retrieval.trace,
     };
 
     const metadata: DocumentSearchAuditMetadata = {
@@ -107,7 +111,8 @@ export class DocumentSearchService {
       query: response.query,
       resultCount: response.resultCount,
       results: response.results,
-      retrievalTrace: response.retrievalTrace,
+      activityTrace: response.activityTrace,
+      executionSurface: input.executionSurface ?? "documents",
     };
 
     await this.auditService.record({

@@ -7,7 +7,7 @@ import type {
   ChatStreamEvent,
   ChatSuggestion,
 } from "../../../modules/chat/contracts/index.js";
-import type { RetrievalInfo, RetrievalTrace } from "../../../modules/retrieval/public.js";
+import type { ActivitySummary, ActivityTrace } from "../../../modules/retrieval/public.js";
 
 export const sendChatJson = (
   res: Response,
@@ -21,8 +21,8 @@ export const sendChatJson = (
     citations?: ChatCitation[];
     answerSegments?: AnswerSegment[];
     suggestions?: ChatSuggestion[];
-    retrievalInfo: RetrievalInfo;
-    retrievalTrace: RetrievalTrace;
+    activitySummary: ActivitySummary;
+    activityTrace: ActivityTrace;
   },
 ): void => {
   res.status(200).json(payload);
@@ -83,8 +83,8 @@ export const sendChatSse = (
       citations: event.citations,
       answerSegments: event.answerSegments,
       suggestions: event.suggestions,
-      retrievalInfo: event.retrievalInfo,
-      retrievalTrace: event.retrievalTrace,
+      activitySummary: event.activitySummary,
+      activityTrace: event.activityTrace,
     })}\n\n`);
   };
 

@@ -161,7 +161,7 @@ const retrievalAnswer = await client.skills.get("retrieval.answer");
 console.log(retrievalAnswer.contractReferences);
 ```
 
-When you call retrieval answer through the REST contract, the response `retrievalTrace` includes shape diagnostics. The existing trace graph is the debug surface. Check `retrievalTrace.summary.shapeName`, `retrievalTrace.summary.queryShape`, `retrievalTrace.summary.resolvedSteps`, and the `shape_selection` stage to see how the answer was retrieved.
+When you call retrieval answer through the REST contract, the response `activityTrace` includes shape diagnostics. The trace graph is the debug surface. Check `activitySummary.shapeName`, `activitySummary.queryShape`, `activitySummary.resolvedSteps`, and the `shape_selection` stage to see how the answer was retrieved.
 
 ## Agents
 
@@ -283,7 +283,7 @@ try {
 - The SDK sends the API token as `Authorization: Bearer <token>`.
 - Streaming chat is layered on top of the assistant chat contract, `POST /api/v1/assistant/chat`, with `stream: true`.
 - Skill discovery is exposed through `client.skills.list()` and `client.skills.get(name)`. The catalog describes current assistant, retrieval, document, and MCP contracts; it does not execute skills directly.
-- Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history. `retrieval.answer` responses expose shape and resolved-step diagnostics through `retrievalTrace`; callers do not select shapes directly.
+- Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history. `retrieval.answer` responses expose shape and resolved-step diagnostics through `activityTrace`; callers do not select shapes directly.
 - Shared workspace settings are exposed by the REST platform settings resource, `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
 - Workspace creation, rename, and deletion are not exposed because those routes are currently session-authenticated rather than token-authenticated.
 - Run `pnpm run sync` in [`typescript-sdk/`](/Users/dm/conductor/workspaces/radioso/typescript-sdk/typescript-sdk) after backend API changes so the generated types stay up to date.

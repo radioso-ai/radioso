@@ -177,6 +177,9 @@ export const createRadiosoApiAdapter = (
     searchDocuments: (body) =>
       request("/api/v1/document/search", {
         body: JSON.stringify(body),
+        headers: {
+          "x-radioso-capability-client": "mcp",
+        },
         method: "POST",
       }, { notFoundCode: "unsupported_capability" }),
     updateDocument: (documentId, body) =>

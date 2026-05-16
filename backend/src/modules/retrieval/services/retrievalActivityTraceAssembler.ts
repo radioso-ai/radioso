@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import type {
   RetrievalExecutionDiagnostics,
-  RetrievalTrace,
-  RetrievalTraceLink,
-  RetrievalTraceStage,
-  RetrievalTraceStageStatus,
+  ActivityTrace,
+  ActivityLink,
+  ActivityStage,
+  ActivityStageStatus,
 } from "../domain/retrievalPipelineTypes.js";
 import type { PromptAssemblyStageResult } from "./retrievalPipelineStages.js";
 import { getContextSelectionClauses, summarizeResolvedSteps } from "./retrievalShapeResolver.js";
@@ -15,7 +15,7 @@ interface StageTiming {
   durationMs: number;
 }
 
-export interface RetrievalTraceAssemblerInput {
+export interface ActivityTraceAssemblerInput {
   prompt: PromptAssemblyStageResult;
   diagnostics: RetrievalExecutionDiagnostics;
   timings: {
@@ -34,7 +34,7 @@ export interface RetrievalTraceAssemblerInput {
   };
 }
 
-const toStatus = (value: string | undefined, fallback: RetrievalTraceStageStatus = "applied"): RetrievalTraceStageStatus => {
+const toStatus = (value: string | undefined, fallback: ActivityStageStatus = "applied"): ActivityStageStatus => {
   if (value === "skipped" || value === "fallback" || value === "rejected") {
     return value;
   }
@@ -42,7 +42,7 @@ const toStatus = (value: string | undefined, fallback: RetrievalTraceStageStatus
   return fallback;
 };
 
-const toTriggerStatus = (value: string | undefined): RetrievalTraceStageStatus => {
+const toTriggerStatus = (value: string | undefined): ActivityStageStatus => {
   if (value === "fallback") {
     return "fallback";
   }
@@ -57,10 +57,10 @@ const buildStage = (
   stageId: string,
   kind: string,
   label: string,
-  status: RetrievalTraceStageStatus,
+  status: ActivityStageStatus,
   timing: StageTiming,
-  fields: Omit<RetrievalTraceStage, "stageId" | "kind" | "label" | "status" | "startedAt" | "durationMs"> = {},
-): RetrievalTraceStage => ({
+  fields: Omit<ActivityStage, "stageId" | "kind" | "label" | "status" | "startedAt" | "durationMs"> = {},
+): ActivityStage => ({
   stageId,
   kind,
   label,
@@ -85,8 +85,8 @@ const toSafeStageId = (value: string): string =>
     .replace(/^_+|_+$/g, "")
     .slice(0, 40);
 
-export class RetrievalTraceAssembler {
-  assemble(input: RetrievalTraceAssemblerInput): RetrievalTrace {
+export class ActivityTraceAssembler {
+  assemble(input: ActivityTraceAssemblerInput): ActivityTrace {
     const { prompt, diagnostics, timings } = input;
     const rewriteReason = prompt.rewrittenQuery.rejectionReason ?? prompt.rewrittenQuery.fallbackReason;
     const semanticKind = prompt.rewrittenQuery.retrievalEligible ? "semantic_rewritten" : "semantic_original";
@@ -126,7 +126,7 @@ export class RetrievalTraceAssembler {
     const contextSelectionClauses = getContextSelectionClauses(prompt.shapeSelection?.resolvedRun);
     const resolvedSteps = summarizeResolvedSteps(diagnostics.shapeSelection?.resolvedRun);
 
-    const stages: RetrievalTraceStage[] = [
+    const stages: ActivityStage[] = [
       buildStage("context", "context", "Context", "applied", timings.retrievalContext, {
         settings: {
           vectorTopK: prompt.settings.vectorTopK,
@@ -329,6 +329,7 @@ export class RetrievalTraceAssembler {
           retrievalSkipped: diagnostics.retrievalSkipped,
           fallbackApplied: diagnostics.fallbackApplied,
           continuityDecision: diagnostics.continuityDecision,
+          finalContexts: toChunkRefs(prompt.contexts),
         },
         metrics: {
           semanticCandidateCount: diagnostics.originalCandidateCount + diagnostics.rewrittenCandidateCount,
@@ -340,7 +341,7 @@ export class RetrievalTraceAssembler {
       }),
     ];
 
-    const links: RetrievalTraceLink[] = [
+    const links: ActivityLink[] = [
       { fromStageId: "context", toStageId: "interpretation", kind: "sequence" },
       { fromStageId: "interpretation", toStageId: "trigger_analysis", kind: "sequence" },
       ...(diagnostics.shapeSelection

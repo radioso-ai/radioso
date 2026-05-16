@@ -97,7 +97,7 @@ describe("chat integration", () => {
         }),
       ]),
     );
-    expect(response.body.retrievalInfo.appliedConstraints).toEqual(
+    expect(response.body.activitySummary.appliedConstraints).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           signalKey: "metadata.dateFrom",
@@ -105,7 +105,7 @@ describe("chat integration", () => {
         }),
       ]),
     );
-    expect(response.body.retrievalInfo.candidateCounts.final).toBeGreaterThan(0);
+    expect(response.body.activitySummary.candidateCounts.final).toBeGreaterThan(0);
   });
 
   it("enacts triggerable filters only for matched turns", async () => {
@@ -209,16 +209,16 @@ describe("chat integration", () => {
     expect(unmatched.status).toBe(200);
     expect(matched.body.answer).toEqual(expect.any(String));
     expect(unmatched.body.answer).toEqual(expect.any(String));
-    expect(matched.body.retrievalInfo.triggerAnalysis).toMatchObject({
+    expect(matched.body.activitySummary.triggerAnalysis).toMatchObject({
       matchedRuleIds: ["events-only"],
       matchCount: 1,
     });
-    expect(unmatched.body.retrievalInfo.triggerAnalysis).toMatchObject({
+    expect(unmatched.body.activitySummary.triggerAnalysis).toMatchObject({
       matchedRuleIds: [],
       unmatchedRuleIds: ["events-only"],
       matchCount: 0,
     });
-    expect(matched.body.retrievalTrace.stages).toEqual(
+    expect(matched.body.activityTrace.stages).toEqual(
       expect.arrayContaining([expect.objectContaining({ stageId: "trigger_analysis", kind: "trigger_analysis" })]),
     );
   });
@@ -998,7 +998,7 @@ describe("chat integration", () => {
     const chatAudit = [...auditEvents].reverse().find((event) => event.eventType === "chat.answer");
 
     expect(response.status).toBe(200);
-    expect(response.body.retrievalInfo).toMatchObject({
+    expect(response.body.activitySummary).toMatchObject({
       execution: {
         surface: "assistant",
         path: "assistant_retrieval",
@@ -1023,7 +1023,7 @@ describe("chat integration", () => {
       type: "retrieval",
       reason: "evidence_required",
     });
-    expect(response.body.retrievalTrace).toMatchObject({
+    expect(response.body.activityTrace).toMatchObject({
       summary: {
         execution: {
           surface: "assistant",
@@ -1077,14 +1077,14 @@ describe("chat integration", () => {
       routeReason: "evidence_required",
       retrievalInvoked: true,
     });
-    expect(assistantTurn?.debug?.retrievalInfo?.execution).toMatchObject({
+    expect(assistantTurn?.debug?.activitySummary?.execution).toMatchObject({
       surface: "assistant",
       path: "assistant_retrieval",
       retrievalInvoked: true,
     });
-    expect(assistantTurn?.debug?.retrievalTrace?.summary).toMatchObject({
-      shapeName: response.body.retrievalTrace.summary.shapeName,
-      queryShape: response.body.retrievalTrace.summary.queryShape,
+    expect(assistantTurn?.debug?.activityTrace?.summary).toMatchObject({
+      shapeName: response.body.activityTrace.summary.shapeName,
+      queryShape: response.body.activityTrace.summary.queryShape,
       skillDiagnostic: expect.objectContaining({
         skillName: "retrieval.answer",
         callerSurface: "assistant",
@@ -1264,7 +1264,7 @@ describe("chat integration", () => {
       });
 
     expect(second.status).toBe(200);
-    expect(second.body.retrievalInfo.rewrite).toMatchObject({
+    expect(second.body.activitySummary.rewrite).toMatchObject({
       status: "applied",
       eligible: true,
       ran: true,
@@ -1336,7 +1336,7 @@ describe("chat integration", () => {
       });
 
     expect(response.status).toBe(200);
-    expect(response.body.retrievalInfo.rewrite).toMatchObject({
+    expect(response.body.activitySummary.rewrite).toMatchObject({
       status: "applied",
       eligible: true,
       ran: true,
@@ -1401,12 +1401,12 @@ describe("chat integration", () => {
     expect(response.body.answer).toEqual(expect.any(String));
     expect(response.body.answer.length).toBeGreaterThan(0);
     expect(response.body.citations ?? []).toEqual([]);
-    expect(response.body.retrievalInfo).toMatchObject({
+    expect(response.body.activitySummary).toMatchObject({
       responseIntent: "social_only",
       retrievalSkipped: true,
       intentConfidence: 0.95,
     });
-    expect(response.body.retrievalInfo.candidateCounts).toEqual({
+    expect(response.body.activitySummary.candidateCounts).toEqual({
       semantic: 0,
       lexical: 0,
       merged: 0,
@@ -1476,7 +1476,7 @@ describe("chat integration", () => {
       type: "direct",
       reason: "social_only",
     });
-    expect(response.body.retrievalInfo).toMatchObject({
+    expect(response.body.activitySummary).toMatchObject({
       responseIntent: "social_only",
       retrievalSkipped: true,
       intentConfidence: 0.95,
@@ -1546,7 +1546,7 @@ describe("chat integration", () => {
     expect(response.body.answer).toEqual(expect.any(String));
     expect(response.body.answer.length).toBeGreaterThan(0);
     expect(response.body.citations ?? []).toEqual([]);
-    expect(response.body.retrievalInfo).toMatchObject({
+    expect(response.body.activitySummary).toMatchObject({
       responseIntent: "assistant_identity",
       retrievalSkipped: true,
       intentConfidence: 0.91,
@@ -1572,7 +1572,7 @@ describe("chat integration", () => {
       routeReason: "assistant_identity",
       retrievalInvoked: false,
     });
-    expect(assistantTurn?.debug?.retrievalInfo?.execution).toMatchObject({
+    expect(assistantTurn?.debug?.activitySummary?.execution).toMatchObject({
       surface: "assistant",
       path: "assistant_direct",
       retrievalInvoked: false,
@@ -1730,7 +1730,7 @@ describe("chat integration", () => {
         }),
       ]),
     );
-    expect(response.body.retrievalInfo).toMatchObject({
+    expect(response.body.activitySummary).toMatchObject({
       responseIntent: "retrieval",
       retrievalSkipped: false,
     });
@@ -1807,7 +1807,7 @@ describe("chat integration", () => {
         }),
       ]),
     );
-    expect(response.body.retrievalInfo).toMatchObject({
+    expect(response.body.activitySummary).toMatchObject({
       responseIntent: "retrieval",
       retrievalSkipped: false,
       intentFallbackApplied: true,
@@ -1889,11 +1889,11 @@ describe("chat integration", () => {
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
     expect(response.body.answer.length).toBeGreaterThan(0);
-    expect(response.body.retrievalInfo.parsedQuery).toMatchObject({
+    expect(response.body.activitySummary.parsedQuery).toMatchObject({
       originalQuery: "go ahead",
       semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
     });
-    expect(response.body.retrievalInfo.rewrite).toMatchObject({
+    expect(response.body.activitySummary.rewrite).toMatchObject({
       status: "applied",
       eligible: true,
       ran: true,
@@ -2008,12 +2008,12 @@ describe("chat integration", () => {
       });
 
     expect(response.status).toBe(200);
-    expect(response.body.retrievalInfo.parsedQuery).toMatchObject({
+    expect(response.body.activitySummary.parsedQuery).toMatchObject({
       originalQuery: "go ahead",
       semanticQuery: "go ahead",
       lexicalQuery: "go ahead",
     });
-    expect(response.body.retrievalInfo.retrievalSubqueries).toEqual([
+    expect(response.body.activitySummary.retrievalSubqueries).toEqual([
       {
         id: "subquery_1",
         label: "what I can do in this conversation",
@@ -2036,7 +2036,7 @@ describe("chat integration", () => {
         responseLanguagePolicy: "match_user_question",
       },
     ]);
-    expect(response.body.retrievalInfo.rewrite).toMatchObject({
+    expect(response.body.activitySummary.rewrite).toMatchObject({
       status: "applied",
       eligible: true,
       ran: true,
@@ -2181,7 +2181,7 @@ describe("chat integration", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.citations[0]?.title).toBe("Rate Limits");
-    expect(response.body.retrievalInfo.rerankStatus).toBe("fallback");
+    expect(response.body.activitySummary.rerankStatus).toBe("fallback");
   });
 
   it("still answers grounded questions when lexical search is disabled", async () => {
@@ -2211,7 +2211,7 @@ describe("chat integration", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.citations[0]?.title).toBe("Rate Limits");
-    expect(response.body.retrievalInfo.candidateCounts.lexical).toBe(0);
+    expect(response.body.activitySummary.candidateCounts.lexical).toBe(0);
   });
 
   it("accepts metadataFilter in the request body and returns a successful response", async () => {
@@ -2254,8 +2254,8 @@ describe("chat integration", () => {
     expect(response.status).toBe(200);
     expect(response.body).toHaveProperty("answer");
     expect(response.body).toHaveProperty("conversationId");
-    expect(response.body).toHaveProperty("retrievalInfo");
-    expect(response.body).toHaveProperty("retrievalTrace");
+    expect(response.body).toHaveProperty("activitySummary");
+    expect(response.body).toHaveProperty("activityTrace");
   });
 
   it("handles legacy chunks without search text or structured attributes", async () => {

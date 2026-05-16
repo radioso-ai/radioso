@@ -180,7 +180,7 @@ Assistant and retrieval responses include diagnostic metadata that identifies wh
 
 Radioso exposes an OSS website crawler provider port at `POST /api/v1/document/crawl`. The route accepts a website URL, calls the bundled `radioso-crawler` provider by default, and publishes returned pages through the normal document ingestion pipeline.
 
-Application composition can register a different crawler provider for custom deployments. Crawl limits are controlled with `WEBSITE_CRAWLER_DEFAULT_LIMIT` and `WEBSITE_CRAWLER_MAX_LIMIT`. Outbound requests identify as `RadiosoCrawler/1.0` by default; set `WEBSITE_CRAWLER_USER_AGENT` when a deployment needs a custom allowlisted crawler identity or contact URL.
+Application composition can register a different crawler provider for custom deployments. Crawl limits are controlled with `WEBSITE_CRAWLER_MAX_LIMIT` (default 1,000 pages). Outbound requests identify as `RadiosoCrawler/1.0` by default; set `WEBSITE_CRAWLER_USER_AGENT` when a deployment needs a custom allowlisted crawler identity or contact URL. Pages exceeding 500,000 characters are skipped during ingestion. Website sources can be re-crawled or deleted through the source management API; see `docs/website-crawler.md` for details.
 
 The bundled crawler does not rotate user agents or proxies to bypass site blocks. Responses with `401`, `403`, or `429` are recorded as failed pages instead of being ingested as content.
 
@@ -229,7 +229,9 @@ for await (const event of client.chat.stream({ message: "Summarize the FAQ" })) 
 
 ### MCP server
 
-The standalone `packages/radioso-mcp-server/` package exposes your workspace as an MCP context layer. Cursor can use a local server directly. Claude Desktop, ChatGPT deep-research, and other hosted remote MCP clients require a public HTTPS deployment plus compatible auth.
+Radioso supports MCP in two deployment shapes. Self-hosted operators can set `RADIOSO_MCP_ENABLED=true` with `RADIOSO_MCP_STANDALONE=false` and serve MCP from the backend at `/mcp`, using the workspace API token directly. Operators who need a separate public connector surface can keep backend MCP disabled and use the standalone `packages/radioso-mcp-server/` process with its token exchange flow.
+
+Cursor can use either same-host merged mode or a local standalone server. Claude Desktop, ChatGPT deep-research, and other hosted remote MCP clients require a public HTTPS deployment plus compatible auth.
 
 ---
 

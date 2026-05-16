@@ -138,10 +138,14 @@ export type HumanContactTriggerSource =
 export interface HumanContactDraftResponse {
   draftMessage: string
   defaultEmail?: string | null
+  activitySummary?: ActivitySummary
+  activityTrace?: ActivityTrace
 }
 
 export interface HumanContactSubmitResponse {
   requestId: string
+  activitySummary?: ActivitySummary
+  activityTrace?: ActivityTrace
 }
 
 export interface HumanContactSubmitInput {
@@ -178,15 +182,15 @@ export interface HumanContactSigningSecretResponse {
   signingSecret: string | null
 }
 
-export type RetrievalInfo = ApiSchemas['RetrievalInfo']
-export type SkillDiagnostic = NonNullable<ApiSchemas['RetrievalInfo']['skillDiagnostic']>
+export type ActivitySummary = ApiSchemas['ActivitySummary']
+export type SkillDiagnostic = NonNullable<ApiSchemas['ActivitySummary']['skillDiagnostic']>
 export type ParsedQueryInfo = ApiSchemas['ParsedQuery']
 export type RetrievalSubqueryInfo = ApiSchemas['RetrievalSubquery']
 export type CandidateCounts = ApiSchemas['CandidateCounts']
 export type AppliedConstraintInfo = ApiSchemas['AppliedConstraint']
-export type RetrievalTraceStage = ApiSchemas['RetrievalTraceStage']
-export type RetrievalTraceLink = ApiSchemas['RetrievalTraceLink']
-export type RetrievalTrace = ApiSchemas['RetrievalTrace']
+export type ActivityStage = ApiSchemas['ActivityStage']
+export type ActivityLink = ApiSchemas['ActivityLink']
+export type ActivityTrace = ApiSchemas['ActivityTrace']
 export type ChatResponse = RelaxedAssistantChatResponse<ApiSchemas['AssistantChatResponse']>
 
 export type AnswerFeedbackValue = 'up' | 'down'
@@ -232,8 +236,8 @@ export interface ChatStreamCompletion {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
-  retrievalInfo?: RetrievalInfo
-  retrievalTrace?: RetrievalTrace
+  activitySummary?: ActivitySummary
+  activityTrace?: ActivityTrace
 }
 
 export type ChatConversationSummary = ApiSchemas['ChatConversationSummary']
@@ -261,11 +265,13 @@ export interface ContactHistorySummary {
   attempts: number
   createdAt: string
   updatedAt: string
+  activitySummary?: ActivitySummary
 }
 
 export interface ContactHistoryDetail extends ContactHistorySummary {
   message: string
   finalDeliveryError: string | null
+  activityTrace?: ActivityTrace
 }
 
 export interface ContactHistoryListResponse {
@@ -381,7 +387,6 @@ export type WorkspaceGrantRole = ApiSchemas['WorkspaceGrant']['role']
 export type AccountInvitationSummary = ApiSchemas['AccountInvitation']
 export type WorkspaceGrantSummary = ApiSchemas['WorkspaceGrant']
 
-export type SupportImpersonationSummary = ApiSchemas['SupportImpersonation']
 
 export type AccountUsersResponse = ApiSchemas['AccountUsersResponse']
 export type AccessibleAccountSummary = ApiSchemas['AccessibleAccount']

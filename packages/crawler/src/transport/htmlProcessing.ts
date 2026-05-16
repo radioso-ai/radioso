@@ -101,16 +101,27 @@ export const extractStructuredTextFromHtml = (html: string): string =>
 export const hasPrimaryContentContainer = (html: string): boolean =>
   /<(main|article)\b/i.test(html) || /\brole\s*=\s*["']main["']/i.test(html);
 
+const LOW_CONFIDENCE_TEXT_LENGTH = 120;
+const FALLBACK_TEXT_MIN_LENGTH = 300;
+
 export const extractStructuredTextWithFallback = (input: {
   cleanedHtml: string;
   originalHtml: string;
 }): string => {
   const cleanedText = extractStructuredTextFromHtml(input.cleanedHtml);
-  if (cleanedText) {
+  if (!hasPrimaryContentContainer(input.originalHtml)) {
     return cleanedText;
   }
-  if (!hasPrimaryContentContainer(input.originalHtml)) {
-    return "";
+  const originalText = extractStructuredTextFromHtml(input.originalHtml);
+  if (
+    cleanedText &&
+    (
+      cleanedText.length >= LOW_CONFIDENCE_TEXT_LENGTH ||
+      originalText.length < FALLBACK_TEXT_MIN_LENGTH ||
+      originalText.length <= cleanedText.length * 3
+    )
+  ) {
+    return cleanedText;
   }
-  return extractStructuredTextFromHtml(input.originalHtml);
+  return originalText || cleanedText;
 };

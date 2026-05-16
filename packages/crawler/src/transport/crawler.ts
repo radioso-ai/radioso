@@ -230,24 +230,119 @@ const DEFAULT_NON_CONTENT_SELECTOR = [
   "[aria-label*='navigation' i]"
 ].join(", ");
 
-const NON_CONTENT_ATTRIBUTE_PATTERN =
-  /(?:^|[-_\s])(cookie|footer|header|login|menu|nav|navbar|navigation|search)(?:$|[-_\s])/i;
+const NON_CONTENT_ATTRIBUTE_BASE_TOKENS = new Set([
+  "cookie",
+  "footer",
+  "header",
+  "login",
+  "menu",
+  "nav",
+  "navbar",
+  "navigation",
+  "search"
+]);
+const NON_CONTENT_ATTRIBUTE_PREFIX_TOKENS = new Set([
+  "bottom",
+  "desktop",
+  "global",
+  "main",
+  "mobile",
+  "page",
+  "primary",
+  "secondary",
+  "site",
+  "sticky",
+  "top"
+]);
+const NON_CONTENT_ATTRIBUTE_SUFFIX_TOKENS = new Set([
+  "action",
+  "actions",
+  "bar",
+  "block",
+  "brand",
+  "collapse",
+  "container",
+  "content",
+  "drawer",
+  "group",
+  "inner",
+  "item",
+  "items",
+  "legal",
+  "link",
+  "links",
+  "list",
+  "logo",
+  "menu",
+  "nav",
+  "overlay",
+  "panel",
+  "section",
+  "search",
+  "style",
+  "toggle",
+  "wrapper"
+]);
+const PROTECTED_PAGE_CONTAINER_ELEMENTS = new Set(["html", "head", "body"]);
 const LINK_DENSE_BLOCK_SELECTOR = "ul, ol, section, div";
 const LINK_DENSE_MIN_LINKS = 6;
 const LINK_DENSE_MIN_RATIO = 0.75;
 const PRIMARY_CONTENT_SELECTOR = "main, article, [role='main']";
+const PRIMARY_CONTENT_SUBTREE_SELECTOR = "main, [role='main']";
+
+const isNonContentAttributeToken = (token: string): boolean => {
+  const normalized = token.trim().replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
+  if (NON_CONTENT_ATTRIBUTE_BASE_TOKENS.has(normalized)) {
+    return true;
+  }
+  const segments = normalized.split(/[-_]+/).filter(Boolean);
+  if (segments.length === 0) {
+    return false;
+  }
+  const baseIndex =
+    segments.length > 1 && NON_CONTENT_ATTRIBUTE_PREFIX_TOKENS.has(segments[0])
+      ? 1
+      : 0;
+  const base = segments[baseIndex];
+  if (!NON_CONTENT_ATTRIBUTE_BASE_TOKENS.has(base)) {
+    return false;
+  }
+  const suffixes = segments.slice(baseIndex + 1);
+  if (suffixes.length === 0) {
+    return baseIndex > 0;
+  }
+  return (
+    suffixes.every((suffix) => NON_CONTENT_ATTRIBUTE_SUFFIX_TOKENS.has(suffix))
+  );
+};
 
 const hasNonContentAttribute = (value: string | undefined): boolean => {
   if (!value) {
     return false;
   }
-  return value.split(/\s+/).some((token) => NON_CONTENT_ATTRIBUTE_PATTERN.test(token));
+  return value.split(/\s+/).some(isNonContentAttributeToken);
+};
+
+const elementName = (element: unknown): string => {
+  const typed = element as { name?: unknown; tagName?: unknown };
+  const name = typeof typed.name === "string"
+    ? typed.name
+    : typeof typed.tagName === "string"
+      ? typed.tagName
+      : "";
+  return name.toLowerCase();
 };
 
 const removeAttributeMarkedPageChrome = ($: any): void => {
   $("[class], [id]").each((_index: number, element: unknown) => {
+    if (PROTECTED_PAGE_CONTAINER_ELEMENTS.has(elementName(element))) {
+      return;
+    }
     const block = $(element);
-    if (block.closest(PRIMARY_CONTENT_SELECTOR).length > 0) {
+    if (
+      block.closest(PRIMARY_CONTENT_SELECTOR).length > 0 ||
+      block.find(PRIMARY_CONTENT_SUBTREE_SELECTOR).length > 0
+    ) {
       return;
     }
     if (

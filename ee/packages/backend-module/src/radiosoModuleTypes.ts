@@ -297,6 +297,50 @@ export interface ChatActionSuggestion {
   };
 }
 
+export type ActivityStageStatus = "applied" | "skipped" | "fallback" | "rejected" | "unavailable" | "failed";
+
+export interface ActivityStage {
+  stageId: string;
+  kind: string;
+  label: string;
+  status: ActivityStageStatus;
+  startedAt?: string;
+  durationMs?: number;
+  settings?: Record<string, unknown>;
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
+  metrics?: Record<string, number>;
+  reason?: string;
+}
+
+export interface ActivityLink {
+  fromStageId: string;
+  toStageId: string;
+  kind: "sequence" | "branch" | "converge";
+}
+
+export interface ActivitySummary {
+  traceId?: string;
+  skillName?: string;
+  surface?: string;
+  path?: string;
+  status?: "success" | "skipped" | "blocked" | "failed" | "fallback" | "pending";
+  outcome?: string;
+  fallbackApplied?: boolean;
+  primaryCounts?: Record<string, number>;
+  contact?: Record<string, unknown>;
+}
+
+export interface ActivityTrace {
+  traceId: string;
+  startedAt: string;
+  completedAt?: string;
+  totalDurationMs?: number;
+  stages: ActivityStage[];
+  links: ActivityLink[];
+  summary?: ActivitySummary;
+}
+
 export interface ChatActionProvider {
   evaluate(input: {
     workspaceId: string;
@@ -382,11 +426,13 @@ export interface ContactHistorySummary {
   attempts: number;
   createdAt: string;
   updatedAt: string;
+  activitySummary?: ActivitySummary;
 }
 
 export interface ContactHistoryDetail extends ContactHistorySummary {
   message: string;
   finalDeliveryError: string | null;
+  activityTrace?: ActivityTrace;
 }
 
 export interface ContactHistoryProvider {

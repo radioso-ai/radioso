@@ -7,7 +7,6 @@ import { randomUUID } from "node:crypto";
 
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
-import { SupportImpersonationService } from "../../src/modules/support/services/supportImpersonationService.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
@@ -84,7 +83,6 @@ import {
   InMemoryAccountRepository,
   InMemoryAccountInvitationRepository,
   InMemoryAccountMembershipRepository,
-  InMemorySupportImpersonationRepository,
   InMemoryUserRepository,
   InMemoryWorkspaceGrantRepository,
   InMemoryWorkspaceTokenRepository,
@@ -166,8 +164,27 @@ export const createTestEnv = (): Env => ({
   WEBSITE_CRAWL_JOB_LEASE_MS: 900_000,
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
   WEBSITE_CRAWLER_ENABLED: true,
+  APP_BASE_URL: undefined,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
-  SUPPORT_STAFF_EMAILS: "support@example.com,approver@example.com",
+  RADIOSO_BASE_URL: undefined,
+  RADIOSO_MCP_ENABLED: false,
+  RADIOSO_MCP_STANDALONE: false,
+  RADIOSO_MCP_MOUNT_PATH: "/mcp",
+  RADIOSO_MCP_MERGED_CORS_ORIGINS: "*",
+  RADIOSO_MCP_ACCESS_TOKEN_TTL_SECONDS: 900,
+  RADIOSO_MCP_ALLOWED_READ_TOOLS: undefined,
+  RADIOSO_MCP_ALLOWED_WRITE_TOOLS: undefined,
+  RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: undefined,
+  RADIOSO_MCP_APPROVAL_TTL_SECONDS: 300,
+  RADIOSO_MCP_AUDIT_LOG_PATH: undefined,
+  RADIOSO_MCP_BIND_HOST: "127.0.0.1",
+  RADIOSO_MCP_BIND_PORT: 8787,
+  RADIOSO_MCP_REDIS_KEY_PREFIX: "radioso-mcp",
+  RADIOSO_MCP_REDIS_URL: undefined,
+  RADIOSO_MCP_REQUEST_TIMEOUT_MS: 30_000,
+  RADIOSO_MCP_SERVER_NAME: "radioso-context",
+  RADIOSO_MCP_WORKSPACE_POLICIES_PATH: undefined,
+  RADIOSO_APPLICATION_MODULES: undefined,
 });
 
 interface TestRepositories {
@@ -261,12 +278,6 @@ export const createTestDependencies = (overrides: {
   accountMembershipRepository.setUserRepository(userRepository);
   const workspaceRepository = new InMemoryWorkspaceRepository();
   const workspaceGrantRepository = new InMemoryWorkspaceGrantRepository();
-  const supportImpersonationService = new SupportImpersonationService(
-    new InMemorySupportImpersonationRepository(),
-    userRepository,
-    auditService,
-    env,
-  );
   const accountAccessService = new AccountAccessService(
     accountMembershipRepository,
     auditService,
@@ -642,6 +653,7 @@ export const createTestDependencies = (overrides: {
     retrievalPipeline,
     chatGateway,
     usageLimitPolicy,
+    auditService,
   });
   const capabilityPolicy = new DefaultAllowCapabilityPolicy();
   const skillCatalogService = new SkillCatalogService({
@@ -674,7 +686,6 @@ export const createTestDependencies = (overrides: {
     auditService,
     accountAccessService,
     accountInvitationService,
-    supportImpersonationService,
     workspaceSessionService,
     abuseControlService,
     authService: new AuthService({
@@ -706,6 +717,7 @@ export const createTestDependencies = (overrides: {
         requestedUrl: "https://example.com",
         status: "queued" as const,
       }),
+      cancelJobsForSource: async () => 0,
     } as any,
     websiteCrawlWorker: {
       start: async () => undefined,

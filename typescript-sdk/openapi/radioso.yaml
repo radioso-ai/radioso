@@ -346,22 +346,6 @@ components:
             - member
       required:
         - role
-    SupportImpersonationApproveRequest:
-      type: object
-      properties:
-        accountId:
-          type: string
-          format: uuid
-        staffUserId:
-          type: string
-          format: uuid
-        reason:
-          type: string
-          minLength: 1
-          maxLength: 1000
-      required:
-        - accountId
-        - reason
     WorkspaceCreateRequest:
       type: object
       properties:
@@ -478,61 +462,6 @@ components:
         - role
         - createdAt
         - updatedAt
-    SupportImpersonation:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        accountId:
-          type: string
-          format: uuid
-        staffUserId:
-          type: string
-          format: uuid
-        approverUserId:
-          type: string
-          format: uuid
-        reason:
-          type: string
-        status:
-          type: string
-          enum:
-            - approved
-            - active
-            - ended
-            - expired
-            - revoked
-        approvedAt:
-          type: string
-          format: date-time
-        startedAt:
-          type:
-            - string
-            - "null"
-          format: date-time
-        expiresAt:
-          type: string
-          format: date-time
-        endedAt:
-          type:
-            - string
-            - "null"
-          format: date-time
-        active:
-          type: boolean
-      required:
-        - id
-        - accountId
-        - staffUserId
-        - approverUserId
-        - reason
-        - status
-        - approvedAt
-        - startedAt
-        - expiresAt
-        - endedAt
-        - active
     AccountUsersResponse:
       type: object
       properties:
@@ -554,17 +483,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceGrant"
-        supportImpersonations:
-          type: array
-          items:
-            $ref: "#/components/schemas/SupportImpersonation"
       required:
         - accountId
         - currentUserId
         - users
         - invitations
         - workspaceGrants
-        - supportImpersonations
     AccessibleAccount:
       type: object
       properties:
@@ -2531,7 +2455,7 @@ components:
         resultCount:
           type: integer
           minimum: 0
-        traceAvailable:
+        activityTraceAvailable:
           type: boolean
         previewTopTitles:
           type: array
@@ -2542,7 +2466,7 @@ components:
         - query
         - createdAt
         - resultCount
-        - traceAvailable
+        - activityTraceAvailable
         - previewTopTitles
     DocumentSearchHistoryListResponse:
       type: object
@@ -2920,9 +2844,38 @@ components:
         - surface
         - path
         - retrievalInvoked
-    RetrievalInfo:
+    ActivitySummary:
       type: object
       properties:
+        traceId:
+          type: string
+        skillName:
+          type: string
+        surface:
+          type: string
+        path:
+          type: string
+        status:
+          type: string
+          enum:
+            - success
+            - skipped
+            - blocked
+            - failed
+            - fallback
+            - pending
+        outcome:
+          type: string
+        primaryCounts:
+          type: object
+          additionalProperties:
+            type: number
+        assistant:
+          type: object
+          additionalProperties: {}
+        contact:
+          type: object
+          additionalProperties: {}
         execution:
           $ref: "#/components/schemas/RetrievalExecutionMetadata"
         parsedQuery:
@@ -3110,11 +3063,7 @@ components:
             - callerSurface
             - capabilityChecks
             - outcome
-      required:
-        - candidateCounts
-        - fallbackApplied
-        - rerankStatus
-    RetrievalTraceStage:
+    ActivityStage:
       type: object
       properties:
         stageId:
@@ -3158,7 +3107,7 @@ components:
         - kind
         - label
         - status
-    RetrievalTraceLink:
+    ActivityLink:
       type: object
       properties:
         fromStageId:
@@ -3175,7 +3124,7 @@ components:
         - fromStageId
         - toStageId
         - kind
-    RetrievalTrace:
+    ActivityTrace:
       type: object
       properties:
         traceId:
@@ -3192,13 +3141,13 @@ components:
         stages:
           type: array
           items:
-            $ref: "#/components/schemas/RetrievalTraceStage"
+            $ref: "#/components/schemas/ActivityStage"
         links:
           type: array
           items:
-            $ref: "#/components/schemas/RetrievalTraceLink"
+            $ref: "#/components/schemas/ActivityLink"
         summary:
-          $ref: "#/components/schemas/RetrievalInfo"
+          $ref: "#/components/schemas/ActivitySummary"
       required:
         - traceId
         - startedAt
@@ -3224,8 +3173,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DocumentSearchResult"
-        retrievalTrace:
-          $ref: "#/components/schemas/RetrievalTrace"
+        activityTrace:
+          $ref: "#/components/schemas/ActivityTrace"
       required:
         - searchId
         - mode
@@ -3320,16 +3269,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RetrievalSearchEvidence"
-        retrievalInfo:
-          $ref: "#/components/schemas/RetrievalInfo"
-        retrievalTrace:
-          $ref: "#/components/schemas/RetrievalTrace"
+        activitySummary:
+          $ref: "#/components/schemas/ActivitySummary"
+        activityTrace:
+          $ref: "#/components/schemas/ActivityTrace"
       required:
         - outcome
         - rewrittenQuery
         - results
-        - retrievalInfo
-        - retrievalTrace
+        - activitySummary
+        - activityTrace
     RetrievalAnswerEvidence:
       type: object
       properties:
@@ -3379,17 +3328,17 @@ components:
                 - not_checked
           required:
             - status
-        retrievalInfo:
-          $ref: "#/components/schemas/RetrievalInfo"
-        retrievalTrace:
-          $ref: "#/components/schemas/RetrievalTrace"
+        activitySummary:
+          $ref: "#/components/schemas/ActivitySummary"
+        activityTrace:
+          $ref: "#/components/schemas/ActivityTrace"
       required:
         - outcome
         - answer
         - evidence
         - validation
-        - retrievalInfo
-        - retrievalTrace
+        - activitySummary
+        - activityTrace
     RetrievalAnswerUnsupported:
       type: object
       properties:
@@ -3799,18 +3748,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatSuggestion"
-        retrievalInfo:
-          $ref: "#/components/schemas/RetrievalInfo"
-        retrievalTrace:
-          $ref: "#/components/schemas/RetrievalTrace"
+        activitySummary:
+          $ref: "#/components/schemas/ActivitySummary"
+        activityTrace:
+          $ref: "#/components/schemas/ActivityTrace"
         route:
           $ref: "#/components/schemas/AssistantRoute"
       required:
         - conversationId
         - assistantMessageId
         - answer
-        - retrievalInfo
-        - retrievalTrace
+        - activitySummary
+        - activityTrace
         - route
     ChatBootstrapResponse:
       type: object
@@ -3837,16 +3786,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatSuggestion"
-        retrievalInfo:
-          $ref: "#/components/schemas/RetrievalInfo"
-        retrievalTrace:
-          $ref: "#/components/schemas/RetrievalTrace"
+        activitySummary:
+          $ref: "#/components/schemas/ActivitySummary"
+        activityTrace:
+          $ref: "#/components/schemas/ActivityTrace"
         route:
           $ref: "#/components/schemas/AssistantRoute"
       required:
         - answer
-        - retrievalInfo
-        - retrievalTrace
+        - activitySummary
+        - activityTrace
         - route
       description: Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn.
     AssistantChatResponse:
@@ -4223,10 +4172,10 @@ components:
           $ref: "#/components/schemas/AssistantRouteDiagnostics"
         validation:
           $ref: "#/components/schemas/ValidationDebug"
-        retrievalInfo:
-          $ref: "#/components/schemas/RetrievalInfo"
-        retrievalTrace:
-          $ref: "#/components/schemas/RetrievalTrace"
+        activitySummary:
+          $ref: "#/components/schemas/ActivitySummary"
+        activityTrace:
+          $ref: "#/components/schemas/ActivityTrace"
         errorMessage:
           type:
             - string
@@ -4974,71 +4923,6 @@ paths:
       responses:
         "204":
           description: Workspace grant removed
-  /api/v1/support/impersonations:
-    post:
-      tags:
-        - Support
-      summary: Approve a support impersonation session
-      operationId: approveSupportImpersonation
-      security:
-        - sessionCookie: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SupportImpersonationApproveRequest"
-      responses:
-        "201":
-          description: Support impersonation approved
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SupportImpersonation"
-  /api/v1/support/impersonations/{id}/start:
-    post:
-      tags:
-        - Support
-      summary: Start an approved support impersonation session
-      operationId: startSupportImpersonation
-      security:
-        - sessionCookie: []
-      parameters:
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: id
-          in: path
-      responses:
-        "200":
-          description: Support impersonation started
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SupportImpersonation"
-  /api/v1/support/impersonations/{id}/end:
-    post:
-      tags:
-        - Support
-      summary: End a support impersonation session
-      operationId: endSupportImpersonation
-      security:
-        - sessionCookie: []
-      parameters:
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: id
-          in: path
-      responses:
-        "200":
-          description: Support impersonation ended
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SupportImpersonation"
   /api/v1/account/switch:
     post:
       tags:

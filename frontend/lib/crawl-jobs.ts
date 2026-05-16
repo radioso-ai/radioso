@@ -1,4 +1,5 @@
 import type { WebsiteCrawlJobStatus, WebsiteCrawlJobSummary } from '@/lib/api'
+import { getApiErrorMessage } from '@/lib/api-error'
 
 export type ParsedCrawlForm =
   | {
@@ -126,6 +127,20 @@ export function applySourceResumeResult({
   return {
     pausedSourceIds: nextPaused,
     crawlingSourceIds: nextCrawling,
+  }
+}
+
+export async function runSourceCrawlAction<T>({
+  request,
+  fallbackMessage,
+}: {
+  request: () => Promise<T>
+  fallbackMessage: string
+}): Promise<{ ok: true; result: T } | { ok: false; error: string }> {
+  try {
+    return { ok: true, result: await request() }
+  } catch (error) {
+    return { ok: false, error: getApiErrorMessage(error, fallbackMessage) }
   }
 }
 

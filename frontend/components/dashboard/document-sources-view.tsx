@@ -30,7 +30,7 @@ import {
   type DocumentSummary,
   type WebsiteCrawlJobSummary,
 } from '@/lib/api'
-import { applySourceResumeResult, getCrawlPageIssueSummaries } from '@/lib/crawl-jobs'
+import { applySourceResumeResult, getCrawlPageIssueSummaries, runSourceCrawlAction } from '@/lib/crawl-jobs'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const MANUALLY_ADDED_SOURCE_ID = '00000000-0000-0000-0000-000000000001'
@@ -262,6 +262,7 @@ export function DocumentSourcesView() {
   const [deleteCandidate, setDeleteCandidate] = useState<DocumentSourceListItem | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [crawlActionError, setCrawlActionError] = useState<string | null>(null)
   const [recrawlingSourceId, setRecrawlingSourceId] = useState<string | null>(null)
   const [pausingSourceId, setPausingSourceId] = useState<string | null>(null)
   const [resumingSourceId, setResumingSourceId] = useState<string | null>(null)
@@ -360,8 +361,16 @@ export function DocumentSourcesView() {
 
   const handlePause = async (source: DocumentSourceListItem) => {
     setPausingSourceId(source.id)
+    setCrawlActionError(null)
     try {
-      await documentsApi.pauseSourceCrawl(source.id)
+      const result = await runSourceCrawlAction({
+        request: () => documentsApi.pauseSourceCrawl(source.id),
+        fallbackMessage: 'Failed to pause crawl.',
+      })
+      if (!result.ok) {
+        setCrawlActionError(result.error)
+        return
+      }
       setCrawlingSourceIds((prev) => {
         const next = new Set(prev)
         next.delete(source.id)
@@ -377,17 +386,25 @@ export function DocumentSourcesView() {
 
   const handleResume = async (source: DocumentSourceListItem) => {
     setResumingSourceId(source.id)
+    setCrawlActionError(null)
     try {
-      const result = await documentsApi.resumeSourceCrawl(source.id)
+      const result = await runSourceCrawlAction({
+        request: () => documentsApi.resumeSourceCrawl(source.id),
+        fallbackMessage: 'Failed to resume crawl.',
+      })
+      if (!result.ok) {
+        setCrawlActionError(result.error)
+        return
+      }
       setPausedSourceIds((prev) => applySourceResumeResult({
         sourceId: source.id,
-        resumedJobCount: result.resumedJobCount,
+        resumedJobCount: result.result.resumedJobCount,
         pausedSourceIds: prev,
         crawlingSourceIds: new Set(),
       }).pausedSourceIds)
       setCrawlingSourceIds((prev) => applySourceResumeResult({
         sourceId: source.id,
-        resumedJobCount: result.resumedJobCount,
+        resumedJobCount: result.result.resumedJobCount,
         pausedSourceIds: new Set(),
         crawlingSourceIds: prev,
       }).crawlingSourceIds)
@@ -463,6 +480,11 @@ export function DocumentSourcesView() {
 
   return (
     <div className={`${sectionShellClassName} space-y-4`}>
+      {crawlActionError ? (
+        <p className="text-sm text-destructive" role="alert">
+          {crawlActionError}
+        </p>
+      ) : null}
       <DashboardTable aria-label="Document sources">
         <DashboardTableHead>
           <DashboardTableHeader className="w-10" />

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import type { WebsiteCrawlJobStatus, WebsiteCrawlJobSummary } from '@/lib/api'
-import { applySourceResumeResult, getCrawlPageIssueSummaries, mergeCrawlJobs, parseCrawlForm } from '@/lib/crawl-jobs'
+import {
+  applySourceResumeResult,
+  getCrawlPageIssueSummaries,
+  mergeCrawlJobs,
+  parseCrawlForm,
+  runSourceCrawlAction,
+} from '@/lib/crawl-jobs'
 
 const baseJob = (overrides: Partial<WebsiteCrawlJobSummary>): WebsiteCrawlJobSummary => ({
   id: 'j-1',
@@ -240,5 +246,27 @@ describe('applySourceResumeResult', () => {
 
     expect([...result.pausedSourceIds]).toEqual([])
     expect([...result.crawlingSourceIds]).toEqual(['source-1'])
+  })
+})
+
+describe('runSourceCrawlAction', () => {
+  it('returns an error result for rejected pause calls without throwing', async () => {
+    await expect(runSourceCrawlAction({
+      request: () => Promise.reject({ error: 'Pause is unavailable' }),
+      fallbackMessage: 'Failed to pause crawl.',
+    })).resolves.toEqual({
+      ok: false,
+      error: 'Pause is unavailable',
+    })
+  })
+
+  it('returns an error result for rejected resume calls without throwing', async () => {
+    await expect(runSourceCrawlAction({
+      request: () => Promise.reject(new Error('Resume is unavailable')),
+      fallbackMessage: 'Failed to resume crawl.',
+    })).resolves.toEqual({
+      ok: false,
+      error: 'Resume is unavailable',
+    })
   })
 })

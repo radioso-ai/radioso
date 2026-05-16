@@ -80,6 +80,21 @@ export type ExtractionOptions = {
   preserveContentLinks?: boolean;
 };
 
+const DEFAULT_EXTRACTION_BASE_URL = "http://localhost/";
+
+const resolveExtractionArguments = (
+  baseUrlOrOptions?: string | ExtractionOptions,
+  options: ExtractionOptions = {}
+): { baseUrl: string; options: ExtractionOptions } => {
+  if (typeof baseUrlOrOptions === "string") {
+    return { baseUrl: baseUrlOrOptions, options };
+  }
+  return {
+    baseUrl: DEFAULT_EXTRACTION_BASE_URL,
+    options: baseUrlOrOptions ?? options
+  };
+};
+
 const resolveTextContentUrl = (value: string | undefined, baseUrl: string): string | null => {
   const trimmed = decodeEntities(value ?? "").trim();
   if (!trimmed || trimmed.startsWith("#")) {
@@ -190,8 +205,13 @@ const renderContentUrls = (html: string, baseUrl: string, options: ExtractionOpt
   return $.html();
 };
 
-export const formatHtmlAsMarkdown = (html: string, baseUrl: string, options: ExtractionOptions = {}): string =>
-  renderContentUrls(html, baseUrl, options)
+export const formatHtmlAsMarkdown = (
+  html: string,
+  baseUrlOrOptions?: string | ExtractionOptions,
+  extractionOptions: ExtractionOptions = {}
+): string => {
+  const { baseUrl, options } = resolveExtractionArguments(baseUrlOrOptions, extractionOptions);
+  return renderContentUrls(html, baseUrl, options)
     .replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_m, p1) => `\n\n\`\`\`\n${stripTags(p1)}\n\`\`\`\n\n`)
     .replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, (_m, p1) => `\`${stripTags(p1)}\``)
     .replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, level, p1) => `\n\n${"#".repeat(Number(level))} ${stripTags(p1)}\n\n`)
@@ -208,11 +228,18 @@ export const formatHtmlAsMarkdown = (html: string, baseUrl: string, options: Ext
     .replace(/[ \t]*\n[ \t]*/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+};
 
-export const extractStructuredTextFromHtml = (html: string, baseUrl: string, options: ExtractionOptions = {}): string =>
-  normalizeText(
+export const extractStructuredTextFromHtml = (
+  html: string,
+  baseUrlOrOptions?: string | ExtractionOptions,
+  extractionOptions: ExtractionOptions = {}
+): string => {
+  const { baseUrl, options } = resolveExtractionArguments(baseUrlOrOptions, extractionOptions);
+  return normalizeText(
     formatHtmlAsMarkdown(extractMainContentHtml(html), baseUrl, options)
   );
+};
 
 export const hasPrimaryContentContainer = (html: string): boolean =>
   /<(main|article)\b/i.test(html) || /\brole\s*=\s*["']main["']/i.test(html);
@@ -223,14 +250,15 @@ const FALLBACK_TEXT_MIN_LENGTH = 300;
 export const extractStructuredTextWithFallback = (input: {
   cleanedHtml: string;
   originalHtml: string;
-  baseUrl: string;
+  baseUrl?: string;
   options?: ExtractionOptions;
 }): string => {
-  const cleanedText = extractStructuredTextFromHtml(input.cleanedHtml, input.baseUrl, input.options);
+  const baseUrl = input.baseUrl ?? DEFAULT_EXTRACTION_BASE_URL;
+  const cleanedText = extractStructuredTextFromHtml(input.cleanedHtml, baseUrl, input.options);
   if (!hasPrimaryContentContainer(input.originalHtml)) {
     return cleanedText;
   }
-  const originalText = extractStructuredTextFromHtml(input.originalHtml, input.baseUrl, input.options);
+  const originalText = extractStructuredTextFromHtml(input.originalHtml, baseUrl, input.options);
   if (
     cleanedText &&
     (

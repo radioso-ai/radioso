@@ -9,6 +9,11 @@ import type { WebsiteCrawlJobDispatcherPort } from "./jobDispatcher.js";
 import { normalizeBaseUrl } from "./service.js";
 import { assertPublicWebsiteUrl } from "./urlPolicy.js";
 import type { WebsiteCrawlerDocumentIngestionPort } from "./service.js";
+import {
+  DEFAULT_WEBSITE_CRAWL_POLICY,
+  normalizeWebsiteCrawlPolicy,
+  type WebsiteCrawlPolicy,
+} from "./policy.js";
 
 export interface CrawlPageFailure {
   sourceUrl: string;
@@ -23,6 +28,7 @@ export interface WebsiteCrawlJobSummary {
   sourceId: string | null;
   documentCount: number | null;
   failedPageCount: number | null;
+  skippedPageCount: number | null;
   failures: CrawlPageFailure[];
   lastError: string | null;
   createdAt: string;
@@ -55,6 +61,17 @@ const extractFailedPageCount = (result: Record<string, unknown> | null): number 
   return null;
 };
 
+const extractSkippedPageCount = (result: Record<string, unknown> | null): number | null => {
+  if (!result) {
+    return null;
+  }
+  const typed = result as { skipped?: unknown };
+  if (typeof typed.skipped === "number" && Number.isFinite(typed.skipped)) {
+    return typed.skipped;
+  }
+  return null;
+};
+
 const extractFailures = (result: Record<string, unknown> | null): CrawlPageFailure[] => {
   if (!result) {
     return [];
@@ -80,6 +97,7 @@ const toJobSummary = (record: WebsiteCrawlJobRecord): WebsiteCrawlJobSummary => 
   sourceId: record.sourceId,
   documentCount: extractDocumentCount(record.result),
   failedPageCount: extractFailedPageCount(record.result),
+  skippedPageCount: extractSkippedPageCount(record.result),
   failures: extractFailures(record.result),
   lastError: record.lastError,
   createdAt: record.createdAt.toISOString(),
@@ -101,6 +119,7 @@ export class WebsiteCrawlJobService {
     workspaceId: string;
     url: string;
     limit: number;
+    policy?: Partial<WebsiteCrawlPolicy>;
   }): Promise<{
     jobId: string;
     sourceId: string | null;
@@ -109,6 +128,10 @@ export class WebsiteCrawlJobService {
   }> {
     const requestedUrl = normalizeBaseUrl(input.url);
     await (this.dependencies.assertCrawlUrlAllowed ?? assertPublicWebsiteUrl)(requestedUrl);
+    const policy = normalizeWebsiteCrawlPolicy({
+      ...DEFAULT_WEBSITE_CRAWL_POLICY,
+      ...(input.policy ?? {}),
+    });
     const source = await this.dependencies.documentIngestionService.resolveSource?.({
       workspaceId: input.workspaceId,
       source: {
@@ -117,6 +140,7 @@ export class WebsiteCrawlJobService {
         config: {
           url: requestedUrl,
           limit: input.limit,
+          policy,
         },
         metadata: {
           requestedUrl,
@@ -129,6 +153,7 @@ export class WebsiteCrawlJobService {
       sourceId: source?.id ?? null,
       requestedUrl,
       limit: input.limit,
+      policy,
     });
     try {
       await this.dependencies.dispatcher.dispatch({
@@ -171,6 +196,34 @@ export class WebsiteCrawlJobService {
 
   async cancelJobsForSource(input: { workspaceId: string; sourceId: string }): Promise<number> {
     return this.dependencies.repository.cancelBySourceId(input.sourceId, input.workspaceId);
+  }
+
+  async pauseJobsForSource(input: { workspaceId: string; sourceId: string }): Promise<{ pausedJobCount: number }> {
+    const jobs = await this.dependencies.repository.pauseBySourceId(input.sourceId, input.workspaceId);
+    return { pausedJobCount: jobs.length };
+  }
+
+  async resumeJobsForSource(input: { workspaceId: string; sourceId: string }): Promise<{ resumedJobCount: number }> {
+    const jobs = await this.dependencies.repository.resumePausedBySourceId(input.sourceId, input.workspaceId);
+    for (const job of jobs) {
+      try {
+        await this.dependencies.dispatcher.dispatch({
+          jobId: job.id,
+          workspaceId: job.workspaceId,
+        });
+      } catch (error) {
+        this.dependencies.logger?.warn(
+          {
+            role: "website-crawl-job-service",
+            jobId: job.id,
+            workspaceId: job.workspaceId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "Website crawl job resume dispatch failed; database polling remains active",
+        );
+      }
+    }
+    return { resumedJobCount: jobs.length };
   }
 
   async listForWorkspace(

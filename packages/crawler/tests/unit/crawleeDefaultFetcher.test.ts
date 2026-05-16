@@ -89,6 +89,80 @@ describe("default Crawlee fetcher", () => {
     );
   });
 
+  it("falls back to a plain fetch when the Crawlee HTTP client connection is reset before a response", async () => {
+    let pageAttempts = 0;
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      if (req.url === "/next") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end("<html><head><title>Next</title></head><body><main><p>Next page content.</p></main></body></html>");
+        return;
+      }
+      pageAttempts += 1;
+      if (pageAttempts === 1) {
+        req.socket.destroy();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>Fallback</title></head><body><main><p>Fallback content.</p><a href=\"/next\">Next</a></main></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 2,
+      userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)"
+    });
+
+    expect(pageAttempts).toBe(2);
+    expect(pages.map((page) => page.url).sort()).toEqual([
+      `${baseUrl}/`,
+      `${baseUrl}/next`,
+    ].sort());
+    expect(pages[0]).toEqual(expect.objectContaining({
+      status: "success",
+      text: `Fallback content.\n\n[Next](${baseUrl}/next)`,
+      httpAttempted: true,
+      transportUsed: "http"
+    }));
+  });
+
+  it("does not use the plain fetch fallback to bypass robots.txt", async () => {
+    let pageHits = 0;
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res
+          .writeHead(200, { "content-type": "text/plain; charset=utf-8" })
+          .end("User-agent: ExampleDocsCrawler/1.0\nDisallow: /\n");
+        return;
+      }
+      pageHits += 1;
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>Blocked</title></head><body><main><p>Robots-blocked content.</p></main></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1,
+      userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)"
+    });
+
+    expect(pageHits).toBe(0);
+    expect(pages[0]).toEqual(expect.objectContaining({
+      status: "failed",
+      text: "",
+      links: [],
+      error: "Blocked by robots.txt"
+    }));
+  });
+
   it("stores decoded readable text with structural line breaks", async () => {
     const { server, baseUrl } = await listen((req, res) => {
       if (req.url === "/robots.txt") {
@@ -136,6 +210,172 @@ describe("default Crawlee fetcher", () => {
     expect(pages[0].text).not.toContain("Esimenesamm");
     expect(pages[0].text).not.toContain("&#xF5;");
     expect(pages[0].text).not.toContain("&auml;");
+  });
+
+  it("preserves content link and embedded video URLs in extracted text", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html>
+            <head><title>Lesson</title></head>
+            <body>
+              <header>
+                <a href="/menu">Menu</a>
+                <iframe src="https://www.youtube.com/embed/header-video"></iframe>
+              </header>
+              <main>
+                <h1>Lesson</h1>
+                <p>Read <a href="/resources/holy-science"><em>The Holy Science</em></a> before class.</p>
+                <iframe
+                  src="about:blank"
+                  data-lazy-src="https://www.youtube.com/embed/z1ktOP09oLM?rel=0&amp;autoplay=1"
+                ></iframe>
+                <p>Then watch <a href="https://youtu.be/follow-up">the follow-up video</a>.</p>
+              </main>
+            </body>
+          </html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1
+    });
+
+    expect(pages[0].text).toContain(`Read [The Holy Science](${baseUrl}/resources/holy-science) before class.`);
+    expect(pages[0].text).toContain("Video: https://www.youtube.com/watch?v=z1ktOP09oLM");
+    expect(pages[0].text).toContain("Then watch [the follow-up video](https://youtu.be/follow-up).");
+    expect(pages[0].text).not.toContain("header-video");
+    expect(pages[0].text).not.toContain("Menu");
+  });
+
+  it("can render content links as plain text while still dropping share and tracking links", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html>
+            <head><title>Lesson</title></head>
+            <body>
+              <main>
+                <p>Read <a href="/resources?utm_source=newsletter">the resource</a>.</p>
+                <p>Share <a href="https://facebook.com/sharer/sharer.php?u=https://example.com">Facebook</a>.</p>
+                <iframe src="https://www.youtube.com/embed/z1ktOP09oLM"></iframe>
+              </main>
+            </body>
+          </html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1,
+      preserveContentLinks: false
+    });
+
+    expect(pages[0].text).toContain("Read the resource.");
+    expect(pages[0].text).toContain("Share Facebook.");
+    expect(pages[0].text).not.toContain("utm_source");
+    expect(pages[0].text).not.toContain("facebook.com");
+    expect(pages[0].text).not.toContain("youtube.com");
+  });
+
+  it("applies include and exclude URL patterns with deny taking precedence", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      if (req.url === "/docs/keep") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end("<html><head><title>Keep</title></head><body><main><p>Keep documentation.</p></main></body></html>");
+        return;
+      }
+      if (req.url === "/docs/private" || req.url === "/blog/post") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end("<html><head><title>Denied</title></head><body><main><p>Denied content.</p></main></body></html>");
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html><head><title>Home</title></head><body><main>
+            <p>Home content.</p>
+            <a href="/docs/keep">Keep</a>
+            <a href="/docs/private">Private</a>
+            <a href="/blog/post">Blog</a>
+          </main></body></html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 4,
+      includeUrlPatterns: ["/docs/"],
+      excludeUrlPatterns: ["private"]
+    });
+
+    expect(pages.map((page) => page.url).sort()).toEqual([
+      `${baseUrl}/`,
+      `${baseUrl}/docs/keep`,
+    ].sort());
+    expect(pages.map((page) => page.text).join("\n")).not.toContain("Denied content");
+  });
+
+  it("marks category pages as discovery-only listing pages", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      if (req.url === "/category/news") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end(`
+            <html><head><title>News Archive</title></head><body><main>
+              <a href="/news/story">A full story</a>
+              <a href="/news/second">Another story</a>
+            </main></body></html>
+          `);
+        return;
+      }
+      if (req.url === "/") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end("<html><head><title>Home</title></head><body><main><a href=\"/category/news\">News archive</a></main></body></html>");
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>Story</title></head><body><article><p>Detailed story content with enough words to pass extraction scoring.</p></article></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 3
+    });
+    const listingPage = pages.find((page) => page.url === `${baseUrl}/category/news`);
+
+    expect(listingPage).toEqual(expect.objectContaining({
+      pageType: "listing",
+      skipReason: "Skipped listing page"
+    }));
+    expect(pages.map((page) => page.url)).toContain(`${baseUrl}/news/story`);
   });
 
   it("keeps main content when utility classes contain navigation-like breakpoint names", async () => {

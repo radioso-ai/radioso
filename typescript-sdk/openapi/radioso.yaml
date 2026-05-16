@@ -2524,6 +2524,22 @@ components:
         limit:
           type: integer
           exclusiveMinimum: 0
+        includeUrlPatterns:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+          maxItems: 50
+        excludeUrlPatterns:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+          maxItems: 50
+        preserveContentLinks:
+          type: boolean
       required:
         - url
     WebsiteCrawlJobResponse:
@@ -2565,6 +2581,9 @@ components:
         requestedUrl:
           type: string
         accepted:
+          type: integer
+          minimum: 0
+        skipped:
           type: integer
           minimum: 0
         failed:
@@ -2611,6 +2630,7 @@ components:
         - status
         - requestedUrl
         - accepted
+        - skipped
         - failed
         - documents
         - failures
@@ -2619,6 +2639,7 @@ components:
       enum:
         - queued
         - processing
+        - paused
         - completed
         - failed
     CrawlPageFailure:
@@ -2660,6 +2681,11 @@ components:
             - integer
             - "null"
           minimum: 0
+        skippedPageCount:
+          type:
+            - integer
+            - "null"
+          minimum: 0
         failures:
           type: array
           items:
@@ -2687,6 +2713,7 @@ components:
         - sourceId
         - documentCount
         - failedPageCount
+        - skippedPageCount
         - failures
         - lastError
         - createdAt
@@ -6468,6 +6495,98 @@ paths:
                 $ref: "#/components/schemas/WebsiteCrawlJobResponse"
         "400":
           description: Source is not a website or has no configured URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Source not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/document/sources/{sourceId}/pause-crawl:
+    post:
+      tags:
+        - Documents
+      summary: Pause active crawl jobs for a website source
+      operationId: pauseDocumentSourceCrawl
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: sourceId
+          in: path
+      responses:
+        "200":
+          description: Active crawl jobs paused
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pausedJobCount:
+                    type: integer
+                    minimum: 0
+                required:
+                  - pausedJobCount
+        "400":
+          description: Source is not a website source
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Source not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/document/sources/{sourceId}/resume-crawl:
+    post:
+      tags:
+        - Documents
+      summary: Resume paused crawl jobs for a website source
+      operationId: resumeDocumentSourceCrawl
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: sourceId
+          in: path
+      responses:
+        "200":
+          description: Paused crawl jobs queued for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resumedJobCount:
+                    type: integer
+                    minimum: 0
+                required:
+                  - resumedJobCount
+        "400":
+          description: Source is not a website source
           content:
             application/json:
               schema:

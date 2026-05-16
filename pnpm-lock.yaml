@@ -439,6 +439,9 @@ importers:
 
   packages/crawler:
     dependencies:
+      cheerio:
+        specifier: 1.0.0-rc.12
+        version: 1.0.0-rc.12
       crawlee:
         specifier: ^3.16.0
         version: 3.16.0(@types/node@24.12.4)(playwright@1.60.0)

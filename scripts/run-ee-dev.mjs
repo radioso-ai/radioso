@@ -15,6 +15,7 @@ Starts the local Enterprise Edition development stack:
 - Postgres in Docker Compose
 - backend dev server on http://127.0.0.1:8080
 - document worker
+- crawler worker
 - frontend dev server on http://127.0.0.1:3000
 - embed test harness on http://127.0.0.1:4321
 
@@ -228,6 +229,7 @@ const main = async () => {
     "stop",
     "backend",
     "backend-worker",
+    "backend-crawler-worker",
     "frontend",
   ]);
   await command("docker", ["compose", "-f", "docker-compose.yml", "up", "-d", "postgres"]);
@@ -276,7 +278,7 @@ const main = async () => {
   console.log(`Frontend: ${appOrigin}`);
   console.log("Backend:  http://127.0.0.1:8080");
   console.log("Embed harness: http://127.0.0.1:4321");
-  console.log("Press Ctrl-C to stop backend, worker, frontend, and embed harness.\n");
+  console.log("Press Ctrl-C to stop backend, workers, frontend, and embed harness.\n");
 
   const enterpriseBackendEnv = {
     ...backendEnvFileValues,
@@ -296,6 +298,10 @@ const main = async () => {
       env: enterpriseBackendEnv,
     }),
     spawnService("worker", "pnpm", ["run", "dev:worker"], {
+      cwd: backendDir,
+      env: enterpriseBackendEnv,
+    }),
+    spawnService("crawler-worker", "pnpm", ["run", "dev:crawler-worker"], {
       cwd: backendDir,
       env: enterpriseBackendEnv,
     }),

@@ -11,6 +11,7 @@ const baseJob = (overrides: Partial<WebsiteCrawlJobSummary>): WebsiteCrawlJobSum
   sourceId: null,
   documentCount: null,
   failedPageCount: null,
+  skippedPageCount: null,
   failures: [],
   lastError: null,
   createdAt: '2026-05-11T10:00:00.000Z',
@@ -45,6 +46,9 @@ describe('parseCrawlForm', () => {
     expect(parseCrawlForm({ url: '  https://example.com  ', limit: '', maxLimit: 100 })).toEqual({
       ok: true,
       url: 'https://example.com',
+      includeUrlPatterns: [],
+      excludeUrlPatterns: [],
+      preserveContentLinks: true,
     })
   })
 
@@ -68,6 +72,9 @@ describe('parseCrawlForm', () => {
       ok: true,
       url: 'https://example.com',
       limit: 100,
+      includeUrlPatterns: [],
+      excludeUrlPatterns: [],
+      preserveContentLinks: true,
     })
   })
 
@@ -76,6 +83,26 @@ describe('parseCrawlForm', () => {
       ok: true,
       url: 'https://example.com',
       limit: 7,
+      includeUrlPatterns: [],
+      excludeUrlPatterns: [],
+      preserveContentLinks: true,
+    })
+  })
+
+  it('parses crawler policy fields', () => {
+    expect(parseCrawlForm({
+      url: 'https://example.com',
+      limit: '',
+      maxLimit: 100,
+      includeUrlPatterns: ' /docs/ \n/docs/\n/blog',
+      excludeUrlPatterns: '/tag\n/search',
+      preserveContentLinks: false,
+    })).toEqual({
+      ok: true,
+      url: 'https://example.com',
+      includeUrlPatterns: ['/docs/', '/blog'],
+      excludeUrlPatterns: ['/tag', '/search'],
+      preserveContentLinks: false,
     })
   })
 })

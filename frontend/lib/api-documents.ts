@@ -75,12 +75,21 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async crawlWebsite(input: { url: string; limit?: number }): Promise<WebsiteCrawlEnqueueResponse> {
+  async crawlWebsite(input: {
+    url: string
+    limit?: number
+    includeUrlPatterns?: string[]
+    excludeUrlPatterns?: string[]
+    preserveContentLinks?: boolean
+  }): Promise<WebsiteCrawlEnqueueResponse> {
     return request<WebsiteCrawlEnqueueResponse>("/document/crawl", {
       method: "POST",
       body: JSON.stringify({
         url: input.url,
         ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        ...(input.includeUrlPatterns !== undefined ? { includeUrlPatterns: input.includeUrlPatterns } : {}),
+        ...(input.excludeUrlPatterns !== undefined ? { excludeUrlPatterns: input.excludeUrlPatterns } : {}),
+        ...(input.preserveContentLinks !== undefined ? { preserveContentLinks: input.preserveContentLinks } : {}),
       }),
     }, { withApiToken: true })
   },
@@ -114,6 +123,18 @@ export const documentsApi = {
 
   async recrawlSource(sourceId: string): Promise<WebsiteCrawlEnqueueResponse> {
     return request<WebsiteCrawlEnqueueResponse>(`/document/sources/${encodeURIComponent(sourceId)}/recrawl`, {
+      method: "POST",
+    }, { withApiToken: true })
+  },
+
+  async pauseSourceCrawl(sourceId: string): Promise<{ pausedJobCount: number }> {
+    return request<{ pausedJobCount: number }>(`/document/sources/${encodeURIComponent(sourceId)}/pause-crawl`, {
+      method: "POST",
+    }, { withApiToken: true })
+  },
+
+  async resumeSourceCrawl(sourceId: string): Promise<{ resumedJobCount: number }> {
+    return request<{ resumedJobCount: number }>(`/document/sources/${encodeURIComponent(sourceId)}/resume-crawl`, {
       method: "POST",
     }, { withApiToken: true })
   },

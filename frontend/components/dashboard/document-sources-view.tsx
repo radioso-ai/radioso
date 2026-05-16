@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight, Database, RefreshCw, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Database, Pause, Play, RefreshCw, Trash2 } from 'lucide-react'
 
 import {
   AlertDialog,
@@ -139,6 +139,7 @@ function SourceDocumentList({ sourceId, sourceKind }: { sourceId: string; source
   const pendingCount = documents.filter((d) => d.status === 'queued' || d.status === 'processing').length
   const failedDocCount = documents.filter((d) => d.status === 'failed').length
   const crawlInProgress = crawlJob?.status === 'queued' || crawlJob?.status === 'processing'
+  const crawlPaused = crawlJob?.status === 'paused'
   const crawlFailedPages = crawlJob?.failedPageCount ?? 0
   const crawlFailures = crawlJob?.failures ?? []
   const crawlFailed = crawlJob?.status === 'failed'
@@ -151,6 +152,9 @@ function SourceDocumentList({ sourceId, sourceKind }: { sourceId: string; source
             <Spinner className="mr-1 inline h-3 w-3" />
             Crawling…
           </span>
+        ) : null}
+        {crawlPaused ? (
+          <span>Paused</span>
         ) : null}
         <span>{total} {total === 1 ? 'document' : 'documents'}</span>
         {readyCount > 0 ? (
@@ -253,7 +257,10 @@ export function DocumentSourcesView() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [recrawlingSourceId, setRecrawlingSourceId] = useState<string | null>(null)
+  const [pausingSourceId, setPausingSourceId] = useState<string | null>(null)
+  const [resumingSourceId, setResumingSourceId] = useState<string | null>(null)
   const [crawlingSourceIds, setCrawlingSourceIds] = useState<Set<string>>(new Set())
+  const [pausedSourceIds, setPausedSourceIds] = useState<Set<string>>(new Set())
   const sectionShellClassName = 'w-full'
 
   const refreshCrawlingStatus = useCallback(() => {
@@ -261,11 +268,14 @@ export function DocumentSourcesView() {
       .listCrawlJobs({ sinceMinutes: 60 })
       .then((response) => {
         const active = new Set<string>()
+        const paused = new Set<string>()
         const staleThresholdMs = 10 * 60 * 1000
         for (const job of response.jobs) {
           if (!job.sourceId) continue
           if (job.status === 'queued') {
             active.add(job.sourceId)
+          } else if (job.status === 'paused') {
+            paused.add(job.sourceId)
           } else if (job.status === 'processing') {
             const age = Date.now() - new Date(job.updatedAt).getTime()
             if (age < staleThresholdMs) {
@@ -274,6 +284,7 @@ export function DocumentSourcesView() {
           }
         }
         setCrawlingSourceIds(active)
+        setPausedSourceIds(paused)
       })
       .catch(() => {})
   }, [])
@@ -322,11 +333,50 @@ export function DocumentSourcesView() {
     try {
       await documentsApi.recrawlSource(source.id)
       setCrawlingSourceIds((prev) => new Set([...prev, source.id]))
+      setPausedSourceIds((prev) => {
+        const next = new Set(prev)
+        next.delete(source.id)
+        return next
+      })
       void loadSources()
     } catch {
       // Recrawl failure is visible via the crawl jobs banner
     } finally {
       setRecrawlingSourceId(null)
+    }
+  }
+
+  const handlePause = async (source: DocumentSourceListItem) => {
+    setPausingSourceId(source.id)
+    try {
+      await documentsApi.pauseSourceCrawl(source.id)
+      setCrawlingSourceIds((prev) => {
+        const next = new Set(prev)
+        next.delete(source.id)
+        return next
+      })
+      setPausedSourceIds((prev) => new Set([...prev, source.id]))
+      refreshCrawlingStatus()
+      void loadSources()
+    } finally {
+      setPausingSourceId(null)
+    }
+  }
+
+  const handleResume = async (source: DocumentSourceListItem) => {
+    setResumingSourceId(source.id)
+    try {
+      await documentsApi.resumeSourceCrawl(source.id)
+      setPausedSourceIds((prev) => {
+        const next = new Set(prev)
+        next.delete(source.id)
+        return next
+      })
+      setCrawlingSourceIds((prev) => new Set([...prev, source.id]))
+      refreshCrawlingStatus()
+      void loadSources()
+    } finally {
+      setResumingSourceId(null)
     }
   }
 
@@ -462,17 +512,50 @@ export function DocumentSourcesView() {
                       >
                         {canRecrawl(source) ? (() => {
                           const isCrawling = crawlingSourceIds.has(source.id) || recrawlingSourceId === source.id
+                          const isPaused = pausedSourceIds.has(source.id)
+                          const isPausing = pausingSourceId === source.id
+                          const isResuming = resumingSourceId === source.id
+                          if (isCrawling) {
+                            return (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                disabled={isPausing}
+                                title="Pause crawl"
+                                onClick={() => void handlePause(source)}
+                              >
+                                {isPausing ? <Spinner className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+                              </Button>
+                            )
+                          }
+                          if (isPaused) {
+                            return (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                disabled={isResuming}
+                                title="Resume crawl"
+                                onClick={() => void handleResume(source)}
+                              >
+                                {isResuming ? <Spinner className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+                              </Button>
+                            )
+                          }
                           return (
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
                               className="h-7 w-7 p-0"
-                              disabled={isCrawling}
-                              title={isCrawling ? 'Crawl in progress' : 'Re-crawl'}
+                              disabled={recrawlingSourceId === source.id}
+                              title="Re-crawl"
                               onClick={() => void handleRecrawl(source)}
                             >
-                              <RefreshCw className={`h-3.5 w-3.5 ${isCrawling ? 'animate-spin' : ''}`} />
+                              <RefreshCw className={`h-3.5 w-3.5 ${recrawlingSourceId === source.id ? 'animate-spin' : ''}`} />
                             </Button>
                           )
                         })() : null}

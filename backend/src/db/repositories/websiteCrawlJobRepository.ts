@@ -1,8 +1,16 @@
 import { randomUUID } from "node:crypto";
 
 import type { Database } from "../../shared/infra/database.js";
+import {
+  DEFAULT_WEBSITE_CRAWL_POLICY,
+  emptyWebsiteCrawlCheckpoint,
+  normalizeWebsiteCrawlCheckpoint,
+  normalizeWebsiteCrawlPolicy,
+  type WebsiteCrawlCheckpoint,
+  type WebsiteCrawlPolicy,
+} from "../../modules/websiteCrawler/policy.js";
 
-export type WebsiteCrawlJobStatus = "queued" | "processing" | "completed" | "failed";
+export type WebsiteCrawlJobStatus = "queued" | "processing" | "paused" | "completed" | "failed";
 
 export interface WebsiteCrawlJobRecord {
   id: string;
@@ -13,6 +21,8 @@ export interface WebsiteCrawlJobRecord {
   limit: number;
   status: WebsiteCrawlJobStatus;
   attemptCount: number;
+  policy: WebsiteCrawlPolicy;
+  checkpoint: WebsiteCrawlCheckpoint;
   result: Record<string, unknown> | null;
   lastError: string | null;
   availableAt: Date;
@@ -31,6 +41,8 @@ interface WebsiteCrawlJobRow {
   crawl_limit: number;
   status: WebsiteCrawlJobStatus;
   attempt_count: number;
+  policy_json: Record<string, unknown> | null;
+  checkpoint_json: Record<string, unknown> | null;
   result_json: Record<string, unknown> | null;
   last_error: string | null;
   available_at: Date;
@@ -49,6 +61,8 @@ const websiteCrawlJobColumns = [
   "crawl_limit",
   "status",
   "attempt_count",
+  "policy_json",
+  "checkpoint_json",
   "result_json",
   "last_error",
   "available_at",
@@ -72,6 +86,8 @@ const mapWebsiteCrawlJob = (row: WebsiteCrawlJobRow): WebsiteCrawlJobRecord => (
   limit: row.crawl_limit,
   status: row.status,
   attemptCount: row.attempt_count,
+  policy: normalizeWebsiteCrawlPolicy(row.policy_json ?? DEFAULT_WEBSITE_CRAWL_POLICY),
+  checkpoint: normalizeWebsiteCrawlCheckpoint(row.checkpoint_json ?? emptyWebsiteCrawlCheckpoint()),
   result: row.result_json ?? null,
   lastError: row.last_error,
   availableAt: new Date(row.available_at),
@@ -95,11 +111,16 @@ export interface WebsiteCrawlJobRepositoryPort {
     sourceId?: string | null;
     requestedUrl: string;
     limit: number;
+    policy?: WebsiteCrawlPolicy;
+    checkpoint?: WebsiteCrawlCheckpoint;
   }): Promise<WebsiteCrawlJobRecord>;
   findById(jobId: string): Promise<WebsiteCrawlJobRecord | null>;
   listForWorkspace(workspaceId: string, options?: WebsiteCrawlJobListOptions): Promise<WebsiteCrawlJobRecord[]>;
   deleteById(jobId: string, workspaceId: string): Promise<boolean>;
   cancelBySourceId(sourceId: string, workspaceId: string): Promise<number>;
+  pauseBySourceId(sourceId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord[]>;
+  resumePausedBySourceId(sourceId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord[]>;
+  updateCheckpoint(jobId: string, checkpoint: WebsiteCrawlCheckpoint): Promise<void>;
   claimNext(now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   claimById(jobId: string, now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean>;
@@ -117,6 +138,8 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     sourceId?: string | null;
     requestedUrl: string;
     limit: number;
+    policy?: WebsiteCrawlPolicy;
+    checkpoint?: WebsiteCrawlCheckpoint;
   }): Promise<WebsiteCrawlJobRecord> {
     const [row] = await this.database.query<WebsiteCrawlJobRow>(
       `INSERT INTO website_crawl_jobs (
@@ -126,9 +149,11 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
          source_id,
          requested_url,
          crawl_limit,
+         policy_json,
+         checkpoint_json,
          status
        )
-       VALUES ($1, $2, $3, $4, $5, $6, 'queued')
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, 'queued')
        RETURNING ${selectWebsiteCrawlJob}`,
       [
         randomUUID(),
@@ -137,6 +162,8 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
         input.sourceId ?? null,
         input.requestedUrl,
         input.limit,
+        JSON.stringify(input.policy ?? DEFAULT_WEBSITE_CRAWL_POLICY),
+        JSON.stringify(input.checkpoint ?? emptyWebsiteCrawlCheckpoint()),
       ],
     );
 
@@ -169,9 +196,50 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     return this.database.execute(
       `DELETE FROM website_crawl_jobs
        WHERE source_id = $1
-         AND workspace_id = $2
-         AND status IN ('queued', 'processing')`,
+         AND workspace_id = $2`,
       [sourceId, workspaceId],
+    );
+  }
+
+  async pauseBySourceId(sourceId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord[]> {
+    const rows = await this.database.query<WebsiteCrawlJobRow>(
+      `UPDATE website_crawl_jobs
+       SET status = 'paused',
+           claimed_at = NULL,
+           updated_at = NOW()
+       WHERE source_id = $1
+         AND workspace_id = $2
+         AND status IN ('queued', 'processing')
+       RETURNING ${selectWebsiteCrawlJob}`,
+      [sourceId, workspaceId],
+    );
+    return rows.map(mapWebsiteCrawlJob);
+  }
+
+  async resumePausedBySourceId(sourceId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord[]> {
+    const rows = await this.database.query<WebsiteCrawlJobRow>(
+      `UPDATE website_crawl_jobs
+       SET status = 'queued',
+           available_at = NOW(),
+           claimed_at = NULL,
+           updated_at = NOW()
+       WHERE source_id = $1
+         AND workspace_id = $2
+         AND status = 'paused'
+       RETURNING ${selectWebsiteCrawlJob}`,
+      [sourceId, workspaceId],
+    );
+    return rows.map(mapWebsiteCrawlJob);
+  }
+
+  async updateCheckpoint(jobId: string, checkpoint: WebsiteCrawlCheckpoint): Promise<void> {
+    await this.database.execute(
+      `UPDATE website_crawl_jobs
+       SET checkpoint_json = $2::jsonb,
+           updated_at = NOW()
+       WHERE id = $1
+         AND status IN ('processing', 'paused')`,
+      [jobId, JSON.stringify(checkpoint)],
     );
   }
 
@@ -279,7 +347,8 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
            last_error = NULL,
            completed_at = NOW(),
            updated_at = NOW()
-       WHERE id = $1`,
+       WHERE id = $1
+         AND status = 'processing'`,
       [jobId, result],
     );
   }
@@ -291,7 +360,8 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
            last_error = $2,
            completed_at = NOW(),
            updated_at = NOW()
-       WHERE id = $1`,
+       WHERE id = $1
+         AND status = 'processing'`,
       [jobId, errorMessage],
     );
   }

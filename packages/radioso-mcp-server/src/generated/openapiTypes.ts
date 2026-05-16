@@ -731,6 +731,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/document/sources/{sourceId}/pause-crawl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause active crawl jobs for a website source */
+        post: operations["pauseDocumentSourceCrawl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}/resume-crawl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume paused crawl jobs for a website source */
+        post: operations["resumeDocumentSourceCrawl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/document/sources/{sourceId}": {
         parameters: {
             query?: never;
@@ -2062,6 +2096,9 @@ export interface components {
             /** Format: uri */
             url: string;
             limit?: number;
+            includeUrlPatterns?: string[];
+            excludeUrlPatterns?: string[];
+            preserveContentLinks?: boolean;
         };
         WebsiteCrawlJobResponse: {
             /** Format: uuid */
@@ -2079,6 +2116,7 @@ export interface components {
             status: string | null;
             requestedUrl: string;
             accepted: number;
+            skipped: number;
             failed: number;
             documents: {
                 externalDocumentId: string;
@@ -2093,7 +2131,7 @@ export interface components {
             }[];
         };
         /** @enum {string} */
-        WebsiteCrawlJobStatus: "queued" | "processing" | "completed" | "failed";
+        WebsiteCrawlJobStatus: "queued" | "processing" | "paused" | "completed" | "failed";
         CrawlPageFailure: {
             sourceUrl: string;
             reason: string;
@@ -2109,6 +2147,7 @@ export interface components {
             sourceId: string | null;
             documentCount: number | null;
             failedPageCount: number | null;
+            skippedPageCount: number | null;
             failures: components["schemas"]["CrawlPageFailure"][];
             lastError: string | null;
             /** Format: date-time */
@@ -5059,6 +5098,108 @@ export interface operations {
                 };
             };
             /** @description Source is not a website or has no configured URL */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    pauseDocumentSourceCrawl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active crawl jobs paused */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        pausedJobCount: number;
+                    };
+                };
+            };
+            /** @description Source is not a website source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resumeDocumentSourceCrawl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paused crawl jobs queued for processing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        resumedJobCount: number;
+                    };
+                };
+            };
+            /** @description Source is not a website source */
             400: {
                 headers: {
                     [name: string]: unknown;

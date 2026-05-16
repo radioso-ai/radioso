@@ -87,6 +87,46 @@ describe("website crawler service", () => {
     expect(ingest.mock.calls[1][0].metadata.sourceUrl).toBe("https://example.com/contact");
   });
 
+  it("skips duplicate normalized content within a crawl run", async () => {
+    const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([
+        {
+          sourceUrl: "https://example.com/a",
+          canonicalUrl: "https://example.com/a",
+          title: "A",
+          content: "# Shared",
+          metadata: { normalizedContentHash: "hash-1" },
+        },
+        {
+          sourceUrl: "https://example.com/b",
+          canonicalUrl: "https://example.com/b",
+          title: "B",
+          content: "# Shared",
+          metadata: { normalizedContentHash: "hash-1" },
+        },
+      ]),
+      documentIngestionService: { ingest },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    const result = await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 2,
+    });
+
+    expect(result.accepted).toBe(1);
+    expect(result.skipped).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(result.failures).toEqual([{
+      sourceUrl: "https://example.com/b",
+      reason: "Duplicate normalized content",
+    }]);
+    expect(ingest).toHaveBeenCalledOnce();
+  });
+
   it("uses stable external document IDs for repeated crawls", async () => {
     const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
     const service = new WebsiteCrawlerService({
@@ -534,10 +574,10 @@ describe("website crawler service", () => {
       limit: 1,
     });
 
-    expect(crawl).toHaveBeenCalledWith({
+    expect(crawl).toHaveBeenCalledWith(expect.objectContaining({
       url: "https://example.com/search?q=api",
       limit: 1,
-    });
+    }));
     expect(result.requestedUrl).toBe("https://example.com/search?q=api");
   });
 
@@ -564,11 +604,11 @@ describe("website crawler service", () => {
       signal,
     });
 
-    expect(crawl).toHaveBeenCalledWith({
+    expect(crawl).toHaveBeenCalledWith(expect.objectContaining({
       url: "https://example.com",
       limit: 1,
       signal,
-    });
+    }));
   });
 
   it("stops before provider calls when the request signal is already aborted", async () => {

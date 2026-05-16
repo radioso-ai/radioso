@@ -272,6 +272,102 @@ export const registerDocumentsPaths = (
   });
 
   registry.registerPath({
+    method: "post",
+    path: "/api/v1/document/sources/{sourceId}/pause-crawl",
+    tags: ["Documents"],
+    summary: "Pause active crawl jobs for a website source",
+    operationId: "pauseDocumentSourceCrawl",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.sourceParamsSchema,
+    },
+    responses: {
+      200: {
+        description: "Active crawl jobs paused",
+        content: {
+          "application/json": {
+            schema: z.object({
+              pausedJobCount: z.number().int().min(0),
+            }),
+          },
+        },
+      },
+      400: {
+        description: "Source is not a website source",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Source not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/document/sources/{sourceId}/resume-crawl",
+    tags: ["Documents"],
+    summary: "Resume paused crawl jobs for a website source",
+    operationId: "resumeDocumentSourceCrawl",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.sourceParamsSchema,
+    },
+    responses: {
+      200: {
+        description: "Paused crawl jobs queued for processing",
+        content: {
+          "application/json": {
+            schema: z.object({
+              resumedJobCount: z.number().int().min(0),
+            }),
+          },
+        },
+      },
+      400: {
+        description: "Source is not a website source",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Source not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "delete",
     path: "/api/v1/document/sources/{sourceId}",
     tags: ["Documents"],

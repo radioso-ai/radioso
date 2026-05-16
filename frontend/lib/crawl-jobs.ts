@@ -1,16 +1,29 @@
 import type { WebsiteCrawlJobStatus, WebsiteCrawlJobSummary } from '@/lib/api'
 
 export type ParsedCrawlForm =
-  | { ok: true; url: string; limit?: number }
+  | {
+      ok: true
+      url: string
+      limit?: number
+      includeUrlPatterns: string[]
+      excludeUrlPatterns: string[]
+      preserveContentLinks: boolean
+    }
   | { ok: false; error: string }
 
 export function parseCrawlForm({
   url,
   limit,
+  includeUrlPatterns = '',
+  excludeUrlPatterns = '',
+  preserveContentLinks = true,
   maxLimit,
 }: {
   url: string
   limit: string
+  includeUrlPatterns?: string
+  excludeUrlPatterns?: string
+  preserveContentLinks?: boolean
   maxLimit: number
 }): ParsedCrawlForm {
   const trimmedUrl = url.trim()
@@ -30,7 +43,13 @@ export function parseCrawlForm({
 
   const trimmedLimit = limit.trim()
   if (!trimmedLimit) {
-    return { ok: true, url: trimmedUrl }
+    return {
+      ok: true,
+      url: trimmedUrl,
+      includeUrlPatterns: parsePatternLines(includeUrlPatterns),
+      excludeUrlPatterns: parsePatternLines(excludeUrlPatterns),
+      preserveContentLinks,
+    }
   }
 
   const value = Number.parseInt(trimmedLimit, 10)
@@ -38,7 +57,28 @@ export function parseCrawlForm({
     return { ok: false, error: 'Page limit must be a positive whole number.' }
   }
 
-  return { ok: true, url: trimmedUrl, limit: Math.min(value, maxLimit) }
+  return {
+    ok: true,
+    url: trimmedUrl,
+    limit: Math.min(value, maxLimit),
+    includeUrlPatterns: parsePatternLines(includeUrlPatterns),
+    excludeUrlPatterns: parsePatternLines(excludeUrlPatterns),
+    preserveContentLinks,
+  }
+}
+
+const parsePatternLines = (value: string): string[] => {
+  const seen = new Set<string>()
+  const patterns: string[] = []
+  for (const line of value.split(/\r?\n/)) {
+    const pattern = line.trim()
+    if (!pattern) continue
+    const key = pattern.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    patterns.push(pattern)
+  }
+  return patterns
 }
 
 export interface CrawlJobMergeResult {

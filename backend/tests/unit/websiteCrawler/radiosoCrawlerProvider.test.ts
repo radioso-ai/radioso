@@ -45,13 +45,15 @@ describe("RadiosoCrawlerProvider", () => {
       limit: 5,
     });
 
-    expect(mocks.crawlSite).toHaveBeenCalledWith({
+    expect(mocks.crawlSite).toHaveBeenCalledWith(expect.objectContaining({
       baseUrl: "https://example.com",
       pageLimit: 5,
       pageConcurrency: 1,
       userAgent: "RadiosoCrawler/1.0",
       signal: undefined,
-    });
+      seedPendingUrls: [],
+      includeBaseUrl: true,
+    }));
     expect(result).toEqual({
       provider: "radioso-crawler",
       status: "completed",
@@ -71,6 +73,11 @@ describe("RadiosoCrawlerProvider", () => {
           browserAttempted: false,
           browserFallbackReason: null,
           httpQualityScore: 0.95,
+          pageType: null,
+          qualityScore: null,
+          skipReason: null,
+          extractedContainer: null,
+          normalizedContentHash: null,
           error: null,
         },
       }],

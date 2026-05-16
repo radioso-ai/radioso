@@ -1,7 +1,7 @@
 import type { CrawledPageResult } from "@radioso/crawler";
 
 import { resolveWebsiteCrawlerConfig } from "./config.js";
-import type { WebsiteCrawlPage, WebsiteCrawlResult, WebsiteCrawlerProvider } from "./provider.js";
+import type { WebsiteCrawlPage, WebsiteCrawlRequest, WebsiteCrawlResult, WebsiteCrawlerProvider } from "./provider.js";
 
 const PROVIDER_NAME = "radioso-crawler";
 const DEFAULT_PAGE_CONCURRENCY = 1;
@@ -9,11 +9,7 @@ const DEFAULT_PAGE_CONCURRENCY = 1;
 export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
   readonly name = PROVIDER_NAME;
 
-  async crawl(request: {
-    url: string;
-    limit: number;
-    signal?: AbortSignal;
-  }): Promise<WebsiteCrawlResult> {
+  async crawl(request: WebsiteCrawlRequest): Promise<WebsiteCrawlResult> {
     const { crawlSite } = await import("@radioso/crawler");
     const config = resolveWebsiteCrawlerConfig();
     const pages = await crawlSite({
@@ -21,6 +17,15 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
       pageLimit: request.limit,
       pageConcurrency: DEFAULT_PAGE_CONCURRENCY,
       userAgent: config.userAgent,
+      includeUrlPatterns: request.policy?.includeUrlPatterns,
+      excludeUrlPatterns: request.policy?.excludeUrlPatterns,
+      preserveContentLinks: request.policy?.preserveContentLinks,
+      seedDiscoveredUrls: request.checkpoint?.discoveredUrls,
+      seedPendingUrls: [
+        ...(request.checkpoint?.queuedUrls ?? []),
+        ...(request.checkpoint?.processingUrls ?? []),
+      ],
+      includeBaseUrl: (request.checkpoint?.discoveredUrls.length ?? 0) === 0,
       signal: request.signal,
     });
 
@@ -32,7 +37,7 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
   }
 
   async crawlStream(
-    request: { url: string; limit: number; signal?: AbortSignal },
+    request: WebsiteCrawlRequest,
     onPage: (page: WebsiteCrawlPage) => Promise<void>,
   ): Promise<Omit<WebsiteCrawlResult, "pages">> {
     const { crawlSiteStream } = await import("@radioso/crawler");
@@ -42,9 +47,38 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
       pageLimit: request.limit,
       pageConcurrency: DEFAULT_PAGE_CONCURRENCY,
       userAgent: config.userAgent,
+      includeUrlPatterns: request.policy?.includeUrlPatterns,
+      excludeUrlPatterns: request.policy?.excludeUrlPatterns,
+      preserveContentLinks: request.policy?.preserveContentLinks,
+      seedDiscoveredUrls: request.checkpoint?.discoveredUrls,
+      seedPendingUrls: [
+        ...(request.checkpoint?.queuedUrls ?? []),
+        ...(request.checkpoint?.processingUrls ?? []),
+      ],
+      includeBaseUrl: (request.checkpoint?.discoveredUrls.length ?? 0) === 0,
       signal: request.signal,
+      onCandidateUrl: async (decision) => {
+        if (decision.decision !== "accepted" || !decision.canonicalUrl) {
+          return;
+        }
+        await request.onCheckpointEvent?.({
+          type: "discovered",
+          url: decision.canonicalUrl,
+          canonicalUrl: decision.canonicalUrl,
+        });
+      },
       onResult: async (page) => {
+        await request.onCheckpointEvent?.({
+          type: "processing",
+          url: page.frontierUrl,
+          canonicalUrl: page.url,
+        });
         await onPage(toWebsiteCrawlPage(page));
+        await request.onCheckpointEvent?.({
+          type: "processed",
+          url: page.frontierUrl,
+          canonicalUrl: page.url,
+        });
       },
     });
 
@@ -71,6 +105,11 @@ const toWebsiteCrawlPage = (page: CrawledPageResult): WebsiteCrawlPage => ({
     browserAttempted: page.browserAttempted ?? null,
     browserFallbackReason: page.browserFallbackReason ?? null,
     httpQualityScore: page.httpQualityScore ?? null,
+    pageType: page.pageType ?? null,
+    qualityScore: page.qualityScore ?? null,
+    skipReason: page.skipReason ?? null,
+    extractedContainer: page.extractedContainer ?? null,
+    normalizedContentHash: page.normalizedContentHash ?? null,
     error: page.error ?? null,
   },
 });

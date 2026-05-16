@@ -75,4 +75,18 @@ describe('agent creation extensions', () => {
       },
     ])
   })
+
+  it('hides wizard-dialog actions when the workspace public route key is missing', () => {
+    expect(resolveAgentCreationActions([
+      {
+        id: 'website',
+        label: 'Create from website',
+        icon: 'globe',
+        kind: 'wizard-dialog',
+      },
+    ], {
+      accountId: 'acct',
+      workspacePublicRouteKey: null,
+    })).toEqual([])
+  })
 })

@@ -186,6 +186,28 @@ describe("AgentWizardService", () => {
     expect(complete).toHaveBeenCalledTimes(2);
   });
 
+  it("expires cached analysis runs after the TTL", async () => {
+    const crawler = createCrawler();
+    const { service } = createService({ crawlerProvider: crawler });
+    const initial = await service.analyzeWebsite({
+      url: "https://example.com",
+      workspaceId: "workspace-1",
+    });
+
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + 31 * 60 * 1000;
+      await expect(
+        service.regenerateInstructions({
+          workspaceId: "workspace-1",
+          analysisRunId: initial.analysisRunId,
+        }),
+      ).rejects.toMatchObject({ code: "analysis_not_found", statusCode: 404 });
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
   it("classifies an unreachable site before calling the LLM", async () => {
     const crawler = createCrawler({
       fetchPageWithScreenshot: vi.fn().mockRejectedValue(Object.assign(new Error("getaddrinfo ENOTFOUND example.com"), {

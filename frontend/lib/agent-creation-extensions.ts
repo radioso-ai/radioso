@@ -70,6 +70,13 @@ export const resolveAgentCreationActions = (
   definitions.flatMap((definition): AgentCreationAction[] => {
     const kind = definition.kind ?? 'route'
     if (kind === 'wizard-dialog') {
+      // The wizard navigates to the agent settings page after creation,
+      // which requires the workspace public route key. Hide the action
+      // entirely until that key is available rather than rendering a
+      // button that opens a dialog state nothing renders for.
+      if (!workspacePublicRouteKey) {
+        return []
+      }
       return [{
         id: definition.id,
         label: definition.label,

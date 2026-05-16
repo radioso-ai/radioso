@@ -173,10 +173,13 @@ interface AgentWizardDependencies {
 interface CachedAnalysisRun {
   workspaceId: string;
   prompt: string;
+  createdAt: number;
 }
 
 const MAX_CONTENT_LENGTH = 30_000;
 const MAX_ANALYSIS_PAGES = 10;
+const ANALYSIS_RUN_TTL_MS = 30 * 60 * 1000;
+const ANALYSIS_RUN_MAX_ENTRIES = 200;
 
 const selectKeyPageUrls = (links: string[], baseUrl: string, limit: number): string[] => {
   const baseOrigin = new URL(baseUrl).origin;
@@ -498,9 +501,11 @@ export class AgentWizardService {
       }).catch(() => {});
 
       const analysisRunId = crypto.randomUUID();
+      this.pruneAnalysisRuns();
       this.analysisRuns.set(analysisRunId, {
         workspaceId: input.workspaceId,
         prompt,
+        createdAt: Date.now(),
       });
 
       const resultPayload = {
@@ -531,7 +536,11 @@ export class AgentWizardService {
     signal?: AbortSignal;
   }): Promise<WizardInstructionSuggestion> {
     const cached = this.analysisRuns.get(input.analysisRunId);
-    if (!cached || cached.workspaceId !== input.workspaceId) {
+    const isExpired = cached !== undefined && Date.now() - cached.createdAt > ANALYSIS_RUN_TTL_MS;
+    if (isExpired) {
+      this.analysisRuns.delete(input.analysisRunId);
+    }
+    if (!cached || isExpired || cached.workspaceId !== input.workspaceId) {
       throw new AgentWizardError(
         "analysis_not_found",
         "The previous analysis is no longer available. Re-run the website analysis before regenerating instructions.",
@@ -619,6 +628,20 @@ Return a fresh alternative for agentName, customInstruction, greetingMessage, ch
     }).catch(() => {});
 
     return { agentId: agent.id, crawlJobId };
+  }
+
+  private pruneAnalysisRuns(): void {
+    const now = Date.now();
+    for (const [id, run] of this.analysisRuns) {
+      if (now - run.createdAt > ANALYSIS_RUN_TTL_MS) {
+        this.analysisRuns.delete(id);
+      }
+    }
+    while (this.analysisRuns.size >= ANALYSIS_RUN_MAX_ENTRIES) {
+      const oldestId = this.analysisRuns.keys().next().value;
+      if (!oldestId) break;
+      this.analysisRuns.delete(oldestId);
+    }
   }
 
   private async assertSafeUrl(value: string): Promise<void> {

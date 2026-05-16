@@ -11,6 +11,10 @@ on:
         description: Cloud Run backend service name.
         required: true
         type: string
+      crawler_worker_service:
+        description: Cloud Run crawler worker service name.
+        required: true
+        type: string
       frontend_service:
         description: Cloud Run frontend service name.
         required: true
@@ -49,6 +53,7 @@ jobs:
       ARTIFACT_REGISTRY_REGION: ${{ vars.ARTIFACT_REGISTRY_REGION }}
       ARTIFACT_REPOSITORY: ${{ inputs.artifact_repository }}
       BACKEND_SERVICE: ${{ inputs.backend_service }}
+      CRAWLER_WORKER_SERVICE: ${{ inputs.crawler_worker_service }}
       FRONTEND_SERVICE: ${{ inputs.frontend_service }}
       GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
@@ -146,6 +151,9 @@ jobs:
       - name: Deploy worker service
         run: gcloud run services update "${WORKER_SERVICE}" --image "${BACKEND_IMAGE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
 
+      - name: Deploy crawler worker service
+        run: gcloud run services update "${CRAWLER_WORKER_SERVICE}" --image "${BACKEND_IMAGE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+
       - name: Deploy frontend service
         run: gcloud run services update "${FRONTEND_SERVICE}" --image "${FRONTEND_IMAGE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
 
@@ -153,4 +161,5 @@ jobs:
         run: |
           echo "backend_url=$(gcloud run services describe "${BACKEND_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
           echo "worker_url=$(gcloud run services describe "${WORKER_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
+          echo "crawler_worker_url=$(gcloud run services describe "${CRAWLER_WORKER_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
           echo "frontend_url=$(gcloud run services describe "${FRONTEND_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"

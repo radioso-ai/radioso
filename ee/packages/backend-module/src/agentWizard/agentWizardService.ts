@@ -393,11 +393,22 @@ export class AgentWizardService {
         screenshotUnavailableReason = "browser_unavailable";
         homepage = await this.fetchHomepageViaHttp(crawler, input.url, analysisSignal.signal, null);
       }
+      // Re-validate the loaded URL: page.goto follows redirects, and a public
+      // input URL can redirect to localhost / RFC1918 / cloud metadata.
+      // Re-running the public-host policy on the final URL closes that gap.
+      if (homepage.url !== input.url) {
+        await this.assertSafeUrl(homepage.url);
+      }
       input.onProgress?.({ type: "progress", step: "crawling", page: 1, total: MAX_ANALYSIS_PAGES, url: homepage.url, title: homepage.title });
 
+      // Use the loaded URL as the scope for link selection and follow-up
+      // crawling. Common www-prefix redirects (e.g. example.com → www.example.com)
+      // would otherwise drop every link on the loaded page because they don't
+      // match the input origin, leaving the wizard to analyze a single page.
+      const baseForFollowUp = homepage.url;
       const keyPageUrls = selectKeyPageUrls(
         homepage.links,
-        input.url,
+        baseForFollowUp,
         MAX_ANALYSIS_PAGES - 1,
       );
 
@@ -411,7 +422,7 @@ export class AgentWizardService {
       try {
         additionalPages = keyPageUrls.length > 0
           ? await crawler.crawlSite({
-              baseUrl: input.url,
+              baseUrl: baseForFollowUp,
               pageLimit: keyPageUrls.length,
               seedPendingUrls: keyPageUrls,
               includeBaseUrl: false,

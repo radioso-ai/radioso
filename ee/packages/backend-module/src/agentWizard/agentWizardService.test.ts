@@ -334,6 +334,63 @@ describe("AgentWizardService", () => {
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ limit: 250 }));
   });
 
+  it("re-validates the loaded URL when Playwright follows a redirect", async () => {
+    const longText = "Example helps support teams resolve customer questions across many channels. ".repeat(20);
+    const crawler = createCrawler({
+      fetchPageWithScreenshot: vi.fn().mockResolvedValue({
+        url: "http://169.254.169.254/latest/meta-data/",
+        title: "Metadata",
+        text: longText,
+        links: [],
+        screenshot: null,
+        faviconUrl: null,
+      }),
+    });
+    const assertPublicWebsiteUrl = vi.fn(async (url: string) => {
+      if (url.includes("169.254")) {
+        throw new Error("Website URL must resolve to a publicly routable host");
+      }
+    });
+    const { service } = createService({ crawlerProvider: crawler, assertPublicWebsiteUrl });
+
+    await expect(
+      service.analyzeWebsite({
+        url: "https://example.com",
+        workspaceId: "workspace-1",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_url", statusCode: 400 });
+    expect(crawler.crawlSite).not.toHaveBeenCalled();
+  });
+
+  it("uses the loaded homepage URL as the scope for follow-up crawling", async () => {
+    const crawler = createCrawler({
+      fetchPageWithScreenshot: vi.fn().mockResolvedValue({
+        url: "https://www.example.com",
+        title: "Example",
+        text: "Example builds useful support software for complex customer workflows.",
+        links: [
+          "https://www.example.com/product",
+          "https://www.example.com/contact",
+          "https://www.example.com/docs",
+        ],
+        screenshot: null,
+        faviconUrl: null,
+      }),
+    });
+    const { service } = createService({ crawlerProvider: crawler });
+
+    await service.analyzeWebsite({
+      url: "https://example.com",
+      workspaceId: "workspace-1",
+    });
+
+    expect(crawler.crawlSite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseUrl: "https://www.example.com",
+      }),
+    );
+  });
+
   it("rejects analysis of URLs that fail the public-host policy", async () => {
     const crawler = createCrawler();
     const assertPublicWebsiteUrl = vi.fn(async (url: string) => {

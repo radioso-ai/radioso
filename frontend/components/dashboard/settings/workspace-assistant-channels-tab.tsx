@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Building2, CheckCircle2, CircleAlert, ExternalLink, FolderOpen, KeyRound, Link as LinkIcon, Mail, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
@@ -110,6 +111,7 @@ export function WorkspaceAssistantChannelsTab({
   channelsTabHref?: string
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
+  const router = useRouter()
   const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
   const [workspaceNameDraft, setWorkspaceNameDraft] = useState<string | null>(null)
   const [organizationName, setOrganizationName] = useState(() => readCachedOrganizationName(accountId))
@@ -123,6 +125,16 @@ export function WorkspaceAssistantChannelsTab({
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteOrgConfirmName, setDeleteOrgConfirmName] = useState('')
+  const [isDeletingOrg, setIsDeletingOrg] = useState(false)
+  const [deleteOrgDialogOpen, setDeleteOrgDialogOpen] = useState(false)
+  const [deleteOrgError, setDeleteOrgError] = useState<string | null>(null)
+  const [agentName, setAgentName] = useState<string>('')
+  const [agentCount, setAgentCount] = useState<number>(0)
+  const [deleteAgentConfirmName, setDeleteAgentConfirmName] = useState('')
+  const [isDeletingAgent, setIsDeletingAgent] = useState(false)
+  const [deleteAgentDialogOpen, setDeleteAgentDialogOpen] = useState(false)
+  const [deleteAgentError, setDeleteAgentError] = useState<string | null>(null)
   const [rotateApiTokenDialogOpen, setRotateApiTokenDialogOpen] = useState(false)
   const [isRotatingApiToken, setIsRotatingApiToken] = useState(false)
   const [rotateApiTokenError, setRotateApiTokenError] = useState<string | null>(null)
@@ -409,6 +421,76 @@ export function WorkspaceAssistantChannelsTab({
       setIsDeleting(false)
     }
   }
+
+  const canDeleteOrganization = currentAccountRole === 'owner'
+  const deleteOrgConfirmValid = deleteOrgConfirmName.trim() === savedOrganizationName.trim() && savedOrganizationName.trim().length > 0
+
+  const handleDeleteOrganization = async () => {
+    if (!canDeleteOrganization || !deleteOrgConfirmValid) return
+    setIsDeletingOrg(true)
+    setDeleteOrgError(null)
+    try {
+      await accountApi.deleteOrganization()
+      setDeleteOrgDialogOpen(false)
+      setDeleteOrgConfirmName('')
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login'
+      }
+    } catch (error) {
+      setDeleteOrgError(getApiErrorMessage(error, 'Failed to delete the organization.'))
+      setIsDeletingOrg(false)
+    }
+  }
+
+  const canDeleteAgent = currentAccountRole === 'owner' || currentAccountRole === 'admin'
+  const isLastAgent = agentCount <= 1
+  const deleteAgentConfirmValid = agentName.trim().length > 0 && deleteAgentConfirmName.trim() === agentName.trim()
+
+  const handleDeleteAgent = async () => {
+    if (!agentId || !canDeleteAgent || !deleteAgentConfirmValid || isLastAgent) return
+    setIsDeletingAgent(true)
+    setDeleteAgentError(null)
+    try {
+      await agentsApi.deleteAgent(agentId)
+      setDeleteAgentDialogOpen(false)
+      setDeleteAgentConfirmName('')
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('radioso:agents-updated'))
+      }
+      router.push(`/account/${accountId}/agents`)
+    } catch (error) {
+      setDeleteAgentError(getApiErrorMessage(error, 'Failed to delete the agent.'))
+      setIsDeletingAgent(false)
+    }
+  }
+
+  useEffect(() => {
+    if (mode !== 'assistant') {
+      return
+    }
+
+    let active = true
+    void (async () => {
+      try {
+        const response = await agentsApi.listAgents()
+        if (!active) return
+        setAgentCount(response.agents.length)
+        if (agentId) {
+          const current = response.agents.find((agent) => agent.id === agentId)
+          setAgentName(current?.name ?? '')
+        } else {
+          setAgentName('')
+        }
+      } catch {
+        if (!active) return
+        setAgentCount(0)
+        setAgentName('')
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [agentId, mode, activeWorkspaceId])
 
   const handleRevealApiToken = async () => {
     if (!activeWorkspaceId || !canReadWorkspaceTokens) return
@@ -1269,7 +1351,8 @@ export function WorkspaceAssistantChannelsTab({
               title="Danger zone"
               description="Permanent workspace actions that cannot be undone."
             >
-            <div className="flex flex-col gap-4 border-b border-destructive/20 pb-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="divide-y divide-border">
+            <div className="flex flex-col gap-4 py-4 first:pt-0 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">Rotate workspace API token</p>
                 <p className="text-sm text-muted-foreground">
@@ -1290,9 +1373,9 @@ export function WorkspaceAssistantChannelsTab({
               >
                 <DialogTrigger asChild>
                   <Button
-                    variant="destructive"
+                    variant="outline"
                     size="sm"
-                    className="sm:self-start"
+                    className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive sm:self-start"
                     disabled={!canRotateWorkspaceTokens}
                   >
                     <RefreshCw className="mr-2 h-4 w-4" />
@@ -1327,12 +1410,17 @@ export function WorkspaceAssistantChannelsTab({
               </Dialog>
             </div>
 
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-4 py-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">Delete this workspace</p>
                 <p className="text-sm text-muted-foreground">
                   Permanently delete this workspace and all its documents, chats, and settings. This action cannot be undone.
                 </p>
+                {isLastWorkspace ? (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    You cannot delete your only workspace. Create another workspace first.
+                  </p>
+                ) : null}
               </div>
 
               <Dialog
@@ -1347,9 +1435,9 @@ export function WorkspaceAssistantChannelsTab({
               >
                 <DialogTrigger asChild>
                   <Button
-                    variant="destructive"
+                    variant="outline"
                     size="sm"
-                    className="sm:self-start"
+                    className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive sm:self-start"
                     disabled={isLastWorkspace || !canManageWorkspaceLifecycle}
                     title={
                       !canManageWorkspaceLifecycle
@@ -1360,7 +1448,7 @@ export function WorkspaceAssistantChannelsTab({
                     }
                   >
                     <Trash2 className="w-4 h-4 mr-2" />
-                    Delete
+                    Delete workspace
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
@@ -1400,11 +1488,176 @@ export function WorkspaceAssistantChannelsTab({
               </Dialog>
             </div>
 
-            {isLastWorkspace ? (
-              <p className="text-sm text-muted-foreground">
-                You cannot delete your only workspace. Create another workspace first.
-              </p>
-            ) : null}
+            <div className="flex flex-col gap-4 py-4 last:pb-0 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">Delete this organization</p>
+                <p className="text-sm text-muted-foreground">
+                  Permanently delete the organization, all workspaces, agents, documents, and members. This action cannot be undone.
+                </p>
+                {!canDeleteOrganization ? (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Only the organization owner can delete the organization.
+                  </p>
+                ) : null}
+              </div>
+
+              <Dialog
+                open={deleteOrgDialogOpen}
+                onOpenChange={(open) => {
+                  setDeleteOrgDialogOpen(open)
+                  if (!open) {
+                    setDeleteOrgConfirmName('')
+                    setIsDeletingOrg(false)
+                    setDeleteOrgError(null)
+                  }
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive sm:self-start"
+                    disabled={!canDeleteOrganization}
+                    title={!canDeleteOrganization ? 'Only the organization owner can delete the organization' : undefined}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete organization
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Delete organization</DialogTitle>
+                    <DialogDescription>
+                      This will permanently delete the organization <strong>{savedOrganizationName}</strong>,
+                      including every workspace, agent, document, and member. This action cannot be undone.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-2 py-2">
+                    <Label htmlFor="deleteOrgConfirm" className="text-foreground">
+                      Type <strong>{savedOrganizationName}</strong> to confirm
+                    </Label>
+                    <Input
+                      id="deleteOrgConfirm"
+                      value={deleteOrgConfirmName}
+                      onChange={(event) => setDeleteOrgConfirmName(event.target.value)}
+                      placeholder={savedOrganizationName}
+                      disabled={!canDeleteOrganization}
+                    />
+                  </div>
+                  {deleteOrgError ? <p className="text-sm text-destructive">{deleteOrgError}</p> : null}
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setDeleteOrgDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={handleDeleteOrganization}
+                      disabled={!deleteOrgConfirmValid || isDeletingOrg || !canDeleteOrganization}
+                    >
+                      {isDeletingOrg ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                      Delete organization
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+            </div>
+            </SettingsCard>
+          </section>
+          ) : null}
+
+          {mode === 'assistant' && agentId ? (
+          <section id="agent-danger-zone" className="space-y-6 scroll-mt-24">
+            <SettingsCard
+              icon={<ShieldAlert className="h-5 w-5 text-destructive" />}
+              iconClassName="border-destructive/20 bg-destructive/10"
+              className="border-destructive/50"
+              title="Danger zone"
+              description="Permanent agent actions that cannot be undone."
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">Delete this agent</p>
+                  <p className="text-sm text-muted-foreground">
+                    Permanently delete this agent and its channel tokens, conversations, and settings. This action cannot be undone.
+                  </p>
+                  {isLastAgent ? (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      You cannot delete your only agent in this workspace. Create another agent first.
+                    </p>
+                  ) : !canDeleteAgent ? (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Only owners and admins can delete agents.
+                    </p>
+                  ) : null}
+                </div>
+
+                <Dialog
+                  open={deleteAgentDialogOpen}
+                  onOpenChange={(open) => {
+                    setDeleteAgentDialogOpen(open)
+                    if (!open) {
+                      setDeleteAgentConfirmName('')
+                      setIsDeletingAgent(false)
+                      setDeleteAgentError(null)
+                    }
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive sm:self-start"
+                      disabled={!canDeleteAgent || isLastAgent}
+                      title={
+                        !canDeleteAgent
+                          ? 'Only owners and admins can delete agents'
+                          : isLastAgent
+                            ? 'Cannot delete the last agent in this workspace'
+                            : undefined
+                      }
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete agent
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Delete agent</DialogTitle>
+                      <DialogDescription>
+                        This will permanently delete the agent <strong>{agentName || 'this agent'}</strong> and
+                        its channel tokens, conversations, and settings. This action cannot be undone.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2 py-2">
+                      <Label htmlFor="deleteAgentConfirm" className="text-foreground">
+                        Type <strong>{agentName || 'agent name'}</strong> to confirm
+                      </Label>
+                      <Input
+                        id="deleteAgentConfirm"
+                        value={deleteAgentConfirmName}
+                        onChange={(event) => setDeleteAgentConfirmName(event.target.value)}
+                        placeholder={agentName}
+                        disabled={!canDeleteAgent || isLastAgent}
+                      />
+                    </div>
+                    {deleteAgentError ? <p className="text-sm text-destructive">{deleteAgentError}</p> : null}
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setDeleteAgentDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={handleDeleteAgent}
+                        disabled={!deleteAgentConfirmValid || isDeletingAgent || !canDeleteAgent || isLastAgent}
+                      >
+                        {isDeletingAgent ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                        Delete agent
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </SettingsCard>
           </section>
           ) : null}

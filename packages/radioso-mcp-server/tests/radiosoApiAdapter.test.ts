@@ -33,6 +33,7 @@ describe("createRadiosoApiAdapter", () => {
         headers: expect.objectContaining({
           authorization: "Bearer radioso_test",
           "content-type": "application/json",
+          "x-radioso-capability-client": "mcp",
         }),
         method: "POST",
       }),

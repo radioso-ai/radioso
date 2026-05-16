@@ -7,7 +7,7 @@ import { adminSessionHeaders, createTestApp, issueTestSession } from "../support
 
 describe("retrieval answer contract", () => {
   it("returns a grounded answer without assistant conversation ownership", async () => {
-    const { app } = createTestApp();
+    const { app, repositories } = createTestApp();
     const session = await issueTestSession(app, "retrieval-answer@example.com");
 
     await request(app)
@@ -92,10 +92,24 @@ describe("retrieval answer contract", () => {
       ]),
     );
     expect(response.body).not.toHaveProperty("conversationId");
+
+    const auditEvents = repositories.auditEventRepository.items.filter(
+      (event) => event.eventType === "retrieval.answer",
+    );
+    expect(auditEvents).toHaveLength(1);
+    expect(auditEvents[0]).toMatchObject({
+      eventStatus: "success",
+      workspaceId: session.workspaceId,
+      metadata: expect.objectContaining({
+        outcome: "answer",
+        execution: expect.objectContaining({ surface: "retrieval", path: "retrieval_answer" }),
+        query: "When does the advanced workshop run?",
+      }),
+    });
   });
 
   it("marks MCP capability-originated grounded answers separately from direct retrieval clients", async () => {
-    const { app } = createTestApp();
+    const { app, repositories } = createTestApp();
     const session = await issueTestSession(app, "retrieval-answer-mcp@example.com");
 
     await request(app)
@@ -133,6 +147,15 @@ describe("retrieval answer contract", () => {
           },
         },
       },
+    });
+
+    const auditEvents = repositories.auditEventRepository.items.filter(
+      (event) => event.eventType === "retrieval.answer",
+    );
+    expect(auditEvents).toHaveLength(1);
+    expect(auditEvents[0]?.metadata).toMatchObject({
+      outcome: "answer",
+      execution: expect.objectContaining({ surface: "mcp_capability", path: "mcp_grounded_answer" }),
     });
   });
 

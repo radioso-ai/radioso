@@ -39,12 +39,15 @@ export interface DocumentSearchResponse {
   activityTrace?: ActivityTrace;
 }
 
+export type DocumentSearchExecutionSurface = "documents" | "mcp_capability";
+
 interface DocumentSearchAuditMetadata extends Record<string, unknown> {
   searchId: string;
   query: string;
   resultCount: number;
   results: DocumentSearchResult[];
   activityTrace?: ActivityTrace;
+  executionSurface: DocumentSearchExecutionSurface;
 }
 
 export class DocumentSearchService {
@@ -58,6 +61,7 @@ export class DocumentSearchService {
     workspaceId: string;
     query: string;
     metadataFilter?: Record<string, unknown>;
+    executionSurface?: DocumentSearchExecutionSurface;
   }): Promise<DocumentSearchResponse> {
     const retrieval = await this.retrievalPipeline.run({
       workspaceId: input.workspaceId,
@@ -108,6 +112,7 @@ export class DocumentSearchService {
       resultCount: response.resultCount,
       results: response.results,
       activityTrace: response.activityTrace,
+      executionSurface: input.executionSurface ?? "documents",
     };
 
     await this.auditService.record({

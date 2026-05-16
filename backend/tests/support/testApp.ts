@@ -653,6 +653,7 @@ export const createTestDependencies = (overrides: {
     retrievalPipeline,
     chatGateway,
     usageLimitPolicy,
+    auditService,
   });
   const capabilityPolicy = new DefaultAllowCapabilityPolicy();
   const skillCatalogService = new SkillCatalogService({

@@ -71,7 +71,7 @@ describe("document contract", () => {
   });
 
   it("searches documents and returns a stable search snapshot with shared diagnostics", async () => {
-    const { app } = createTestApp();
+    const { app, repositories } = createTestApp();
 
     const session = await issueTestSession(app, "document-search@example.com");
 
@@ -110,6 +110,42 @@ describe("document contract", () => {
       activityTrace: expect.objectContaining({
         traceId: expect.any(String),
       }),
+    });
+
+    const auditEvent = await repositories.auditEventRepository.findDocumentSearchEventBySearchId(
+      session.workspaceId,
+      response.body.searchId,
+    );
+    expect(auditEvent?.metadata).toMatchObject({
+      executionSurface: "documents",
+    });
+  });
+
+  it("marks MCP capability-originated document searches in audit metadata", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "document-search-mcp@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Pricing FAQ",
+        content: "Annual pricing includes support and onboarding details.",
+      });
+
+    const response = await request(app)
+      .post("/api/v1/document/search")
+      .set(adminSessionHeaders(session))
+      .set("x-radioso-capability-client", "mcp")
+      .send({ query: "pricing support" });
+
+    expect(response.status).toBe(200);
+    const auditEvent = await repositories.auditEventRepository.findDocumentSearchEventBySearchId(
+      session.workspaceId,
+      response.body.searchId,
+    );
+    expect(auditEvent?.metadata).toMatchObject({
+      executionSurface: "mcp_capability",
     });
   });
 

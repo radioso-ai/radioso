@@ -6583,11 +6583,15 @@ paths:
                   resumedJobCount:
                     type: integer
                     minimum: 0
+                  pendingResumeJobCount:
+                    type: integer
+                    minimum: 0
                   resumeDispatchFailureCount:
                     type: integer
                     minimum: 0
                 required:
                   - resumedJobCount
+                  - pendingResumeJobCount
                   - resumeDispatchFailureCount
         "400":
           description: Source is not a website source

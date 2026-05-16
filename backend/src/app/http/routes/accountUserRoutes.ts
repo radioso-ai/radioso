@@ -167,6 +167,25 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
     }
   });
 
+  router.delete(
+    "/",
+    authenticatedSession,
+    requireAccountPermission(dependencies, "account.organization.delete"),
+    async (_req, res, next) => {
+      try {
+        const { accountId, userId } = res.locals as { accountId: string; userId: string };
+        await dependencies.authService.deleteOrganization({ accountId, userId });
+        res.setHeader(
+          "Set-Cookie",
+          `${dependencies.env.SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+        );
+        res.status(204).end();
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   router.patch(
     "/",
     authenticatedSession,

@@ -88,6 +88,30 @@ export class AgentService {
     return this.present(updated, workspace.defaultAgentId);
   }
 
+  async delete(workspaceId: string, agentId: string): Promise<void> {
+    const workspace = await this.requireWorkspace(workspaceId);
+    const agent = await this.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+    if (!agent) {
+      throw notFound("Agent not found");
+    }
+
+    const total = await this.agentRepository.countByWorkspaceId(workspaceId);
+    if (total <= 1) {
+      throw badRequest("Cannot delete the last agent in this workspace");
+    }
+
+    await this.agentRepository.deleteByIdAndWorkspaceId(agentId, workspaceId);
+
+    if (workspace.defaultAgentId === agentId) {
+      const remaining = await this.agentRepository.listByWorkspaceId(workspaceId);
+      const nextDefault = remaining[0];
+      if (nextDefault) {
+        await this.agentRepository.setDefault(workspaceId, nextDefault.id);
+        await this.syncLegacyWorkspaceDefaults(workspace, nextDefault);
+      }
+    }
+  }
+
   async setDefault(workspaceId: string, agentId: string): Promise<AgentSettingsResource> {
     const workspace = await this.requireWorkspace(workspaceId);
     const agent = await this.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);

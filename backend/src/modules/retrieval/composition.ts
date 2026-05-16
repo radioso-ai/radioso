@@ -1,3 +1,21 @@
+import type { RetrievalSettingsService } from "../settings/composition.js";
+import type { Database } from "../../shared/infra/database.js";
+import type { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
+import type { AppLogger } from "../../shared/observability/logger.js";
+import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
+import { CandidatePreparationService } from "./services/candidatePreparationService.js";
+import { ConversationContextService } from "./services/conversationContextService.js";
+import { EmbeddingService } from "./services/embeddingService.js";
+import { PgLexicalSearch } from "./infra/lexicalSearch.js";
+import { PgVectorSearch } from "./infra/vectorSearch.js";
+import { PromptBuilder } from "./services/promptBuilder.js";
+import { PromptContextSelectorService } from "./services/promptContextSelectorService.js";
+import { QueryRewriteService } from "./services/queryRewriteService.js";
+import { RerankService } from "./services/rerankService.js";
+import { RetrievalExecutionTelemetryService } from "./services/retrievalExecutionTelemetryService.js";
+import { RetrievalPipelineService } from "./services/retrievalPipelineService.js";
+import { RetrievalSearchService } from "./services/retrievalSearchService.js";
+
 export { ChunkingStrategyRegistry } from "./domain/chunking/chunkingStrategyRegistry.js";
 export {
   chunkFixedWindowMarkdown,
@@ -59,3 +77,33 @@ export {
   type RetrievalPipelineResult,
 } from "./services/retrievalPipelineService.js";
 export { RetrievalSearchService } from "./services/retrievalSearchService.js";
+
+export const createDefaultRetrievalServices = (input: {
+  database: Database;
+  embeddingService: EmbeddingService;
+  llmRegistry: LlmProviderRegistry;
+  logger: AppLogger;
+  retrievalSettingsService: RetrievalSettingsService;
+  telemetryService: TelemetryService;
+}) => {
+  const retrievalPipeline = new RetrievalPipelineService(
+    input.retrievalSettingsService,
+    input.embeddingService,
+    new PgVectorSearch(input.database),
+    new PgLexicalSearch(input.database),
+    new ConversationContextService(),
+    new QueryRewriteService(input.llmRegistry.createRewriteGateway(), input.llmRegistry.createTriggerAnalysisGateway()),
+    new CandidatePreparationService(),
+    undefined,
+    new RerankService(input.llmRegistry.createRerankGateway(), input.logger),
+    new PromptContextSelectorService(),
+    new PromptBuilder(),
+    new RetrievalExecutionTelemetryService(input.telemetryService),
+  );
+  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
+
+  return {
+    retrievalPipeline,
+    retrievalSearchService,
+  };
+};

@@ -125,6 +125,7 @@ export interface WebsiteCrawlJobRepositoryPort {
   claimById(jobId: string, now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean>;
   releaseAllTimedOutClaims(claimedAtOrBefore: Date, errorMessage: string): Promise<number>;
+  releasePausedClaim(jobId: string): Promise<void>;
   markCompleted(jobId: string, result: Record<string, unknown>): Promise<void>;
   markFailed(jobId: string, errorMessage: string): Promise<void>;
 }
@@ -205,7 +206,7 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     const rows = await this.database.query<WebsiteCrawlJobRow>(
       `UPDATE website_crawl_jobs
        SET status = 'paused',
-           claimed_at = NULL,
+           claimed_at = CASE WHEN status = 'queued' THEN NULL ELSE claimed_at END,
            updated_at = NOW()
        WHERE source_id = $1
          AND workspace_id = $2
@@ -226,6 +227,7 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
        WHERE source_id = $1
          AND workspace_id = $2
          AND status = 'paused'
+         AND claimed_at IS NULL
        RETURNING ${selectWebsiteCrawlJob}`,
       [sourceId, workspaceId],
     );
@@ -339,6 +341,17 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     );
   }
 
+  async releasePausedClaim(jobId: string): Promise<void> {
+    await this.database.execute(
+      `UPDATE website_crawl_jobs
+       SET claimed_at = NULL,
+           updated_at = NOW()
+       WHERE id = $1
+         AND status = 'paused'`,
+      [jobId],
+    );
+  }
+
   async markCompleted(jobId: string, result: Record<string, unknown>): Promise<void> {
     await this.database.execute(
       `UPDATE website_crawl_jobs
@@ -348,7 +361,7 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
            completed_at = NOW(),
            updated_at = NOW()
        WHERE id = $1
-         AND status IN ('processing', 'paused')`,
+         AND status = 'processing'`,
       [jobId, result],
     );
   }

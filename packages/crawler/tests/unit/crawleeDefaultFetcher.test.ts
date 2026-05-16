@@ -300,7 +300,7 @@ describe("default Crawlee fetcher", () => {
       if (req.url === "/docs/keep") {
         res
           .writeHead(200, { "content-type": "text/html; charset=utf-8" })
-          .end("<html><head><title>Keep</title></head><body><main><p>Keep documentation.</p></main></body></html>");
+          .end("<html><head><title>Keep</title></head><body><main><p>Keep documentation with enough practical explanation to pass quality scoring. This page describes setup steps, troubleshooting details, operational constraints, configuration ownership, release verification, support routing, and maintenance expectations for the documentation area. It also explains expected user permissions, migration order, rollback criteria, logging checks, and handoff notes so operators can use the material as durable reference content rather than a sparse navigation stub.</p></main></body></html>");
         return;
       }
       if (req.url === "/docs/private" || req.url === "/blog/post") {
@@ -333,30 +333,40 @@ describe("default Crawlee fetcher", () => {
       `${baseUrl}/`,
       `${baseUrl}/docs/keep`,
     ].sort());
+    expect(pages.find((page) => page.url === `${baseUrl}/`)).toEqual(expect.objectContaining({
+      skipReason: "Skipped by include URL policy"
+    }));
+    expect(pages.find((page) => page.url === `${baseUrl}/docs/keep`)?.skipReason).toBeNull();
     expect(pages.map((page) => page.text).join("\n")).not.toContain("Denied content");
   });
 
-  it("marks category pages as discovery-only listing pages", async () => {
+  it("marks structurally link-dense pages as discovery-only listing pages", async () => {
     const { server, baseUrl } = await listen((req, res) => {
       if (req.url === "/robots.txt") {
         res.writeHead(404).end();
         return;
       }
-      if (req.url === "/category/news") {
+      if (req.url === "/indexes/news") {
         res
           .writeHead(200, { "content-type": "text/html; charset=utf-8" })
           .end(`
-            <html><head><title>News Archive</title></head><body><main>
+            <html><head><title>News Index</title></head><body>
               <a href="/news/story">A full story</a>
               <a href="/news/second">Another story</a>
-            </main></body></html>
+              <a href="/news/third">Third story</a>
+              <a href="/news/fourth">Fourth story</a>
+              <a href="/news/fifth">Fifth story</a>
+              <a href="/news/sixth">Sixth story</a>
+              <a href="/news/seventh">Seventh story</a>
+              <a href="/news/eighth">Eighth story</a>
+            </body></html>
           `);
         return;
       }
       if (req.url === "/") {
         res
           .writeHead(200, { "content-type": "text/html; charset=utf-8" })
-          .end("<html><head><title>Home</title></head><body><main><a href=\"/category/news\">News archive</a></main></body></html>");
+          .end("<html><head><title>Home</title></head><body><main><a href=\"/indexes/news\">News index</a></main></body></html>");
         return;
       }
       res
@@ -369,13 +379,47 @@ describe("default Crawlee fetcher", () => {
       baseUrl,
       pageLimit: 3
     });
-    const listingPage = pages.find((page) => page.url === `${baseUrl}/category/news`);
+    const listingPage = pages.find((page) => page.url === `${baseUrl}/indexes/news`);
 
     expect(listingPage).toEqual(expect.objectContaining({
       pageType: "listing",
       skipReason: "Skipped listing page"
     }));
     expect(pages.map((page) => page.url)).toContain(`${baseUrl}/news/story`);
+  });
+
+  it("does not skip content only because the path contains index-like words", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      if (req.url === "/category/security-guide") {
+        res
+          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+          .end(`
+            <html><head><title>Security Guide</title></head><body>
+              <article><p>This security guide explains how administrators should evaluate access boundaries, rotate operational credentials, document emergency procedures, and verify that monitoring covers the full deployment path. It includes practical guidance for rollout planning, maintenance windows, ownership checks, audit review, incident follow-up, and regular validation of assumptions across teams.</p></article>
+            </body></html>
+          `);
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>Home</title></head><body><main><a href=\"/category/security-guide\">Security guide</a></main></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 2
+    });
+    const contentPage = pages.find((page) => page.url === `${baseUrl}/category/security-guide`);
+
+    expect(contentPage).toEqual(expect.objectContaining({
+      pageType: "content",
+      skipReason: null
+    }));
   });
 
   it("keeps main content when utility classes contain navigation-like breakpoint names", async () => {

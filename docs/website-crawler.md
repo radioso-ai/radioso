@@ -48,9 +48,9 @@ Cookie-session requests select the workspace with `x-workspace-id`. Bearer-token
 
 Accepted pages are published as documents with stable external document IDs and a workspace-local website source. Repeated crawls of the same normalized URL reuse that source, so recrawl logic can find the related documents through `sourceId`. Chunking, embeddings, retrieval, and citations remain owned by the standard document worker.
 
-The bundled `radioso-crawler` provider seeds its crawl from the requested URL and from same-origin sitemaps listed in `robots.txt`. It still applies the request `limit`, same-origin scope checks, duplicate removal, and asset filtering before fetching pages.
+The bundled `radioso-crawler` provider seeds its crawl from the requested URL and from same-origin sitemaps listed in `robots.txt`. It still applies the request `limit`, same-origin scope checks, duplicate removal, and asset filtering before fetching pages. If URL allow patterns are configured and the requested seed URL does not match them, the crawler may fetch that seed page for link discovery, but marks it discovery-only so it is not published as a document.
 
-The bundled crawler uses listing, archive, feed, search, and low-quality pages for discovery, but does not publish them as documents by default. It also drops share, tracking, and social links from extracted content, keeps source links by default, and records a normalized content hash so duplicate extracted content can be skipped within a crawl run.
+The bundled crawler uses structurally link-dense pages and low-quality pages for discovery, but does not publish them as documents by default. It also drops share, tracking, and social links from extracted content, keeps source links by default, and records a normalized content hash so duplicate extracted content can be skipped within a crawl run.
 
 By default, outbound crawler requests identify as `RadiosoCrawler/1.0`. Self-hosted operators can set `WEBSITE_CRAWLER_USER_AGENT` to a deployment-specific value, such as `ExampleDocsCrawler/1.0 (+https://example.com/crawler)`. Use this when a site needs to allowlist the crawler or route support requests to the right owner.
 
@@ -167,9 +167,9 @@ POST /api/v1/document/sources/{sourceId}/pause-crawl
 POST /api/v1/document/sources/{sourceId}/resume-crawl
 ```
 
-Pause and resume only apply to website sources. Pausing marks queued or processing crawl jobs as `paused`. If a worker is processing the job, the worker observes the status change, aborts the active crawl, and keeps the checkpoint state.
+Pause and resume only apply to website sources. Pausing marks queued or processing crawl jobs as `paused`. If a worker is processing the job, the paused row keeps its claim until the worker observes the status change, aborts the active crawl, releases the claim, and keeps the checkpoint state.
 
-Resume marks paused jobs as `queued`. The worker loads the saved checkpoint and continues from the discovered and pending URLs for the same job and policy. URLs already processed in that job are not republished.
+Resume marks unclaimed paused jobs as `queued`. The worker loads the saved checkpoint and continues from the discovered and pending URLs for the same job and policy. URLs already processed in that job are not republished.
 
 Changing crawler policy is a new crawl. Resume continues the same paused job and does not create a new source configuration version.
 

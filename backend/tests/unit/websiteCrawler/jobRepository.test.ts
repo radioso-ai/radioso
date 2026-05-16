@@ -158,12 +158,13 @@ describe("WebsiteCrawlJobRepository.pauseBySourceId/resumePausedBySourceId", () 
     await expect(repository.pauseBySourceId("source-1", "workspace-1")).resolves.toHaveLength(1);
     await expect(repository.resumePausedBySourceId("source-1", "workspace-1")).resolves.toHaveLength(1);
 
-    expect(query.mock.calls[0][0].replace(/\s+/g, " ")).toMatch(
-      /SET status = 'paused'.*WHERE source_id = \$1\s+AND workspace_id = \$2\s+AND status IN \('queued', 'processing'\).*RETURNING/s,
+    const pauseSql = query.mock.calls[0][0].replace(/\s+/g, " ");
+    expect(pauseSql).toMatch(
+      /SET status = 'paused'.*claimed_at = CASE WHEN status = 'queued' THEN NULL ELSE claimed_at END.*WHERE source_id = \$1\s+AND workspace_id = \$2\s+AND status IN \('queued', 'processing'\).*RETURNING/s,
     );
     expect(query.mock.calls[0][1]).toEqual(["source-1", "workspace-1"]);
     expect(query.mock.calls[1][0].replace(/\s+/g, " ")).toMatch(
-      /SET status = 'queued'.*WHERE source_id = \$1\s+AND workspace_id = \$2\s+AND status = 'paused'.*RETURNING/s,
+      /SET status = 'queued'.*WHERE source_id = \$1\s+AND workspace_id = \$2\s+AND status = 'paused'\s+AND claimed_at IS NULL.*RETURNING/s,
     );
     expect(query.mock.calls[1][1]).toEqual(["source-1", "workspace-1"]);
   });
@@ -195,7 +196,7 @@ describe("WebsiteCrawlJobRepository.updateCheckpoint", () => {
 });
 
 describe("WebsiteCrawlJobRepository.markCompleted", () => {
-  it("allows a just-paused processing job to finish as completed", async () => {
+  it("only completes jobs that are still processing", async () => {
     const execute = vi.fn().mockResolvedValue(1);
     const repository = new WebsiteCrawlJobRepository({ execute } as never);
 
@@ -203,9 +204,24 @@ describe("WebsiteCrawlJobRepository.markCompleted", () => {
 
     expect(execute).toHaveBeenCalledTimes(1);
     expect(execute.mock.calls[0][0].replace(/\s+/g, " ")).toMatch(
-      /SET status = 'completed'.*WHERE id = \$1\s+AND status IN \('processing', 'paused'\)/s,
+      /SET status = 'completed'.*WHERE id = \$1\s+AND status = 'processing'/s,
     );
     expect(execute.mock.calls[0][1]).toEqual(["job-1", { accepted: 3 }]);
+  });
+});
+
+describe("WebsiteCrawlJobRepository.releasePausedClaim", () => {
+  it("clears the claim only after a paused processing worker stops", async () => {
+    const execute = vi.fn().mockResolvedValue(1);
+    const repository = new WebsiteCrawlJobRepository({ execute } as never);
+
+    await repository.releasePausedClaim("job-1");
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0].replace(/\s+/g, " ")).toMatch(
+      /SET claimed_at = NULL.*WHERE id = \$1\s+AND status = 'paused'/s,
+    );
+    expect(execute.mock.calls[0][1]).toEqual(["job-1"]);
   });
 });
 

@@ -334,15 +334,6 @@ const classifyPageType = (url: string, html: string): NonNullable<FetchedPage["p
   if (/\.(?:jpe?g|png|gif|webp|svg|pdf|zip|mp3|mp4|mov|avi|webm)$/i.test(path)) {
     return "asset";
   }
-  if (/(?:^|\/)(?:feed|rss|atom)(?:\/|$)/i.test(path)) {
-    return "feed";
-  }
-  if (/(?:^|\/)(?:search|find)(?:\/|$)/i.test(path) || /[?&](?:q|s|search)=/i.test(url)) {
-    return "search";
-  }
-  if (/(?:^|\/)(?:tag|tags|category|categories|keyword|archive|archives|calendar|page)(?:\/|$)/i.test(path)) {
-    return "listing";
-  }
   if (/<article\b/i.test(html) || /\bitemtype\s*=\s*["'][^"']*Article/i.test(html)) {
     return "content";
   }
@@ -479,6 +470,21 @@ const removePageChrome = ($: any): void => {
   });
 };
 
+const isStructurallyLinkDensePage = ($: any): boolean => {
+  const body = $("body");
+  const scope = body.length > 0 ? body : $.root();
+  const text = normalizeText(scope.text());
+  if (text.length < 80) {
+    return false;
+  }
+  const anchors = scope.find("a[href]");
+  if (anchors.length < LINK_DENSE_MIN_LINKS) {
+    return false;
+  }
+  const linkText = normalizeText(anchors.text());
+  return linkText.length / Math.max(text.length, 1) >= LINK_DENSE_MIN_RATIO;
+};
+
 const extractLinks = ($: any, loadedUrl: string): string[] =>
   $("a[href]")
     .toArray()
@@ -558,6 +564,7 @@ const buildFetchedHtmlPage = (input: {
 }): FetchedPage => {
   const $ = load(input.originalHtml);
   const originalLinks = extractLinks($, input.loadedUrl);
+  const structurallyLinkDense = isStructurallyLinkDensePage($);
   removePageChrome($);
   const html = $.html();
   const cleanedLinks = extractLinks($, input.loadedUrl);
@@ -568,11 +575,14 @@ const buildFetchedHtmlPage = (input: {
     options: input.options
   });
   const pageType = classifyPageType(input.loadedUrl, input.originalHtml);
+  const resolvedPageType = pageType === "unknown" && !hasPrimaryContentContainer(input.originalHtml) && structurallyLinkDense
+    ? "listing"
+    : pageType;
   const qualityScore = scoreExtractedContent(text);
   const diagnostics: ExtractionDiagnostics = {
-    pageType,
+    pageType: resolvedPageType,
     qualityScore,
-    skipReason: resolveSkipReason(pageType, qualityScore, text),
+    skipReason: resolveSkipReason(resolvedPageType, qualityScore, text),
     extractedContainer: hasPrimaryContentContainer(input.originalHtml) ? "primary" : "body",
     normalizedContentHash: hashNormalizedContent(text)
   };
@@ -821,6 +831,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
   const discovered = new Set<string>();
   const queued = new Set<string>();
   const claimedResolvedUrls = new Set<string>();
+  const discoveryOnlyUrls = new Set<string>();
   log.setLevel(LogLevel.ERROR);
   const MAX_ERROR_MESSAGE_LENGTH = 500;
   const truncateErrorMessage = (value: string) => {
@@ -882,6 +893,31 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
 
   const matchesPattern = (url: string, patterns: string[] | undefined): boolean =>
     (patterns ?? []).some((pattern) => url.toLowerCase().includes(pattern.toLowerCase()));
+
+  const resolveSeedUrl = (
+    rawUrl: string
+  ): { canonicalUrl: string; publishable: boolean } | null => {
+    const policyResolution = resolvePolicy?.(rawUrl);
+    if (
+      policyResolution?.action === "asset" ||
+      policyResolution?.action === "defer" ||
+      policyResolution?.action === "deny"
+    ) {
+      return null;
+    }
+    const classification = classifyCrawlCandidateUrl(rawUrl, baseUrl);
+    if (classification.reason !== "accepted") {
+      return null;
+    }
+    const canonicalUrl = canonicalize(classification.canonicalUrl);
+    if (!canonicalUrl || matchesPattern(canonicalUrl, excludeUrlPatterns)) {
+      return null;
+    }
+    return {
+      canonicalUrl,
+      publishable: (includeUrlPatterns?.length ?? 0) === 0 || matchesPattern(canonicalUrl, includeUrlPatterns)
+    };
+  };
 
   const enqueueCandidate = async (
     rawUrl: string,
@@ -997,6 +1033,11 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
             return;
           }
           const status = page.notModified ? "unchanged" : "success";
+          const frontierCanonical = canonicalize(next);
+          const discoveryOnlySkipReason = discoveryOnlyUrls.has(resolvedCanonical) ||
+            (frontierCanonical ? discoveryOnlyUrls.has(frontierCanonical) : false)
+            ? "Skipped by include URL policy"
+            : null;
           const result: CrawledPageResult = {
             url: page.url,
             frontierUrl: next,
@@ -1016,7 +1057,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
             httpQualityScore: page.httpQualityScore ?? null,
             pageType: page.pageType ?? "unknown",
             qualityScore: page.qualityScore ?? null,
-            skipReason: page.skipReason ?? null,
+            skipReason: discoveryOnlySkipReason ?? page.skipReason ?? null,
             extractedContainer: page.extractedContainer ?? null,
             normalizedContentHash: page.normalizedContentHash ?? null
           };
@@ -1079,17 +1120,16 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
   }
   const initialUrls: Array<{ url: string; uniqueKey: string }> = [];
   const seedPending = async (url: string) => {
-    const classification = classifyCrawlCandidateUrl(url, baseUrl);
-    if (classification.reason !== "accepted") {
+    const seed = resolveSeedUrl(url);
+    if (!seed || queued.has(seed.canonicalUrl)) {
       return;
     }
-    const canonical = canonicalize(classification.canonicalUrl);
-    if (!canonical || queued.has(canonical)) {
-      return;
+    discovered.add(seed.canonicalUrl);
+    queued.add(seed.canonicalUrl);
+    if (!seed.publishable) {
+      discoveryOnlyUrls.add(seed.canonicalUrl);
     }
-    discovered.add(canonical);
-    queued.add(canonical);
-    initialUrls.push({ url: canonical, uniqueKey: canonical });
+    initialUrls.push({ url: seed.canonicalUrl, uniqueKey: seed.canonicalUrl });
   };
   for (const url of seedPendingUrls ?? []) {
     await seedPending(url);

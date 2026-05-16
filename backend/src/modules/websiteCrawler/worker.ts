@@ -198,6 +198,18 @@ export class WebsiteCrawlWorker {
       );
     } finally {
       clearInterval(cancellationMonitor);
+      await this.releasePausedClaim(job.id);
+    }
+  }
+
+  private async releasePausedClaim(jobId: string): Promise<void> {
+    try {
+      await this.dependencies.repository.releasePausedClaim(jobId);
+    } catch (error) {
+      this.dependencies.logger.warn(
+        { role: "website-crawl-worker", jobId, error: error instanceof Error ? error.message : String(error) },
+        "Failed to release paused crawl job claim",
+      );
     }
   }
 

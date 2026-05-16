@@ -361,7 +361,7 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
            completed_at = NOW(),
            updated_at = NOW()
        WHERE id = $1
-         AND status = 'processing'`,
+         AND status IN ('processing', 'paused')`,
       [jobId, result],
     );
   }

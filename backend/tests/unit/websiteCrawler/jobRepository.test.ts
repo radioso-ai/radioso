@@ -196,7 +196,7 @@ describe("WebsiteCrawlJobRepository.updateCheckpoint", () => {
 });
 
 describe("WebsiteCrawlJobRepository.markCompleted", () => {
-  it("only completes jobs that are still processing", async () => {
+  it("completes jobs that are still processing or paused after a successful crawl", async () => {
     const execute = vi.fn().mockResolvedValue(1);
     const repository = new WebsiteCrawlJobRepository({ execute } as never);
 
@@ -204,7 +204,7 @@ describe("WebsiteCrawlJobRepository.markCompleted", () => {
 
     expect(execute).toHaveBeenCalledTimes(1);
     expect(execute.mock.calls[0][0].replace(/\s+/g, " ")).toMatch(
-      /SET status = 'completed'.*WHERE id = \$1\s+AND status = 'processing'/s,
+      /SET status = 'completed'.*WHERE id = \$1\s+AND status IN \('processing', 'paused'\)/s,
     );
     expect(execute.mock.calls[0][1]).toEqual(["job-1", { accepted: 3 }]);
   });

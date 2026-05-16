@@ -178,6 +178,9 @@ export class WebsiteCrawlWorker {
         },
       });
       clearInterval(cancellationMonitor);
+      if (cancelled) {
+        return;
+      }
       await this.dependencies.repository.markCompleted(job.id, result as unknown as Record<string, unknown>);
     } catch (error) {
       if (cancelled) {

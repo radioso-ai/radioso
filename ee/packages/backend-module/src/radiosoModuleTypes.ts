@@ -222,6 +222,7 @@ export interface AgentWizardCrawlerPort {
     status: string;
     links?: string[];
   }>>;
+  isBrowserTransportAvailable(): Promise<boolean>;
 }
 
 export interface AgentWizardAgentServicePort {

@@ -755,6 +755,7 @@ export const createTestDependencies = (overrides: {
     crawlerProvider: {
       async fetchPageWithScreenshot() { return { url: "", title: null, text: "", links: [], screenshot: null, faviconUrl: null }; },
       async crawlSite() { return []; },
+      async isBrowserTransportAvailable() { return false; },
     },
     assertPublicWebsiteUrl: async () => {},
     websiteCrawlerLimits: { defaultLimit: 100, maxLimit: 1000 },

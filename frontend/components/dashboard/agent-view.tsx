@@ -420,7 +420,7 @@ export function AgentView({
           </DashboardPage>
         )}
       </TabsContent>
-      {WizardDialog && activeWorkspace?.publicRouteKey ? (
+      {WizardDialog ? (
         <WizardDialog
           open={wizardOpen}
           onOpenChange={setWizardOpen}
@@ -431,7 +431,7 @@ export function AgentView({
               agentTab: 'behavior',
               anchor: 'assistant-identity',
               workspaceId: activeWorkspaceId ?? undefined,
-              workspacePublicRouteKey: activeWorkspace.publicRouteKey,
+              workspacePublicRouteKey: activeWorkspace?.publicRouteKey ?? undefined,
             })
           }
         />

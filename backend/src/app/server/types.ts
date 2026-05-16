@@ -134,6 +134,7 @@ export interface AppDependencies {
       status: string;
       links?: string[];
     }>>;
+    isBrowserTransportAvailable(): Promise<boolean>;
   };
   assertPublicWebsiteUrl: (url: string) => Promise<void>;
   websiteCrawlerLimits: {

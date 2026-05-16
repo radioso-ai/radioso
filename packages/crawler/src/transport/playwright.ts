@@ -8,6 +8,7 @@ export type FetchedPageWithScreenshot = FetchedPage & {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let playwrightModule: any = null;
+let playwrightAvailability: boolean | null = null;
 
 const loadPlaywright = async () => {
   if (playwrightModule) {
@@ -15,13 +16,34 @@ const loadPlaywright = async () => {
   }
   try {
     playwrightModule = await import("playwright");
+    playwrightAvailability = true;
     return playwrightModule;
   } catch {
+    playwrightAvailability = false;
     throw new Error(
       "Playwright is required for browser transport but is not installed. " +
         "Install it with: npm install playwright"
     );
   }
+};
+
+/**
+ * Capability probe for callers that need to decide between browser and HTTP
+ * transports up-front rather than catching a thrown error mid-flow. Returns
+ * true when the optional `playwright` dependency is resolvable in the current
+ * runtime, false otherwise. Caches the result so repeat calls are cheap.
+ */
+export const isPlaywrightAvailable = async (): Promise<boolean> => {
+  if (playwrightAvailability !== null) {
+    return playwrightAvailability;
+  }
+  try {
+    playwrightModule = await import("playwright");
+    playwrightAvailability = true;
+  } catch {
+    playwrightAvailability = false;
+  }
+  return playwrightAvailability;
 };
 
 const NAVIGATION_TIMEOUT = 30_000;

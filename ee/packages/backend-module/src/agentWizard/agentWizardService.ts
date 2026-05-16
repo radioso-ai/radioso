@@ -116,6 +116,7 @@ export interface CrawlerPort {
     status: string;
     links?: string[];
   }>>;
+  isBrowserTransportAvailable(): Promise<boolean>;
 }
 
 export type AgentWizardErrorCode =
@@ -373,31 +374,24 @@ export class AgentWizardService {
       };
       let screenshotUnavailableReason: string | null = null;
 
-      try {
-        throwIfAborted();
-        input.onProgress?.({ type: "progress", step: "crawling", page: 1, total: MAX_ANALYSIS_PAGES, url: input.url });
-        homepage = await crawler.fetchPageWithScreenshot(input.url, { signal: analysisSignal.signal });
-      } catch (error) {
-        throwIfAborted();
-        screenshotUnavailableReason = "browser_unavailable";
-        const httpPages = await crawler.crawlSite({
-          baseUrl: input.url,
-          pageLimit: 1,
-          includeBaseUrl: true,
-          signal: analysisSignal.signal,
-        });
-        const first = httpPages[0];
-        if (!first || first.status !== "success") {
-          throw classifyFetchError(first?.status ?? error);
+      throwIfAborted();
+      input.onProgress?.({ type: "progress", step: "crawling", page: 1, total: MAX_ANALYSIS_PAGES, url: input.url });
+
+      const browserAvailable = await crawler.isBrowserTransportAvailable();
+      if (browserAvailable) {
+        try {
+          homepage = await crawler.fetchPageWithScreenshot(input.url, { signal: analysisSignal.signal });
+        } catch (error) {
+          throwIfAborted();
+          // Browser was available but navigation failed at runtime (timeout,
+          // navigation error, captcha, etc.). Fall back to HTTP so a single
+          // page-load failure doesn't kill the whole wizard.
+          screenshotUnavailableReason = "browser_navigation_failed";
+          homepage = await this.fetchHomepageViaHttp(crawler, input.url, analysisSignal.signal, error);
         }
-        homepage = {
-          url: first.url,
-          title: first.title,
-          text: first.text,
-          links: (first as { links?: string[] }).links ?? [],
-          screenshot: null,
-          faviconUrl: null,
-        };
+      } else {
+        screenshotUnavailableReason = "browser_unavailable";
+        homepage = await this.fetchHomepageViaHttp(crawler, input.url, analysisSignal.signal, null);
       }
       input.onProgress?.({ type: "progress", step: "crawling", page: 1, total: MAX_ANALYSIS_PAGES, url: homepage.url, title: homepage.title });
 
@@ -628,6 +622,39 @@ Return a fresh alternative for agentName, customInstruction, greetingMessage, ch
     }).catch(() => {});
 
     return { agentId: agent.id, crawlJobId };
+  }
+
+  private async fetchHomepageViaHttp(
+    crawler: CrawlerPort,
+    url: string,
+    signal: AbortSignal,
+    upstreamError: unknown,
+  ): Promise<{
+    url: string;
+    title: string | null;
+    text: string;
+    links: string[];
+    screenshot: Uint8Array | null;
+    faviconUrl: string | null;
+  }> {
+    const httpPages = await crawler.crawlSite({
+      baseUrl: url,
+      pageLimit: 1,
+      includeBaseUrl: true,
+      signal,
+    });
+    const first = httpPages[0];
+    if (!first || first.status !== "success") {
+      throw classifyFetchError(first?.status ?? upstreamError ?? new Error("HTTP fetch failed"));
+    }
+    return {
+      url: first.url,
+      title: first.title,
+      text: first.text,
+      links: (first as { links?: string[] }).links ?? [],
+      screenshot: null,
+      faviconUrl: null,
+    };
   }
 
   private pruneAnalysisRuns(): void {

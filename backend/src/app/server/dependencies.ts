@@ -155,6 +155,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       const { crawlSite } = await import("@radioso/crawler");
       return crawlSite(params);
     },
+    async isBrowserTransportAvailable() {
+      const { isPlaywrightAvailable } = await import("@radioso/crawler");
+      return isPlaywrightAvailable();
+    },
   };
 
   return {

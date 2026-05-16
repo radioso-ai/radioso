@@ -548,7 +548,7 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
           </form>
         </DialogContent>
       </Dialog>
-      {WizardDialog && activeWorkspace?.publicRouteKey ? (
+      {WizardDialog ? (
         <WizardDialog
           open={wizardOpen}
           onOpenChange={setWizardOpen}
@@ -559,7 +559,7 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
               agentTab: 'behavior',
               anchor: 'assistant-identity',
               workspaceId: activeWorkspaceId ?? undefined,
-              workspacePublicRouteKey: activeWorkspace.publicRouteKey,
+              workspacePublicRouteKey: activeWorkspace?.publicRouteKey ?? undefined,
             })
           }
         />

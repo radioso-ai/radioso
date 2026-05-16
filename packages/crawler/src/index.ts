@@ -75,6 +75,7 @@ export {
 export {
   fetchPageWithPlaywright,
   fetchPageWithScreenshot,
+  isPlaywrightAvailable,
   type FetchedPageWithScreenshot
 } from "./transport/playwright.js";
 export {

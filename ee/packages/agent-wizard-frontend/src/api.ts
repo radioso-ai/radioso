@@ -29,8 +29,22 @@ const parseSseBlock = (block: string): { event: string; data: string } | null =>
   return { event, data: data.join("\n") };
 };
 
+const requireActiveWorkspaceId = (): string => {
+  const workspaceId = getStoredActiveWorkspaceId();
+  if (!workspaceId) {
+    throw {
+      error: {
+        code: "workspace_required",
+        message: "Select a workspace before using the wizard.",
+      },
+    };
+  }
+  return workspaceId;
+};
+
 export const wizardApi = {
   analyzeWebsite(url: string): Promise<WizardAnalysisResult> {
+    requireActiveWorkspaceId();
     return request<WizardAnalysisResult>("/ee/agent-wizard/analyze-website", {
       method: "POST",
       body: JSON.stringify({ url }),
@@ -44,14 +58,12 @@ export const wizardApi = {
       onProgress?: (event: WizardProgressEvent) => void;
     } = {},
   ): Promise<WizardAnalysisResult> {
+    const workspaceId = requireActiveWorkspaceId();
     const headers = new Headers({
       "Content-Type": "application/json",
       "X-Forwarded-Prefix": "/backend",
+      "X-Workspace-Id": workspaceId,
     });
-    const workspaceId = getStoredActiveWorkspaceId();
-    if (workspaceId) {
-      headers.set("X-Workspace-Id", workspaceId);
-    }
 
     const response = await fetch(`${API_BASE}/ee/agent-wizard/analyze-website/stream`, {
       method: "POST",
@@ -115,6 +127,7 @@ export const wizardApi = {
   },
 
   regenerateInstructions(analysisRunId: string): Promise<WizardInstructionSuggestion> {
+    requireActiveWorkspaceId();
     return request<WizardInstructionSuggestion>("/ee/agent-wizard/regenerate-instructions", {
       method: "POST",
       body: JSON.stringify({ analysisRunId }),
@@ -122,6 +135,7 @@ export const wizardApi = {
   },
 
   createFromWizard(input: WizardCreateInput): Promise<WizardCreateResult> {
+    requireActiveWorkspaceId();
     return request<WizardCreateResult>("/ee/agent-wizard/create", {
       method: "POST",
       body: JSON.stringify(input),

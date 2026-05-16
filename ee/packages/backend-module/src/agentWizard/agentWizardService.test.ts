@@ -23,6 +23,7 @@ const createCrawler = (overrides: Partial<CrawlerPort> = {}): CrawlerPort => ({
       status: "success",
     },
   ]),
+  isBrowserTransportAvailable: vi.fn().mockResolvedValue(true),
   ...overrides,
 });
 
@@ -206,6 +207,34 @@ describe("AgentWizardService", () => {
     } finally {
       Date.now = realNow;
     }
+  });
+
+  it("skips the browser transport when Playwright is not available", async () => {
+    const fetchPageWithScreenshot = vi.fn();
+    const longText = "Example helps support teams resolve customer questions across many channels. ".repeat(20);
+    const crawler = createCrawler({
+      isBrowserTransportAvailable: vi.fn().mockResolvedValue(false),
+      fetchPageWithScreenshot,
+      crawlSite: vi.fn().mockResolvedValue([
+        {
+          url: "https://example.com",
+          title: "Example",
+          text: longText,
+          status: "success",
+          links: [],
+        },
+      ]),
+    });
+    const { service } = createService({ crawlerProvider: crawler });
+
+    const result = await service.analyzeWebsite({
+      url: "https://example.com",
+      workspaceId: "workspace-1",
+    });
+
+    expect(fetchPageWithScreenshot).not.toHaveBeenCalled();
+    expect(crawler.isBrowserTransportAvailable).toHaveBeenCalled();
+    expect(result.screenshotUnavailableReason).toBe("browser_unavailable");
   });
 
   it("classifies an unreachable site before calling the LLM", async () => {

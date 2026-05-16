@@ -6,28 +6,28 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { AuthPage } from '@/components/auth/auth-page'
 import { LogoSpinner } from '@/components/ui/spinner'
-import { buildDashboardHref } from '@/lib/dashboard-routes'
-import { getStoredActiveWorkspaceId, getStoredActiveWorkspacePublicRouteKey } from '@/lib/api'
+import { getHomeDashboardRedirectHref } from '@/lib/home-dashboard-redirect'
+import { useWorkspace } from '@/lib/workspace-context'
 
 export default function Home() {
   const router = useRouter()
   const { user, isAuthenticated, isBootstrapping } = useAuth()
+  const { activeWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
 
   useEffect(() => {
-    if (!isBootstrapping && user) {
-      const workspaceId =
-        typeof window !== 'undefined' ? getStoredActiveWorkspaceId() ?? undefined : undefined
-      const workspacePublicRouteKey =
-        typeof window !== 'undefined' ? getStoredActiveWorkspacePublicRouteKey() ?? undefined : undefined
-      router.replace(buildDashboardHref(user.accountId, {
-        section: 'agents',
-        workspaceId,
-        workspacePublicRouteKey,
-      }))
-    }
-  }, [isBootstrapping, router, user])
+    const redirectHref = getHomeDashboardRedirectHref({
+      accountId: user?.accountId,
+      isAuthBootstrapping: isBootstrapping,
+      isWorkspaceLoading,
+      activeWorkspace,
+    })
 
-  if (isBootstrapping) {
+    if (redirectHref) {
+      router.replace(redirectHref)
+    }
+  }, [activeWorkspace, isBootstrapping, isWorkspaceLoading, router, user?.accountId])
+
+  if (isBootstrapping || (isAuthenticated && isWorkspaceLoading)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <LogoSpinner imageClassName="h-7 w-7" />

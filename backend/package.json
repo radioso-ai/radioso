@@ -41,7 +41,7 @@
     "validate:architecture": "node ../scripts/validate-architecture-boundaries.mjs"
   },
   "dependencies": {
-    "@asteasolutions/zod-to-openapi": "^7.3.4",
+    "@asteasolutions/zod-to-openapi": "^8.5.0",
     "@google-cloud/storage": "^7.17.2",
     "@google-cloud/tasks": "^5.5.0",
     "@radioso/connector-api": "workspace:*",

@@ -51,9 +51,6 @@ const createService = (overrides: {
   const service = new AgentWizardService({
     textGenerationClient: { complete },
     agentService,
-    ingestionSettingsService: {
-      updateForWorkspace: vi.fn().mockResolvedValue(undefined),
-    },
     documentStorage: {
       upload: vi.fn().mockResolvedValue({ bucket: "logos", key: "logo-key" }),
     },
@@ -250,7 +247,6 @@ describe("AgentWizardService", () => {
         create: vi.fn().mockResolvedValue({ id: "agent-1", name: "Example" }),
         update: vi.fn(),
       },
-      ingestionSettingsService: { updateForWorkspace: vi.fn().mockResolvedValue(undefined) },
       documentStorage: { upload: vi.fn() },
       websiteCrawlJobService,
       crawlerProvider: createCrawler(),
@@ -465,7 +461,6 @@ describe("AgentWizardService", () => {
     const service = new AgentWizardService({
       textGenerationClient: { complete: vi.fn() },
       agentService,
-      ingestionSettingsService: { updateForWorkspace: vi.fn().mockResolvedValue(undefined) },
       documentStorage,
       websiteCrawlJobService: { enqueue: vi.fn().mockResolvedValue({ jobId: "j", sourceId: null }) },
       crawlerProvider: createCrawler(),

@@ -15,9 +15,6 @@ export const createAgentWizardApplicationModule = (): ApplicationModule => ({
         if (!dependencies.agentService) {
           throw new Error("Agent wizard requires agentService");
         }
-        if (!dependencies.ingestionSettingsService) {
-          throw new Error("Agent wizard requires ingestionSettingsService");
-        }
         if (!dependencies.documentStorage) {
           throw new Error("Agent wizard requires documentStorage");
         }
@@ -37,7 +34,6 @@ export const createAgentWizardApplicationModule = (): ApplicationModule => ({
         const service = new AgentWizardService({
           textGenerationClient: dependencies.chatTextGenerationClient,
           agentService: dependencies.agentService,
-          ingestionSettingsService: dependencies.ingestionSettingsService,
           documentStorage: dependencies.documentStorage,
           websiteCrawlJobService: dependencies.websiteCrawlJobService,
           crawlerProvider: dependencies.crawlerProvider,

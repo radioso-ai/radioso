@@ -155,6 +155,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       pageLimit: number;
       seedPendingUrls?: string[];
       includeBaseUrl?: boolean;
+      signal?: AbortSignal;
     }) {
       const { crawlSite } = await import("@radioso/crawler");
       return crawlSite(params);

@@ -6,7 +6,6 @@ import type {
   AgentWizardAgentServicePort,
   AgentWizardCrawlerLimits,
   AgentWizardDocumentStoragePort,
-  AgentWizardIngestionSettingsPort,
   AgentWizardTextGenerationPort,
   AgentWizardUrlPolicy,
   AgentWizardWebsiteCrawlerPort,
@@ -151,7 +150,6 @@ export interface AgentWizardProgressEvent {
 interface AgentWizardDependencies {
   textGenerationClient: AgentWizardTextGenerationPort;
   agentService: AgentWizardAgentServicePort;
-  ingestionSettingsService: AgentWizardIngestionSettingsPort;
   documentStorage: AgentWizardDocumentStoragePort;
   websiteCrawlJobService: AgentWizardWebsiteCrawlerPort;
   crawlerProvider: CrawlerPort;
@@ -553,11 +551,13 @@ export class AgentWizardService {
       await this.uploadFaviconAsLogo(input.workspaceId, agent.id, input.config.faviconUrl).catch(() => {});
     }
 
-    if (input.config.chunkingStrategy) {
-      await this.dependencies.ingestionSettingsService.updateForWorkspace(input.workspaceId, {
-        chunkingStrategy: input.config.chunkingStrategy,
-      }).catch(() => {});
-    }
+    // The LLM-suggested chunking strategy is captured in the audit event
+    // below but NOT applied to the workspace's IngestionSettings here.
+    // chunkingStrategy is workspace-scoped, so writing it would silently
+    // change retrieval behavior for every other agent and every previously
+    // ingested document in this workspace — based on the content of a
+    // single new site. The user can pick up the suggestion explicitly from
+    // the agent settings page if they want it applied.
 
     let crawlJobId: string | null = null;
     if (input.config.websiteUrl) {

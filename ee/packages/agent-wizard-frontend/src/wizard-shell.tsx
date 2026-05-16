@@ -70,6 +70,12 @@ export function WizardShell({ agentSettingsHrefBuilder }: WizardShellProps) {
       }
       setStep("creating");
       failureStep = "creating";
+      // Re-check just before the network call: abort can fire after
+      // setStep but before fetch is dispatched (microtask scheduling),
+      // and there's no signal threaded into createFromWizard yet.
+      if (controller.signal.aborted) {
+        return;
+      }
       const createResult = await wizardApi.createFromWizard({
         websiteUrl: submittedUrl,
         name: result.suggestedName,

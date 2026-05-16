@@ -131,6 +131,7 @@ export interface AppDependencies {
       pageLimit: number;
       seedPendingUrls?: string[];
       includeBaseUrl?: boolean;
+      signal?: AbortSignal;
     }): Promise<Array<{
       url: string;
       title: string | null;

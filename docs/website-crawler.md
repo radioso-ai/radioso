@@ -15,11 +15,26 @@ The request body is:
 ```json
 {
   "url": "https://example.com/docs",
-  "limit": 10
+  "limit": 10,
+  "includeUrlPatterns": ["/docs/"],
+  "excludeUrlPatterns": ["/tag/", "/search"],
+  "preserveContentLinks": true
 }
 ```
 
-`limit` is optional. When omitted the backend uses the configured maximum. Environment variables:
+Only `url` is required. `limit` is optional. When omitted the backend uses the configured maximum.
+
+The policy fields are optional:
+
+| Field | Notes |
+|-------|-------|
+| `includeUrlPatterns` | URL substrings to allow. Empty or omitted means no extra allow filter. |
+| `excludeUrlPatterns` | URL substrings to deny. Deny patterns win over allow patterns. |
+| `preserveContentLinks` | Defaults to `true`. When `false`, content links are rendered as plain text. Share, tracking, and social links are still dropped. |
+
+Pattern matching is case-insensitive substring matching, not regex matching. It is intended for simple path or domain fragments that an operator can understand.
+
+Environment variables:
 
 ```bash
 WEBSITE_CRAWLER_DEFAULT_LIMIT=1000
@@ -27,17 +42,35 @@ WEBSITE_CRAWLER_MAX_LIMIT=1000
 WEBSITE_CRAWLER_USER_AGENT=RadiosoCrawler/1.0
 ```
 
-Pages whose content exceeds 500,000 characters are skipped during ingestion with a failure reason recorded in the crawl job result.
+Pages whose content exceeds 500,000 characters are skipped during ingestion with a skip reason recorded in the crawl job result.
 
 Cookie-session requests select the workspace with `x-workspace-id`. Bearer-token requests use the workspace already bound to the API token.
 
 Accepted pages are published as documents with stable external document IDs and a workspace-local website source. Repeated crawls of the same normalized URL reuse that source, so recrawl logic can find the related documents through `sourceId`. Chunking, embeddings, retrieval, and citations remain owned by the standard document worker.
 
-The bundled `radioso-crawler` provider seeds its crawl from the requested URL and from same-origin sitemaps listed in `robots.txt`. It still applies the request `limit`, same-origin scope checks, duplicate removal, and asset filtering before fetching pages.
+The bundled `radioso-crawler` provider seeds its crawl from the requested URL and from same-origin sitemaps listed in `robots.txt`. It still applies the request `limit`, same-origin scope checks, duplicate removal, and asset filtering before fetching pages. If URL allow patterns are configured and the requested seed URL does not match them, the crawler may fetch that seed page for link discovery, but marks it discovery-only so it is not published as a document.
+
+The bundled crawler uses structurally link-dense pages and low-quality pages for discovery, but does not publish them as documents by default. It also drops share, tracking, and social links from extracted content, keeps source links by default, and records a normalized content hash so duplicate extracted content can be skipped within a crawl run.
 
 By default, outbound crawler requests identify as `RadiosoCrawler/1.0`. Self-hosted operators can set `WEBSITE_CRAWLER_USER_AGENT` to a deployment-specific value, such as `ExampleDocsCrawler/1.0 (+https://example.com/crawler)`. Use this when a site needs to allowlist the crawler or route support requests to the right owner.
 
 Radioso does not rotate user agents or proxies to bypass blocks. If a page returns `401`, `403`, or `429`, the crawler records that page as failed instead of ingesting the block page as content. For `429` responses, `Retry-After` is preserved in the failure message when the site sends it.
+
+### When a site blocks the crawler
+
+Some websites use Cloudflare, other web application firewalls, login gates, or bot-detection rules that block automated fetches. In that case the crawl job will usually show failed pages with reasons such as `403`, `401`, `429`, `Blocked by robots.txt`, or a network error.
+
+Radioso does not try to bypass those controls. It does not solve CAPTCHA challenges, rotate proxies, spoof browsers, or keep retrying with different identities. The site owner needs to allow the crawler or provide content through another path.
+
+In practice, use one of these options:
+
+1. Ask the site owner to allowlist the crawler's user agent and source IP range, if the deployment has stable egress IPs.
+2. Set `WEBSITE_CRAWLER_USER_AGENT` to an identifiable value with a contact URL or email, such as `ExampleDocsCrawler/1.0 (+https://example.com/crawler)`, then ask the site owner to allow that user agent.
+3. If the site is behind Cloudflare or another WAF that challenges all automated traffic, create a WAF rule that skips the challenge for the crawler identity or IP range.
+4. If the content requires authentication, export the pages or upload the source documents directly. The bundled crawler does not crawl authenticated browser sessions.
+5. Reduce the crawl scope with `includeUrlPatterns` and `excludeUrlPatterns` so the site does not see a broad scan. This can help with rate limits, but it will not bypass an explicit block.
+
+After changing the site's allow rules, re-run the crawl. If the job has both accepted and failed pages, inspect `failedPageCount` and `failures` in `GET /api/v1/document/crawl/jobs` to confirm which URLs still need attention.
 
 ### Document and source metadata
 
@@ -48,6 +81,7 @@ Per-document metadata is intentionally narrow:
 | `sourceUrl` | Always present. The page URL the crawler fetched. |
 | `canonicalUrl` | Always present. Equals `sourceUrl` when the page has no separate canonical, so consumers can rely on the key. |
 | `httpStatus`, `etag`, `lastModified` | Optional. Pulled from the provider via a fixed allow-list and only when truthy. Useful for incremental re-crawl decisions. |
+| `pageType`, `qualityScore`, `skipReason`, `extractedContainer`, `normalizedContentHash` | Optional crawler diagnostics. These help explain why a page was accepted or skipped. |
 
 Provider-supplied metadata fields outside the allow-list are dropped — including any attempt to spoof `sourceUrl`, `websiteBaseUrl`, or to smuggle secrets.
 
@@ -66,14 +100,14 @@ The `documents.list` API joins `document_sources` so each `DocumentSummary` expo
 GET /api/v1/document/crawl/jobs
 ```
 
-Returns recent crawl jobs for the current workspace. The dashboard uses this endpoint to show queued, running, completed, and failed crawls without polling each document.
+Returns recent crawl jobs for the current workspace. The dashboard uses this endpoint to show queued, running, paused, completed, and failed crawls without polling each document.
 
 Query parameters are all optional:
 
 | Parameter | Type | Default | Notes |
 |-----------|------|---------|-------|
-| `status` | `queued` \| `processing` \| `completed` \| `failed` | unset (any) | Filter to a single status. |
-| `sinceMinutes` | integer 1-1440 | `30` | Only return jobs created in this window. Ignored when `sourceId` is set. |
+| `status` | `queued` \| `processing` \| `paused` \| `completed` \| `failed` | unset (any) | Filter to a single status. |
+| `sinceMinutes` | integer 1-1440 | `30` | Only return jobs updated in this window. Ignored when `sourceId` is set or when filtering `status=paused`. |
 | `limit` | integer 1-200 | `50` | Maximum number of jobs to return. |
 | `sourceId` | UUID | unset | Filter to jobs linked to a specific document source. |
 
@@ -89,6 +123,7 @@ Response shape:
       "limit": 10,
       "sourceId": "22222222-2222-4222-8222-222222222222",
       "documentCount": 7,
+      "skippedPageCount": 2,
       "failedPageCount": 1,
       "failures": [
         {
@@ -105,7 +140,7 @@ Response shape:
 }
 ```
 
-`documentCount` is derived from the worker result (`accepted` pages). It is `null` for jobs that have not completed yet. `failedPageCount` is the number of pages skipped during ingestion. `failures` contains the URL and reason for each skipped page. `lastError` is populated for failed jobs and is `null` otherwise.
+`documentCount` is derived from the worker result (`accepted` pages). It is `null` for jobs that have not completed yet. `skippedPageCount` counts pages that were intentionally not published, such as listing pages, duplicate content, empty content, or oversized pages. `failedPageCount` counts pages that could not be fetched, validated, or published. `failures` contains the URL and reason for skipped or failed pages. `lastError` is populated for failed jobs and is `null` otherwise.
 
 ### Deleting a finished crawl job
 
@@ -141,6 +176,19 @@ Enqueues a new crawl job using the URL and limit stored in the source's `config`
 
 Duplicate pages are handled by the existing `externalDocumentId` upsert — unchanged pages update the existing document rather than creating a new one.
 
+### Pausing and resuming a website source crawl
+
+```text
+POST /api/v1/document/sources/{sourceId}/pause-crawl
+POST /api/v1/document/sources/{sourceId}/resume-crawl
+```
+
+Pause and resume only apply to website sources. Pausing marks queued or processing crawl jobs as `paused`. If a worker is processing the job, the paused row keeps its claim until the worker observes the status change, aborts the active crawl, releases the claim, and keeps the checkpoint state.
+
+Resume marks unclaimed paused jobs as `queued`. The worker loads the saved checkpoint and continues from the discovered and pending URLs for the same job and policy. URLs already processed in that job are not republished.
+
+Changing crawler policy is a new crawl. Resume continues the same paused job and does not create a new source configuration version.
+
 ### Deleting a source
 
 ```text
@@ -164,9 +212,33 @@ interface WebsiteCrawlerProvider {
     url: string;
     limit: number;
     signal?: AbortSignal;
+    policy?: {
+      includeUrlPatterns: string[];
+      excludeUrlPatterns: string[];
+      preserveContentLinks: boolean;
+    };
+    checkpoint?: {
+      discoveredUrls: string[];
+      queuedUrls: string[];
+      processingUrls: string[];
+      processedCanonicalUrls: string[];
+      processedContentHashes?: string[];
+      accepted: number;
+      skipped: number;
+      failed: number;
+      lastProcessedAt: string | null;
+    };
+    onCheckpointEvent?: (event: WebsiteCrawlCheckpointEvent) => Promise<void>;
   }): Promise<WebsiteCrawlResult>;
   crawlStream?(
-    request: { url: string; limit: number; signal?: AbortSignal },
+    request: {
+      url: string;
+      limit: number;
+      signal?: AbortSignal;
+      policy?: WebsiteCrawlPolicy;
+      checkpoint?: WebsiteCrawlCheckpoint;
+      onCheckpointEvent?: (event: WebsiteCrawlCheckpointEvent) => Promise<void>;
+    },
     onPage: (page: WebsiteCrawlPage) => Promise<void>,
   ): Promise<Omit<WebsiteCrawlResult, "pages">>;
 }

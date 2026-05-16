@@ -113,6 +113,10 @@ export function DocumentsView({
   const [isCrawlDialogOpen, setIsCrawlDialogOpen] = useState(false)
   const [isCrawling, setIsCrawling] = useState(false)
   const [crawlUrl, setCrawlUrl] = useState('')
+  const [crawlLimit, setCrawlLimit] = useState('')
+  const [crawlIncludeUrlPatterns, setCrawlIncludeUrlPatterns] = useState('')
+  const [crawlExcludeUrlPatterns, setCrawlExcludeUrlPatterns] = useState('')
+  const [crawlPreserveContentLinks, setCrawlPreserveContentLinks] = useState(true)
   const [crawlError, setCrawlError] = useState<string | null>(null)
   const [crawlJobs, setCrawlJobs] = useState<WebsiteCrawlJobSummary[]>([])
   const [dismissedCrawlJobIds, setDismissedCrawlJobIds] = useState<Set<string>>(new Set())
@@ -200,7 +204,15 @@ export function DocumentsView({
     const requestWorkspaceKey = `${accountId}:${routeState.workspaceId ?? ''}`
 
     try {
-      const response = await documentsApi.listCrawlJobs({ sinceMinutes: CRAWL_JOBS_SINCE_MINUTES })
+      const [recentResponse, pausedResponse] = await Promise.all([
+        documentsApi.listCrawlJobs({ sinceMinutes: CRAWL_JOBS_SINCE_MINUTES }),
+        documentsApi.listCrawlJobs({ status: 'paused' }),
+      ])
+      const jobsById = new Map(recentResponse.jobs.map((job) => [job.id, job]))
+      for (const job of pausedResponse.jobs) {
+        jobsById.set(job.id, job)
+      }
+      const jobs = [...jobsById.values()]
 
       if (
         crawlLoadRequestIdRef.current !== requestId ||
@@ -212,7 +224,7 @@ export function DocumentsView({
       setCrawlJobs((current) => {
         const merged = mergeCrawlJobs({
           current,
-          incoming: response.jobs,
+          incoming: jobs,
           previousStatuses: previousCrawlJobsRef.current,
           recentlyDeletedJobIds: recentlyDeletedRef.current,
         })
@@ -360,6 +372,10 @@ export function DocumentsView({
 
   const resetCrawlDialog = useCallback(() => {
     setCrawlUrl('')
+    setCrawlLimit('')
+    setCrawlIncludeUrlPatterns('')
+    setCrawlExcludeUrlPatterns('')
+    setCrawlPreserveContentLinks(true)
     setCrawlError(null)
   }, [])
 
@@ -518,7 +534,14 @@ export function DocumentsView({
 
   const handleCrawlSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    const parsed = parseCrawlForm({ url: crawlUrl, limit: '', maxLimit: CRAWL_MAX_LIMIT })
+    const parsed = parseCrawlForm({
+      url: crawlUrl,
+      limit: crawlLimit,
+      includeUrlPatterns: crawlIncludeUrlPatterns,
+      excludeUrlPatterns: crawlExcludeUrlPatterns,
+      preserveContentLinks: crawlPreserveContentLinks,
+      maxLimit: CRAWL_MAX_LIMIT,
+    })
     if (!parsed.ok) {
       setCrawlError(parsed.error)
       return
@@ -530,15 +553,20 @@ export function DocumentsView({
     try {
       const response = await documentsApi.crawlWebsite({
         url: parsed.url,
+        limit: parsed.limit,
+        includeUrlPatterns: parsed.includeUrlPatterns,
+        excludeUrlPatterns: parsed.excludeUrlPatterns,
+        preserveContentLinks: parsed.preserveContentLinks,
       })
       const optimisticJob: WebsiteCrawlJobSummary = {
         id: response.jobId,
         requestedUrl: response.requestedUrl,
         status: 'queued',
-        limit: CRAWL_MAX_LIMIT,
+        limit: parsed.limit ?? CRAWL_MAX_LIMIT,
         sourceId: response.sourceId,
         documentCount: null,
         failedPageCount: null,
+        skippedPageCount: null,
         failures: [],
         lastError: null,
         createdAt: new Date().toISOString(),
@@ -765,6 +793,10 @@ export function DocumentsView({
         <DocumentCrawlDialog
           open={isCrawlDialogOpen}
           url={crawlUrl}
+          limit={crawlLimit}
+          includeUrlPatterns={crawlIncludeUrlPatterns}
+          excludeUrlPatterns={crawlExcludeUrlPatterns}
+          preserveContentLinks={crawlPreserveContentLinks}
           crawlError={crawlError}
           isCrawling={isCrawling}
           maxLimit={CRAWL_MAX_LIMIT}
@@ -772,6 +804,22 @@ export function DocumentsView({
           onSubmit={handleCrawlSubmit}
           onUrlChange={(value) => {
             setCrawlUrl(value)
+            setCrawlError(null)
+          }}
+          onLimitChange={(value) => {
+            setCrawlLimit(value)
+            setCrawlError(null)
+          }}
+          onIncludeUrlPatternsChange={(value) => {
+            setCrawlIncludeUrlPatterns(value)
+            setCrawlError(null)
+          }}
+          onExcludeUrlPatternsChange={(value) => {
+            setCrawlExcludeUrlPatterns(value)
+            setCrawlError(null)
+          }}
+          onPreserveContentLinksChange={(value) => {
+            setCrawlPreserveContentLinks(value)
             setCrawlError(null)
           }}
         />

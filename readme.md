@@ -200,7 +200,7 @@ The catalog describes product-facing work and points to stable contracts. It doe
 
 Radioso exposes an OSS website crawler provider port at `POST /api/v1/document/crawl`. The route accepts a website URL, calls the bundled `radioso-crawler` provider by default, and publishes returned pages through the normal document ingestion pipeline.
 
-Application composition can register a different crawler provider for custom deployments. Crawl limits are controlled with `WEBSITE_CRAWLER_MAX_LIMIT` (default 1,000 pages). Outbound requests identify as `RadiosoCrawler/1.0` by default; set `WEBSITE_CRAWLER_USER_AGENT` when a deployment needs a custom allowlisted crawler identity or contact URL. Pages exceeding 500,000 characters are skipped during ingestion. Website sources can be re-crawled or deleted through the source management API; see `docs/website-crawler.md` for details.
+Application composition can register a different crawler provider for custom deployments. Crawl limits are controlled with `WEBSITE_CRAWLER_MAX_LIMIT` (default 1,000 pages), and crawl requests can also set simple URL allow and deny substrings. Outbound requests identify as `RadiosoCrawler/1.0` by default; set `WEBSITE_CRAWLER_USER_AGENT` when a deployment needs a custom allowlisted crawler identity or contact URL. Pages exceeding 500,000 characters are skipped during ingestion. Website sources can be re-crawled, paused, resumed, or deleted through the source management API; see `docs/website-crawler.md` for details.
 
 The bundled crawler does not rotate user agents or proxies to bypass site blocks. Responses with `401`, `403`, or `429` are recorded as failed pages instead of being ingested as content.
 

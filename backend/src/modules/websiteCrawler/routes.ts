@@ -46,10 +46,13 @@ export const crawlBodySchema = z.object({
     }
   }, "URL must use http or https"),
   limit: z.number().int().positive().optional(),
+  includeUrlPatterns: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+  excludeUrlPatterns: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+  preserveContentLinks: z.boolean().optional(),
 });
 
 const crawlJobsQuerySchema = z.object({
-  status: z.enum(["queued", "processing", "completed", "failed"]).optional(),
+  status: z.enum(["queued", "processing", "paused", "completed", "failed"]).optional(),
   sinceMinutes: z.coerce.number().int().min(1).max(1440).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
   sourceId: z.string().uuid().optional(),
@@ -106,11 +109,12 @@ export const createWebsiteCrawlerRoutes = (
   router.get("/jobs", workspaceSession, crawlJobReadRateLimit, async (req, res, next) => {
     try {
       const query = parseRequest(crawlJobsQuerySchema, req.query, "Invalid crawl jobs query");
+      const useUnboundedWindow = query.status === "paused" || (Boolean(query.sourceId) && query.status === undefined);
       const jobs = await dependencies.websiteCrawlJobService.listForWorkspace(
         res.locals.workspaceId as string,
         {
           status: query.status,
-          sinceMinutes: query.sourceId ? undefined : (query.sinceMinutes ?? 30),
+          sinceMinutes: useUnboundedWindow ? undefined : (query.sinceMinutes ?? 30),
           limit: query.limit,
           sourceId: query.sourceId,
         },
@@ -157,6 +161,11 @@ export const createWebsiteCrawlerRoutes = (
         workspaceId: res.locals.workspaceId as string,
         url: body.url,
         limit,
+        policy: {
+          includeUrlPatterns: body.includeUrlPatterns ?? [],
+          excludeUrlPatterns: body.excludeUrlPatterns ?? [],
+          preserveContentLinks: body.preserveContentLinks ?? true,
+        },
       });
       res.status(202).json(result);
     } catch (error) {

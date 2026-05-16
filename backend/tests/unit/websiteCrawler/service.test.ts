@@ -87,6 +87,46 @@ describe("website crawler service", () => {
     expect(ingest.mock.calls[1][0].metadata.sourceUrl).toBe("https://example.com/contact");
   });
 
+  it("skips duplicate normalized content within a crawl run", async () => {
+    const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([
+        {
+          sourceUrl: "https://example.com/a",
+          canonicalUrl: "https://example.com/a",
+          title: "A",
+          content: "# Shared",
+          metadata: { normalizedContentHash: "hash-1" },
+        },
+        {
+          sourceUrl: "https://example.com/b",
+          canonicalUrl: "https://example.com/b",
+          title: "B",
+          content: "# Shared",
+          metadata: { normalizedContentHash: "hash-1" },
+        },
+      ]),
+      documentIngestionService: { ingest },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    const result = await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 2,
+    });
+
+    expect(result.accepted).toBe(1);
+    expect(result.skipped).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(result.failures).toEqual([{
+      sourceUrl: "https://example.com/b",
+      reason: "Duplicate normalized content",
+    }]);
+    expect(ingest).toHaveBeenCalledOnce();
+  });
+
   it("uses stable external document IDs for repeated crawls", async () => {
     const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
     const service = new WebsiteCrawlerService({
@@ -534,11 +574,82 @@ describe("website crawler service", () => {
       limit: 1,
     });
 
-    expect(crawl).toHaveBeenCalledWith({
+    expect(crawl).toHaveBeenCalledWith(expect.objectContaining({
       url: "https://example.com/search?q=api",
       limit: 1,
-    });
+    }));
     expect(result.requestedUrl).toBe("https://example.com/search?q=api");
+  });
+
+  it("passes only the remaining page limit when resuming from a checkpoint", async () => {
+    const crawl = vi.fn().mockResolvedValue({
+      provider: "custom-crawler",
+      pages: [],
+    });
+    const service = new WebsiteCrawlerService({
+      provider: {
+        name: "custom-crawler",
+        crawl,
+      },
+      documentIngestionService: { ingest: vi.fn() },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 100,
+      checkpoint: {
+        discoveredUrls: [],
+        queuedUrls: [],
+        processingUrls: [],
+        processedCanonicalUrls: [],
+        accepted: 80,
+        skipped: 5,
+        failed: 3,
+        lastProcessedAt: null,
+      },
+    });
+
+    expect(crawl).toHaveBeenCalledWith(expect.objectContaining({
+      limit: 12,
+    }));
+  });
+
+  it("does not call the provider when a resumed checkpoint already reached the page limit", async () => {
+    const crawl = vi.fn();
+    const service = new WebsiteCrawlerService({
+      provider: {
+        name: "custom-crawler",
+        crawl,
+      },
+      documentIngestionService: { ingest: vi.fn() },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    const result = await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 100,
+      checkpoint: {
+        discoveredUrls: [],
+        queuedUrls: [],
+        processingUrls: [],
+        processedCanonicalUrls: [],
+        accepted: 80,
+        skipped: 15,
+        failed: 5,
+        lastProcessedAt: null,
+      },
+    });
+
+    expect(crawl).not.toHaveBeenCalled();
+    expect(result.accepted).toBe(80);
+    expect(result.skipped).toBe(15);
+    expect(result.failed).toBe(5);
+    expect(result.status).toBe("completed");
   });
 
   it("passes request cancellation signals into the abstract provider", async () => {
@@ -564,11 +675,11 @@ describe("website crawler service", () => {
       signal,
     });
 
-    expect(crawl).toHaveBeenCalledWith({
+    expect(crawl).toHaveBeenCalledWith(expect.objectContaining({
       url: "https://example.com",
       limit: 1,
       signal,
-    });
+    }));
   });
 
   it("stops before provider calls when the request signal is already aborted", async () => {
@@ -657,6 +768,49 @@ describe("website crawler service", () => {
       },
     ]);
     expect(ingest).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts crawler transport failures as failed pages before empty-content skips", async () => {
+    const ingest = vi.fn();
+    const resolveSource = vi.fn().mockResolvedValue({ id: "source-1" });
+    const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([
+        {
+          sourceUrl: "https://example.com/blocked",
+          title: null,
+          content: "",
+          metadata: {
+            crawlerStatus: "failed",
+            error: "Blocked by status code 403 token=crawler-secret",
+            httpStatus: 403,
+          },
+        },
+      ]),
+      documentIngestionService: { ingest, resolveSource, updateSourceSyncState },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    const result = await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 1,
+    });
+
+    expect(result.accepted).toBe(0);
+    expect(result.skipped).toBe(0);
+    expect(result.failed).toBe(1);
+    expect(result.failures).toEqual([{
+      sourceUrl: "https://example.com/blocked",
+      reason: "Crawler failed: Blocked by status code 403 [redacted]",
+    }]);
+    expect(ingest).not.toHaveBeenCalled();
+    expect(updateSourceSyncState).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+      status: "failure",
+    }));
   });
 
   it("enforces local page limits and accounts for malformed provider page URLs", async () => {

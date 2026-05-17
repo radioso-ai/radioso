@@ -50,12 +50,12 @@ const normalizeMessageField = (value: unknown): string | null => {
   return trimmed.slice(0, MESSAGE_MAX_LENGTH);
 };
 
-const hasPriorUserConversation = (input: ChatIntakeInput): boolean =>
+const hasPriorSubstantiveUserContext = (input: ChatIntakeInput): boolean =>
   input.history.some(
     (message) =>
       message.role === "user" &&
       message.id !== input.userMessageId &&
-      message.content.trim().length > 0,
+      isUsefulLanguageAnchor(message.content),
   );
 
 const isUsefulLanguageAnchor = (value: string): boolean => {
@@ -644,7 +644,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
   }
 
   private deriveMessageFromPriorContext(input: ChatIntakeInput): string | null {
-    if (!hasPriorUserConversation(input)) {
+    if (!hasPriorSubstantiveUserContext(input)) {
       return null;
     }
     return buildFallbackDraft(input).draftMessage;

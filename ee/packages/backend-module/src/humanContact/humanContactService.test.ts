@@ -580,6 +580,62 @@ describe("enterprise human contact service", () => {
     expect(database.submissions.size).toBe(0);
   });
 
+  it("does not treat a short greeting plus handoff request as the message for the team", async () => {
+    const responses = [
+      "{\"shouldStart\":true}",
+      "{}",
+      "What email address should the team use to follow up?",
+    ];
+    const { service, database } = createService({
+      chatGateway: {
+        async answer() {
+          return responses.shift() ?? "{}";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    const result = await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-2",
+      query: "I want to talk to someone",
+      history: [
+        {
+          id: "user-message-1",
+          role: "user",
+          content: "hey",
+          createdAt: new Date("2026-05-04T09:59:00.000Z"),
+        },
+        {
+          id: "user-message-2",
+          role: "user",
+          content: "I want to talk to someone",
+          createdAt: new Date("2026-05-04T10:00:00.000Z"),
+        },
+      ],
+      sourceChannel: "authenticated_chat",
+    });
+
+    expect(result).toMatchObject({
+      skillName: "human_contact.request",
+      status: "active",
+      answer: "What email address should the team use to follow up?",
+    });
+    const [state] = [...database.intakeStates.values()];
+    expect(state).toMatchObject({
+      missing: ["email", "message"],
+      last_prompted_field: "email",
+      collected: {},
+    });
+  });
+
   it("starts contact intake from structured intent metadata without English intent matching", async () => {
     const prompts: string[] = [];
     const responses = [
@@ -1136,7 +1192,7 @@ describe("enterprise human contact service", () => {
       status: "active",
       answer: "Quale indirizzo email dovrebbe usare il team per ricontattarti?",
     });
-    expect(prompts.at(-1)).toContain("Reply in the same language the user wrote in.");
+    expect(prompts.at(-1)).toContain("Reply in exactly the same natural language the user used in the anchor message below.");
     expect(prompts.at(-1)).toContain("The user's anchor message in this conversation was: Volevo parlare con una persona.");
   });
 
@@ -1247,6 +1303,7 @@ describe("enterprise human contact service", () => {
     });
 
     expect(prompts.at(-1)).toContain("The user's anchor message in this conversation was: I'd like to talk to someone.");
+    expect(prompts.at(-1)).toContain("Ignore browser locale hints");
     expect(prompts.at(-1)).not.toContain("fall back to locale es-ES");
   });
 

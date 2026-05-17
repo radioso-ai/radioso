@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../app/server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
+import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { createRateLimitMiddleware } from "../../app/http/middleware/rateLimit.js";
 import { resolveWebsiteCrawlerConfig } from "./config.js";
 import {
@@ -78,6 +79,8 @@ export const createWebsiteCrawlerRoutes = (
   const configuredProvider = options.provider ?? dependencies.websiteCrawlerProvider ?? null;
 
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const documentsRead = requireWorkspacePermission(dependencies, "workspace.documents.read");
+  const documentsManage = requireWorkspacePermission(dependencies, "workspace.documents.manage");
   const resolveCrawlSubjectKey = (_req: unknown, res: { locals: Record<string, unknown> }) =>
     res.locals.authMode === "bearer"
       ? `${res.locals.workspaceId as string}:bearer`
@@ -106,7 +109,7 @@ export const createWebsiteCrawlerRoutes = (
     resolveAuditContext: resolveCrawlAuditContext,
   });
 
-  router.get("/jobs", workspaceSession, crawlJobReadRateLimit, async (req, res, next) => {
+  router.get("/jobs", workspaceSession, documentsRead, crawlJobReadRateLimit, async (req, res, next) => {
     try {
       const query = parseRequest(crawlJobsQuerySchema, req.query, "Invalid crawl jobs query");
       const useUnboundedWindow = query.status === "paused" || (Boolean(query.sourceId) && query.status === undefined);
@@ -125,7 +128,7 @@ export const createWebsiteCrawlerRoutes = (
     }
   });
 
-  router.delete("/jobs/:jobId", workspaceSession, crawlJobReadRateLimit, async (req, res, next) => {
+  router.delete("/jobs/:jobId", workspaceSession, documentsManage, crawlJobReadRateLimit, async (req, res, next) => {
     try {
       const params = parseRequest(crawlJobParamsSchema, req.params, "Invalid crawl job id");
       await dependencies.websiteCrawlJobService.deleteJob({
@@ -138,7 +141,7 @@ export const createWebsiteCrawlerRoutes = (
     }
   });
 
-  router.post("/", workspaceSession, crawlRateLimit, async (req, res, next) => {
+  router.post("/", workspaceSession, documentsManage, crawlRateLimit, async (req, res, next) => {
     const abortController = new AbortController();
     const abort = () => abortController.abort();
     const abortIfResponseDidNotFinish = () => {

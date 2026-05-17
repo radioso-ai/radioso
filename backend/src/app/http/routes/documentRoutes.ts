@@ -134,6 +134,7 @@ export const chunkParamsSchema = z.object({
 export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const documentsRead = requireWorkspacePermission(dependencies, "workspace.documents.read");
   const uploadRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
@@ -170,7 +171,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       });
     });
 
-  router.get("/", workspaceSession, async (req, res, next) => {
+  router.get("/", workspaceSession, documentsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedQuery = documentListQuerySchema.safeParse(req.query);
@@ -185,7 +186,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.get("/sources", workspaceSession, async (_req, res, next) => {
+  router.get("/sources", workspaceSession, documentsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const [sources, documentsWithoutSourceCount] = await Promise.all([
@@ -231,7 +232,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.get("/sources/:sourceId/documents", workspaceSession, async (req, res, next) => {
+  router.get("/sources/:sourceId/documents", workspaceSession, documentsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { sourceId } = sourceParamsSchema.parse(req.params);
@@ -425,7 +426,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.post("/search", workspaceSession, validateBody(documentSearchSchema), async (req, res, next) => {
+  router.post("/search", workspaceSession, documentsRead, validateBody(documentSearchSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const executionSurface = req.header("x-radioso-capability-client") === "mcp" ? "mcp_capability" : "documents";
@@ -441,7 +442,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.get("/search/history", workspaceSession, async (req, res, next) => {
+  router.get("/search/history", workspaceSession, documentsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedQuery = documentListQuerySchema.safeParse(req.query);
@@ -456,7 +457,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.get("/search/history/:searchId", workspaceSession, async (req, res, next) => {
+  router.get("/search/history/:searchId", workspaceSession, documentsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { searchId } = documentSearchHistoryParamsSchema.parse(req.params);
@@ -530,7 +531,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     });
   }
 
-  router.get("/:documentId", workspaceSession, async (req, res, next) => {
+  router.get("/:documentId", workspaceSession, documentsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
@@ -541,7 +542,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.get("/:documentId/chunks", workspaceSession, async (req, res, next) => {
+  router.get("/:documentId/chunks", workspaceSession, documentsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
@@ -556,7 +557,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.get("/:documentId/chunks/:chunkId", workspaceSession, async (req, res, next) => {
+  router.get("/:documentId/chunks/:chunkId", workspaceSession, documentsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId, chunkId } = chunkParamsSchema.parse(req.params);

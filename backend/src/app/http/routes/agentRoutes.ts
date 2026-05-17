@@ -67,9 +67,11 @@ type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencie
 export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const agentRead = requireWorkspacePermission(dependencies, "workspace.agents.read");
+  const agentManage = requireWorkspacePermission(dependencies, "workspace.agents.manage");
   const runUploadSingle = createAssistantLogoUploadHandler();
 
-  router.get("/", workspaceSession, async (_req, res, next) => {
+  router.get("/", workspaceSession, agentRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       res.status(200).json({ agents: await dependencies.agentService.list(workspaceId) });
@@ -78,7 +80,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     }
   });
 
-  router.post("/", workspaceSession, validateBody(agentBodySchema), async (req, res, next) => {
+  router.post("/", workspaceSession, agentManage, validateBody(agentBodySchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const agent = await dependencies.agentService.create(workspaceId, req.body);
@@ -88,7 +90,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     }
   });
 
-  router.get("/:agentId", workspaceSession, async (req, res, next) => {
+  router.get("/:agentId", workspaceSession, agentRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentParamsSchema.parse(req.params);
@@ -99,7 +101,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     }
   });
 
-  router.put("/:agentId", workspaceSession, validateBody(agentBodySchema), async (req, res, next) => {
+  router.put("/:agentId", workspaceSession, agentManage, validateBody(agentBodySchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentParamsSchema.parse(req.params);
@@ -115,7 +117,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     }
   });
 
-  router.post("/:agentId/assistant-logo", workspaceSession, async (req, res, next) => {
+  router.post("/:agentId/assistant-logo", workspaceSession, agentManage, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentParamsSchema.parse(req.params);
@@ -171,7 +173,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     }
   });
 
-  router.delete("/:agentId/assistant-logo", workspaceSession, async (req, res, next) => {
+  router.delete("/:agentId/assistant-logo", workspaceSession, agentManage, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentParamsSchema.parse(req.params);
@@ -195,7 +197,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     }
   });
 
-  router.post("/:agentId/anonymous-chat-token/rotate", workspaceSession, async (req, res, next) => {
+  router.post("/:agentId/anonymous-chat-token/rotate", workspaceSession, agentManage, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentParamsSchema.parse(req.params);
@@ -211,7 +213,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     }
   });
 
-  router.post("/:agentId/website-embed-token/rotate", requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"), workspaceSession, async (req, res, next) => {
+  router.post("/:agentId/website-embed-token/rotate", requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"), workspaceSession, agentManage, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentParamsSchema.parse(req.params);
@@ -243,7 +245,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     },
   );
 
-  router.post("/:agentId/default", workspaceSession, async (req, res, next) => {
+  router.post("/:agentId/default", workspaceSession, agentManage, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentParamsSchema.parse(req.params);

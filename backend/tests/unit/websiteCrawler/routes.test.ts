@@ -60,6 +60,7 @@ const createApp = (dependencies: Partial<Record<keyof RouteDependencies, unknown
     },
     accountAccessService: {
       async requireActiveMembership() {},
+      async requirePermission() {},
     },
     workspaceSessionService: {
       async resolve({ accountId, workspaceId }) {

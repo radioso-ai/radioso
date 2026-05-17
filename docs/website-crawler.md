@@ -44,7 +44,7 @@ WEBSITE_CRAWLER_USER_AGENT=RadiosoCrawler/1.0
 
 Pages whose content exceeds 500,000 characters are skipped during ingestion with a skip reason recorded in the crawl job result.
 
-Cookie-session requests select the workspace with `x-workspace-id`. Bearer-token requests use the workspace already bound to the API token.
+Cookie-session requests select the workspace with `x-workspace-id`. Bearer-token requests use the workspace already bound to the workspace API token and authorize through the crawler's document-management permission. Public chat and website embed launch credentials are not accepted as crawler bearer tokens.
 
 Accepted pages are published as documents with stable external document IDs and a workspace-local website source. Repeated crawls of the same normalized URL reuse that source, so recrawl logic can find the related documents through `sourceId`. Chunking, embeddings, retrieval, and citations remain owned by the standard document worker.
 

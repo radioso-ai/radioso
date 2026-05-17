@@ -144,9 +144,10 @@ type SettingsRouteDependencies = WorkspaceSessionDependencies & Pick<
 export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const settingsRead = requireWorkspacePermission(dependencies, "workspace.settings.read");
   const runUploadSingle = createAssistantLogoUploadHandler();
 
-  router.get("/", workspaceSession, async (_req, res, next) => {
+  router.get("/", workspaceSession, settingsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.platformSettingsService.getForWorkspace(workspaceId);
@@ -178,7 +179,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     customInstruction: settings.assistant.customInstruction,
   });
 
-  router.get("/retrieval", workspaceSession, async (_req, res, next) => {
+  router.get("/retrieval", workspaceSession, settingsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const [settings, record] = await Promise.all([
@@ -219,7 +220,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     }
   });
 
-  router.get("/ingestion", workspaceSession, async (_req, res, next) => {
+  router.get("/ingestion", workspaceSession, settingsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.ingestionSettingsService.getForWorkspace(workspaceId);
@@ -274,7 +275,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     websiteEmbedExpertOverrides: settings.channels.websiteEmbedExpertOverrides,
   });
 
-  router.get("/general", workspaceSession, async (_req, res, next) => {
+  router.get("/general", workspaceSession, settingsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.platformSettingsService.getForWorkspace(workspaceId);

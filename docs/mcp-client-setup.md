@@ -30,7 +30,7 @@ No `/v1/auth/exchange` call is needed in merged mode.
 ### Standalone HTTP Mode
 
 1. Start the Radioso backend and the remote MCP server.
-2. Exchange a Radioso workspace token for an MCP access token:
+2. Exchange a Radioso workspace API token for an MCP access token:
 
 ```bash
 source <(
@@ -51,6 +51,8 @@ Same-host backend MCP exposes MCP anywhere the backend is reachable. This is con
 Standalone mode keeps a separate public surface. It is the better fit when cloud connectors need public HTTPS access but the main backend should remain private.
 
 The merged route has separate CORS configuration through `RADIOSO_MCP_MERGED_CORS_ORIGINS`. The default is `*` without credentials, because MCP clients use bearer tokens rather than dashboard cookies.
+
+Workspace API tokens are secret bearer credentials bound to one workspace. Public chat and website embed launch credentials are not API tokens and are never accepted by MCP or other workspace API bearer-authenticated routes.
 
 ## Endpoint Model
 
@@ -99,7 +101,7 @@ If Cursor is already open, fully quit it first so the relaunched app picks up th
 If you prefer Cursor to spawn the MCP server directly:
 
 - Set `RADIOSO_BASE_URL` (for example `http://localhost:8080`)
-- Set `RADIOSO_API_TOKEN` (your workspace token, `radioso_...`)
+- Set `RADIOSO_API_TOKEN` (your workspace API token, `radioso_...`)
 - Ensure `pnpm install --filter @radioso/mcp-server...` has been run so the `cursor:mcp-stdio` entrypoint can run.
 
 ## Claude And Claude Desktop Remote Connectors

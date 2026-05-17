@@ -3,6 +3,7 @@ import { Router } from "express";
 import type { AppDependencies } from "../../server/types.js";
 import { sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { assistantChatSchema } from "../schemas/assistantChatSchemas.js";
@@ -13,7 +14,7 @@ export const createAssistantRoutes = (dependencies: AssistantRouteDependencies):
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
 
-  router.post("/chat", workspaceSession, validateBody(assistantChatSchema), async (req, res, next) => {
+  router.post("/chat", workspaceSession, requireWorkspacePermission(dependencies, "workspace.chat.use"), validateBody(assistantChatSchema), async (req, res, next) => {
     try {
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
       if (req.body.stream && req.body.startConversation) {

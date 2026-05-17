@@ -28,6 +28,10 @@ export const requireWorkspaceSession = (dependencies: WorkspaceSessionDependenci
           res.locals.workspaceId = resolved.workspaceId;
           res.locals.sessionId = session.sessionId;
           res.locals.authMode = "session";
+          res.locals.authPrincipal = {
+            type: "session_user",
+            userId: session.userId,
+          };
           next();
           return;
         } catch (error) {
@@ -53,6 +57,7 @@ export const requireWorkspaceSession = (dependencies: WorkspaceSessionDependenci
       res.locals.bearerToken = bearerToken;
       res.locals.workspaceId = auth.workspaceId;
       res.locals.authMode = "bearer";
+      res.locals.authPrincipal = auth.principal;
       next();
     } catch (error) {
       next(error);

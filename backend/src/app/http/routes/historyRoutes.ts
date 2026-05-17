@@ -3,6 +3,7 @@ import { Router } from "express";
 import type { AppDependencies } from "../../server/types.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import {
   collectionPageQuerySchema,
   conversationParamsSchema,
@@ -20,8 +21,9 @@ type HistoryRouteDependencies = WorkspaceSessionDependencies & Pick<
 export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const historyRead = requireWorkspacePermission(dependencies, "workspace.history.read");
 
-  router.get("/", workspaceSession, async (req, res, next) => {
+  router.get("/", workspaceSession, historyRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedQuery = historyItemsPageQuerySchema.safeParse(req.query);
@@ -36,7 +38,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
     }
   });
 
-  router.get("/chat", workspaceSession, async (req, res, next) => {
+  router.get("/chat", workspaceSession, historyRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedQuery = collectionPageQuerySchema.safeParse(req.query);
@@ -51,7 +53,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
     }
   });
 
-  router.get("/search", workspaceSession, async (req, res, next) => {
+  router.get("/search", workspaceSession, historyRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedQuery = collectionPageQuerySchema.safeParse(req.query);
@@ -66,7 +68,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
     }
   });
 
-  router.get("/contact", workspaceSession, async (req, res, next) => {
+  router.get("/contact", workspaceSession, historyRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedQuery = historyItemsPageQuerySchema.safeParse(req.query);
@@ -81,7 +83,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
     }
   });
 
-  router.get("/contact/:requestId", workspaceSession, async (req, res, next) => {
+  router.get("/contact/:requestId", workspaceSession, historyRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedParams = historyContactParamsSchema.safeParse(req.params);
@@ -105,7 +107,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
     }
   });
 
-  router.get("/search/:searchId", workspaceSession, async (req, res, next) => {
+  router.get("/search/:searchId", workspaceSession, historyRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedParams = historySearchParamsSchema.safeParse(req.params);
@@ -120,7 +122,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
     }
   });
 
-  router.get("/chat/:conversationId", workspaceSession, async (req, res, next) => {
+  router.get("/chat/:conversationId", workspaceSession, historyRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedParams = conversationParamsSchema.safeParse(req.params);
@@ -144,7 +146,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
     }
   });
 
-  router.get("/:conversationId", workspaceSession, async (req, res, next) => {
+  router.get("/:conversationId", workspaceSession, historyRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedParams = conversationParamsSchema.safeParse(req.params);

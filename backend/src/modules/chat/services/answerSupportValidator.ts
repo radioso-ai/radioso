@@ -429,7 +429,6 @@ export class AnswerSupportValidator {
     citationEvidence: CitationEvidence[];
     hiddenSupportEvidence?: HiddenSupportEvidence[];
     retrievedContextSummaries: Array<{ title: string; content: string }>;
-    citationDisplayEnabled: boolean;
     groundedMissResponseComposer: GroundedMissResponseComposer;
     unsupportedNoticeMarked?: boolean;
     userExpectedLocale?: string | null;
@@ -549,8 +548,8 @@ export class AnswerSupportValidator {
 
     return {
       answer,
-      citations: input.citationDisplayEnabled ? citations : undefined,
-      answerSegments: input.citationDisplayEnabled ? answerSegments : undefined,
+      citations,
+      answerSegments,
       validation: {
         ran: true,
         answerModified: effectiveSegmentResults.some((segment) => segment.replacementApplied),

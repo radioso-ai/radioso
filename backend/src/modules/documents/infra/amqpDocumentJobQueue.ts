@@ -15,9 +15,30 @@ const DEFAULT_BUSY_REQUEUE_DELAY_MS = 1_000;
 interface AmqpDocumentJobQueueOptions {
   amqpUrl: string;
   queueName: string;
+  deadLetterQueueName?: string;
   connect?: AmqpConnect;
   logger: AppLogger;
 }
+
+const buildMainQueueOptions = (deadLetterQueueName?: string): amqp.Options.AssertQueue => {
+  const options: amqp.Options.AssertQueue = { durable: true };
+  if (deadLetterQueueName) {
+    options.deadLetterExchange = "";
+    options.deadLetterRoutingKey = deadLetterQueueName;
+  }
+  return options;
+};
+
+const assertQueuesWithDlq = async (
+  channel: amqp.Channel | amqp.ConfirmChannel,
+  queueName: string,
+  deadLetterQueueName: string | undefined,
+): Promise<void> => {
+  if (deadLetterQueueName) {
+    await channel.assertQueue(deadLetterQueueName, { durable: true });
+  }
+  await channel.assertQueue(queueName, buildMainQueueOptions(deadLetterQueueName));
+};
 
 export interface AmqpDocumentJobDispatcherOptions extends AmqpDocumentJobQueueOptions {}
 
@@ -41,7 +62,7 @@ export class AmqpDocumentJobDispatcher implements DocumentJobDispatcherPort {
       channel.on("error", (error) => {
         this.logPublishLifecycleError("channel", error);
       });
-      await channel.assertQueue(this.options.queueName, { durable: true });
+      await assertQueuesWithDlq(channel, this.options.queueName, this.options.deadLetterQueueName);
       const payload = toDocumentJobQueueMessage(input);
       channel.sendToQueue(
         this.options.queueName,
@@ -179,7 +200,7 @@ export class AmqpDocumentJobConsumer implements DocumentJobConsumerPort {
       connection = await this.connect(this.options.amqpUrl);
       channel = await connection.createChannel();
       this.bindLifecycleHandlers(connection, channel);
-      await channel.assertQueue(this.options.queueName, { durable: true });
+      await assertQueuesWithDlq(channel, this.options.queueName, this.options.deadLetterQueueName);
       await channel.prefetch(this.options.prefetch ?? 1);
       const consumer = await channel.consume(this.options.queueName, (message) => {
         let processing: Promise<void>;
@@ -347,11 +368,13 @@ export class AmqpDocumentJobConsumer implements DocumentJobConsumerPort {
         {
           role: "amqp-document-job-consumer",
           queueName: this.options.queueName,
+          deadLetterQueueName: this.options.deadLetterQueueName,
           error: formatMessageError(error),
+          rawPayloadBase64: message.content.toString("base64"),
         },
-        "Discarded invalid document job queue message",
+        "Rejected invalid document job queue message",
       );
-      ackQuietly(channel, message, this.options.logger, this.options.queueName);
+      nackQuietly(channel, message, false, this.options.logger, this.options.queueName);
       return;
     }
 

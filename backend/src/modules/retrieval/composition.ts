@@ -18,13 +18,22 @@ import { RetrievalSearchService } from "./services/retrievalSearchService.js";
 
 export { ChunkingStrategyRegistry } from "./domain/chunking/chunkingStrategyRegistry.js";
 export {
-  chunkFixedWindowMarkdown,
   FixedWindowChunkingStrategy,
 } from "./domain/chunking/fixedWindowChunkingStrategy.js";
 export {
+  RecursiveTextChunkingStrategy,
+} from "./domain/chunking/recursiveTextChunkingStrategy.js";
+export type {
+  TextChunkingEmbeddingPort,
+  TextChunkingMethod,
+  TextChunkingProviderChunk,
+  TextChunkingProviderPort,
+  TextChunkingProviderRequest,
+} from "./domain/chunking/chunkingProvider.js";
+export {
   StructuredSemanticChunkingStrategy,
-  type ChunkingSimilarityPort,
 } from "./domain/chunking/structuredSemanticChunkingStrategy.js";
+export { ChonkieChunkingProvider } from "./infra/chonkieChunkingProvider.js";
 export {
   PgLexicalSearch,
   type LexicalSearchPort,

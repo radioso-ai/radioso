@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { chunkMarkdown, normalizeMarkdown } from "../../src/modules/retrieval/domain/chunkingService.js";
+import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
+import { normalizeMarkdown } from "../../src/modules/retrieval/domain/chunkingService.js";
+import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
 import { QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { AttributeMatchScoringService } from "../../src/modules/retrieval/services/attributeMatchScoringService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
@@ -12,10 +14,20 @@ import { PromptContextSelectorService } from "../../src/modules/retrieval/servic
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
 
 describe("edge cases", () => {
-  it("normalizes short content into a single chunk", () => {
+  it("normalizes short content into a single provider-backed chunk", async () => {
     const content = "   short content   ";
     const normalized = normalizeMarkdown(content);
-    const chunks = chunkMarkdown(content);
+    const strategy = new FixedWindowChunkingStrategy(new ChonkieChunkingProvider());
+    const chunks = await strategy.chunk({
+      title: "Short content",
+      content,
+      config: {
+        fixedWindowChunkSize: 800,
+        fixedWindowChunkOverlap: 120,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
+      },
+    });
 
     expect(normalized).toBe("short content");
     expect(chunks).toHaveLength(1);

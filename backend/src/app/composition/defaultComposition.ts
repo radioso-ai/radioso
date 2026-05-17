@@ -14,10 +14,13 @@ import {
   type DocumentStoragePort,
 } from "../../modules/documents/composition.js";
 import {
+  ChonkieChunkingProvider,
   ChunkingStrategyRegistry,
   FixedWindowChunkingStrategy,
+  RecursiveTextChunkingStrategy,
   StructuredSemanticChunkingStrategy,
   type EmbeddingService,
+  type TextChunkingProviderPort,
 } from "../../modules/retrieval/composition.js";
 import { buildAnalyticsSinks } from "../../shared/analytics/buildAnalyticsSinks.js";
 import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
@@ -61,6 +64,7 @@ export interface ApplicationComposition {
   documentJobDispatcher?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobDispatcher"];
   documentJobConsumer?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobConsumer"];
   websiteCrawlerProvider?: ReturnType<typeof createApplicationExtensionRegistry>["websiteCrawlerProvider"];
+  chunkingProvider?: ReturnType<typeof createApplicationExtensionRegistry>["chunkingProvider"];
   websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
   chatIntakeProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["chatIntakeProviderRegistration"];
@@ -95,6 +99,7 @@ export const createDefaultApplicationComposition = (options: {
     documentJobDispatcher: registry.documentJobDispatcher,
     documentJobConsumer: registry.documentJobConsumer,
     websiteCrawlerProvider: registry.websiteCrawlerProvider,
+    chunkingProvider: registry.chunkingProvider,
     websiteEmbedIntegration: registry.websiteEmbedIntegration,
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
     chatIntakeProviderRegistration: registry.chatIntakeProviderRegistration,
@@ -244,8 +249,12 @@ export const createDefaultWebsiteCrawlJobConsumer = (
       })
     : undefined;
 
-export const createDefaultChunkingStrategyRegistry = (embeddingService: EmbeddingService): ChunkingStrategyRegistry =>
+export const createDefaultChunkingStrategyRegistry = (
+  embeddingService: EmbeddingService,
+  chunkingProvider: TextChunkingProviderPort = new ChonkieChunkingProvider(embeddingService),
+): ChunkingStrategyRegistry =>
   new ChunkingStrategyRegistry([
-    new FixedWindowChunkingStrategy(),
-    new StructuredSemanticChunkingStrategy(embeddingService),
+    new FixedWindowChunkingStrategy(chunkingProvider),
+    new StructuredSemanticChunkingStrategy(chunkingProvider),
+    new RecursiveTextChunkingStrategy(chunkingProvider),
   ]);

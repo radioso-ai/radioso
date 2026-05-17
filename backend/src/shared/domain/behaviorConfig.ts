@@ -67,8 +67,6 @@ export const RETRIEVAL_BEHAVIOR = {
     structuredMinChunkSizeMax: 1_000,
     structuredMaxChunkSizeMin: 1,
     structuredMaxChunkSizeMax: 2_000,
-    blockMergeSimilarityThreshold: 0.82,
-    maxFragmentChars: 900,
   },
 } as const;
 

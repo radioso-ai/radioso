@@ -28,6 +28,7 @@ import type { MessageRepositoryPort } from "../../db/repositories/messageReposit
 import type { SkillCatalogEntryDefinition, SkillDefinition } from "../../modules/skills/public.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { AgentSurfaceExtension } from "../../modules/agents/public.js";
+import type { TextChunkingProviderPort } from "../../modules/retrieval/public.js";
 
 export interface ApplicationDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
@@ -96,6 +97,7 @@ export interface ApplicationExtensionRegistry {
   documentJobDispatcher?: DocumentJobDispatcherPort;
   documentJobConsumer?: DocumentJobConsumerPort;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
+  chunkingProvider?: TextChunkingProviderPort;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
   chatIntakeProviderRegistration?: ApplicationChatIntakeProviderRegistration;
   contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
@@ -119,6 +121,7 @@ export interface ApplicationModuleRegistrationContext {
   registerDocumentJobDispatcher(dispatcher: DocumentJobDispatcherPort): void;
   registerDocumentJobConsumer(consumer: DocumentJobConsumerPort): void;
   registerWebsiteCrawlerProvider(provider: WebsiteCrawlerProvider): void;
+  registerChunkingProvider(provider: TextChunkingProviderPort): void;
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
   registerChatIntakeProvider(provider: ApplicationChatIntakeProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
@@ -188,6 +191,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerWebsiteCrawlerProvider(provider) {
     registry.websiteCrawlerProvider = provider;
+  },
+  registerChunkingProvider(provider) {
+    registry.chunkingProvider = provider;
   },
   registerWebsiteEmbedIntegration(provider) {
     registry.websiteEmbedIntegration = provider;

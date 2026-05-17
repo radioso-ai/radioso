@@ -28,7 +28,9 @@ import { DocumentSourceContentService } from "../../src/modules/documents/servic
 import { WorkspaceIngestionReprocessService } from "../../src/modules/documents/services/workspaceIngestionReprocessService.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
-import { StructuredSemanticChunkingStrategy, type ChunkingSimilarityPort } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
+import { RecursiveTextChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/recursiveTextChunkingStrategy.js";
+import { StructuredSemanticChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
+import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
 import type { LexicalSearchPort } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import { AttributeMatchScoringService } from "../../src/modules/retrieval/services/attributeMatchScoringService.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
@@ -226,7 +228,6 @@ class TestGroundedMissResponseComposer implements GroundedMissResponseComposer {
 
 export const createTestDependencies = (overrides: {
   chatGateway?: ChatGateway;
-  chunkingSimilarityPort?: ChunkingSimilarityPort;
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
   triggerAnalysisGateway?: TriggerAnalysisGateway;
@@ -395,16 +396,11 @@ export const createTestDependencies = (overrides: {
       return embeddingGateway.embedTexts(texts);
     },
   });
-  const chunkingSimilarityPort =
-    overrides.chunkingSimilarityPort ??
-    ({
-      async embedTexts(texts: string[]): Promise<number[][]> {
-        return texts.map((text) => keywordEmbedding(text));
-      },
-    } satisfies ChunkingSimilarityPort);
+  const chunkingProvider = new ChonkieChunkingProvider(embeddingService);
   const chunkingStrategyRegistry = new ChunkingStrategyRegistry([
-    new FixedWindowChunkingStrategy(),
-    new StructuredSemanticChunkingStrategy(chunkingSimilarityPort),
+    new FixedWindowChunkingStrategy(chunkingProvider),
+    new StructuredSemanticChunkingStrategy(chunkingProvider),
+    new RecursiveTextChunkingStrategy(chunkingProvider),
   ]);
   const defaultQueryRewriteGateway: QueryRewriteGateway = {
     async rewrite(input) {
@@ -799,7 +795,6 @@ export const createTestDependencies = (overrides: {
 
 export const createTestApp = (overrides: {
   chatGateway?: ChatGateway;
-  chunkingSimilarityPort?: ChunkingSimilarityPort;
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
   triggerAnalysisGateway?: TriggerAnalysisGateway;

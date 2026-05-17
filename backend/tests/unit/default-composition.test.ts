@@ -187,6 +187,10 @@ describe("default application composition", () => {
       name: "test-crawler",
       crawl: vi.fn(),
     };
+    const chunkingProvider = {
+      name: "test-chunker",
+      chunkText: vi.fn(),
+    };
 
     const composition = createDefaultApplicationComposition({
       logger: createLogger(),
@@ -200,6 +204,7 @@ describe("default application composition", () => {
             context.registerDocumentStorage(documentStorage);
             context.registerDocumentJobDispatcher(documentJobDispatcher);
             context.registerWebsiteCrawlerProvider(websiteCrawlerProvider);
+            context.registerChunkingProvider(chunkingProvider);
             context.registerWebsiteEmbedIntegration(websiteEmbedIntegration);
           },
         },
@@ -212,6 +217,7 @@ describe("default application composition", () => {
     expect(composition.documentStorage).toBe(documentStorage);
     expect(composition.documentJobDispatcher).toBe(documentJobDispatcher);
     expect(composition.websiteCrawlerProvider).toBe(websiteCrawlerProvider);
+    expect(composition.chunkingProvider).toBe(chunkingProvider);
     expect(composition.websiteEmbedIntegration).toBe(websiteEmbedIntegration);
   });
 

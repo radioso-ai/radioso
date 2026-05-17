@@ -17,7 +17,13 @@ export {
   type ChunkingStrategyId,
   type ChunkOutput,
 } from "./domain/chunking/chunkingStrategy.js";
-export type { ChunkingSimilarityPort } from "./domain/chunking/structuredSemanticChunkingStrategy.js";
+export type {
+  TextChunkingEmbeddingPort,
+  TextChunkingMethod,
+  TextChunkingProviderChunk,
+  TextChunkingProviderPort,
+  TextChunkingProviderRequest,
+} from "./domain/chunking/chunkingProvider.js";
 export type {
   ConversationContextWindow,
   ContinuityDecision,

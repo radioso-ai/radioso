@@ -1,17 +1,17 @@
 # Minimum Chunk Size
 
 ## Summary
-Merge tiny structural fragments until they reach this minimum size.
+Avoid tiny semantic text segments during chunking.
 
 ## Details
 ### Overview
 
-This setting prevents structure-aware chunking from emitting fragments that are too small to be useful on their own.
+This setting gives semantic and recursive text chunking a lower bound for very small text segments.
 
-### Typical Small Fragments
+### Typical Small Segments
 
-- a short heading
-- a one-line list item
+- a short sentence
 - a small note
+- a brief paragraph
 
-The chunker merges these fragments with nearby content until they are large enough to be useful for retrieval.
+The chunker keeps nearby text together until the segment is large enough to be useful for retrieval.

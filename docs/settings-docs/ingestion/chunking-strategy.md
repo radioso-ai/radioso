@@ -38,27 +38,69 @@ Use it when:
 - you want predictable behavior
 - formatting is weak or unreliable
 
-#### Structured semantic
+#### Semantic
 
-This tries to respect document shape first:
+This uses embedding similarity over sentence windows to find natural topic boundaries.
 
-- headings
-- paragraphs
-- lists
-- tables
-- similar structural units
+The stored setting value is `structured_semantic` for compatibility with existing workspaces.
 
 Use it when:
 
-- formatting carries meaning
-- you have policies, manuals, FAQs, exported docs, or rich text
-- you want chunks to follow the way humans read the document
+- documents are mostly prose
+- topic shifts matter more than exact character counts
+- you want boundaries based on semantic changes in the text
+
+#### Recursive text
+
+This uses text boundaries before falling back to smaller splits:
+
+- paragraphs
+- sentences
+- punctuation
+- words
+- characters
+
+Use it when:
+
+- fixed window chunks are cutting words or sentences awkwardly
+- documents are mostly prose
+- you want a simple strategy that still respects natural text boundaries
 
 ### Tradeoffs
 
 Fixed window is simpler and more predictable.
 
-Structured semantic is often more natural, but it depends more on document structure being usable.
+Semantic chunking is often more natural for prose, but it depends on embeddings during ingestion.
+
+Recursive text is a practical middle option. It does not use embeddings, and it avoids many fixed-window boundary problems.
+
+### Tables And Code
+
+Recursive text and semantic chunking handle tables and code before the selected prose strategy runs.
+
+Markdown and HTML tables are split with repeated table headers so each chunk keeps column context. Fenced code blocks and source-code documents are routed through code-aware chunking when the runtime has parser support for the detected language. If a code parser is unavailable, ingestion falls back to the selected text strategy.
+
+Fixed window chunking stays fixed window for every input type. It does not use table-aware or code-aware chunking.
+
+Code-aware chunking is attempted for source documents and fenced code blocks with these language hints or file extensions:
+
+- Bash, shell, Fish, and Zsh
+- C, C++, C headers, and C#
+- CSS, SCSS, and Less
+- Go
+- Java
+- JavaScript, JSX, JSON, TypeScript, and TSX
+- Kotlin
+- PHP
+- Python
+- Ruby
+- Rust
+- Scala
+- SQL
+- Swift
+- TOML
+- XML
+- YAML and YML
 
 ### When To Revisit
 

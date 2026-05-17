@@ -26,7 +26,9 @@ For uploaded files, Radioso reads the stored source file and extracts normalized
 
 ### Chunk the content
 
-The worker loads workspace ingestion settings and applies the configured chunking strategy. Fixed-window and structured chunking both map to workspace-scoped settings.
+The worker loads workspace ingestion settings and applies the configured chunking strategy. Fixed-window, semantic, and recursive text chunking all map to workspace-scoped settings.
+
+Fixed-window chunking always uses fixed-size overlapping text windows. Semantic and recursive text chunking first handle Markdown or HTML tables with repeated headers, then use code-aware chunking for fenced code blocks and source-code documents when parser support is available. Code-aware chunking is attempted for common shell, C-family, CSS, Go, Java, JavaScript, Kotlin, PHP, Python, Ruby, Rust, Scala, SQL, Swift, TOML, TypeScript, XML, and YAML inputs. If parser support is unavailable, processing falls back to text chunking.
 
 ### Embed and publish chunks
 

@@ -1,4 +1,4 @@
-export const chunkingStrategyIds = ["fixed_window", "structured_semantic"] as const;
+export const chunkingStrategyIds = ["fixed_window", "structured_semantic", "recursive_text"] as const;
 
 export type ChunkingStrategyId = (typeof chunkingStrategyIds)[number];
 

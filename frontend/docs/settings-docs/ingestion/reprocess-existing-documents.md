@@ -14,4 +14,4 @@ Until reprocessing runs, previously indexed documents continue using their exist
 
 ### When To Use It
 
-Use reprocessing after meaningful ingestion changes, especially after changing chunking strategy, chunk size, overlap, or structure-aware chunk limits.
+Use reprocessing after meaningful ingestion changes, especially after changing chunking strategy, chunk size, overlap, or semantic chunk limits.

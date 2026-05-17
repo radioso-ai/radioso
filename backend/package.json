@@ -42,8 +42,10 @@
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.4",
+    "@chonkiejs/core": "0.0.10",
     "@google-cloud/storage": "^7.17.2",
     "@google-cloud/tasks": "^5.5.0",
+    "@kreuzberg/tree-sitter-language-pack": "1.8.1",
     "@radioso/connector-api": "workspace:*",
     "@radioso/crawler": "workspace:*",
     "@radioso/document-parser": "workspace:*",

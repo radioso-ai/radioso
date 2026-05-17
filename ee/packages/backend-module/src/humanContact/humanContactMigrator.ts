@@ -81,6 +81,22 @@ export const humanContactMigrator: ApplicationDatabaseMigrator = {
     `);
 
     await database.query(`
+      DO $$
+      DECLARE
+        current_index_definition TEXT;
+      BEGIN
+        IF to_regclass('public.skill_submissions_idempotency_key_idx') IS NOT NULL THEN
+          SELECT pg_get_indexdef('public.skill_submissions_idempotency_key_idx'::regclass)
+            INTO current_index_definition;
+
+          IF current_index_definition NOT LIKE '%(workspace_id, skill_name, idempotency_key)%' THEN
+            DROP INDEX skill_submissions_idempotency_key_idx;
+          END IF;
+        END IF;
+      END $$;
+    `);
+
+    await database.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS skill_submissions_idempotency_key_idx
         ON skill_submissions (workspace_id, skill_name, idempotency_key)
         WHERE idempotency_key IS NOT NULL

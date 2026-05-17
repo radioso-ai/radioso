@@ -58,6 +58,17 @@ const hasPriorUserConversation = (input: ChatIntakeInput): boolean =>
       message.content.trim().length > 0,
   );
 
+const isUsefulLanguageAnchor = (value: string): boolean => {
+  const trimmed = value.trim();
+  if (!trimmed || normalizeEmailField(trimmed) || looksLikeEmailCandidate(trimmed)) {
+    return false;
+  }
+  if (trimmed.length < 8) {
+    return false;
+  }
+  return /[\p{L}\p{N}]/u.test(trimmed);
+};
+
 const missingFields = (collected: Record<string, unknown>): string[] => {
   const missing: string[] = [];
   if (!normalizeEmailField(collected.email)) {
@@ -70,12 +81,16 @@ const missingFields = (collected: Record<string, unknown>): string[] => {
 };
 
 export const resolveLanguageContext = (input: ChatIntakeInput, _collected?: Record<string, unknown>): string => {
-  // Anchor language on the user's earliest natural-language message in this conversation.
+  // Anchor language on the user's most recent meaningful natural-language message.
   // We deliberately ignore `collected.message` because it is the auto-built contact-request draft
   // ("Contact request:\n...") whose English boilerplate would mislead the LLM on follow-up turns,
   // and we ignore short answer-only turns like "test@test" that carry no language signal.
-  const earliestUserMessage = input.history.find((message) => message.role === "user")?.content?.trim();
-  return earliestUserMessage || input.query;
+  const userMessages = input.history
+    .filter((message) => message.role === "user")
+    .map((message) => message.content.trim())
+    .filter(Boolean);
+  const latestUsefulMessage = [...userMessages].reverse().find(isUsefulLanguageAnchor);
+  return latestUsefulMessage || input.query;
 };
 
 const buildFallbackDraft = (input: ChatIntakeInput): { draftMessage: string } => {

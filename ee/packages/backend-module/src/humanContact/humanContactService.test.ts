@@ -356,16 +356,42 @@ describe("resolveLanguageContext", () => {
     userExpectedLocale: null,
   } as Parameters<typeof resolveLanguageContext>[0];
 
-  it("anchors language on the user's earliest message, ignoring follow-up answers like an email", () => {
+  it("anchors language on the user's latest meaningful message, ignoring follow-up answers like an email", () => {
     const result = resolveLanguageContext({
       ...baseInput,
       query: "test@test",
       history: [
+        { id: "u0", role: "user", content: "hey", createdAt: new Date() },
         { id: "u1", role: "user", content: "Я хочу поговорить с кем-нибудь.", createdAt: new Date() },
         { id: "a1", role: "assistant", content: "Please share your email.", createdAt: new Date() },
+        { id: "u2", role: "user", content: "test@test", createdAt: new Date() },
       ],
     });
     expect(result).toBe("Я хочу поговорить с кем-нибудь.");
+  });
+
+  it("skips a short greeting before an explicit English contact request", () => {
+    const result = resolveLanguageContext({
+      ...baseInput,
+      query: "i want to talk to someone",
+      history: [
+        { id: "u1", role: "user", content: "hey", createdAt: new Date() },
+        { id: "a1", role: "assistant", content: "How can I help?", createdAt: new Date() },
+        { id: "u2", role: "user", content: "i want to talk to someone", createdAt: new Date() },
+      ],
+    });
+    expect(result).toBe("i want to talk to someone");
+  });
+
+  it("falls back to a short current query when no better language anchor exists", () => {
+    const result = resolveLanguageContext({
+      ...baseInput,
+      query: "hey",
+      history: [
+        { id: "u1", role: "user", content: "hey", createdAt: new Date() },
+      ],
+    });
+    expect(result).toBe("hey");
   });
 
   it("ignores the auto-built collected.message draft when resolving language anchor", () => {
@@ -1112,6 +1138,66 @@ describe("enterprise human contact service", () => {
     });
     expect(prompts.at(-1)).toContain("Reply in the same language the user wrote in.");
     expect(prompts.at(-1)).toContain("The user's anchor message in this conversation was: Volevo parlare con una persona.");
+  });
+
+  it("uses the explicit contact request rather than an earlier greeting as the intake language anchor", async () => {
+    const prompts: string[] = [];
+    const responses = [
+      "{\"shouldStart\":true}",
+      "{}",
+      "Sure, what email address should the team use to follow up?",
+    ];
+    const { service } = createService({
+      chatGateway: {
+        async answer(input: { prompt: string }) {
+          prompts.push(input.prompt);
+          return responses.shift() ?? "{}";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    const result = await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-2",
+      query: "i want to talk to someone",
+      history: [
+        {
+          id: "user-message-1",
+          role: "user",
+          content: "hey",
+          createdAt: new Date("2026-05-04T10:00:00.000Z"),
+        },
+        {
+          id: "assistant-message-1",
+          role: "assistant",
+          content: "How can I help?",
+          createdAt: new Date("2026-05-04T10:00:05.000Z"),
+        },
+        {
+          id: "user-message-2",
+          role: "user",
+          content: "i want to talk to someone",
+          createdAt: new Date("2026-05-04T10:01:00.000Z"),
+        },
+      ],
+      sourceChannel: "authenticated_chat",
+      userExpectedLocale: "en-US",
+    });
+
+    expect(result).toMatchObject({
+      status: "active",
+      answer: "Sure, what email address should the team use to follow up?",
+    });
+    expect(prompts.at(-1)).toContain("The user's anchor message in this conversation was: i want to talk to someone");
+    expect(prompts.at(-1)).not.toContain("The user's anchor message in this conversation was: hey");
   });
 
   it("resumes a paused chat intake when the user provides the missing email", async () => {

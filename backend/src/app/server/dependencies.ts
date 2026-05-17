@@ -190,6 +190,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceSummaryService: workspace.workspaceSummaryService,
     ingestionSettingsService: settings.ingestionSettingsService,
     retrievalSettingsService: settings.retrievalSettingsService,
+    chunkRepository: repositories.chunkRepository,
     documentIngestionService: documents.documentIngestionService,
     documentSourceRepository: repositories.documentSourceRepository,
     documentImportService: documents.documentImportService,

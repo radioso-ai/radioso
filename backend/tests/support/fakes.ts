@@ -1784,6 +1784,45 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
     this.items.set(input.documentId, input.chunks);
     return true;
   }
+
+  async listSummariesForDocument(input: { documentId: string; workspaceId: string }) {
+    const chunks = this.items.get(input.documentId) ?? [];
+    return chunks
+      .filter((chunk) => chunk.workspaceId === input.workspaceId)
+      .slice()
+      .sort((a, b) => a.chunkIndex - b.chunkIndex)
+      .map((chunk) => ({
+        id: chunk.id,
+        chunkIndex: chunk.chunkIndex,
+        contentPreview: chunk.content.slice(0, 240),
+        contentLength: chunk.content.length,
+        startOffset: chunk.startOffset,
+        endOffset: chunk.endOffset,
+      }));
+  }
+
+  async findByIdForDocument(input: { chunkId: string; documentId: string; workspaceId: string }) {
+    const chunks = this.items.get(input.documentId) ?? [];
+    const chunk = chunks.find(
+      (entry) => entry.id === input.chunkId && entry.workspaceId === input.workspaceId,
+    );
+    if (!chunk) {
+      return null;
+    }
+    return {
+      id: chunk.id,
+      documentId: chunk.documentId,
+      workspaceId: chunk.workspaceId,
+      chunkIndex: chunk.chunkIndex,
+      content: chunk.content,
+      searchText: chunk.searchText ?? null,
+      startOffset: chunk.startOffset,
+      endOffset: chunk.endOffset,
+      metadata: chunk.metadata ?? {},
+      createdAt: chunk.createdAt,
+      embeddingDimensions: chunk.embedding.length,
+    };
+  }
 }
 
 export class InMemoryDocumentProcessingJobRepository implements DocumentProcessingJobRepositoryPort {

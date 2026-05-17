@@ -39,6 +39,7 @@ const documentFixture = {
   updatedAt: nowIso,
   metadata: {},
   sourceKind: "inline_text",
+  sourceId: "00000000-0000-0000-0000-000000000001",
 };
 
 const documentList = {

@@ -15,6 +15,10 @@ import {
   type DocumentEditorValues,
 } from '@/components/dashboard/documents/document-editor-page'
 import { DocumentImportDialog } from '@/components/dashboard/documents/document-import-dialog'
+import {
+  ChunkInspectorSheet,
+  type ChunkInspectorRequest,
+} from '@/components/dashboard/documents/chunk-inspector-sheet'
 import { DocumentList } from '@/components/dashboard/documents/document-list'
 import { DocumentSearchBar } from '@/components/dashboard/document-search-bar'
 import { DocumentSearchResults } from '@/components/dashboard/document-search-results'
@@ -114,6 +118,7 @@ export function DocumentsView({
   const [deleteErrorById, setDeleteErrorById] = useState<Record<string, string>>({})
   const [retryingDocumentId, setRetryingDocumentId] = useState<string | null>(null)
   const [retryErrorById, setRetryErrorById] = useState<Record<string, string>>({})
+  const [chunkInspectorRequest, setChunkInspectorRequest] = useState<ChunkInspectorRequest>(null)
   const [availableSources, setAvailableSources] = useState<DocumentSourceListItem[]>([])
   const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false)
 
@@ -936,6 +941,14 @@ export function DocumentsView({
               setDeleteCandidate(activeDetailDocument)
             }
           }}
+          onInspectChunks={() => {
+            if (activeDetailDocument) {
+              setChunkInspectorRequest({
+                documentId: activeDetailDocument.id,
+                documentTitle: activeDetailDocument.title,
+              })
+            }
+          }}
           onSubmit={handleSubmit}
         />
       ) : (
@@ -1063,6 +1076,12 @@ export function DocumentsView({
             )}
         </DashboardPage>
       )}
+      <ChunkInspectorSheet
+        request={chunkInspectorRequest}
+        onOpenChange={(open) => {
+          if (!open) setChunkInspectorRequest(null)
+        }}
+      />
     </div>
   )
 }

@@ -716,6 +716,7 @@ export const createTestDependencies = (overrides: {
     workspaceSummaryService,
     ingestionSettingsService,
     retrievalSettingsService,
+    chunkRepository,
     documentIngestionService,
     documentSourceRepository,
     documentImportService,

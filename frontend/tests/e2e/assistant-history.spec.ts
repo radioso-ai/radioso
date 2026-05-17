@@ -201,7 +201,7 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
   await expect(page.getByText("Route", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /Context/ })).toBeVisible();
   await expect(page.getByText("retrieval").first()).toBeVisible();
-  await expect(page.getByText("evidence required")).toBeVisible();
+  await expect(page.getByText("evidence needed")).toBeVisible();
 });
 
 test("activity filtered pages request one offset-backed page", async ({ page }) => {

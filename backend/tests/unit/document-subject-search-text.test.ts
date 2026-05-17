@@ -57,6 +57,12 @@ describe("document subject search text", () => {
         async publishForDocumentRevision(input): Promise<boolean> {
           return chunkRepository.publishForDocumentRevision(input);
         },
+        async listSummariesForDocument(input) {
+          return chunkRepository.listSummariesForDocument(input);
+        },
+        async findByIdForDocument(input) {
+          return chunkRepository.findByIdForDocument(input);
+        },
       },
       embeddingService,
       createAuditService(),
@@ -133,6 +139,12 @@ describe("document subject search text", () => {
         },
         async publishForDocumentRevision(input): Promise<boolean> {
           return chunkRepository.publishForDocumentRevision(input);
+        },
+        async listSummariesForDocument(input) {
+          return chunkRepository.listSummariesForDocument(input);
+        },
+        async findByIdForDocument(input) {
+          return chunkRepository.findByIdForDocument(input);
         },
       },
       embeddingService,

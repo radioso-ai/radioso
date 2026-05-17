@@ -66,6 +66,34 @@ export type DocumentSummary = ApiSchemas['DocumentSummary']
 export type DocumentDetails = ApiSchemas['DocumentDetails']
 export type DocumentListResponse = ApiSchemas['DocumentListResponse']
 
+export interface DocumentChunkSummary {
+  id: string
+  chunkIndex: number
+  contentPreview: string
+  contentLength: number
+  startOffset: number
+  endOffset: number
+}
+
+export interface DocumentChunkListResponse {
+  documentId: string
+  chunks: DocumentChunkSummary[]
+}
+
+export interface DocumentChunkDetail {
+  id: string
+  documentId: string
+  workspaceId: string
+  chunkIndex: number
+  content: string
+  searchText: string | null
+  startOffset: number
+  endOffset: number
+  metadata: Record<string, unknown>
+  createdAt: string
+  embeddingDimensions: number | null
+}
+
 export type DocumentSearchAction = ApiSchemas['DocumentSearchAction']
 export type DocumentSearchResult = ApiSchemas['DocumentSearchResult']
 export type DocumentSearchResponse = ApiSchemas['DocumentSearchResponse']

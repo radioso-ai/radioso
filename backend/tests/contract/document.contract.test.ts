@@ -1,9 +1,112 @@
+import { randomUUID } from "node:crypto";
+
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("document contract", () => {
+  it("lists chunk summaries for a document and returns chunk detail", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "document-chunks@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Chunk inspectable document",
+        content: "Body content for chunk inspection.",
+      })
+      .expect(202);
+
+    const documentId = createResponse.body.documentId as string;
+    const document = repositories.documentRepository.items.get(documentId);
+    if (!document) {
+      throw new Error("document missing after create");
+    }
+    const workspaceId = document.workspaceId;
+
+    const chunkAlpha = {
+      id: randomUUID(),
+      documentId,
+      workspaceId,
+      chunkIndex: 0,
+      content: "First chunk content that the inspector should preview.",
+      searchText: "first chunk searchable",
+      embedding: Array.from({ length: 4 }, () => 0.1),
+      startOffset: 0,
+      endOffset: 54,
+      metadata: { heading: "Intro" },
+      createdAt: new Date("2025-01-01T00:00:00.000Z"),
+    };
+    const chunkBravo = {
+      id: randomUUID(),
+      documentId,
+      workspaceId,
+      chunkIndex: 1,
+      content: "Second chunk content for the next page.",
+      searchText: "second chunk searchable",
+      embedding: Array.from({ length: 4 }, () => 0.2),
+      startOffset: 54,
+      endOffset: 93,
+      metadata: {},
+      createdAt: new Date("2025-01-01T00:00:01.000Z"),
+    };
+    await repositories.chunkRepository.replaceForDocument(documentId, [chunkAlpha, chunkBravo]);
+
+    const listResponse = await request(app)
+      .get(`/api/v1/document/${documentId}/chunks`)
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    expect(listResponse.body).toEqual({
+      documentId,
+      chunks: [
+        {
+          id: chunkAlpha.id,
+          chunkIndex: 0,
+          contentPreview: chunkAlpha.content,
+          contentLength: chunkAlpha.content.length,
+          startOffset: 0,
+          endOffset: 54,
+        },
+        {
+          id: chunkBravo.id,
+          chunkIndex: 1,
+          contentPreview: chunkBravo.content,
+          contentLength: chunkBravo.content.length,
+          startOffset: 54,
+          endOffset: 93,
+        },
+      ],
+    });
+
+    const detailResponse = await request(app)
+      .get(`/api/v1/document/${documentId}/chunks/${chunkBravo.id}`)
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    expect(detailResponse.body).toEqual({
+      id: chunkBravo.id,
+      documentId,
+      workspaceId,
+      chunkIndex: 1,
+      content: chunkBravo.content,
+      searchText: "second chunk searchable",
+      startOffset: 54,
+      endOffset: 93,
+      metadata: {},
+      createdAt: "2025-01-01T00:00:01.000Z",
+      embeddingDimensions: 4,
+    });
+
+    await request(app)
+      .get(`/api/v1/document/${documentId}/chunks/${randomUUID()}`)
+      .set(adminSessionHeaders(session))
+      .expect(404);
+  });
+
+
   it("lists persisted document sources with document counts", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "document-sources@example.com");

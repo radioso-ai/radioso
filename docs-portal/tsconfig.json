@@ -20,6 +20,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@radioso/ui/*": [
+        "../packages/ui/src/*"
       ]
     },
     "incremental": true,

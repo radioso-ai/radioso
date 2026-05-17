@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import './edition-tailwind-sources.css';
+@source "../../packages/ui/src/**/*.{ts,tsx}";
 
 @keyframes typing-bounce {
   0%, 60%, 100% {

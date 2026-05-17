@@ -220,7 +220,13 @@ export function AgentView({
     [agents, fallbackAgent, rememberedAgentId, routeState.agentId],
   )
   const selectedAgentId = selectedAgent?.id
-  const agentSelectionPending = isAgentsLoading
+  const isAgentRouteCanonicalizing = Boolean(
+    !isAgentsLoading &&
+    !agentsError &&
+    selectedAgentId &&
+    routeState.agentId !== selectedAgentId,
+  )
+  const agentSelectionPending = isAgentsLoading || isAgentRouteCanonicalizing
   const agentSelectionUnavailable = Boolean(!isAgentsLoading && (agentsError || !selectedAgent))
 
   useEffect(() => {
@@ -251,16 +257,12 @@ export function AgentView({
       return
     }
 
-    const timeout = window.setTimeout(() => {
-      router.replace(buildDashboardHref(accountId, {
-        ...routeState,
-        section: 'agents',
-        agentId: selectedAgentId,
-        anchor: undefined,
-      }))
-    }, 0)
-
-    return () => window.clearTimeout(timeout)
+    router.replace(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'agents',
+      agentId: selectedAgentId,
+      anchor: undefined,
+    }))
   }, [accountId, agentsError, isAgentsLoading, routeState, router, selectedAgentId])
 
   const tabNavigation = (

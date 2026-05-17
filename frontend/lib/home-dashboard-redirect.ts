@@ -10,6 +10,7 @@ interface HomeDashboardRedirectInput {
   isAuthBootstrapping: boolean
   isWorkspaceLoading: boolean
   activeWorkspace: HomeDashboardRedirectWorkspace | null | undefined
+  agentId?: string | null
 }
 
 export const getHomeDashboardRedirectHref = ({
@@ -17,6 +18,7 @@ export const getHomeDashboardRedirectHref = ({
   isAuthBootstrapping,
   isWorkspaceLoading,
   activeWorkspace,
+  agentId,
 }: HomeDashboardRedirectInput): string | null => {
   if (isAuthBootstrapping || !accountId || isWorkspaceLoading || !activeWorkspace) {
     return null
@@ -26,5 +28,6 @@ export const getHomeDashboardRedirectHref = ({
     section: 'agents',
     workspaceId: activeWorkspace.id,
     workspacePublicRouteKey: activeWorkspace.publicRouteKey,
+    agentId: agentId ?? undefined,
   })
 }

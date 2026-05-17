@@ -2,7 +2,7 @@
 
 import type { FormEvent } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Boxes, ExternalLink, FileText, PanelRight, Pencil, Save, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Boxes, ExternalLink, FileText, PanelRight, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react'
 
 import { DocumentStatus } from '@/components/dashboard/document-status'
 import { MarkdownContent } from '@/components/markdown/markdown-content'
@@ -40,8 +40,10 @@ export function DocumentEditorPage({
   isLoading,
   isSaving,
   isDeleting,
+  isRetrying,
   isEditing,
   isMetadataOpen,
+  retryError,
   availableSources,
   sourceFilterHref,
   onBack,
@@ -51,6 +53,7 @@ export function DocumentEditorPage({
   onEditingChange,
   onMetadataOpenChange,
   onDelete,
+  onRetry,
   onInspectChunks,
   onSubmit,
 }: {
@@ -60,8 +63,10 @@ export function DocumentEditorPage({
   isLoading: boolean
   isSaving: boolean
   isDeleting: boolean
+  isRetrying: boolean
   isEditing: boolean
   isMetadataOpen: boolean
+  retryError?: string
   availableSources: DocumentSourceListItem[]
   sourceFilterHref?: string
   onBack: () => void
@@ -71,6 +76,7 @@ export function DocumentEditorPage({
   onEditingChange: (editing: boolean) => void
   onMetadataOpenChange: (open: boolean) => void
   onDelete: () => void
+  onRetry: () => void
   onInspectChunks: () => void
   onSubmit: (event: FormEvent) => void
 }) {
@@ -100,6 +106,7 @@ export function DocumentEditorPage({
   }
 
   const isInlineText = document.sourceKind === 'inline_text'
+  const isFailed = document.status.toLowerCase() === 'failed'
   const sourceIsManual = (document.sourceId ?? null) === MANUALLY_ADDED_SOURCE_ID
   const isEditable = isInlineText && sourceIsManual
   const canEditSource = isEditing && isEditable
@@ -118,6 +125,12 @@ export function DocumentEditorPage({
 
   const headerActions = (
     <div className="flex flex-wrap items-center gap-2">
+      {isFailed ? (
+        <Button type="button" variant="outline" onClick={onRetry} disabled={isSaving || isDeleting || isRetrying}>
+          {isRetrying ? <Spinner className="mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+          Retry processing
+        </Button>
+      ) : null}
       <Button type="button" variant="outline" onClick={onInspectChunks}>
         <Boxes className="mr-2 h-4 w-4" />
         Chunks
@@ -196,6 +209,12 @@ export function DocumentEditorPage({
                 )}
                 <DocumentStatus status={document.status} />
               </div>
+              {isFailed && document.failureReason ? (
+                <p className="text-sm text-destructive">{document.failureReason}</p>
+              ) : null}
+              {retryError ? (
+                <p className="text-sm text-destructive">{retryError}</p>
+              ) : null}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                 <span>
                   Updated {new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(document.updatedAt))}

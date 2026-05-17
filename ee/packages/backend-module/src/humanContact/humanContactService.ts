@@ -30,6 +30,7 @@ export class EnterpriseHumanContactService {
     });
     const submissions = createHumanContactSkillSubmissionRepository(input.database, {
       logger: input.logger,
+      auditService: input.auditService,
     });
     this.deliveryDispatcher = new HumanContactDeliveryDispatcher({
       submissions,

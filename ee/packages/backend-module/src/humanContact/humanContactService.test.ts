@@ -246,7 +246,7 @@ class FakeSkillSubmissionDatabase implements UsageLimitDatabasePort {
       for (const row of dueRows) {
         row.status = "delivering";
       }
-      return dueRows as T[];
+      return dueRows.map((row) => ({ ...row })) as T[];
     }
 
     if (text.includes("UPDATE skill_submissions") && text.includes("SET status = 'delivered'")) {
@@ -255,6 +255,17 @@ class FakeSkillSubmissionDatabase implements UsageLimitDatabasePort {
         row.status = "delivered";
         row.attempts += 1;
         row.final_delivery_error = null;
+      }
+      return [] as T[];
+    }
+
+    if (text.includes("UPDATE skill_submissions") && text.includes("SET status = 'failed'")) {
+      const row = this.submissions.get(String(params[0]));
+      if (row) {
+        row.status = "failed";
+        row.attempts += 1;
+        row.final_delivery_error = String(params[1]);
+        row.activity_trace = params[2];
       }
       return [] as T[];
     }
@@ -2040,6 +2051,62 @@ describe("enterprise human contact service", () => {
       attempts: 8,
       final_delivery_error: "Webhook: HTTP 500",
     });
+  });
+
+  it("audits invalid stored submission fields when delivery claims quarantine a row", async () => {
+    const database = new FakeSkillSubmissionDatabase();
+    const { service, auditEvents } = createService({ database });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    database.submissions.set("request-invalid", {
+      id: "request-invalid",
+      account_id: "account-1",
+      workspace_id: "workspace-1",
+      conversation_id: "conversation-1",
+      assistant_message_id: null,
+      skill_name: "human_contact.request",
+      source_channel: "authenticated_chat",
+      source_origin: null,
+      trigger_source: "manual",
+      trigger_reason: null,
+      idempotency_key: null,
+      fields: { email: "not an email", message: "Please contact me." },
+      subject_identity: "not an email",
+      attempts: 0,
+      status: "pending",
+      next_retry_at: new Date("2026-05-04T10:00:00.000Z"),
+      final_delivery_error: null,
+      activity_trace: null,
+      created_at: new Date("2026-05-04T10:00:00.000Z"),
+      updated_at: new Date("2026-05-04T10:00:00.000Z"),
+    });
+
+    await service.processDueDeliveries(1);
+
+    expect(database.submissions.get("request-invalid")).toMatchObject({
+      status: "failed",
+      attempts: 1,
+      final_delivery_error: expect.stringContaining("failed validation"),
+    });
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      eventType: "human_contact.delivery_failed",
+      eventStatus: "failure",
+      metadata: expect.objectContaining({
+        requestId: "request-invalid",
+        conversationId: "conversation-1",
+        skillName: "human_contact.request",
+        failureKind: "stored_field_validation",
+        attempts: 1,
+        reason: expect.stringContaining("failed validation"),
+      }),
+    }));
   });
 
   it("prompts for the message after the user provides email when no prior context exists", async () => {

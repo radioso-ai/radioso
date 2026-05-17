@@ -47,7 +47,7 @@ class FakeSkillSubmissionRepositoryDatabase implements UsageLimitDatabasePort {
       for (const row of dueRows) {
         row.status = "delivering";
       }
-      return dueRows as T[];
+      return dueRows.map((row) => ({ ...row })) as T[];
     }
 
     if (text.includes("UPDATE skill_submissions") && text.includes("SET status = 'failed'")) {
@@ -159,12 +159,14 @@ describe("skill submission repository", () => {
     const logger = {
       error: vi.fn(),
     };
+    const onInvalidClaim = vi.fn();
     database.rows.set("invalid-submission", createRow({
       id: "invalid-submission",
       fields: { email: "not an email", message: "Please contact me." },
     }));
     const repository = new SkillSubmissionRepository(database, [humanContactRequestSkillDefinition], {
       logger,
+      onInvalidClaim,
     });
 
     const rows = await repository.claimDueDeliveries({
@@ -201,6 +203,17 @@ describe("skill submission repository", () => {
       }),
       "Stored skill submission fields failed validation during delivery claim",
     );
+    expect(onInvalidClaim).toHaveBeenCalledWith(expect.objectContaining({
+      row: expect.objectContaining({ id: "invalid-submission" }),
+      reason: expect.stringContaining("failed validation"),
+      activityTrace: expect.objectContaining({
+        summary: expect.objectContaining({
+          status: "failed",
+          outcome: "stored_fields_validation_failed",
+        }),
+      }),
+      error: expect.any(Error),
+    }));
   });
 
   it("looks up idempotency keys within the requested skill scope", async () => {

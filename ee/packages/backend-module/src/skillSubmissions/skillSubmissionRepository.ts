@@ -56,8 +56,16 @@ export interface SkillSubmissionRepositoryLogger {
   error?(entry: unknown, message?: string): void;
 }
 
+export interface SkillSubmissionInvalidClaim {
+  row: SkillSubmissionRow;
+  reason: string;
+  activityTrace: ActivityTrace;
+  error: unknown;
+}
+
 export interface SkillSubmissionRepositoryOptions {
   logger?: SkillSubmissionRepositoryLogger;
+  onInvalidClaim?(input: SkillSubmissionInvalidClaim): Promise<void> | void;
 }
 
 const MAX_FAILURE_REASON_LENGTH = 1000;
@@ -183,8 +191,9 @@ const buildInvalidFieldsTrace = (row: SkillSubmissionRow, reason: string): Activ
     : [...existingStages, stage];
   const links = existingTrace?.links ? [...existingTrace.links] : [];
   if (existingStageIndex < 0 && existingStages.length > 0) {
+    const previousStage = existingStages[existingStages.length - 1];
     links.push({
-      fromStageId: existingStages[existingStages.length - 1]?.stageId ?? INVALID_FIELDS_STAGE_ID,
+      fromStageId: previousStage.stageId,
       toStageId: INVALID_FIELDS_STAGE_ID,
       kind: "sequence",
     });
@@ -373,6 +382,24 @@ export class SkillSubmissionRepository {
        WHERE id = $1`,
       [row.id, truncatedReason, activityTrace],
     );
+    try {
+      await this.options.onInvalidClaim?.({
+        row,
+        reason: truncatedReason,
+        activityTrace,
+        error,
+      });
+    } catch (hookError) {
+      this.options.logger?.error?.(
+        {
+          submissionId: row.id,
+          workspaceId: row.workspace_id,
+          skillName: row.skill_name,
+          err: hookError instanceof Error ? hookError.message : String(hookError),
+        },
+        "Stored skill submission invalid-claim hook failed",
+      );
+    }
   }
 
   async recordFailure(input: {

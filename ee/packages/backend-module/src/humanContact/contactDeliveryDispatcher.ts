@@ -1,12 +1,18 @@
 import { createHmac } from "node:crypto";
 
-import type { EmailService, Logger } from "./humanContactTypes.js";
+import type {
+  Logger,
+  MailService,
+  WorkspaceContactInfo,
+  WorkspaceContactInfoRepository,
+} from "./humanContactTypes.js";
 import {
   HUMAN_CONTACT_SKILL_NAME,
   MAX_ATTEMPTS,
   serializeDate,
 } from "./humanContactTypes.js";
 import { buildContactStage, replaceContactTraceStage } from "./contactActivityTrace.js";
+import { renderHumanContactRequestEmail } from "./contactRequestEmailTemplate.js";
 import type { HumanContactSettingsService } from "./contactSettingsService.js";
 import type {
   SkillSubmissionRepository,
@@ -18,7 +24,9 @@ export class HumanContactDeliveryDispatcher {
     submissions: SkillSubmissionRepository;
     logger: Logger;
     settingsService: HumanContactSettingsService;
-    emailService: EmailService;
+    mailService: MailService;
+    workspaceContactInfoRepository?: WorkspaceContactInfoRepository;
+    dashboardBaseUrl?: string | null;
     webhookFetch?: typeof fetch;
   }) {}
 
@@ -46,6 +54,35 @@ export class HumanContactDeliveryDispatcher {
     return typeof row.fields.message === "string" ? row.fields.message : "";
   }
 
+  private async loadWorkspaceContactInfo(workspaceId: string): Promise<WorkspaceContactInfo | null> {
+    const repository = this.input.workspaceContactInfoRepository;
+    if (!repository) {
+      return null;
+    }
+    try {
+      return await repository.findById(workspaceId);
+    } catch (error) {
+      this.input.logger.warn?.(
+        { workspaceId, err: error instanceof Error ? error.message : String(error) },
+        "Failed to load workspace info for contact email",
+      );
+      return null;
+    }
+  }
+
+  private buildDashboardUrl(workspace: WorkspaceContactInfo | null, requestId: string): string | null {
+    const base = this.input.dashboardBaseUrl?.replace(/\/+$/, "");
+    if (!base || !workspace) {
+      return null;
+    }
+    const params = new URLSearchParams({
+      filter: "contact",
+      itemKind: "contact",
+      itemId: requestId,
+    });
+    return `${base}/w/${encodeURIComponent(workspace.publicRouteKey)}/activity?${params.toString()}`;
+  }
+
   private async deliver(row: SkillSubmissionRow): Promise<void> {
     const settings = await this.input.settingsService.requireConfigured(row.workspace_id);
     const email = this.contactEmail(row);
@@ -67,27 +104,22 @@ export class HumanContactDeliveryDispatcher {
     const errors: string[] = [];
 
     if (settings.email_enabled && settings.default_email) {
+      const workspace = await this.loadWorkspaceContactInfo(row.workspace_id);
+      const dashboardUrl = this.buildDashboardUrl(workspace, row.id);
       try {
-        await this.input.emailService.send({
+        await this.input.mailService.send(renderHumanContactRequestEmail({
           to: settings.default_email,
-          subject: `Radioso contact request from ${email}`,
-          text: [
-            "A visitor submitted a contact request.",
-            "",
-            `From: ${email}`,
-            `Workspace: ${row.workspace_id}`,
-            `Conversation: ${row.conversation_id}`,
-            `Request: ${row.id}`,
-            "",
-            "Message:",
-            message,
-          ].join("\n"),
-          metadata: {
-            kind: "human_contact_request",
-            requestId: row.id,
-            workspaceId: row.workspace_id,
-          },
-        });
+          visitorEmail: email,
+          message,
+          workspace: workspace
+            ? { name: workspace.name, publicRouteKey: workspace.publicRouteKey }
+            : null,
+          sourceChannel: row.source_channel,
+          createdAt: row.created_at,
+          requestId: row.id,
+          workspaceId: row.workspace_id,
+          dashboardUrl,
+        }));
       } catch (error) {
         errors.push(`Email: ${error instanceof Error ? error.message : "delivery failed"}`);
       }

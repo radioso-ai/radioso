@@ -81,6 +81,7 @@ import { IncidentReportingService } from "../../shared/incidents/incidentReporti
 import { Database } from "../../shared/infra/database.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
+import { createMailService } from "../../modules/mail/public.js";
 import { createLogger, type AppLogger } from "../../shared/observability/logger.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import {
@@ -147,12 +148,14 @@ export const buildInfrastructure = (input: {
     : typeof composition.usageLimitPolicyRegistration === "function"
       ? composition.usageLimitPolicyRegistration({ database, logger })
       : composition.usageLimitPolicyRegistration;
+  const mailService = createMailService(process.env);
 
   return {
     auditEventRepository,
     auditService,
     database,
     incidentReportingService,
+    mailService,
     metricsRegistry,
     productAnalyticsService,
     telemetryService,
@@ -429,6 +432,7 @@ export const buildChatServices = (input: {
   logger: AppLogger;
   messageRepository: MessageRepository;
   productAnalyticsService: ProductAnalyticsService;
+  mailService: ReturnType<typeof buildInfrastructure>["mailService"];
   retrievalPipeline: RetrievalPipelineService;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   workspaceRepository: WorkspaceRepository;
@@ -444,8 +448,22 @@ export const buildChatServices = (input: {
           logger: input.logger,
           conversationRepository: input.conversationRepository,
           messageRepository: input.messageRepository,
+          workspaceContactInfoRepository: {
+            async findById(workspaceId) {
+              const workspace = await input.workspaceRepository.findById(workspaceId);
+              return workspace
+                ? {
+                    id: workspace.id,
+                    name: workspace.name,
+                    publicRouteKey: workspace.publicRouteKey,
+                  }
+                : null;
+            },
+          },
           auditService: input.auditService,
           abuseControlService,
+          mailService: input.mailService,
+          dashboardBaseUrl: input.env.APP_BASE_URL ?? null,
         })
       : input.composition.chatIntakeProviderRegistration;
   const chatIntakeProviders = [

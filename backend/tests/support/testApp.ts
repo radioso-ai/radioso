@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import request from "supertest";
 import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
+import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";
 
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
@@ -693,6 +694,7 @@ export const createTestDependencies = (overrides: {
       registry: createApplicationExtensionRegistry(),
     }),
     auditService,
+    mailService: createMailService({ EE_MAIL_DRIVER: "noop" }),
     accountAccessService,
     accountInvitationService,
     workspaceSessionService,

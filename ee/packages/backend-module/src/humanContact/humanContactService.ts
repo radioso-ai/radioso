@@ -36,7 +36,9 @@ export class EnterpriseHumanContactService {
       submissions,
       logger: input.logger,
       settingsService: this.settingsService,
-      emailService: input.emailService,
+      mailService: input.mailService,
+      workspaceContactInfoRepository: input.workspaceContactInfoRepository,
+      dashboardBaseUrl: input.dashboardBaseUrl ?? null,
       webhookFetch: input.webhookFetch,
     });
     this.requestExecutor = new HumanContactRequestExecutor({

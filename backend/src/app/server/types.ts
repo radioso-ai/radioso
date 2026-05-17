@@ -55,6 +55,7 @@ import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provid
 import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import type { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 import type { TextGenerationClient } from "../../shared/infra/llm/providerTypes.js";
+import type { EmailService } from "../../modules/mail/public.js";
 
 export interface AppDependencies {
   env: Env;
@@ -75,6 +76,7 @@ export interface AppDependencies {
   workspaceSessionService: WorkspaceSessionService;
   abuseControlService: AbuseControlService;
   auditService: AuditService;
+  mailService: EmailService;
   workspaceService: WorkspaceService;
   workspaceSummaryService: WorkspaceSummaryService;
   ingestionSettingsService: IngestionSettingsService;

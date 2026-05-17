@@ -1,6 +1,5 @@
 import type { ApplicationModule } from "../radiosoModuleTypes.js";
 
-import { createEnterpriseEmailService } from "../mail/emailService.js";
 import { skillSubmissionMigrator } from "../skillSubmissions/skillSubmissionMigrator.js";
 import { HumanContactHistoryService } from "./contactHistoryService.js";
 import { HumanContactSettingsService } from "./contactSettingsService.js";
@@ -17,13 +16,10 @@ export interface HumanContactModuleState {
 
 const replaceService = (
   state: HumanContactModuleState,
-  dependencies: Omit<HumanContactDependencies, "emailService">,
+  dependencies: HumanContactDependencies,
 ): EnterpriseHumanContactService => {
   state.service?.stop();
-  state.service = new EnterpriseHumanContactService({
-    ...dependencies,
-    emailService: createEnterpriseEmailService(),
-  });
+  state.service = new EnterpriseHumanContactService(dependencies);
   return state.service;
 };
 

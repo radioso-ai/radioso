@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 
 import type { UsageLimitDatabaseClient, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import { EnterpriseHumanContactService } from "./humanContactService.js";
+import type { MailService } from "./humanContactTypes.js";
+
+type CapturedMail = Parameters<MailService["send"]>[0];
 import { humanContactRequestSkillDefinition } from "./skill/definition.js";
 import { DefinitionBackedIntakePrompts } from "./skill/definitionBackedIntakePrompts.js";
 import { resolveLanguageContext } from "./skill/humanContactIntakeProvider.js";
@@ -296,7 +299,7 @@ const createService = (input: {
 } = {}) => {
   const database = input.database ?? new FakeSkillSubmissionDatabase();
   const auditEvents: unknown[] = [];
-  const sentEmails: unknown[] = [];
+  const sentEmails: CapturedMail[] = [];
   const service = new EnterpriseHumanContactService({
     database,
     logger: { error: () => undefined, warn: () => undefined },
@@ -326,6 +329,11 @@ const createService = (input: {
         ];
       },
     },
+    workspaceContactInfoRepository: {
+      async findById(workspaceId) {
+        return { id: workspaceId, name: "Acme Workspace", publicRouteKey: "acme" };
+      },
+    },
     auditService: {
       async record(event) {
         auditEvents.push(event);
@@ -336,12 +344,12 @@ const createService = (input: {
         return undefined;
       },
     },
-    emailService: {
+    mailService: {
       async send(message) {
         sentEmails.push(message);
-        return undefined;
       },
     },
+    dashboardBaseUrl: "https://app.example.com",
     chatGateway: input.chatGateway ?? {
       async answer() {
         return "{}";
@@ -526,13 +534,20 @@ describe("enterprise human contact service", () => {
 
     await service.processDueDeliveries(1);
 
-    expect(sentEmails).toEqual([
-      expect.objectContaining({
-        to: "support@example.com",
-        subject: expect.stringContaining("user@example.com"),
-        text: expect.stringContaining("Please contact me."),
-      }),
-    ]);
+    expect(sentEmails).toHaveLength(1);
+    const sent = sentEmails[0]!;
+    expect(sent.to).toBe("support@example.com");
+    expect(sent.replyTo).toBe("user@example.com");
+    expect(sent.subject).toBe("[Acme Workspace] New contact request from user@example.com");
+    expect(sent.text).toContain("Please contact me.");
+    expect(sent.text).toContain(
+      "https://app.example.com/w/acme/activity?filter=contact&itemKind=contact&itemId=request-1",
+    );
+    expect(sent.metadata).toEqual({
+      kind: "human_contact_request",
+      requestId: "request-1",
+      workspaceId: "workspace-1",
+    });
     expect(database.submissions.get("request-1")?.status).toBe("delivered");
   });
 

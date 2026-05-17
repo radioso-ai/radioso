@@ -4,8 +4,9 @@ import bcrypt from "bcryptjs";
 import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
-import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
-import { createEnterpriseEmailService } from "./emailService.js";
+import type { MailTransport, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import { renderEmailVerificationEmail } from "./templates/emailVerificationEmail.js";
+import { renderPasswordResetEmail } from "./templates/passwordResetEmail.js";
 
 interface EnterpriseAuthRouteDependencies {
   connectorDb: UsageLimitDatabasePort;
@@ -32,6 +33,7 @@ interface EnterpriseAuthRouteDependencies {
       metadata?: Record<string, unknown>;
     }): Promise<void>;
   };
+  mailService: MailTransport;
 }
 
 interface UserRow {
@@ -297,7 +299,7 @@ const issueVerificationEmail = async (
     email: string;
     requestIp?: string | null;
     requestUserAgent?: string | null;
-    emailService: ReturnType<typeof createEnterpriseEmailService>;
+    mailService: MailTransport;
     env: EnterpriseAuthRouteDependencies["env"];
   },
 ): Promise<void> => {
@@ -323,10 +325,10 @@ const issueVerificationEmail = async (
   verificationUrl.searchParams.set("token", token);
 
   try {
-    await input.emailService.sendEmailVerificationEmail({
+    await input.mailService.send(renderEmailVerificationEmail({
       to: input.email,
       verificationUrl: verificationUrl.toString(),
-    });
+    }));
   } catch (error) {
     await markTokenUsed(database, "ee_email_verification_tokens", id, now);
     throw error;
@@ -495,7 +497,7 @@ const resolveLoginContext = async (
 export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDependencies): Router => {
   const router = Router();
   const database = dependencies.connectorDb;
-  const emailService = createEnterpriseEmailService();
+  const mailService = dependencies.mailService;
   const registerRateLimit = createEnterpriseRateLimitMiddleware(dependencies, {
     scope: "ee.auth.register",
     resolveSubjectKey: (req) => {
@@ -569,7 +571,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
           email,
           requestIp: req.ip ?? null,
           requestUserAgent: req.get("user-agent") ?? null,
-          emailService,
+          mailService,
           env: dependencies.env,
         });
         await database.query(
@@ -666,10 +668,10 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
       resetUrl.searchParams.set("token", token);
 
       try {
-        await emailService.sendPasswordResetEmail({
+        await mailService.send(renderPasswordResetEmail({
           to: email,
           resetUrl: resetUrl.toString(),
-        });
+        }));
       } catch {
         await markTokenUsed(database, "ee_password_reset_tokens", id, now);
       }
@@ -798,7 +800,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
         email,
         requestIp: req.ip ?? null,
         requestUserAgent: req.get("user-agent") ?? null,
-        emailService,
+        mailService,
         env: dependencies.env,
       });
 

@@ -227,6 +227,7 @@ export interface ApplicationRouteMount {
     crawlerProvider?: AgentWizardCrawlerPort;
     assertPublicWebsiteUrl?: AgentWizardUrlPolicy;
     websiteCrawlerLimits?: AgentWizardCrawlerLimits;
+    mailService: MailTransport;
   }): Router;
 }
 
@@ -489,6 +490,13 @@ export type ApplicationChatIntakeProviderRegistration =
           createdAt: Date;
         }>>;
       };
+      workspaceContactInfoRepository: {
+        findById(workspaceId: string): Promise<{
+          id: string;
+          name: string;
+          publicRouteKey: string;
+        } | null>;
+      };
       auditService: {
         record(input: {
           accountId?: string | null;
@@ -507,7 +515,20 @@ export type ApplicationChatIntakeProviderRegistration =
           blockMs?: number;
         }): Promise<void>;
       };
+      mailService: MailTransport;
+      dashboardBaseUrl: string | null;
     }) => ChatIntakeProvider);
+
+export interface MailTransport {
+  send(message: {
+    to: string;
+    replyTo?: string | null;
+    subject: string;
+    text: string;
+    html?: string;
+    metadata?: Record<string, string>;
+  }): Promise<void>;
+}
 
 export interface ContactHistorySummary {
   id: string;

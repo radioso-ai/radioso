@@ -3,6 +3,7 @@ import {
   type LlmCapabilityConfig,
   type TextGenerationClient,
 } from "./providerTypes.js";
+import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
 import { parseSseEvents } from "./sse.js";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -123,20 +124,26 @@ export class GeminiEmbeddingClient implements EmbeddingClient {
     const embeddings: number[][] = [];
 
     for (const text of texts) {
-      const response = await fetch(
-        `${GEMINI_BASE_URL}/${this.config.model}:embedContent?key=${encodeURIComponent(this.config.apiKey)}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            content: {
-              role: "user",
-              parts: [{ text }],
+      const response = await runProviderRequestWithTimeout(
+        "Gemini embeddings request",
+        EMBEDDING_REQUEST_TIMEOUT_MS,
+        (signal) =>
+          fetch(
+            `${GEMINI_BASE_URL}/${this.config.model}:embedContent?key=${encodeURIComponent(this.config.apiKey)}`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              signal,
+              body: JSON.stringify({
+                content: {
+                  role: "user",
+                  parts: [{ text }],
+                },
+              }),
             },
-          }),
-        },
+          ),
       );
 
       if (!response.ok) {

@@ -138,6 +138,7 @@ function DocumentRow({
             <button
               type="button"
               aria-label={`Retry processing ${document.title}`}
+              title="Retry processing"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent/40 disabled:opacity-50"
               onClick={() => onRetry(document.id)}
               disabled={retryingDocumentId === document.id}

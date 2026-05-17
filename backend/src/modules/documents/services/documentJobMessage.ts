@@ -7,7 +7,7 @@ export const documentJobQueueMessageSchema = z.object({
   documentId: z.string().uuid().optional(),
   workspaceId: z.string().uuid().optional(),
   revision: z.number().int().positive().optional(),
-}).passthrough();
+}).strict();
 
 export type DocumentJobQueueMessage = z.infer<typeof documentJobQueueMessageSchema>;
 

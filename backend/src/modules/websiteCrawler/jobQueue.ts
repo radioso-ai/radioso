@@ -14,7 +14,27 @@ const WORKER_TASK_PATH = "/internal/tasks/website-crawl";
 export const websiteCrawlJobQueueMessageSchema = z.object({
   jobId: z.string().uuid(),
   workspaceId: z.string().uuid(),
-});
+}).strict();
+
+const buildCrawlMainQueueOptions = (deadLetterQueueName?: string): amqp.Options.AssertQueue => {
+  const options: amqp.Options.AssertQueue = { durable: true };
+  if (deadLetterQueueName) {
+    options.deadLetterExchange = "";
+    options.deadLetterRoutingKey = deadLetterQueueName;
+  }
+  return options;
+};
+
+const assertCrawlQueuesWithDlq = async (
+  channel: amqp.Channel | amqp.ConfirmChannel,
+  queueName: string,
+  deadLetterQueueName: string | undefined,
+): Promise<void> => {
+  if (deadLetterQueueName) {
+    await channel.assertQueue(deadLetterQueueName, { durable: true });
+  }
+  await channel.assertQueue(queueName, buildCrawlMainQueueOptions(deadLetterQueueName));
+};
 
 export type WebsiteCrawlJobQueueMessage = z.infer<typeof websiteCrawlJobQueueMessageSchema>;
 
@@ -86,6 +106,7 @@ export class AmqpWebsiteCrawlJobDispatcher implements WebsiteCrawlJobDispatcherP
   constructor(private readonly options: {
     amqpUrl: string;
     queueName: string;
+    deadLetterQueueName?: string;
     connect?: (url: string) => Promise<amqp.ChannelModel>;
     logger: AppLogger;
   }) {
@@ -99,7 +120,7 @@ export class AmqpWebsiteCrawlJobDispatcher implements WebsiteCrawlJobDispatcherP
     try {
       connection = await this.connect(this.options.amqpUrl);
       channel = await connection.createConfirmChannel();
-      await channel.assertQueue(this.options.queueName, { durable: true });
+      await assertCrawlQueuesWithDlq(channel, this.options.queueName, this.options.deadLetterQueueName);
       channel.sendToQueue(
         this.options.queueName,
         Buffer.from(JSON.stringify(toWebsiteCrawlJobQueueMessage(input)), "utf8"),
@@ -136,6 +157,7 @@ export class AmqpWebsiteCrawlJobConsumer implements DocumentJobConsumerPort {
   constructor(private readonly options: {
     amqpUrl: string;
     queueName: string;
+    deadLetterQueueName?: string;
     connect?: (url: string) => Promise<amqp.ChannelModel>;
     logger: AppLogger;
     worker: {
@@ -153,7 +175,7 @@ export class AmqpWebsiteCrawlJobConsumer implements DocumentJobConsumerPort {
     try {
       this.connection = await this.connect(this.options.amqpUrl);
       this.channel = await this.connection.createChannel();
-      await this.channel.assertQueue(this.options.queueName, { durable: true });
+      await assertCrawlQueuesWithDlq(this.channel, this.options.queueName, this.options.deadLetterQueueName);
       await this.channel.prefetch(1);
       const consumer = await this.channel.consume(this.options.queueName, (message) => {
         void this.handleMessage(message);
@@ -200,11 +222,13 @@ export class AmqpWebsiteCrawlJobConsumer implements DocumentJobConsumerPort {
         {
           role: "amqp-website-crawl-job-consumer",
           queueName: this.options.queueName,
+          deadLetterQueueName: this.options.deadLetterQueueName,
           error: error instanceof Error ? error.message : String(error),
+          rawPayloadBase64: message.content.toString("base64"),
         },
-        "Discarded invalid website crawl queue message",
+        "Rejected invalid website crawl queue message",
       );
-      this.channel.ack(message);
+      this.channel.nack(message, false, false);
       return;
     }
 

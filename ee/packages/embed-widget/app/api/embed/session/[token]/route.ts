@@ -13,10 +13,15 @@ const CORS_HEADERS = {
   Vary: 'Origin',
 }
 
-const withCorsHeaders = (origin: string | null, headers?: HeadersInit) => {
+const withCorsHeaders = (
+  origin: string | null,
+  headers?: HeadersInit,
+  options: { allowOrigin?: boolean } = {},
+) => {
   const nextHeaders = new Headers(headers)
   Object.entries(CORS_HEADERS).forEach(([key, value]) => nextHeaders.set(key, value))
-  if (origin) {
+  const allowOrigin = options.allowOrigin ?? true
+  if (origin && allowOrigin) {
     nextHeaders.set('Access-Control-Allow-Origin', origin)
   }
   return nextHeaders
@@ -64,7 +69,7 @@ export async function POST(
           message: 'Invalid embed session request',
         },
       },
-      { status: 400, headers: withCorsHeaders(requestOrigin) },
+      { status: 400, headers: withCorsHeaders(requestOrigin, undefined, { allowOrigin: false }) },
     )
   }
 
@@ -76,7 +81,7 @@ export async function POST(
           message: 'Invalid embed session request',
         },
       },
-      { status: 400, headers: withCorsHeaders(requestOrigin) },
+      { status: 400, headers: withCorsHeaders(requestOrigin, undefined, { allowOrigin: false }) },
     )
   }
 
@@ -99,10 +104,14 @@ export async function POST(
 
     return new Response(upstream.body, {
       status: upstream.status,
-      headers: withCorsHeaders(requestOrigin, {
-        'Content-Type': contentType,
-        'Cache-Control': 'no-store',
-      }),
+      headers: withCorsHeaders(
+        requestOrigin,
+        {
+          'Content-Type': contentType,
+          'Cache-Control': 'no-store',
+        },
+        { allowOrigin: upstream.ok },
+      ),
     })
   } catch (error) {
     const message =

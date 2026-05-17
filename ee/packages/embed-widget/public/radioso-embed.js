@@ -953,6 +953,10 @@
         return
       }
 
+      if (event.origin !== scriptUrl.origin) {
+        return
+      }
+
       if (!event.data || typeof event.data !== 'object') {
         return
       }
@@ -1161,6 +1165,12 @@
     }
     window.addEventListener('message', handleIframeMessage)
     window.addEventListener('message', (event) => {
+      if (event.source !== (iframe && iframe.contentWindow)) {
+        return
+      }
+      if (event.origin !== scriptUrl.origin) {
+        return
+      }
       if (!event.data || typeof event.data !== 'object' || event.data.type !== TYPING_MESSAGE) {
         return
       }

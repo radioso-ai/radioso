@@ -93,6 +93,8 @@ const envSchema = z.object({
   WORKER_AMQP_URL: emptyStringToUndefined(z.string().url()),
   WORKER_AMQP_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
   WORKER_AMQP_CRAWL_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
+  WORKER_AMQP_DLQ_NAME: emptyStringToUndefined(z.string().min(1)),
+  WORKER_AMQP_CRAWL_DLQ_NAME: emptyStringToUndefined(z.string().min(1)),
   WORKER_AMQP_PREFETCH: z.coerce.number().int().positive().default(1),
   DOCUMENT_PROCESSING_JOB_LEASE_MS: z.coerce.number().int().positive().default(300_000),
   WEBSITE_CRAWL_JOB_LEASE_MS: z.coerce.number().int().positive().default(900_000),

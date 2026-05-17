@@ -58,4 +58,55 @@ describe("renderHumanContactRequestEmail", () => {
     expect(message.html).not.toContain("<script>");
     expect(message.html).toContain("&lt;script&gt;");
   });
+
+  it("renders a Recent conversation section in chronological order when turns are provided", () => {
+    const message = renderHumanContactRequestEmail({
+      ...baseInput,
+      recentTurns: [
+        { role: "user", content: "I have a billing question.", createdAt: new Date("2026-05-04T09:58:00.000Z") },
+        { role: "assistant", content: "I could not find that in the indexed documents.", createdAt: new Date("2026-05-04T09:59:00.000Z") },
+        { role: "user", content: "Can someone help me?", createdAt: new Date("2026-05-04T09:59:30.000Z") },
+      ],
+    });
+
+    expect(message.text).toContain("Recent conversation:");
+    expect(message.text).toContain("Visitor: I have a billing question.");
+    expect(message.text).toContain("Assistant: I could not find that in the indexed documents.");
+    expect(message.text).toContain("Visitor: Can someone help me?");
+    const billingIdx = message.text.indexOf("I have a billing question");
+    const helpIdx = message.text.indexOf("Can someone help me");
+    expect(billingIdx).toBeLessThan(helpIdx);
+
+    expect(message.html).toContain("Recent conversation");
+    expect(message.html).toContain("I have a billing question.");
+    expect(message.html).toContain("Can someone help me?");
+  });
+
+  it("omits the Recent conversation section when no turns are provided", () => {
+    const message = renderHumanContactRequestEmail({ ...baseInput, recentTurns: [] });
+
+    expect(message.text).not.toContain("Recent conversation");
+    expect(message.html).not.toContain("Recent conversation");
+  });
+
+  it("truncates long turn content with an ellipsis", () => {
+    const longContent = "a".repeat(500);
+    const message = renderHumanContactRequestEmail({
+      ...baseInput,
+      recentTurns: [{ role: "user", content: longContent, createdAt: new Date() }],
+    });
+
+    expect(message.text).toContain("…");
+    expect(message.text).not.toContain("a".repeat(300));
+  });
+
+  it("escapes HTML inside conversation turns", () => {
+    const message = renderHumanContactRequestEmail({
+      ...baseInput,
+      recentTurns: [{ role: "user", content: "<img src=x onerror=alert(1)>", createdAt: new Date() }],
+    });
+
+    expect(message.html).not.toContain("<img");
+    expect(message.html).toContain("&lt;img");
+  });
 });

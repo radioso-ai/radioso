@@ -37,6 +37,7 @@ export class EnterpriseHumanContactService {
       logger: input.logger,
       settingsService: this.settingsService,
       mailService: input.mailService,
+      messageRepository: input.messageRepository,
       workspaceContactInfoRepository: input.workspaceContactInfoRepository,
       dashboardBaseUrl: input.dashboardBaseUrl ?? null,
       webhookFetch: input.webhookFetch,

@@ -543,6 +543,9 @@ describe("enterprise human contact service", () => {
     expect(sent.text).toContain(
       "https://app.example.com/w/acme/activity?filter=contact&itemKind=contact&itemId=request-1",
     );
+    expect(sent.text).toContain("Recent conversation:");
+    expect(sent.text).toContain("Visitor: I need help with billing.");
+    expect(sent.text).toContain("Assistant: I could not find that in the indexed documents.");
     expect(sent.metadata).toEqual({
       kind: "human_contact_request",
       requestId: "request-1",

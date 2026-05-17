@@ -93,14 +93,13 @@ export class AnswerPresentationService {
   present(input: {
     answer: string;
     citations: CitationEvidence[];
-    citationDisplayEnabled: boolean;
   }): PresentedAnswer {
     const normalized = this.normalize({
       answer: input.answer,
       citations: input.citations,
     });
 
-    if (!input.citationDisplayEnabled || normalized.citationEvidence.length === 0) {
+    if (normalized.citationEvidence.length === 0) {
       return { answer: normalized.answer };
     }
 

@@ -111,7 +111,6 @@ export class RetrievalAnswerService {
             ...this.answerPresentationService.present({
               answer: rawAnswer,
               citations: evidence,
-              citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
             }),
             validation: {
               ran: false,
@@ -136,7 +135,6 @@ export class RetrievalAnswerService {
               title: context.title,
               content: context.content,
             })),
-            citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
             groundedMissResponseComposer: this.groundedMissResponseComposer,
             unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
           });

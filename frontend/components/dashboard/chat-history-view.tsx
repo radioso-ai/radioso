@@ -32,13 +32,23 @@ import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
 import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { formatConversationSource } from '@/lib/history-source'
 import {
+  type DiagnosticPresentation,
+  presentActivityOutcome,
+  presentRunParameters,
+} from '@/lib/activity-diagnostics'
+import {
   HISTORY_PAGE_SIZE,
   useHistoryDetailState,
   useHistoryDocumentDialogState,
   useHistoryListState,
 } from '@/components/dashboard/history/use-chat-history-state'
 
-const formatDiagnosticLabel = (value: string) => value.replaceAll('_', ' ')
+const toneStyles: Record<DiagnosticPresentation['tone'], string> = {
+  neutral: 'border-border/70 bg-background/60',
+  ok: 'border-emerald-500/30 bg-emerald-500/10',
+  warning: 'border-amber-500/30 bg-amber-500/10',
+  error: 'border-destructive/30 bg-destructive/10',
+}
 
 function CompactIdField({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false)
@@ -442,6 +452,32 @@ export function ChatHistoryView({
   )
 }
 
+function DiagnosticPresentationSection({
+  label,
+  presentation,
+}: {
+  label: string
+  presentation: DiagnosticPresentation
+}) {
+  return (
+    <section className={`rounded-lg border p-3 ${toneStyles[presentation.tone]}`}>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 text-base font-medium text-foreground">{presentation.title}</p>
+      <p className="mt-1 text-sm leading-6 text-muted-foreground">{presentation.summary}</p>
+      {presentation.facts.length ? (
+        <dl className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2">
+          {presentation.facts.map((fact) => (
+            <div key={`${label}-${fact.label}`} className="min-w-0">
+              <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{fact.label}</dt>
+              <dd className="mt-0.5 break-words text-sm text-foreground">{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </section>
+  )
+}
+
 function ChatDiagnosticsPanel({
   selectedMessage,
   diagnosticsMessage,
@@ -466,6 +502,12 @@ function ChatDiagnosticsPanel({
   const diagnosticsDebug =
     diagnosticsMessage?.role === 'assistant' ? diagnosticsMessage.debug : undefined
   const resolvedActivityTrace = activityTrace ?? diagnosticsDebug?.activityTrace
+  const outcomePresentation = presentActivityOutcome({
+    trace: resolvedActivityTrace,
+    route: diagnosticsDebug?.route,
+    validation: diagnosticsDebug?.validation,
+  })
+  const runParameters = presentRunParameters(resolvedActivityTrace)
 
   return (
     <div className="space-y-4">
@@ -477,24 +519,10 @@ function ChatDiagnosticsPanel({
         </div>
       ) : null}
 
-      {diagnosticsDebug?.route ? (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">Route</span>
-          <span className="rounded-full bg-muted px-2 py-0.5">{formatDiagnosticLabel(diagnosticsDebug.route.routeType)}</span>
-          <span className="rounded-full bg-muted px-2 py-0.5">{formatDiagnosticLabel(diagnosticsDebug.route.routeReason)}</span>
-          {diagnosticsDebug.validation ? (
-            <>
-              <span className="text-border">|</span>
-              <span className="font-medium text-foreground">Validation</span>
-              <span className="rounded-full bg-muted px-2 py-0.5">
-                {diagnosticsDebug.validation.answerModified ? 'modified' : 'unchanged'}
-              </span>
-              {diagnosticsDebug.validation.hiddenSupportUsed ? (
-                <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-700 dark:text-amber-300">hidden support</span>
-              ) : null}
-            </>
-          ) : null}
-        </div>
+      <DiagnosticPresentationSection label="Outcome summary" presentation={outcomePresentation} />
+
+      {runParameters ? (
+        <DiagnosticPresentationSection label="Run parameters" presentation={runParameters} />
       ) : null}
 
       <div className="grid grid-cols-[minmax(180px,220px)_1fr] gap-4">
@@ -529,8 +557,15 @@ function SearchDiagnosticsPanel({
     )
   }
 
+  const outcomePresentation = presentActivityOutcome({ trace: search.activityTrace })
+  const runParameters = presentRunParameters(search.activityTrace)
+
   return (
     <div className="space-y-4">
+      <DiagnosticPresentationSection label="Outcome summary" presentation={outcomePresentation} />
+      {runParameters ? (
+        <DiagnosticPresentationSection label="Run parameters" presentation={runParameters} />
+      ) : null}
       <div className="grid grid-cols-[minmax(180px,220px)_1fr] gap-4">
         <div className="sticky top-0 self-start overflow-y-auto rounded-lg border border-border/50 bg-muted/20 p-2">
           {graphPane}

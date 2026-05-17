@@ -26,6 +26,14 @@ const DISPLAY_LABELS: Record<string, string> = {
   diagnostics: 'Check',
   answer_outcome: 'Answer',
   generation: 'Generate',
+  availability_check: 'Contact settings',
+  intake_collect: 'Collect details',
+  trigger_evaluation: 'Follow-up intent',
+  draft_build: 'Prepare request',
+  request_submit: 'Queue request',
+  delivery_dispatch: 'Notify team',
+  audit_record: 'Audit log',
+  skill_execute: 'Run workflow',
 }
 
 type LayoutSection =
@@ -44,14 +52,22 @@ const getPhase = (kind: string): string | null => {
     case 'query_interpretation':
     case 'trigger_analysis':
     case 'shape_selection':
+    case 'availability_check':
+    case 'trigger_evaluation':
       return 'understand'
     case 'candidate_preparation':
     case 'context_selection':
     case 'prompt_assembly':
+    case 'intake_collect':
+    case 'draft_build':
+    case 'request_submit':
+    case 'skill_execute':
       return 'prepare'
     case 'diagnostics':
     case 'answer_outcome':
     case 'generation':
+    case 'delivery_dispatch':
+    case 'audit_record':
       return 'result'
     default:
       return null
@@ -205,6 +221,7 @@ const summaryLine = (stage: ActivityStage): string => {
       return outputs.fallbackApplied ? 'fallback' : 'ok'
     case 'answer_outcome': {
       const outcome = outputs.outcome as string | undefined
+      if (outcome === 'non_retrieval_response' || outcome === 'non_retrieval_answer') return 'direct reply'
       return outcome?.replaceAll('_', ' ') ?? ''
     }
     case 'generation': {

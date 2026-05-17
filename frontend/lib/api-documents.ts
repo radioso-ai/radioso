@@ -7,6 +7,8 @@ import type {
   DocumentCreateResponse,
   DocumentDetails,
   DocumentListResponse,
+  DocumentSourceCrawlSettings,
+  DocumentSourceListItem,
   DocumentSourceListResponse,
   DocumentSearchHistoryListResponse,
   DocumentSearchResponse,
@@ -156,6 +158,16 @@ export const documentsApi = {
   async deleteSource(sourceId: string): Promise<void> {
     await request<void>(`/document/sources/${encodeURIComponent(sourceId)}`, {
       method: "DELETE",
+    }, { withApiToken: true })
+  },
+
+  async updateSourceCrawlSettings(
+    sourceId: string,
+    crawlSettings: Partial<Omit<DocumentSourceCrawlSettings, 'url'>>,
+  ): Promise<DocumentSourceListItem> {
+    return request<DocumentSourceListItem>(`/document/sources/${encodeURIComponent(sourceId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ crawlSettings }),
     }, { withApiToken: true })
   },
 

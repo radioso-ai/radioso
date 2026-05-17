@@ -58,19 +58,10 @@ import {
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
 import {
-  CandidatePreparationService,
-  ConversationContextService,
   EmbeddingService,
-  PgLexicalSearch,
-  PgVectorSearch,
-  PromptBuilder,
-  PromptContextSelectorService,
-  QueryRewriteService,
-  RerankService,
+  createDefaultRetrievalServices,
   RetrievalAnswerService,
-  RetrievalExecutionTelemetryService,
-  RetrievalPipelineService,
-  RetrievalSearchService,
+  type RetrievalPipelineService,
 } from "../../modules/retrieval/composition.js";
 import { AbuseControlRepository } from "../../db/repositories/abuseControlRepository.js";
 import { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
@@ -388,31 +379,14 @@ export const buildRetrievalServices = (input: {
   retrievalSettingsService: RetrievalSettingsService;
   telemetryService: TelemetryService;
 }) => {
-  const retrievalPipeline = new RetrievalPipelineService(
-    input.retrievalSettingsService,
-    input.embeddingService,
-    new PgVectorSearch(input.database),
-    new PgLexicalSearch(input.database),
-    new ConversationContextService(),
-    new QueryRewriteService(input.llmRegistry.createRewriteGateway(), input.llmRegistry.createTriggerAnalysisGateway()),
-    new CandidatePreparationService(),
-    undefined,
-    new RerankService(input.llmRegistry.createRerankGateway(), input.logger),
-    new PromptContextSelectorService(),
-    new PromptBuilder(),
-    new RetrievalExecutionTelemetryService(input.telemetryService),
-  );
-  const documentSearchService = new DocumentSearchService(
-    input.documentRepository,
-    retrievalPipeline,
-    input.auditService,
-  );
-  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
-
+  const retrieval = createDefaultRetrievalServices(input);
   return {
-    documentSearchService,
-    retrievalPipeline,
-    retrievalSearchService,
+    ...retrieval,
+    documentSearchService: new DocumentSearchService(
+      input.documentRepository,
+      retrieval.retrievalPipeline,
+      input.auditService,
+    ),
   };
 };
 

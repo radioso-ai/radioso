@@ -1,15 +1,17 @@
 'use client'
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, FileUp, Globe, Pencil, Plus } from 'lucide-react'
+import { ChevronDown, FileUp, Globe, Pencil, Plus, SlidersHorizontal, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 import { DocumentCrawlDialog } from '@/components/dashboard/documents/document-crawl-dialog'
 import { DocumentCrawlJobsBanner } from '@/components/dashboard/documents/document-crawl-jobs-banner'
 import { DocumentDeleteDialog } from '@/components/dashboard/documents/document-delete-dialog'
 import { DocumentEditorDialog } from '@/components/dashboard/documents/document-editor-dialog'
+import { DocumentFilterDialog } from '@/components/dashboard/documents/document-filter-dialog'
 import {
   DocumentEditorPage,
+  MANUALLY_ADDED_SOURCE_ID,
   type DocumentEditorValues,
 } from '@/components/dashboard/documents/document-editor-page'
 import { DocumentImportDialog } from '@/components/dashboard/documents/document-import-dialog'
@@ -30,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
+  type DocumentSourceListItem,
   type DocumentSummary,
   type WebsiteCrawlJobSummary,
   documentsApi,
@@ -49,6 +52,7 @@ const EMPTY_FORM: DocumentEditorValues = {
   title: '',
   content: '',
   metadata: '',
+  sourceId: MANUALLY_ADDED_SOURCE_ID,
 }
 
 interface DocumentsViewProps {
@@ -115,6 +119,13 @@ export function DocumentsView({
   const [retryingDocumentId, setRetryingDocumentId] = useState<string | null>(null)
   const [retryErrorById, setRetryErrorById] = useState<Record<string, string>>({})
   const [chunkInspectorRequest, setChunkInspectorRequest] = useState<ChunkInspectorRequest>(null)
+  const [availableSources, setAvailableSources] = useState<DocumentSourceListItem[]>([])
+  const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false)
+
+  const sourceFilterId = routeState.documentSourceFilter ?? null
+  const activeSource = sourceFilterId
+    ? availableSources.find((source) => source.id === sourceFilterId) ?? null
+    : null
   const [isCrawlDialogOpen, setIsCrawlDialogOpen] = useState(false)
   const [isCrawling, setIsCrawling] = useState(false)
   const [crawlUrl, setCrawlUrl] = useState('')
@@ -143,10 +154,15 @@ export function DocumentsView({
     }
 
     try {
-      const pageSnapshot = await documentsApi.listDocuments({
-        limit: PAGE_SIZE,
-        offset: Math.max(0, page - 1) * PAGE_SIZE,
-      })
+      const pageSnapshot = sourceFilterId
+        ? await documentsApi.listSourceDocuments(sourceFilterId, {
+            limit: PAGE_SIZE,
+            offset: Math.max(0, page - 1) * PAGE_SIZE,
+          })
+        : await documentsApi.listDocuments({
+            limit: PAGE_SIZE,
+            offset: Math.max(0, page - 1) * PAGE_SIZE,
+          })
 
       if (documentLoadRequestIdRef.current !== requestId || documentWorkspaceKeyRef.current !== requestWorkspaceKey) {
         return
@@ -174,7 +190,7 @@ export function DocumentsView({
         }
       }
     }
-  }, [accountId, routeState.workspaceId])
+  }, [accountId, routeState.workspaceId, sourceFilterId])
 
   useEffect(() => {
     const nextWorkspaceKey = `${accountId}:${routeState.workspaceId ?? ''}`
@@ -266,6 +282,21 @@ export function DocumentsView({
   const websiteCrawlerEnabled = onboarding.websiteCrawlerEnabled
 
   useEffect(() => {
+    let cancelled = false
+    void documentsApi
+      .listSources()
+      .then((response) => {
+        if (!cancelled) {
+          setAvailableSources(response.sources)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [routeState.workspaceId])
+
+  useEffect(() => {
     setCrawlJobs([])
     setDismissedCrawlJobIds(new Set())
     setDismissingCrawlJobIds(new Set())
@@ -352,6 +383,16 @@ export function DocumentsView({
     }))
   }, [accountId, routeState, router])
 
+  const setSourceFilter = useCallback((sourceId: string | null) => {
+    router.push(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'knowledge',
+      knowledgeTab: 'documents',
+      documentSourceFilter: sourceId ?? undefined,
+      documentsPage: undefined,
+    }))
+  }, [accountId, routeState, router])
+
   const resetDetailState = useCallback(() => {
     setEditingDocumentId(null)
     setActiveDocument(null)
@@ -406,7 +447,10 @@ export function DocumentsView({
     setIsDocumentLoading(true)
 
     try {
-      const document = await documentsApi.getDocument(documentId)
+      const [document, sourcesResponse] = await Promise.all([
+        documentsApi.getDocument(documentId),
+        documentsApi.listSources().catch(() => null),
+      ])
       setActiveDocument(document)
       setFormValues({
         title: document.title,
@@ -414,7 +458,11 @@ export function DocumentsView({
         metadata: Object.keys(document.metadata ?? {}).length > 0
           ? JSON.stringify(document.metadata, null, 2)
           : '',
+        sourceId: document.sourceId ?? MANUALLY_ADDED_SOURCE_ID,
       })
+      if (sourcesResponse) {
+        setAvailableSources(sourcesResponse.sources)
+      }
       setIsEditingDetail(false)
       setMetadataError(null)
     } catch (error) {
@@ -489,10 +537,13 @@ export function DocumentsView({
     setIsSaving(true)
 
     try {
+      const originalSourceId = activeDocument?.sourceId ?? MANUALLY_ADDED_SOURCE_ID
+      const sourceChanged = Boolean(editingDocumentId) && formValues.sourceId !== originalSourceId
       const payload = {
         title: formValues.title.trim(),
         content: formValues.content.trim(),
         ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+        ...(sourceChanged ? { source: { id: formValues.sourceId } } : {}),
       }
 
       if (editingDocumentId) {
@@ -838,6 +889,14 @@ export function DocumentsView({
         onConfirm={() => void handleConfirmDelete()}
       />
 
+      <DocumentFilterDialog
+        open={isFilterDialogOpen}
+        onOpenChange={setIsFilterDialogOpen}
+        sources={availableSources}
+        currentSourceId={sourceFilterId}
+        onApply={setSourceFilter}
+      />
+
       {selectedDocumentId ? (
         <DocumentEditorPage
           document={activeDetailDocument}
@@ -848,6 +907,17 @@ export function DocumentsView({
           isDeleting={activeDetailDocument ? deletingDocumentId === activeDetailDocument.id : false}
           isEditing={isEditingDetail}
           isMetadataOpen={isMetadataSheetOpen}
+          availableSources={availableSources}
+          sourceFilterHref={activeDetailDocument?.sourceId
+            ? buildDashboardHref(accountId, {
+                ...routeState,
+                section: 'knowledge',
+                knowledgeTab: 'documents',
+                documentId: undefined,
+                documentSourceFilter: activeDetailDocument.sourceId,
+                documentsPage: undefined,
+              })
+            : undefined}
           onBack={() => {
             justClosedDocumentIdRef.current = editingDocumentId
             onSelectedDocumentChange?.(null)
@@ -857,6 +927,7 @@ export function DocumentsView({
             setFormValues((current) => ({ ...current, metadata: value }))
             setMetadataError(null)
           }}
+          onSourceChange={(sourceId) => setFormValues((current) => ({ ...current, sourceId }))}
           onEditingChange={(editing) => {
             if (!editing && editingDocumentId) {
               void openDocumentPage(editingDocumentId)
@@ -893,6 +964,21 @@ export function DocumentsView({
                 onClear={documentSearch.clearSearch}
                 isSearching={documentSearch.isSearching}
               />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-10 px-3.5"
+                onClick={() => setIsFilterDialogOpen(true)}
+              >
+                <SlidersHorizontal className="mr-2 h-4 w-4" />
+                Filter
+                {sourceFilterId ? (
+                  <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+                    1
+                  </span>
+                ) : null}
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="sm" className="h-10 px-3.5">
@@ -942,6 +1028,20 @@ export function DocumentsView({
                     onDismiss={(job) => { void dismissCrawlJob(job) }}
                     dismissingJobIds={dismissingCrawlJobIds}
                   />
+                ) : null}
+                {sourceFilterId ? (
+                  <div className="flex flex-wrap items-center gap-2" aria-label="Active filters">
+                    <button
+                      type="button"
+                      onClick={() => setSourceFilter(null)}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1 text-xs text-foreground hover:bg-accent"
+                      aria-label={`Remove source filter${activeSource ? `: ${activeSource.name}` : ''}`}
+                    >
+                      <span className="text-muted-foreground">Source:</span>
+                      <span className="font-medium">{activeSource?.name ?? sourceFilterId}</span>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
                 ) : null}
                 <DocumentList
                 isLoading={isLoading}

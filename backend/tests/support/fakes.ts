@@ -1159,6 +1159,24 @@ export class InMemoryDocumentSourceRepository implements DocumentSourceRepositor
     });
   }
 
+  async updateConfigByIdAndWorkspaceId(input: {
+    sourceId: string;
+    workspaceId: string;
+    config: Record<string, unknown>;
+  }): Promise<DocumentSourceRecord> {
+    const source = await this.findByIdAndWorkspaceId(input.sourceId, input.workspaceId);
+    if (!source) {
+      throw new Error(`Document source ${input.sourceId} not found in workspace ${input.workspaceId}`);
+    }
+    const updated: DocumentSourceRecord = {
+      ...source,
+      config: input.config,
+      updatedAt: new Date(),
+    };
+    this.items.set(updated.id, updated);
+    return updated;
+  }
+
   async deleteByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<boolean> {
     const source = await this.findByIdAndWorkspaceId(sourceId, workspaceId);
     if (!source) {

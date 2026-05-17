@@ -1,10 +1,14 @@
 import { request, requestLongRunning } from './api-client'
 import { withQuery } from './api-query'
 import type {
+  DocumentChunkDetail,
+  DocumentChunkListResponse,
   DocumentCreateRequest,
   DocumentCreateResponse,
   DocumentDetails,
   DocumentListResponse,
+  DocumentSourceCrawlSettings,
+  DocumentSourceListItem,
   DocumentSourceListResponse,
   DocumentSearchHistoryListResponse,
   DocumentSearchResponse,
@@ -23,6 +27,18 @@ export const documentsApi = {
 
   async getDocument(documentId: string): Promise<DocumentDetails> {
     return request<DocumentDetails>(`/document/${documentId}`, {
+      method: "GET",
+    }, { withApiToken: true })
+  },
+
+  async listDocumentChunks(documentId: string): Promise<DocumentChunkListResponse> {
+    return request<DocumentChunkListResponse>(`/document/${documentId}/chunks`, {
+      method: "GET",
+    }, { withApiToken: true })
+  },
+
+  async getDocumentChunk(documentId: string, chunkId: string): Promise<DocumentChunkDetail> {
+    return request<DocumentChunkDetail>(`/document/${documentId}/chunks/${chunkId}`, {
       method: "GET",
     }, { withApiToken: true })
   },
@@ -142,6 +158,16 @@ export const documentsApi = {
   async deleteSource(sourceId: string): Promise<void> {
     await request<void>(`/document/sources/${encodeURIComponent(sourceId)}`, {
       method: "DELETE",
+    }, { withApiToken: true })
+  },
+
+  async updateSourceCrawlSettings(
+    sourceId: string,
+    crawlSettings: Partial<Omit<DocumentSourceCrawlSettings, 'url'>>,
+  ): Promise<DocumentSourceListItem> {
+    return request<DocumentSourceListItem>(`/document/sources/${encodeURIComponent(sourceId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ crawlSettings }),
     }, { withApiToken: true })
   },
 

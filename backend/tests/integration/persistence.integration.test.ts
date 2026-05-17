@@ -19,6 +19,7 @@ import { DocumentProcessingService } from "../../src/modules/documents/services/
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
+import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
 import { PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { AuditEventRepository } from "../../src/db/repositories/auditEventRepository.js";
 import { HistoryItemsRepository } from "../../src/db/repositories/historyItemsRepository.js";
@@ -453,7 +454,7 @@ describeIfDatabase("persistence integration", () => {
         embeddingService,
         auditService,
         ingestionSettingsService,
-        new ChunkingStrategyRegistry([new FixedWindowChunkingStrategy()]),
+        new ChunkingStrategyRegistry([new FixedWindowChunkingStrategy(new ChonkieChunkingProvider())]),
       ),
       auditService,
       createLogger("silent"),

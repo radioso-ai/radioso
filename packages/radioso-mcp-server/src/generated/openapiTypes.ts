@@ -1482,7 +1482,7 @@ export interface components {
             /** Format: uuid */
             workspaceId: string;
             /** @enum {string} */
-            chunkingStrategy: "fixed_window" | "structured_semantic";
+            chunkingStrategy: "fixed_window" | "structured_semantic" | "recursive_text";
             fixedWindowChunkSize: number;
             fixedWindowChunkOverlap: number;
             structuredMinChunkSize: number;
@@ -1494,7 +1494,7 @@ export interface components {
         };
         UpdateIngestionSettingsRequest: {
             /** @enum {string} */
-            chunkingStrategy: "fixed_window" | "structured_semantic";
+            chunkingStrategy: "fixed_window" | "structured_semantic" | "recursive_text";
             fixedWindowChunkSize: number;
             fixedWindowChunkOverlap: number;
             structuredMinChunkSize: number;

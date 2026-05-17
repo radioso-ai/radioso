@@ -15,6 +15,7 @@
     "sync:stoplight": "node ./scripts/sync-stoplight.mjs"
   },
   "dependencies": {
+    "@radioso/ui": "workspace:*",
     "@radix-ui/react-slot": "^1.2.4",
     "@stoplight/elements": "^9.0.19",
     "class-variance-authority": "^0.7.1",

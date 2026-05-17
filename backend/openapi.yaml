@@ -921,6 +921,7 @@ components:
           enum: &a6
             - fixed_window
             - structured_semantic
+            - recursive_text
         fixedWindowChunkSize:
           type: integer
         fixedWindowChunkOverlap:

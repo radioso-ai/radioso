@@ -282,7 +282,11 @@ describe("chat history service", () => {
       metadata: {
         conversationId: conversation.id,
         assistantMessageId: assistant.id,
-        citationCount: 0,
+        citationCount: 2,
+        citations: [
+          { documentId: "doc-1", chunkId: "chunk-1", title: "Kriya overview" },
+          { documentId: "doc-1", chunkId: "chunk-2", title: "Kriya history" },
+        ],
         route: {
           generator: "assistant",
           routeType: "retrieval",
@@ -353,6 +357,16 @@ describe("chat history service", () => {
       ],
     });
     expect(debug?.activityTrace?.links).toHaveLength(5);
+
+    const diagnosticsStage = debug?.activityTrace?.stages.find(
+      (stage) => stage.stageId === "candidate_summary",
+    );
+    expect(diagnosticsStage?.outputs).toMatchObject({
+      finalContexts: [
+        { documentId: "doc-1", chunkId: "chunk-1", title: "Kriya overview" },
+        { documentId: "doc-1", chunkId: "chunk-2", title: "Kriya history" },
+      ],
+    });
   });
 
   it("normalizes legacy stored suggestions without kind as deeper suggestions", async () => {

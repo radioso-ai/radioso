@@ -59,6 +59,34 @@ This payload includes fields such as:
 - `structuredMinChunkSize`
 - `structuredMaxChunkSize`
 
+Supported `chunkingStrategy` values are:
+
+- `fixed_window`, which keeps predictable fixed-size overlapping chunks for every input type
+- `structured_semantic`, which uses embedding similarity and format-aware preprocessing
+- `recursive_text`, which uses natural text boundaries and format-aware preprocessing
+
+For `structured_semantic` and `recursive_text`, Markdown and HTML tables use table-aware chunking with repeated headers. Fenced code blocks and source-code documents use code-aware chunking when parser support is available. Fixed-window chunking does not use table-aware or code-aware chunking.
+
+Code-aware chunking is attempted for these language hints and file extensions:
+
+- Bash, shell, Fish, and Zsh
+- C, C++, C headers, and C#
+- CSS, SCSS, and Less
+- Go
+- Java
+- JavaScript, JSX, JSON, TypeScript, and TSX
+- Kotlin
+- PHP
+- Python
+- Ruby
+- Rust
+- Scala
+- SQL
+- Swift
+- TOML
+- XML
+- YAML and YML
+
 If you change these values and want them applied to existing documents, call:
 
 ```text

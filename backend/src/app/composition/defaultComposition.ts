@@ -156,6 +156,7 @@ export const createDefaultDocumentJobDispatcher = (
     | "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
     | "WORKER_AMQP_URL"
     | "WORKER_AMQP_QUEUE_NAME"
+    | "WORKER_AMQP_DLQ_NAME"
     | "WORKER_AMQP_PREFETCH"
   >,
   logger: AppLogger,
@@ -173,6 +174,7 @@ export const createDefaultDocumentJobDispatcher = (
       ? new AmqpDocumentJobDispatcher({
           amqpUrl: env.WORKER_AMQP_URL!,
           queueName: env.WORKER_AMQP_QUEUE_NAME!,
+          deadLetterQueueName: env.WORKER_AMQP_DLQ_NAME,
           logger,
         })
     : new NoopDocumentJobDispatcher();
@@ -182,6 +184,7 @@ export const createDefaultDocumentJobConsumer = (
     | "WORKER_DISPATCH_DRIVER"
     | "WORKER_AMQP_URL"
     | "WORKER_AMQP_QUEUE_NAME"
+    | "WORKER_AMQP_DLQ_NAME"
     | "WORKER_AMQP_PREFETCH"
   >,
   logger: AppLogger,
@@ -191,6 +194,7 @@ export const createDefaultDocumentJobConsumer = (
     ? new AmqpDocumentJobConsumer({
         amqpUrl: env.WORKER_AMQP_URL!,
         queueName: env.WORKER_AMQP_QUEUE_NAME!,
+        deadLetterQueueName: env.WORKER_AMQP_DLQ_NAME,
         prefetch: env.WORKER_AMQP_PREFETCH,
         logger,
         worker,
@@ -210,6 +214,8 @@ export const createDefaultWebsiteCrawlJobDispatcher = (
     | "WORKER_AMQP_URL"
     | "WORKER_AMQP_QUEUE_NAME"
     | "WORKER_AMQP_CRAWL_QUEUE_NAME"
+    | "WORKER_AMQP_DLQ_NAME"
+    | "WORKER_AMQP_CRAWL_DLQ_NAME"
   >,
   logger: AppLogger,
 ): WebsiteCrawlJobDispatcherPort =>
@@ -226,6 +232,7 @@ export const createDefaultWebsiteCrawlJobDispatcher = (
       ? new AmqpWebsiteCrawlJobDispatcher({
           amqpUrl: env.WORKER_AMQP_URL!,
           queueName: env.WORKER_AMQP_CRAWL_QUEUE_NAME ?? env.WORKER_AMQP_QUEUE_NAME!,
+          deadLetterQueueName: env.WORKER_AMQP_CRAWL_DLQ_NAME ?? env.WORKER_AMQP_DLQ_NAME,
           logger,
         })
       : new NoopWebsiteCrawlJobDispatcher();
@@ -236,6 +243,8 @@ export const createDefaultWebsiteCrawlJobConsumer = (
     | "WORKER_AMQP_URL"
     | "WORKER_AMQP_CRAWL_QUEUE_NAME"
     | "WORKER_AMQP_QUEUE_NAME"
+    | "WORKER_AMQP_CRAWL_DLQ_NAME"
+    | "WORKER_AMQP_DLQ_NAME"
   >,
   logger: AppLogger,
   worker: { runJobById(jobId: string): Promise<"processed" | "noop" | "busy"> },
@@ -244,6 +253,7 @@ export const createDefaultWebsiteCrawlJobConsumer = (
     ? new AmqpWebsiteCrawlJobConsumer({
         amqpUrl: env.WORKER_AMQP_URL!,
         queueName: env.WORKER_AMQP_CRAWL_QUEUE_NAME ?? env.WORKER_AMQP_QUEUE_NAME!,
+        deadLetterQueueName: env.WORKER_AMQP_CRAWL_DLQ_NAME ?? env.WORKER_AMQP_DLQ_NAME,
         logger,
         worker,
       })

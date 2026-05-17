@@ -7,8 +7,8 @@ import {
 import type { TextChunkingProviderPort } from "./chunkingProvider.js";
 import { normalizeProviderChunks } from "./providerChunkAdapter.js";
 
-export class FixedWindowChunkingStrategy implements ChunkingStrategy {
-  readonly id = "fixed_window" as const;
+export class RecursiveTextChunkingStrategy implements ChunkingStrategy {
+  readonly id = "recursive_text" as const;
 
   constructor(private readonly provider: TextChunkingProviderPort) {}
 
@@ -20,11 +20,11 @@ export class FixedWindowChunkingStrategy implements ChunkingStrategy {
     }
 
     const chunks = await this.provider.chunkText({
-      method: "fixed_window",
+      method: "recursive",
       title: request.title,
       content: normalized,
       chunkSize: request.config.fixedWindowChunkSize,
-      chunkOverlap: request.config.fixedWindowChunkOverlap,
+      minCharactersPerChunk: request.config.structuredMinChunkSize,
     });
 
     return normalizeProviderChunks(normalized, chunks);

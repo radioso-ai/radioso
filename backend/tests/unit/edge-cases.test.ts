@@ -63,6 +63,20 @@ describe("edge cases", () => {
     expect(result.systemPrompt).toContain("Stable response identity:");
     expect(result.systemPrompt).toContain("Response identity name: Marta");
   });
+
+  it("encodes the team-voice role boundary in the retrieval system prompt", () => {
+    const builder = new PromptBuilder();
+    const result = builder.build({
+      query: "Draft a follow-up email",
+      history: [],
+      settings: {},
+      contexts: [],
+    });
+
+    expect(result.systemPrompt).toContain("produce content on the user's behalf");
+    expect(result.systemPrompt).toContain("decline in the team's voice");
+    expect(result.systemPrompt).toContain("Do not frame any decline around missing documents");
+  });
   it("falls back to the original query when rewrite assistance errors", async () => {
     const service = new QueryRewriteService({
       async rewrite() {

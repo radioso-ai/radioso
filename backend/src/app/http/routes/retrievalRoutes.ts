@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
 import type { RetrievalExecutionSurface } from "../../../modules/retrieval/public.js";
 
@@ -39,7 +40,7 @@ export const createRetrievalRoutes = (dependencies: RetrievalRouteDependencies):
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
 
-  router.post("/search", workspaceSession, validateBody(retrievalSearchSchema), async (req, res, next) => {
+  router.post("/search", workspaceSession, requireWorkspacePermission(dependencies, "workspace.retrieval.query"), validateBody(retrievalSearchSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const result = await dependencies.retrievalSearchService.search({
@@ -55,7 +56,7 @@ export const createRetrievalRoutes = (dependencies: RetrievalRouteDependencies):
     }
   });
 
-  router.post("/answer", workspaceSession, validateBody(retrievalAnswerSchema), async (req, res, next) => {
+  router.post("/answer", workspaceSession, requireWorkspacePermission(dependencies, "workspace.retrieval.query"), validateBody(retrievalAnswerSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const result = await dependencies.retrievalAnswerService.answer({

@@ -282,7 +282,8 @@ try {
 ## Notes
 
 - `baseUrl` should be the Radioso server origin, without a trailing slash.
-- The SDK sends the API token as `Authorization: Bearer <token>`.
+- The SDK sends the workspace API token as `Authorization: Bearer <token>`.
+- Public chat and website embed launch credentials are intentionally public and are not accepted as SDK API tokens.
 - Streaming chat is layered on top of the assistant chat contract, `POST /api/v1/assistant/chat`, with `stream: true`.
 - Skill discovery is exposed through `client.skills.list()` and `client.skills.get(name)`. The catalog describes current assistant, retrieval, document, and MCP contracts; it does not execute skills directly.
 - Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history. `retrieval.answer` responses expose shape and resolved-step diagnostics through `activityTrace`; callers do not select shapes directly.

@@ -28,11 +28,10 @@ export class HumanContactDeliveryDispatcher {
       limit,
       skillName: HUMAN_CONTACT_SKILL_NAME,
     });
-    const humanContactRows = rows.filter((row) => row.skill_name === HUMAN_CONTACT_SKILL_NAME);
-    for (const row of humanContactRows) {
+    for (const row of rows) {
       await this.deliver(row);
     }
-    return humanContactRows.length;
+    return rows.length;
   }
 
   private contactEmail(row: SkillSubmissionRow): string {

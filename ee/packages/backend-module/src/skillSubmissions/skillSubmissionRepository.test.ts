@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 
 import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
@@ -155,11 +155,16 @@ describe("skill submission repository", () => {
 
   it("fails invalid claimed rows instead of leaving them delivering", async () => {
     const database = new FakeSkillSubmissionRepositoryDatabase();
+    const logger = {
+      error: vi.fn(),
+    };
     database.rows.set("invalid-submission", createRow({
       id: "invalid-submission",
       fields: { email: "not an email", message: "Please contact me." },
     }));
-    const repository = new SkillSubmissionRepository(database, [humanContactRequestSkillDefinition]);
+    const repository = new SkillSubmissionRepository(database, [humanContactRequestSkillDefinition], {
+      logger,
+    });
 
     const rows = await repository.claimDueDeliveries({
       maxAttempts: 8,
@@ -173,6 +178,15 @@ describe("skill submission repository", () => {
       attempts: 1,
       final_delivery_error: expect.stringContaining("failed validation"),
     });
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        submissionId: "invalid-submission",
+        workspaceId: "workspace-1",
+        skillName: "human_contact.request",
+        attempts: 1,
+      }),
+      "Stored skill submission fields failed validation during delivery claim",
+    );
   });
 
   it("looks up idempotency keys within the requested skill scope", async () => {
@@ -192,5 +206,24 @@ describe("skill submission repository", () => {
     const row = await repository.findByIdempotencyKey("workspace-1", "human_contact.request", "same-key");
 
     expect(row?.id).toBe("contact-submission");
+  });
+
+  it("can read idempotency matches in passthrough mode", async () => {
+    const database = new FakeSkillSubmissionRepositoryDatabase();
+    database.rows.set("contact-submission", createRow({
+      id: "contact-submission",
+      idempotency_key: "same-key",
+      fields: { email: "not an email", message: "Please contact me." },
+    }));
+    const repository = new SkillSubmissionRepository(database, [humanContactRequestSkillDefinition]);
+
+    const row = await repository.findByIdempotencyKey("workspace-1", "human_contact.request", "same-key", {
+      fieldValidation: "passthrough",
+    });
+
+    expect(row?.fields).toEqual({
+      email: "not an email",
+      message: "Please contact me.",
+    });
   });
 });

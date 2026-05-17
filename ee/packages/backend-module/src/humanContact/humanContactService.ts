@@ -3,7 +3,7 @@ import type {
   ContactHistoryDetail,
   ContactHistoryProvider,
 } from "../radiosoModuleTypes.js";
-import { SkillSubmissionRepository } from "../skillSubmissions/skillSubmissionRepository.js";
+import { createSkillSubmissionRepository } from "../skillSubmissions/skillSubmissionRepositoryFactory.js";
 import { HumanContactDeliveryDispatcher } from "./contactDeliveryDispatcher.js";
 import { HumanContactHistoryService } from "./contactHistoryService.js";
 import { HumanContactRequestExecutor, type HumanContactSubmitInput } from "./contactRequestExecutor.js";
@@ -12,7 +12,6 @@ import type { HumanContactDependencies } from "./humanContactTypes.js";
 import {
   DEFAULT_POLL_INTERVAL_MS,
 } from "./humanContactTypes.js";
-import { humanContactRequestSkillDefinition } from "./skill/definition.js";
 import { HumanContactSkillIntakeProvider } from "./skill/humanContactIntakeProvider.js";
 import type { HumanContactSettingsProvider } from "./humanContactContracts.js";
 
@@ -29,7 +28,9 @@ export class EnterpriseHumanContactService {
       database: input.database,
       auditService: input.auditService,
     });
-    const submissions = new SkillSubmissionRepository(input.database, [humanContactRequestSkillDefinition]);
+    const submissions = createSkillSubmissionRepository(input.database, {
+      logger: input.logger,
+    });
     this.deliveryDispatcher = new HumanContactDeliveryDispatcher({
       submissions,
       logger: input.logger,

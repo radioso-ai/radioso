@@ -53,7 +53,9 @@ export class HumanContactRequestExecutor {
     await this.ensureConversationAccess(input);
     const idempotencyKey = normalizeIdempotencyKey(input.idempotencyKey);
     const existing = idempotencyKey
-      ? await this.input.submissions.findByIdempotencyKey(input.workspaceId, HUMAN_CONTACT_SKILL_NAME, idempotencyKey)
+      ? await this.input.submissions.findByIdempotencyKey(input.workspaceId, HUMAN_CONTACT_SKILL_NAME, idempotencyKey, {
+          fieldValidation: "passthrough",
+        })
       : null;
     if (existing) {
       return this.presentExistingSubmitResult(existing);
@@ -128,7 +130,9 @@ export class HumanContactRequestExecutor {
     });
     if (!inserted) {
       const existingAfterConflict = idempotencyKey
-        ? await this.input.submissions.findByIdempotencyKey(input.workspaceId, HUMAN_CONTACT_SKILL_NAME, idempotencyKey)
+        ? await this.input.submissions.findByIdempotencyKey(input.workspaceId, HUMAN_CONTACT_SKILL_NAME, idempotencyKey, {
+            fieldValidation: "passthrough",
+          })
         : null;
       if (existingAfterConflict) {
         return this.presentExistingSubmitResult(existingAfterConflict);

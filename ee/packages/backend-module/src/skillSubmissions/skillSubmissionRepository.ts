@@ -50,6 +50,16 @@ export interface SkillSubmissionInsert {
 
 export type SkillSubmissionFieldValidation = "strict" | "passthrough";
 
+export interface SkillSubmissionRepositoryLogger {
+  error?(entry: unknown, message?: string): void;
+}
+
+export interface SkillSubmissionRepositoryOptions {
+  logger?: SkillSubmissionRepositoryLogger;
+}
+
+const MAX_FAILURE_REASON_LENGTH = 1000;
+
 const FULL_COLUMNS = `
   id::text,
   account_id::text,
@@ -149,6 +159,7 @@ export class SkillSubmissionRepository {
   constructor(
     private readonly database: UsageLimitDatabasePort,
     definitions: SkillDefinition[] = [],
+    private readonly options: SkillSubmissionRepositoryOptions = {},
   ) {
     for (const definition of definitions) {
       const schema = buildFieldsSchema(definition);
@@ -210,6 +221,7 @@ export class SkillSubmissionRepository {
     workspaceId: string,
     skillName: string,
     idempotencyKey: string,
+    input: { fieldValidation?: SkillSubmissionFieldValidation } = {},
   ): Promise<SkillSubmissionRow | null> {
     const [row] = await queryRows<SkillSubmissionRow>(
       this.database,
@@ -221,7 +233,7 @@ export class SkillSubmissionRepository {
        LIMIT 1`,
       [workspaceId, skillName, idempotencyKey],
     );
-    return row ? this.normalizeRow(row) : null;
+    return row ? this.normalizeRow(row, input.fieldValidation) : null;
   }
 
   async claimDueDeliveries(input: {
@@ -271,16 +283,30 @@ export class SkillSubmissionRepository {
       try {
         validRows.push(this.normalizeRow(row));
       } catch (error) {
-        await this.recordInvalidClaim(row.id, error);
+        await this.recordInvalidClaim(row, error);
       }
     }
     return validRows;
   }
 
-  private async recordInvalidClaim(id: string, error: unknown): Promise<void> {
+  private truncateFailureReason(reason: string): string {
+    return reason.slice(0, MAX_FAILURE_REASON_LENGTH);
+  }
+
+  private async recordInvalidClaim(row: SkillSubmissionRow, error: unknown): Promise<void> {
     const reason = error instanceof Error
       ? `Stored skill submission fields failed validation: ${error.message}`
       : "Stored skill submission fields failed validation.";
+    this.options.logger?.error?.(
+      {
+        submissionId: row.id,
+        workspaceId: row.workspace_id,
+        skillName: row.skill_name,
+        attempts: row.attempts + 1,
+        err: error instanceof Error ? error.message : String(error),
+      },
+      "Stored skill submission fields failed validation during delivery claim",
+    );
     await queryRows(
       this.database,
       `UPDATE skill_submissions
@@ -289,7 +315,7 @@ export class SkillSubmissionRepository {
            final_delivery_error = $2,
            updated_at = NOW()
        WHERE id = $1`,
-      [id, reason.slice(0, 1000)],
+      [row.id, this.truncateFailureReason(reason)],
     );
   }
 
@@ -310,7 +336,13 @@ export class SkillSubmissionRepository {
            activity_trace = COALESCE($5::jsonb, activity_trace),
            updated_at = NOW()
        WHERE id = $1`,
-      [input.id, input.nextStatus, input.nextRetryDelaySeconds, input.reason, input.activityTrace],
+      [
+        input.id,
+        input.nextStatus,
+        input.nextRetryDelaySeconds,
+        this.truncateFailureReason(input.reason),
+        input.activityTrace,
+      ],
     );
   }
 

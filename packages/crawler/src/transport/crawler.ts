@@ -12,6 +12,7 @@ import {
 } from "crawlee";
 import { load } from "cheerio";
 import type { CrawlCandidateDecision } from "./candidateDecision.js";
+import { matchesUrlPattern } from "./urlPatterns.js";
 import {
   buildAcceptedCandidateDecision,
   buildRejectedCandidateDecision
@@ -890,8 +891,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     })?.canonicalUrl ?? null;
   };
 
-  const matchesPattern = (url: string, patterns: string[] | undefined): boolean =>
-    (patterns ?? []).some((pattern) => url.toLowerCase().includes(pattern.toLowerCase()));
+  const matchesPattern = matchesUrlPattern;
 
   const resolveSeedUrl = (
     rawUrl: string

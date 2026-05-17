@@ -15,6 +15,7 @@ export interface DashboardRouteState {
   settingsTab?: SettingsTab
   documentId?: string
   documentsPage?: number
+  documentSourceFilter?: string
   historyFilter?: HistoryFilter
   historyPage?: number
   historyItemKind?: HistoryItemKind
@@ -32,6 +33,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'settingsTab',
   'documentId',
   'documentsPage',
+  'documentSourceFilter',
   'historyFilter',
   'historyPage',
   'historyItemKind',
@@ -151,6 +153,9 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.documentsPage && state.documentsPage > 1 && (state.knowledgeTab ?? DEFAULT_KNOWLEDGE_TAB) === 'documents') {
       normalized.documentsPage = state.documentsPage
     }
+    if (state.documentSourceFilter && (state.knowledgeTab ?? DEFAULT_KNOWLEDGE_TAB) === 'documents') {
+      normalized.documentSourceFilter = state.documentSourceFilter
+    }
     if (state.anchor) {
       normalized.anchor = state.anchor
     }
@@ -220,6 +225,9 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.documentsPage) {
       searchParams.set('page', String(normalized.documentsPage))
+    }
+    if (normalized.documentSourceFilter) {
+      searchParams.set('source', normalized.documentSourceFilter)
     }
     if (normalized.anchor) {
       searchParams.set('anchor', normalized.anchor)
@@ -359,6 +367,7 @@ export const parseDashboardRoute = (
       workspaceId,
       ...(secondSegment ? { documentId: secondSegment } : {}),
       documentsPage: parsePositiveInt(searchParams?.get('page') ?? null),
+      ...(searchParams?.get('source') ? { documentSourceFilter: searchParams.get('source') ?? undefined } : {}),
     })
   }
 
@@ -411,6 +420,7 @@ export const parseDashboardRoute = (
       knowledgeTab: parseKnowledgeTab(searchParams?.get('tab') ?? null),
       ...(thirdSegment ? { documentId: thirdSegment } : {}),
       documentsPage: parsePositiveInt(searchParams?.get('page') ?? null),
+      ...(searchParams?.get('source') ? { documentSourceFilter: searchParams.get('source') ?? undefined } : {}),
       anchor: parseAnchor(searchParams?.get('anchor') ?? null),
     })
   }

@@ -79,7 +79,9 @@ export interface OpenApiSchemaCatalog {
   DocumentSearchResultSchema: z.ZodTypeAny;
   DocumentSourceDocumentsQuerySchema: RouteParameterSchema;
   DocumentSourceSummarySchema: z.ZodTypeAny;
+  DocumentSourceCrawlSettingsSchema: z.ZodTypeAny;
   DocumentSourceListItemSchema: z.ZodTypeAny;
+  DocumentSourceUpdateRequestSchema: z.ZodTypeAny;
   DocumentSourceListResponseSchema: z.ZodTypeAny;
   DocumentStatusSchema: z.ZodTypeAny;
   sourceParamsSchema: RouteParameterSchema;

@@ -1,7 +1,18 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight, Database, Pause, Play, RefreshCw, Trash2 } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Database,
+  FileText,
+  Pause,
+  Play,
+  RefreshCw,
+  ScrollText,
+  Settings2,
+  Trash2,
+} from 'lucide-react'
 
 import {
   AlertDialog,
@@ -18,16 +29,17 @@ import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import {
   DashboardTable,
   DashboardTableBody,
-  DashboardTableCell,
   DashboardTableHead,
   DashboardTableHeader,
-  DashboardTableRow,
 } from '@/components/dashboard/shared/dashboard-table'
+import { SourceCrawlLogSheet } from '@/components/dashboard/source-crawl-log-sheet'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { CrawlPolicyFields } from '@/components/dashboard/documents/crawl-policy-fields'
 import {
   documentsApi,
+  type DocumentSourceCrawlSettings,
   type DocumentSourceListItem,
-  type DocumentSummary,
   type WebsiteCrawlJobSummary,
 } from '@/lib/api'
 import {
@@ -55,12 +67,6 @@ const formatSourceKind = (kind: DocumentSourceListItem['kind']) => {
   }
 }
 
-const formatBytes = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
 const formatDate = (value: string | null) => {
   if (!value) {
     return 'Never'
@@ -69,211 +75,236 @@ const formatDate = (value: string | null) => {
   return Number.isNaN(date.getTime()) ? 'Never' : date.toLocaleDateString()
 }
 
-function SourceDocumentList({
-  sourceId,
-  sourceKind,
-  crawlStatusVersion = 0,
-  isResumePending = false,
+interface DocumentSourcesViewProps {
+  onViewDocumentsForSource: (sourceId: string) => void
+}
+
+const splitPatterns = (value: string): string[] =>
+  value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+
+function SourceCrawlSettingsForm({
+  source,
+  onSaved,
 }: {
-  sourceId: string
-  sourceKind: string
-  crawlStatusVersion?: number
-  isResumePending?: boolean
+  source: DocumentSourceListItem
+  onSaved: (settings: DocumentSourceCrawlSettings) => void
 }) {
-  const [documents, setDocuments] = useState<DocumentSummary[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const initial = source.crawlSettings
+  const [limitInput, setLimitInput] = useState<string>(initial ? String(initial.limit) : '')
+  const [includeInput, setIncludeInput] = useState<string>(initial?.includeUrlPatterns.join('\n') ?? '')
+  const [excludeInput, setExcludeInput] = useState<string>(initial?.excludeUrlPatterns.join('\n') ?? '')
+  const [preserveContentLinks, setPreserveContentLinks] = useState<boolean>(initial?.preserveContentLinks ?? true)
+  const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [total, setTotal] = useState(0)
-  const [hasMore, setHasMore] = useState(false)
-  const [cursor, setCursor] = useState<string | null>(null)
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const [crawlJob, setCrawlJob] = useState<WebsiteCrawlJobSummary | null>(null)
 
-  const loadDocuments = useCallback(async (append = false, nextCursor?: string | null) => {
-    if (append) {
-      setIsLoadingMore(true)
-    } else {
-      setIsLoading(true)
+  if (!initial) {
+    return null
+  }
+
+  const parsedLimit = Number.parseInt(limitInput, 10)
+  const limitValid = Number.isFinite(parsedLimit) && parsedLimit > 0
+  const includePatterns = splitPatterns(includeInput)
+  const excludePatterns = splitPatterns(excludeInput)
+  const includeUnchanged =
+    includePatterns.length === initial.includeUrlPatterns.length &&
+    includePatterns.every((value, index) => value === initial.includeUrlPatterns[index])
+  const excludeUnchanged =
+    excludePatterns.length === initial.excludeUrlPatterns.length &&
+    excludePatterns.every((value, index) => value === initial.excludeUrlPatterns[index])
+  const isDirty =
+    (limitValid && parsedLimit !== initial.limit) ||
+    !includeUnchanged ||
+    !excludeUnchanged ||
+    preserveContentLinks !== initial.preserveContentLinks
+
+  const handleSave = async () => {
+    if (!limitValid || !isDirty) {
+      return
     }
+    setIsSaving(true)
+    setError(null)
     try {
-      const response = await documentsApi.listSourceDocuments(sourceId, {
-        limit: 25,
-        ...(nextCursor ? { cursor: nextCursor } : {}),
+      const updated = await documentsApi.updateSourceCrawlSettings(source.id, {
+        limit: parsedLimit,
+        includeUrlPatterns: includePatterns,
+        excludeUrlPatterns: excludePatterns,
+        preserveContentLinks,
       })
-      setDocuments((prev) => (append ? [...prev, ...response.documents] : response.documents))
-      setTotal(response.total)
-      setHasMore(response.hasMore)
-      setCursor(response.nextCursor ?? null)
-      setError(null)
-    } catch (loadError) {
-      setError(getApiErrorMessage(loadError, 'Failed to load documents.'))
+      if (updated.crawlSettings) {
+        onSaved(updated.crawlSettings)
+      }
+    } catch (saveError) {
+      setError(getApiErrorMessage(saveError, 'Failed to save crawl settings.'))
     } finally {
-      setIsLoading(false)
-      setIsLoadingMore(false)
+      setIsSaving(false)
     }
-  }, [sourceId])
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Fetch-on-mount pattern; setState happens in async callback, not synchronously.
-    void loadDocuments()
-  }, [loadDocuments])
-
-  useEffect(() => {
-    if (sourceKind !== 'website') return
-    void documentsApi
-      .listCrawlJobs({ sourceId, limit: 1 })
-      .then((response) => setCrawlJob(response.jobs[0] ?? null))
-      .catch(() => {})
-  }, [sourceId, sourceKind, crawlStatusVersion])
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-6">
-        <LogoSpinner imageClassName="h-6 w-6" />
-      </div>
-    )
   }
-
-  if (error) {
-    return (
-      <div className="px-4 py-3">
-        <p className="text-sm text-destructive">{error}</p>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="mt-1"
-          onClick={() => void loadDocuments()}
-        >
-          Retry
-        </Button>
-      </div>
-    )
-  }
-
-  const readyCount = documents.filter((d) => d.status === 'ready').length
-  const pendingCount = documents.filter((d) => d.status === 'queued' || d.status === 'processing').length
-  const failedDocCount = documents.filter((d) => d.status === 'failed').length
-  const crawlInProgress = crawlJob?.status === 'queued' || crawlJob?.status === 'processing' || isResumePending
-  const crawlPaused = crawlJob?.status === 'paused' && !isResumePending
-  const crawlPageIssueSummaries = getCrawlPageIssueSummaries(crawlJob)
-  const crawlFailures = crawlJob?.failures ?? []
-  const crawlFailed = crawlJob?.status === 'failed'
 
   return (
-    <div className="px-4 pb-3">
-      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        {crawlInProgress ? (
-          <span>
-            <Spinner className="mr-1 inline h-3 w-3" />
-            Crawling…
-          </span>
-        ) : null}
-        {crawlPaused ? (
-          <span>Paused</span>
-        ) : null}
-        <span>{total} {total === 1 ? 'document' : 'documents'}</span>
-        {readyCount > 0 ? (
-          <span className="text-emerald-700 dark:text-emerald-400">{readyCount} ready</span>
-        ) : null}
-        {pendingCount > 0 ? (
-          <span>{pendingCount} processing</span>
-        ) : null}
-        {failedDocCount > 0 ? (
-          <span className="text-destructive">{failedDocCount} failed</span>
-        ) : null}
-        {crawlPageIssueSummaries.map((summary) => (
-          <span
-            key={summary.kind}
-            className={summary.kind === 'failed' ? 'text-destructive' : undefined}
-          >
-            {summary.label}
-          </span>
-        ))}
-        {crawlFailed && crawlJob?.lastError ? (
-          <span className="text-destructive">Crawl failed: {crawlJob.lastError}</span>
-        ) : null}
-      </div>
-
-      {crawlFailures.length > 0 ? (
-        <ul className="mb-3 space-y-1 rounded-md border border-border bg-muted/30 px-3 py-2">
-          {crawlFailures.map((failure, index) => (
-            <li key={index} className="text-xs text-destructive/80">
-              <span className="font-medium">{failure.sourceUrl}</span>
-              {' — '}
-              {failure.reason}
-            </li>
-          ))}
-        </ul>
+    <div className="space-y-3 rounded-md border border-border bg-background/40 p-3">
+      <CrawlPolicyFields
+        idPrefix={`source-${source.id}`}
+        limit={limitInput}
+        includeUrlPatterns={includeInput}
+        excludeUrlPatterns={excludeInput}
+        preserveContentLinks={preserveContentLinks}
+        disabled={isSaving}
+        onLimitChange={setLimitInput}
+        onIncludeUrlPatternsChange={setIncludeInput}
+        onExcludeUrlPatternsChange={setExcludeInput}
+        onPreserveContentLinksChange={setPreserveContentLinks}
+      />
+      {!limitValid ? (
+        <p className="text-xs text-destructive">Page limit must be a positive integer.</p>
       ) : null}
-
-      {documents.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No documents in this source.</p>
-      ) : (
-        <DashboardTable minWidth="min-w-0" aria-label="Source documents">
-          <DashboardTableHead>
-            <DashboardTableHeader>Title</DashboardTableHeader>
-            <DashboardTableHeader className="w-24 text-right">Size</DashboardTableHeader>
-            <DashboardTableHeader className="w-24">Status</DashboardTableHeader>
-          </DashboardTableHead>
-          <DashboardTableBody>
-            {documents.map((doc) => (
-              <DashboardTableRow key={doc.id}>
-                <DashboardTableCell>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{doc.title}</p>
-                    {doc.metadata?.sourceUrl ? (
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {String(doc.metadata.sourceUrl)}
-                      </p>
-                    ) : null}
-                  </div>
-                </DashboardTableCell>
-                <DashboardTableCell>
-                  <p className="text-right text-sm text-muted-foreground">
-                    {doc.contentSize != null ? formatBytes(doc.contentSize) : '—'}
-                  </p>
-                </DashboardTableCell>
-                <DashboardTableCell>
-                  <span className={`text-sm ${doc.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}>
-                    {doc.status}
-                  </span>
-                </DashboardTableCell>
-              </DashboardTableRow>
-            ))}
-          </DashboardTableBody>
-        </DashboardTable>
-      )}
-
-      {hasMore ? (
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      <div className="flex justify-end">
         <Button
           type="button"
-          variant="ghost"
           size="sm"
-          className="mt-2 w-full"
-          disabled={isLoadingMore}
-          onClick={() => void loadDocuments(true, cursor)}
+          disabled={!isDirty || !limitValid || isSaving}
+          onClick={() => void handleSave()}
         >
-          {isLoadingMore ? (
+          {isSaving ? (
             <>
               <Spinner className="mr-2 h-3 w-3" />
-              Loading...
+              Saving…
             </>
           ) : (
-            'Load more'
+            'Save settings'
           )}
         </Button>
-      ) : null}
+      </div>
     </div>
   )
 }
 
-export function DocumentSourcesView() {
+function SourceExpandedPanel({
+  source,
+  crawlStatusVersion,
+  isResumePending,
+  onViewDocuments,
+  onOpenCrawlLog,
+  onSettingsSaved,
+}: {
+  source: DocumentSourceListItem
+  crawlStatusVersion: number
+  isResumePending: boolean
+  onViewDocuments: () => void
+  onOpenCrawlLog: () => void
+  onSettingsSaved: (settings: DocumentSourceCrawlSettings) => void
+}) {
+  const [crawlJob, setCrawlJob] = useState<WebsiteCrawlJobSummary | null>(null)
+  const [isLoading, setIsLoading] = useState(source.kind === 'website')
+
+  useEffect(() => {
+    if (source.kind !== 'website') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Sync derived loading flag when source kind has no crawl data to load.
+      setIsLoading(false)
+      return
+    }
+    let cancelled = false
+     
+    setIsLoading(true)
+    void documentsApi
+      .listCrawlJobs({ sourceId: source.id, limit: 1 })
+      .then((response) => {
+        if (!cancelled) {
+          setCrawlJob(response.jobs[0] ?? null)
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [source.id, source.kind, crawlStatusVersion])
+
+  const crawlInProgress = crawlJob?.status === 'queued' || crawlJob?.status === 'processing' || isResumePending
+  const crawlPaused = crawlJob?.status === 'paused' && !isResumePending
+  const crawlFailed = crawlJob?.status === 'failed'
+  const pageIssueSummaries = getCrawlPageIssueSummaries(crawlJob)
+  const hasCrawlLog = source.kind === 'website' && Boolean(crawlJob)
+
+  return (
+    <div className="space-y-3 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        {isLoading ? (
+          <span>
+            <Spinner className="mr-1 inline h-3 w-3" />
+            Loading status…
+          </span>
+        ) : (
+          <>
+            {crawlInProgress ? (
+              <span>
+                <Spinner className="mr-1 inline h-3 w-3" />
+                Crawling…
+              </span>
+            ) : null}
+            {crawlPaused ? <span>Paused</span> : null}
+            <span>
+              {source.documentCount} {source.documentCount === 1 ? 'document' : 'documents'}
+            </span>
+            {pageIssueSummaries.map((summary) => (
+              <span
+                key={summary.kind}
+                className={summary.kind === 'failed' ? 'text-destructive' : undefined}
+              >
+                {summary.label}
+              </span>
+            ))}
+            {crawlFailed && crawlJob?.lastError ? (
+              <span className="text-destructive">Crawl failed: {crawlJob.lastError}</span>
+            ) : null}
+          </>
+        )}
+      </div>
+      <Collapsible>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={onViewDocuments}>
+            <FileText className="mr-2 h-3.5 w-3.5" />
+            View documents
+          </Button>
+          {hasCrawlLog ? (
+            <Button type="button" variant="outline" size="sm" onClick={onOpenCrawlLog}>
+              <ScrollText className="mr-2 h-3.5 w-3.5" />
+              View crawl log
+            </Button>
+          ) : null}
+          {source.kind === 'website' && source.crawlSettings ? (
+            <CollapsibleTrigger asChild>
+              <Button type="button" variant="outline" size="sm">
+                <Settings2 className="mr-2 h-3.5 w-3.5" />
+                Settings
+              </Button>
+            </CollapsibleTrigger>
+          ) : null}
+        </div>
+        {source.kind === 'website' && source.crawlSettings ? (
+          <CollapsibleContent className="pt-3">
+            <SourceCrawlSettingsForm source={source} onSaved={onSettingsSaved} />
+          </CollapsibleContent>
+        ) : null}
+      </Collapsible>
+    </div>
+  )
+}
+
+export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSourcesViewProps) {
   const { activeWorkspaceId, isLoading: isWorkspaceLoading } = useWorkspace()
   const [sources, setSources] = useState<DocumentSourceListItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null)
+  const [crawlLogSource, setCrawlLogSource] = useState<DocumentSourceListItem | null>(null)
   const [deleteCandidate, setDeleteCandidate] = useState<DocumentSourceListItem | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -555,11 +586,12 @@ export function DocumentSourcesView() {
                   <div
                     role="button"
                     tabIndex={0}
+                    aria-expanded={isExpanded}
                     className="flex cursor-pointer items-center hover:bg-accent/20"
                     onClick={() => setExpandedSourceId(isExpanded ? null : source.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
                         setExpandedSourceId(isExpanded ? null : source.id)
                       }
                     }}
@@ -575,32 +607,25 @@ export function DocumentSourcesView() {
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-foreground">{source.name}</p>
                         {source.externalId ? (
-                          <p className="mt-1 truncate text-xs text-muted-foreground">
-                            {source.externalId}
-                          </p>
+                          <p className="mt-1 truncate text-xs text-muted-foreground">{source.externalId}</p>
                         ) : null}
                       </div>
                     </div>
                     <div className="w-32 px-4 py-3">
-                      <span className="text-sm text-muted-foreground">
-                        {formatSourceKind(source.kind)}
-                      </span>
+                      <span className="text-sm text-muted-foreground">{formatSourceKind(source.kind)}</span>
                     </div>
                     <div className="w-24 px-4 py-3">
-                      <p className="text-right text-sm text-muted-foreground">
-                        {source.documentCount}
-                      </p>
+                      <p className="text-right text-sm text-muted-foreground">{source.documentCount}</p>
                     </div>
                     <div className="w-36 px-4 py-3">
-                      <p className="text-sm text-muted-foreground">
-                        {formatDate(source.lastSyncedAt)}
-                      </p>
+                      <p className="text-sm text-muted-foreground">{formatDate(source.lastSyncedAt)}</p>
                     </div>
                     <div className="w-28 px-2 py-3">
                       <div
                         className="flex items-center gap-1"
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        role="presentation"
                       >
                         {canRecrawl(source) ? (() => {
                           const isCrawling = crawlingSourceIds.has(source.id) || recrawlingSourceId === source.id
@@ -659,7 +684,9 @@ export function DocumentSourcesView() {
                                 void handleRecrawl(source)
                               }}
                             >
-                              <RefreshCw className={`h-3.5 w-3.5 ${recrawlingSourceId === source.id ? 'animate-spin' : ''}`} />
+                              <RefreshCw
+                                className={`h-3.5 w-3.5 ${recrawlingSourceId === source.id ? 'animate-spin' : ''}`}
+                              />
                             </Button>
                           )
                         })() : null}
@@ -683,11 +710,19 @@ export function DocumentSourcesView() {
                   </div>
                   {isExpanded ? (
                     <div className="border-t border-border bg-muted/10">
-                      <SourceDocumentList
-                        sourceId={source.id}
-                        sourceKind={source.kind}
+                      <SourceExpandedPanel
+                        source={source}
                         crawlStatusVersion={crawlStatusVersion}
                         isResumePending={pendingResumeSourceIds.has(source.id)}
+                        onViewDocuments={() => onViewDocumentsForSource(source.id)}
+                        onOpenCrawlLog={() => setCrawlLogSource(source)}
+                        onSettingsSaved={(settings) => {
+                          setSources((current) =>
+                            current.map((entry) =>
+                              entry.id === source.id ? { ...entry, crawlSettings: settings } : entry,
+                            ),
+                          )
+                        }}
                       />
                     </div>
                   ) : null}
@@ -697,6 +732,13 @@ export function DocumentSourcesView() {
           })}
         </DashboardTableBody>
       </DashboardTable>
+
+      <SourceCrawlLogSheet
+        source={crawlLogSource}
+        onOpenChange={(open) => {
+          if (!open) setCrawlLogSource(null)
+        }}
+      />
 
       <AlertDialog
         open={deleteCandidate !== null}
@@ -725,8 +767,8 @@ export function DocumentSourcesView() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault()
+              onClick={(event) => {
+                event.preventDefault()
                 void handleDeleteConfirm()
               }}
               disabled={isDeleting}

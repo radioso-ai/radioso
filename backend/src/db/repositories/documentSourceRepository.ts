@@ -49,6 +49,11 @@ export interface DocumentSourceRepositoryPort {
     status: string;
     syncedAt?: Date | null;
   }): Promise<void>;
+  updateConfigByIdAndWorkspaceId(input: {
+    sourceId: string;
+    workspaceId: string;
+    config: Record<string, unknown>;
+  }): Promise<DocumentSourceRecord>;
   deleteByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<boolean>;
 }
 
@@ -236,6 +241,26 @@ export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
        WHERE id = $1 AND workspace_id = $2`,
       [input.sourceId, input.workspaceId, input.status, input.syncedAt ?? null],
     );
+  }
+
+  async updateConfigByIdAndWorkspaceId(input: {
+    sourceId: string;
+    workspaceId: string;
+    config: Record<string, unknown>;
+  }): Promise<DocumentSourceRecord> {
+    const [row] = await this.database.query<DocumentSourceRow>(
+      `UPDATE document_sources
+       SET config = $3::jsonb,
+           updated_at = NOW()
+       WHERE id = $1 AND workspace_id = $2
+       RETURNING ${sourceSelect}`,
+      [input.sourceId, input.workspaceId, JSON.stringify(input.config)],
+    );
+
+    if (!row) {
+      throw new Error(`Document source ${input.sourceId} not found in workspace ${input.workspaceId}`);
+    }
+    return mapDocumentSource(row);
   }
 
   async deleteByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<boolean> {

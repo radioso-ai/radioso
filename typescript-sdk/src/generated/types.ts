@@ -714,6 +714,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/document/sources/{sourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a source and all its documents */
+        delete: operations["deleteDocumentSource"];
+        options?: never;
+        head?: never;
+        /** Update a website source's crawl settings */
+        patch: operations["updateDocumentSource"];
+        trace?: never;
+    };
     "/api/v1/document/sources/{sourceId}/recrawl": {
         parameters: {
             query?: never;
@@ -760,23 +778,6 @@ export interface paths {
         /** Resume paused crawl jobs for a website source */
         post: operations["resumeDocumentSourceCrawl"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/document/sources/{sourceId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a source and all its documents */
-        delete: operations["deleteDocumentSource"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1977,6 +1978,13 @@ export interface components {
             name: string;
             externalId: string | null;
         };
+        DocumentSourceCrawlSettings: {
+            url: string | null;
+            limit: number;
+            includeUrlPatterns: string[];
+            excludeUrlPatterns: string[];
+            preserveContentLinks: boolean;
+        };
         DocumentSourceListItem: {
             /** Format: uuid */
             id: string;
@@ -1988,10 +1996,19 @@ export interface components {
             /** Format: date-time */
             lastSyncedAt: string | null;
             documentCount: number;
+            crawlSettings?: components["schemas"]["DocumentSourceCrawlSettings"];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        DocumentSourceUpdateRequest: {
+            crawlSettings?: {
+                limit?: number;
+                includeUrlPatterns?: string[];
+                excludeUrlPatterns?: string[];
+                preserveContentLinks?: boolean;
+            };
         };
         DocumentSourceListResponse: {
             sources: components["schemas"]["DocumentSourceListItem"][];
@@ -3016,6 +3033,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Public chat session exchange rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"];
                 };
             };
         };
@@ -5077,6 +5103,106 @@ export interface operations {
             };
         };
     };
+    deleteDocumentSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Source and documents deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Source cannot be deleted */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDocumentSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DocumentSourceUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Source updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceListItem"];
+                };
+            };
+            /** @description Source is not a website or the manually-added bucket */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     recrawlDocumentSource: {
         parameters: {
             query?: never;
@@ -5202,53 +5328,6 @@ export interface operations {
                 };
             };
             /** @description Source is not a website source */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Source not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    deleteDocumentSource: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sourceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Source and documents deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Source cannot be deleted */
             400: {
                 headers: {
                     [name: string]: unknown;

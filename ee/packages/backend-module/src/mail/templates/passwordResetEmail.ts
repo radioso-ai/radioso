@@ -1,3 +1,5 @@
+import { button } from "../layout/index.js";
+
 export interface PasswordResetEmailInput {
   to: string;
   resetUrl: string;
@@ -24,7 +26,7 @@ export const renderPasswordResetEmail = (input: PasswordResetEmailInput): Render
   ].join("\n"),
   html: [
     "<p>We received a request to reset your Radioso password.</p>",
-    `<p><a href="${input.resetUrl}">Use this link to choose a new password</a>.</p>`,
+    button({ href: input.resetUrl, label: "Choose a new password" }),
     "<p>If you did not request this, you can ignore this email.</p>",
   ].join(""),
   metadata: {

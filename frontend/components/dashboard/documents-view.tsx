@@ -763,6 +763,9 @@ export function DocumentsView({
     try {
       await documentsApi.reprocessDocument(documentId)
       await loadDocuments(currentPage, { reset: true })
+      if (editingDocumentId === documentId) {
+        await openDocumentPage(documentId)
+      }
     } catch (error) {
       setRetryErrorById((current) => ({
         ...current,
@@ -905,8 +908,10 @@ export function DocumentsView({
           isLoading={isDocumentLoading}
           isSaving={isSaving}
           isDeleting={activeDetailDocument ? deletingDocumentId === activeDetailDocument.id : false}
+          isRetrying={activeDetailDocument ? retryingDocumentId === activeDetailDocument.id : false}
           isEditing={isEditingDetail}
           isMetadataOpen={isMetadataSheetOpen}
+          retryError={activeDetailDocument ? retryErrorById[activeDetailDocument.id] : undefined}
           availableSources={availableSources}
           sourceFilterHref={activeDetailDocument?.sourceId
             ? buildDashboardHref(accountId, {
@@ -939,6 +944,11 @@ export function DocumentsView({
           onDelete={() => {
             if (activeDetailDocument) {
               setDeleteCandidate(activeDetailDocument)
+            }
+          }}
+          onRetry={() => {
+            if (activeDetailDocument) {
+              void handleRetry(activeDetailDocument.id)
             }
           }}
           onInspectChunks={() => {

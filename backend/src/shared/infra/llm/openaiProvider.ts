@@ -5,6 +5,7 @@ import {
   type LlmCapabilityConfig,
   type TextGenerationClient,
 } from "./providerTypes.js";
+import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
 import type { AppLogger } from "../../observability/logger.js";
 
 const buildMessages = (input: { systemPrompt?: string; prompt: string }) => {
@@ -101,10 +102,18 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
   async embedTexts(texts: string[]): Promise<number[][]> {
     const startedAt = Date.now();
     try {
-      const response = await this.client.embeddings.create({
-        model: this.config.model,
-        input: texts,
-      });
+      const response = await runProviderRequestWithTimeout(
+        "OpenAI embeddings request",
+        EMBEDDING_REQUEST_TIMEOUT_MS,
+        (signal) =>
+          this.client.embeddings.create(
+            {
+              model: this.config.model,
+              input: texts,
+            },
+            { signal },
+          ),
+      );
       const durationMs = Math.max(0, Date.now() - startedAt);
       this.logger?.info(
         {

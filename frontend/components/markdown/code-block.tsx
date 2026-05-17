@@ -6,7 +6,7 @@ import { Check, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-import { getHighlighter, resolveLanguage } from './highlighter'
+import { highlightCode, type HighlightedCode, resolveLanguage } from './highlighter'
 
 export function CodeBlock({
   code,
@@ -19,7 +19,7 @@ export function CodeBlock({
 }) {
   const lang = resolveLanguage(language)
   const displayLang = language?.trim() || lang
-  const [html, setHtml] = useState<string | null>(null)
+  const [highlightedCode, setHighlightedCode] = useState<HighlightedCode | null>(null)
   const [copied, setCopied] = useState(false)
   const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -27,16 +27,9 @@ export function CodeBlock({
     let cancelled = false
     void (async () => {
       try {
-        const highlighter = await getHighlighter()
+        const rendered = await highlightCode(code, lang)
         if (cancelled) return
-        const rendered = highlighter.codeToHtml(code, {
-          lang,
-          themes: { light: 'github-light', dark: 'github-dark' },
-          defaultColor: false,
-        })
-        if (!cancelled) {
-          setHtml(rendered)
-        }
+        setHighlightedCode(rendered)
       } catch {
         // Fallback to plain rendering remains.
       }
@@ -97,11 +90,21 @@ export function CodeBlock({
           )}
         </Button>
       </div>
-      {html ? (
-        <div
-          className="overflow-x-auto text-xs leading-6 [&_pre]:!bg-transparent [&_pre]:m-0 [&_pre]:px-4 [&_pre]:py-3"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+      {highlightedCode ? (
+        <pre className="syntax-highlight m-0 overflow-x-auto bg-transparent px-4 py-3 text-xs leading-6 text-foreground">
+          <code>
+            {highlightedCode.map((line, lineIndex) => (
+              <span key={lineIndex} className="line">
+                {line.map((token, tokenIndex) => (
+                  <span key={`${tokenIndex}:${token.content}`} style={token.style}>
+                    {token.content}
+                  </span>
+                ))}
+                {lineIndex < highlightedCode.length - 1 ? '\n' : null}
+              </span>
+            ))}
+          </code>
+        </pre>
       ) : (
         <pre className="m-0 overflow-x-auto px-4 py-3 text-xs leading-6 text-foreground">
           <code>{code}</code>

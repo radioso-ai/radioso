@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { skillParamsSchema } from "../../../modules/skills/public.js";
 
 type SkillRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "skillCatalogService">;
@@ -9,8 +10,9 @@ type SkillRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencie
 export const createSkillRoutes = (dependencies: SkillRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const skillRead = requireWorkspacePermission(dependencies, "workspace.skills.read");
 
-  router.get("/", workspaceSession, async (_req, res, next) => {
+  router.get("/", workspaceSession, skillRead, async (_req, res, next) => {
     try {
       const { workspaceId, accountId, userId } = res.locals as {
         workspaceId: string;
@@ -24,7 +26,7 @@ export const createSkillRoutes = (dependencies: SkillRouteDependencies): Router 
     }
   });
 
-  router.get("/:skillName", workspaceSession, async (req, res, next) => {
+  router.get("/:skillName", workspaceSession, skillRead, async (req, res, next) => {
     try {
       const parsedParams = skillParamsSchema.safeParse(req.params);
       if (!parsedParams.success) {

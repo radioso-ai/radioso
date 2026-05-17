@@ -4,6 +4,8 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { sendChatSse } from "../presenters/chatPresenter.js";
+import type { ChatConversationDetail } from "../../../modules/chat/services/chatHistoryService.js";
+import type { AnswerSegment, ChatStreamEvent, ChatSuggestion } from "../../../modules/chat/contracts/index.js";
 import { AppError, badRequest, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
 import { anonymousRateLimiters, publicChatSessionExchangeRateLimiter, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
@@ -115,6 +117,77 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "logger"
   | "workspaceRepository"
 >;
+
+const stripPublicSuggestionCitation = (suggestion: ChatSuggestion): ChatSuggestion => {
+  const { citation: _citation, ...publicSuggestion } = suggestion;
+  return publicSuggestion;
+};
+
+const stripPublicAnswerSegmentCitations = (answerSegments?: AnswerSegment[]): AnswerSegment[] | undefined =>
+  answerSegments?.map((segment) => ({ text: segment.text }));
+
+const stripPublicChatCitationArtifacts = <T extends {
+  citations?: unknown;
+  answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
+}>(payload: T): Omit<T, "citations" | "answerSegments" | "suggestions"> & {
+  answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
+} => {
+  const {
+    citations: _citations,
+    answerSegments,
+    suggestions,
+    ...publicPayload
+  } = payload;
+
+  return {
+    ...publicPayload,
+    ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments) } : {}),
+    ...(suggestions ? { suggestions: suggestions.map(stripPublicSuggestionCitation) } : {}),
+  };
+};
+
+const stripPublicConversationCitationArtifacts = (
+  detail: ChatConversationDetail,
+): ChatConversationDetail => ({
+  ...detail,
+  messages: detail.messages.map((message) => {
+    const {
+      citations: _citations,
+      answerSegments,
+      suggestions,
+      ...publicMessage
+    } = message;
+
+    return {
+      ...publicMessage,
+      ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments) } : {}),
+      ...(suggestions ? { suggestions: suggestions.map(stripPublicSuggestionCitation) } : {}),
+    };
+  }),
+});
+
+async function* stripPublicStreamCitationArtifacts(
+  events: AsyncIterable<ChatStreamEvent>,
+): AsyncIterable<ChatStreamEvent> {
+  for await (const event of events) {
+    if (event.type === "done") {
+      yield stripPublicChatCitationArtifacts(event) as ChatStreamEvent;
+      continue;
+    }
+
+    if (event.type === "suggestions") {
+      yield {
+        ...event,
+        suggestions: event.suggestions.map(stripPublicSuggestionCitation),
+      };
+      continue;
+    }
+
+    yield event;
+  }
+}
 
 export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies): Router => {
   const router = Router();
@@ -482,7 +555,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
             res.status(204).end();
             return;
           }
-          res.status(200).json(bootstrap);
+          res.status(200).json(stripPublicChatCitationArtifacts(bootstrap));
           return;
         }
 
@@ -501,10 +574,14 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         };
 
         if (input.stream) {
-          await sendChatSse(res, dependencies.assistantChatService.streamAnswer(input));
+          await sendChatSse(res, stripPublicStreamCitationArtifacts(dependencies.assistantChatService.streamAnswer(input)));
         } else {
           const result = await dependencies.assistantChatService.answer(input);
-          res.status(200).json(result);
+          if (!result) {
+            res.status(204).end();
+            return;
+          }
+          res.status(200).json(stripPublicChatCitationArtifacts(result));
         }
       } catch (error) {
         next(error);
@@ -586,7 +663,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         parsedQuery.data,
         { includeAnswerFeedback: true },
       );
-      res.status(200).json(detail);
+      res.status(200).json(stripPublicConversationCitationArtifacts(detail));
     } catch (error) {
       next(error);
     }

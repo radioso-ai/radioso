@@ -771,6 +771,12 @@ describe("document ingestion", () => {
           async publishForDocumentRevision(): Promise<boolean> {
             throw new Error("chunk write failed");
           },
+          async listSummariesForDocument() {
+            return [];
+          },
+          async findByIdForDocument() {
+            return null;
+          },
         },
         new EmbeddingService({
           async embedTexts(texts: string[]): Promise<number[][]> {

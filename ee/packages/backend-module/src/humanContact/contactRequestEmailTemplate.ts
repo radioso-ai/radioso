@@ -1,3 +1,5 @@
+import { button, escapeHtml } from "../mail/layout/index.js";
+
 export interface ConversationTurn {
   role: "user" | "assistant" | "system";
   content: string;
@@ -40,14 +42,6 @@ export interface RenderedContactRequestEmail {
   html: string;
   metadata: Record<string, string>;
 }
-
-const escapeHtml = (value: string): string =>
-  value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 
 const formatTimestamp = (value: Date | string): string => {
   const date = value instanceof Date ? value : new Date(value);
@@ -127,9 +121,7 @@ export const renderHumanContactRequestEmail = (
     htmlParts.push(`</div>`);
   }
   if (input.dashboardUrl) {
-    htmlParts.push(
-      `<p style="margin:0 0 16px 0;"><a href="${escapeHtml(input.dashboardUrl)}" style="display:inline-block;padding:8px 14px;background:#111827;color:#ffffff;border-radius:6px;text-decoration:none;">Open in Radioso</a></p>`,
-    );
+    htmlParts.push(button({ href: input.dashboardUrl, label: "Open in Radioso" }));
   }
   htmlParts.push(
     `<p style="margin:24px 0 0 0;color:#9ca3af;font-size:11px;">Request ID: ${escapeHtml(input.requestId)}</p>`,

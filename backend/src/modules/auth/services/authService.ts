@@ -49,6 +49,12 @@ export interface WorkspaceTokenRecord {
   lastUsedAt: Date | null;
 }
 
+export type WorkspaceApiTokenPrincipal = {
+  type: "workspace_api_token";
+  role: "admin";
+  tokenId: string;
+};
+
 export interface AccountRepositoryPort {
   create(params: { name: string; email: string; passwordHash: string }): Promise<AccountRecord>;
   findByEmail(email: string): Promise<AccountRecord | null>;
@@ -556,7 +562,11 @@ export class AuthService {
     return token;
   }
 
-  async authenticateApiToken(token: string): Promise<{ workspaceId: string; accountId: string }> {
+  async authenticateApiToken(token: string): Promise<{
+    workspaceId: string;
+    accountId: string;
+    principal: WorkspaceApiTokenPrincipal;
+  }> {
     const tokenHash = sha256(token);
     const workspaceToken = await this.dependencies.workspaceTokenRepository.findByTokenHash(tokenHash);
 
@@ -565,7 +575,15 @@ export class AuthService {
     }
 
     await this.dependencies.workspaceTokenRepository.touch(workspaceToken.workspaceId, new Date());
-    return { workspaceId: workspaceToken.workspaceId, accountId: workspaceToken.accountId };
+    return {
+      workspaceId: workspaceToken.workspaceId,
+      accountId: workspaceToken.accountId,
+      principal: {
+        type: "workspace_api_token",
+        role: "admin",
+        tokenId: workspaceToken.id,
+      },
+    };
   }
 
   private async issueWorkspaceToken(workspaceId: string, accountId: string): Promise<{ token: string }> {

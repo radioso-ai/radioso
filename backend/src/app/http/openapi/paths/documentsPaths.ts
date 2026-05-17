@@ -226,6 +226,59 @@ export const registerDocumentsPaths = (
   });
 
   registry.registerPath({
+    method: "patch",
+    path: "/api/v1/document/sources/{sourceId}",
+    tags: ["Documents"],
+    summary: "Update a website source's crawl settings",
+    operationId: "updateDocumentSource",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.sourceParamsSchema,
+      body: {
+        content: {
+          "application/json": {
+            schema: schemas.DocumentSourceUpdateRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Source updated",
+        content: {
+          "application/json": {
+            schema: schemas.DocumentSourceListItemSchema,
+          },
+        },
+      },
+      400: {
+        description: "Source is not a website or the manually-added bucket",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Source not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/document/sources/{sourceId}/recrawl",
     tags: ["Documents"],

@@ -7,15 +7,28 @@ import { DocumentStatus } from '@/components/dashboard/document-status'
 import { MarkdownContent } from '@/components/markdown/markdown-content'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import type { DocumentSummary } from '@/lib/api'
+import type { DocumentSourceListItem, DocumentSummary } from '@/lib/api'
 import { cn } from '@/lib/utils'
+
+// Synthetic source created automatically for inline documents that the user
+// writes directly in the editor. Documents in this bucket can be reassigned to
+// other sources; documents in crawl/upload/connector sources stay locked.
+export const MANUALLY_ADDED_SOURCE_ID = '00000000-0000-0000-0000-000000000001'
 
 export type DocumentEditorValues = {
   title: string
   content: string
   metadata: string
+  sourceId: string
 }
 
 export function DocumentEditorPage({
@@ -27,9 +40,11 @@ export function DocumentEditorPage({
   isDeleting,
   isEditing,
   isMetadataOpen,
+  availableSources,
   onBack,
   onChange,
   onMetadataChange,
+  onSourceChange,
   onEditingChange,
   onMetadataOpenChange,
   onDelete,
@@ -43,9 +58,11 @@ export function DocumentEditorPage({
   isDeleting: boolean
   isEditing: boolean
   isMetadataOpen: boolean
+  availableSources: DocumentSourceListItem[]
   onBack: () => void
   onChange: (field: keyof DocumentEditorValues, value: string) => void
   onMetadataChange: (value: string) => void
+  onSourceChange: (sourceId: string) => void
   onEditingChange: (editing: boolean) => void
   onMetadataOpenChange: (open: boolean) => void
   onDelete: () => void
@@ -77,6 +94,12 @@ export function DocumentEditorPage({
   }
 
   const isEditable = document.sourceKind === 'inline_text'
+  const sourceIsManual = (document.sourceId ?? null) === MANUALLY_ADDED_SOURCE_ID
+  const canEditSource = isEditing && isEditable && sourceIsManual
+  const currentSourceName =
+    availableSources.find((source) => source.id === values.sourceId)?.name ??
+    document.source?.name ??
+    '—'
 
   return (
     <form onSubmit={onSubmit} className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -118,7 +141,7 @@ export function DocumentEditorPage({
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" onClick={() => onMetadataOpenChange(!isMetadataOpen)}>
               <PanelRight className="mr-2 h-4 w-4" />
-              Metadata
+              Properties
             </Button>
             <Button
               type="button"
@@ -185,7 +208,7 @@ export function DocumentEditorPage({
               aria-hidden={!isMetadataOpen}
             >
               <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-4">
-                <h2 className="font-semibold text-foreground">Metadata</h2>
+                <h2 className="font-semibold text-foreground">Properties</h2>
                 <Button
                   type="button"
                   variant="ghost"
@@ -194,20 +217,60 @@ export function DocumentEditorPage({
                   onClick={() => onMetadataOpenChange(false)}
                 >
                   <X className="h-4 w-4" />
-                  <span className="sr-only">Close metadata</span>
+                  <span className="sr-only">Close properties</span>
                 </Button>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                <Textarea
-                  id="document-metadata"
-                  value={values.metadata}
-                  onChange={(event) => onMetadataChange(event.target.value)}
-                  placeholder='{"key": "value"}'
-                  readOnly={!isEditing}
-                  disabled={isSaving}
-                  className="min-h-[70vh] resize-none font-mono text-sm"
-                />
-                {metadataError ? <p className="mt-2 text-sm text-destructive">{metadataError}</p> : null}
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+                <div className="space-y-1">
+                  <label
+                    htmlFor="document-source"
+                    className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    Source
+                  </label>
+                  {canEditSource ? (
+                    <Select
+                      value={values.sourceId}
+                      onValueChange={onSourceChange}
+                      disabled={isSaving}
+                    >
+                      <SelectTrigger id="document-source" className="w-full">
+                        <SelectValue placeholder="Select a source" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableSources.map((source) => (
+                          <SelectItem key={source.id} value={source.id}>
+                            {source.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="text-sm text-foreground [overflow-wrap:anywhere]">
+                      {currentSourceName}
+                    </p>
+                  )}
+                  {isEditing && isEditable && !sourceIsManual ? (
+                    <p className="text-xs text-muted-foreground">
+                      Source is locked because this document came from a crawl or import.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor="document-metadata" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Metadata
+                  </label>
+                  <Textarea
+                    id="document-metadata"
+                    value={values.metadata}
+                    onChange={(event) => onMetadataChange(event.target.value)}
+                    placeholder='{"key": "value"}'
+                    readOnly={!isEditing}
+                    disabled={isSaving}
+                    className="min-h-[60vh] resize-none font-mono text-sm"
+                  />
+                  {metadataError ? <p className="mt-2 text-sm text-destructive">{metadataError}</p> : null}
+                </div>
               </div>
             </aside>
           </div>

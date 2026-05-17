@@ -19,6 +19,7 @@ import {
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
 
 export type DocumentSourceKind = "inline_text" | "uploaded_file";
 export type DocumentSourceResolverInput =
@@ -389,6 +390,12 @@ export class DocumentIngestionService {
       const existing = await this.getDocument(input.workspaceId, input.documentId);
       if (existing.sourceKind === "uploaded_file") {
         throw conflict("Imported documents cannot be updated through the inline document API");
+      }
+      if (
+        input.source !== undefined &&
+        (existing.sourceId ?? null) !== MANUALLY_ADDED_DOCUMENTS_SOURCE_ID
+      ) {
+        throw conflict("Source can only be changed for manually-added documents");
       }
       if (
         existing.externalDocumentId &&

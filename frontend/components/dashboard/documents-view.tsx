@@ -903,6 +903,16 @@ export function DocumentsView({
           isEditing={isEditingDetail}
           isMetadataOpen={isMetadataSheetOpen}
           availableSources={availableSources}
+          sourceFilterHref={activeDetailDocument?.sourceId
+            ? buildDashboardHref(accountId, {
+                ...routeState,
+                section: 'knowledge',
+                knowledgeTab: 'documents',
+                documentId: undefined,
+                documentSourceFilter: activeDetailDocument.sourceId,
+                documentsPage: undefined,
+              })
+            : undefined}
           onBack={() => {
             justClosedDocumentIdRef.current = editingDocumentId
             onSelectedDocumentChange?.(null)

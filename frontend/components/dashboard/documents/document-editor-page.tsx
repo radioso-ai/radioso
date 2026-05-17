@@ -1,7 +1,8 @@
 'use client'
 
 import type { FormEvent } from 'react'
-import { ArrowLeft, FileText, PanelRight, Pencil, Save, Trash2, X } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowLeft, ExternalLink, FileText, PanelRight, Pencil, Save, Trash2, X } from 'lucide-react'
 
 import { DocumentStatus } from '@/components/dashboard/document-status'
 import { MarkdownContent } from '@/components/markdown/markdown-content'
@@ -41,6 +42,7 @@ export function DocumentEditorPage({
   isEditing,
   isMetadataOpen,
   availableSources,
+  sourceFilterHref,
   onBack,
   onChange,
   onMetadataChange,
@@ -59,6 +61,7 @@ export function DocumentEditorPage({
   isEditing: boolean
   isMetadataOpen: boolean
   availableSources: DocumentSourceListItem[]
+  sourceFilterHref?: string
   onBack: () => void
   onChange: (field: keyof DocumentEditorValues, value: string) => void
   onMetadataChange: (value: string) => void
@@ -93,13 +96,22 @@ export function DocumentEditorPage({
     )
   }
 
-  const isEditable = document.sourceKind === 'inline_text'
+  const isInlineText = document.sourceKind === 'inline_text'
   const sourceIsManual = (document.sourceId ?? null) === MANUALLY_ADDED_SOURCE_ID
-  const canEditSource = isEditing && isEditable && sourceIsManual
+  const isEditable = isInlineText && sourceIsManual
+  const canEditSource = isEditing && isEditable
   const currentSourceName =
     availableSources.find((source) => source.id === values.sourceId)?.name ??
     document.source?.name ??
     '—'
+  const sourceName = document.source?.name ?? null
+  const sourceUrlRaw = document.metadata?.sourceUrl
+  const sourceUrl = typeof sourceUrlRaw === 'string' && sourceUrlRaw.trim().length > 0 ? sourceUrlRaw : null
+  const readOnlyExplanation = document.sourceKind === 'uploaded_file'
+    ? 'Imported documents stay read-only here. Re-import the source file to replace its contents.'
+    : isInlineText && !sourceIsManual
+      ? 'This document was added by a crawl or sync. Re-crawl the source to refresh it.'
+      : null
 
   return (
     <form onSubmit={onSubmit} className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -124,17 +136,40 @@ export function DocumentEditorPage({
                 )}
                 <DocumentStatus status={document.status} />
               </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                 <span>
                   Updated {new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(document.updatedAt))}
                 </span>
                 {document.sourceFilename ? <span>{document.sourceFilename}</span> : null}
-                <span>{isEditable ? 'Inline document' : 'Imported document'}</span>
+                {sourceName ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span>From</span>
+                    {sourceFilterHref ? (
+                      <Link
+                        href={sourceFilterHref}
+                        className="font-medium text-foreground underline-offset-2 hover:underline"
+                      >
+                        {sourceName}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-foreground">{sourceName}</span>
+                    )}
+                  </span>
+                ) : null}
+                {sourceUrl ? (
+                  <a
+                    href={sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                  >
+                    Open original
+                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                  </a>
+                ) : null}
               </div>
-              {!isEditable ? (
-                <p className="text-sm text-muted-foreground">
-                  Imported documents stay read-only here. Re-import the source file to replace its contents.
-                </p>
+              {readOnlyExplanation ? (
+                <p className="text-sm text-muted-foreground">{readOnlyExplanation}</p>
               ) : null}
             </div>
           </div>
@@ -142,17 +177,6 @@ export function DocumentEditorPage({
             <Button type="button" variant="outline" onClick={() => onMetadataOpenChange(!isMetadataOpen)}>
               <PanelRight className="mr-2 h-4 w-4" />
               Properties
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={onDelete}
-              disabled={isSaving || isDeleting}
-            >
-              {isDeleting ? <Spinner className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
-              <span className="sr-only">Delete document</span>
             </Button>
             {isEditing ? (
               <>
@@ -170,6 +194,17 @@ export function DocumentEditorPage({
                 Edit
               </Button>
             ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={onDelete}
+              disabled={isSaving || isDeleting}
+            >
+              {isDeleting ? <Spinner className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
+              <span className="sr-only">Delete document</span>
+            </Button>
           </div>
         </div>
 

@@ -25,6 +25,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@radioso/ui/*": [
+        "../packages/ui/src/*"
       ]
     }
   },

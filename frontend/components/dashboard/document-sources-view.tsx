@@ -283,7 +283,7 @@ function SourceExpandedPanel({
             <CollapsibleTrigger asChild>
               <Button type="button" variant="outline" size="sm">
                 <Settings2 className="mr-2 h-3.5 w-3.5" />
-                Advanced crawl settings
+                Settings
               </Button>
             </CollapsibleTrigger>
           ) : null}

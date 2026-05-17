@@ -459,6 +459,57 @@ describe("document ingestion", () => {
     expect(chunkRepository.items.get(first.documentId)?.[0]?.content).toContain("Second content");
   });
 
+  it("rejects source changes when the document is not in the manually-added bucket", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const auditService = createAuditService();
+    const ingestionService = new DocumentIngestionService(documentRepository, auditService);
+
+    const crawledSourceId = "11111111-1111-1111-1111-111111111111";
+    const crawled = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Crawled page",
+      sourceContent: "Crawled body",
+      markdownContent: "Crawled body",
+      status: "ready",
+      sourceKind: "inline_text",
+      sourceId: crawledSourceId,
+      sourceFilename: null,
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      sourceSizeBytes: null,
+    });
+
+    await expect(
+      ingestionService.update({
+        workspaceId: "workspace-1",
+        documentId: crawled.id,
+        title: "Crawled page",
+        content: "Crawled body",
+        source: { id: "00000000-0000-0000-0000-000000000001" },
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: "Source can only be changed for manually-added documents",
+    });
+
+    const persisted = await documentRepository.findByIdAndWorkspaceId(crawled.id, "workspace-1");
+    expect(persisted?.sourceId).toBe(crawledSourceId);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.update",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          documentId: crawled.id,
+          reason: "Source can only be changed for manually-added documents",
+        }),
+      }),
+    );
+  });
+
   it("rejects inline updates for imported documents", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const auditService = createAuditService();
@@ -719,6 +770,12 @@ describe("document ingestion", () => {
           },
           async publishForDocumentRevision(): Promise<boolean> {
             throw new Error("chunk write failed");
+          },
+          async listSummariesForDocument() {
+            return [];
+          },
+          async findByIdForDocument() {
+            return null;
           },
         },
         new EmbeddingService({

@@ -3322,6 +3322,43 @@
           "externalId"
         ]
       },
+      "DocumentSourceCrawlSettings": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "includeUrlPatterns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excludeUrlPatterns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "preserveContentLinks": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "url",
+          "limit",
+          "includeUrlPatterns",
+          "excludeUrlPatterns",
+          "preserveContentLinks"
+        ]
+      },
       "DocumentSourceListItem": {
         "type": "object",
         "properties": {
@@ -3364,6 +3401,9 @@
             "type": "integer",
             "minimum": 0
           },
+          "crawlSettings": {
+            "$ref": "#/components/schemas/DocumentSourceCrawlSettings"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -3384,6 +3424,41 @@
           "createdAt",
           "updatedAt"
         ]
+      },
+      "DocumentSourceUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "crawlSettings": {
+            "type": "object",
+            "properties": {
+              "limit": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "includeUrlPatterns": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "maxItems": 50
+              },
+              "excludeUrlPatterns": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "maxItems": 50
+              },
+              "preserveContentLinks": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
       },
       "DocumentSourceListResponse": {
         "type": "object",
@@ -5511,6 +5586,9 @@
                   ]
                 }
               },
+              "subjectIdentityField": {
+                "type": "string"
+              },
               "confirmation": {
                 "type": "string",
                 "enum": [
@@ -7098,6 +7176,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Public chat session exchange rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitExceededResponse"
                 }
               }
             }
@@ -9918,6 +10006,140 @@
         }
       }
     },
+    "/api/v1/document/sources/{sourceId}": {
+      "patch": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Update a website source's crawl settings",
+        "operationId": "updateDocumentSource",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentSourceUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Source updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSourceListItem"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Source is not a website or the manually-added bucket",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Source not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Delete a source and all its documents",
+        "operationId": "deleteDocumentSource",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Source and documents deleted"
+          },
+          "400": {
+            "description": "Source cannot be deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Source not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/document/sources/{sourceId}/recrawl": {
       "post": {
         "tags": [
@@ -10116,66 +10338,6 @@
           },
           "400": {
             "description": "Source is not a website source",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Source not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/document/sources/{sourceId}": {
-      "delete": {
-        "tags": [
-          "Documents"
-        ],
-        "summary": "Delete a source and all its documents",
-        "operationId": "deleteDocumentSource",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "sourceId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Source and documents deleted"
-          },
-          "400": {
-            "description": "Source cannot be deleted",
             "content": {
               "application/json": {
                 "schema": {

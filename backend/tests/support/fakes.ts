@@ -1159,6 +1159,24 @@ export class InMemoryDocumentSourceRepository implements DocumentSourceRepositor
     });
   }
 
+  async updateConfigByIdAndWorkspaceId(input: {
+    sourceId: string;
+    workspaceId: string;
+    config: Record<string, unknown>;
+  }): Promise<DocumentSourceRecord> {
+    const source = await this.findByIdAndWorkspaceId(input.sourceId, input.workspaceId);
+    if (!source) {
+      throw new Error(`Document source ${input.sourceId} not found in workspace ${input.workspaceId}`);
+    }
+    const updated: DocumentSourceRecord = {
+      ...source,
+      config: input.config,
+      updatedAt: new Date(),
+    };
+    this.items.set(updated.id, updated);
+    return updated;
+  }
+
   async deleteByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<boolean> {
     const source = await this.findByIdAndWorkspaceId(sourceId, workspaceId);
     if (!source) {
@@ -1765,6 +1783,45 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
 
     this.items.set(input.documentId, input.chunks);
     return true;
+  }
+
+  async listSummariesForDocument(input: { documentId: string; workspaceId: string }) {
+    const chunks = this.items.get(input.documentId) ?? [];
+    return chunks
+      .filter((chunk) => chunk.workspaceId === input.workspaceId)
+      .slice()
+      .sort((a, b) => a.chunkIndex - b.chunkIndex)
+      .map((chunk) => ({
+        id: chunk.id,
+        chunkIndex: chunk.chunkIndex,
+        contentPreview: chunk.content.slice(0, 240),
+        contentLength: chunk.content.length,
+        startOffset: chunk.startOffset,
+        endOffset: chunk.endOffset,
+      }));
+  }
+
+  async findByIdForDocument(input: { chunkId: string; documentId: string; workspaceId: string }) {
+    const chunks = this.items.get(input.documentId) ?? [];
+    const chunk = chunks.find(
+      (entry) => entry.id === input.chunkId && entry.workspaceId === input.workspaceId,
+    );
+    if (!chunk) {
+      return null;
+    }
+    return {
+      id: chunk.id,
+      documentId: chunk.documentId,
+      workspaceId: chunk.workspaceId,
+      chunkIndex: chunk.chunkIndex,
+      content: chunk.content,
+      searchText: chunk.searchText ?? null,
+      startOffset: chunk.startOffset,
+      endOffset: chunk.endOffset,
+      metadata: chunk.metadata ?? {},
+      createdAt: chunk.createdAt,
+      embeddingDimensions: chunk.embedding.length,
+    };
   }
 }
 

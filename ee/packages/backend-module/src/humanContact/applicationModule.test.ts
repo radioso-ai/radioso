@@ -62,6 +62,7 @@ describe("human contact application module", () => {
         ]),
         intake: expect.objectContaining({
           enabled: true,
+          subjectIdentityField: "email",
           fields: expect.arrayContaining([
             expect.objectContaining({ name: "email", type: "email", required: true }),
             expect.objectContaining({ name: "message", type: "string", required: true }),

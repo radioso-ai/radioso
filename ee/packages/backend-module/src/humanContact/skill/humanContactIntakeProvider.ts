@@ -23,6 +23,8 @@ import type { ChatGateway, UsageLimitDatabasePort } from "../../radiosoModuleTyp
 
 type ChatIntakeInput = Parameters<ChatIntakeProvider["handle"]>[0];
 
+const MESSAGE_MAX_LENGTH = 6000;
+
 const looksLikeEmailCandidate = (value: string): boolean => {
   const trimmed = value.trim();
   return trimmed.includes("@") && trimmed.length <= 320 && !Array.from(trimmed).some((character) => character.trim() === "");
@@ -37,13 +39,58 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const normalizeCollected = (value: unknown): Record<string, unknown> =>
   isObject(value) ? value : {};
 
+const normalizeMessageField = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  return trimmed.slice(0, MESSAGE_MAX_LENGTH);
+};
+
+const hasPriorSubstantiveUserContext = (input: ChatIntakeInput): boolean =>
+  input.history.some(
+    (message) =>
+      message.role === "user" &&
+      message.id !== input.userMessageId &&
+      isUsefulLanguageAnchor(message.content),
+  );
+
+const isUsefulLanguageAnchor = (value: string): boolean => {
+  const trimmed = value.trim();
+  if (!trimmed || normalizeEmailField(trimmed) || looksLikeEmailCandidate(trimmed)) {
+    return false;
+  }
+  if (trimmed.length < 8) {
+    return false;
+  }
+  return /[\p{L}\p{N}]/u.test(trimmed);
+};
+
+const missingFields = (collected: Record<string, unknown>): string[] => {
+  const missing: string[] = [];
+  if (!normalizeEmailField(collected.email)) {
+    missing.push("email");
+  }
+  if (!normalizeMessageField(collected.message)) {
+    missing.push("message");
+  }
+  return missing;
+};
+
 export const resolveLanguageContext = (input: ChatIntakeInput, _collected?: Record<string, unknown>): string => {
-  // Anchor language on the user's earliest natural-language message in this conversation.
+  // Anchor language on the user's most recent meaningful natural-language message.
   // We deliberately ignore `collected.message` because it is the auto-built contact-request draft
   // ("Contact request:\n...") whose English boilerplate would mislead the LLM on follow-up turns,
   // and we ignore short answer-only turns like "test@test" that carry no language signal.
-  const earliestUserMessage = input.history.find((message) => message.role === "user")?.content?.trim();
-  return earliestUserMessage || input.query;
+  const userMessages = input.history
+    .filter((message) => message.role === "user")
+    .map((message) => message.content.trim())
+    .filter(Boolean);
+  const latestUsefulMessage = [...userMessages].reverse().find(isUsefulLanguageAnchor);
+  return latestUsefulMessage || input.query;
 };
 
 const buildFallbackDraft = (input: ChatIntakeInput): { draftMessage: string } => {
@@ -172,14 +219,15 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       return null;
     }
 
-    const email = await this.extractEmailSlot(input.query);
-    const message = buildFallbackDraft(input).draftMessage;
-    const collected = {
-      message,
+    const slots = await this.extractSlots(input.query);
+    const message = slots.message ?? this.deriveMessageFromPriorContext(input);
+    const { email } = slots;
+    const collected: Record<string, unknown> = {
       ...(email ? { email } : {}),
+      ...(message ? { message } : {}),
     };
 
-    if (email) {
+    if (email && message) {
       const submitResult = await this.input.requestExecutor.submit({
         workspaceId: input.workspaceId,
         agentId: input.agentId,
@@ -249,9 +297,14 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       };
     }
 
+    const nextField: "email" | "message" = email ? "message" : "email";
+    const missing = [
+      ...(email ? [] : ["email"]),
+      ...(message ? [] : ["message"]),
+    ];
     const answer = await this.intakePrompts.composeAnswer({
       kind: "missing",
-      fieldName: "email",
+      fieldName: nextField,
       languageContext: resolveLanguageContext(input, collected),
       userExpectedLocale: input.userExpectedLocale,
     });
@@ -259,9 +312,9 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       workspaceId: input.workspaceId,
       conversationId: input.conversationId,
       status: "active",
-      collected: {},
-      missing: ["email"],
-      lastPromptedField: "email",
+      collected,
+      missing,
+      lastPromptedField: nextField,
     });
     const activityTrace = buildContactTrace([
       buildContactStage("availability_check", "availability_check", "Availability check", "applied", {
@@ -270,10 +323,10 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       buildContactStage("intake_collect", "intake_collect", "Intake collect", "applied", {
         outputs: {
           stateId: state.id,
-          missing: ["email"],
+          missing,
         },
       }),
-    ], "intake_waiting_for_email", "pending");
+    ], nextField === "email" ? "intake_waiting_for_email" : "intake_waiting_for_message", "pending");
 
     return {
       skillName: HUMAN_CONTACT_SKILL_NAME,
@@ -286,6 +339,16 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
   }
 
   private async continueIntake(
+    state: SkillIntakeStateRow,
+    input: ChatIntakeInput,
+  ): Promise<ChatIntakeResult | null> {
+    if (state.last_prompted_field === "message") {
+      return this.continueMessageIntake(state, input);
+    }
+    return this.continueEmailIntake(state, input);
+  }
+
+  private async continueEmailIntake(
     state: SkillIntakeStateRow,
     input: ChatIntakeInput,
   ): Promise<ChatIntakeResult | null> {
@@ -316,7 +379,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
         await this.updateIntakeState(state.id, {
           status: "active",
           collected,
-          missing: ["email"],
+          missing: missingFields(collected),
           lastPromptedField: "email",
         });
         const answer = await this.requireIntakePrompts().composeAnswer({
@@ -348,7 +411,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
         await this.updateIntakeState(state.id, {
           status: "active",
           collected,
-          missing: ["email"],
+          missing: missingFields(collected),
           lastPromptedField: "email",
         });
         const answer = await this.requireIntakePrompts().composeAnswer({
@@ -384,15 +447,130 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       return null;
     }
 
-    const message = typeof collected.message === "string" && collected.message.trim()
-      ? collected.message.trim()
-      : buildFallbackDraft(input).draftMessage;
-    const nextCollected = {
+    const storedMessage = normalizeMessageField(collected.message);
+    const nextCollected: Record<string, unknown> = {
       ...collected,
       email,
-      message,
+      ...(storedMessage ? { message: storedMessage } : {}),
     };
 
+    if (!storedMessage) {
+      return this.promptForMessage(state, input, nextCollected);
+    }
+
+    return this.submitFromState(state, input, { email, message: storedMessage, collected: nextCollected });
+  }
+
+  private async continueMessageIntake(
+    state: SkillIntakeStateRow,
+    input: ChatIntakeInput,
+  ): Promise<ChatIntakeResult | null> {
+    const collected = normalizeCollected(state.collected);
+    const email = normalizeEmailField(collected.email);
+    if (!email) {
+      // The state is corrupt: message was prompted without a stored email. Fall back to email collection.
+      await this.updateIntakeState(state.id, {
+        status: "active",
+        collected,
+        missing: missingFields(collected),
+        lastPromptedField: "email",
+      });
+      const answer = await this.requireIntakePrompts().composeAnswer({
+        kind: "missing",
+        fieldName: "email",
+        languageContext: resolveLanguageContext(input, collected),
+        userExpectedLocale: input.userExpectedLocale,
+      });
+      const activityTrace = buildContactTrace([
+        buildContactStage("intake_collect", "intake_collect", "Intake collect", "applied", {
+          outputs: { missing: ["email"] },
+        }),
+      ], "intake_waiting_for_email", "pending");
+      return {
+        skillName: HUMAN_CONTACT_SKILL_NAME,
+        status: "active",
+        stateId: state.id,
+        answer,
+        activityTrace,
+        activitySummary: activityTrace.summary!,
+      };
+    }
+
+    const message = normalizeMessageField(input.query);
+    if (!message) {
+      await this.updateIntakeState(state.id, {
+        status: "active",
+        collected,
+        missing: ["message"],
+        lastPromptedField: "message",
+      });
+      const answer = await this.requireIntakePrompts().composeAnswer({
+        kind: "invalid",
+        fieldName: "message",
+        languageContext: resolveLanguageContext(input, collected),
+        userExpectedLocale: input.userExpectedLocale,
+      });
+      const activityTrace = buildContactTrace([
+        buildContactStage("intake_validate", "intake_validate", "Intake validate", "rejected", {
+          reason: "Message field was empty.",
+          outputs: { missing: ["message"], invalid: ["message"] },
+        }),
+      ], "intake_invalid_message", "blocked");
+      return {
+        skillName: HUMAN_CONTACT_SKILL_NAME,
+        status: "active",
+        stateId: state.id,
+        answer,
+        activityTrace,
+        activitySummary: activityTrace.summary!,
+      };
+    }
+
+    const nextCollected: Record<string, unknown> = { ...collected, email, message };
+    return this.submitFromState(state, input, { email, message, collected: nextCollected });
+  }
+
+  private async promptForMessage(
+    state: SkillIntakeStateRow,
+    input: ChatIntakeInput,
+    collected: Record<string, unknown>,
+  ): Promise<ChatIntakeResult> {
+    await this.updateIntakeState(state.id, {
+      status: "active",
+      collected,
+      missing: ["message"],
+      lastPromptedField: "message",
+    });
+    const answer = await this.requireIntakePrompts().composeAnswer({
+      kind: "missing",
+      fieldName: "message",
+      languageContext: resolveLanguageContext(input, collected),
+      userExpectedLocale: input.userExpectedLocale,
+    });
+    const activityTrace = buildContactTrace([
+      buildContactStage("intake_collect", "intake_collect", "Intake collect", "applied", {
+        outputs: {
+          stateId: state.id,
+          missing: ["message"],
+        },
+      }),
+    ], "intake_waiting_for_message", "pending");
+    return {
+      skillName: HUMAN_CONTACT_SKILL_NAME,
+      status: "active",
+      stateId: state.id,
+      answer,
+      activityTrace,
+      activitySummary: activityTrace.summary!,
+    };
+  }
+
+  private async submitFromState(
+    state: SkillIntakeStateRow,
+    input: ChatIntakeInput,
+    submission: { email: string; message: string; collected: Record<string, unknown> },
+  ): Promise<ChatIntakeResult> {
+    const { email, message, collected } = submission;
     const submitResult = await this.input.requestExecutor.submit({
       workspaceId: input.workspaceId,
       agentId: input.agentId,
@@ -409,7 +587,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
     }).catch(async (error) => {
       const failureAnswer = await this.composeAnswerOrFallback({
         kind: "failed",
-        languageContext: resolveLanguageContext(input, nextCollected),
+        languageContext: resolveLanguageContext(input, collected),
         userExpectedLocale: input.userExpectedLocale,
       }, failedFallbackAnswer);
       try {
@@ -440,7 +618,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
     }
     const answer = await this.composeAnswerOrFallback({
       kind: "submitted",
-      languageContext: resolveLanguageContext(input, nextCollected),
+      languageContext: resolveLanguageContext(input, collected),
       userExpectedLocale: input.userExpectedLocale,
     }, submittedFallbackAnswer);
     try {
@@ -462,6 +640,25 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       activityTrace: submitResult.activityTrace,
       activitySummary: submitResult.activityTrace.summary!,
       receipt: buildContactReceipt({ email }),
+    };
+  }
+
+  private deriveMessageFromPriorContext(input: ChatIntakeInput): string | null {
+    if (!hasPriorSubstantiveUserContext(input)) {
+      return null;
+    }
+    return buildFallbackDraft(input).draftMessage;
+  }
+
+  private async extractSlots(query: string): Promise<{ email: string | null; message: string | null }> {
+    const direct = normalizeEmailField(query);
+    if (direct) {
+      return { email: direct, message: null };
+    }
+    const extracted = await this.requireIntakePrompts().extractFields(query);
+    return {
+      email: normalizeEmailField(extracted.email),
+      message: normalizeMessageField(extracted.message),
     };
   }
 

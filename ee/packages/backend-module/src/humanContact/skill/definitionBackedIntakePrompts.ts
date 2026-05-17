@@ -154,7 +154,7 @@ export class DefinitionBackedIntakePrompts {
       languageInstruction = renderPromptSection(ANSWER_TEMPLATE, "language.default", {});
     }
 
-    const localeFallback = input.languageContext && input.userExpectedLocale
+    const localeFallback = !input.languageContext && input.userExpectedLocale
       ? renderPromptSection(ANSWER_TEMPLATE, "locale_fallback", {
           user_expected_locale: input.userExpectedLocale,
         })

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createHumanContactApplicationModule } from "./applicationModule.js";
 import type {
   ApplicationChatIntakeProviderRegistration,
+  ApplicationDatabaseMigrator,
   ApplicationModuleRegistrationContext,
   SkillDefinition,
 } from "../radiosoModuleTypes.js";
@@ -31,10 +32,13 @@ const createChatIntakeDependencies = () => ({
 describe("human contact application module", () => {
   it("registers the human contact request skill definition when installed", () => {
     const registeredSkills: SkillDefinition[] = [];
+    const registeredMigrators: ApplicationDatabaseMigrator[] = [];
     const module = createHumanContactApplicationModule();
 
     module.register?.({
-      registerDatabaseMigrator: vi.fn(),
+      registerDatabaseMigrator(migrator) {
+        registeredMigrators.push(migrator);
+      },
       registerSkillDefinition(definition) {
         registeredSkills.push(definition);
       },
@@ -46,6 +50,10 @@ describe("human contact application module", () => {
       registerAccountCreatedHandler: vi.fn(),
     } satisfies ApplicationModuleRegistrationContext);
 
+    expect(registeredMigrators.map((migrator) => migrator.id)).toEqual([
+      "ee-skill-submissions",
+      "ee-human-contact",
+    ]);
     expect(registeredSkills).toEqual([
       expect.objectContaining({
         name: "human_contact.request",
@@ -62,6 +70,7 @@ describe("human contact application module", () => {
         ]),
         intake: expect.objectContaining({
           enabled: true,
+          subjectIdentityField: "email",
           fields: expect.arrayContaining([
             expect.objectContaining({ name: "email", type: "email", required: true }),
             expect.objectContaining({ name: "message", type: "string", required: true }),

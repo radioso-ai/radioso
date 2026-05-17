@@ -59,17 +59,14 @@ export interface WorkspaceContactInfoRepositoryPort {
   } | null>;
 }
 
-export interface ContactRequestMailServicePort {
-  sendHumanContactRequestEmail(input: {
+export interface MailTransportPort {
+  send(message: {
     to: string;
-    visitorEmail: string;
-    message: string;
-    workspace: { name: string; publicRouteKey: string } | null;
-    sourceChannel: string | null;
-    createdAt: Date | string;
-    requestId: string;
-    workspaceId: string;
-    dashboardUrl: string | null;
+    replyTo?: string | null;
+    subject: string;
+    text: string;
+    html?: string;
+    metadata?: Record<string, string>;
   }): Promise<void>;
 }
 
@@ -84,7 +81,7 @@ export type ApplicationChatIntakeProviderRegistration =
       workspaceContactInfoRepository: WorkspaceContactInfoRepositoryPort;
       auditService: AuditService;
       abuseControlService: AbuseControlService;
-      mailService: ContactRequestMailServicePort;
+      mailService: MailTransportPort;
       dashboardBaseUrl: string | null;
     }) => ChatIntakeProviderPort);
 

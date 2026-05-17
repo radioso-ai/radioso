@@ -31,7 +31,7 @@ const createChatIntakeDependencies = () => ({
     findById: vi.fn(),
   },
   mailService: {
-    sendHumanContactRequestEmail: vi.fn(),
+    send: vi.fn(),
   },
   dashboardBaseUrl: null,
 });

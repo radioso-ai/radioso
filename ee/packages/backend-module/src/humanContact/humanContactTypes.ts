@@ -6,7 +6,7 @@ import type {
   ChatGateway,
   ContactHistoryDetail,
   ContactHistorySummary,
-  ContactRequestMailService,
+  MailTransport,
   UsageLimitDatabaseClient,
   UsageLimitDatabasePort,
 } from "../radiosoModuleTypes.js";
@@ -18,7 +18,7 @@ export type Logger = {
   error(entry: unknown, message?: string): void;
 };
 
-export type MailService = ContactRequestMailService;
+export type MailService = MailTransport;
 
 export interface WorkspaceContactInfo {
   id: string;

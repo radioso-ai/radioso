@@ -5,32 +5,26 @@ import express from "express";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { AuthMailService, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import type { MailTransport, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import { createEnterpriseAuthRoutes } from "./enterpriseAuthRoutes.js";
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 
-interface MailServiceStub extends AuthMailService {
-  passwordResets: Array<{ to: string; resetUrl: string }>;
-  verifications: Array<{ to: string; verificationUrl: string }>;
+type CapturedMail = Parameters<MailTransport["send"]>[0];
+
+interface MailServiceStub extends MailTransport {
+  sent: CapturedMail[];
 }
 
 const createMailServiceStub = (overrides: {
-  onPasswordReset?: (input: { to: string; resetUrl: string }) => Promise<void> | void;
-  onVerification?: (input: { to: string; verificationUrl: string }) => Promise<void> | void;
+  onSend?: (input: CapturedMail) => Promise<void> | void;
 } = {}): MailServiceStub => {
-  const passwordResets: Array<{ to: string; resetUrl: string }> = [];
-  const verifications: Array<{ to: string; verificationUrl: string }> = [];
+  const sent: CapturedMail[] = [];
   return {
-    passwordResets,
-    verifications,
-    async sendPasswordResetEmail(input) {
-      passwordResets.push(input);
-      await overrides.onPasswordReset?.(input);
-    },
-    async sendEmailVerificationEmail(input) {
-      verifications.push(input);
-      await overrides.onVerification?.(input);
+    sent,
+    async send(input) {
+      sent.push(input);
+      await overrides.onSend?.(input);
     },
   };
 };
@@ -151,7 +145,7 @@ const createApp = (
       enforced: Array<{ scope: string; subjectKey: string }>;
       enforce(input: { scope: string; subjectKey: string }): Promise<unknown>;
     };
-    mailService?: AuthMailService;
+    mailService?: MailTransport;
   } = {},
 ) => {
   const app = express();
@@ -222,9 +216,11 @@ describe("enterprise auth routes", () => {
       .send({ email: "Ada@Example.com" });
 
     expect(response.status).toBe(202);
-    expect(mailService.passwordResets).toHaveLength(1);
-    expect(mailService.passwordResets[0]?.resetUrl).toContain("https://radioso.dev/reset-password?token=");
-    expect(mailService.passwordResets[0]?.resetUrl).not.toContain("radioso-live-frontend.example.run.app");
+    expect(mailService.sent).toHaveLength(1);
+    const sent = mailService.sent[0]!;
+    expect(sent.metadata).toMatchObject({ kind: "password_reset" });
+    expect(sent.metadata?.resetUrl).toContain("https://radioso.dev/reset-password?token=");
+    expect(sent.metadata?.resetUrl).not.toContain("radioso-live-frontend.example.run.app");
   });
 
   it("keeps verified Enterprise users able to log in after an unused password reset request", async () => {
@@ -311,8 +307,10 @@ describe("enterprise auth routes", () => {
     const database = new FakeEnterpriseAuthDatabase();
     database.userExists = false;
     const mailService = createMailServiceStub({
-      onVerification: () => {
-        throw new Error("delivery failed");
+      onSend: (input) => {
+        if (input.metadata?.kind === "email_verification") {
+          throw new Error("delivery failed");
+        }
       },
     });
 

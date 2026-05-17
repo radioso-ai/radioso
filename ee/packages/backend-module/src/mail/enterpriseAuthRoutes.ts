@@ -4,7 +4,9 @@ import bcrypt from "bcryptjs";
 import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
-import type { AuthMailService, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import type { MailTransport, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import { renderEmailVerificationEmail } from "./templates/emailVerificationEmail.js";
+import { renderPasswordResetEmail } from "./templates/passwordResetEmail.js";
 
 interface EnterpriseAuthRouteDependencies {
   connectorDb: UsageLimitDatabasePort;
@@ -31,7 +33,7 @@ interface EnterpriseAuthRouteDependencies {
       metadata?: Record<string, unknown>;
     }): Promise<void>;
   };
-  mailService: AuthMailService;
+  mailService: MailTransport;
 }
 
 interface UserRow {
@@ -297,7 +299,7 @@ const issueVerificationEmail = async (
     email: string;
     requestIp?: string | null;
     requestUserAgent?: string | null;
-    mailService: AuthMailService;
+    mailService: MailTransport;
     env: EnterpriseAuthRouteDependencies["env"];
   },
 ): Promise<void> => {
@@ -323,10 +325,10 @@ const issueVerificationEmail = async (
   verificationUrl.searchParams.set("token", token);
 
   try {
-    await input.mailService.sendEmailVerificationEmail({
+    await input.mailService.send(renderEmailVerificationEmail({
       to: input.email,
       verificationUrl: verificationUrl.toString(),
-    });
+    }));
   } catch (error) {
     await markTokenUsed(database, "ee_email_verification_tokens", id, now);
     throw error;
@@ -666,10 +668,10 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
       resetUrl.searchParams.set("token", token);
 
       try {
-        await mailService.sendPasswordResetEmail({
+        await mailService.send(renderPasswordResetEmail({
           to: email,
           resetUrl: resetUrl.toString(),
-        });
+        }));
       } catch {
         await markTokenUsed(database, "ee_password_reset_tokens", id, now);
       }

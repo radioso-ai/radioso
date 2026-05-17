@@ -227,13 +227,8 @@ export interface ApplicationRouteMount {
     crawlerProvider?: AgentWizardCrawlerPort;
     assertPublicWebsiteUrl?: AgentWizardUrlPolicy;
     websiteCrawlerLimits?: AgentWizardCrawlerLimits;
-    mailService: AuthMailService;
+    mailService: MailTransport;
   }): Router;
-}
-
-export interface AuthMailService {
-  sendPasswordResetEmail(input: { to: string; resetUrl: string }): Promise<void>;
-  sendEmailVerificationEmail(input: { to: string; verificationUrl: string }): Promise<void>;
 }
 
 export type AgentWizardUrlPolicy = (url: string) => Promise<void>;
@@ -520,21 +515,18 @@ export type ApplicationChatIntakeProviderRegistration =
           blockMs?: number;
         }): Promise<void>;
       };
-      mailService: ContactRequestMailService;
+      mailService: MailTransport;
       dashboardBaseUrl: string | null;
     }) => ChatIntakeProvider);
 
-export interface ContactRequestMailService {
-  sendHumanContactRequestEmail(input: {
+export interface MailTransport {
+  send(message: {
     to: string;
-    visitorEmail: string;
-    message: string;
-    workspace: { name: string; publicRouteKey: string } | null;
-    sourceChannel: string | null;
-    createdAt: Date | string;
-    requestId: string;
-    workspaceId: string;
-    dashboardUrl: string | null;
+    replyTo?: string | null;
+    subject: string;
+    text: string;
+    html?: string;
+    metadata?: Record<string, string>;
   }): Promise<void>;
 }
 

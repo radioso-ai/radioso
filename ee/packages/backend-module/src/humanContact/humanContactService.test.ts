@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import type { UsageLimitDatabaseClient, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import { EnterpriseHumanContactService } from "./humanContactService.js";
 import type { MailService } from "./humanContactTypes.js";
+
+type CapturedMail = Parameters<MailService["send"]>[0];
 import { humanContactRequestSkillDefinition } from "./skill/definition.js";
 import { DefinitionBackedIntakePrompts } from "./skill/definitionBackedIntakePrompts.js";
 import { resolveLanguageContext } from "./skill/humanContactIntakeProvider.js";
@@ -297,7 +299,7 @@ const createService = (input: {
 } = {}) => {
   const database = input.database ?? new FakeSkillSubmissionDatabase();
   const auditEvents: unknown[] = [];
-  const sentEmails: Array<Parameters<MailService["sendHumanContactRequestEmail"]>[0]> = [];
+  const sentEmails: CapturedMail[] = [];
   const service = new EnterpriseHumanContactService({
     database,
     logger: { error: () => undefined, warn: () => undefined },
@@ -343,7 +345,7 @@ const createService = (input: {
       },
     },
     mailService: {
-      async sendHumanContactRequestEmail(message) {
+      async send(message) {
         sentEmails.push(message);
       },
     },
@@ -534,17 +536,18 @@ describe("enterprise human contact service", () => {
 
     expect(sentEmails).toHaveLength(1);
     const sent = sentEmails[0]!;
-    expect(sent).toMatchObject({
-      to: "support@example.com",
-      visitorEmail: "user@example.com",
-      message: "Please contact me.",
-      workspace: { name: "Acme Workspace", publicRouteKey: "acme" },
+    expect(sent.to).toBe("support@example.com");
+    expect(sent.replyTo).toBe("user@example.com");
+    expect(sent.subject).toBe("[Acme Workspace] New contact request from user@example.com");
+    expect(sent.text).toContain("Please contact me.");
+    expect(sent.text).toContain(
+      "https://app.example.com/w/acme/activity?filter=contact&itemKind=contact&itemId=request-1",
+    );
+    expect(sent.metadata).toEqual({
+      kind: "human_contact_request",
       requestId: "request-1",
       workspaceId: "workspace-1",
     });
-    expect(sent.dashboardUrl).toBe(
-      "https://app.example.com/w/acme/activity?filter=contact&itemKind=contact&itemId=request-1",
-    );
     expect(database.submissions.get("request-1")?.status).toBe("delivered");
   });
 

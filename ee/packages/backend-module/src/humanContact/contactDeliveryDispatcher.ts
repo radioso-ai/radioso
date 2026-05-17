@@ -12,6 +12,7 @@ import {
   serializeDate,
 } from "./humanContactTypes.js";
 import { buildContactStage, replaceContactTraceStage } from "./contactActivityTrace.js";
+import { renderHumanContactRequestEmail } from "./contactRequestEmailTemplate.js";
 import type { HumanContactSettingsService } from "./contactSettingsService.js";
 import type {
   SkillSubmissionRepository,
@@ -106,7 +107,7 @@ export class HumanContactDeliveryDispatcher {
       const workspace = await this.loadWorkspaceContactInfo(row.workspace_id);
       const dashboardUrl = this.buildDashboardUrl(workspace, row.id);
       try {
-        await this.input.mailService.sendHumanContactRequestEmail({
+        await this.input.mailService.send(renderHumanContactRequestEmail({
           to: settings.default_email,
           visitorEmail: email,
           message,
@@ -118,7 +119,7 @@ export class HumanContactDeliveryDispatcher {
           requestId: row.id,
           workspaceId: row.workspace_id,
           dashboardUrl,
-        });
+        }));
       } catch (error) {
         errors.push(`Email: ${error instanceof Error ? error.message : "delivery failed"}`);
       }

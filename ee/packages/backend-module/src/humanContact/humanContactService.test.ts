@@ -1200,6 +1200,56 @@ describe("enterprise human contact service", () => {
     expect(prompts.at(-1)).not.toContain("The user's anchor message in this conversation was: hey");
   });
 
+  it("does not mix a browser locale fallback into a meaningful language anchor prompt", async () => {
+    const prompts: string[] = [];
+    const responses = [
+      "{\"shouldStart\":true}",
+      "{}",
+      "Sure, what email address should the team use to follow up?",
+    ];
+    const { service } = createService({
+      chatGateway: {
+        async answer(input: { prompt: string }) {
+          prompts.push(input.prompt);
+          return responses.shift() ?? "{}";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-2",
+      query: "I'd like to talk to someone.",
+      history: [
+        {
+          id: "user-message-1",
+          role: "user",
+          content: "hey",
+          createdAt: new Date("2026-05-04T10:00:00.000Z"),
+        },
+        {
+          id: "user-message-2",
+          role: "user",
+          content: "I'd like to talk to someone.",
+          createdAt: new Date("2026-05-04T10:01:00.000Z"),
+        },
+      ],
+      sourceChannel: "authenticated_chat",
+      userExpectedLocale: "es-ES",
+    });
+
+    expect(prompts.at(-1)).toContain("The user's anchor message in this conversation was: I'd like to talk to someone.");
+    expect(prompts.at(-1)).not.toContain("fall back to locale es-ES");
+  });
+
   it("resumes a paused chat intake when the user provides the missing email", async () => {
     const database = new FakeSkillSubmissionDatabase();
     database.intakeStates.set("state-1", {

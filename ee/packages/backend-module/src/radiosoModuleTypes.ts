@@ -79,6 +79,7 @@ export interface SkillDefinition {
       maxLength?: number;
       extractionHint?: string;
     }>;
+    subjectIdentityField?: string;
     confirmation: "none" | "before_execute" | "always";
     interruptionPolicy: "pause_and_resume" | "cancel_on_topic_change";
   };

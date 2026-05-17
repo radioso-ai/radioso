@@ -134,6 +134,9 @@ importers:
 
   docs-portal:
     dependencies:
+      '@radioso/ui':
+        specifier: workspace:*
+        version: link:../packages/ui
       '@radix-ui/react-slot':
         specifier: ^1.2.4
         version: 1.2.4(@types/react@19.2.14)(react@19.2.5)
@@ -344,6 +347,9 @@ importers:
 
   frontend:
     dependencies:
+      '@radioso/ui':
+        specifier: workspace:*
+        version: link:../packages/ui
       '@radix-ui/react-alert-dialog':
         specifier: 1.1.15
         version: 1.1.15(@types/react-dom@19.2.2(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -534,6 +540,28 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.13)(@types/node@24.12.4)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0)
+
+  packages/ui:
+    dependencies:
+      '@radix-ui/react-slot':
+        specifier: '*'
+        version: 1.2.4(@types/react@19.2.14)(react@19.2.5)
+      class-variance-authority:
+        specifier: '*'
+        version: 0.7.1
+      clsx:
+        specifier: '*'
+        version: 2.1.1
+      react:
+        specifier: '*'
+        version: 19.2.5
+      tailwind-merge:
+        specifier: '*'
+        version: 3.6.0
+    devDependencies:
+      '@types/react':
+        specifier: 19.2.14
+        version: 19.2.14
 
   typescript-sdk:
     devDependencies:

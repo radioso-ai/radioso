@@ -175,7 +175,8 @@ radioso/
 |-- packages/
 |   |-- radioso-mcp-server/      # standalone MCP server package
 |   |-- document-parser/         # local parser package
-|   `-- connector-api/           # connector contract package
+|   |-- connector-api/           # connector contract package
+|   `-- ui/                      # shared shadcn primitives (frontend + docs-portal)
 |-- typescript-sdk/              # first-party TypeScript SDK
 |-- docs/                        # product, SDK, MCP, and settings docs
 |-- docs-portal/                 # public documentation site

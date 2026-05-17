@@ -3,7 +3,7 @@
 import { useState } from 'react'
 
 import { CodeBlock } from '@/components/docs/code-block'
-import { cn } from '@/lib/utils'
+import { cn } from '@radioso/ui/utils'
 
 interface CodeExample {
   code: string

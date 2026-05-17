@@ -1,0 +1,44 @@
+{
+  "name": "@radioso/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "sideEffects": false,
+  "exports": {
+    "./badge": {
+      "types": "./src/badge.tsx",
+      "default": "./src/badge.tsx"
+    },
+    "./button": {
+      "types": "./src/button.tsx",
+      "default": "./src/button.tsx"
+    },
+    "./input": {
+      "types": "./src/input.tsx",
+      "default": "./src/input.tsx"
+    },
+    "./utils": {
+      "types": "./src/utils.ts",
+      "default": "./src/utils.ts"
+    }
+  },
+  "peerDependencies": {
+    "@radix-ui/react-slot": "*",
+    "@types/react": "*",
+    "class-variance-authority": "*",
+    "clsx": "*",
+    "react": "*",
+    "tailwind-merge": "*"
+  },
+  "peerDependenciesMeta": {
+    "@types/react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2"
+  }
+}

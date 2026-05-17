@@ -1,11 +1,11 @@
 'use client'
 
 import { ArrowRight, CheckCircle2, Info } from 'lucide-react'
+import Image from 'next/image'
 import Link from 'next/link'
 
 import { CodeBlock } from '@/components/docs/code-block'
 import { LanguageTabs } from '@/components/docs/language-tabs'
-import { Badge } from '@/components/ui/badge'
 
 const sdkExamples = [
   {
@@ -58,20 +58,28 @@ export function DocsContent() {
   return (
     <>
       <section id="introduction" className="mb-14">
-        <div className="mb-5 flex items-center gap-2">
-          <Badge variant="secondary" className="rounded-full px-3 py-1 text-xs">v0.1</Badge>
-          <Badge variant="outline" className="rounded-full border-emerald-200 bg-emerald-500/5 px-3 py-1 text-xs text-emerald-700 dark:border-emerald-800 dark:text-emerald-300">
-            Early preview
-          </Badge>
+        <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
+          <span className="h-1.5 w-1.5 rounded-full bg-secondary" />
+          <span className="font-medium text-foreground">v0.1</span>
+          <span className="text-muted-foreground/70">·</span>
+          <span>Early preview</span>
         </div>
-        <h1 className="max-w-4xl text-5xl font-semibold tracking-tight text-foreground text-balance">Docs for teams that need answers they can defend</h1>
-        <p className="mt-5 max-w-4xl text-xl leading-relaxed text-muted-foreground">
-          Radioso is built for grounded answers, traceable citations, workspace-scoped controls, and embedded support experiences. This portal is designed to get you to first success quickly and then explain enough of the system that you can trust what you deploy.
+        <h1 className="sr-only">Radioso documentation</h1>
+        <Image
+          src="/radioso-lockup.svg"
+          alt="Radioso"
+          width={983}
+          height={300}
+          priority
+          className="h-auto w-full max-w-[420px]"
+        />
+        <p className="mt-6 max-w-3xl text-xl leading-relaxed text-muted-foreground">
+          Grounded answers, traceable citations, and workspace-scoped controls for teams that need to defend what their assistants say.
         </p>
-        <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/5 p-5">
+        <div className="mt-6 rounded-xl border border-border bg-card p-5">
           <div className="flex gap-3">
             <ArrowRight className="mt-0.5 h-5 w-5 text-primary" />
-            <p className="text-base leading-relaxed text-primary/95">
+            <p className="text-base leading-relaxed text-foreground/85">
               Start with one of three paths: run Radioso locally, embed it on a website, or upload docs and ask through the API.
             </p>
           </div>
@@ -83,7 +91,7 @@ export function DocsContent() {
           <Link
             key={card.href}
             href={card.href}
-            className="group rounded-3xl border border-border bg-card p-6 transition-colors hover:border-primary/40 hover:bg-secondary/25"
+            className="group rounded-xl border border-border bg-card p-6 transition-colors hover:border-primary/40 hover:bg-sidebar-accent/40"
           >
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-xl font-semibold text-foreground">{card.title}</h2>

@@ -25,6 +25,7 @@ const resolvePublicMcpUrl = () => {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   outputFileTracingRoot: frontendRoot,
+  transpilePackages: ['@radioso/ui'],
   env: {
     NEXT_PUBLIC_RADIOSO_EDITION:
       process.env.NEXT_PUBLIC_RADIOSO_EDITION ??

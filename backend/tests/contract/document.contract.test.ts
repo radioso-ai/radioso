@@ -1066,4 +1066,85 @@ describe("document contract", () => {
       .set(adminSessionHeaders(session))
       .expect(400);
   });
+
+  it("updates crawl settings for a website source and exposes them via listSources", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "source-config-update@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Page",
+        content: "Body",
+        source: { kind: "website", url: "https://patch-source.example.com" },
+      })
+      .expect(202);
+
+    const sourcesResponse = await request(app)
+      .get("/api/v1/document/sources")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+    const source = sourcesResponse.body.sources.find(
+      (entry: { kind: string }) => entry.kind === "website",
+    );
+    expect(source.crawlSettings).toEqual(
+      expect.objectContaining({
+        url: "https://patch-source.example.com",
+        includeUrlPatterns: [],
+        excludeUrlPatterns: [],
+        preserveContentLinks: true,
+      }),
+    );
+
+    const patchResponse = await request(app)
+      .patch(`/api/v1/document/sources/${source.id}`)
+      .set(adminSessionHeaders(session))
+      .send({
+        crawlSettings: {
+          limit: 42,
+          includeUrlPatterns: ["/docs/.*"],
+          excludeUrlPatterns: ["/admin/.*"],
+          preserveContentLinks: false,
+        },
+      })
+      .expect(200);
+
+    expect(patchResponse.body.crawlSettings).toEqual(
+      expect.objectContaining({
+        url: "https://patch-source.example.com",
+        limit: 42,
+        includeUrlPatterns: ["/docs/.*"],
+        excludeUrlPatterns: ["/admin/.*"],
+        preserveContentLinks: false,
+      }),
+    );
+
+    const afterResponse = await request(app)
+      .get("/api/v1/document/sources")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+    const refreshed = afterResponse.body.sources.find(
+      (entry: { id: string }) => entry.id === source.id,
+    );
+    expect(refreshed.crawlSettings).toEqual(
+      expect.objectContaining({
+        limit: 42,
+        includeUrlPatterns: ["/docs/.*"],
+        excludeUrlPatterns: ["/admin/.*"],
+        preserveContentLinks: false,
+      }),
+    );
+  });
+
+  it("rejects PATCH /sources for the manually-added bucket", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "source-config-manual@example.com");
+
+    await request(app)
+      .patch("/api/v1/document/sources/00000000-0000-0000-0000-000000000001")
+      .set(adminSessionHeaders(session))
+      .send({ crawlSettings: { limit: 5 } })
+      .expect(400);
+  });
 });

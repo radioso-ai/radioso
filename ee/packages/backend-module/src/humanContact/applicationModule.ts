@@ -1,8 +1,10 @@
 import type { ApplicationModule } from "../radiosoModuleTypes.js";
 
 import { createEnterpriseEmailService } from "../mail/emailService.js";
+import { skillSubmissionMigrator } from "../skillSubmissions/skillSubmissionMigrator.js";
 import { HumanContactHistoryService } from "./contactHistoryService.js";
 import { HumanContactSettingsService } from "./contactSettingsService.js";
+import { createHumanContactSkillSubmissionRepository } from "./contactSkillSubmissionRepository.js";
 import { humanContactMigrator } from "./humanContactMigrator.js";
 import { createHumanContactRoutes } from "./humanContactRoutes.js";
 import { EnterpriseHumanContactService } from "./humanContactService.js";
@@ -31,13 +33,17 @@ export const createHumanContactApplicationModule = (
   id: "radioso-enterprise-human-contact",
   name: "Radioso Enterprise Human Contact",
   register(context) {
+    context.registerDatabaseMigrator(skillSubmissionMigrator);
     context.registerDatabaseMigrator(humanContactMigrator);
     context.registerSkillDefinition?.(humanContactRequestSkillDefinition);
     context.registerChatIntakeProvider?.((dependencies) => {
       return replaceService(state, dependencies).asChatIntakeProvider();
     });
     context.registerContactHistoryProvider((dependencies) => {
-      const historyService = new HumanContactHistoryService(dependencies.database);
+      const submissions = createHumanContactSkillSubmissionRepository(dependencies.database, {
+        logger: dependencies.logger,
+      });
+      const historyService = new HumanContactHistoryService(submissions);
       return {
         listPageByWorkspaceId: (workspaceId, input) => historyService.listPageByWorkspaceId(workspaceId, input),
         getById: (workspaceId, requestId) => historyService.getById(workspaceId, requestId),

@@ -5588,6 +5588,9 @@
                   ]
                 }
               },
+              "subjectIdentityField": {
+                "type": "string"
+              },
               "confirmation": {
                 "type": "string",
                 "enum": [

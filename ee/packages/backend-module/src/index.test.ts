@@ -85,6 +85,7 @@ describe("Enterprise backend module aggregation", () => {
       "ee-assistant-answer-feedback",
       "ee-human-contact",
       "ee-mail-tokens",
+      "ee-skill-submissions",
       "ee-usage-limits",
     ]);
     expect(capture.routeMounts.map((mount) => mount.path).sort()).toEqual([

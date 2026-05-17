@@ -90,6 +90,7 @@ export const skillIntakeDefinitionSchema = z.object({
     examples: z.array(z.string()),
   }),
   fields: z.array(skillIntakeFieldSchema),
+  subjectIdentityField: z.string().optional(),
   confirmation: z.enum(["none", "before_execute", "always"]),
   interruptionPolicy: z.enum(["pause_and_resume", "cancel_on_topic_change"]),
 });

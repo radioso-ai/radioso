@@ -8,26 +8,28 @@ import { humanContactRequestSkillDefinition } from "./skill/definition.js";
 import { DefinitionBackedIntakePrompts } from "./skill/definitionBackedIntakePrompts.js";
 import { resolveLanguageContext } from "./skill/humanContactIntakeProvider.js";
 
-type RequestRow = {
+type SubmissionRow = {
   id: string;
   account_id: string | null;
   workspace_id: string;
   conversation_id: string;
   assistant_message_id: string | null;
+  skill_name: string;
   source_channel: string | null;
   source_origin: string | null;
-  user_email: string;
-  message: string;
-  generated_summary: string;
   trigger_source: string;
   trigger_reason: string | null;
   idempotency_key: string | null;
+  fields: Record<string, unknown>;
+  subject_identity: string | null;
   attempts: number;
   status: "pending" | "delivering" | "delivered" | "failed";
   next_retry_at: Date;
+  final_delivery_error: string | null;
+  activity_trace: unknown;
   created_at: Date;
-  activity_trace?: unknown;
-  final_delivery_error?: string | null;
+  updated_at: Date;
+  total_count?: string;
 };
 
 type IntakeStateRow = {
@@ -45,7 +47,7 @@ type IntakeStateRow = {
   updated_at: Date;
 };
 
-class FakeHumanContactDatabase implements UsageLimitDatabasePort {
+class FakeSkillSubmissionDatabase implements UsageLimitDatabasePort {
   readonly now = new Date("2026-05-04T10:02:00.000Z");
   failNextSkillIntakeInsert = false;
   failNextSkillIntakeUpdate = false;
@@ -59,7 +61,7 @@ class FakeHumanContactDatabase implements UsageLimitDatabasePort {
     signing_secret: string | null;
     updated_at: Date;
   }>();
-  readonly requests = new Map<string, RequestRow>();
+  readonly submissions = new Map<string, SubmissionRow>();
   readonly assistantMessages = new Set<string>();
   readonly intakeStates = new Map<string, IntakeStateRow>();
 
@@ -89,43 +91,70 @@ class FakeHumanContactDatabase implements UsageLimitDatabasePort {
       return [row] as T[];
     }
 
-    if (text.includes("INSERT INTO ee_contact_requests")) {
-      const idempotencyKey = params[12] === null ? null : String(params[12]);
+    if (text.includes("INSERT INTO skill_submissions")) {
+      const idempotencyKey = params[10] === null ? null : String(params[10]);
       if (idempotencyKey) {
-        const existing = [...this.requests.values()].find((request) =>
-          request.workspace_id === String(params[2]) && request.idempotency_key === idempotencyKey
+        const existing = [...this.submissions.values()].find((submission) =>
+          submission.workspace_id === String(params[2]) &&
+          submission.skill_name === String(params[5]) &&
+          submission.idempotency_key === idempotencyKey
         );
         if (existing) {
           return [] as T[];
         }
       }
-      const row: RequestRow = {
+      const row: SubmissionRow = {
         id: String(params[0]),
         account_id: params[1] === null ? null : String(params[1]),
         workspace_id: String(params[2]),
         conversation_id: String(params[3]),
         assistant_message_id: params[4] === null ? null : String(params[4]),
-        source_channel: params[5] === null ? null : String(params[5]),
-        source_origin: params[6] === null ? null : String(params[6]),
-        user_email: String(params[7]),
-        message: String(params[8]),
-        generated_summary: String(params[9]),
-        trigger_source: String(params[10]),
-        trigger_reason: params[11] === null ? null : String(params[11]),
+        skill_name: String(params[5]),
+        source_channel: params[6] === null ? null : String(params[6]),
+        source_origin: params[7] === null ? null : String(params[7]),
+        trigger_source: String(params[8]),
+        trigger_reason: params[9] === null ? null : String(params[9]),
         idempotency_key: idempotencyKey,
+        fields: JSON.parse(String(params[11])) as Record<string, unknown>,
+        subject_identity: params[12] === null ? null : String(params[12]),
         status: "pending",
         attempts: 0,
         next_retry_at: new Date("2026-05-04T10:00:00.000Z"),
-        created_at: new Date("2026-05-04T10:00:00.000Z"),
+        final_delivery_error: null,
         activity_trace: params[13],
+        created_at: new Date("2026-05-04T10:00:00.000Z"),
+        updated_at: new Date("2026-05-04T10:00:00.000Z"),
       };
-      this.requests.set(row.id, row);
+      this.submissions.set(row.id, row);
       return [row] as T[];
     }
 
-    if (text.includes("FROM ee_contact_requests") && text.includes("idempotency_key = $2")) {
-      const row = [...this.requests.values()].find((request) =>
-        request.workspace_id === String(params[0]) && request.idempotency_key === String(params[1])
+    if (text.includes("FROM skill_submissions") && text.includes("idempotency_key = $3")) {
+      const row = [...this.submissions.values()].find((submission) =>
+        submission.workspace_id === String(params[0]) &&
+        submission.skill_name === String(params[1]) &&
+        submission.idempotency_key === String(params[2])
+      );
+      return (row ? [row] : []) as T[];
+    }
+
+    if (text.includes("FROM skill_submissions") && text.includes("COUNT(*) OVER")) {
+      const workspaceId = String(params[0]);
+      const skillFilter = params[1] === null ? null : String(params[1]);
+      const limit = Number(params[2]);
+      const offset = Number(params[3]);
+      let all = [...this.submissions.values()].filter((row) => row.workspace_id === workspaceId);
+      if (skillFilter) {
+        all = all.filter((row) => row.skill_name === skillFilter);
+      }
+      all.sort((a, b) => b.created_at.getTime() - a.created_at.getTime() || b.id.localeCompare(a.id));
+      const total = all.length;
+      return all.slice(offset, offset + limit).map((row) => ({ ...row, total_count: String(total) })) as T[];
+    }
+
+    if (text.includes("FROM skill_submissions") && text.includes("AND id = $2")) {
+      const row = [...this.submissions.values()].find((submission) =>
+        submission.workspace_id === String(params[0]) && submission.id === String(params[1])
       );
       return (row ? [row] : []) as T[];
     }
@@ -208,20 +237,20 @@ class FakeHumanContactDatabase implements UsageLimitDatabasePort {
       return [] as T[];
     }
 
-    if (text.includes("UPDATE ee_contact_requests") && text.includes("status = 'delivering'")) {
+    if (text.includes("UPDATE skill_submissions") && text.includes("SET status = 'delivering'")) {
       const maxAttempts = Number(params[0]);
       const limit = Number(params[1]);
-      const dueRows = [...this.requests.values()]
+      const dueRows = [...this.submissions.values()]
         .filter((row) => row.status === "pending" && row.attempts < maxAttempts)
         .slice(0, limit);
       for (const row of dueRows) {
         row.status = "delivering";
       }
-      return dueRows as T[];
+      return dueRows.map((row) => ({ ...row })) as T[];
     }
 
-    if (text.includes("SET status = 'delivered'")) {
-      const row = this.requests.get(String(params[0]));
+    if (text.includes("UPDATE skill_submissions") && text.includes("SET status = 'delivered'")) {
+      const row = this.submissions.get(String(params[0]));
       if (row) {
         row.status = "delivered";
         row.attempts += 1;
@@ -230,10 +259,21 @@ class FakeHumanContactDatabase implements UsageLimitDatabasePort {
       return [] as T[];
     }
 
-    if (text.includes("SET status = $2")) {
-      const row = this.requests.get(String(params[0]));
+    if (text.includes("UPDATE skill_submissions") && text.includes("SET status = 'failed'")) {
+      const row = this.submissions.get(String(params[0]));
       if (row) {
-        row.status = String(params[1]) as RequestRow["status"];
+        row.status = "failed";
+        row.attempts += 1;
+        row.final_delivery_error = String(params[1]);
+        row.activity_trace = params[2];
+      }
+      return [] as T[];
+    }
+
+    if (text.includes("UPDATE skill_submissions") && text.includes("SET status = $2")) {
+      const row = this.submissions.get(String(params[0]));
+      if (row) {
+        row.status = String(params[1]) as SubmissionRow["status"];
         row.attempts += 1;
         row.final_delivery_error = String(params[3]);
       }
@@ -249,12 +289,12 @@ class FakeHumanContactDatabase implements UsageLimitDatabasePort {
 }
 
 const createService = (input: {
-  database?: FakeHumanContactDatabase;
+  database?: FakeSkillSubmissionDatabase;
   webhookFetch?: typeof fetch;
   chatGateway?: { answer(input: { prompt: string; query: string; history: Array<{ role: string; content: string }> }): Promise<string> };
   abuseControlService?: { enforce(input: { scope: string; subjectKey: string; limit: number; windowMs: number; blockMs?: number }): Promise<void> };
 } = {}) => {
-  const database = input.database ?? new FakeHumanContactDatabase();
+  const database = input.database ?? new FakeSkillSubmissionDatabase();
   const auditEvents: unknown[] = [];
   const sentEmails: unknown[] = [];
   const service = new EnterpriseHumanContactService({
@@ -327,16 +367,42 @@ describe("resolveLanguageContext", () => {
     userExpectedLocale: null,
   } as Parameters<typeof resolveLanguageContext>[0];
 
-  it("anchors language on the user's earliest message, ignoring follow-up answers like an email", () => {
+  it("anchors language on the user's latest meaningful message, ignoring follow-up answers like an email", () => {
     const result = resolveLanguageContext({
       ...baseInput,
       query: "test@test",
       history: [
+        { id: "u0", role: "user", content: "hey", createdAt: new Date() },
         { id: "u1", role: "user", content: "Я хочу поговорить с кем-нибудь.", createdAt: new Date() },
         { id: "a1", role: "assistant", content: "Please share your email.", createdAt: new Date() },
+        { id: "u2", role: "user", content: "test@test", createdAt: new Date() },
       ],
     });
     expect(result).toBe("Я хочу поговорить с кем-нибудь.");
+  });
+
+  it("skips a short greeting before an explicit English contact request", () => {
+    const result = resolveLanguageContext({
+      ...baseInput,
+      query: "i want to talk to someone",
+      history: [
+        { id: "u1", role: "user", content: "hey", createdAt: new Date() },
+        { id: "a1", role: "assistant", content: "How can I help?", createdAt: new Date() },
+        { id: "u2", role: "user", content: "i want to talk to someone", createdAt: new Date() },
+      ],
+    });
+    expect(result).toBe("i want to talk to someone");
+  });
+
+  it("falls back to a short current query when no better language anchor exists", () => {
+    const result = resolveLanguageContext({
+      ...baseInput,
+      query: "hey",
+      history: [
+        { id: "u1", role: "user", content: "hey", createdAt: new Date() },
+      ],
+    });
+    expect(result).toBe("hey");
   });
 
   it("ignores the auto-built collected.message draft when resolving language anchor", () => {
@@ -426,7 +492,7 @@ describe("enterprise human contact service", () => {
   });
 
   it("delivers requests by email when email delivery is configured", async () => {
-    const database = new FakeHumanContactDatabase();
+    const database = new FakeSkillSubmissionDatabase();
     const { service, sentEmails } = createService({ database });
     await service.updateSettings({
       workspaceId: "workspace-1",
@@ -435,24 +501,27 @@ describe("enterprise human contact service", () => {
       defaultEmail: "support@example.com",
     });
 
-    database.requests.set("request-1", {
+    database.submissions.set("request-1", {
       id: "request-1",
       account_id: "account-1",
       workspace_id: "workspace-1",
       conversation_id: "conversation-1",
       assistant_message_id: null,
+      skill_name: "human_contact.request",
       source_channel: "authenticated_chat",
       source_origin: null,
-      user_email: "user@example.com",
-      message: "Please contact me.",
-      generated_summary: "The user wants contact follow-up.",
       trigger_source: "manual",
       trigger_reason: null,
       idempotency_key: null,
+      fields: { email: "user@example.com", message: "Please contact me." },
+      subject_identity: "user@example.com",
       attempts: 0,
       status: "pending",
       next_retry_at: new Date("2026-05-04T10:00:00.000Z"),
+      final_delivery_error: null,
+      activity_trace: null,
       created_at: new Date("2026-05-04T10:00:00.000Z"),
+      updated_at: new Date("2026-05-04T10:00:00.000Z"),
     });
 
     await service.processDueDeliveries(1);
@@ -464,10 +533,10 @@ describe("enterprise human contact service", () => {
         text: expect.stringContaining("Please contact me."),
       }),
     ]);
-    expect(database.requests.get("request-1")?.status).toBe("delivered");
+    expect(database.submissions.get("request-1")?.status).toBe("delivered");
   });
 
-  it("starts a chat intake for explicit human-contact requests and asks only for email", async () => {
+  it("starts a chat intake for explicit human-contact requests and asks for email first", async () => {
     const responses = [
       "{\"shouldStart\":true}",
       "{}",
@@ -514,12 +583,68 @@ describe("enterprise human contact service", () => {
     expect([...database.intakeStates.values()]).toEqual([
       expect.objectContaining({
         status: "active",
-        missing: ["email"],
+        missing: ["email", "message"],
         last_prompted_field: "email",
         collected: {},
       }),
     ]);
-    expect(database.requests.size).toBe(0);
+    expect(database.submissions.size).toBe(0);
+  });
+
+  it("does not treat a short greeting plus handoff request as the message for the team", async () => {
+    const responses = [
+      "{\"shouldStart\":true}",
+      "{}",
+      "What email address should the team use to follow up?",
+    ];
+    const { service, database } = createService({
+      chatGateway: {
+        async answer() {
+          return responses.shift() ?? "{}";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    const result = await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-2",
+      query: "I want to talk to someone",
+      history: [
+        {
+          id: "user-message-1",
+          role: "user",
+          content: "hey",
+          createdAt: new Date("2026-05-04T09:59:00.000Z"),
+        },
+        {
+          id: "user-message-2",
+          role: "user",
+          content: "I want to talk to someone",
+          createdAt: new Date("2026-05-04T10:00:00.000Z"),
+        },
+      ],
+      sourceChannel: "authenticated_chat",
+    });
+
+    expect(result).toMatchObject({
+      skillName: "human_contact.request",
+      status: "active",
+      answer: "What email address should the team use to follow up?",
+    });
+    const [state] = [...database.intakeStates.values()];
+    expect(state).toMatchObject({
+      missing: ["email", "message"],
+      last_prompted_field: "email",
+      collected: {},
+    });
   });
 
   it("starts contact intake from structured intent metadata without English intent matching", async () => {
@@ -577,13 +702,13 @@ describe("enterprise human contact service", () => {
     expect([...database.intakeStates.values()]).toEqual([
       expect.objectContaining({
         status: "active",
-        missing: ["email"],
+        missing: ["email", "message"],
       }),
     ]);
   });
 
   it("expires stale open intake rows before starting a new intake for the same conversation", async () => {
-    const database = new FakeHumanContactDatabase();
+    const database = new FakeSkillSubmissionDatabase();
     database.intakeStates.set("expired-state", {
       id: "expired-state",
       workspace_id: "workspace-1",
@@ -654,7 +779,7 @@ describe("enterprise human contact service", () => {
   it("queues a direct contact request when submitted confirmation generation falls back", async () => {
     const responses = [
       "{\"shouldStart\":true}",
-      "{\"fields\":{\"email\":\"alex@example.com\"}}",
+      "{\"fields\":{\"email\":\"alex@example.com\",\"message\":\"Please contact me about my account.\"}}",
       "",
     ];
     const { service, database } = createService({
@@ -693,7 +818,7 @@ describe("enterprise human contact service", () => {
       status: "completed",
       answer: "Your request was received and will be sent to the team.",
     });
-    expect(database.requests.size).toBe(1);
+    expect(database.submissions.size).toBe(1);
   });
 
   it("does not leave an active intake state when email prompt generation fails", async () => {
@@ -733,17 +858,17 @@ describe("enterprise human contact service", () => {
       sourceChannel: "authenticated_chat",
     })).rejects.toThrow("Skill intake answer generation failed for human_contact.request.");
 
-    expect(database.requests.size).toBe(0);
+    expect(database.submissions.size).toBe(0);
     expect(database.intakeStates.size).toBe(0);
   });
 
   it("uses a stable idempotency key for repeated direct contact submissions", async () => {
     const responses = [
       "{\"shouldStart\":true}",
-      "{\"fields\":{\"email\":\"alex@example.com\"}}",
+      "{\"fields\":{\"email\":\"alex@example.com\",\"message\":\"Please contact me about my account.\"}}",
       "Received. The request will continue through the configured channel.",
       "{\"shouldStart\":true}",
-      "{\"fields\":{\"email\":\"alex@example.com\"}}",
+      "{\"fields\":{\"email\":\"alex@example.com\",\"message\":\"Please contact me about my account.\"}}",
       "Received. The request will continue through the configured channel.",
     ];
     const { service, database, auditEvents } = createService({
@@ -807,8 +932,8 @@ describe("enterprise human contact service", () => {
 
     expect(first?.status).toBe("completed");
     expect(second?.status).toBe("completed");
-    expect(database.requests.size).toBe(1);
-    expect([...database.requests.values()][0]?.idempotency_key).toMatch(/^human-contact:intake:direct:/);
+    expect(database.submissions.size).toBe(1);
+    expect([...database.submissions.values()][0]?.idempotency_key).toMatch(/^human-contact:intake:direct:/);
     for (const state of database.intakeStates.values()) {
       expect(state).toMatchObject({
         status: "completed",
@@ -830,10 +955,10 @@ describe("enterprise human contact service", () => {
   it("queues distinct direct contact submissions in the same conversation", async () => {
     const responses = [
       "{\"shouldStart\":true}",
-      "{\"fields\":{\"email\":\"alex@example.com\"}}",
+      "{\"fields\":{\"email\":\"alex@example.com\",\"message\":\"Please contact me about billing.\"}}",
       "Received. The request will continue through the configured channel.",
       "{\"shouldStart\":true}",
-      "{\"fields\":{\"email\":\"alex@example.com\"}}",
+      "{\"fields\":{\"email\":\"alex@example.com\",\"message\":\"Please contact me about a security issue.\"}}",
       "Received. The request will continue through the configured channel.",
     ];
     const { service, database } = createService({
@@ -883,8 +1008,8 @@ describe("enterprise human contact service", () => {
       sourceChannel: "authenticated_chat",
     });
 
-    expect(database.requests.size).toBe(2);
-    expect([...database.requests.values()].map((request) => request.message)).toEqual([
+    expect(database.submissions.size).toBe(2);
+    expect([...database.submissions.values()].map((submission) => submission.fields.message)).toEqual([
       expect.stringContaining("about billing"),
       expect.stringContaining("security issue"),
     ]);
@@ -893,7 +1018,7 @@ describe("enterprise human contact service", () => {
   it("returns a completed direct intake response when post-submit state insert fails", async () => {
     const responses = [
       "{\"shouldStart\":true}",
-      "{\"fields\":{\"email\":\"alex@example.com\"}}",
+      "{\"fields\":{\"email\":\"alex@example.com\",\"message\":\"Please contact me about my account.\"}}",
       "Received. The request will continue through the configured channel.",
     ];
     const { service, database } = createService({
@@ -934,7 +1059,7 @@ describe("enterprise human contact service", () => {
       answer: "Received. The request will continue through the configured channel.",
     });
     expect(result?.stateId).toBeUndefined();
-    expect(database.requests.size).toBe(1);
+    expect(database.submissions.size).toBe(1);
   });
 
   it("keeps the prior user issue in the contact draft when the latest turn only starts handoff", async () => {
@@ -988,7 +1113,9 @@ describe("enterprise human contact service", () => {
 
     expect(result?.status).toBe("active");
     const [state] = [...database.intakeStates.values()];
-    expect(state?.collected).toEqual({});
+    expect(state?.collected).toMatchObject({
+      message: expect.stringContaining("Why was invoice 123 charged twice?"),
+    });
 
     await service.handle({
       workspaceId: "workspace-1",
@@ -1025,11 +1152,12 @@ describe("enterprise human contact service", () => {
       sourceChannel: "authenticated_chat",
     });
 
-    const [request] = [...database.requests.values()];
-    expect(request?.message).toContain("User issue:\nWhy was invoice 123 charged twice?");
-    expect(request?.message).toContain("Latest contact request:\nI want to talk to a human.");
-    expect(request?.message).toContain("User: Why was invoice 123 charged twice?");
-    expect(request?.message).toContain("Assistant: I could not find that invoice in the indexed documents.");
+    const [submission] = [...database.submissions.values()];
+    const submittedMessage = String(submission?.fields.message ?? "");
+    expect(submittedMessage).toContain("User issue:\nWhy was invoice 123 charged twice?");
+    expect(submittedMessage).toContain("Latest contact request:\nI want to talk to a human.");
+    expect(submittedMessage).toContain("User: Why was invoice 123 charged twice?");
+    expect(submittedMessage).toContain("Assistant: I could not find that invoice in the indexed documents.");
   });
 
   it("passes the user's message as language context when composing intake replies", async () => {
@@ -1075,12 +1203,123 @@ describe("enterprise human contact service", () => {
       status: "active",
       answer: "Quale indirizzo email dovrebbe usare il team per ricontattarti?",
     });
-    expect(prompts.at(-1)).toContain("Reply in the same language the user wrote in.");
+    expect(prompts.at(-1)).toContain("Reply in exactly the same natural language the user used in the anchor message below.");
     expect(prompts.at(-1)).toContain("The user's anchor message in this conversation was: Volevo parlare con una persona.");
   });
 
+  it("uses the explicit contact request rather than an earlier greeting as the intake language anchor", async () => {
+    const prompts: string[] = [];
+    const responses = [
+      "{\"shouldStart\":true}",
+      "{}",
+      "Sure, what email address should the team use to follow up?",
+    ];
+    const { service } = createService({
+      chatGateway: {
+        async answer(input: { prompt: string }) {
+          prompts.push(input.prompt);
+          return responses.shift() ?? "{}";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    const result = await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-2",
+      query: "i want to talk to someone",
+      history: [
+        {
+          id: "user-message-1",
+          role: "user",
+          content: "hey",
+          createdAt: new Date("2026-05-04T10:00:00.000Z"),
+        },
+        {
+          id: "assistant-message-1",
+          role: "assistant",
+          content: "How can I help?",
+          createdAt: new Date("2026-05-04T10:00:05.000Z"),
+        },
+        {
+          id: "user-message-2",
+          role: "user",
+          content: "i want to talk to someone",
+          createdAt: new Date("2026-05-04T10:01:00.000Z"),
+        },
+      ],
+      sourceChannel: "authenticated_chat",
+      userExpectedLocale: "en-US",
+    });
+
+    expect(result).toMatchObject({
+      status: "active",
+      answer: "Sure, what email address should the team use to follow up?",
+    });
+    expect(prompts.at(-1)).toContain("The user's anchor message in this conversation was: i want to talk to someone");
+    expect(prompts.at(-1)).not.toContain("The user's anchor message in this conversation was: hey");
+  });
+
+  it("does not mix a browser locale fallback into a meaningful language anchor prompt", async () => {
+    const prompts: string[] = [];
+    const responses = [
+      "{\"shouldStart\":true}",
+      "{}",
+      "Sure, what email address should the team use to follow up?",
+    ];
+    const { service } = createService({
+      chatGateway: {
+        async answer(input: { prompt: string }) {
+          prompts.push(input.prompt);
+          return responses.shift() ?? "{}";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-2",
+      query: "I'd like to talk to someone.",
+      history: [
+        {
+          id: "user-message-1",
+          role: "user",
+          content: "hey",
+          createdAt: new Date("2026-05-04T10:00:00.000Z"),
+        },
+        {
+          id: "user-message-2",
+          role: "user",
+          content: "I'd like to talk to someone.",
+          createdAt: new Date("2026-05-04T10:01:00.000Z"),
+        },
+      ],
+      sourceChannel: "authenticated_chat",
+      userExpectedLocale: "es-ES",
+    });
+
+    expect(prompts.at(-1)).toContain("The user's anchor message in this conversation was: I'd like to talk to someone.");
+    expect(prompts.at(-1)).toContain("Ignore browser locale hints");
+    expect(prompts.at(-1)).not.toContain("fall back to locale es-ES");
+  });
+
   it("resumes a paused chat intake when the user provides the missing email", async () => {
-    const database = new FakeHumanContactDatabase();
+    const database = new FakeSkillSubmissionDatabase();
     database.intakeStates.set("state-1", {
       id: "state-1",
       workspace_id: "workspace-1",
@@ -1144,17 +1383,20 @@ describe("enterprise human contact service", () => {
     });
     expect(JSON.stringify(database.intakeStates.get("state-1")?.collected)).not.toContain("alex@example.com");
     expect(JSON.stringify(database.intakeStates.get("state-1")?.collected)).not.toContain("I need help with billing.");
-    expect([...database.requests.values()]).toEqual([
+    expect([...database.submissions.values()]).toEqual([
       expect.objectContaining({
-        user_email: "alex@example.com",
-        message: expect.stringContaining("I need help with billing."),
+        subject_identity: "alex@example.com",
+        fields: expect.objectContaining({
+          email: "alex@example.com",
+          message: expect.stringContaining("I need help with billing."),
+        }),
         trigger_source: "explicit_user_request",
       }),
     ]);
   });
 
   it("returns a completed resumed intake response when post-submit state update fails", async () => {
-    const database = new FakeHumanContactDatabase();
+    const database = new FakeSkillSubmissionDatabase();
     database.intakeStates.set("state-1", {
       id: "state-1",
       workspace_id: "workspace-1",
@@ -1210,18 +1452,20 @@ describe("enterprise human contact service", () => {
       stateId: "state-1",
       answer: "Received. The request will continue through the configured channel.",
     });
-    expect(database.requests.size).toBe(1);
+    expect(database.submissions.size).toBe(1);
   });
 
   it("returns a failed intake response when completed contact submission is rejected", async () => {
-    const database = new FakeHumanContactDatabase();
+    const database = new FakeSkillSubmissionDatabase();
     database.intakeStates.set("state-1", {
       id: "state-1",
       workspace_id: "workspace-1",
       conversation_id: "conversation-1",
       skill_name: "human_contact.request",
       status: "active",
-      collected: {},
+      collected: {
+        message: "Contact request:\n\nI need help with billing.",
+      },
       invalid: {},
       missing: ["email"],
       expires_at: new Date("2026-05-04T10:15:00.000Z"),
@@ -1281,7 +1525,7 @@ describe("enterprise human contact service", () => {
       stateId: "state-1",
       answer: "I could not submit that request right now. Please try again later.",
     });
-    expect(database.requests.size).toBe(0);
+    expect(database.submissions.size).toBe(0);
     expect(database.intakeStates.get("state-1")).toMatchObject({
       status: "failed",
       collected: {},
@@ -1291,7 +1535,7 @@ describe("enterprise human contact service", () => {
   });
 
   it("keeps the email intake active when the user provides an invalid email-like value", async () => {
-    const database = new FakeHumanContactDatabase();
+    const database = new FakeSkillSubmissionDatabase();
     database.intakeStates.set("state-1", {
       id: "state-1",
       workspace_id: "workspace-1",
@@ -1350,11 +1594,11 @@ describe("enterprise human contact service", () => {
       missing: ["email"],
       last_prompted_field: "email",
     });
-    expect(database.requests.size).toBe(0);
+    expect(database.submissions.size).toBe(0);
   });
 
   it("pauses an active contact intake when a later message only mentions an email", async () => {
-    const database = new FakeHumanContactDatabase();
+    const database = new FakeSkillSubmissionDatabase();
     database.intakeStates.set("state-1", {
       id: "state-1",
       workspace_id: "workspace-1",
@@ -1406,7 +1650,7 @@ describe("enterprise human contact service", () => {
     });
 
     expect(result).toBeNull();
-    expect(database.requests.size).toBe(0);
+    expect(database.submissions.size).toBe(0);
     expect(database.intakeStates.get("state-1")).toMatchObject({
       status: "paused",
       collected: {},
@@ -1416,14 +1660,16 @@ describe("enterprise human contact service", () => {
   });
 
   it("accepts a natural prose email reply while active contact intake is waiting for email", async () => {
-    const database = new FakeHumanContactDatabase();
+    const database = new FakeSkillSubmissionDatabase();
     database.intakeStates.set("state-1", {
       id: "state-1",
       workspace_id: "workspace-1",
       conversation_id: "conversation-1",
       skill_name: "human_contact.request",
       status: "active",
-      collected: {},
+      collected: {
+        message: "Contact request:\n\nI need help with billing.",
+      },
       invalid: {},
       missing: ["email"],
       expires_at: new Date("2026-05-04T10:15:00.000Z"),
@@ -1479,14 +1725,14 @@ describe("enterprise human contact service", () => {
       stateId: "state-1",
       answer: "Received. The request will continue through the configured channel.",
     });
-    expect(database.requests.size).toBe(1);
-    expect([...database.requests.values()][0]).toMatchObject({
-      user_email: "alex@example.com",
+    expect(database.submissions.size).toBe(1);
+    expect([...database.submissions.values()][0]).toMatchObject({
+      fields: expect.objectContaining({ email: "alex@example.com" }),
     });
   });
 
   it("re-prompts for email when a paused intake receives another explicit human-contact request", async () => {
-    const database = new FakeHumanContactDatabase();
+    const database = new FakeSkillSubmissionDatabase();
     database.intakeStates.set("state-1", {
       id: "state-1",
       workspace_id: "workspace-1",
@@ -1550,11 +1796,11 @@ describe("enterprise human contact service", () => {
       missing: ["email"],
       last_prompted_field: "email",
     });
-    expect(database.requests.size).toBe(0);
+    expect(database.submissions.size).toBe(0);
   });
 
   it("does not resume a paused contact intake from an unrelated later email", async () => {
-    const database = new FakeHumanContactDatabase();
+    const database = new FakeSkillSubmissionDatabase();
     database.intakeStates.set("state-1", {
       id: "state-1",
       workspace_id: "workspace-1",
@@ -1602,7 +1848,7 @@ describe("enterprise human contact service", () => {
     });
 
     expect(result).toBeNull();
-    expect(database.requests.size).toBe(0);
+    expect(database.submissions.size).toBe(0);
     expect(database.intakeStates.get("state-1")).toMatchObject({
       status: "paused",
       collected: {},
@@ -1624,14 +1870,14 @@ describe("enterprise human contact service", () => {
       workspaceId: "workspace-1",
       accountId: "account-1",
       conversationId: "conversation-1",
-      email: "user@example.com",
+      email: " User@Example.com ",
       message: "Please contact me.",
       triggerSource: "manual",
     });
 
-    expect(database.requests.get(result.requestId)).toMatchObject({
-      message: "Please contact me.",
-      generated_summary: "",
+    expect(database.submissions.get(result.requestId)).toMatchObject({
+      fields: { email: " User@Example.com ", message: "Please contact me." },
+      subject_identity: "user@example.com",
     });
   });
 
@@ -1664,8 +1910,8 @@ describe("enterprise human contact service", () => {
     });
 
     expect(second.requestId).toBe(first.requestId);
-    expect(database.requests.size).toBe(1);
-    expect([...database.requests.values()][0]).toMatchObject({
+    expect(database.submissions.size).toBe(1);
+    expect([...database.submissions.values()][0]).toMatchObject({
       idempotency_key: "human-contact:intake:state-1",
     });
     expect(auditEvents.filter((event) =>
@@ -1694,14 +1940,14 @@ describe("enterprise human contact service", () => {
       triggerSource: "manual",
     });
 
-    expect(database.requests.get(result.requestId)).toMatchObject({
+    expect(database.submissions.get(result.requestId)).toMatchObject({
       assistant_message_id: null,
-      message: "Please contact me.",
+      fields: { email: "user@example.com", message: "Please contact me." },
     });
   });
 
   it("signs webhook deliveries and marks successful requests delivered", async () => {
-    const database = new FakeHumanContactDatabase();
+    const database = new FakeSkillSubmissionDatabase();
     let deliveredBody = "";
     let deliveredSignature = "";
     const { service } = createService({
@@ -1721,24 +1967,27 @@ describe("enterprise human contact service", () => {
     });
 
     const requestId = "request-1";
-    database.requests.set(requestId, {
+    database.submissions.set(requestId, {
       id: requestId,
       account_id: "account-1",
       workspace_id: "workspace-1",
       conversation_id: "conversation-1",
       assistant_message_id: null,
+      skill_name: "human_contact.request",
       source_channel: "authenticated_chat",
       source_origin: null,
-      user_email: "user@example.com",
-      message: "Please contact me.",
-      generated_summary: "The user wants contact follow-up.",
       trigger_source: "manual",
       trigger_reason: null,
       idempotency_key: null,
+      fields: { email: "user@example.com", message: "Please contact me." },
+      subject_identity: "user@example.com",
       attempts: 0,
       status: "pending",
       next_retry_at: new Date("2026-05-04T10:00:00.000Z"),
+      final_delivery_error: null,
+      activity_trace: null,
       created_at: new Date("2026-05-04T10:00:00.000Z"),
+      updated_at: new Date("2026-05-04T10:00:00.000Z"),
     });
 
     await service.processDueDeliveries(1);
@@ -1755,11 +2004,11 @@ describe("enterprise human contact service", () => {
       triggerSource: "manual",
     });
     expect(deliveredPayload).not.toHaveProperty("summary");
-    expect(database.requests.get(requestId)?.status).toBe("delivered");
+    expect(database.submissions.get(requestId)?.status).toBe("delivered");
   });
 
   it("marks webhook deliveries failed after the terminal retry attempt", async () => {
-    const database = new FakeHumanContactDatabase();
+    const database = new FakeSkillSubmissionDatabase();
     const { service } = createService({
       database,
       webhookFetch: (async () => new Response(null, { status: 500 })) as typeof fetch,
@@ -1772,32 +2021,416 @@ describe("enterprise human contact service", () => {
       signingSecret: "secret-value-for-tests",
     });
 
-    database.requests.set("request-1", {
+    database.submissions.set("request-1", {
       id: "request-1",
       account_id: "account-1",
       workspace_id: "workspace-1",
       conversation_id: "conversation-1",
       assistant_message_id: null,
+      skill_name: "human_contact.request",
       source_channel: "authenticated_chat",
       source_origin: null,
-      user_email: "user@example.com",
-      message: "Please contact me.",
-      generated_summary: "The user wants contact follow-up.",
       trigger_source: "manual",
       trigger_reason: null,
       idempotency_key: null,
+      fields: { email: "user@example.com", message: "Please contact me." },
+      subject_identity: "user@example.com",
       attempts: 7,
       status: "pending",
       next_retry_at: new Date("2026-05-04T10:00:00.000Z"),
+      final_delivery_error: null,
+      activity_trace: null,
       created_at: new Date("2026-05-04T10:00:00.000Z"),
+      updated_at: new Date("2026-05-04T10:00:00.000Z"),
     });
 
     await service.processDueDeliveries(1);
 
-    expect(database.requests.get("request-1")).toMatchObject({
+    expect(database.submissions.get("request-1")).toMatchObject({
       status: "failed",
       attempts: 8,
       final_delivery_error: "Webhook: HTTP 500",
     });
+  });
+
+  it("audits invalid stored submission fields when delivery claims quarantine a row", async () => {
+    const database = new FakeSkillSubmissionDatabase();
+    const { service, auditEvents } = createService({ database });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    database.submissions.set("request-invalid", {
+      id: "request-invalid",
+      account_id: "account-1",
+      workspace_id: "workspace-1",
+      conversation_id: "conversation-1",
+      assistant_message_id: null,
+      skill_name: "human_contact.request",
+      source_channel: "authenticated_chat",
+      source_origin: null,
+      trigger_source: "manual",
+      trigger_reason: null,
+      idempotency_key: null,
+      fields: { email: "not an email", message: "Please contact me." },
+      subject_identity: "not an email",
+      attempts: 0,
+      status: "pending",
+      next_retry_at: new Date("2026-05-04T10:00:00.000Z"),
+      final_delivery_error: null,
+      activity_trace: null,
+      created_at: new Date("2026-05-04T10:00:00.000Z"),
+      updated_at: new Date("2026-05-04T10:00:00.000Z"),
+    });
+
+    await service.processDueDeliveries(1);
+
+    expect(database.submissions.get("request-invalid")).toMatchObject({
+      status: "failed",
+      attempts: 1,
+      final_delivery_error: expect.stringContaining("failed validation"),
+    });
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      eventType: "human_contact.delivery_failed",
+      eventStatus: "failure",
+      metadata: expect.objectContaining({
+        requestId: "request-invalid",
+        conversationId: "conversation-1",
+        skillName: "human_contact.request",
+        failureKind: "stored_field_validation",
+        attempts: 1,
+        reason: expect.stringContaining("failed validation"),
+      }),
+    }));
+  });
+
+  it("prompts for the message after the user provides email when no prior context exists", async () => {
+    const database = new FakeSkillSubmissionDatabase();
+    database.intakeStates.set("state-1", {
+      id: "state-1",
+      workspace_id: "workspace-1",
+      conversation_id: "conversation-1",
+      skill_name: "human_contact.request",
+      status: "active",
+      collected: {},
+      invalid: {},
+      missing: ["email", "message"],
+      expires_at: new Date("2026-05-04T10:15:00.000Z"),
+      last_prompted_field: "email",
+      created_at: new Date("2026-05-04T10:00:00.000Z"),
+      updated_at: new Date("2026-05-04T10:01:00.000Z"),
+    });
+    const { service } = createService({
+      database,
+      chatGateway: {
+        async answer() {
+          return "What message would you like the team to receive?";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    const result = await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-2",
+      query: "alex@example.com",
+      history: [
+        {
+          id: "user-message-1",
+          role: "user",
+          content: "I want to talk to a human.",
+          createdAt: new Date("2026-05-04T10:00:00.000Z"),
+        },
+        {
+          id: "user-message-2",
+          role: "user",
+          content: "alex@example.com",
+          createdAt: new Date("2026-05-04T10:02:00.000Z"),
+        },
+      ],
+      sourceChannel: "authenticated_chat",
+    });
+
+    expect(result).toMatchObject({
+      skillName: "human_contact.request",
+      status: "active",
+      stateId: "state-1",
+      answer: "What message would you like the team to receive?",
+    });
+    expect(database.intakeStates.get("state-1")).toMatchObject({
+      status: "active",
+      missing: ["message"],
+      last_prompted_field: "message",
+      collected: { email: "alex@example.com" },
+    });
+    expect(database.submissions.size).toBe(0);
+  });
+
+  it("submits the request after the user provides the missing message", async () => {
+    const database = new FakeSkillSubmissionDatabase();
+    database.intakeStates.set("state-1", {
+      id: "state-1",
+      workspace_id: "workspace-1",
+      conversation_id: "conversation-1",
+      skill_name: "human_contact.request",
+      status: "active",
+      collected: { email: "alex@example.com" },
+      invalid: {},
+      missing: ["message"],
+      expires_at: new Date("2026-05-04T10:15:00.000Z"),
+      last_prompted_field: "message",
+      created_at: new Date("2026-05-04T10:00:00.000Z"),
+      updated_at: new Date("2026-05-04T10:01:00.000Z"),
+    });
+    const { service } = createService({
+      database,
+      chatGateway: {
+        async answer() {
+          return "Got it — the team will reach out shortly.";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    const result = await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-3",
+      query: "My invoice 123 was charged twice — please refund it.",
+      history: [
+        {
+          id: "user-message-1",
+          role: "user",
+          content: "I want to talk to a human.",
+          createdAt: new Date("2026-05-04T10:00:00.000Z"),
+        },
+        {
+          id: "user-message-2",
+          role: "user",
+          content: "alex@example.com",
+          createdAt: new Date("2026-05-04T10:02:00.000Z"),
+        },
+        {
+          id: "user-message-3",
+          role: "user",
+          content: "My invoice 123 was charged twice — please refund it.",
+          createdAt: new Date("2026-05-04T10:03:00.000Z"),
+        },
+      ],
+      sourceChannel: "authenticated_chat",
+    });
+
+    expect(result).toMatchObject({
+      skillName: "human_contact.request",
+      status: "completed",
+      stateId: "state-1",
+      answer: "Got it — the team will reach out shortly.",
+    });
+    expect([...database.submissions.values()]).toEqual([
+      expect.objectContaining({
+        fields: {
+          email: "alex@example.com",
+          message: "My invoice 123 was charged twice — please refund it.",
+        },
+        trigger_source: "explicit_user_request",
+      }),
+    ]);
+    expect(database.intakeStates.get("state-1")).toMatchObject({
+      status: "completed",
+      missing: [],
+    });
+  });
+
+  it("re-asks for the message when the user reply is empty", async () => {
+    const database = new FakeSkillSubmissionDatabase();
+    database.intakeStates.set("state-1", {
+      id: "state-1",
+      workspace_id: "workspace-1",
+      conversation_id: "conversation-1",
+      skill_name: "human_contact.request",
+      status: "active",
+      collected: { email: "alex@example.com" },
+      invalid: {},
+      missing: ["message"],
+      expires_at: new Date("2026-05-04T10:15:00.000Z"),
+      last_prompted_field: "message",
+      created_at: new Date("2026-05-04T10:00:00.000Z"),
+      updated_at: new Date("2026-05-04T10:01:00.000Z"),
+    });
+    const { service } = createService({
+      database,
+      chatGateway: {
+        async answer() {
+          return "Could you share the message you'd like us to send?";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    const result = await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-3",
+      query: "   ",
+      history: [
+        {
+          id: "user-message-3",
+          role: "user",
+          content: "   ",
+          createdAt: new Date("2026-05-04T10:03:00.000Z"),
+        },
+      ],
+      sourceChannel: "authenticated_chat",
+    });
+
+    expect(result).toMatchObject({
+      skillName: "human_contact.request",
+      status: "active",
+      stateId: "state-1",
+      answer: "Could you share the message you'd like us to send?",
+    });
+    expect(database.submissions.size).toBe(0);
+    expect(database.intakeStates.get("state-1")).toMatchObject({
+      status: "active",
+      missing: ["message"],
+      last_prompted_field: "message",
+    });
+  });
+
+  it("uses prior conversation context as the message without asking for it", async () => {
+    const responses = [
+      "{\"shouldStart\":true}",
+      "{}",
+      "What email address should the team use to follow up?",
+    ];
+    const { service, database } = createService({
+      chatGateway: {
+        async answer() {
+          return responses.shift() ?? "{}";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    const result = await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-2",
+      query: "I want to talk to a human.",
+      history: [
+        {
+          id: "user-message-1",
+          role: "user",
+          content: "Why was invoice 123 charged twice?",
+          createdAt: new Date("2026-05-04T09:58:00.000Z"),
+        },
+        {
+          id: "assistant-message-1",
+          role: "assistant",
+          content: "I could not find that invoice in the indexed documents.",
+          createdAt: new Date("2026-05-04T09:59:00.000Z"),
+        },
+        {
+          id: "user-message-2",
+          role: "user",
+          content: "I want to talk to a human.",
+          createdAt: new Date("2026-05-04T10:00:00.000Z"),
+        },
+      ],
+      sourceChannel: "authenticated_chat",
+    });
+
+    expect(result?.status).toBe("active");
+    expect(result?.answer).toBe("What email address should the team use to follow up?");
+    const [state] = [...database.intakeStates.values()];
+    expect(state).toMatchObject({
+      missing: ["email"],
+      last_prompted_field: "email",
+    });
+    expect(state?.collected).toMatchObject({
+      message: expect.stringContaining("Why was invoice 123 charged twice?"),
+    });
+  });
+
+  it("submits directly when both email and message are extractable from the initial query", async () => {
+    const responses = [
+      "{\"shouldStart\":true}",
+      "{\"fields\":{\"email\":\"alex@example.com\",\"message\":\"Please refund my duplicate invoice.\"}}",
+      "Thanks — your request is on its way to the team.",
+    ];
+    const { service, database } = createService({
+      chatGateway: {
+        async answer() {
+          return responses.shift() ?? "{}";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    const result = await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-1",
+      query: "Please refund my duplicate invoice — alex@example.com.",
+      history: [
+        {
+          id: "user-message-1",
+          role: "user",
+          content: "Please refund my duplicate invoice — alex@example.com.",
+          createdAt: new Date("2026-05-04T10:00:00.000Z"),
+        },
+      ],
+      sourceChannel: "authenticated_chat",
+    });
+
+    expect(result).toMatchObject({
+      skillName: "human_contact.request",
+      status: "completed",
+      answer: "Thanks — your request is on its way to the team.",
+    });
+    expect([...database.submissions.values()]).toEqual([
+      expect.objectContaining({
+        fields: {
+          email: "alex@example.com",
+          message: "Please refund my duplicate invoice.",
+        },
+      }),
+    ]);
   });
 });

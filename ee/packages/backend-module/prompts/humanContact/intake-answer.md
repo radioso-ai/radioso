@@ -23,7 +23,7 @@ Apologize briefly that the request could not be submitted right now and invite t
 Warmly confirm that the request was received and let the user know the team will reach out. A single short follow-up sentence (e.g. a friendly closer) is welcome if it fits the conversation.
 
 --- language.with_context ---
-Reply in the same language the user wrote in. The user's anchor message in this conversation was: {{anchor_message}}
+Reply in exactly the same natural language the user used in the anchor message below. Ignore browser locale hints, previous assistant wording, and any other language unless the anchor itself is ambiguous. Do not translate into a different language. The user's anchor message in this conversation was: {{anchor_message}}
 
 --- language.with_locale ---
 Reply in locale {{user_expected_locale}}.

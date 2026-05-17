@@ -152,8 +152,8 @@ Integrations should send normal chat messages that express the human-contact
 intent. The assistant skill intake then collects required fields and submits the
 request through the same durable delivery pipeline.
 
-The module stores configuration in `ee_contact_settings` and durable delivery
-requests in `ee_contact_requests`.
+The module stores configuration in `ee_contact_settings`. Durable contact
+requests are stored as `human_contact.request` rows in `skill_submissions`.
 
 Webhook requests are `POST` JSON payloads with:
 

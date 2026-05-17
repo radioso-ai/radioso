@@ -2576,6 +2576,7 @@ export interface components {
                     maxLength?: number;
                     extractionHint?: string;
                 }[];
+                subjectIdentityField?: string;
                 /** @enum {string} */
                 confirmation: "none" | "before_execute" | "always";
                 /** @enum {string} */

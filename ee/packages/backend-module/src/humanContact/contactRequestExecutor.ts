@@ -1,15 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import type { ActivityTrace } from "../radiosoModuleTypes.js";
 import type {
   AbuseControlService,
   AuditService,
   ConversationRepository,
-  HumanContactRequestRow,
 } from "./humanContactTypes.js";
 import {
   AUTHENTICATED_CONTACT_LIMIT,
   CONTACT_RATE_LIMIT_WINDOW_MS,
+  HUMAN_CONTACT_SKILL_NAME,
   PUBLIC_CONTACT_LIMIT,
   normalizeIdempotencyKey,
   queryRows,
@@ -17,6 +16,10 @@ import {
 import { buildContactStage, buildContactTrace } from "./contactActivityTrace.js";
 import type { HumanContactSettingsService } from "./contactSettingsService.js";
 import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import type {
+  SkillSubmissionRepository,
+  SkillSubmissionRow,
+} from "../skillSubmissions/skillSubmissionRepository.js";
 
 export interface HumanContactSubmitInput {
   workspaceId: string;
@@ -38,6 +41,7 @@ export class HumanContactRequestExecutor {
   constructor(private readonly input: {
     database: UsageLimitDatabasePort;
     settingsService: HumanContactSettingsService;
+    submissions: SkillSubmissionRepository;
     conversationRepository: ConversationRepository;
     auditService: AuditService;
     abuseControlService: AbuseControlService;
@@ -49,7 +53,9 @@ export class HumanContactRequestExecutor {
     await this.ensureConversationAccess(input);
     const idempotencyKey = normalizeIdempotencyKey(input.idempotencyKey);
     const existing = idempotencyKey
-      ? await this.findRequestByIdempotencyKey(input.workspaceId, idempotencyKey)
+      ? await this.input.submissions.findByIdempotencyKey(input.workspaceId, HUMAN_CONTACT_SKILL_NAME, idempotencyKey, {
+          fieldValidation: "passthrough",
+        })
       : null;
     if (existing) {
       return this.presentExistingSubmitResult(existing);
@@ -66,7 +72,6 @@ export class HumanContactRequestExecutor {
     });
 
     const requestId = randomUUID();
-    const summary = "";
     const assistantMessageId = await this.resolveAssistantMessageId({
       workspaceId: input.workspaceId,
       conversationId: input.conversationId,
@@ -107,53 +112,27 @@ export class HumanContactRequestExecutor {
       }),
     ], "request_queued", "pending");
 
-    const rows = await queryRows<HumanContactRequestRow>(
-      this.input.database,
-      `INSERT INTO ee_contact_requests (
-         id,
-         account_id,
-         workspace_id,
-         conversation_id,
-         assistant_message_id,
-         source_channel,
-         source_origin,
-         user_email,
-         message,
-         generated_summary,
-         trigger_source,
-         trigger_reason,
-         idempotency_key,
-         status,
-         next_retry_at,
-         activity_trace
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', NOW(), $14::jsonb)
-       ON CONFLICT (workspace_id, idempotency_key) WHERE idempotency_key IS NOT NULL
-       DO NOTHING
-       RETURNING id::text, account_id::text, workspace_id::text, conversation_id::text,
-         assistant_message_id::text, source_channel, source_origin, user_email, message,
-         trigger_source, trigger_reason, idempotency_key, attempts, activity_trace, created_at`,
-      [
-        requestId,
-        input.accountId ?? null,
-        input.workspaceId,
-        input.conversationId,
-        assistantMessageId,
-        input.sourceChannel ?? null,
-        input.sourceOrigin ?? null,
-        input.email,
-        input.message,
-        summary,
-        input.triggerSource,
-        input.triggerReason ?? null,
-        idempotencyKey,
-        activityTrace,
-      ],
-    );
-    const inserted = rows[0];
+    const inserted = await this.input.submissions.insert({
+      id: requestId,
+      accountId: input.accountId ?? null,
+      workspaceId: input.workspaceId,
+      conversationId: input.conversationId,
+      assistantMessageId,
+      skillName: HUMAN_CONTACT_SKILL_NAME,
+      sourceChannel: input.sourceChannel ?? null,
+      sourceOrigin: input.sourceOrigin ?? null,
+      triggerSource: input.triggerSource,
+      triggerReason: input.triggerReason ?? null,
+      idempotencyKey,
+      fields: { email: input.email, message: input.message },
+      subjectIdentity: input.email.trim().toLowerCase(),
+      activityTrace,
+    });
     if (!inserted) {
       const existingAfterConflict = idempotencyKey
-        ? await this.findRequestByIdempotencyKey(input.workspaceId, idempotencyKey)
+        ? await this.input.submissions.findByIdempotencyKey(input.workspaceId, HUMAN_CONTACT_SKILL_NAME, idempotencyKey, {
+            fieldValidation: "passthrough",
+          })
         : null;
       if (existingAfterConflict) {
         return this.presentExistingSubmitResult(existingAfterConflict);
@@ -179,25 +158,7 @@ export class HumanContactRequestExecutor {
     return { requestId, activityTrace, activitySummary: activityTrace.summary };
   }
 
-  private async findRequestByIdempotencyKey(
-    workspaceId: string,
-    idempotencyKey: string,
-  ): Promise<HumanContactRequestRow | null> {
-    const [row] = await queryRows<HumanContactRequestRow>(
-      this.input.database,
-      `SELECT id::text, account_id::text, workspace_id::text, conversation_id::text,
-         assistant_message_id::text, source_channel, source_origin, user_email, message,
-         trigger_source, trigger_reason, idempotency_key, attempts, activity_trace, created_at
-       FROM ee_contact_requests
-       WHERE workspace_id = $1
-         AND idempotency_key = $2
-       LIMIT 1`,
-      [workspaceId, idempotencyKey],
-    );
-    return row ?? null;
-  }
-
-  private presentExistingSubmitResult(row: HumanContactRequestRow) {
+  private presentExistingSubmitResult(row: SkillSubmissionRow) {
     const activityTrace = row.activity_trace ?? buildContactTrace([
       buildContactStage("request_submit", "request_submit", "Request submit", "skipped", {
         reason: "An existing contact request matched the idempotency key.",

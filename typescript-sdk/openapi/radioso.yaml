@@ -3749,6 +3749,8 @@ components:
                   - displayName
                   - type
                   - required
+            subjectIdentityField:
+              type: string
             confirmation:
               type: string
               enum:

@@ -7,6 +7,7 @@ import { HumanContactDeliveryDispatcher } from "./contactDeliveryDispatcher.js";
 import { HumanContactHistoryService } from "./contactHistoryService.js";
 import { HumanContactRequestExecutor, type HumanContactSubmitInput } from "./contactRequestExecutor.js";
 import { HumanContactSettingsService } from "./contactSettingsService.js";
+import { createHumanContactSkillSubmissionRepository } from "./contactSkillSubmissionRepository.js";
 import type { HumanContactDependencies } from "./humanContactTypes.js";
 import {
   DEFAULT_POLL_INTERVAL_MS,
@@ -27,8 +28,12 @@ export class EnterpriseHumanContactService {
       database: input.database,
       auditService: input.auditService,
     });
+    const submissions = createHumanContactSkillSubmissionRepository(input.database, {
+      logger: input.logger,
+      auditService: input.auditService,
+    });
     this.deliveryDispatcher = new HumanContactDeliveryDispatcher({
-      database: input.database,
+      submissions,
       logger: input.logger,
       settingsService: this.settingsService,
       emailService: input.emailService,
@@ -37,12 +42,13 @@ export class EnterpriseHumanContactService {
     this.requestExecutor = new HumanContactRequestExecutor({
       database: input.database,
       settingsService: this.settingsService,
+      submissions,
       conversationRepository: input.conversationRepository,
       auditService: input.auditService,
       abuseControlService: input.abuseControlService,
       processDueDeliveries: (limit) => this.processDueDeliveries(limit),
     });
-    this.historyService = new HumanContactHistoryService(input.database);
+    this.historyService = new HumanContactHistoryService(submissions);
     this.intakeProvider = new HumanContactSkillIntakeProvider({
       database: input.database,
       settingsService: this.settingsService,

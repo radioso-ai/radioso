@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import type {
   Logger,
   MailService,
+  MessageRepository,
   WorkspaceContactInfo,
   WorkspaceContactInfoRepository,
 } from "./humanContactTypes.js";
@@ -19,12 +20,15 @@ import type {
   SkillSubmissionRow,
 } from "../skillSubmissions/skillSubmissionRepository.js";
 
+const CONVERSATION_TURNS_LIMIT = 6;
+
 export class HumanContactDeliveryDispatcher {
   constructor(private readonly input: {
     submissions: SkillSubmissionRepository;
     logger: Logger;
     settingsService: HumanContactSettingsService;
     mailService: MailService;
+    messageRepository?: MessageRepository;
     workspaceContactInfoRepository?: WorkspaceContactInfoRepository;
     dashboardBaseUrl?: string | null;
     webhookFetch?: typeof fetch;
@@ -52,6 +56,26 @@ export class HumanContactDeliveryDispatcher {
 
   private contactMessage(row: SkillSubmissionRow): string {
     return typeof row.fields.message === "string" ? row.fields.message : "";
+  }
+
+  private async loadRecentTurns(workspaceId: string, conversationId: string): Promise<Array<{
+    role: "user" | "assistant" | "system";
+    content: string;
+    createdAt: Date;
+  }>> {
+    const repository = this.input.messageRepository;
+    if (!repository) {
+      return [];
+    }
+    try {
+      return await repository.listRecentByConversationId(workspaceId, conversationId, CONVERSATION_TURNS_LIMIT);
+    } catch (error) {
+      this.input.logger.warn?.(
+        { workspaceId, conversationId, err: error instanceof Error ? error.message : String(error) },
+        "Failed to load recent conversation for contact email",
+      );
+      return [];
+    }
   }
 
   private async loadWorkspaceContactInfo(workspaceId: string): Promise<WorkspaceContactInfo | null> {
@@ -104,7 +128,10 @@ export class HumanContactDeliveryDispatcher {
     const errors: string[] = [];
 
     if (settings.email_enabled && settings.default_email) {
-      const workspace = await this.loadWorkspaceContactInfo(row.workspace_id);
+      const [workspace, recentTurns] = await Promise.all([
+        this.loadWorkspaceContactInfo(row.workspace_id),
+        this.loadRecentTurns(row.workspace_id, row.conversation_id),
+      ]);
       const dashboardUrl = this.buildDashboardUrl(workspace, row.id);
       try {
         await this.input.mailService.send(renderHumanContactRequestEmail({
@@ -119,6 +146,7 @@ export class HumanContactDeliveryDispatcher {
           requestId: row.id,
           workspaceId: row.workspace_id,
           dashboardUrl,
+          recentTurns,
         }));
       } catch (error) {
         errors.push(`Email: ${error instanceof Error ? error.message : "delivery failed"}`);

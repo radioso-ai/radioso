@@ -5,10 +5,35 @@ import express from "express";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import type { AuthMailService, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import { createEnterpriseAuthRoutes } from "./enterpriseAuthRoutes.js";
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
+
+interface MailServiceStub extends AuthMailService {
+  passwordResets: Array<{ to: string; resetUrl: string }>;
+  verifications: Array<{ to: string; verificationUrl: string }>;
+}
+
+const createMailServiceStub = (overrides: {
+  onPasswordReset?: (input: { to: string; resetUrl: string }) => Promise<void> | void;
+  onVerification?: (input: { to: string; verificationUrl: string }) => Promise<void> | void;
+} = {}): MailServiceStub => {
+  const passwordResets: Array<{ to: string; resetUrl: string }> = [];
+  const verifications: Array<{ to: string; verificationUrl: string }> = [];
+  return {
+    passwordResets,
+    verifications,
+    async sendPasswordResetEmail(input) {
+      passwordResets.push(input);
+      await overrides.onPasswordReset?.(input);
+    },
+    async sendEmailVerificationEmail(input) {
+      verifications.push(input);
+      await overrides.onVerification?.(input);
+    },
+  };
+};
 
 class FakeEnterpriseAuthDatabase implements UsageLimitDatabasePort {
   readonly queries: Array<{ text: string; params: unknown[] }> = [];
@@ -126,6 +151,7 @@ const createApp = (
       enforced: Array<{ scope: string; subjectKey: string }>;
       enforce(input: { scope: string; subjectKey: string }): Promise<unknown>;
     };
+    mailService?: AuthMailService;
   } = {},
 ) => {
   const app = express();
@@ -150,6 +176,7 @@ const createApp = (
         return undefined;
       },
     },
+    mailService: options.mailService ?? createMailServiceStub(),
   }));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (error && typeof error === "object" && "statusCode" in error) {
@@ -163,8 +190,6 @@ const createApp = (
 
 describe("enterprise auth routes", () => {
   afterEach(() => {
-    delete process.env.EE_MAIL_DRIVER;
-    delete process.env.RESEND_MAIL_API_KEY;
     delete process.env.SESSION_COOKIE_NAME;
     delete process.env.APP_BASE_URL;
     delete process.env.RADIOSO_ENTERPRISE_WIDGET_ORIGIN;
@@ -173,7 +198,6 @@ describe("enterprise auth routes", () => {
   });
 
   it("mounts password reset request under the Enterprise auth namespace", async () => {
-    process.env.EE_MAIL_DRIVER = "noop";
     const database = new FakeEnterpriseAuthDatabase();
 
     const response = await request(createApp(database))
@@ -186,30 +210,24 @@ describe("enterprise auth routes", () => {
   });
 
   it("uses the configured app base URL for password reset links", async () => {
-    process.env.EE_MAIL_DRIVER = "log";
     process.env.RADIOSO_ENTERPRISE_WIDGET_ORIGIN = "https://radioso-live-frontend.example.run.app";
-    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const database = new FakeEnterpriseAuthDatabase();
+    const mailService = createMailServiceStub();
 
     const response = await request(createApp(database, {
-      env: {
-        APP_BASE_URL: "https://radioso.dev",
-      },
+      env: { APP_BASE_URL: "https://radioso.dev" },
+      mailService,
     }))
       .post("/api/v1/ee/auth/password-reset/request")
       .send({ email: "Ada@Example.com" });
 
     expect(response.status).toBe(202);
-    expect(log).toHaveBeenCalledWith("email.send", expect.objectContaining({
-      text: expect.stringContaining("https://radioso.dev/reset-password?token="),
-    }));
-    expect(log).not.toHaveBeenCalledWith("email.send", expect.objectContaining({
-      text: expect.stringContaining("radioso-live-frontend.example.run.app"),
-    }));
+    expect(mailService.passwordResets).toHaveLength(1);
+    expect(mailService.passwordResets[0]?.resetUrl).toContain("https://radioso.dev/reset-password?token=");
+    expect(mailService.passwordResets[0]?.resetUrl).not.toContain("radioso-live-frontend.example.run.app");
   });
 
   it("keeps verified Enterprise users able to log in after an unused password reset request", async () => {
-    process.env.EE_MAIL_DRIVER = "noop";
     process.env.SESSION_COOKIE_NAME = "radioso_session";
     const database = new FakeEnterpriseAuthDatabase();
     const app = createApp(database);
@@ -238,7 +256,6 @@ describe("enterprise auth routes", () => {
   });
 
   it("registers Enterprise users without a session and issues verification mail", async () => {
-    process.env.EE_MAIL_DRIVER = "noop";
     const database = new FakeEnterpriseAuthDatabase();
     database.userExists = false;
 
@@ -258,7 +275,6 @@ describe("enterprise auth routes", () => {
   });
 
   it("resends verification mail for unverified Enterprise users", async () => {
-    process.env.EE_MAIL_DRIVER = "noop";
     const database = new FakeEnterpriseAuthDatabase();
     database.emailVerifiedAt = null;
 
@@ -276,7 +292,6 @@ describe("enterprise auth routes", () => {
   });
 
   it("accepts verification resend for verified Enterprise users without reopening verification", async () => {
-    process.env.EE_MAIL_DRIVER = "noop";
     const database = new FakeEnterpriseAuthDatabase();
 
     const response = await request(createApp(database))
@@ -293,13 +308,15 @@ describe("enterprise auth routes", () => {
   });
 
   it("cleans up the user and account when Enterprise verification mail delivery fails", async () => {
-    process.env.EE_MAIL_DRIVER = "resend";
-    process.env.RESEND_MAIL_API_KEY = "test-key";
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("delivery failed", { status: 500 })));
     const database = new FakeEnterpriseAuthDatabase();
     database.userExists = false;
+    const mailService = createMailServiceStub({
+      onVerification: () => {
+        throw new Error("delivery failed");
+      },
+    });
 
-    const response = await request(createApp(database))
+    const response = await request(createApp(database, { mailService }))
       .post("/api/v1/ee/auth/register")
       .send({ email: "new@example.com", password: "new-secure-password" });
 
@@ -310,7 +327,6 @@ describe("enterprise auth routes", () => {
   });
 
   it("rate limits Enterprise auth attempts before doing auth work", async () => {
-    process.env.EE_MAIL_DRIVER = "noop";
     const database = new FakeEnterpriseAuthDatabase();
     const abuseControlService = {
       enforced: [] as Array<{ scope: string; subjectKey: string }>,
@@ -337,7 +353,6 @@ describe("enterprise auth routes", () => {
   });
 
   it("rate limits token endpoints by source instead of attacker-controlled token value", async () => {
-    process.env.EE_MAIL_DRIVER = "noop";
     const database = new FakeEnterpriseAuthDatabase();
     const abuseControlService = {
       enforced: [] as Array<{ scope: string; subjectKey: string }>,
@@ -369,7 +384,6 @@ describe("enterprise auth routes", () => {
   });
 
   it("blocks Enterprise login until signup email verification completes", async () => {
-    process.env.EE_MAIL_DRIVER = "noop";
     const database = new FakeEnterpriseAuthDatabase();
     database.emailVerifiedAt = null;
 
@@ -384,7 +398,6 @@ describe("enterprise auth routes", () => {
   });
 
   it("logs in verified Enterprise users", async () => {
-    process.env.EE_MAIL_DRIVER = "noop";
     process.env.SESSION_COOKIE_NAME = "radioso_session";
     const database = new FakeEnterpriseAuthDatabase();
 
@@ -406,7 +419,6 @@ describe("enterprise auth routes", () => {
   });
 
   it("honors preferred Enterprise account and workspace when logging in", async () => {
-    process.env.EE_MAIL_DRIVER = "noop";
     process.env.SESSION_COOKIE_NAME = "radioso_session";
     const database = new FakeEnterpriseAuthDatabase();
 
@@ -435,7 +447,6 @@ describe("enterprise auth routes", () => {
   });
 
   it("falls back when stored Enterprise account and workspace preferences are stale", async () => {
-    process.env.EE_MAIL_DRIVER = "noop";
     process.env.SESSION_COOKIE_NAME = "radioso_session";
     const database = new FakeEnterpriseAuthDatabase();
 
@@ -460,7 +471,6 @@ describe("enterprise auth routes", () => {
   });
 
   it("confirms password reset, rotates sessions, and returns login context", async () => {
-    process.env.EE_MAIL_DRIVER = "noop";
     process.env.SESSION_COOKIE_NAME = "radioso_session";
     const database = new FakeEnterpriseAuthDatabase();
 

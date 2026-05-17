@@ -27,6 +27,13 @@ const createChatIntakeDependencies = () => ({
   messageRepository: {
     listRecentByConversationId: vi.fn(),
   },
+  workspaceContactInfoRepository: {
+    findById: vi.fn(),
+  },
+  mailService: {
+    sendHumanContactRequestEmail: vi.fn(),
+  },
+  dashboardBaseUrl: null,
 });
 
 describe("human contact application module", () => {

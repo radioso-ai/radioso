@@ -227,7 +227,13 @@ export interface ApplicationRouteMount {
     crawlerProvider?: AgentWizardCrawlerPort;
     assertPublicWebsiteUrl?: AgentWizardUrlPolicy;
     websiteCrawlerLimits?: AgentWizardCrawlerLimits;
+    mailService: AuthMailService;
   }): Router;
+}
+
+export interface AuthMailService {
+  sendPasswordResetEmail(input: { to: string; resetUrl: string }): Promise<void>;
+  sendEmailVerificationEmail(input: { to: string; verificationUrl: string }): Promise<void>;
 }
 
 export type AgentWizardUrlPolicy = (url: string) => Promise<void>;
@@ -489,6 +495,13 @@ export type ApplicationChatIntakeProviderRegistration =
           createdAt: Date;
         }>>;
       };
+      workspaceContactInfoRepository: {
+        findById(workspaceId: string): Promise<{
+          id: string;
+          name: string;
+          publicRouteKey: string;
+        } | null>;
+      };
       auditService: {
         record(input: {
           accountId?: string | null;
@@ -507,7 +520,23 @@ export type ApplicationChatIntakeProviderRegistration =
           blockMs?: number;
         }): Promise<void>;
       };
+      mailService: ContactRequestMailService;
+      dashboardBaseUrl: string | null;
     }) => ChatIntakeProvider);
+
+export interface ContactRequestMailService {
+  sendHumanContactRequestEmail(input: {
+    to: string;
+    visitorEmail: string;
+    message: string;
+    workspace: { name: string; publicRouteKey: string } | null;
+    sourceChannel: string | null;
+    createdAt: Date | string;
+    requestId: string;
+    workspaceId: string;
+    dashboardUrl: string | null;
+  }): Promise<void>;
+}
 
 export interface ContactHistorySummary {
   id: string;

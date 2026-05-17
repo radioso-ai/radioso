@@ -4,8 +4,7 @@ import bcrypt from "bcryptjs";
 import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
-import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
-import { createEnterpriseEmailService } from "./emailService.js";
+import type { AuthMailService, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 
 interface EnterpriseAuthRouteDependencies {
   connectorDb: UsageLimitDatabasePort;
@@ -32,6 +31,7 @@ interface EnterpriseAuthRouteDependencies {
       metadata?: Record<string, unknown>;
     }): Promise<void>;
   };
+  mailService: AuthMailService;
 }
 
 interface UserRow {
@@ -297,7 +297,7 @@ const issueVerificationEmail = async (
     email: string;
     requestIp?: string | null;
     requestUserAgent?: string | null;
-    emailService: ReturnType<typeof createEnterpriseEmailService>;
+    mailService: AuthMailService;
     env: EnterpriseAuthRouteDependencies["env"];
   },
 ): Promise<void> => {
@@ -323,7 +323,7 @@ const issueVerificationEmail = async (
   verificationUrl.searchParams.set("token", token);
 
   try {
-    await input.emailService.sendEmailVerificationEmail({
+    await input.mailService.sendEmailVerificationEmail({
       to: input.email,
       verificationUrl: verificationUrl.toString(),
     });
@@ -495,7 +495,7 @@ const resolveLoginContext = async (
 export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDependencies): Router => {
   const router = Router();
   const database = dependencies.connectorDb;
-  const emailService = createEnterpriseEmailService();
+  const mailService = dependencies.mailService;
   const registerRateLimit = createEnterpriseRateLimitMiddleware(dependencies, {
     scope: "ee.auth.register",
     resolveSubjectKey: (req) => {
@@ -569,7 +569,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
           email,
           requestIp: req.ip ?? null,
           requestUserAgent: req.get("user-agent") ?? null,
-          emailService,
+          mailService,
           env: dependencies.env,
         });
         await database.query(
@@ -666,7 +666,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
       resetUrl.searchParams.set("token", token);
 
       try {
-        await emailService.sendPasswordResetEmail({
+        await mailService.sendPasswordResetEmail({
           to: email,
           resetUrl: resetUrl.toString(),
         });
@@ -798,7 +798,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
         email,
         requestIp: req.ip ?? null,
         requestUserAgent: req.get("user-agent") ?? null,
-        emailService,
+        mailService,
         env: dependencies.env,
       });
 

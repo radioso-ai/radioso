@@ -176,6 +176,17 @@ const resolveOwnFeedback = (
   return entry ? { value: entry.value, comment: entry.comment } : undefined
 }
 
+const stripPublicSuggestionCitation = (suggestion: ChatSuggestion): ChatSuggestion => {
+  const { citation: _citation, ...publicSuggestion } = suggestion
+  return publicSuggestion
+}
+
+const stripPublicSuggestionCitations = (suggestions?: ChatSuggestion[]) =>
+  suggestions?.map(stripPublicSuggestionCitation)
+
+const stripPublicAnswerSegmentCitations = (answerSegments?: AnswerSegment[]) =>
+  answerSegments?.map((segment) => ({ text: segment.text }))
+
 const toChatMessages = (
   detail: ChatConversationDetail,
   anonymousSessionId?: string | null,
@@ -188,9 +199,8 @@ const toChatMessages = (
       content: message.content,
       createdAt: message.createdAt,
       inputMetadata: message.inputMetadata,
-      citations: message.citations,
-      answerSegments: message.answerSegments,
-      suggestions: message.suggestions,
+      answerSegments: stripPublicAnswerSegmentCitations(message.answerSegments),
+      suggestions: stripPublicSuggestionCitations(message.suggestions),
       answerFeedback: message.role === 'assistant'
         ? resolveOwnFeedback(message.answerFeedbackEntries, anonymousSessionId)
         : undefined,
@@ -403,8 +413,8 @@ export function AnonymousChatProvider({
                 role: 'assistant',
                 content: bootstrap.answer,
                 createdAt: new Date().toISOString(),
-                citations: bootstrap.citations,
-                answerSegments: bootstrap.answerSegments,
+                answerSegments: stripPublicAnswerSegmentCitations(bootstrap.answerSegments),
+                suggestions: stripPublicSuggestionCitations(bootstrap.suggestions),
                 activitySummary: bootstrap.activitySummary,
                 activityTrace: bootstrap.activityTrace,
                 persistedAssistantMessageId: bootstrap.assistantMessageId,
@@ -464,9 +474,8 @@ export function AnonymousChatProvider({
                 ...message,
                 persistedAssistantMessageId: completion.assistantMessageId ?? message.persistedAssistantMessageId,
                 content: completion.answer ?? message.content,
-                citations: completion.citations,
-                answerSegments: completion.answerSegments,
-                suggestions: completion.suggestions,
+                answerSegments: stripPublicAnswerSegmentCitations(completion.answerSegments),
+                suggestions: stripPublicSuggestionCitations(completion.suggestions),
                 activitySummary: completion.activitySummary,
                 activityTrace: completion.activityTrace,
                 skill: completion.skill ?? message.skill,
@@ -502,9 +511,8 @@ export function AnonymousChatProvider({
             ? {
                 ...message,
                 content: assistantMessage.content,
-                citations: assistantMessage.citations,
-                answerSegments: assistantMessage.answerSegments,
-                suggestions: assistantMessage.suggestions,
+                answerSegments: stripPublicAnswerSegmentCitations(assistantMessage.answerSegments),
+                suggestions: stripPublicSuggestionCitations(assistantMessage.suggestions),
                 answerFeedback: assistantMessage.answerFeedback,
                 answerFeedbackEntries: assistantMessage.answerFeedbackEntries,
                 activitySummary: assistantMessage.activitySummary,
@@ -597,7 +605,7 @@ export function AnonymousChatProvider({
                     message.id === assistantMessageId
                       ? {
                           ...message,
-                          suggestions,
+                          suggestions: stripPublicSuggestionCitations(suggestions),
                         }
                       : message,
                   ),
@@ -675,7 +683,6 @@ export function AnonymousChatProvider({
                 ...message,
                 content: message.content || errorMessage,
                 status: 'error' as const,
-                citations: [] as Citation[],
                 answerSegments: undefined,
                 suggestions: undefined,
               }

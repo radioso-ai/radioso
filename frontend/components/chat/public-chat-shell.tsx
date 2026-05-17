@@ -330,6 +330,7 @@ function PublicChatCenteredIntro({
                 onOpenDocument={async () => 'unavailable'}
                 theme={theme}
                 isStreaming={greetingMessage!.status === 'streaming'}
+                showCitations={false}
               />
             )}
           </div>
@@ -755,6 +756,7 @@ function PublicChatContent({
                   hideFeedbackEntries
                   theme={theme}
                   themedSuggestionButtons
+                  showCitations={false}
                 />
                 <div ref={messagesEndRef} />
               </div>

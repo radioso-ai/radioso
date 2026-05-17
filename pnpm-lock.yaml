@@ -22,12 +22,18 @@ importers:
       '@asteasolutions/zod-to-openapi':
         specifier: ^7.3.4
         version: 7.3.4(zod@3.25.76)
+      '@chonkiejs/core':
+        specifier: 0.0.10
+        version: 0.0.10
       '@google-cloud/storage':
         specifier: ^7.17.2
         version: 7.19.0
       '@google-cloud/tasks':
         specifier: ^5.5.0
         version: 5.5.2
+      '@kreuzberg/tree-sitter-language-pack':
+        specifier: 1.8.1
+        version: 1.8.1
       '@radioso/connector-api':
         specifier: workspace:*
         version: link:../packages/connector-api
@@ -718,6 +724,12 @@ packages:
 
   '@chevrotain/types@11.1.2':
     resolution: {integrity: sha512-U+HFai5+zmJCkK86QsaJtoITlboZHBqrVketcO2ROv865xfCMSFpELQoz1GkX5GzME8pTa+3kbKrZHQtI0gdbw==}
+
+  '@chonkiejs/chunk@0.9.3':
+    resolution: {integrity: sha512-uUOeoFGY3s6kzAoKskI50weZN0zvW3oLwUijA1uX7Wxuy9yZStF2IvGuXRigMgP2g/L85lsotYGkjpBMLjQnrg==}
+
+  '@chonkiejs/core@0.0.10':
+    resolution: {integrity: sha512-1u9VJBRqRcaSgvlb5tZgA/Y7nu6J3Mm56xK7M+NMshsEortrEpX4AL42HYFovxlggy5kHnjjDzLq7eDpiSRa+Q==}
 
   '@crawlee/basic@3.16.0':
     resolution: {integrity: sha512-dcqeDkYk6NoXHSBEkALD4orb7k6yTDkwZp8RtcvlmMmVZKVQTVVHh78NFInzxRkjFVmStFWE2LRHBZpe518E0Q==}
@@ -1499,6 +1511,15 @@ packages:
 
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
+
+  '@kreuzberg/tree-sitter-language-pack@1.8.1':
+    resolution: {integrity: sha512-24qZIP3CvDUD/XokRJPc7rD82M4RJZHn4GxMox35Iicye/q2NLiEkjiE6BSeyMltBHXoVCXFkzDDgVCXrQhmMQ==}
+    engines: {node: '>= 16'}
+    peerDependencies:
+      tree-sitter: ^0.25.0
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
 
   '@mdx-js/mdx@3.1.1':
     resolution: {integrity: sha512-f6ZO2ifpwAQIpzGWaBQT2TXxPv6z3RBzQKpVftEWN78Vl/YweF1uwussDx8ECAXVtr3Rs89fKyG9YlzUs9DyGQ==}
@@ -8671,6 +8692,16 @@ snapshots:
 
   '@chevrotain/types@11.1.2': {}
 
+  '@chonkiejs/chunk@0.9.3': {}
+
+  '@chonkiejs/core@0.0.10':
+    dependencies:
+      '@chonkiejs/chunk': 0.9.3
+    optionalDependencies:
+      '@kreuzberg/tree-sitter-language-pack': 1.8.1
+    transitivePeerDependencies:
+      - tree-sitter
+
   '@crawlee/basic@3.16.0':
     dependencies:
       '@apify/log': 2.5.39
@@ -9435,6 +9466,8 @@ snapshots:
   '@juggle/resize-observer@3.4.0': {}
 
   '@keyv/serialize@1.1.1': {}
+
+  '@kreuzberg/tree-sitter-language-pack@1.8.1': {}
 
   '@mdx-js/mdx@3.1.1':
     dependencies:

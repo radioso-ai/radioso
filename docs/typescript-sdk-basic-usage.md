@@ -114,6 +114,8 @@ const ingestion = await client.settings.getIngestion();
 
 Update ingestion settings:
 
+Supported chunking strategies are `"fixed_window"`, `"structured_semantic"`, and `"recursive_text"`.
+
 ```ts
 await client.settings.updateIngestion({
   chunkingStrategy: "fixed_window",

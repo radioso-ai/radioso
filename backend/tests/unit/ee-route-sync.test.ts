@@ -238,5 +238,8 @@ describe("Enterprise frontend route sync", () => {
     expect(dockerfile).toContain("ee/packages/agent-wizard-frontend/package.json");
     expect(dockerfile).toContain("ee/readme.md");
     expect(dockerfile).toContain("docs-portal/content/quickstarts/website-embed.mdx");
+    expect(dockerfile).toContain("COPY packages/ui/package.json ./packages/ui/package.json");
+    expect(dockerfile).toContain("COPY packages/ui ./packages/ui");
+    expect(dockerfile).toContain("COPY --chown=node:node --from=builder /app/packages/ui ./packages/ui");
   });
 });

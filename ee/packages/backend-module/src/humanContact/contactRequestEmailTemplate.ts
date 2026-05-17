@@ -1,3 +1,9 @@
+export interface ConversationTurn {
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAt: Date | string;
+}
+
 export interface HumanContactRequestEmailInput {
   to: string;
   visitorEmail: string;
@@ -8,7 +14,23 @@ export interface HumanContactRequestEmailInput {
   requestId: string;
   workspaceId: string;
   dashboardUrl: string | null;
+  recentTurns?: ConversationTurn[];
 }
+
+const TURN_CONTENT_MAX_CHARS = 240;
+const TURN_ROLE_LABELS: Record<ConversationTurn["role"], string> = {
+  user: "Visitor",
+  assistant: "Assistant",
+  system: "System",
+};
+
+const truncateTurnContent = (content: string): string => {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (normalized.length <= TURN_CONTENT_MAX_CHARS) {
+    return normalized;
+  }
+  return `${normalized.slice(0, TURN_CONTENT_MAX_CHARS).trimEnd()}…`;
+};
 
 export interface RenderedContactRequestEmail {
   to: string;
@@ -62,6 +84,8 @@ export const renderHumanContactRequestEmail = (
     .filter((part): part is string => Boolean(part))
     .join(" • ");
 
+  const recentTurns = input.recentTurns ?? [];
+
   const textLines = [
     `New contact request — ${metaLine}`,
     "",
@@ -70,6 +94,12 @@ export const renderHumanContactRequestEmail = (
     "Message:",
     input.message || "(no message)",
   ];
+  if (recentTurns.length > 0) {
+    textLines.push("", "Recent conversation:");
+    for (const turn of recentTurns) {
+      textLines.push(`  ${TURN_ROLE_LABELS[turn.role]}: ${truncateTurnContent(turn.content)}`);
+    }
+  }
   if (input.dashboardUrl) {
     textLines.push("", `Open in Radioso: ${input.dashboardUrl}`);
   }
@@ -86,6 +116,16 @@ export const renderHumanContactRequestEmail = (
   htmlParts.push(
     `<p style="margin:0 0 4px 0;"><strong>Message:</strong></p><p style="margin:0 0 16px 0;white-space:pre-wrap;">${escapeHtml(input.message || "(no message)")}</p>`,
   );
+  if (recentTurns.length > 0) {
+    htmlParts.push(`<p style="margin:0 0 4px 0;"><strong>Recent conversation:</strong></p>`);
+    htmlParts.push(`<div style="margin:0 0 16px 0;padding:8px 12px;border-left:2px solid #e5e7eb;font-size:13px;line-height:1.5;">`);
+    for (const turn of recentTurns) {
+      htmlParts.push(
+        `<p style="margin:0 0 6px 0;"><span style="color:#6b7280;">${escapeHtml(TURN_ROLE_LABELS[turn.role])}:</span> ${escapeHtml(truncateTurnContent(turn.content))}</p>`,
+      );
+    }
+    htmlParts.push(`</div>`);
+  }
   if (input.dashboardUrl) {
     htmlParts.push(
       `<p style="margin:0 0 16px 0;"><a href="${escapeHtml(input.dashboardUrl)}" style="display:inline-block;padding:8px 14px;background:#111827;color:#ffffff;border-radius:6px;text-decoration:none;">Open in Radioso</a></p>`,

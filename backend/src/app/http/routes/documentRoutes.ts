@@ -70,6 +70,7 @@ type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "env"
   | "abuseControlService"
   | "auditService"
+  | "chunkRepository"
   | "documentDeletionService"
   | "documentImportService"
   | "documentIngestionService"
@@ -81,6 +82,11 @@ type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "websiteCrawlerProvider"
   | "usageLimitPolicy"
 >;
+
+export const chunkParamsSchema = z.object({
+  documentId: z.string().uuid(),
+  chunkId: z.string().uuid(),
+});
 
 export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): Router => {
   const router = Router();
@@ -408,6 +414,42 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       const { documentId } = documentParamsSchema.parse(req.params);
       const document = await dependencies.documentIngestionService.getDocument(workspaceId, documentId);
       res.status(200).json(document);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:documentId/chunks", workspaceSession, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { documentId } = documentParamsSchema.parse(req.params);
+      await dependencies.documentIngestionService.getDocument(workspaceId, documentId);
+      const chunks = await dependencies.chunkRepository.listSummariesForDocument({
+        documentId,
+        workspaceId,
+      });
+      res.status(200).json({ documentId, chunks });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:documentId/chunks/:chunkId", workspaceSession, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { documentId, chunkId } = chunkParamsSchema.parse(req.params);
+      const chunk = await dependencies.chunkRepository.findByIdForDocument({
+        chunkId,
+        documentId,
+        workspaceId,
+      });
+      if (!chunk) {
+        throw notFound("Chunk not found");
+      }
+      res.status(200).json({
+        ...chunk,
+        createdAt: chunk.createdAt.toISOString(),
+      });
     } catch (error) {
       next(error);
     }

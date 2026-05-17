@@ -27,6 +27,7 @@ import type { AuditService } from "../../modules/audit/composition.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import type { WorkspaceSummaryService } from "../../modules/workspace/services/workspaceSummaryService.js";
 import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
+import type { ChunkRepositoryPort } from "../../modules/documents/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
@@ -78,6 +79,7 @@ export interface AppDependencies {
   workspaceSummaryService: WorkspaceSummaryService;
   ingestionSettingsService: IngestionSettingsService;
   retrievalSettingsService: RetrievalSettingsService;
+  chunkRepository: ChunkRepositoryPort;
   documentIngestionService: DocumentIngestionService;
   documentSourceRepository: DocumentSourceRepositoryPort;
   documentImportService: DocumentImportService;

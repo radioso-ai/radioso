@@ -1,9 +1,15 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import { ChevronDown, CircleCheck, CircleX } from 'lucide-react'
 
+import {
+  ChunkInspectorSheet,
+  type ChunkInspectorRequest,
+} from '@/components/dashboard/documents/chunk-inspector-sheet'
 import type { ActivityTrace, ActivityStage } from '@/lib/api'
+
+const ChunkInspectorContext = createContext<((request: ChunkInspectorRequest) => void) | null>(null)
 
 const formatJson = (value: unknown) => JSON.stringify(value, null, 2)
 
@@ -109,6 +115,8 @@ function ChunkList({
   label: string
   chunks?: ChunkRef[]
 }) {
+  const openInspector = useContext(ChunkInspectorContext)
+
   if (!chunks?.length) {
     return null
   }
@@ -117,13 +125,22 @@ function ChunkList({
     <Section title={label}>
       <div className="space-y-2">
         {chunks.map((chunk) => (
-          <div
+          <button
+            type="button"
             key={`${chunk.documentId}-${chunk.chunkId}`}
-            className="rounded-lg border border-border/70 bg-background/70 p-3 select-text"
+            onClick={() =>
+              openInspector?.({
+                documentId: chunk.documentId,
+                documentTitle: chunk.title,
+                initialChunkId: chunk.chunkId,
+              })
+            }
+            disabled={!openInspector}
+            className="block w-full rounded-lg border border-border/70 bg-background/70 p-3 text-left transition enabled:cursor-pointer enabled:hover:border-border enabled:hover:bg-accent/40 disabled:cursor-default"
           >
             <p className="text-sm text-foreground">{chunk.title}</p>
             <p className="mt-1 font-mono text-[11px] text-muted-foreground">{chunk.chunkId}</p>
-          </div>
+          </button>
         ))}
       </div>
     </Section>
@@ -722,6 +739,8 @@ export function ActivityTraceDetail({
   activityTrace?: ActivityTrace
   selectedStageId?: string
 }) {
+  const [chunkInspectorRequest, setChunkInspectorRequest] = useState<ChunkInspectorRequest>(null)
+
   if (!activityTrace) {
     return (
       <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
@@ -742,8 +761,9 @@ export function ActivityTraceDetail({
   }
 
   return (
-    <div className="space-y-4 select-text">
-      <StageOverview stage={selectedStage} trace={activityTrace} />
+    <ChunkInspectorContext.Provider value={setChunkInspectorRequest}>
+      <div className="space-y-4 select-text">
+        <StageOverview stage={selectedStage} trace={activityTrace} />
 
       <details className="group rounded-lg border border-border/70 bg-background/60 p-3 text-xs text-muted-foreground">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-medium text-foreground">
@@ -768,5 +788,12 @@ export function ActivityTraceDetail({
         </pre>
       </details>
     </div>
+    <ChunkInspectorSheet
+      request={chunkInspectorRequest}
+      onOpenChange={(open) => {
+        if (!open) setChunkInspectorRequest(null)
+      }}
+    />
+    </ChunkInspectorContext.Provider>
   )
 }

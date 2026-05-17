@@ -1,7 +1,7 @@
 'use client'
 
 import type { FormEvent } from 'react'
-import { ArrowLeft, FileText, PanelRight, Pencil, Save, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Boxes, FileText, PanelRight, Pencil, Save, Trash2, X } from 'lucide-react'
 
 import { DocumentStatus } from '@/components/dashboard/document-status'
 import { MarkdownContent } from '@/components/markdown/markdown-content'
@@ -33,6 +33,7 @@ export function DocumentEditorPage({
   onEditingChange,
   onMetadataOpenChange,
   onDelete,
+  onInspectChunks,
   onSubmit,
 }: {
   document: DocumentSummary | null
@@ -49,6 +50,7 @@ export function DocumentEditorPage({
   onEditingChange: (editing: boolean) => void
   onMetadataOpenChange: (open: boolean) => void
   onDelete: () => void
+  onInspectChunks: () => void
   onSubmit: (event: FormEvent) => void
 }) {
   if (isLoading) {
@@ -116,6 +118,10 @@ export function DocumentEditorPage({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" onClick={onInspectChunks}>
+              <Boxes className="mr-2 h-4 w-4" />
+              Chunks
+            </Button>
             <Button type="button" variant="outline" onClick={() => onMetadataOpenChange(!isMetadataOpen)}>
               <PanelRight className="mr-2 h-4 w-4" />
               Metadata

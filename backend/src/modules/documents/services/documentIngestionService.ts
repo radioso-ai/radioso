@@ -178,6 +178,29 @@ export interface DocumentWorkspaceSummaryRecord {
   sampleDocumentSlugs: string[];
 }
 
+export interface ChunkSummary {
+  id: string;
+  chunkIndex: number;
+  contentPreview: string;
+  contentLength: number;
+  startOffset: number;
+  endOffset: number;
+}
+
+export interface ChunkDetail {
+  id: string;
+  documentId: string;
+  workspaceId: string;
+  chunkIndex: number;
+  content: string;
+  searchText: string | null;
+  startOffset: number;
+  endOffset: number;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+  embeddingDimensions: number | null;
+}
+
 export interface ChunkRepositoryPort {
   replaceForDocument(documentId: string, chunks: ChunkRecord[]): Promise<void>;
   publishForDocumentRevision(input: {
@@ -186,6 +209,12 @@ export interface ChunkRepositoryPort {
     revision: number;
     chunks: ChunkRecord[];
   }): Promise<boolean>;
+  listSummariesForDocument(input: { documentId: string; workspaceId: string }): Promise<ChunkSummary[]>;
+  findByIdForDocument(input: {
+    chunkId: string;
+    documentId: string;
+    workspaceId: string;
+  }): Promise<ChunkDetail | null>;
 }
 
 export interface DocumentSummary {

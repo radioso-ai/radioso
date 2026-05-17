@@ -746,28 +746,6 @@ export function RetrievalSettingsPanel({
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-1.5">
-                  <Label htmlFor="citationDisplay" className="text-foreground">
-                    {retrievalSettingDocs.citationDisplayEnabled.label}
-                  </Label>
-                  <SettingTooltip
-                    label={retrievalSettingDocs.citationDisplayEnabled.label}
-                    content={retrievalSettingDocs.citationDisplayEnabled.details}
-                  />
-                </div>
-                <div className="mt-0.5 text-sm text-muted-foreground">
-                  <AssistantMarkdownContent content={retrievalSettingDocs.citationDisplayEnabled.summary} inline />
-                </div>
-              </div>
-              <Switch
-                id="citationDisplay"
-                checked={settings.citationDisplayEnabled}
-                onCheckedChange={(checked) => updateSetting('citationDisplayEnabled', checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-1.5">
                   <Label htmlFor="answerSupportValidation" className="text-foreground">
                     {retrievalSettingDocs.answerSupportValidationEnabled.label}
                   </Label>

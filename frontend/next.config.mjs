@@ -5,6 +5,41 @@ const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_STANDALONE_MCP_URL = process.env.NODE_ENV === "production" ? "" : "http://localhost:8787/mcp";
 const backendProxyMcpUrl = (mountPath) => `/backend${mountPath.startsWith("/") ? mountPath : `/${mountPath}`}`;
 
+const cspDirectives = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
+  "script-src-attr 'none'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: http: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' http: https: ws: wss:",
+  "media-src 'self' data: blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'self'",
+  "worker-src 'self' blob:",
+].join("; ");
+
+const securityHeaders = [
+  {
+    key: "Content-Security-Policy",
+    value: cspDirectives,
+  },
+  {
+    key: "Referrer-Policy",
+    value: "strict-origin-when-cross-origin",
+  },
+  {
+    key: "X-Content-Type-Options",
+    value: "nosniff",
+  },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=()",
+  },
+];
+
 const resolvePublicMcpUrl = () => {
   if (process.env.NEXT_PUBLIC_MCP_URL) {
     return process.env.NEXT_PUBLIC_MCP_URL;
@@ -46,6 +81,14 @@ const nextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
   images: {
     unoptimized: true,
+  },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: securityHeaders,
+      },
+    ];
   },
   webpack(config) {
     config.resolve.alias = {

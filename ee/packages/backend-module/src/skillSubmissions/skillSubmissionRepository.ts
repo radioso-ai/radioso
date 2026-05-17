@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
+
 import { z } from "zod";
 
-import type { ActivityTrace, SkillDefinition, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import type { ActivityStage, ActivityTrace, SkillDefinition, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 
 export type SkillSubmissionStatus = "pending" | "delivering" | "delivered" | "failed";
 
@@ -59,6 +61,7 @@ export interface SkillSubmissionRepositoryOptions {
 }
 
 const MAX_FAILURE_REASON_LENGTH = 1000;
+const INVALID_FIELDS_STAGE_ID = "stored_field_validation";
 
 const FULL_COLUMNS = `
   id::text,
@@ -151,6 +154,56 @@ const buildFieldsSchema = (definition: SkillDefinition): z.ZodObject<Record<stri
     shape[field.name] = fieldSchemaFor(field);
   }
   return z.object(shape).passthrough();
+};
+
+const buildInvalidFieldsTrace = (row: SkillSubmissionRow, reason: string): ActivityTrace => {
+  const now = new Date().toISOString();
+  const existingTrace = row.activity_trace;
+  const traceId = existingTrace?.traceId ?? randomUUID();
+  const startedAt = existingTrace?.startedAt ?? now;
+  const stage: ActivityStage = {
+    stageId: INVALID_FIELDS_STAGE_ID,
+    kind: "validation",
+    label: "Stored field validation",
+    status: "failed",
+    startedAt: now,
+    reason,
+    outputs: {
+      status: "failed",
+      finalDeliveryError: reason,
+    },
+    metrics: {
+      attempt: row.attempts + 1,
+    },
+  };
+  const existingStages = existingTrace?.stages ?? [];
+  const existingStageIndex = existingStages.findIndex((candidate) => candidate.stageId === INVALID_FIELDS_STAGE_ID);
+  const stages = existingStageIndex >= 0
+    ? existingStages.map((candidate) => candidate.stageId === INVALID_FIELDS_STAGE_ID ? stage : candidate)
+    : [...existingStages, stage];
+  const links = existingTrace?.links ? [...existingTrace.links] : [];
+  if (existingStageIndex < 0 && existingStages.length > 0) {
+    links.push({
+      fromStageId: existingStages[existingStages.length - 1]?.stageId ?? INVALID_FIELDS_STAGE_ID,
+      toStageId: INVALID_FIELDS_STAGE_ID,
+      kind: "sequence",
+    });
+  }
+  return {
+    traceId,
+    startedAt,
+    completedAt: now,
+    totalDurationMs: Math.max(0, Date.parse(now) - Date.parse(startedAt)),
+    stages,
+    links,
+    summary: {
+      ...(existingTrace?.summary ?? {}),
+      traceId,
+      skillName: row.skill_name,
+      status: "failed",
+      outcome: "stored_fields_validation_failed",
+    },
+  };
 };
 
 export class SkillSubmissionRepository {
@@ -297,6 +350,8 @@ export class SkillSubmissionRepository {
     const reason = error instanceof Error
       ? `Stored skill submission fields failed validation: ${error.message}`
       : "Stored skill submission fields failed validation.";
+    const truncatedReason = this.truncateFailureReason(reason);
+    const activityTrace = buildInvalidFieldsTrace(row, truncatedReason);
     this.options.logger?.error?.(
       {
         submissionId: row.id,
@@ -313,9 +368,10 @@ export class SkillSubmissionRepository {
        SET status = 'failed',
            attempts = attempts + 1,
            final_delivery_error = $2,
+           activity_trace = COALESCE($3::jsonb, activity_trace),
            updated_at = NOW()
        WHERE id = $1`,
-      [row.id, this.truncateFailureReason(reason)],
+      [row.id, truncatedReason, activityTrace],
     );
   }
 

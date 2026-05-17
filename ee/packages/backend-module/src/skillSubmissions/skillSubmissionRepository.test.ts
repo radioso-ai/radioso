@@ -56,6 +56,7 @@ class FakeSkillSubmissionRepositoryDatabase implements UsageLimitDatabasePort {
         row.status = "failed";
         row.attempts += 1;
         row.final_delivery_error = String(params[1]);
+        row.activity_trace = params[2] as SkillSubmissionRow["activity_trace"];
       }
       return [] as T[];
     }
@@ -177,6 +178,19 @@ describe("skill submission repository", () => {
       status: "failed",
       attempts: 1,
       final_delivery_error: expect.stringContaining("failed validation"),
+      activity_trace: expect.objectContaining({
+        summary: expect.objectContaining({
+          status: "failed",
+          outcome: "stored_fields_validation_failed",
+        }),
+        stages: expect.arrayContaining([
+          expect.objectContaining({
+            stageId: "stored_field_validation",
+            status: "failed",
+            reason: expect.stringContaining("failed validation"),
+          }),
+        ]),
+      }),
     });
     expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({

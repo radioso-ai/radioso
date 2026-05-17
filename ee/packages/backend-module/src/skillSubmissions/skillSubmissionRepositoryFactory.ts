@@ -1,12 +1,8 @@
-import { humanContactRequestSkillDefinition } from "../humanContact/skill/definition.js";
-import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import type { SkillDefinition, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import { SkillSubmissionRepository, type SkillSubmissionRepositoryOptions } from "./skillSubmissionRepository.js";
-
-const registeredSkillSubmissionDefinitions = [
-  humanContactRequestSkillDefinition,
-];
 
 export const createSkillSubmissionRepository = (
   database: UsageLimitDatabasePort,
+  definitions: SkillDefinition[] = [],
   options: SkillSubmissionRepositoryOptions = {},
-): SkillSubmissionRepository => new SkillSubmissionRepository(database, registeredSkillSubmissionDefinitions, options);
+): SkillSubmissionRepository => new SkillSubmissionRepository(database, definitions, options);

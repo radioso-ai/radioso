@@ -2,9 +2,9 @@ import type { ApplicationModule } from "../radiosoModuleTypes.js";
 
 import { createEnterpriseEmailService } from "../mail/emailService.js";
 import { skillSubmissionMigrator } from "../skillSubmissions/skillSubmissionMigrator.js";
-import { createSkillSubmissionRepository } from "../skillSubmissions/skillSubmissionRepositoryFactory.js";
 import { HumanContactHistoryService } from "./contactHistoryService.js";
 import { HumanContactSettingsService } from "./contactSettingsService.js";
+import { createHumanContactSkillSubmissionRepository } from "./contactSkillSubmissionRepository.js";
 import { humanContactMigrator } from "./humanContactMigrator.js";
 import { createHumanContactRoutes } from "./humanContactRoutes.js";
 import { EnterpriseHumanContactService } from "./humanContactService.js";
@@ -40,7 +40,7 @@ export const createHumanContactApplicationModule = (
       return replaceService(state, dependencies).asChatIntakeProvider();
     });
     context.registerContactHistoryProvider((dependencies) => {
-      const submissions = createSkillSubmissionRepository(dependencies.database, {
+      const submissions = createHumanContactSkillSubmissionRepository(dependencies.database, {
         logger: dependencies.logger,
       });
       const historyService = new HumanContactHistoryService(submissions);

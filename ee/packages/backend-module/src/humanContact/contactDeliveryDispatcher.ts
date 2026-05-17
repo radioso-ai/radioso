@@ -38,6 +38,7 @@ export class HumanContactDeliveryDispatcher {
     if (typeof row.fields.email === "string" && row.fields.email.trim()) {
       return row.fields.email;
     }
+    // Last-resort delivery label for malformed legacy rows; validated submissions should carry email fields.
     return row.subject_identity ?? "visitor";
   }
 

@@ -267,31 +267,33 @@ function SourceExpandedPanel({
           </>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={onViewDocuments}>
-          <FileText className="mr-2 h-3.5 w-3.5" />
-          View documents
-        </Button>
-        {hasCrawlLog ? (
-          <Button type="button" variant="outline" size="sm" onClick={onOpenCrawlLog}>
-            <ScrollText className="mr-2 h-3.5 w-3.5" />
-            View crawl log
+      <Collapsible>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={onViewDocuments}>
+            <FileText className="mr-2 h-3.5 w-3.5" />
+            View documents
           </Button>
-        ) : null}
-      </div>
-      {source.kind === 'website' && source.crawlSettings ? (
-        <Collapsible>
-          <CollapsibleTrigger asChild>
-            <Button type="button" variant="ghost" size="sm" className="-ml-2 text-muted-foreground">
-              <Settings2 className="mr-2 h-3.5 w-3.5" />
-              Advanced crawl settings
+          {hasCrawlLog ? (
+            <Button type="button" variant="outline" size="sm" onClick={onOpenCrawlLog}>
+              <ScrollText className="mr-2 h-3.5 w-3.5" />
+              View crawl log
             </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="pt-2">
+          ) : null}
+          {source.kind === 'website' && source.crawlSettings ? (
+            <CollapsibleTrigger asChild>
+              <Button type="button" variant="outline" size="sm">
+                <Settings2 className="mr-2 h-3.5 w-3.5" />
+                Advanced crawl settings
+              </Button>
+            </CollapsibleTrigger>
+          ) : null}
+        </div>
+        {source.kind === 'website' && source.crawlSettings ? (
+          <CollapsibleContent className="pt-3">
             <SourceCrawlSettingsForm source={source} onSaved={onSettingsSaved} />
           </CollapsibleContent>
-        </Collapsible>
-      ) : null}
+        ) : null}
+      </Collapsible>
     </div>
   )
 }

@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/select'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { DocumentSourceListItem, DocumentSummary } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -143,7 +144,7 @@ export function DocumentEditorPage({
                 {document.sourceFilename ? <span>{document.sourceFilename}</span> : null}
                 {sourceName ? (
                   <span className="inline-flex items-center gap-1">
-                    <span>From</span>
+                    <span>Source</span>
                     {sourceFilterHref ? (
                       <Link
                         href={sourceFilterHref}
@@ -168,9 +169,6 @@ export function DocumentEditorPage({
                   </a>
                 ) : null}
               </div>
-              {readOnlyExplanation ? (
-                <p className="text-sm text-muted-foreground">{readOnlyExplanation}</p>
-              ) : null}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -193,7 +191,21 @@ export function DocumentEditorPage({
                 <Pencil className="mr-2 h-4 w-4" />
                 Edit
               </Button>
-            ) : null}
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0} aria-disabled="true">
+                    <Button type="button" disabled className="pointer-events-none">
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Edit
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {readOnlyExplanation ? (
+                  <TooltipContent>{readOnlyExplanation}</TooltipContent>
+                ) : null}
+              </Tooltip>
+            )}
             <Button
               type="button"
               variant="outline"

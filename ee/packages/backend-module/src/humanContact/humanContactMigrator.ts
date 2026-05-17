@@ -106,6 +106,10 @@ export const humanContactMigrator: ApplicationDatabaseMigrator = {
       DO $$
       BEGIN
         IF to_regclass('public.ee_contact_requests') IS NOT NULL THEN
+          ALTER TABLE ee_contact_requests
+            ADD COLUMN IF NOT EXISTS idempotency_key TEXT,
+            ADD COLUMN IF NOT EXISTS activity_trace JSONB;
+
           INSERT INTO skill_submissions (
             id, account_id, workspace_id, conversation_id, assistant_message_id,
             skill_name, source_channel, source_origin, trigger_source, trigger_reason,

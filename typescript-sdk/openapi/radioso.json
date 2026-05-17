@@ -1375,7 +1375,8 @@
             "type": "string",
             "enum": [
               "fixed_window",
-              "structured_semantic"
+              "structured_semantic",
+              "recursive_text"
             ]
           },
           "fixedWindowChunkSize": {
@@ -1417,7 +1418,8 @@
             "type": "string",
             "enum": [
               "fixed_window",
-              "structured_semantic"
+              "structured_semantic",
+              "recursive_text"
             ]
           },
           "fixedWindowChunkSize": {

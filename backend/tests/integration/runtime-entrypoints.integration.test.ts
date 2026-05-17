@@ -235,7 +235,9 @@ describe("runtime entrypoints", () => {
 
   it("starts the worker task runtime and serves internal task routes", async () => {
     const { dependencies, repositories } = createTestDependencies();
-    const workerStartSpy = vi.spyOn(dependencies.documentProcessingWorker, "start");
+    const workerStartSpy = vi
+      .spyOn(dependencies.documentProcessingWorker, "start")
+      .mockResolvedValue(undefined);
     const workerStopSpy = vi.spyOn(dependencies.documentProcessingWorker, "stop");
     const document = await repositories.documentRepository.create({
       workspaceId: randomUUID(),

@@ -273,7 +273,10 @@ export const buildDocumentServices = (input: {
   const documentJobDispatcher = composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
   const websiteCrawlJobDispatcher = createDefaultWebsiteCrawlJobDispatcher(env, logger);
   const websiteCrawlerProvider = composition.websiteCrawlerProvider ?? new RadiosoCrawlerProvider();
-  const chunkingStrategyRegistry = createDefaultChunkingStrategyRegistry(embeddingService);
+  const chunkingStrategyRegistry = createDefaultChunkingStrategyRegistry(
+    embeddingService,
+    composition.chunkingProvider,
+  );
   const documentProcessingService = new DocumentProcessingService(
     repositories.documentRepository,
     repositories.chunkRepository,

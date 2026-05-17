@@ -51,6 +51,25 @@ export type ApplicationUsageLimitPolicyRegistration =
       logger: AppLogger;
     }) => UsageLimitPolicy);
 
+export interface WorkspaceContactInfoRepositoryPort {
+  findById(workspaceId: string): Promise<{
+    id: string;
+    name: string;
+    publicRouteKey: string;
+  } | null>;
+}
+
+export interface MailTransportPort {
+  send(message: {
+    to: string;
+    replyTo?: string | null;
+    subject: string;
+    text: string;
+    html?: string;
+    metadata?: Record<string, string>;
+  }): Promise<void>;
+}
+
 export type ApplicationChatIntakeProviderRegistration =
   | ChatIntakeProviderPort
   | ((context: {
@@ -59,8 +78,11 @@ export type ApplicationChatIntakeProviderRegistration =
       logger: AppLogger;
       conversationRepository: ConversationRepositoryPort;
       messageRepository: MessageRepositoryPort;
+      workspaceContactInfoRepository: WorkspaceContactInfoRepositoryPort;
       auditService: AuditService;
       abuseControlService: AbuseControlService;
+      mailService: MailTransportPort;
+      dashboardBaseUrl: string | null;
     }) => ChatIntakeProviderPort);
 
 export type ApplicationContactHistoryProviderRegistration =

@@ -6,6 +6,7 @@ import type {
   ChatGateway,
   ContactHistoryDetail,
   ContactHistorySummary,
+  MailTransport,
   UsageLimitDatabaseClient,
   UsageLimitDatabasePort,
 } from "../radiosoModuleTypes.js";
@@ -17,15 +18,17 @@ export type Logger = {
   error(entry: unknown, message?: string): void;
 };
 
-export type EmailService = {
-  send(message: {
-    to: string;
-    subject: string;
-    text: string;
-    html?: string;
-    metadata?: Record<string, string>;
-  }): Promise<void>;
-};
+export type MailService = MailTransport;
+
+export interface WorkspaceContactInfo {
+  id: string;
+  name: string;
+  publicRouteKey: string;
+}
+
+export interface WorkspaceContactInfoRepository {
+  findById(workspaceId: string): Promise<WorkspaceContactInfo | null>;
+}
 
 export interface ConversationRepository {
   findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<{
@@ -196,10 +199,12 @@ export type HumanContactDependencies = {
   logger: Logger;
   conversationRepository: ConversationRepository;
   messageRepository: MessageRepository;
+  workspaceContactInfoRepository?: WorkspaceContactInfoRepository;
   auditService: AuditService;
   abuseControlService: AbuseControlService;
-  emailService: EmailService;
+  mailService: MailService;
   chatGateway: ChatGateway;
+  dashboardBaseUrl?: string | null;
   pollIntervalMs?: number;
   webhookFetch?: typeof fetch;
   startPoller?: boolean;

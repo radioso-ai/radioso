@@ -8,18 +8,6 @@ import { createUsageLimitsApplicationModule } from "./usageLimits/applicationMod
 import { createWebsiteEmbedApplicationModule } from "./websiteEmbedApplicationModule.js";
 
 export {
-  EmailService,
-  LogEmailDriver,
-  NoopEmailDriver,
-  ResendEmailDriver,
-  createEnterpriseEmailService,
-  type EmailDriver,
-  type EmailMessage,
-  type EmailVerificationInput,
-  type EnterpriseEmailEnv,
-  type PasswordResetEmailInput,
-} from "./mail/emailService.js";
-export {
   collectFrontendRouteContributions,
   validateFeatureManifests,
   type FeatureManifest,

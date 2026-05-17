@@ -114,14 +114,67 @@ export function DocumentEditorPage({
       ? 'This document was added by a crawl or sync. Re-crawl the source to refresh it.'
       : null
 
+  const headerActions = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button type="button" variant="outline" onClick={() => onMetadataOpenChange(!isMetadataOpen)}>
+        <PanelRight className="mr-2 h-4 w-4" />
+        Properties
+      </Button>
+      {isEditing ? (
+        <>
+          <Button type="button" variant="outline" onClick={() => onEditingChange(false)} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isSaving || !values.title.trim() || !values.content.trim()}>
+            {isSaving ? <Spinner className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
+            Save document
+          </Button>
+        </>
+      ) : isEditable ? (
+        <Button type="button" onClick={() => onEditingChange(true)}>
+          <Pencil className="mr-2 h-4 w-4" />
+          Edit
+        </Button>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span tabIndex={0} aria-disabled="true">
+              <Button type="button" disabled className="pointer-events-none">
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            </span>
+          </TooltipTrigger>
+          {readOnlyExplanation ? (
+            <TooltipContent>{readOnlyExplanation}</TooltipContent>
+          ) : null}
+        </Tooltip>
+      )}
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
+        onClick={onDelete}
+        disabled={isSaving || isDeleting}
+      >
+        {isDeleting ? <Spinner className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
+        <span className="sr-only">Delete document</span>
+      </Button>
+    </div>
+  )
+
   return (
     <form onSubmit={onSubmit} className="flex h-full min-h-0 flex-col overflow-hidden">
-        <div className="sticky top-0 z-30 flex flex-wrap items-start justify-between gap-4 border-b border-border bg-background/95 px-6 py-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="min-w-0 space-y-3">
+        <div className="sticky top-0 z-30 space-y-3 border-b border-border bg-background/95 px-6 py-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Button type="button" variant="ghost" className="-ml-3 h-8 px-3 text-muted-foreground" onClick={onBack}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to documents
             </Button>
+            {headerActions}
+          </div>
+          <div className="min-w-0">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 {isEditing ? (
@@ -170,53 +223,6 @@ export function DocumentEditorPage({
                 ) : null}
               </div>
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" onClick={() => onMetadataOpenChange(!isMetadataOpen)}>
-              <PanelRight className="mr-2 h-4 w-4" />
-              Properties
-            </Button>
-            {isEditing ? (
-              <>
-                <Button type="button" variant="outline" onClick={() => onEditingChange(false)} disabled={isSaving}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSaving || !values.title.trim() || !values.content.trim()}>
-                  {isSaving ? <Spinner className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
-                  Save document
-                </Button>
-              </>
-            ) : isEditable ? (
-              <Button type="button" onClick={() => onEditingChange(true)}>
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit
-              </Button>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span tabIndex={0} aria-disabled="true">
-                    <Button type="button" disabled className="pointer-events-none">
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Edit
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                {readOnlyExplanation ? (
-                  <TooltipContent>{readOnlyExplanation}</TooltipContent>
-                ) : null}
-              </Tooltip>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={onDelete}
-              disabled={isSaving || isDeleting}
-            >
-              {isDeleting ? <Spinner className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
-              <span className="sr-only">Delete document</span>
-            </Button>
           </div>
         </div>
 

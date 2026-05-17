@@ -200,7 +200,19 @@ export function KnowledgeView({
       description={dataTabSummaries.sources}
       actions={dataNavigation}
     >
-      <DocumentSourcesView />
+      <DocumentSourcesView
+        onViewDocumentsForSource={(sourceId) => {
+          router.push(
+            buildDashboardHref(accountId, {
+              ...routeState,
+              section: 'knowledge',
+              knowledgeTab: 'documents',
+              documentSourceFilter: sourceId,
+              documentsPage: undefined,
+            }),
+          )
+        }}
+      />
     </DashboardPage>
   )
 }

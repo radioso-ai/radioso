@@ -248,6 +248,19 @@ describe('applySourceResumeResult', () => {
     expect([...result.pausedSourceIds]).toEqual([])
     expect([...result.crawlingSourceIds]).toEqual(['source-1'])
   })
+
+  it('moves the source from paused to crawling after a claimed paused job accepts a pending resume', () => {
+    const result = applySourceResumeResult({
+      sourceId: 'source-1',
+      resumedJobCount: 0,
+      pendingResumeJobCount: 1,
+      pausedSourceIds: new Set(['source-1']),
+      crawlingSourceIds: new Set<string>(),
+    })
+
+    expect([...result.pausedSourceIds]).toEqual([])
+    expect([...result.crawlingSourceIds]).toEqual(['source-1'])
+  })
 })
 
 describe('getResumeDispatchWarning', () => {

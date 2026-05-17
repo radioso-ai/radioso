@@ -135,8 +135,8 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async resumeSourceCrawl(sourceId: string): Promise<{ resumedJobCount: number; resumeDispatchFailureCount?: number }> {
-    return request<{ resumedJobCount: number; resumeDispatchFailureCount?: number }>(`/document/sources/${encodeURIComponent(sourceId)}/resume-crawl`, {
+  async resumeSourceCrawl(sourceId: string): Promise<{ resumedJobCount: number; pendingResumeJobCount?: number; resumeDispatchFailureCount?: number }> {
+    return request<{ resumedJobCount: number; pendingResumeJobCount?: number; resumeDispatchFailureCount?: number }>(`/document/sources/${encodeURIComponent(sourceId)}/resume-crawl`, {
       method: "POST",
     }, { withApiToken: true })
   },

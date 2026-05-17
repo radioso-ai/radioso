@@ -117,7 +117,10 @@ describe("website crawl job service", () => {
       status: "queued",
     };
     const pauseBySourceId = vi.fn().mockResolvedValue([pausedJob]);
-    const resumePausedBySourceId = vi.fn().mockResolvedValue([resumedJob]);
+    const resumePausedBySourceId = vi.fn().mockResolvedValue({
+      resumedJobs: [resumedJob],
+      pendingResumeJobCount: 0,
+    });
     const dispatch = vi.fn().mockResolvedValue(undefined);
     const service = new WebsiteCrawlJobService({
       repository: { pauseBySourceId, resumePausedBySourceId } as never,
@@ -134,7 +137,11 @@ describe("website crawl job service", () => {
     await expect(service.resumeJobsForSource({
       workspaceId: "ws-1",
       sourceId: "source-1",
-    })).resolves.toEqual({ resumedJobCount: 1, resumeDispatchFailureCount: 0 });
+    })).resolves.toEqual({
+      resumedJobCount: 1,
+      pendingResumeJobCount: 0,
+      resumeDispatchFailureCount: 0,
+    });
     expect(resumePausedBySourceId).toHaveBeenCalledWith("source-1", "ws-1");
     expect(dispatch).toHaveBeenCalledWith({
       jobId: "job-resumed",
@@ -144,20 +151,23 @@ describe("website crawl job service", () => {
 
   it("only counts resumed source jobs whose dispatch notification succeeds", async () => {
     const warn = vi.fn();
-    const resumePausedBySourceId = vi.fn().mockResolvedValue([
-      {
-        id: "job-resumed",
-        workspaceId: "ws-1",
-        sourceId: "source-1",
-        status: "queued",
-      },
-      {
-        id: "job-not-dispatched",
-        workspaceId: "ws-1",
-        sourceId: "source-1",
-        status: "queued",
-      },
-    ]);
+    const resumePausedBySourceId = vi.fn().mockResolvedValue({
+      resumedJobs: [
+        {
+          id: "job-resumed",
+          workspaceId: "ws-1",
+          sourceId: "source-1",
+          status: "queued",
+        },
+        {
+          id: "job-not-dispatched",
+          workspaceId: "ws-1",
+          sourceId: "source-1",
+          status: "queued",
+        },
+      ],
+      pendingResumeJobCount: 1,
+    });
     const dispatch = vi
       .fn()
       .mockResolvedValueOnce(undefined)
@@ -172,7 +182,11 @@ describe("website crawl job service", () => {
     await expect(service.resumeJobsForSource({
       workspaceId: "ws-1",
       sourceId: "source-1",
-    })).resolves.toEqual({ resumedJobCount: 1, resumeDispatchFailureCount: 1 });
+    })).resolves.toEqual({
+      resumedJobCount: 1,
+      pendingResumeJobCount: 1,
+      resumeDispatchFailureCount: 1,
+    });
     expect(dispatch).toHaveBeenCalledTimes(2);
     expect(warn).toHaveBeenCalledOnce();
   });

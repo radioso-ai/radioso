@@ -49,7 +49,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -93,7 +92,6 @@ describe("answer support validator", () => {
       ],
       citationEvidence: [],
       retrievedContextSummaries: [],
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -120,7 +118,6 @@ describe("answer support validator", () => {
       answerSegments: [{ text: "Paris." }],
       citationEvidence: [],
       retrievedContextSummaries: [],
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -155,7 +152,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -193,7 +189,6 @@ describe("answer support validator", () => {
       citationEvidence: [],
       hiddenSupportEvidence: [{ kind: "assistant_name", content: "Vikram" }],
       retrievedContextSummaries: [],
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -215,7 +210,6 @@ describe("answer support validator", () => {
         { kind: "assistant_name", content: "Vikram" },
       ],
       retrievedContextSummaries: [],
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -225,36 +219,7 @@ describe("answer support validator", () => {
     expect(result.validation.hiddenSupportUsed).toBeUndefined();
   });
 
-  it("omits visible citation artifacts when citation display is disabled but still classifies support correctly", async () => {
-    const validator = new AnswerSupportValidator();
-
-    const result = await validator.validate({
-      query: "What does the page explain?",
-      answer: "The page explains testing and parsing content for users.",
-      answerSegments: [
-        {
-          text: "The page explains testing and parsing content for users",
-          citationIndices: [0],
-        },
-        { text: "." },
-      ],
-      citationEvidence: citations,
-      retrievedContextSummaries: citations.map((citation) => ({
-        title: citation.title,
-        content: citation.content,
-      })),
-      citationDisplayEnabled: false,
-      groundedMissResponseComposer,
-    });
-
-    expect(result.answer).toBe("The page explains testing and parsing content for users.");
-    expect(result.citations).toBeUndefined();
-    expect(result.answerSegments).toBeUndefined();
-    expect(result.validation.answerModified).toBe(false);
-    expect(result.validation.supportedSegmentCount).toBe(1);
-  });
-
-  it("omits consecutive unsupported claims within mixed answers", async () => {
+it("omits consecutive unsupported claims within mixed answers", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -276,7 +241,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -316,7 +280,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -358,7 +321,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -376,7 +338,6 @@ describe("answer support validator", () => {
       answerSegments: [{ text: "Narayani is a teacher and author" }, { text: "." }],
       citationEvidence: [],
       retrievedContextSummaries: [],
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -415,7 +376,6 @@ describe("answer support validator", () => {
           content: "Keep it short and simple. Begin with a few minutes each day instead of starting with a long session.",
         },
       ],
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -457,7 +417,6 @@ describe("answer support validator", () => {
           content: "Ananda offre informazioni introduttive e corsi residenziali per i visitatori interessati.",
         },
       ],
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -498,7 +457,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -545,7 +503,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -588,7 +545,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -624,7 +580,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -661,7 +616,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -705,7 +659,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -737,7 +690,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -768,7 +720,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer,
     });
 
@@ -800,7 +751,6 @@ describe("answer support validator", () => {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled: true,
       groundedMissResponseComposer: {
         async composeUnsupportedWithContext() {
           return "I couldn't verify that from your workspace documents.";

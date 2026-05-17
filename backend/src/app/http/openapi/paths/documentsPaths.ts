@@ -389,6 +389,7 @@ export const registerDocumentsPaths = (
           "application/json": {
             schema: z.object({
               resumedJobCount: z.number().int().min(0),
+              pendingResumeJobCount: z.number().int().min(0),
               resumeDispatchFailureCount: z.number().int().min(0),
             }),
           },

@@ -3035,6 +3035,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Public chat session exchange rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                };
+            };
         };
     };
     registerAccount: {
@@ -5313,6 +5322,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         resumedJobCount: number;
+                        pendingResumeJobCount: number;
                         resumeDispatchFailureCount: number;
                     };
                 };

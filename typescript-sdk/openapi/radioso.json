@@ -7176,6 +7176,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Public chat session exchange rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitExceededResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -10305,6 +10315,10 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "pendingResumeJobCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
                     "resumeDispatchFailureCount": {
                       "type": "integer",
                       "minimum": 0
@@ -10312,6 +10326,7 @@
                   },
                   "required": [
                     "resumedJobCount",
+                    "pendingResumeJobCount",
                     "resumeDispatchFailureCount"
                   ]
                 }

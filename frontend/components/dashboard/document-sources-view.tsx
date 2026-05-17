@@ -184,11 +184,15 @@ function SourceCrawlSettingsForm({
 
 function SourceExpandedPanel({
   source,
+  crawlStatusVersion,
+  isResumePending,
   onViewDocuments,
   onOpenCrawlLog,
   onSettingsSaved,
 }: {
   source: DocumentSourceListItem
+  crawlStatusVersion: number
+  isResumePending: boolean
   onViewDocuments: () => void
   onOpenCrawlLog: () => void
   onSettingsSaved: (settings: DocumentSourceCrawlSettings) => void
@@ -221,10 +225,10 @@ function SourceExpandedPanel({
     return () => {
       cancelled = true
     }
-  }, [source.id, source.kind])
+  }, [source.id, source.kind, crawlStatusVersion])
 
-  const crawlInProgress = crawlJob?.status === 'queued' || crawlJob?.status === 'processing'
-  const crawlPaused = crawlJob?.status === 'paused'
+  const crawlInProgress = crawlJob?.status === 'queued' || crawlJob?.status === 'processing' || isResumePending
+  const crawlPaused = crawlJob?.status === 'paused' && !isResumePending
   const crawlFailed = crawlJob?.status === 'failed'
   const pageIssueSummaries = getCrawlPageIssueSummaries(crawlJob)
   const hasCrawlLog = source.kind === 'website' && Boolean(crawlJob)
@@ -308,14 +312,17 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
   const [resumingSourceId, setResumingSourceId] = useState<string | null>(null)
   const [crawlingSourceIds, setCrawlingSourceIds] = useState<Set<string>>(new Set())
   const [pausedSourceIds, setPausedSourceIds] = useState<Set<string>>(new Set())
+  const [pendingResumeSourceIds, setPendingResumeSourceIds] = useState<Set<string>>(new Set())
+  const [crawlStatusVersion, setCrawlStatusVersion] = useState(0)
   const sectionShellClassName = 'w-full'
 
-  const refreshCrawlingStatus = useCallback(() => {
+  const refreshCrawlingStatus = useCallback((pendingResumeSourceIdsOverride?: ReadonlySet<string>) => {
     void Promise.all([
       documentsApi.listCrawlJobs({ sinceMinutes: 60 }),
       documentsApi.listCrawlJobs({ status: 'paused' }),
     ])
       .then(([recentResponse, pausedResponse]) => {
+        const effectivePendingResumeSourceIds = pendingResumeSourceIdsOverride ?? pendingResumeSourceIds
         const jobsById = new Map(recentResponse.jobs.map((job) => [job.id, job]))
         for (const job of pausedResponse.jobs) {
           jobsById.set(job.id, job)
@@ -336,11 +343,26 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
             }
           }
         }
+        const nextPendingResumeSourceIds = new Set(effectivePendingResumeSourceIds)
+        let pendingResumeChanged = false
+        for (const sourceId of effectivePendingResumeSourceIds) {
+          if (!paused.has(sourceId)) {
+            nextPendingResumeSourceIds.delete(sourceId)
+            pendingResumeChanged = true
+            continue
+          }
+          paused.delete(sourceId)
+          active.add(sourceId)
+        }
+        if (pendingResumeChanged) {
+          setPendingResumeSourceIds(nextPendingResumeSourceIds)
+          setCrawlStatusVersion((version) => version + 1)
+        }
         setCrawlingSourceIds(active)
         setPausedSourceIds(paused)
       })
       .catch(() => {})
-  }, [])
+  }, [pendingResumeSourceIds])
 
   const loadSources = async () => {
     if (isWorkspaceLoading) {
@@ -383,6 +405,9 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
 
   const handleRecrawl = async (source: DocumentSourceListItem) => {
     setRecrawlingSourceId(source.id)
+    const nextPendingResumeSourceIds = new Set(pendingResumeSourceIds)
+    nextPendingResumeSourceIds.delete(source.id)
+    setPendingResumeSourceIds(nextPendingResumeSourceIds)
     try {
       await documentsApi.recrawlSource(source.id)
       setCrawlingSourceIds((prev) => new Set([...prev, source.id]))
@@ -391,7 +416,8 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
         next.delete(source.id)
         return next
       })
-      void loadSources()
+      setCrawlStatusVersion((version) => version + 1)
+      refreshCrawlingStatus(nextPendingResumeSourceIds)
     } catch {
       // Recrawl failure is visible via the crawl jobs banner
     } finally {
@@ -402,6 +428,9 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
   const handlePause = async (source: DocumentSourceListItem) => {
     setPausingSourceId(source.id)
     setCrawlActionError(null)
+    const nextPendingResumeSourceIds = new Set(pendingResumeSourceIds)
+    nextPendingResumeSourceIds.delete(source.id)
+    setPendingResumeSourceIds(nextPendingResumeSourceIds)
     try {
       const result = await runSourceCrawlAction({
         request: () => documentsApi.pauseSourceCrawl(source.id),
@@ -417,8 +446,8 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
         return next
       })
       setPausedSourceIds((prev) => new Set([...prev, source.id]))
-      refreshCrawlingStatus()
-      void loadSources()
+      setCrawlStatusVersion((version) => version + 1)
+      refreshCrawlingStatus(nextPendingResumeSourceIds)
     } finally {
       setPausingSourceId(null)
     }
@@ -440,20 +469,28 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
       if (resumeDispatchWarning) {
         setCrawlActionError(resumeDispatchWarning)
       }
+      const pendingResumeJobCount = result.result.pendingResumeJobCount ?? 0
+      if (pendingResumeJobCount > 0) {
+        setPendingResumeSourceIds((prev) => new Set([...prev, source.id]))
+      }
       setPausedSourceIds((prev) => applySourceResumeResult({
         sourceId: source.id,
         resumedJobCount: result.result.resumedJobCount,
+        pendingResumeJobCount: result.result.pendingResumeJobCount,
         pausedSourceIds: prev,
         crawlingSourceIds: new Set(),
       }).pausedSourceIds)
       setCrawlingSourceIds((prev) => applySourceResumeResult({
         sourceId: source.id,
         resumedJobCount: result.result.resumedJobCount,
+        pendingResumeJobCount: result.result.pendingResumeJobCount,
         pausedSourceIds: new Set(),
         crawlingSourceIds: prev,
       }).crawlingSourceIds)
-      refreshCrawlingStatus()
-      void loadSources()
+      setCrawlStatusVersion((version) => version + 1)
+      if (pendingResumeJobCount === 0) {
+        refreshCrawlingStatus()
+      }
     } finally {
       setResumingSourceId(null)
     }
@@ -602,7 +639,11 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
                                 className="h-7 w-7 p-0"
                                 disabled={isPausing}
                                 title="Pause crawl"
-                                onClick={() => void handlePause(source)}
+                                onClick={(event) => {
+                                  event.preventDefault()
+                                  event.stopPropagation()
+                                  void handlePause(source)
+                                }}
                               >
                                 {isPausing ? <Spinner className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
                               </Button>
@@ -617,7 +658,11 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
                                 className="h-7 w-7 p-0"
                                 disabled={isResuming}
                                 title="Resume crawl"
-                                onClick={() => void handleResume(source)}
+                                onClick={(event) => {
+                                  event.preventDefault()
+                                  event.stopPropagation()
+                                  void handleResume(source)
+                                }}
                               >
                                 {isResuming ? <Spinner className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
                               </Button>
@@ -631,7 +676,11 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
                               className="h-7 w-7 p-0"
                               disabled={recrawlingSourceId === source.id}
                               title="Re-crawl"
-                              onClick={() => void handleRecrawl(source)}
+                              onClick={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                void handleRecrawl(source)
+                              }}
                             >
                               <RefreshCw
                                 className={`h-3.5 w-3.5 ${recrawlingSourceId === source.id ? 'animate-spin' : ''}`}
@@ -644,7 +693,9 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
                             type="button"
                             aria-label={`Delete ${source.name}`}
                             className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-destructive hover:bg-destructive/10"
-                            onClick={() => {
+                            onClick={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
                               setDeleteError(null)
                               setDeleteCandidate(source)
                             }}
@@ -659,6 +710,8 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
                     <div className="border-t border-border bg-muted/10">
                       <SourceExpandedPanel
                         source={source}
+                        crawlStatusVersion={crawlStatusVersion}
+                        isResumePending={pendingResumeSourceIds.has(source.id)}
                         onViewDocuments={() => onViewDocumentsForSource(source.id)}
                         onOpenCrawlLog={() => setCrawlLogSource(source)}
                         onSettingsSaved={(settings) => {

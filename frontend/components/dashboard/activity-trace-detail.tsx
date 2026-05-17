@@ -480,7 +480,6 @@ function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
         <Section title="Prompt assembly">
           <KeyValueList
             rows={[
-              { label: 'Citations enabled', value: settings.citationDisplayEnabled as boolean | undefined },
               { label: 'Prompt context count', value: metrics.promptContextCount as number | undefined },
               { label: 'Citation count', value: metrics.citationCount as number | undefined },
             ]}

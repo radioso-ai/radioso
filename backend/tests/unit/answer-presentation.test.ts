@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { AnswerPresentationService } from "../../src/modules/chat/services/answerPresentationService.js";
 
 describe("answer presentation service", () => {
-  it("retains normalized segments and citation evidence for validation even when citation display is disabled", () => {
+  it("normalize() retains citation evidence and segments for validation", () => {
     const service = new AnswerPresentationService();
 
     const normalized = service.normalize({
@@ -39,30 +39,13 @@ describe("answer presentation service", () => {
       ],
       unsupportedNoticeMarked: false,
     });
-    expect(
-      service.present({
-        answer: "Tomas is a leader[[1]].",
-        citationDisplayEnabled: false,
-        citations: [
-          {
-            documentId: "doc-1",
-            chunkId: "chunk-1",
-            title: "Tomas",
-            content: "Tomas is a leader.",
-          },
-        ],
-      }),
-    ).toEqual({
-      answer: "Tomas is a leader.",
-    });
   });
 
-  it("strips raw citation anchors when citation display is disabled", () => {
+  it("present() emits citations for resolved anchors", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
       answer: "Tomas is a leader[[1]].",
-      citationDisplayEnabled: false,
       citations: [
         {
           documentId: "doc-1",
@@ -75,6 +58,11 @@ describe("answer presentation service", () => {
 
     expect(result).toEqual({
       answer: "Tomas is a leader.",
+      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Tomas" }],
+      answerSegments: [
+        { text: "Tomas is a leader", citationIndices: [0] },
+        { text: "." },
+      ],
     });
   });
 
@@ -83,7 +71,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "Valmora Yoga can lead naturally into meditation[[1]] . It also supports inner silence[[1]] .",
-      citationDisplayEnabled: false,
       citations: [
         {
           documentId: "doc-1",
@@ -94,9 +81,9 @@ describe("answer presentation service", () => {
       ],
     });
 
-    expect(result).toEqual({
-      answer: "Valmora Yoga can lead naturally into meditation. It also supports inner silence.",
-    });
+    expect(result.answer).toBe(
+      "Valmora Yoga can lead naturally into meditation. It also supports inner silence.",
+    );
   });
 
   it("adds punctuation when a terminal markdown link is followed by a new sentence", () => {
@@ -105,7 +92,6 @@ describe("answer presentation service", () => {
     const result = service.present({
       answer:
         "You can explore the main overview here: [Meditation and Valmora Meditation](https://valmora-europe.example/meditation-and-valmora-meditation) \nIf you want to look at course options, here are the residential pages: [Il sentiero del Valmora Meditation 4 giorni](https://courses.valmora.example/corso/0007963-corso-residenziale-il-sentiero-del-valmora-meditation-4-giorni) and [Il sentiero del Valmora Meditation 5 giorni](https://courses.valmora.example/en/course/0007995-corso-residenziale-il-sentiero-del-valmora-meditation-5-days) ",
-      citationDisplayEnabled: false,
       citations: [],
     });
 
@@ -141,7 +127,6 @@ describe("answer presentation service", () => {
     const result = service.present({
       answer:
         "Tomas is a leader/facilitator featured by Valmora Europe[[1]], leads morning meditations and Purification ceremonies[[2]], and events are offered in Italian and English[[3]].",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",
@@ -196,7 +181,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "Freya's books are available from Valmora Books[[1]][[2]].",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",
@@ -234,7 +218,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "The retreat is offered in Montelago[[9]][[2]][[3]].",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",
@@ -278,7 +261,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "Freya's books are available from Valmora Books[[1]][[2]][[3]].",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",
@@ -322,7 +304,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "Author page: https://books.valmora.example/autore/freya-rennick[[1]]. Price: EUR 18,00[[9]]. Broken [[abc]] token and dangling [[ marker.",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",
@@ -355,7 +336,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "Tomas leads morning meditations[[1]]. He also leads Purification ceremonies[[1]].",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",
@@ -388,7 +368,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "First grounded paragraph[[1]].\n\nSecond grounded paragraph[[1]].",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",

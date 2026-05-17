@@ -2106,7 +2106,7 @@ describe("chat integration", () => {
     expect(response.body.answer.length).toBeGreaterThan(0);
   });
 
-  it("omits citation metadata when citation display is disabled", async () => {
+  it("emits citation metadata regardless of the legacy citationDisplayEnabled setting", async () => {
     const { app } = createTestApp();
 
     const { token } = await issueTestToken(app, "no-citations@example.com");
@@ -2138,8 +2138,8 @@ describe("chat integration", () => {
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
     expect(response.body.answer.length).toBeGreaterThan(0);
-    expect(response.body).not.toHaveProperty("citations");
-    expect(response.body).not.toHaveProperty("answerSegments");
+    expect(Array.isArray(response.body.citations)).toBe(true);
+    expect(response.body.citations.length).toBeGreaterThan(0);
   });
 
   it("falls back safely when rerank fails", async () => {

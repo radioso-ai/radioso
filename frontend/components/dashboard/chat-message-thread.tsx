@@ -206,6 +206,7 @@ export function ChatMessageThread({
   onClearAnswerFeedback,
   hideFeedbackEntries = false,
   copy = DEFAULT_WEBSITE_EMBED_COPY,
+  showCitations = true,
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
@@ -221,6 +222,7 @@ export function ChatMessageThread({
   themedSuggestionButtons?: boolean
   hideFeedbackEntries?: boolean
   copy?: WebsiteEmbedCopy
+  showCitations?: boolean
 }) {
   const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
   const [localFeedback, setLocalFeedback] = useState<Record<string, AnswerFeedbackState | null | undefined>>({})
@@ -468,6 +470,7 @@ export function ChatMessageThread({
                               onOpenDocument={onOpenDocument}
                               theme={theme}
                               isStreaming={message.status === 'streaming'}
+                              showCitations={showCitations}
                             />
                           </div>
                         )}

@@ -109,7 +109,6 @@ export class ChatAnswerPresenter {
     const presented = this.answerPresentationService.present({
       answer,
       citations: [],
-      citationDisplayEnabled: false,
     });
 
     return {
@@ -140,10 +139,9 @@ export class ChatAnswerPresenter {
     userExpectedLocale?: string | null,
   ): Promise<ChatPresentedAnswer> {
     const citationEvidence = toCitationEvidence(session);
-    const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
 
     if (session.retrieval.contexts.length === 0) {
-      return this.presentNoContextRefusal(answer, citationEvidence, citationDisplayEnabled);
+      return this.presentNoContextRefusal(answer, citationEvidence);
     }
 
     const normalized = this.answerPresentationService.normalize({
@@ -156,7 +154,6 @@ export class ChatAnswerPresenter {
       const presented = this.answerPresentationService.present({
         answer,
         citations: citationEvidence,
-        citationDisplayEnabled,
       });
       const validation = buildSkippedValidationSummary();
 
@@ -188,7 +185,6 @@ export class ChatAnswerPresenter {
         title: citation.title,
         content: citation.content,
       })),
-      citationDisplayEnabled,
       groundedMissResponseComposer: this.groundedMissResponseComposer,
       unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
       userExpectedLocale,
@@ -244,12 +240,10 @@ export class ChatAnswerPresenter {
   private presentNoContextRefusal(
     answer: string,
     citationEvidence: CitationEvidence[],
-    citationDisplayEnabled: boolean,
   ): ChatPresentedAnswer {
     const presented = this.answerPresentationService.present({
       answer,
       citations: citationEvidence,
-      citationDisplayEnabled,
     });
 
     return {

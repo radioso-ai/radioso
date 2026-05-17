@@ -86,6 +86,30 @@ describe("grounded miss response composer", () => {
     expect(observedPrompt).toContain("Do not mention internal labels");
   });
 
+  it("forbids librarian phrasing in the grounded-miss prompt rules", async () => {
+    let observedPrompt = "";
+    const composer = new ModelGroundedMissResponseComposer({
+      metadata: {
+        capability: "chat",
+        provider: "openai",
+        model: "test-model",
+      },
+      async complete({ prompt }) {
+        observedPrompt = prompt;
+        return "MODEL_NO_CONTEXT";
+      },
+      async *stream() {
+        yield "";
+      },
+    });
+
+    await composer.composeNoContext({ query: "Draft a follow-up" });
+
+    expect(observedPrompt).toContain("decline directly in the team's voice");
+    expect(observedPrompt).toContain('Do not say "I don\'t have that information,"');
+    expect(observedPrompt).toContain("anything that references documents, materials, sources, search, or retrieval");
+  });
+
   it("passes explicit locale guidance into grounded-miss generation", async () => {
     const composer = new ModelGroundedMissResponseComposer({
       metadata: {

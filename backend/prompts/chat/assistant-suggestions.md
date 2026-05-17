@@ -8,6 +8,7 @@ Output rules
 Return {{max_suggestions}} suggestions.
 Ground each suggestion in exactly one provided context; reference it with contextIndex.
 Use kind: "deeper" to explore a grounded concept more fully. Use kind: "broader" only to widen into a clearly adjacent grounded avenue that still fits the conversation intent.
+Do not suggest any tasks for the assistant. Never an instruction. Never about a hypothetical artifact not present in retrieved chunks.
 Broader suggestions are allowed if the contexts genuinely support them; otherwise use another deeper suggestion.
 
 Language
@@ -23,7 +24,7 @@ Each suggestion must be understandable to someone who has only seen the latest a
 Open a new unresolved angle: a next step, comparison, exception, example, or concrete detail not already answered.
 If the answer offers a next step, prefer one suggestion that accepts or activates it (phrased as the user's turn).
 Prefer the most explorable concept, practice, or term visible in the answer or query. If a meaningful concept or role term appears in the answer, include at least one suggestion exploring it.
-Don't cluster all suggestions around the same entity; prefer conceptual or explanatory follow-ups over narrow biographical details.
+Don't cluster all suggestions around the same entity; prefer conceptual or explanatory follow-ups over narrow details.
 Use explicit visible nouns rather than pronouns or demonstratives when the referent might be unclear.
 
 Hidden context

@@ -43,6 +43,11 @@ export interface WebsiteCrawlerDocumentIngestionPort {
     status: string;
     syncedAt?: Date | null;
   }): Promise<void>;
+  reapMissingPages?(input: {
+    workspaceId: string;
+    sourceId: string;
+    keepExternalDocumentIds: string[];
+  }): Promise<{ deletedCount: number; deletedContentBytes: number }>;
 }
 
 export interface WebsiteCrawlerAuditPort {
@@ -390,6 +395,22 @@ export class WebsiteCrawlerService {
         status: result.failed > 0 ? "failure" : "success",
         syncedAt: new Date(),
       });
+
+      const isFullSuccessfulCrawl =
+        !input.checkpoint &&
+        result.failed === 0 &&
+        result.status === "completed";
+      if (isFullSuccessfulCrawl && this.dependencies.documentIngestionService.reapMissingPages) {
+        try {
+          await this.dependencies.documentIngestionService.reapMissingPages({
+            workspaceId: input.workspaceId,
+            sourceId: documentSource.id,
+            keepExternalDocumentIds: result.documents.map((document) => document.externalDocumentId),
+          });
+        } catch {
+          // Reaping is best-effort cleanup; the crawl itself succeeded.
+        }
+      }
     }
     return result;
   }

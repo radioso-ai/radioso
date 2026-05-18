@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   DocumentProcessingJobRecord,
@@ -40,6 +42,7 @@ export interface DocumentSourceRecord {
   sourceStorageGeneration?: string | null;
   sourceSizeBytes?: number | null;
   contentSizeBytes?: number | null;
+  contentHash?: string | null;
 }
 
 export interface DocumentSourceInput {
@@ -51,6 +54,7 @@ export interface DocumentSourceInput {
   sourceStorageGeneration?: string | null;
   sourceSizeBytes?: number | null;
   contentSizeBytes?: number | null;
+  contentHash?: string | null;
 }
 
 export interface DocumentRecord extends DocumentSourceRecord {
@@ -172,6 +176,21 @@ export interface DocumentRepositoryPort {
     count: number;
     storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }>;
   }>;
+  findActivePageState(input: {
+    workspaceId: string;
+    sourceId?: string | null;
+    externalDocumentId: string;
+  }): Promise<{
+    documentId: string;
+    revision: number;
+    contentSizeBytes: number | null;
+    contentHash: string | null;
+  } | null>;
+  deleteMissingPagesBySourceAndExternalIds(input: {
+    workspaceId: string;
+    sourceId: string;
+    keepExternalDocumentIds: string[];
+  }): Promise<{ deletedCount: number; deletedContentBytes: number }>;
 }
 
 export interface DocumentWorkspaceSummaryRecord {
@@ -294,6 +313,27 @@ export class DocumentIngestionService {
       metadata: input.metadata,
     });
     const contentSizeBytes = Buffer.byteLength(sanitizedContent.sourceContent, "utf8");
+    const contentHash = createHash("sha256").update(sanitizedContent.sourceContent, "utf8").digest("hex");
+    const resolvedSource = await this.resolveSourceForInput(input.workspaceId, input.source);
+    const externalDocumentId = input.externalDocumentId ?? null;
+
+    const existingPage = externalDocumentId
+      ? await this.documentRepository.findActivePageState({
+          workspaceId: input.workspaceId,
+          sourceId: resolvedSource.sourceId ?? null,
+          externalDocumentId,
+        })
+      : null;
+
+    if (existingPage && existingPage.contentHash && existingPage.contentHash === contentHash) {
+      return {
+        documentId: existingPage.documentId,
+        status: "ready",
+      };
+    }
+
+    const previousBytes = existingPage?.contentSizeBytes ?? 0;
+    const deltaBytes = Math.max(0, contentSizeBytes - previousBytes);
     let document:
       | {
           id: string;
@@ -312,7 +352,7 @@ export class DocumentIngestionService {
     const storageReservation = await this.usageLimitPolicy.reserveIndexedStorage({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
-      contentSizeBytes,
+      contentSizeBytes: deltaBytes,
       sourceKind: "inline_text",
       externalDocumentId: input.externalDocumentId,
     }).catch(async (error) => {
@@ -326,7 +366,7 @@ export class DocumentIngestionService {
         title: input.title,
         sourceContent: sanitizedContent.sourceContent,
         markdownContent: normalizeMarkdown(sanitizedContent.markdownContent),
-        ...(await this.resolveSourceForInput(input.workspaceId, input.source)),
+        ...resolvedSource,
         metadata: input.metadata,
         externalDocumentId: input.externalDocumentId,
         sourceKind: "inline_text",
@@ -337,6 +377,7 @@ export class DocumentIngestionService {
         sourceStorageGeneration: null,
         sourceSizeBytes: null,
         contentSizeBytes,
+        contentHash,
       });
 
     } catch (error) {
@@ -671,6 +712,14 @@ export class DocumentIngestionService {
     syncedAt?: Date | null;
   }): Promise<void> {
     await this.documentSourceRepository?.updateSyncState(input);
+  }
+
+  async reapMissingPages(input: {
+    workspaceId: string;
+    sourceId: string;
+    keepExternalDocumentIds: string[];
+  }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    return this.documentRepository.deleteMissingPagesBySourceAndExternalIds(input);
   }
 
   private async resolveSourceForInput(

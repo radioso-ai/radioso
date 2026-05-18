@@ -20,6 +20,16 @@ Radioso Enterprise tracks three customer-facing usage dimensions and lets operat
 
 The number reflects what Radioso currently keeps searchable. It does not count earlier revisions of recrawled pages, transient HTML fetched during crawling, or content that has been deleted.
 
+## Website recrawls
+
+Recrawls update the existing indexed page rather than appending duplicate storage:
+
+- A recrawl of the same workspace, source, and external document ID reserves only the positive byte delta against the storage cap. Pages that shrink reserve zero bytes and are accepted even if the account is currently at its cap.
+- A recrawl whose normalized content hash matches the stored content is skipped entirely. No re-embedding happens and no monthly indexed-content usage is recorded for the unchanged page.
+- After a fresh, fully successful crawl, pages that were previously indexed for the source but were not found in the new run are removed from the active corpus.
+
+Partial recrawls (resumed from a checkpoint or that ended with failures) do not remove missing pages. Removal only happens when a fresh crawl completes cleanly.
+
 ## Configuring a profile
 
 Profiles are managed through the admin API. Each profile can set:

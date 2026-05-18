@@ -1479,6 +1479,39 @@
               "structured_semantic"
             ]
           },
+          "embeddingModel": {
+            "type": "string",
+            "enum": [
+              "text-embedding-3-small",
+              "text-embedding-3-large",
+              "text-embedding-ada-002",
+              "gemini-embedding-001"
+            ]
+          },
+          "pendingEmbeddingModel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "text-embedding-3-small",
+              "text-embedding-3-large",
+              "text-embedding-ada-002",
+              "gemini-embedding-001"
+            ]
+          },
+          "supportedEmbeddingModels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "text-embedding-3-small",
+                "text-embedding-3-large",
+                "text-embedding-ada-002",
+                "gemini-embedding-001"
+              ]
+            }
+          },
           "fixedWindowChunkSize": {
             "type": "integer"
           },
@@ -1503,6 +1536,9 @@
         "required": [
           "workspaceId",
           "chunkingStrategy",
+          "embeddingModel",
+          "pendingEmbeddingModel",
+          "supportedEmbeddingModels",
           "fixedWindowChunkSize",
           "fixedWindowChunkOverlap",
           "structuredMinChunkSize",
@@ -1540,6 +1576,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 2000
+          },
+          "embeddingModel": {
+            "type": "string",
+            "enum": [
+              "text-embedding-3-small",
+              "text-embedding-3-large",
+              "text-embedding-ada-002",
+              "gemini-embedding-001"
+            ]
           }
         },
         "required": [
@@ -8441,6 +8486,42 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/ingestion/embedding-model/cancel": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Cancel a pending workspace embedding model change",
+        "operationId": "cancelPendingEmbeddingModel",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending embedding model change cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionSettings"
                 }
               }
             }

@@ -450,7 +450,18 @@ export const createTestDependencies = (overrides: {
     },
   };
   const rerankGateway = overrides.rerankGateway ?? defaultRerankGateway;
-  const ingestionSettingsService = new IngestionSettingsService(ingestionSettingsRepository, auditService);
+  const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(
+    documentRepository,
+    auditService,
+    documentProcessingJobRepository,
+  );
+  const ingestionSettingsService = new IngestionSettingsService(
+    ingestionSettingsRepository,
+    auditService,
+    documentRepository,
+    undefined,
+    workspaceIngestionReprocessService,
+  );
   const retrievalSettingsService = new RetrievalSettingsService(
     retrievalSettingsRepository,
     auditService,
@@ -498,7 +509,6 @@ export const createTestDependencies = (overrides: {
     usageLimitPolicy,
     documentSourceRepository,
   );
-  const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
   const documentDeletionService = new DocumentDeletionService(
     documentRepository,
     documentStorage,
@@ -549,6 +559,8 @@ export const createTestDependencies = (overrides: {
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(telemetryService),
+    undefined,
+    ingestionSettingsService,
   );
   const documentSearchService = new DocumentSearchService(
     documentRepository,

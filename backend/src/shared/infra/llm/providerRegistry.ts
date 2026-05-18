@@ -7,13 +7,14 @@ import {
   OpenAISemanticRerankGateway,
 } from "../../../modules/retrieval/public.js";
 import { ClaudeTextGenerationClient } from "./claudeProvider.js";
-import { GeminiTextGenerationClient } from "./geminiProvider.js";
+import { GeminiEmbeddingClient, GeminiTextGenerationClient } from "./geminiProvider.js";
 import { createOpenAIClient, OpenAIEmbeddingClient, OpenAITextGenerationClient } from "./openaiProvider.js";
 import type { AppLogger } from "../../observability/logger.js";
 import {
   type EmbeddingClient,
   type LlmCapabilityConfig,
   type LlmCapabilityName,
+  type LlmProviderName,
   type LlmProviderMetadata,
   ProviderConfigurationError,
   type ResolvedLlmConfig,
@@ -23,7 +24,72 @@ import {
 export { ProviderConfigurationError } from "./providerTypes.js";
 
 const supportsEmbeddings = (config: LlmCapabilityConfig): boolean =>
-  config.provider === "openai" || config.provider === "openai-compatible";
+  config.provider === "openai" || config.provider === "openai-compatible" || config.provider === "gemini";
+
+const providerFamilyForEmbeddingModel = (model: string): "gemini" | "openai-like" | undefined => {
+  if (model.startsWith("gemini-")) {
+    return "gemini";
+  }
+  if (model.startsWith("text-embedding-")) {
+    return "openai-like";
+  }
+  return undefined;
+};
+
+const configMatchesEmbeddingFamily = (config: LlmCapabilityConfig, family: "gemini" | "openai-like"): boolean => {
+  if (family === "gemini") {
+    return config.provider === "gemini";
+  }
+
+  return config.provider === "openai" || config.provider === "openai-compatible";
+};
+
+class RoutedEmbeddingClient implements EmbeddingClient {
+  readonly metadata;
+  private readonly clients = new Map<LlmProviderName, EmbeddingClient>();
+
+  constructor(
+    private readonly primaryConfig: LlmCapabilityConfig,
+    private readonly configs: LlmCapabilityConfig[],
+    private readonly clientFactory: (config: LlmCapabilityConfig) => EmbeddingClient,
+  ) {
+    this.metadata = {
+      capability: primaryConfig.capability,
+      provider: primaryConfig.provider,
+      model: primaryConfig.model,
+    };
+  }
+
+  async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
+    return this.clientForModel(options?.model ?? this.primaryConfig.model).embedTexts(texts, options);
+  }
+
+  private clientForModel(model: string): EmbeddingClient {
+    const config = this.configForModel(model);
+    const existing = this.clients.get(config.provider);
+    if (existing) {
+      return existing;
+    }
+
+    const client = this.clientFactory(config);
+    this.clients.set(config.provider, client);
+    return client;
+  }
+
+  private configForModel(model: string): LlmCapabilityConfig {
+    const providerFamily = providerFamilyForEmbeddingModel(model);
+    if (!providerFamily || configMatchesEmbeddingFamily(this.primaryConfig, providerFamily)) {
+      return this.primaryConfig;
+    }
+
+    const config = this.configs.find((candidate) => configMatchesEmbeddingFamily(candidate, providerFamily));
+    if (config) {
+      return config;
+    }
+
+    throw new ProviderConfigurationError(`No configured embedding provider can serve model ${model}`);
+  }
+}
 
 export class LlmProviderRegistry {
   constructor(
@@ -73,7 +139,23 @@ export class LlmProviderRegistry {
   }
 
   createEmbeddingGateway() {
-    return new ModelEmbeddingGateway(this.createEmbeddingClient(this.config.embeddings));
+    return new ModelEmbeddingGateway(
+      new RoutedEmbeddingClient(
+        this.config.embeddings,
+        this.config.embeddingProviderConfigs,
+        (config) => this.createEmbeddingClient(config),
+      ),
+    );
+  }
+
+  canServeEmbeddingModel(model: string): boolean {
+    const providerFamily = providerFamilyForEmbeddingModel(model);
+    if (!providerFamily) {
+      return supportsEmbeddings(this.config.embeddings);
+    }
+
+    return [this.config.embeddings, ...this.config.embeddingProviderConfigs]
+      .some((config) => supportsEmbeddings(config) && configMatchesEmbeddingFamily(config, providerFamily));
   }
 
   private metadataFor(config: LlmCapabilityConfig): LlmProviderMetadata {
@@ -102,6 +184,7 @@ export class LlmProviderRegistry {
       case "openai-compatible":
         return new OpenAIEmbeddingClient(config, this.logger);
       case "gemini":
+        return new GeminiEmbeddingClient(config);
       case "claude":
         throw new ProviderConfigurationError(`Provider ${config.provider} does not support embeddings`);
     }

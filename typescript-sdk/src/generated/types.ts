@@ -436,6 +436,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/ingestion/embedding-model/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a pending workspace embedding model change */
+        post: operations["cancelPendingEmbeddingModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/ingestion/reprocess": {
         parameters: {
             query?: never;
@@ -1529,6 +1546,11 @@ export interface components {
             workspaceId: string;
             /** @enum {string} */
             chunkingStrategy: "fixed_window" | "structured_semantic";
+            /** @enum {string} */
+            embeddingModel: "text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001";
+            /** @enum {string|null} */
+            pendingEmbeddingModel: "text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001" | null;
+            supportedEmbeddingModels: ("text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001")[];
             fixedWindowChunkSize: number;
             fixedWindowChunkOverlap: number;
             structuredMinChunkSize: number;
@@ -1545,6 +1567,8 @@ export interface components {
             fixedWindowChunkOverlap: number;
             structuredMinChunkSize: number;
             structuredMaxChunkSize: number;
+            /** @enum {string} */
+            embeddingModel?: "text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001";
         };
         RetrievalMetadataRule: {
             id: string;
@@ -4158,6 +4182,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancelPendingEmbeddingModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending embedding model change cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestionSettings"];
                 };
             };
             /** @description Authentication required */

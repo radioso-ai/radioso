@@ -6,6 +6,8 @@ import {
 import { parseSseEvents } from "./sse.js";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
+const STORAGE_VECTOR_DIMENSIONS = 1536;
+const GEMINI_EMBEDDING_TIMEOUT_MS = 60_000;
 
 const buildGenerateBody = (input: {
   prompt: string;
@@ -119,20 +121,23 @@ export class GeminiEmbeddingClient implements EmbeddingClient {
     };
   }
 
-  async embedTexts(texts: string[]): Promise<number[][]> {
+  async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
     const embeddings: number[][] = [];
+    const model = options?.model ?? this.config.model;
 
     for (const text of texts) {
       const response = await fetch(
-        `${GEMINI_BASE_URL}/${this.config.model}:embedContent?key=${encodeURIComponent(this.config.apiKey)}`,
+        `${GEMINI_BASE_URL}/${model}:embedContent?key=${encodeURIComponent(this.config.apiKey)}`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
+          signal: AbortSignal.timeout(GEMINI_EMBEDDING_TIMEOUT_MS),
           body: JSON.stringify({
+            model: `models/${model}`,
+            output_dimensionality: STORAGE_VECTOR_DIMENSIONS,
             content: {
-              role: "user",
               parts: [{ text }],
             },
           }),

@@ -346,6 +346,8 @@ describe("settings contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       chunkingStrategy: "fixed_window",
+      embeddingModel: "text-embedding-3-small",
+      pendingEmbeddingModel: null,
       fixedWindowChunkSize: 800,
       fixedWindowChunkOverlap: 120,
       structuredMinChunkSize: 24,
@@ -366,15 +368,50 @@ describe("settings contract", () => {
         fixedWindowChunkOverlap: 90,
         structuredMinChunkSize: 30,
         structuredMaxChunkSize: 260,
+        embeddingModel: "text-embedding-3-large",
       });
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       chunkingStrategy: "structured_semantic",
+      embeddingModel: "text-embedding-3-large",
+      pendingEmbeddingModel: null,
       fixedWindowChunkSize: 900,
       fixedWindowChunkOverlap: 90,
       structuredMinChunkSize: 30,
       structuredMaxChunkSize: 260,
+      supportedEmbeddingModels: expect.arrayContaining(["text-embedding-3-small", "text-embedding-3-large"]),
+    });
+  });
+
+  it("keeps the active embedding model until existing documents are reprocessed", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "ingestion-model-migration@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Existing",
+        content: "Already embedded content",
+      });
+
+    const response = await request(app)
+      .put("/api/v1/settings/ingestion")
+      .set(adminSessionHeaders(session))
+      .send({
+        chunkingStrategy: "fixed_window",
+        fixedWindowChunkSize: 800,
+        fixedWindowChunkOverlap: 120,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
+        embeddingModel: "text-embedding-3-large",
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      embeddingModel: "text-embedding-3-small",
+      pendingEmbeddingModel: "text-embedding-3-large",
     });
   });
 
@@ -417,7 +454,10 @@ describe("settings contract", () => {
     expect(retrievalUpdateSchema).toContain("lexicalRewriteInstructions:");
     expect(retrievalUpdateSchema).not.toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("chunkingStrategy:");
+    expect(ingestionSettingsSchema).toContain("embeddingModel:");
+    expect(ingestionSettingsSchema).toContain("pendingEmbeddingModel:");
     expect(ingestionSettingsSchema).toContain("fixedWindowChunkSize:");
+    expect(ingestionUpdateSchema).toContain("embeddingModel:");
     expect(ingestionUpdateSchema).toContain("fixedWindowChunkOverlap:");
     expect(ingestionUpdateSchema).toContain("structuredMinChunkSize:");
     expect(spec).toContain("/api/v1/settings:");

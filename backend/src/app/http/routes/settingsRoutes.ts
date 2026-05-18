@@ -8,6 +8,7 @@ import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/public.js";
+import { embeddingModelIds } from "../../../modules/settings/contracts/ingestion.js";
 import {
   metadataRuleCombinators,
   metadataRuleEffects,
@@ -127,6 +128,7 @@ export const updateIngestionSettingsSchema = z.object({
   structuredMaxChunkSize: z.number().int()
     .min(RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMin)
     .max(RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMax),
+  embeddingModel: z.enum(embeddingModelIds).optional(),
 });
 
 type SettingsRouteDependencies = WorkspaceSessionDependencies & Pick<
@@ -145,6 +147,12 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
   const runUploadSingle = createAssistantLogoUploadHandler();
+  const presentIngestionSettings = (
+    settings: Awaited<ReturnType<typeof dependencies.ingestionSettingsService.getForWorkspace>>,
+  ) => ({
+    ...settings,
+    supportedEmbeddingModels: dependencies.ingestionSettingsService.listSupportedEmbeddingModels?.() ?? embeddingModelIds,
+  });
 
   router.get("/", workspaceSession, async (_req, res, next) => {
     try {
@@ -223,7 +231,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.ingestionSettingsService.getForWorkspace(workspaceId);
-      res.status(200).json(settings);
+      res.status(200).json(presentIngestionSettings(settings));
     } catch (error) {
       next(error);
     }
@@ -233,7 +241,21 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.ingestionSettingsService.updateForWorkspace(workspaceId, req.body);
-      res.status(200).json(settings);
+      res.status(200).json(presentIngestionSettings(settings));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/ingestion/embedding-model/cancel", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), async (_req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const settings = await dependencies.ingestionSettingsService.cancelPendingEmbeddingModel?.(workspaceId);
+      if (!settings) {
+        res.status(405).json({ error: "pending embedding model cancellation is unavailable" });
+        return;
+      }
+      res.status(200).json(presentIngestionSettings(settings));
     } catch (error) {
       next(error);
     }

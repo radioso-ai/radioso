@@ -994,9 +994,26 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a6
+          enum: &a7
             - fixed_window
             - structured_semantic
+        embeddingModel:
+          type: string
+          enum: &a6
+            - text-embedding-3-small
+            - text-embedding-3-large
+            - text-embedding-ada-002
+            - gemini-embedding-001
+        pendingEmbeddingModel:
+          type:
+            - string
+            - "null"
+          enum: *a6
+        supportedEmbeddingModels:
+          type: array
+          items:
+            type: string
+            enum: *a6
         fixedWindowChunkSize:
           type: integer
         fixedWindowChunkOverlap:
@@ -1014,6 +1031,9 @@ components:
       required:
         - workspaceId
         - chunkingStrategy
+        - embeddingModel
+        - pendingEmbeddingModel
+        - supportedEmbeddingModels
         - fixedWindowChunkSize
         - fixedWindowChunkOverlap
         - structuredMinChunkSize
@@ -1025,7 +1045,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a6
+          enum: *a7
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -1042,6 +1062,9 @@ components:
           type: integer
           minimum: 1
           maximum: 2000
+        embeddingModel:
+          type: string
+          enum: *a6
       required:
         - chunkingStrategy
         - fixedWindowChunkSize
@@ -1220,7 +1243,7 @@ components:
           maxLength: 80
         websiteEmbedLauncherPosition:
           type: string
-          enum: &a7
+          enum: &a8
             - bottom-right
             - bottom-left
         websiteEmbedTheme:
@@ -1297,7 +1320,7 @@ components:
           type: string
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a7
+          enum: *a8
         websiteEmbedTheme:
           type: object
           properties:
@@ -1527,7 +1550,7 @@ components:
           type: string
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a7
+          enum: *a8
         websiteEmbedScriptUrl:
           type:
             - string
@@ -1715,7 +1738,7 @@ components:
               maxLength: 80
             websiteEmbedLauncherPosition:
               type: string
-              enum: *a7
+              enum: *a8
             websiteEmbedTheme:
               type: object
               properties:
@@ -1805,7 +1828,7 @@ components:
               type: string
             launcherPosition:
               type: string
-              enum: &a8
+              enum: &a9
                 - bottom-right
                 - bottom-left
             theme:
@@ -2050,7 +2073,7 @@ components:
                   maxLength: 80
                 launcherPosition:
                   type: string
-                  enum: *a8
+                  enum: *a9
                 theme:
                   type: object
                   properties:
@@ -3034,7 +3057,7 @@ components:
               type: string
             selectionMode:
               type: string
-              enum: &a11
+              enum: &a12
                 - deterministic
                 - probabilistic
             selectionReason:
@@ -3045,7 +3068,7 @@ components:
               maximum: 1
             callerSurface:
               type: string
-              enum: &a12
+              enum: &a13
                 - assistant
                 - retrieval_api
                 - sdk
@@ -3082,7 +3105,7 @@ components:
                 - used
             outcome:
               type: string
-              enum: &a13
+              enum: &a14
                 - success
                 - unsupported
                 - forbidden
@@ -3119,14 +3142,14 @@ components:
                     additionalProperties: {}
                 evidenceStatus:
                   type: string
-                  enum: &a9
+                  enum: &a10
                     - found
                     - missing
                     - partial
                     - not_applicable
                 supportStatus:
                   type: string
-                  enum: &a10
+                  enum: &a11
                     - supported
                     - unsupported
                     - not_checked
@@ -3522,10 +3545,10 @@ components:
             additionalProperties: {}
         evidenceStatus:
           type: string
-          enum: *a9
+          enum: *a10
         supportStatus:
           type: string
-          enum: *a10
+          enum: *a11
         groundingOutcome:
           type: string
     SkillDiagnosticDefinition:
@@ -3539,7 +3562,7 @@ components:
           type: string
         selectionMode:
           type: string
-          enum: *a11
+          enum: *a12
         selectionReason:
           type: string
         selectionConfidence:
@@ -3548,7 +3571,7 @@ components:
           maximum: 1
         callerSurface:
           type: string
-          enum: *a12
+          enum: *a13
         capabilityChecks:
           type: array
           items:
@@ -3579,7 +3602,7 @@ components:
             - used
         outcome:
           type: string
-          enum: *a13
+          enum: *a14
         error:
           type: object
           properties:
@@ -3611,10 +3634,10 @@ components:
                 additionalProperties: {}
             evidenceStatus:
               type: string
-              enum: *a9
+              enum: *a10
             supportStatus:
               type: string
-              enum: *a10
+              enum: *a11
             groundingOutcome:
               type: string
       required:
@@ -3654,7 +3677,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a12
+            enum: *a13
         requiredCapabilities:
           type: array
           items:
@@ -5587,6 +5610,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/ingestion/embedding-model/cancel:
+    post:
+      tags:
+        - Settings
+      summary: Cancel a pending workspace embedding model change
+      operationId: cancelPendingEmbeddingModel
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Pending embedding model change cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionSettings"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/settings/ingestion/reprocess:
     post:
       tags:
@@ -6054,7 +6098,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - &a14
+        - &a15
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -6078,7 +6122,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a14
+        - *a15
       parameters:
         - schema:
             type: string

@@ -9,7 +9,7 @@ import { planStructuredChunks } from "./blockMergePlanner.js";
 import { parseStructuralBlocks, type StructuralBlock } from "./structuredBlockParser.js";
 
 export interface ChunkingSimilarityPort {
-  embedTexts(texts: string[]): Promise<number[][]>;
+  embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]>;
 }
 
 const MAX_FRAGMENT_CHARS = RETRIEVAL_BEHAVIOR.chunking.maxFragmentChars;
@@ -27,7 +27,7 @@ export class StructuredSemanticChunkingStrategy implements ChunkingStrategy {
     }
 
     const blocks = splitOversizedBlocks(normalized, parseStructuralBlocks(normalized));
-    const adjacentSimilarities = await this.getAdjacentSimilarities(blocks);
+    const adjacentSimilarities = await this.getAdjacentSimilarities(blocks, request.config.embeddingModel);
 
     return planStructuredChunks({
       content: normalized,
@@ -38,9 +38,11 @@ export class StructuredSemanticChunkingStrategy implements ChunkingStrategy {
     });
   }
 
-  private async getAdjacentSimilarities(blocks: StructuralBlock[]): Promise<number[] | undefined> {
+  private async getAdjacentSimilarities(blocks: StructuralBlock[], embeddingModel?: string): Promise<number[] | undefined> {
     try {
-      const embeddings = await this.similarityPort.embedTexts(blocks.map((block) => block.content));
+      const embeddings = await this.similarityPort.embedTexts(blocks.map((block) => block.content), {
+        model: embeddingModel,
+      });
       return embeddings.slice(0, -1).map((embedding, index) => cosineSimilarity(embedding, embeddings[index + 1] ?? []));
     } catch {
       return undefined;

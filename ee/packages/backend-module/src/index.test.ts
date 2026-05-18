@@ -4,7 +4,7 @@ import { createEnterpriseBackendModule } from "./index.js";
 import type {
   ApplicationAccountCreatedHandler,
   ApplicationAnswerFeedbackHistoryProviderRegistration,
-  ApplicationChatActionProviderRegistration,
+  ApplicationChatIntakeProviderRegistration,
   ApplicationContactHistoryProviderRegistration,
   ApplicationDatabaseMigrator,
   ApplicationModuleRegistrationContext,
@@ -18,7 +18,7 @@ const createCaptureContext = () => {
   const routeMounts: ApplicationRouteMount[] = [];
   const accountCreatedHandlers: ApplicationAccountCreatedHandler[] = [];
   let usageLimitPolicy: ApplicationUsageLimitPolicyRegistration | undefined;
-  let chatActionProvider: ApplicationChatActionProviderRegistration | undefined;
+  let chatIntakeProvider: ApplicationChatIntakeProviderRegistration | undefined;
   let contactHistoryProvider: ApplicationContactHistoryProviderRegistration | undefined;
   let answerFeedbackHistoryProvider: ApplicationAnswerFeedbackHistoryProviderRegistration | undefined;
   let websiteEmbedIntegration: WebsiteEmbedIntegrationProvider | undefined;
@@ -36,8 +36,8 @@ const createCaptureContext = () => {
     registerUsageLimitPolicy(policy) {
       usageLimitPolicy = policy;
     },
-    registerChatActionProvider(provider) {
-      chatActionProvider = provider;
+    registerChatIntakeProvider(provider) {
+      chatIntakeProvider = provider;
     },
     registerContactHistoryProvider(provider) {
       contactHistoryProvider = provider;
@@ -54,8 +54,8 @@ const createCaptureContext = () => {
     accountCreatedHandlers,
     context,
     databaseMigrators,
-    get chatActionProvider() {
-      return chatActionProvider;
+    get chatIntakeProvider() {
+      return chatIntakeProvider;
     },
     get contactHistoryProvider() {
       return contactHistoryProvider;
@@ -85,9 +85,11 @@ describe("Enterprise backend module aggregation", () => {
       "ee-assistant-answer-feedback",
       "ee-human-contact",
       "ee-mail-tokens",
+      "ee-skill-submissions",
       "ee-usage-limits",
     ]);
     expect(capture.routeMounts.map((mount) => mount.path).sort()).toEqual([
+      "/api/v1/ee/agent-wizard",
       "/api/v1/ee/answer-feedback",
       "/api/v1/ee/auth",
       "/api/v1/ee/contact",
@@ -95,25 +97,27 @@ describe("Enterprise backend module aggregation", () => {
     ]);
     expect(capture.accountCreatedHandlers).toHaveLength(1);
     expect(capture.usageLimitPolicy).toBeTypeOf("function");
-    expect(capture.chatActionProvider).toBeTypeOf("function");
+    expect(capture.chatIntakeProvider).toBeTypeOf("function");
     expect(capture.contactHistoryProvider).toBeTypeOf("function");
     expect(capture.answerFeedbackHistoryProvider).toBeTypeOf("function");
     expect(capture.websiteEmbedIntegration).toBeDefined();
   });
 
-  it("delegates shutdown to feature modules", async () => {
+  it("registers chat intake through the public provider contract", async () => {
     const capture = createCaptureContext();
     const module = createEnterpriseBackendModule();
     module.register?.(capture.context);
 
-    const providerFactory = capture.chatActionProvider;
+    const providerFactory = capture.chatIntakeProvider;
     if (typeof providerFactory !== "function") {
-      throw new Error("chat action provider factory was not registered");
+      throw new Error("chat intake provider factory was not registered");
     }
     const provider = providerFactory({
       abuseControlService: { enforce: vi.fn() },
       auditService: { record: vi.fn() },
-      chatGateway: undefined,
+      chatGateway: {
+        answer: vi.fn().mockResolvedValue("{}"),
+      },
       conversationRepository: {
         findByIdAndAnonymousSession: vi.fn(),
         findByIdAndWorkspaceId: vi.fn(),
@@ -128,10 +132,13 @@ describe("Enterprise backend module aggregation", () => {
         listRecentByConversationId: vi.fn(),
       },
     } as any);
-    const stopSpy = vi.spyOn(provider as any, "stop");
 
     await module.shutdown?.();
 
-    expect(stopSpy).toHaveBeenCalledOnce();
+    expect(provider).toEqual({
+      handle: expect.any(Function),
+      getPublicIntakeActions: expect.any(Function),
+    });
+    expect(provider).not.toHaveProperty("stop");
   });
 });

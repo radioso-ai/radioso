@@ -25,28 +25,24 @@ describe('editionController', () => {
 
   it('hides human contact surfaces in the OSS edition', async () => {
     const controller = await loadController()
-    const suggestions = controller.filterChatSuggestions([
-      { text: 'Read more' },
-      { text: 'Talk to a human', action: { kind: 'contact_human' } },
-    ])
 
     expect(controller.canUseHumanContact()).toBe(false)
     expect(controller.canUseAssistantAnswerFeedback()).toBe(false)
+    expect(controller.canUseAgentCreationExtensions()).toBe(false)
     expect(controller.shouldLoadHumanContactSettings('assistant')).toBe(false)
     expect(controller.canUseWebsiteEmbed()).toBe(false)
     expect(controller.shouldRenderWebsiteEmbedSettings('channels')).toBe(false)
     expect(controller.getActivityFilterOptions().map((option) => option.value)).toEqual(['all', 'chat', 'search'])
     expect(controller.normalizeHistoryFilter('contact')).toBe('all')
     expect(controller.normalizeHistorySelection({ kind: 'contact', id: 'contact-1' })).toBeNull()
-    expect(suggestions).toEqual([{ text: 'Read more' }])
   })
 
   it('enables human contact surfaces in the enterprise edition', async () => {
     const controller = await loadController('enterprise')
-    const contactSuggestion = { text: 'Talk to a human', action: { kind: 'contact_human' } }
 
     expect(controller.canUseHumanContact()).toBe(true)
     expect(controller.canUseAssistantAnswerFeedback()).toBe(true)
+    expect(controller.canUseAgentCreationExtensions()).toBe(true)
     expect(controller.shouldLoadHumanContactSettings('assistant')).toBe(true)
     expect(controller.shouldLoadHumanContactSettings('channels')).toBe(false)
     expect(controller.canUseWebsiteEmbed()).toBe(true)
@@ -54,6 +50,5 @@ describe('editionController', () => {
     expect(controller.getActivityFilterOptions().map((option) => option.value)).toEqual(['all', 'chat', 'search', 'contact'])
     expect(controller.normalizeHistoryFilter('contact')).toBe('contact')
     expect(controller.normalizeHistorySelection({ kind: 'contact', id: 'contact-1' })).toEqual({ kind: 'contact', id: 'contact-1' })
-    expect(controller.filterChatSuggestions([contactSuggestion])).toEqual([contactSuggestion])
   })
 })

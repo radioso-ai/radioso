@@ -1,9 +1,9 @@
 # <img src="./frontend/public/radioso-icon.svg" alt="Radioso logo" width="44" align="center" /> Radioso
 
-**Self-hosted AI agents grounded in your knowledge.**
+**Self-hosted intelligent knowledge agents grounded in your content.**
 
 You can wire up LangChain and build a rocketship. You can get a PhD in dragging nodes around a low-code agent canvas. 
-Or you can run Radioso, upload your documents, and have an assistant that knows what it's talking about — self-hosted, multi-provider, API-first, today. That is why we built Radioso. 
+Or you can run Radioso, upload your documents, and have a knowledge agent that knows what it's talking about — self-hosted, multi-provider, API-first, today. That is why we built Radioso.
 
 ## Quick Start
 
@@ -43,10 +43,10 @@ This starts Postgres in Docker, builds and installs the commercial packages from
                                        │ upload
                                        ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                        Radioso Platform                          │
+│                 Radioso Knowledge Agents Platform                 │
 │                                                                  │
 │   ┌─────────────┐    ┌──────────────┐    ┌──────────────────┐   │
-│   │  Ingestion  │    │   Retrieval  │    │  Answer engine   │   │
+│   │  Ingestion  │    │   Retrieval  │    │  Agent runtime   │   │
 │   │  worker     │───▶│  (pgvector + │───▶│  grounded on     │   │
 │   │  chunk +    │    │   reranker)  │    │  your chunks     │   │
 │   │  embed      │    └──────────────┘    └──────────────────┘   │
@@ -70,6 +70,8 @@ The backend stores application state, document metadata, chunks, and vectors in 
 ## Integration Points
 
 ### Website embed
+
+Enterprise Edition feature.
 
 One script tag. Paste it on any page of an approved origin. The launcher opens a Radioso-hosted chat iframe — no backend work required on the host site, and origin policy stays under your control.
 
@@ -138,13 +140,21 @@ curl -sS -b cookies.txt \
 
 Each workspace payload includes both `id` and `publicRouteKey`. Use `id` for API calls that require a workspace identifier. Use `publicRouteKey` when you need to inspect or build the canonical dashboard URL.
 
-If a workspace token or public embed link is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
+If a workspace token, public chat link, or Enterprise embed token is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
 
 Public chat and website embed rate limits are configured by operators, not workspace users. The optional `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS`, `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS`, and `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` environment variables tune those limits; backend defaults apply when they are unset.
 
 Older workspace-level `anonymousRateLimit` and `messagesPerMinute` settings are ignored after this change. Operators with custom public-chat limits should set the environment variables above before rollout.
 
-### Assistant and retrieval APIs
+### Agents, assistant, and retrieval APIs
+
+Use agents to configure knowledge-assistant identity, instructions, source scope, retrieval participation, and public surface settings. Chat calls use the workspace default agent unless `agentId` is provided.
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer <workspace-token>" \
+  http://localhost:8080/api/v1/agents
+```
 
 Use the assistant API for human-facing chat. It owns conversation history, source-channel context, assistant identity, direct social replies, and the decision to call retrieval when evidence is needed.
 
@@ -172,15 +182,25 @@ curl -sS \
   http://localhost:8080/api/v1/retrieval/answer
 ```
 
-Assistant conversations are listed from `GET /api/v1/history` and fetched from `GET /api/v1/history/<conversation-id>`. Shared workspace settings are read and merge-updated through `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
+Assistant conversations are listed from `GET /api/v1/history/chat` and fetched from `GET /api/v1/history/chat/<conversation-id>`. `GET /api/v1/history` returns merged chat and document-search history. Shared workspace settings are read and merge-updated through `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
 
 Assistant and retrieval responses include diagnostic metadata that identifies whether the work ran as assistant direct, assistant retrieval-backed, retrieval-only, or MCP capability traffic.
+
+Radioso also exposes a read-only skills catalog:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer <workspace-token>" \
+  http://localhost:8080/api/v1/skills
+```
+
+The catalog describes product-facing work and points to stable contracts. It does not add a generic skill execution endpoint.
 
 ### Website crawler provider
 
 Radioso exposes an OSS website crawler provider port at `POST /api/v1/document/crawl`. The route accepts a website URL, calls the bundled `radioso-crawler` provider by default, and publishes returned pages through the normal document ingestion pipeline.
 
-Application composition can register a different crawler provider for custom deployments. Crawl limits are controlled with `WEBSITE_CRAWLER_MAX_LIMIT` (default 1,000 pages). Outbound requests identify as `RadiosoCrawler/1.0` by default; set `WEBSITE_CRAWLER_USER_AGENT` when a deployment needs a custom allowlisted crawler identity or contact URL. Pages exceeding 500,000 characters are skipped during ingestion. Website sources can be re-crawled or deleted through the source management API; see `docs/website-crawler.md` for details.
+Application composition can register a different crawler provider for custom deployments. Crawl limits are controlled with `WEBSITE_CRAWLER_MAX_LIMIT` (default 1,000 pages), and crawl requests can also set simple URL allow and deny substrings. Outbound requests identify as `RadiosoCrawler/1.0` by default; set `WEBSITE_CRAWLER_USER_AGENT` when a deployment needs a custom allowlisted crawler identity or contact URL. Pages exceeding 500,000 characters are skipped during ingestion. Website sources can be re-crawled, paused, resumed, or deleted through the source management API; see `docs/website-crawler.md` for details.
 
 The bundled crawler does not rotate user agents or proxies to bypass site blocks. Responses with `401`, `403`, or `429` are recorded as failed pages instead of being ingested as content.
 
@@ -192,7 +212,7 @@ Set `WEBSITE_CRAWLER_ENABLED=false` to disable the crawler entirely. The API hid
 
 ### TypeScript SDK
 
-The SDK chat facade is for assistant chat. Use the REST retrieval endpoints above for retrieval-only search or grounded answers when you do not want assistant behavior.
+The SDK chat facade is for agent-backed assistant chat. Use the REST retrieval endpoints above for retrieval-only search or grounded answers when you do not want assistant behavior.
 
 ```ts
 import { createRadiosoClient } from "@radioso/typescript-sdk";
@@ -229,7 +249,9 @@ for await (const event of client.chat.stream({ message: "Summarize the FAQ" })) 
 
 ### MCP server
 
-The standalone `packages/radioso-mcp-server/` package exposes your workspace as an MCP context layer. Cursor can use a local server directly. Claude Desktop, ChatGPT deep-research, and other hosted remote MCP clients require a public HTTPS deployment plus compatible auth.
+Radioso supports MCP in two deployment shapes. Self-hosted operators can set `RADIOSO_MCP_ENABLED=true` with `RADIOSO_MCP_STANDALONE=false` and serve MCP from the backend at `/mcp`, using the workspace API token directly. Operators who need a separate public connector surface can keep backend MCP disabled and use the standalone `packages/radioso-mcp-server/` process with its token exchange flow.
+
+Cursor can use either same-host merged mode or a local standalone server. Claude Desktop, ChatGPT deep-research, and other hosted remote MCP clients require a public HTTPS deployment plus compatible auth.
 
 ---
 

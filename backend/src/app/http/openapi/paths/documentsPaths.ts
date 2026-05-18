@@ -226,6 +226,59 @@ export const registerDocumentsPaths = (
   });
 
   registry.registerPath({
+    method: "patch",
+    path: "/api/v1/document/sources/{sourceId}",
+    tags: ["Documents"],
+    summary: "Update a website source's crawl settings",
+    operationId: "updateDocumentSource",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.sourceParamsSchema,
+      body: {
+        content: {
+          "application/json": {
+            schema: schemas.DocumentSourceUpdateRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Source updated",
+        content: {
+          "application/json": {
+            schema: schemas.DocumentSourceListItemSchema,
+          },
+        },
+      },
+      400: {
+        description: "Source is not a website or the manually-added bucket",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Source not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/document/sources/{sourceId}/recrawl",
     tags: ["Documents"],
@@ -246,6 +299,104 @@ export const registerDocumentsPaths = (
       },
       400: {
         description: "Source is not a website or has no configured URL",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Source not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/document/sources/{sourceId}/pause-crawl",
+    tags: ["Documents"],
+    summary: "Pause active crawl jobs for a website source",
+    operationId: "pauseDocumentSourceCrawl",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.sourceParamsSchema,
+    },
+    responses: {
+      200: {
+        description: "Active crawl jobs paused",
+        content: {
+          "application/json": {
+            schema: z.object({
+              pausedJobCount: z.number().int().min(0),
+            }),
+          },
+        },
+      },
+      400: {
+        description: "Source is not a website source",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Source not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/document/sources/{sourceId}/resume-crawl",
+    tags: ["Documents"],
+    summary: "Resume paused crawl jobs for a website source",
+    operationId: "resumeDocumentSourceCrawl",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.sourceParamsSchema,
+    },
+    responses: {
+      200: {
+        description: "Paused crawl jobs queued for processing",
+        content: {
+          "application/json": {
+            schema: z.object({
+              resumedJobCount: z.number().int().min(0),
+              pendingResumeJobCount: z.number().int().min(0),
+              resumeDispatchFailureCount: z.number().int().min(0),
+            }),
+          },
+        },
+      },
+      400: {
+        description: "Source is not a website source",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

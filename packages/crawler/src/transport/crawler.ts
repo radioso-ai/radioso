@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { delimiter as pathDelimiter } from "node:path";
 import { gunzipSync } from "node:zlib";
 import {
@@ -9,11 +10,20 @@ import {
   RobotsTxtFile,
   log
 } from "crawlee";
+import { load } from "cheerio";
 import type { CrawlCandidateDecision } from "./candidateDecision.js";
+import { matchesUrlPattern } from "./urlPatterns.js";
 import {
   buildAcceptedCandidateDecision,
   buildRejectedCandidateDecision
 } from "./candidateDecision.js";
+import {
+  decodeEntities,
+  extractStructuredTextWithFallback,
+  hasPrimaryContentContainer,
+  normalizeText,
+  type ExtractionOptions
+} from "./htmlProcessing.js";
 import { canonicalizeUrlIdentity, classifyCrawlCandidateUrl } from "./url.js";
 
 export type JsonValue =
@@ -40,6 +50,11 @@ export type FetchedPage = {
   browserAttempted?: boolean;
   browserFallbackReason?: "http_error" | "incomplete_http" | "low_quality" | null;
   httpQualityScore?: number | null;
+  pageType?: "content" | "listing" | "asset" | "feed" | "search" | "unknown";
+  qualityScore?: number | null;
+  skipReason?: string | null;
+  extractedContainer?: string | null;
+  normalizedContentHash?: string | null;
 };
 
 export type CrawledPageResult = FetchedPage & {
@@ -55,6 +70,7 @@ export type FetchPage = (
     lastModified?: string | null;
     scopeBaseUrl?: string | null;
     userAgent?: string;
+    preserveContentLinks?: boolean;
     signal?: AbortSignal;
   }
 ) => Promise<FetchedPage>;
@@ -129,47 +145,17 @@ const readHeader = (headers: unknown, name: string): string | null => {
   if (!headers || typeof headers !== "object") {
     return null;
   }
+  const getter = (headers as { get?: unknown }).get;
+  if (typeof getter === "function") {
+    const value = getter.call(headers, name);
+    return typeof value === "string" ? value : null;
+  }
   const value = (headers as Record<string, unknown>)[name.toLowerCase()];
   if (Array.isArray(value)) {
     return value.find((item): item is string => typeof item === "string") ?? null;
   }
   return typeof value === "string" ? value : null;
 };
-
-const HTML_ENTITY_LOOKUP: Record<string, string> = {
-  amp: "&",
-  apos: "'",
-  gt: ">",
-  lt: "<",
-  nbsp: " ",
-  quot: '"',
-  Auml: "Ä",
-  auml: "ä",
-  Ouml: "Ö",
-  ouml: "ö",
-  Otilde: "Õ",
-  otilde: "õ",
-  Uuml: "Ü",
-  uuml: "ü"
-};
-
-const isValidCodePoint = (value: number) =>
-  Number.isInteger(value) && value >= 0 && value <= 0x10ffff;
-
-const decodeEntities = (text: string): string =>
-  text.replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi, (match, entity: string) => {
-    if (entity.startsWith("#x") || entity.startsWith("#X")) {
-      const codePoint = Number.parseInt(entity.slice(2), 16);
-      return isValidCodePoint(codePoint) ? String.fromCodePoint(codePoint) : match;
-    }
-
-    if (entity.startsWith("#")) {
-      const codePoint = Number.parseInt(entity.slice(1), 10);
-      return isValidCodePoint(codePoint) ? String.fromCodePoint(codePoint) : match;
-    }
-
-    return HTML_ENTITY_LOOKUP[entity] ?? match;
-  });
 
 const unique = <T>(values: T[]): T[] => [...new Set(values)];
 
@@ -241,21 +227,10 @@ const fetchText = async (
   };
 };
 
-const normalizeText = (value: string): string =>
-  decodeEntities(value)
-    .replace(/\r\n?/g, "\n")
-    .replace(/[ \t\f\v]+/g, " ")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n[ \t]+/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/\n\n(?=- )/g, "\n")
-    .trim();
-
 const DEFAULT_NON_CONTENT_SELECTOR = [
   "script",
   "style",
   "noscript",
-  "iframe",
   "svg",
   "nav",
   "header",
@@ -270,24 +245,194 @@ const DEFAULT_NON_CONTENT_SELECTOR = [
   "[aria-label*='navigation' i]"
 ].join(", ");
 
-const NON_CONTENT_ATTRIBUTE_PATTERN =
-  /(?:^|[-_\s])(cookie|footer|header|login|menu|nav|navbar|navigation|search)(?:$|[-_\s])/i;
+const NON_CONTENT_ATTRIBUTE_BASE_TOKENS = new Set([
+  "cookie",
+  "footer",
+  "header",
+  "login",
+  "menu",
+  "nav",
+  "navbar",
+  "navigation",
+  "search"
+]);
+const NON_CONTENT_ATTRIBUTE_PREFIX_TOKENS = new Set([
+  "bottom",
+  "desktop",
+  "global",
+  "main",
+  "mobile",
+  "page",
+  "primary",
+  "secondary",
+  "site",
+  "sticky",
+  "top"
+]);
+const NON_CONTENT_ATTRIBUTE_SUFFIX_TOKENS = new Set([
+  "action",
+  "actions",
+  "bar",
+  "block",
+  "brand",
+  "collapse",
+  "container",
+  "content",
+  "drawer",
+  "group",
+  "inner",
+  "item",
+  "items",
+  "legal",
+  "link",
+  "links",
+  "list",
+  "logo",
+  "menu",
+  "nav",
+  "overlay",
+  "panel",
+  "section",
+  "search",
+  "style",
+  "toggle",
+  "wrapper"
+]);
+const PROTECTED_PAGE_CONTAINER_ELEMENTS = new Set(["html", "head", "body"]);
 const LINK_DENSE_BLOCK_SELECTOR = "ul, ol, section, div";
 const LINK_DENSE_MIN_LINKS = 6;
 const LINK_DENSE_MIN_RATIO = 0.75;
 const PRIMARY_CONTENT_SELECTOR = "main, article, [role='main']";
+const PRIMARY_CONTENT_SUBTREE_SELECTOR = "main, [role='main']";
+const MIN_CONTENT_QUALITY_SCORE = 65;
+
+type ExtractionDiagnostics = {
+  pageType: NonNullable<FetchedPage["pageType"]>;
+  qualityScore: number;
+  skipReason: string | null;
+  extractedContainer: string;
+  normalizedContentHash: string;
+};
+
+const normalizeHashableContent = (value: string): string =>
+  normalizeText(value)
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const hashNormalizedContent = (value: string): string =>
+  createHash("sha256").update(normalizeHashableContent(value)).digest("hex");
+
+const classifyPageType = (url: string, html: string): NonNullable<FetchedPage["pageType"]> => {
+  let path = "";
+  try {
+    path = new URL(url).pathname.toLowerCase();
+  } catch {
+    return "unknown";
+  }
+  if (/\.(?:jpe?g|png|gif|webp|svg|pdf|zip|mp3|mp4|mov|avi|webm)$/i.test(path)) {
+    return "asset";
+  }
+  if (/<article\b/i.test(html) || /\bitemtype\s*=\s*["'][^"']*Article/i.test(html)) {
+    return "content";
+  }
+  return "unknown";
+};
+
+const scoreExtractedContent = (text: string): number => {
+  if (!text.trim()) {
+    return 0;
+  }
+  const length = text.length;
+  const linkMatches = text.match(/\[[^\]]+\]\(https?:\/\/[^)]+\)|https?:\/\/\S+/g) ?? [];
+  const templateMatches = text.match(/\{\{[\s\S]*?\}\}/g) ?? [];
+  const words = text.match(/\p{L}[\p{L}\p{N}'-]*/gu) ?? [];
+  const uniqueWords = new Set(words.map((word) => word.toLowerCase()));
+  let score = 100;
+  if (length < 300) score -= 45;
+  else if (length < 800) score -= 20;
+  const linkDensity = linkMatches.join(" ").length / Math.max(length, 1);
+  if (linkDensity > 0.35) score -= 35;
+  else if (linkDensity > 0.2) score -= 20;
+  const templateDensity = templateMatches.join(" ").length / Math.max(length, 1);
+  if (templateDensity > 0.05) score -= 35;
+  else if (templateDensity > 0.01) score -= 15;
+  if (words.length > 20 && uniqueWords.size / words.length < 0.25) score -= 15;
+  return Math.max(0, Math.min(100, Math.round(score)));
+};
+
+const resolveSkipReason = (
+  pageType: NonNullable<FetchedPage["pageType"]>,
+  qualityScore: number,
+  text: string
+): string | null => {
+  if (!text.trim()) {
+    return "Page did not contain crawlable content";
+  }
+  if (pageType === "asset" || pageType === "feed" || pageType === "search" || pageType === "listing") {
+    return `Skipped ${pageType} page`;
+  }
+  if (qualityScore < MIN_CONTENT_QUALITY_SCORE) {
+    return "Skipped low-quality extracted content";
+  }
+  return null;
+};
+
+const isNonContentAttributeToken = (token: string): boolean => {
+  const normalized = token.trim().replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
+  if (NON_CONTENT_ATTRIBUTE_BASE_TOKENS.has(normalized)) {
+    return true;
+  }
+  const segments = normalized.split(/[-_]+/).filter(Boolean);
+  if (segments.length === 0) {
+    return false;
+  }
+  const baseIndex =
+    segments.length > 1 && NON_CONTENT_ATTRIBUTE_PREFIX_TOKENS.has(segments[0])
+      ? 1
+      : 0;
+  const base = segments[baseIndex];
+  if (!NON_CONTENT_ATTRIBUTE_BASE_TOKENS.has(base)) {
+    return false;
+  }
+  const suffixes = segments.slice(baseIndex + 1);
+  if (suffixes.length === 0) {
+    return baseIndex > 0;
+  }
+  return (
+    suffixes.every((suffix) => NON_CONTENT_ATTRIBUTE_SUFFIX_TOKENS.has(suffix))
+  );
+};
 
 const hasNonContentAttribute = (value: string | undefined): boolean => {
   if (!value) {
     return false;
   }
-  return value.split(/\s+/).some((token) => NON_CONTENT_ATTRIBUTE_PATTERN.test(token));
+  return value.split(/\s+/).some(isNonContentAttributeToken);
+};
+
+const elementName = (element: unknown): string => {
+  const typed = element as { name?: unknown; tagName?: unknown };
+  const name = typeof typed.name === "string"
+    ? typed.name
+    : typeof typed.tagName === "string"
+      ? typed.tagName
+      : "";
+  return name.toLowerCase();
 };
 
 const removeAttributeMarkedPageChrome = ($: any): void => {
   $("[class], [id]").each((_index: number, element: unknown) => {
+    if (PROTECTED_PAGE_CONTAINER_ELEMENTS.has(elementName(element))) {
+      return;
+    }
     const block = $(element);
-    if (block.closest(PRIMARY_CONTENT_SELECTOR).length > 0) {
+    if (
+      block.closest(PRIMARY_CONTENT_SELECTOR).length > 0 ||
+      block.find(PRIMARY_CONTENT_SUBTREE_SELECTOR).length > 0
+    ) {
       return;
     }
     if (
@@ -326,76 +471,19 @@ const removePageChrome = ($: any): void => {
   });
 };
 
-const extractMainContentHtml = (html: string): string => {
-  const cleaned = html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
-
-  const main = cleaned.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1];
-  if (main) return main;
-
-  const article = cleaned.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
-  if (article) return article;
-
-  return cleaned.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? cleaned;
-};
-
-const stripTags = (html: string): string =>
-  html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const renderBlockquote = (html: string): string => {
-  const text = stripTags(html);
-  if (!text) return "";
-  return `\n\n${text
-    .split(/\n+/)
-    .map((line) => `> ${line.trim()}`)
-    .join("\n")}\n\n`;
-};
-
-const formatHtmlAsMarkdown = (html: string): string =>
-  html
-    .replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_m, p1) => `\n\n\`\`\`\n${stripTags(p1)}\n\`\`\`\n\n`)
-    .replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, (_m, p1) => `\`${stripTags(p1)}\``)
-    .replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, level, p1) => `\n\n${"#".repeat(Number(level))} ${stripTags(p1)}\n\n`)
-    .replace(/<blockquote\b[^>]*>([\s\S]*?)<\/blockquote>/gi, (_m, p1) => renderBlockquote(p1))
-    .replace(/<p\b[^>]*>([\s\S]*?)<\/p>/gi, (_m, p1) => `\n\n${stripTags(p1)}\n\n`)
-    .replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, (_m, p1) => `\n- ${stripTags(p1)}`)
-    .replace(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi, (_m, p1) => `\n| ${stripTags(p1)} |`)
-    .replace(/<hr\b[^>]*>/gi, "\n\n---\n\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(address|article|aside|details|dialog|div|dl|fieldset|figcaption|figure|footer|form|header|main|nav|ol|section|table|tbody|tfoot|thead|ul)\b[^>]*>/gi, "\n\n")
-    .replace(/<\/(dd|dt)\b[^>]*>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/[ \t]+/g, " ")
-    .replace(/[ \t]*\n[ \t]*/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
-const extractStructuredTextFromHtml = (html: string): string =>
-  normalizeText(
-    formatHtmlAsMarkdown(extractMainContentHtml(html))
-  );
-
-const hasPrimaryContentContainer = (html: string): boolean =>
-  /<(main|article)\b/i.test(html) || /\brole\s*=\s*["']main["']/i.test(html);
-
-const extractStructuredTextWithFallback = (input: {
-  cleanedHtml: string;
-  originalHtml: string;
-}): string => {
-  const cleanedText = extractStructuredTextFromHtml(input.cleanedHtml);
-  if (cleanedText) {
-    return cleanedText;
+const isStructurallyLinkDensePage = ($: any): boolean => {
+  const body = $("body");
+  const scope = body.length > 0 ? body : $.root();
+  const text = normalizeText(scope.text());
+  if (text.length < 80) {
+    return false;
   }
-  if (!hasPrimaryContentContainer(input.originalHtml)) {
-    return "";
+  const anchors = scope.find("a[href]");
+  if (anchors.length < LINK_DENSE_MIN_LINKS) {
+    return false;
   }
-  return extractStructuredTextFromHtml(input.originalHtml);
+  const linkText = normalizeText(anchors.text());
+  return linkText.length / Math.max(text.length, 1) >= LINK_DENSE_MIN_RATIO;
 };
 
 const extractLinks = ($: any, loadedUrl: string): string[] =>
@@ -447,6 +535,169 @@ const buildBlockedResponseError = (statusCode: number, retryAfter: string | null
   return error;
 };
 
+const buildHttpResponseError = (
+  statusCode: number,
+  statusText: string,
+  body: string
+): Error => {
+  const message = `${statusCode}${statusText ? ` - ${statusText}` : ""}${body ? `: ${body.slice(0, 200)}` : ""}`;
+  const error = new Error(message);
+  Object.defineProperty(error, "crawlMetadata", {
+    value: {
+      httpStatus: statusCode,
+      transportUsed: "http",
+      httpAttempted: true,
+      browserAttempted: false,
+      browserFallbackReason: null,
+      httpQualityScore: null
+    },
+    enumerable: false
+  });
+  return error;
+};
+
+const buildFetchedHtmlPage = (input: {
+  loadedUrl: string;
+  originalHtml: string;
+  statusCode: number | null;
+  headers: unknown;
+  options?: ExtractionOptions;
+}): FetchedPage => {
+  const $ = load(input.originalHtml);
+  const originalLinks = extractLinks($, input.loadedUrl);
+  const structurallyLinkDense = isStructurallyLinkDensePage($);
+  removePageChrome($);
+  const html = $.html();
+  const cleanedLinks = extractLinks($, input.loadedUrl);
+  const text = extractStructuredTextWithFallback({
+    cleanedHtml: html,
+    originalHtml: input.originalHtml,
+    baseUrl: input.loadedUrl,
+    options: input.options
+  });
+  const pageType = classifyPageType(input.loadedUrl, input.originalHtml);
+  const resolvedPageType = pageType === "unknown" && !hasPrimaryContentContainer(input.originalHtml) && structurallyLinkDense
+    ? "listing"
+    : pageType;
+  const qualityScore = scoreExtractedContent(text);
+  const diagnostics: ExtractionDiagnostics = {
+    pageType: resolvedPageType,
+    qualityScore,
+    skipReason: resolveSkipReason(resolvedPageType, qualityScore, text),
+    extractedContainer: hasPrimaryContentContainer(input.originalHtml) ? "primary" : "body",
+    normalizedContentHash: hashNormalizedContent(text)
+  };
+  return {
+    url: input.loadedUrl,
+    title: $("title").text() || null,
+    text,
+    html,
+    httpStatus: input.statusCode,
+    links: cleanedLinks.length > 0 ? cleanedLinks : originalLinks,
+    parsedData: null,
+    etag: readHeader(input.headers, "etag"),
+    lastModified: readHeader(input.headers, "last-modified"),
+    notModified: input.statusCode === 304,
+    transportUsed: "http",
+    httpAttempted: true,
+    browserAttempted: false,
+    browserFallbackReason: null,
+    httpQualityScore: null,
+    ...diagnostics
+  };
+};
+
+const shouldRetryWithPlainFetch = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") {
+    return true;
+  }
+  const metadata = readErrorMetadata(error);
+  if (metadata.httpStatus) {
+    return false;
+  }
+  const message = error instanceof Error ? error.message : "";
+  return !message.includes("Fetched URL out of crawl scope");
+};
+
+const assertPlainFetchAllowedByRobots = async (
+  url: string,
+  options: Parameters<FetchPage>[1]
+): Promise<void> => {
+  const robotsScopeUrl = toOriginScopeUrl(options?.scopeBaseUrl ?? url);
+  const parsedRobotsUrl = new URL(robotsScopeUrl);
+  parsedRobotsUrl.pathname = "/robots.txt";
+  const robots = await fetchText(parsedRobotsUrl.toString(), {
+    signal: options?.signal,
+    userAgent: options?.userAgent
+  });
+  if (robots.status === 404 || !robots.ok) {
+    return;
+  }
+  const robotsFile = RobotsTxtFile.from(parsedRobotsUrl.toString(), robots.body);
+  if (!robotsFile.isAllowed(url, options?.userAgent ?? "*")) {
+    throw new Error("Blocked by robots.txt");
+  }
+};
+
+const fetchPageWithPlainFetch = async (
+  url: string,
+  options: Parameters<FetchPage>[1],
+  assertInScope: (candidateUrl: string) => void
+): Promise<FetchedPage> => {
+  const timeoutSignal = AbortSignal.timeout(30_000);
+  const fetchSignal = options?.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
+  let currentUrl = new URL(url).toString();
+  let response: Response | null = null;
+
+  for (let redirectCount = 0; redirectCount <= 10; redirectCount += 1) {
+    assertInScope(currentUrl);
+    await assertPlainFetchAllowedByRobots(currentUrl, options);
+    response = await fetch(currentUrl, {
+      redirect: "manual",
+      signal: fetchSignal,
+      headers: {
+        ...(options?.userAgent ? { "User-Agent": options.userAgent } : {}),
+        ...(options?.etag ? { "If-None-Match": options.etag } : {}),
+        ...(options?.lastModified ? { "If-Modified-Since": options.lastModified } : {})
+      }
+    });
+
+    if (response.status < 300 || response.status >= 400) {
+      break;
+    }
+
+    const location = response.headers.get("location");
+    if (!location) {
+      break;
+    }
+    currentUrl = new URL(location, currentUrl).toString();
+  }
+
+  if (!response) {
+    throw new Error("Plain fetch produced no page response");
+  }
+
+  assertInScope(currentUrl);
+  if (BLOCKED_HTTP_STATUS_CODES.has(response.status)) {
+    throw buildBlockedResponseError(response.status, response.headers.get("retry-after"));
+  }
+
+  const body = response.status === 304 ? "" : await response.text();
+  if (!response.ok && response.status !== 304) {
+    throw buildHttpResponseError(response.status, response.statusText, body);
+  }
+
+  return buildFetchedHtmlPage({
+    loadedUrl: currentUrl,
+    originalHtml: body,
+    statusCode: response.status,
+    headers: response.headers,
+    options: {
+      preserveContentLinks: options?.preserveContentLinks
+    }
+  });
+};
+
 const fetchPageWithCrawlee: FetchPage = async (url, options) => {
   ensureSystemBinaryPaths();
   let result: FetchedPage | null = null;
@@ -492,31 +743,15 @@ const fetchPageWithCrawlee: FetchPage = async (url, options) => {
         if (statusCode && BLOCKED_HTTP_STATUS_CODES.has(statusCode)) {
           throw buildBlockedResponseError(statusCode, readHeader(response?.headers, "retry-after"));
         }
-        const originalHtml = $.html();
-        const originalLinks = extractLinks($, loadedUrl);
-        removePageChrome($);
-        const html = $.html();
-        const cleanedLinks = extractLinks($, loadedUrl);
-        result = {
-          url: loadedUrl,
-          title: $("title").text() || null,
-          text: extractStructuredTextWithFallback({
-            cleanedHtml: html,
-            originalHtml
-          }),
-          html,
-          httpStatus: statusCode,
-          links: cleanedLinks.length > 0 ? cleanedLinks : originalLinks,
-          parsedData: null,
-          etag: readHeader(response?.headers, "etag"),
-          lastModified: readHeader(response?.headers, "last-modified"),
-          notModified: response?.statusCode === 304,
-          transportUsed: "http",
-          httpAttempted: true,
-          browserAttempted: false,
-          browserFallbackReason: null,
-          httpQualityScore: null
-        };
+        result = buildFetchedHtmlPage({
+          loadedUrl,
+          originalHtml: $.html(),
+          statusCode,
+          headers: response?.headers,
+          options: {
+            preserveContentLinks: options?.preserveContentLinks
+          }
+        });
       },
       failedRequestHandler: (_context, error) => {
         failure = error;
@@ -531,6 +766,9 @@ const fetchPageWithCrawlee: FetchPage = async (url, options) => {
   if (result) {
     return result;
   }
+  if (shouldRetryWithPlainFetch(failure)) {
+    return fetchPageWithPlainFetch(url, options, assertInScope);
+  }
   throw failure instanceof Error ? failure : new Error("Crawlee fetch produced no page result");
 };
 
@@ -539,6 +777,9 @@ type CrawlSiteParams = {
   pageLimit: number;
   pageConcurrency?: number;
   userAgent?: string;
+  includeUrlPatterns?: string[];
+  excludeUrlPatterns?: string[];
+  preserveContentLinks?: boolean;
   seedDiscoveredUrls?: string[];
   seedPendingUrls?: string[];
   includeBaseUrl?: boolean;
@@ -570,6 +811,9 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     pageLimit,
     pageConcurrency = 1,
     userAgent,
+    includeUrlPatterns,
+    excludeUrlPatterns,
+    preserveContentLinks,
     seedDiscoveredUrls,
     seedPendingUrls,
     includeBaseUrl,
@@ -587,6 +831,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
   const discovered = new Set<string>();
   const queued = new Set<string>();
   const claimedResolvedUrls = new Set<string>();
+  const discoveryOnlyUrls = new Set<string>();
   log.setLevel(LogLevel.ERROR);
   const MAX_ERROR_MESSAGE_LENGTH = 500;
   const truncateErrorMessage = (value: string) => {
@@ -646,6 +891,33 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     })?.canonicalUrl ?? null;
   };
 
+  const matchesPattern = matchesUrlPattern;
+
+  const resolveSeedUrl = (
+    rawUrl: string
+  ): { canonicalUrl: string; publishable: boolean } | null => {
+    const policyResolution = resolvePolicy?.(rawUrl);
+    if (
+      policyResolution?.action === "asset" ||
+      policyResolution?.action === "defer" ||
+      policyResolution?.action === "deny"
+    ) {
+      return null;
+    }
+    const classification = classifyCrawlCandidateUrl(rawUrl, baseUrl);
+    if (classification.reason !== "accepted") {
+      return null;
+    }
+    const canonicalUrl = canonicalize(classification.canonicalUrl);
+    if (!canonicalUrl || matchesPattern(canonicalUrl, excludeUrlPatterns)) {
+      return null;
+    }
+    return {
+      canonicalUrl,
+      publishable: (includeUrlPatterns?.length ?? 0) === 0 || matchesPattern(canonicalUrl, includeUrlPatterns)
+    };
+  };
+
   const enqueueCandidate = async (
     rawUrl: string,
     options?: { sourcePageUrl?: string | null; seed?: boolean }
@@ -668,6 +940,18 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     const canonicalUrl = canonicalize(classification.canonicalUrl);
     if (!canonicalUrl) {
       return buildRejectedCandidateDecision(rawUrl, "invalid_url");
+    }
+    if (matchesPattern(canonicalUrl, excludeUrlPatterns)) {
+      return buildRejectedCandidateDecision(rawUrl, "policy_deny", canonicalUrl, {
+        matchedRuleId: "excludeUrlPatterns",
+        matchedScope: "site"
+      });
+    }
+    if ((includeUrlPatterns?.length ?? 0) > 0 && !matchesPattern(canonicalUrl, includeUrlPatterns)) {
+      return buildRejectedCandidateDecision(rawUrl, "policy_deny", canonicalUrl, {
+        matchedRuleId: "includeUrlPatterns",
+        matchedScope: "site"
+      });
     }
     if (discovered.has(canonicalUrl) || claimedResolvedUrls.has(canonicalUrl)) {
       return buildRejectedCandidateDecision(rawUrl, "duplicate", canonicalUrl, policyResolution);
@@ -733,6 +1017,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
             ...(metadata ?? {}),
             scopeBaseUrl: baseUrl,
             userAgent,
+            preserveContentLinks,
             signal
           });
           signal?.throwIfAborted();
@@ -747,6 +1032,11 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
             return;
           }
           const status = page.notModified ? "unchanged" : "success";
+          const frontierCanonical = canonicalize(next);
+          const discoveryOnlySkipReason = discoveryOnlyUrls.has(resolvedCanonical) ||
+            (frontierCanonical ? discoveryOnlyUrls.has(frontierCanonical) : false)
+            ? "Skipped by include URL policy"
+            : null;
           const result: CrawledPageResult = {
             url: page.url,
             frontierUrl: next,
@@ -763,7 +1053,12 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
             httpAttempted: page.httpAttempted,
             browserAttempted: page.browserAttempted,
             browserFallbackReason: page.browserFallbackReason ?? null,
-            httpQualityScore: page.httpQualityScore ?? null
+            httpQualityScore: page.httpQualityScore ?? null,
+            pageType: page.pageType ?? "unknown",
+            qualityScore: page.qualityScore ?? null,
+            skipReason: discoveryOnlySkipReason ?? page.skipReason ?? null,
+            extractedContainer: page.extractedContainer ?? null,
+            normalizedContentHash: page.normalizedContentHash ?? null
           };
           processed += 1;
           if (onResult) {
@@ -824,17 +1119,16 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
   }
   const initialUrls: Array<{ url: string; uniqueKey: string }> = [];
   const seedPending = async (url: string) => {
-    const classification = classifyCrawlCandidateUrl(url, baseUrl);
-    if (classification.reason !== "accepted") {
+    const seed = resolveSeedUrl(url);
+    if (!seed || queued.has(seed.canonicalUrl)) {
       return;
     }
-    const canonical = canonicalize(classification.canonicalUrl);
-    if (!canonical || queued.has(canonical)) {
-      return;
+    discovered.add(seed.canonicalUrl);
+    queued.add(seed.canonicalUrl);
+    if (!seed.publishable) {
+      discoveryOnlyUrls.add(seed.canonicalUrl);
     }
-    discovered.add(canonical);
-    queued.add(canonical);
-    initialUrls.push({ url: canonical, uniqueKey: canonical });
+    initialUrls.push({ url: seed.canonicalUrl, uniqueKey: seed.canonicalUrl });
   };
   for (const url of seedPendingUrls ?? []) {
     await seedPending(url);

@@ -286,6 +286,13 @@ export function IngestionSettingsPanel({
   const requestedEmbeddingModelLabel = embeddingModelChange
     ? embeddingModelOptions.find((option) => option.value === embeddingModelChange)?.label ?? embeddingModelChange
     : null
+  const isFixedWindowChunking = settings.chunkingStrategy === 'fixed_window'
+  const isRecursiveTextChunking = settings.chunkingStrategy === 'recursive_text'
+  const chunkingTuningLabel = isFixedWindowChunking
+    ? 'Fixed-size chunk tuning'
+    : isRecursiveTextChunking
+      ? 'Recursive text tuning'
+      : 'Semantic chunk tuning'
 
   return (
     <SettingsTabShell>
@@ -390,17 +397,17 @@ export function IngestionSettingsPanel({
             </div>
             <div className="space-y-4 border-t border-border/70 pt-4">
               <div className="flex items-center gap-2">
-                {settings.chunkingStrategy === 'fixed_window' ? (
+                {isFixedWindowChunking ? (
                   <SlidersHorizontal className="h-4 w-4 text-primary" />
                 ) : (
                   <Search className="h-4 w-4 text-primary" />
                 )}
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {settings.chunkingStrategy === 'fixed_window' ? 'Fixed-size chunk tuning' : 'Semantic chunk tuning'}
+                  {chunkingTuningLabel}
                 </p>
               </div>
 
-                {settings.chunkingStrategy === 'fixed_window' ? (
+                {isFixedWindowChunking ? (
                   <>
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
@@ -442,6 +449,48 @@ export function IngestionSettingsPanel({
                       />
                     </div>
                   </>
+                ) : isRecursiveTextChunking ? (
+                  <>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <SettingFieldHeader
+                          htmlFor="fixedWindowChunkSize"
+                          label="Chunk size"
+                          description="Maximum size for recursive text chunks."
+                          className="pr-4"
+                        />
+                        <span className="text-sm font-mono text-muted-foreground">{settings.fixedWindowChunkSize}</span>
+                      </div>
+                      <Slider
+                        id="fixedWindowChunkSize"
+                        min={100}
+                        max={4000}
+                        step={10}
+                        value={[settings.fixedWindowChunkSize]}
+                        onValueChange={([value]) => updateSetting('fixedWindowChunkSize', value)}
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <SettingFieldHeader
+                          htmlFor="structuredMinChunkSize"
+                          label="Minimum chunk size"
+                          description="Merge small recursive splits until they reach this size."
+                          className="pr-4"
+                        />
+                        <span className="text-sm font-mono text-muted-foreground">{settings.structuredMinChunkSize}</span>
+                      </div>
+                      <Slider
+                        id="structuredMinChunkSize"
+                        min={1}
+                        max={1000}
+                        step={1}
+                        value={[Math.min(settings.structuredMinChunkSize, 1000)]}
+                        onValueChange={([value]) => updateSetting('structuredMinChunkSize', value)}
+                      />
+                    </div>
+                  </>
                 ) : (
                   <>
                     <div className="space-y-3">
@@ -449,7 +498,7 @@ export function IngestionSettingsPanel({
                         <SettingFieldHeader
                           htmlFor="structuredMinChunkSize"
                           label="Minimum chunk size"
-                          description="Merge very small sections until they reach this size."
+                          description="Keep very small text segments with nearby content."
                           className="pr-4"
                         />
                         <span className="text-sm font-mono text-muted-foreground">{settings.structuredMinChunkSize}</span>
@@ -469,7 +518,7 @@ export function IngestionSettingsPanel({
                         <SettingFieldHeader
                           htmlFor="structuredMaxChunkSize"
                           label="Maximum chunk size"
-                          description="Stop growing a semantic chunk once it reaches this size."
+                          description="Stop growing a semantic text chunk once it reaches this size."
                           className="pr-4"
                         />
                         <span className="text-sm font-mono text-muted-foreground">{settings.structuredMaxChunkSize}</span>

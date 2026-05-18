@@ -18,6 +18,49 @@ const sourceParamsSchema = z.object({
   sourceId: z.string().uuid(),
 });
 
+const crawlPatternSchema = z.array(z.string().trim().min(1).max(200)).max(50);
+
+const sourceUpdateSchema = z.object({
+  crawlSettings: z
+    .object({
+      limit: z.number().int().min(1).optional(),
+      includeUrlPatterns: crawlPatternSchema.optional(),
+      excludeUrlPatterns: crawlPatternSchema.optional(),
+      preserveContentLinks: z.boolean().optional(),
+    })
+    .refine(
+      (value) =>
+        value.limit !== undefined ||
+        value.includeUrlPatterns !== undefined ||
+        value.excludeUrlPatterns !== undefined ||
+        value.preserveContentLinks !== undefined,
+      { message: "crawlSettings must include at least one field" },
+    )
+    .optional(),
+});
+
+const toCrawlSettings = (config: Record<string, unknown>) => {
+  const policy = config.policy && typeof config.policy === "object" && !Array.isArray(config.policy)
+    ? (config.policy as Record<string, unknown>)
+    : {};
+  const includeUrlPatterns = Array.isArray(policy.includeUrlPatterns)
+    ? policy.includeUrlPatterns.filter((value): value is string => typeof value === "string")
+    : [];
+  const excludeUrlPatterns = Array.isArray(policy.excludeUrlPatterns)
+    ? policy.excludeUrlPatterns.filter((value): value is string => typeof value === "string")
+    : [];
+  return {
+    url: typeof config.url === "string" ? config.url : null,
+    limit:
+      typeof config.limit === "number" && Number.isInteger(config.limit) && config.limit > 0
+        ? config.limit
+        : resolveWebsiteCrawlerConfig().defaultLimit,
+    includeUrlPatterns,
+    excludeUrlPatterns,
+    preserveContentLinks: typeof policy.preserveContentLinks === "boolean" ? policy.preserveContentLinks : true,
+  };
+};
+
 const documentSourceSchema = z.union([
   z.object({
     id: z.string().uuid(),
@@ -70,6 +113,7 @@ type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "env"
   | "abuseControlService"
   | "auditService"
+  | "chunkRepository"
   | "documentDeletionService"
   | "documentImportService"
   | "documentIngestionService"
@@ -82,9 +126,15 @@ type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "usageLimitPolicy"
 >;
 
+export const chunkParamsSchema = z.object({
+  documentId: z.string().uuid(),
+  chunkId: z.string().uuid(),
+});
+
 export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const documentsRead = requireWorkspacePermission(dependencies, "workspace.documents.read");
   const uploadRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
@@ -121,7 +171,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       });
     });
 
-  router.get("/", workspaceSession, async (req, res, next) => {
+  router.get("/", workspaceSession, documentsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedQuery = documentListQuerySchema.safeParse(req.query);
@@ -136,7 +186,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.get("/sources", workspaceSession, async (_req, res, next) => {
+  router.get("/sources", workspaceSession, documentsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const [sources, documentsWithoutSourceCount] = await Promise.all([
@@ -174,6 +224,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
           createdAt: source.createdAt.toISOString(),
           updatedAt: source.updatedAt.toISOString(),
           documentCount: source.documentCount,
+          ...(source.kind === "website" ? { crawlSettings: toCrawlSettings(source.config) } : {}),
         })),
       });
     } catch (error) {
@@ -181,7 +232,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.get("/sources/:sourceId/documents", workspaceSession, async (req, res, next) => {
+  router.get("/sources/:sourceId/documents", workspaceSession, documentsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { sourceId } = sourceParamsSchema.parse(req.params);
@@ -222,13 +273,131 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       const config = resolveWebsiteCrawlerConfig();
       const previousLimit = typeof source.config.limit === "number" ? source.config.limit : config.defaultLimit;
       const limit = Math.min(previousLimit, config.maxLimit);
+      const policy = source.config.policy && typeof source.config.policy === "object" && !Array.isArray(source.config.policy)
+        ? source.config.policy as Record<string, unknown>
+        : undefined;
       const result = await dependencies.websiteCrawlJobService.enqueue({
         accountId,
         workspaceId,
         url,
         limit,
+        policy,
       });
       res.status(202).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/sources/:sourceId/pause-crawl", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { sourceId } = sourceParamsSchema.parse(req.params);
+      const source = await dependencies.documentSourceRepository.findByIdAndWorkspaceId(sourceId, workspaceId);
+      if (!source) {
+        throw notFound("Source not found");
+      }
+      if (source.kind !== "website") {
+        throw badRequest("Only website sources can be paused");
+      }
+      const result = await dependencies.websiteCrawlJobService.pauseJobsForSource({ workspaceId, sourceId });
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/sources/:sourceId/resume-crawl", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { sourceId } = sourceParamsSchema.parse(req.params);
+      const source = await dependencies.documentSourceRepository.findByIdAndWorkspaceId(sourceId, workspaceId);
+      if (!source) {
+        throw notFound("Source not found");
+      }
+      if (source.kind !== "website") {
+        throw badRequest("Only website sources can be resumed");
+      }
+      const result = await dependencies.websiteCrawlJobService.resumeJobsForSource({ workspaceId, sourceId });
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch("/sources/:sourceId", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), validateBody(sourceUpdateSchema), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { sourceId } = sourceParamsSchema.parse(req.params);
+      if (sourceId === MANUALLY_ADDED_DOCUMENTS_SOURCE_ID) {
+        throw badRequest("The manually added documents source cannot be edited");
+      }
+      const source = await dependencies.documentSourceRepository.findByIdAndWorkspaceId(sourceId, workspaceId);
+      if (!source) {
+        throw notFound("Source not found");
+      }
+      if (source.kind !== "website") {
+        throw badRequest("Only website sources have editable crawl settings");
+      }
+
+      const crawlInput = (req.body as { crawlSettings?: Record<string, unknown> }).crawlSettings;
+      if (!crawlInput) {
+        res.status(200).json({
+          id: source.id,
+          kind: source.kind,
+          name: source.name,
+          externalId: source.externalId,
+          lastSyncStatus: source.lastSyncStatus,
+          lastSyncedAt: source.lastSyncedAt?.toISOString() ?? null,
+          createdAt: source.createdAt.toISOString(),
+          updatedAt: source.updatedAt.toISOString(),
+          documentCount: 0,
+          crawlSettings: toCrawlSettings(source.config),
+        });
+        return;
+      }
+
+      const previous = toCrawlSettings(source.config);
+      const crawlerConfig = resolveWebsiteCrawlerConfig();
+      const nextLimit = crawlInput.limit !== undefined ? Math.min(crawlInput.limit as number, crawlerConfig.maxLimit) : previous.limit;
+      const nextIncludeUrlPatterns = crawlInput.includeUrlPatterns !== undefined
+        ? (crawlInput.includeUrlPatterns as string[])
+        : previous.includeUrlPatterns;
+      const nextExcludeUrlPatterns = crawlInput.excludeUrlPatterns !== undefined
+        ? (crawlInput.excludeUrlPatterns as string[])
+        : previous.excludeUrlPatterns;
+      const nextPreserveContentLinks = crawlInput.preserveContentLinks !== undefined
+        ? (crawlInput.preserveContentLinks as boolean)
+        : previous.preserveContentLinks;
+
+      const nextConfig: Record<string, unknown> = {
+        ...source.config,
+        limit: nextLimit,
+        policy: {
+          includeUrlPatterns: nextIncludeUrlPatterns,
+          excludeUrlPatterns: nextExcludeUrlPatterns,
+          preserveContentLinks: nextPreserveContentLinks,
+        },
+      };
+
+      const updated = await dependencies.documentSourceRepository.updateConfigByIdAndWorkspaceId({
+        sourceId,
+        workspaceId,
+        config: nextConfig,
+      });
+
+      res.status(200).json({
+        id: updated.id,
+        kind: updated.kind,
+        name: updated.name,
+        externalId: updated.externalId,
+        lastSyncStatus: updated.lastSyncStatus,
+        lastSyncedAt: updated.lastSyncedAt?.toISOString() ?? null,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+        documentCount: 0,
+        crawlSettings: toCrawlSettings(updated.config),
+      });
     } catch (error) {
       next(error);
     }
@@ -257,13 +426,15 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.post("/search", workspaceSession, validateBody(documentSearchSchema), async (req, res, next) => {
+  router.post("/search", workspaceSession, documentsRead, validateBody(documentSearchSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
+      const executionSurface = req.header("x-radioso-capability-client") === "mcp" ? "mcp_capability" : "documents";
       const result = await dependencies.documentSearchService.search({
         workspaceId,
         query: req.body.query,
         metadataFilter: req.body.metadataFilter,
+        executionSurface,
       });
       res.status(200).json(result);
     } catch (error) {
@@ -271,7 +442,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.get("/search/history", workspaceSession, async (req, res, next) => {
+  router.get("/search/history", workspaceSession, documentsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedQuery = documentListQuerySchema.safeParse(req.query);
@@ -286,7 +457,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  router.get("/search/history/:searchId", workspaceSession, async (req, res, next) => {
+  router.get("/search/history/:searchId", workspaceSession, documentsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { searchId } = documentSearchHistoryParamsSchema.parse(req.params);
@@ -360,12 +531,48 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     });
   }
 
-  router.get("/:documentId", workspaceSession, async (req, res, next) => {
+  router.get("/:documentId", workspaceSession, documentsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
       const document = await dependencies.documentIngestionService.getDocument(workspaceId, documentId);
       res.status(200).json(document);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:documentId/chunks", workspaceSession, documentsRead, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { documentId } = documentParamsSchema.parse(req.params);
+      await dependencies.documentIngestionService.getDocument(workspaceId, documentId);
+      const chunks = await dependencies.chunkRepository.listSummariesForDocument({
+        documentId,
+        workspaceId,
+      });
+      res.status(200).json({ documentId, chunks });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:documentId/chunks/:chunkId", workspaceSession, documentsRead, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { documentId, chunkId } = chunkParamsSchema.parse(req.params);
+      const chunk = await dependencies.chunkRepository.findByIdForDocument({
+        chunkId,
+        documentId,
+        workspaceId,
+      });
+      if (!chunk) {
+        throw notFound("Chunk not found");
+      }
+      res.status(200).json({
+        ...chunk,
+        createdAt: chunk.createdAt.toISOString(),
+      });
     } catch (error) {
       next(error);
     }

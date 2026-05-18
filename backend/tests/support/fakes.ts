@@ -19,10 +19,6 @@ import type {
   WorkspaceGrantRole,
 } from "../../src/db/repositories/workspaceGrantRepository.js";
 import type {
-  SupportImpersonationRecord,
-  SupportImpersonationRepositoryPort,
-} from "../../src/db/repositories/supportImpersonationRepository.js";
-import type {
   AccountRecord,
   AccountRepositoryPort,
   SessionRecord,
@@ -494,75 +490,6 @@ export class InMemoryWorkspaceGrantRepository implements WorkspaceGrantRepositor
   }
 }
 
-export class InMemorySupportImpersonationRepository implements SupportImpersonationRepositoryPort {
-  private readonly items = new Map<string, SupportImpersonationRecord>();
-
-  async createApproved(input: {
-    accountId: string;
-    staffUserId: string;
-    approverUserId: string;
-    reason: string;
-    expiresAt: Date;
-  }): Promise<SupportImpersonationRecord> {
-    const now = new Date();
-    const record: SupportImpersonationRecord = {
-      id: randomUUID(),
-      accountId: input.accountId,
-      staffUserId: input.staffUserId,
-      approverUserId: input.approverUserId,
-      reason: input.reason,
-      status: "approved",
-      approvedAt: now,
-      startedAt: null,
-      expiresAt: input.expiresAt,
-      endedAt: null,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.items.set(record.id, record);
-    return record;
-  }
-
-  async findById(id: string): Promise<SupportImpersonationRecord | null> {
-    return this.items.get(id) ?? null;
-  }
-
-  async listByAccount(accountId: string, now: Date): Promise<SupportImpersonationRecord[]> {
-    void now;
-    return [...this.items.values()].filter((item) => item.accountId === accountId);
-  }
-
-  async markStarted(id: string, startedAt: Date): Promise<SupportImpersonationRecord> {
-    const existing = this.items.get(id);
-    if (!existing) {
-      throw notFound("Support impersonation session not found");
-    }
-    const updated: SupportImpersonationRecord = {
-      ...existing,
-      status: "active",
-      startedAt: existing.startedAt ?? startedAt,
-      updatedAt: new Date(),
-    };
-    this.items.set(id, updated);
-    return updated;
-  }
-
-  async end(id: string, status: "ended" | "expired" | "revoked", endedAt: Date): Promise<SupportImpersonationRecord> {
-    const existing = this.items.get(id);
-    if (!existing) {
-      throw notFound("Support impersonation session not found");
-    }
-    const updated: SupportImpersonationRecord = {
-      ...existing,
-      status,
-      endedAt: existing.endedAt ?? endedAt,
-      updatedAt: new Date(),
-    };
-    this.items.set(id, updated);
-    return updated;
-  }
-}
-
 export class InMemoryWorkspaceTokenRepository implements WorkspaceTokenRepositoryPort {
   private readonly items = new Map<string, WorkspaceTokenRecord>();
 
@@ -845,6 +772,28 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       throw new Error(`Agent ${agentId} not found`);
     }
     this.defaultAgentIds.set(workspaceId, agentId);
+  }
+
+  async deleteByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<boolean> {
+    const agent = await this.findByIdAndWorkspaceId(agentId, workspaceId);
+    if (!agent) {
+      return false;
+    }
+    this.items.delete(agentId);
+    if (this.defaultAgentIds.get(workspaceId) === agentId) {
+      this.defaultAgentIds.delete(workspaceId);
+    }
+    return true;
+  }
+
+  async countByWorkspaceId(workspaceId: string): Promise<number> {
+    let count = 0;
+    for (const item of this.items.values()) {
+      if (item.workspaceId === workspaceId) {
+        count += 1;
+      }
+    }
+    return count;
   }
 }
 
@@ -1239,6 +1188,24 @@ export class InMemoryDocumentSourceRepository implements DocumentSourceRepositor
       lastSyncedAt: input.syncedAt ?? source.lastSyncedAt,
       updatedAt: new Date(),
     });
+  }
+
+  async updateConfigByIdAndWorkspaceId(input: {
+    sourceId: string;
+    workspaceId: string;
+    config: Record<string, unknown>;
+  }): Promise<DocumentSourceRecord> {
+    const source = await this.findByIdAndWorkspaceId(input.sourceId, input.workspaceId);
+    if (!source) {
+      throw new Error(`Document source ${input.sourceId} not found in workspace ${input.workspaceId}`);
+    }
+    const updated: DocumentSourceRecord = {
+      ...source,
+      config: input.config,
+      updatedAt: new Date(),
+    };
+    this.items.set(updated.id, updated);
+    return updated;
   }
 
   async deleteByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<boolean> {
@@ -1848,6 +1815,45 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
     this.items.set(input.documentId, input.chunks);
     return true;
   }
+
+  async listSummariesForDocument(input: { documentId: string; workspaceId: string }) {
+    const chunks = this.items.get(input.documentId) ?? [];
+    return chunks
+      .filter((chunk) => chunk.workspaceId === input.workspaceId)
+      .slice()
+      .sort((a, b) => a.chunkIndex - b.chunkIndex)
+      .map((chunk) => ({
+        id: chunk.id,
+        chunkIndex: chunk.chunkIndex,
+        contentPreview: chunk.content.slice(0, 240),
+        contentLength: chunk.content.length,
+        startOffset: chunk.startOffset,
+        endOffset: chunk.endOffset,
+      }));
+  }
+
+  async findByIdForDocument(input: { chunkId: string; documentId: string; workspaceId: string }) {
+    const chunks = this.items.get(input.documentId) ?? [];
+    const chunk = chunks.find(
+      (entry) => entry.id === input.chunkId && entry.workspaceId === input.workspaceId,
+    );
+    if (!chunk) {
+      return null;
+    }
+    return {
+      id: chunk.id,
+      documentId: chunk.documentId,
+      workspaceId: chunk.workspaceId,
+      chunkIndex: chunk.chunkIndex,
+      content: chunk.content,
+      searchText: chunk.searchText ?? null,
+      startOffset: chunk.startOffset,
+      endOffset: chunk.endOffset,
+      metadata: chunk.metadata ?? {},
+      createdAt: chunk.createdAt,
+      embeddingDimensions: chunk.embedding.length,
+    };
+  }
 }
 
 export class InMemoryDocumentProcessingJobRepository implements DocumentProcessingJobRepositoryPort {
@@ -2317,18 +2323,20 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
   async create(input: {
     conversationId: string;
     workspaceId: string;
-    role: "user" | "assistant" | "system";
-    content: string;
-    inputMetadata?: MessageRecord["inputMetadata"];
-  }): Promise<MessageRecord> {
+	    role: "user" | "assistant" | "system";
+	    content: string;
+	    inputMetadata?: MessageRecord["inputMetadata"];
+	    metadata?: Record<string, unknown>;
+	  }): Promise<MessageRecord> {
     const record: MessageRecord = {
       id: randomUUID(),
       conversationId: input.conversationId,
       workspaceId: input.workspaceId,
-      role: input.role,
-      content: input.content,
-      inputMetadata: input.inputMetadata,
-      createdAt: new Date(),
+	      role: input.role,
+	      content: input.content,
+	      metadata: input.metadata ?? (input.inputMetadata ? { ...input.inputMetadata } : undefined),
+	      inputMetadata: input.inputMetadata,
+	      createdAt: new Date(),
     };
     const items = this.items.get(input.conversationId) ?? [];
     items.push(record);

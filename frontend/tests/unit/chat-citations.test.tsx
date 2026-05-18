@@ -28,6 +28,32 @@ describe('AssistantMessageContent', () => {
     expect(html).toContain('[1]')
   })
 
+  it('suppresses citation markers when citation display is disabled', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="This is important evidence."
+        citations={[
+          {
+            documentId: 'doc-1',
+            chunkId: 'chunk-1',
+            title: 'Source 1',
+          },
+        ]}
+        answerSegments={[
+          {
+            text: 'This is **important** evidence.',
+            citationIndices: [0],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+        showCitations={false}
+      />,
+    )
+
+    expect(html).not.toContain('[1]')
+    expect(html).toContain('This is important evidence.')
+  })
+
   it('keeps bare urls clickable inside cited inline segments', async () => {
     const html = renderToStaticMarkup(
       <AssistantMessageContent

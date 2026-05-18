@@ -32,6 +32,11 @@ describe("website crawl job service", () => {
       sourceId: "33333333-3333-4333-8333-333333333333",
       requestedUrl: "https://example.com",
       limit: 3,
+      policy: {
+        includeUrlPatterns: [],
+        excludeUrlPatterns: [],
+        preserveContentLinks: true,
+      },
     });
     expect(dispatch).toHaveBeenCalledWith({
       jobId: "11111111-1111-4111-8111-111111111111",
@@ -95,6 +100,95 @@ describe("website crawl job service", () => {
     ]);
     expect(summaries[0].createdAt).toBe("2026-05-11T10:00:00.000Z");
     expect(summaries[2].completedAt).toBeNull();
+    expect(summaries[0].skippedPageCount).toBeNull();
+  });
+
+  it("pauses and resumes crawl jobs for a source", async () => {
+    const pausedJob = {
+      id: "job-paused",
+      workspaceId: "ws-1",
+      sourceId: "source-1",
+      status: "paused",
+    };
+    const resumedJob = {
+      id: "job-resumed",
+      workspaceId: "ws-1",
+      sourceId: "source-1",
+      status: "queued",
+    };
+    const pauseBySourceId = vi.fn().mockResolvedValue([pausedJob]);
+    const resumePausedBySourceId = vi.fn().mockResolvedValue({
+      resumedJobs: [resumedJob],
+      pendingResumeJobCount: 0,
+    });
+    const dispatch = vi.fn().mockResolvedValue(undefined);
+    const service = new WebsiteCrawlJobService({
+      repository: { pauseBySourceId, resumePausedBySourceId } as never,
+      dispatcher: { dispatch },
+      documentIngestionService: {} as never,
+    });
+
+    await expect(service.pauseJobsForSource({
+      workspaceId: "ws-1",
+      sourceId: "source-1",
+    })).resolves.toEqual({ pausedJobCount: 1 });
+    expect(pauseBySourceId).toHaveBeenCalledWith("source-1", "ws-1");
+
+    await expect(service.resumeJobsForSource({
+      workspaceId: "ws-1",
+      sourceId: "source-1",
+    })).resolves.toEqual({
+      resumedJobCount: 1,
+      pendingResumeJobCount: 0,
+      resumeDispatchFailureCount: 0,
+    });
+    expect(resumePausedBySourceId).toHaveBeenCalledWith("source-1", "ws-1");
+    expect(dispatch).toHaveBeenCalledWith({
+      jobId: "job-resumed",
+      workspaceId: "ws-1",
+    });
+  });
+
+  it("only counts resumed source jobs whose dispatch notification succeeds", async () => {
+    const warn = vi.fn();
+    const resumePausedBySourceId = vi.fn().mockResolvedValue({
+      resumedJobs: [
+        {
+          id: "job-resumed",
+          workspaceId: "ws-1",
+          sourceId: "source-1",
+          status: "queued",
+        },
+        {
+          id: "job-not-dispatched",
+          workspaceId: "ws-1",
+          sourceId: "source-1",
+          status: "queued",
+        },
+      ],
+      pendingResumeJobCount: 1,
+    });
+    const dispatch = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("queue offline"));
+    const service = new WebsiteCrawlJobService({
+      repository: { resumePausedBySourceId } as never,
+      dispatcher: { dispatch },
+      documentIngestionService: {} as never,
+      logger: { warn } as never,
+    });
+
+    await expect(service.resumeJobsForSource({
+      workspaceId: "ws-1",
+      sourceId: "source-1",
+    })).resolves.toEqual({
+      resumedJobCount: 1,
+      pendingResumeJobCount: 1,
+      resumeDispatchFailureCount: 1,
+    });
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledOnce();
   });
 
   it("lists without a since filter when sinceMinutes is omitted", async () => {

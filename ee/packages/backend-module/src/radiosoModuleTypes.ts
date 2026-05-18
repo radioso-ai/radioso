@@ -6,7 +6,7 @@ export interface ApplicationModuleRegistrationContext {
   registerRouteMount(mount: ApplicationRouteMount): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHandler): void;
-  registerChatActionProvider(provider: ApplicationChatActionProviderRegistration): void;
+  registerChatIntakeProvider?(provider: ApplicationChatIntakeProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillDefinition?(definition: SkillDefinition): void;
@@ -60,6 +60,48 @@ export interface SkillDefinition {
     method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     path: string;
   }>;
+  intake?: {
+    enabled: boolean;
+    supportedCallers: Array<"assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed">;
+    intent: {
+      description: string;
+      examples: string[];
+    };
+    fields: Array<{
+      name: string;
+      displayName: string;
+      type: "string" | "email" | "phone" | "number" | "date" | "enum";
+      required: boolean;
+      sensitive?: boolean;
+      ttlSeconds?: number;
+      pattern?: string;
+      enumValues?: string[];
+      maxLength?: number;
+      extractionHint?: string;
+    }>;
+    subjectIdentityField?: string;
+    confirmation: "none" | "before_execute" | "always";
+    interruptionPolicy: "pause_and_resume" | "cancel_on_topic_change";
+  };
+  execution?:
+    | {
+        kind: "internal";
+        adapter: string;
+        enqueue?: boolean;
+      }
+    | {
+        kind: "webhook";
+        provider: "make" | "zapier" | "custom";
+        endpointId: string;
+        enqueue: boolean;
+        timeoutMs?: number;
+      }
+    | {
+        kind: "delivery_pipeline";
+        adapter: string;
+        destinations: Array<"email" | "webhook">;
+        enqueue: boolean;
+      };
   diagnostics: {
     defined: boolean;
     shapeAware: boolean;
@@ -177,7 +219,112 @@ export interface ApplicationRouteMount {
         };
       } | null>;
     };
+    agentService?: AgentWizardAgentServicePort;
+    ingestionSettingsService?: AgentWizardIngestionSettingsPort;
+    documentStorage?: AgentWizardDocumentStoragePort;
+    websiteCrawlJobService?: AgentWizardWebsiteCrawlerPort;
+    chatTextGenerationClient?: AgentWizardTextGenerationPort;
+    crawlerProvider?: AgentWizardCrawlerPort;
+    assertPublicWebsiteUrl?: AgentWizardUrlPolicy;
+    websiteCrawlerLimits?: AgentWizardCrawlerLimits;
+    mailService: MailTransport;
   }): Router;
+}
+
+export type AgentWizardUrlPolicy = (url: string) => Promise<void>;
+
+export interface AgentWizardCrawlerLimits {
+  defaultLimit: number;
+  maxLimit: number;
+}
+
+export interface AgentWizardCrawlerPort {
+  fetchPageWithScreenshot(
+    url: string,
+    options?: {
+      signal?: AbortSignal;
+      /**
+       * Called before every top-level navigation request (including
+       * redirects). Throw to abort. This is the SSRF gate: the wizard
+       * service injects assertSafeUrl here so a public input URL that
+       * redirects to localhost / RFC1918 / cloud metadata is rejected
+       * before any request reaches the wire. Adapters MUST honor this.
+       */
+      validateNavigationUrl?: (url: string) => Promise<void> | void;
+    },
+  ): Promise<{
+    url: string;
+    title: string | null;
+    text: string;
+    links: string[];
+    screenshot: Uint8Array | null;
+    faviconUrl: string | null;
+  }>;
+  crawlSite(
+    params: {
+      baseUrl: string;
+      pageLimit: number;
+      seedPendingUrls?: string[];
+      includeBaseUrl?: boolean;
+      signal?: AbortSignal;
+    },
+  ): Promise<Array<{
+    url: string;
+    title: string | null;
+    text: string;
+    status: string;
+    links?: string[];
+    httpStatus?: number | null;
+    error?: string | null;
+  }>>;
+  isBrowserTransportAvailable(): Promise<boolean>;
+}
+
+export interface AgentWizardAgentServicePort {
+  create(workspaceId: string, input: {
+    name: string;
+    customInstruction?: string;
+    greetingInstruction?: string;
+    retrievalEnabled?: boolean;
+  }): Promise<{ id: string; name: string }>;
+  update(workspaceId: string, agentId: string, input: Record<string, unknown>): Promise<{ id: string }>;
+}
+
+export interface AgentWizardIngestionSettingsPort {
+  updateForWorkspace(workspaceId: string, input: {
+    chunkingStrategy?: string;
+    fixedWindowChunkSize?: number;
+    fixedWindowChunkOverlap?: number;
+    structuredMinChunkSize?: number;
+    structuredMaxChunkSize?: number;
+  }): Promise<void>;
+}
+
+export interface AgentWizardDocumentStoragePort {
+  upload(input: {
+    key: string;
+    body: Uint8Array | NodeJS.ReadableStream;
+    contentType: string;
+  }): Promise<{ bucket: string; key: string; generation?: string | null }>;
+}
+
+export interface AgentWizardWebsiteCrawlerPort {
+  enqueue(input: {
+    accountId?: string | null;
+    workspaceId: string;
+    url: string;
+    limit: number;
+  }): Promise<{ jobId: string; sourceId: string | null }>;
+}
+
+export interface AgentWizardTextGenerationPort {
+  complete(input: {
+    prompt: string;
+    systemPrompt?: string;
+    temperature?: number;
+    maxOutputTokens?: number;
+    signal?: AbortSignal;
+  }): Promise<string>;
 }
 
 export interface UsageLimitDatabaseClient {
@@ -196,15 +343,6 @@ export type ApplicationUsageLimitPolicyRegistration =
         error(entry: unknown, message?: string): void;
       };
     }) => UsageLimitPolicy);
-
-export interface ChatActionSuggestion {
-  text: string;
-  kind: string;
-  action: {
-    kind: string;
-    payload?: Record<string, unknown>;
-  };
-}
 
 export type ActivityStageStatus = "applied" | "skipped" | "fallback" | "rejected" | "unavailable" | "failed";
 
@@ -250,26 +388,79 @@ export interface ActivityTrace {
   summary?: ActivitySummary;
 }
 
-export interface ChatActionProvider {
-  evaluate(input: {
-    workspaceId: string;
-    accountId?: string | null;
-    conversationId: string;
-    assistantMessageId: string;
-    query: string;
-    answer: string;
-    answerOutcome: string;
-    sourceChannel?: string | null;
-    sourceOrigin?: string | null;
-  }): Promise<ChatActionSuggestion | null>;
-  getPublicSessionActions?(input: { workspaceId: string }): Promise<Record<string, unknown> | null | undefined>;
+export interface ChatIntakeReceiptField {
+  name: string;
+  displayName: string;
+  value: string;
 }
 
-export type ApplicationChatActionProviderRegistration =
-  | ChatActionProvider
+export interface ChatIntakeReceipt {
+  fields: ChatIntakeReceiptField[];
+  statusLabel?: string;
+}
+
+export interface ChatIntakeResult {
+  skillName: string;
+  status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+  stateId?: string;
+  answer: string;
+  activitySummary: ActivitySummary;
+  activityTrace: ActivityTrace;
+  receipt?: ChatIntakeReceipt;
+}
+
+export interface PublicChatIntakeAction {
+  skillName: string;
+  intentName: string;
+}
+
+export interface ChatInputIntentMetadata {
+  skillName: string;
+  intentName?: string;
+}
+
+export interface ChatInputMetadata {
+  method: "typed" | "suggestion_click" | "intent_click";
+  suggestionSourceMessageId?: string;
+  intent?: ChatInputIntentMetadata;
+}
+
+export interface ChatIntakeProvider {
+  handle(input: {
+    workspaceId: string;
+    accountId?: string | null;
+    agentId?: string | null;
+    conversationId: string;
+    userMessageId: string;
+    query: string;
+    history: Array<{
+      id: string;
+      role: "user" | "assistant" | "system";
+      content: string;
+      createdAt: Date;
+    }>;
+    sourceChannel?: string | null;
+    sourceOrigin?: string | null;
+    anonymousSessionId?: string | null;
+    userExpectedLocale?: string | null;
+    inputMetadata?: ChatInputMetadata;
+  }): Promise<ChatIntakeResult | null>;
+  getPublicIntakeActions?(input: {
+    workspaceId: string;
+    agentId?: string | null;
+    sourceChannel?: string | null;
+  }): Promise<PublicChatIntakeAction[]>;
+}
+
+export interface ChatGateway {
+  answer(input: { query: string; history: Array<{ role: string; content: string }>; prompt: string; systemPrompt?: string }): Promise<string>;
+}
+
+export type ApplicationChatIntakeProviderRegistration =
+  | ChatIntakeProvider
   | ((context: {
       database: UsageLimitDatabasePort;
-      chatGateway?: unknown;
+      chatGateway: ChatGateway;
       logger: {
         info?(entry: unknown, message?: string): void;
         warn?(entry: unknown, message?: string): void;
@@ -299,6 +490,13 @@ export type ApplicationChatActionProviderRegistration =
           createdAt: Date;
         }>>;
       };
+      workspaceContactInfoRepository: {
+        findById(workspaceId: string): Promise<{
+          id: string;
+          name: string;
+          publicRouteKey: string;
+        } | null>;
+      };
       auditService: {
         record(input: {
           accountId?: string | null;
@@ -317,7 +515,20 @@ export type ApplicationChatActionProviderRegistration =
           blockMs?: number;
         }): Promise<void>;
       };
-    }) => ChatActionProvider);
+      mailService: MailTransport;
+      dashboardBaseUrl: string | null;
+    }) => ChatIntakeProvider);
+
+export interface MailTransport {
+  send(message: {
+    to: string;
+    replyTo?: string | null;
+    subject: string;
+    text: string;
+    html?: string;
+    metadata?: Record<string, string>;
+  }): Promise<void>;
+}
 
 export interface ContactHistorySummary {
   id: string;

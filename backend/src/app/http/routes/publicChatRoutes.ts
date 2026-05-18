@@ -4,9 +4,11 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { sendChatSse } from "../presenters/chatPresenter.js";
+import type { ChatConversationDetail } from "../../../modules/chat/services/chatHistoryService.js";
+import type { AnswerSegment, ChatStreamEvent, ChatSuggestion } from "../../../modules/chat/contracts/index.js";
 import { AppError, badRequest, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
-import { anonymousRateLimiters, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
+import { anonymousRateLimiters, publicChatSessionExchangeRateLimiter, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
@@ -32,14 +34,25 @@ export const anonymousChatSchema = z.object({
   userExpectedLocale: localeHintSchema.optional(),
   pageContext: pageContextSchema,
   inputMetadata: z.object({
-    method: z.enum(["typed", "suggestion_click"]),
+    method: z.enum(["typed", "suggestion_click", "intent_click"]),
     suggestionSourceMessageId: z.string().uuid().optional(),
+    intent: z.object({
+      skillName: z.string().trim().min(1).max(120),
+      intentName: z.string().trim().min(1).max(120).optional(),
+    }).optional(),
   }).superRefine((value, ctx) => {
     if (value.method === "suggestion_click" && !value.suggestionSourceMessageId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "suggestionSourceMessageId is required for suggestion_click",
         path: ["suggestionSourceMessageId"],
+      });
+    }
+    if (value.method === "intent_click" && !value.intent) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "intent is required for intent_click",
+        path: ["intent"],
       });
     }
   }).optional(),
@@ -97,12 +110,84 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "agentSurfaceExtensions"
   | "assistantChatService"
   | "auditService"
-  | "chatActionProvider"
+  | "chatIntakeProvider"
   | "chatHistoryService"
   | "conversationRepository"
   | "documentStorage"
+  | "logger"
   | "workspaceRepository"
 >;
+
+const stripPublicSuggestionCitation = (suggestion: ChatSuggestion): ChatSuggestion => {
+  const { citation: _citation, ...publicSuggestion } = suggestion;
+  return publicSuggestion;
+};
+
+const stripPublicAnswerSegmentCitations = (answerSegments?: AnswerSegment[]): AnswerSegment[] | undefined =>
+  answerSegments?.map((segment) => ({ text: segment.text }));
+
+const stripPublicChatCitationArtifacts = <T extends {
+  citations?: unknown;
+  answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
+}>(payload: T): Omit<T, "citations" | "answerSegments" | "suggestions"> & {
+  answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
+} => {
+  const {
+    citations: _citations,
+    answerSegments,
+    suggestions,
+    ...publicPayload
+  } = payload;
+
+  return {
+    ...publicPayload,
+    ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments) } : {}),
+    ...(suggestions ? { suggestions: suggestions.map(stripPublicSuggestionCitation) } : {}),
+  };
+};
+
+const stripPublicConversationCitationArtifacts = (
+  detail: ChatConversationDetail,
+): ChatConversationDetail => ({
+  ...detail,
+  messages: detail.messages.map((message) => {
+    const {
+      citations: _citations,
+      answerSegments,
+      suggestions,
+      ...publicMessage
+    } = message;
+
+    return {
+      ...publicMessage,
+      ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments) } : {}),
+      ...(suggestions ? { suggestions: suggestions.map(stripPublicSuggestionCitation) } : {}),
+    };
+  }),
+});
+
+async function* stripPublicStreamCitationArtifacts(
+  events: AsyncIterable<ChatStreamEvent>,
+): AsyncIterable<ChatStreamEvent> {
+  for await (const event of events) {
+    if (event.type === "done") {
+      yield stripPublicChatCitationArtifacts(event) as ChatStreamEvent;
+      continue;
+    }
+
+    if (event.type === "suggestions") {
+      yield {
+        ...event,
+        suggestions: event.suggestions.map(stripPublicSuggestionCitation),
+      };
+      continue;
+    }
+
+    yield event;
+  }
+}
 
 export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies): Router => {
   const router = Router();
@@ -115,6 +200,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     dependencies.agentService,
   );
   const rateLimitAnonymousChat = anonymousRateLimiters(dependencies);
+  const rateLimitPublicChatSessionExchange = publicChatSessionExchangeRateLimiter(dependencies);
   const resolveOrigin = (value: string | undefined) => {
     if (!value) {
       return null;
@@ -125,10 +211,6 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     } catch {
       return null;
     }
-  };
-  const resolvePublicSessionActions = async (workspaceId: string) => {
-    const actions = await dependencies.chatActionProvider.getPublicSessionActions?.({ workspaceId });
-    return actions && Object.keys(actions).length > 0 ? actions : undefined;
   };
   const buildAssistantLogoUrl = (req: { get(name: string): string | undefined }, token: string, hasLogo: boolean) =>
     buildPublicAssistantLogoUrl({
@@ -147,6 +229,22 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       return embedAgent;
     }
     return null;
+  };
+  const resolvePublicIntakeActions = async (input: {
+    workspaceId: string;
+    agentId?: string | null;
+    sourceChannel?: string | null;
+  }) => {
+    try {
+      const actions = await dependencies.chatIntakeProvider.getPublicIntakeActions?.(input);
+      return actions && actions.length > 0 ? actions : undefined;
+    } catch (error) {
+      dependencies.logger.warn?.(
+        { err: error instanceof Error ? error.message : String(error), workspaceId: input.workspaceId },
+        "Failed to resolve public chat intake actions",
+      );
+      return undefined;
+    }
   };
 
   router.get("/:token/embed-config", requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"), async (req, res, next) => {
@@ -209,7 +307,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   });
 
   // POST /api/v1/public/chat/:token/sessions — exchange a public launch token for a chat session
-  router.post("/:token/sessions", validateBody(publicChatSessionSchema), async (req, res, next) => {
+  router.post("/:token/sessions", validateBody(publicChatSessionSchema), rateLimitPublicChatSessionExchange, async (req, res, next) => {
     try {
       const sessionSecret = publicChatSessionSecret;
       if (!sessionSecret) {
@@ -270,7 +368,11 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           assistantBootstrapActive: isAgentBootstrapActive(agent),
           assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
           theme: agent.theme,
-          actions: await resolvePublicSessionActions(workspace.id),
+          intakeActions: await resolvePublicIntakeActions({
+            workspaceId: workspace.id,
+            agentId: agent.id,
+            sourceChannel: "anonymous",
+          }),
           expiresAt: session.expiresAt,
         });
         return;
@@ -409,7 +511,11 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         assistantBootstrapActive: isAgentBootstrapActive(agent),
         assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
         theme: agent.theme,
-        actions: await resolvePublicSessionActions(workspace.id),
+        intakeActions: await resolvePublicIntakeActions({
+          workspaceId: workspace.id,
+          agentId: agent.id,
+          sourceChannel: "website_embed",
+        }),
         expiresAt: session.expiresAt,
       });
     } catch (error) {
@@ -449,7 +555,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
             res.status(204).end();
             return;
           }
-          res.status(200).json(bootstrap);
+          res.status(200).json(stripPublicChatCitationArtifacts(bootstrap));
           return;
         }
 
@@ -468,10 +574,14 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         };
 
         if (input.stream) {
-          await sendChatSse(res, dependencies.assistantChatService.streamAnswer(input));
+          await sendChatSse(res, stripPublicStreamCitationArtifacts(dependencies.assistantChatService.streamAnswer(input)));
         } else {
           const result = await dependencies.assistantChatService.answer(input);
-          res.status(200).json(result);
+          if (!result) {
+            res.status(204).end();
+            return;
+          }
+          res.status(200).json(stripPublicChatCitationArtifacts(result));
         }
       } catch (error) {
         next(error);
@@ -507,6 +617,11 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         assistantAvatarUrl: buildAssistantLogoUrl(req, String(req.params.token), Boolean((res.locals as { assistantLogoAvailable?: boolean }).assistantLogoAvailable)),
         theme: (res.locals as { assistantTheme?: unknown }).assistantTheme,
         assistantBootstrapActive: Boolean((res.locals as { assistantBootstrapActive?: boolean }).assistantBootstrapActive),
+        intakeActions: await resolvePublicIntakeActions({
+          workspaceId,
+          agentId,
+          sourceChannel: (res.locals as { sourceChannel?: string | null }).sourceChannel,
+        }),
         ...page,
       });
     } catch (error) {
@@ -548,7 +663,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         parsedQuery.data,
         { includeAnswerFeedback: true },
       );
-      res.status(200).json(detail);
+      res.status(200).json(stripPublicConversationCitationArtifacts(detail));
     } catch (error) {
       next(error);
     }

@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest'
 
 import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
 
+const UTILITY_BUTTON_LABELS = /aria-label="(Copy message|Copied|Thumbs up|Thumbs down)"/
+
+const countSuggestionButtons = (html: string) =>
+  (html.match(/<button[^>]*>/g) ?? []).filter((tag) => !UTILITY_BUTTON_LABELS.test(tag)).length
+
 describe('ChatMessageThread', () => {
   it('does not render assistant message selection as a nested button when citations are present', () => {
     const html = renderToStaticMarkup(
@@ -57,7 +62,7 @@ describe('ChatMessageThread', () => {
     )
 
     expect(html).toContain('Answer text')
-    expect(html.match(/<button/g)?.length).toBeUndefined()
+    expect(countSuggestionButtons(html)).toBe(0)
   })
 
   it('renders legacy flat suggestions for history compatibility', () => {
@@ -79,7 +84,7 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html.match(/<button/g)?.length).toBeUndefined()
+    expect(countSuggestionButtons(html)).toBe(0)
   })
 
   it('renders suggestions even when only broader items are provided', () => {
@@ -122,7 +127,7 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('Ananda Yoga in silenzio - 3 Giorni')
   })
 
-  it('renders suggestion actions as buttons when selection is enabled', () => {
+  it('renders text suggestions as buttons when selection is enabled', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread
         messages={[
@@ -139,7 +144,7 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html.match(/<button/g)?.length).toBe(1)
+    expect(countSuggestionButtons(html)).toBe(1)
   })
 
   it('can hide assistant message avatars for narrow embedded chat layouts', () => {
@@ -185,7 +190,7 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html.match(/<button/g)?.length).toBe(1)
+    expect(countSuggestionButtons(html)).toBe(1)
   })
 
   it('renders inline pseudo-lists as markdown lists for assistant messages', () => {
@@ -303,6 +308,108 @@ describe('ChatMessageThread', () => {
 
     expect(html).toContain('Thumbs down')
     expect(html).toContain('This missed the policy detail.')
+  })
+
+  it('renders a skill chip with the localized title above the first message of a skill group', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Please share your email.',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            skill: {
+              skillName: 'human_contact.request',
+              phase: 'active',
+              localizedTitle: 'Связаться',
+            },
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('data-skill-chip')
+    expect(html).toContain('Связаться')
+  })
+
+  it('falls back to the registry title when the localized title is missing', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Please share your email.',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            skill: {
+              skillName: 'human_contact.request',
+              phase: 'active',
+            },
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('Contact us')
+  })
+
+  it('renders a receipt card with captured fields when the skill phase is completed', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Your request was received.',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            skill: {
+              skillName: 'human_contact.request',
+              phase: 'completed',
+              localizedTitle: 'Связаться',
+              receipt: {
+                fields: [
+                  {
+                    name: 'email',
+                    displayName: 'email address',
+                    value: 'alex@example.com',
+                  },
+                ],
+              },
+            },
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('data-skill-receipt')
+    expect(html).toContain('alex@example.com')
+    expect(html).toContain('Submitted')
+  })
+
+  it('does not render a receipt card while the skill is still active', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Please share your email.',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            skill: {
+              skillName: 'human_contact.request',
+              phase: 'active',
+            },
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).not.toContain('data-skill-receipt')
   })
 
 })

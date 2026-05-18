@@ -19,6 +19,7 @@ import {
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
 
 export type DocumentSourceKind = "inline_text" | "uploaded_file";
 export type DocumentSourceResolverInput =
@@ -179,6 +180,29 @@ export interface DocumentWorkspaceSummaryRecord {
   sampleDocumentSlugs: string[];
 }
 
+export interface ChunkSummary {
+  id: string;
+  chunkIndex: number;
+  contentPreview: string;
+  contentLength: number;
+  startOffset: number;
+  endOffset: number;
+}
+
+export interface ChunkDetail {
+  id: string;
+  documentId: string;
+  workspaceId: string;
+  chunkIndex: number;
+  content: string;
+  searchText: string | null;
+  startOffset: number;
+  endOffset: number;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+  embeddingDimensions: number | null;
+}
+
 export interface ChunkRepositoryPort {
   replaceForDocument(documentId: string, chunks: ChunkRecord[]): Promise<void>;
   publishForDocumentRevision(input: {
@@ -187,6 +211,12 @@ export interface ChunkRepositoryPort {
     revision: number;
     chunks: ChunkRecord[];
   }): Promise<boolean>;
+  listSummariesForDocument(input: { documentId: string; workspaceId: string }): Promise<ChunkSummary[]>;
+  findByIdForDocument(input: {
+    chunkId: string;
+    documentId: string;
+    workspaceId: string;
+  }): Promise<ChunkDetail | null>;
 }
 
 export interface DocumentSummary {
@@ -390,6 +420,12 @@ export class DocumentIngestionService {
       const existing = await this.getDocument(input.workspaceId, input.documentId);
       if (existing.sourceKind === "uploaded_file") {
         throw conflict("Imported documents cannot be updated through the inline document API");
+      }
+      if (
+        input.source !== undefined &&
+        (existing.sourceId ?? null) !== MANUALLY_ADDED_DOCUMENTS_SOURCE_ID
+      ) {
+        throw conflict("Source can only be changed for manually-added documents");
       }
       if (
         existing.externalDocumentId &&

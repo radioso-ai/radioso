@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../app/server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
+import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { createRateLimitMiddleware } from "../../app/http/middleware/rateLimit.js";
 import { resolveWebsiteCrawlerConfig } from "./config.js";
 import {
@@ -46,10 +47,13 @@ export const crawlBodySchema = z.object({
     }
   }, "URL must use http or https"),
   limit: z.number().int().positive().optional(),
+  includeUrlPatterns: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+  excludeUrlPatterns: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+  preserveContentLinks: z.boolean().optional(),
 });
 
 const crawlJobsQuerySchema = z.object({
-  status: z.enum(["queued", "processing", "completed", "failed"]).optional(),
+  status: z.enum(["queued", "processing", "paused", "completed", "failed"]).optional(),
   sinceMinutes: z.coerce.number().int().min(1).max(1440).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
   sourceId: z.string().uuid().optional(),
@@ -75,6 +79,8 @@ export const createWebsiteCrawlerRoutes = (
   const configuredProvider = options.provider ?? dependencies.websiteCrawlerProvider ?? null;
 
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const documentsRead = requireWorkspacePermission(dependencies, "workspace.documents.read");
+  const documentsManage = requireWorkspacePermission(dependencies, "workspace.documents.manage");
   const resolveCrawlSubjectKey = (_req: unknown, res: { locals: Record<string, unknown> }) =>
     res.locals.authMode === "bearer"
       ? `${res.locals.workspaceId as string}:bearer`
@@ -103,14 +109,15 @@ export const createWebsiteCrawlerRoutes = (
     resolveAuditContext: resolveCrawlAuditContext,
   });
 
-  router.get("/jobs", workspaceSession, crawlJobReadRateLimit, async (req, res, next) => {
+  router.get("/jobs", workspaceSession, documentsRead, crawlJobReadRateLimit, async (req, res, next) => {
     try {
       const query = parseRequest(crawlJobsQuerySchema, req.query, "Invalid crawl jobs query");
+      const useUnboundedWindow = query.status === "paused" || (Boolean(query.sourceId) && query.status === undefined);
       const jobs = await dependencies.websiteCrawlJobService.listForWorkspace(
         res.locals.workspaceId as string,
         {
           status: query.status,
-          sinceMinutes: query.sourceId ? undefined : (query.sinceMinutes ?? 30),
+          sinceMinutes: useUnboundedWindow ? undefined : (query.sinceMinutes ?? 30),
           limit: query.limit,
           sourceId: query.sourceId,
         },
@@ -121,7 +128,7 @@ export const createWebsiteCrawlerRoutes = (
     }
   });
 
-  router.delete("/jobs/:jobId", workspaceSession, crawlJobReadRateLimit, async (req, res, next) => {
+  router.delete("/jobs/:jobId", workspaceSession, documentsManage, crawlJobReadRateLimit, async (req, res, next) => {
     try {
       const params = parseRequest(crawlJobParamsSchema, req.params, "Invalid crawl job id");
       await dependencies.websiteCrawlJobService.deleteJob({
@@ -134,7 +141,7 @@ export const createWebsiteCrawlerRoutes = (
     }
   });
 
-  router.post("/", workspaceSession, crawlRateLimit, async (req, res, next) => {
+  router.post("/", workspaceSession, documentsManage, crawlRateLimit, async (req, res, next) => {
     const abortController = new AbortController();
     const abort = () => abortController.abort();
     const abortIfResponseDidNotFinish = () => {
@@ -157,6 +164,11 @@ export const createWebsiteCrawlerRoutes = (
         workspaceId: res.locals.workspaceId as string,
         url: body.url,
         limit,
+        policy: {
+          includeUrlPatterns: body.includeUrlPatterns ?? [],
+          excludeUrlPatterns: body.excludeUrlPatterns ?? [],
+          preserveContentLinks: body.preserveContentLinks ?? true,
+        },
       });
       res.status(202).json(result);
     } catch (error) {

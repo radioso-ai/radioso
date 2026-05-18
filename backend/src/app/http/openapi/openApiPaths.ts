@@ -9,7 +9,6 @@ import {
 } from "./paths/assistantPaths.js";
 import { registerAuthPaths } from "./paths/authPaths.js";
 import { registerAccountManagementPaths, registerAccountSessionPaths } from "./paths/accountPaths.js";
-import { registerSupportPaths } from "./paths/supportPaths.js";
 import { registerWorkspacePaths } from "./paths/workspacePaths.js";
 import { registerSettingsPaths } from "./paths/settingsPaths.js";
 import { registerAgentsPaths } from "./paths/agentsPaths.js";
@@ -28,7 +27,6 @@ export const registerOpenApiPaths = (
   registerAssistantSessionPaths(registry, schemas, security);
   registerAuthPaths(registry, schemas, security);
   registerAccountManagementPaths(registry, schemas, security);
-  registerSupportPaths(registry, schemas, security);
   registerAccountSessionPaths(registry, schemas, security);
   registerWorkspacePaths(registry, schemas, security);
   registerSettingsPaths(registry, schemas, security);

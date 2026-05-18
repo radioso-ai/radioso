@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { ThemeProvider } from '@/components/theme-provider'
+import { DevBuildBadge } from '@/components/dev-build-badge'
 import { AuthProvider } from '@/lib/auth-context'
 import { WorkspaceProvider } from '@/lib/workspace-context'
 import { ChatProvider } from '@/lib/chat-context'
@@ -33,6 +34,7 @@ export default function RootLayout({
               <ChatProvider>{children}</ChatProvider>
             </WorkspaceProvider>
           </AuthProvider>
+          <DevBuildBadge />
         </ThemeProvider>
       </body>
     </html>

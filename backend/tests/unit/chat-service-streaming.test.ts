@@ -6,6 +6,7 @@ import {
   type ChatGateway,
   type ChatStreamEvent,
 } from "../../src/modules/chat/services/chatService.js";
+import type { ChatIntakeProviderPort } from "../../src/modules/chat/services/chatIntakeProvider.js";
 import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
 import {
   createAuditService,
@@ -219,6 +220,381 @@ describe("chat service streaming", () => {
         },
       };
     },
+  });
+
+  it("handles skill intake before retrieval execution", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    let interpretCalls = 0;
+    const retrievalPipeline = {
+      async interpret() {
+        interpretCalls += 1;
+        throw new Error("retrieval unavailable");
+      },
+      async runInterpreted() {
+        throw new Error("runInterpreted should not be used for intake turns");
+      },
+      async runWithoutRetrieval() {
+        throw new Error("runWithoutRetrieval should not be used for intake turns");
+      },
+    };
+    const intakeProvider: ChatIntakeProviderPort = {
+      async handle() {
+        return {
+          skillName: "human_contact.request",
+          status: "completed",
+          answer: "Received.",
+          activitySummary: {
+            outcome: "request_queued",
+            status: "completed",
+          } as never,
+          activityTrace: {
+            traceId: "contact-trace",
+            startedAt: new Date().toISOString(),
+            stages: [],
+            links: [],
+            summary: {
+              outcome: "request_queued",
+              status: "completed",
+            },
+          } as never,
+        };
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      {
+        async answer() {
+          return "Normal answer.";
+        },
+        async *streamAnswer() {
+          yield "Normal answer.";
+        },
+      },
+      auditService,
+      groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      intakeProvider,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "Please contact me at alex@example.com.",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Received.");
+    expect(interpretCalls).toBe(0);
+    const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("applies LLM-emitted skill_receipt overrides onto the captured receipt and strips the tag", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async interpret() { throw new Error("unused"); },
+      async runInterpreted() { throw new Error("unused"); },
+      async runWithoutRetrieval() { throw new Error("unused"); },
+    };
+    const intakeProvider: ChatIntakeProviderPort = {
+      async handle() {
+        return {
+          skillName: "human_contact.request",
+          status: "completed",
+          answer: "<skill_chip>Contatto richiesto</skill_chip><skill_receipt>{\"status\":\"Inviato\",\"fields\":{\"email\":\"indirizzo email\"}}</skill_receipt>Ho ricevuto la tua richiesta.",
+          activitySummary: { outcome: "request_queued", status: "completed" } as never,
+          activityTrace: {
+            traceId: "contact-trace",
+            startedAt: new Date().toISOString(),
+            stages: [],
+            links: [],
+            summary: { outcome: "request_queued", status: "completed" },
+          } as never,
+          receipt: {
+            fields: [
+              { name: "email", displayName: "email address", value: "alex@example.com" },
+            ],
+          },
+        };
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      {
+        async answer() { return "Normal."; },
+        async *streamAnswer() { yield "Normal."; },
+      },
+      auditService,
+      groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      intakeProvider,
+    );
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "alex@example.com",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    const skillEvent = events.find((event) => event.type === "skill");
+    if (skillEvent && skillEvent.type === "skill") {
+      expect(skillEvent.localizedTitle).toBe("Contatto richiesto");
+      expect(skillEvent.receipt?.statusLabel).toBe("Inviato");
+      expect(skillEvent.receipt?.fields[0]?.displayName).toBe("indirizzo email");
+      expect(skillEvent.receipt?.fields[0]?.value).toBe("alex@example.com");
+    }
+
+    const chunkEvent = events.find((event) => event.type === "chunk");
+    expect(chunkEvent && chunkEvent.type === "chunk" && chunkEvent.text).toBe(
+      "Ho ricevuto la tua richiesta.",
+    );
+  });
+
+  it("falls back to the original receipt fields when the LLM omits or malforms the receipt tag", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async interpret() { throw new Error("unused"); },
+      async runInterpreted() { throw new Error("unused"); },
+      async runWithoutRetrieval() { throw new Error("unused"); },
+    };
+    const intakeProvider: ChatIntakeProviderPort = {
+      async handle() {
+        return {
+          skillName: "human_contact.request",
+          status: "completed",
+          answer: "<skill_chip>Contact us</skill_chip><skill_receipt>{not json}</skill_receipt>Your request was received.",
+          activitySummary: { outcome: "request_queued", status: "completed" } as never,
+          activityTrace: {
+            traceId: "contact-trace",
+            startedAt: new Date().toISOString(),
+            stages: [],
+            links: [],
+            summary: { outcome: "request_queued", status: "completed" },
+          } as never,
+          receipt: {
+            fields: [
+              { name: "email", displayName: "email address", value: "alex@example.com" },
+            ],
+          },
+        };
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      {
+        async answer() { return "Normal."; },
+        async *streamAnswer() { yield "Normal."; },
+      },
+      auditService,
+      groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      intakeProvider,
+    );
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "alex@example.com",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    const skillEvent = events.find((event) => event.type === "skill");
+    if (skillEvent && skillEvent.type === "skill") {
+      expect(skillEvent.receipt?.statusLabel).toBeUndefined();
+      expect(skillEvent.receipt?.fields[0]?.displayName).toBe("email address");
+    }
+
+    const chunkEvent = events.find((event) => event.type === "chunk");
+    expect(chunkEvent && chunkEvent.type === "chunk" && chunkEvent.text).toBe(
+      "Your request was received.",
+    );
+  });
+
+  it("emits a skill stream event and strips the skill_chip tag from the chunk and persisted answer", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async interpret() {
+        throw new Error("retrieval should not be reached for intake turns");
+      },
+      async runInterpreted() {
+        throw new Error("runInterpreted should not be used for intake turns");
+      },
+      async runWithoutRetrieval() {
+        throw new Error("runWithoutRetrieval should not be used for intake turns");
+      },
+    };
+    const intakeProvider: ChatIntakeProviderPort = {
+      async handle() {
+        return {
+          skillName: "human_contact.request",
+          status: "completed",
+          answer: "<skill_chip>Связаться</skill_chip>Ваш запрос получен.",
+          activitySummary: {
+            outcome: "request_queued",
+            status: "completed",
+          } as never,
+          activityTrace: {
+            traceId: "contact-trace",
+            startedAt: new Date().toISOString(),
+            stages: [],
+            links: [],
+            summary: {
+              outcome: "request_queued",
+              status: "completed",
+            },
+          } as never,
+          receipt: {
+            fields: [
+              {
+                name: "email",
+                displayName: "email address",
+                value: "alex@example.com",
+              },
+            ],
+          },
+        };
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      {
+        async answer() {
+          return "Normal answer.";
+        },
+        async *streamAnswer() {
+          yield "Normal answer.";
+        },
+      },
+      auditService,
+      groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      intakeProvider,
+    );
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "alex@example.com",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    const skillEvent = events.find((event) => event.type === "skill");
+    expect(skillEvent).toBeDefined();
+    if (skillEvent && skillEvent.type === "skill") {
+      expect(skillEvent.localizedTitle).toBe("Связаться");
+      expect(skillEvent.phase).toBe("completed");
+      expect(skillEvent.skillName).toBe("human_contact.request");
+      expect(skillEvent.receipt?.fields[0]?.value).toBe("alex@example.com");
+    }
+
+    const chunkEvent = events.find((event) => event.type === "chunk");
+    expect(chunkEvent && chunkEvent.type === "chunk" && chunkEvent.text).toBe(
+      "Ваш запрос получен.",
+    );
+
+    const doneEvent = events.find((event) => event.type === "done");
+    expect(doneEvent && doneEvent.type === "done" && doneEvent.skill?.phase).toBe(
+      "completed",
+    );
+    expect(doneEvent && doneEvent.type === "done" && doneEvent.answer).toBe(
+      "Ваш запрос получен.",
+    );
+
+    const messages = await messageRepository.listByConversationId(
+      "workspace-1",
+      (doneEvent as { conversationId: string }).conversationId,
+    );
+    const assistantMessage = messages.find((message) => message.role === "assistant");
+    expect(assistantMessage?.content).toBe("Ваш запрос получен.");
+  });
+
+  it("continues the chat turn when a skill intake provider throws", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Normal answer.";
+      },
+      async *streamAnswer() {
+        yield "Normal answer.";
+      },
+    };
+    const failingIntakeProvider: ChatIntakeProviderPort = {
+      async handle() {
+        throw new Error("intake unavailable");
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      asChatActivityPipeline(createIntentRoutedNoContextPipeline({
+        query: "I need help",
+        responseIntent: "social_only",
+      })) as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      failingIntakeProvider,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "I need help",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Normal answer.");
+    const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "chat.skill_intake",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          errorMessage: "intake unavailable",
+          conversationId: response.conversationId,
+        }),
+      }),
+    );
   });
 
   it("persists the normalized assistant answer only after the stream completes", async () => {
@@ -1276,7 +1652,7 @@ describe("chat service streaming", () => {
     ]);
   });
 
-  it("does not create an empty conversation when retrieval fails before the first turn is persisted", async () => {
+  it("keeps the persisted user turn when retrieval fails after intake has declined", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -1307,7 +1683,12 @@ describe("chat service streaming", () => {
       stream: false,
     })).rejects.toThrow("retrieval failed");
 
-    expect(conversationRepository.items.size).toBe(0);
+    const [conversationId] = conversationRepository.items.keys();
+    expect(conversationId).toEqual(expect.any(String));
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
+      { role: "user", content: "What does this page do?" },
+    ]);
   });
 
   it("replaces unsupported substantive content before returning a non-streaming grounded answer", async () => {

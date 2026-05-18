@@ -1,9 +1,15 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import { ChevronDown, CircleCheck, CircleX } from 'lucide-react'
 
+import {
+  ChunkInspectorSheet,
+  type ChunkInspectorRequest,
+} from '@/components/dashboard/documents/chunk-inspector-sheet'
 import type { ActivityTrace, ActivityStage } from '@/lib/api'
+
+const ChunkInspectorContext = createContext<((request: ChunkInspectorRequest) => void) | null>(null)
 
 const formatJson = (value: unknown) => JSON.stringify(value, null, 2)
 
@@ -109,6 +115,8 @@ function ChunkList({
   label: string
   chunks?: ChunkRef[]
 }) {
+  const openInspector = useContext(ChunkInspectorContext)
+
   if (!chunks?.length) {
     return null
   }
@@ -117,13 +125,22 @@ function ChunkList({
     <Section title={label}>
       <div className="space-y-2">
         {chunks.map((chunk) => (
-          <div
+          <button
+            type="button"
             key={`${chunk.documentId}-${chunk.chunkId}`}
-            className="rounded-lg border border-border/70 bg-background/70 p-3 select-text"
+            onClick={() =>
+              openInspector?.({
+                documentId: chunk.documentId,
+                documentTitle: chunk.title,
+                initialChunkId: chunk.chunkId,
+              })
+            }
+            disabled={!openInspector}
+            className="block w-full rounded-lg border border-border/70 bg-background/70 p-3 text-left transition enabled:cursor-pointer enabled:hover:border-border enabled:hover:bg-accent/40 disabled:cursor-default"
           >
             <p className="text-sm text-foreground">{chunk.title}</p>
             <p className="mt-1 font-mono text-[11px] text-muted-foreground">{chunk.chunkId}</p>
-          </div>
+          </button>
         ))}
       </div>
     </Section>
@@ -160,7 +177,24 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 const asStringList = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
 
+const asBoolean = (value: unknown): boolean | undefined => (typeof value === 'boolean' ? value : undefined)
+
+const asString = (value: unknown): string | undefined => (typeof value === 'string' && value.trim() ? value : undefined)
+
+const joinHumanList = (values: string[]): string => {
+  if (values.length <= 1) return values[0] ?? ''
+  if (values.length === 2) return `${values[0]} and ${values[1]}`
+  return `${values.slice(0, -1).join(', ')}, and ${values[values.length - 1]}`
+}
+
 const formatLabel = (value: unknown) => (typeof value === 'string' ? value.replaceAll('_', ' ') : undefined)
+
+const formatIntent = (value: unknown): string | undefined => {
+  if (value === 'social_only') return 'Conversational message'
+  if (value === 'assistant_identity') return 'Question about the assistant'
+  if (value === 'retrieval') return 'Workspace knowledge question'
+  return formatLabel(value)
+}
 
 const asChunkList = (value: unknown): ChunkRef[] =>
   Array.isArray(value)
@@ -186,7 +220,7 @@ const deriveExplanation = (stage: ActivityStage): string | null => {
     case 'routing': {
       const intent = outputs.responseIntent as string | undefined
       if (intent === 'retrieval') return 'Classified as a knowledge question — routing to document search.'
-      if (intent === 'social_only') return 'Classified as conversational — responding without document search.'
+      if (intent === 'social_only') return 'Classified as conversational — replying directly.'
       if (intent === 'assistant_identity') return 'Classified as a question about the assistant itself.'
       return outputs.retrievalInvoked ? 'Routed to the retrieval pipeline.' : 'Responding without retrieval.'
     }
@@ -275,6 +309,34 @@ const deriveExplanation = (stage: ActivityStage): string | null => {
       if (model) return `Generated using ${model}${typeof latency === 'number' ? ` in ${latency}ms` : ''}.`
       return typeof latency === 'number' ? `Generated in ${latency}ms.` : null
     }
+    case 'availability_check': {
+      if (outputs.configured === true) return 'The workspace is configured to create human follow-up requests.'
+      if (outputs.configured === false) return 'The contact request workflow is not configured yet.'
+      return 'Checked whether the contact request workflow can run.'
+    }
+    case 'intake_collect': {
+      const missing = asStringList(outputs.missing)
+      const invalid = asStringList(outputs.invalid)
+      if (invalid.length) return `Some details need correction: ${joinHumanList(invalid)}.`
+      if (missing.length) return `The assistant still needs ${joinHumanList(missing)} before it can queue the request.`
+      return 'Collected the details needed for the contact request.'
+    }
+    case 'trigger_evaluation': {
+      const reason = asString(outputs.triggerReason)
+      if (reason) return reason
+      return 'Detected that the user wants human follow-up.'
+    }
+    case 'draft_build':
+      return 'Prepared the contact request before saving it.'
+    case 'request_submit':
+      return 'Saved the contact request and queued it for follow-up.'
+    case 'delivery_dispatch': {
+      const status = asString(outputs.status)?.replaceAll('_', ' ')
+      if (stage.status === 'skipped') return stage.reason ?? 'Notification will be handled in the background.'
+      return status ? `Notification status: ${status}.` : 'Updated the follow-up notification status.'
+    }
+    case 'audit_record':
+      return 'Recorded this workflow in the audit log.'
     default:
       return stage.reason ?? null
   }
@@ -480,7 +542,6 @@ function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
         <Section title="Prompt assembly">
           <KeyValueList
             rows={[
-              { label: 'Citations enabled', value: settings.citationDisplayEnabled as boolean | undefined },
               { label: 'Prompt context count', value: metrics.promptContextCount as number | undefined },
               { label: 'Citation count', value: metrics.citationCount as number | undefined },
             ]}
@@ -559,22 +620,21 @@ function RoutingStageOverview({ stage }: { stage: ActivityStage }) {
   const inputs = asRecord(stage.inputs)
   const outputs = asRecord(stage.outputs)
   const metrics = asRecord(stage.metrics)
+  const retrievalInvoked = asBoolean(outputs.retrievalInvoked)
 
   return (
     <>
       <Section title="Routing">
         <KeyValueList
           rows={[
-            { label: 'Surface', value: inputs.surface as string | undefined },
-            { label: 'Response intent', value: outputs.responseIntent as string | undefined },
-            { label: 'Retrieval invoked', value: outputs.retrievalInvoked as boolean | undefined },
-            { label: 'Retrieval skipped', value: outputs.retrievalSkipped as boolean | undefined },
+            { label: 'Surface', value: formatLabel(inputs.surface) },
+            { label: 'Intent', value: formatIntent(outputs.responseIntent) },
+            { label: 'Activity route', value: retrievalInvoked === true ? 'Workspace document answer' : retrievalInvoked === false ? 'Direct assistant reply' : undefined },
             { label: 'Route reason', value: stage.reason },
             { label: 'Latency', value: metrics.latencyMs as number | undefined },
           ]}
         />
       </Section>
-      <RawBlock label="Routing outputs" value={stage.outputs} />
     </>
   )
 }
@@ -602,21 +662,104 @@ function GenerationStageOverview({ stage }: { stage: ActivityStage }) {
 }
 
 function ContactStageOverview({ stage }: { stage: ActivityStage }) {
-  return (
-    <>
-      <Section title={stage.label}>
+  const outputs = asRecord(stage.outputs)
+  const inputs = asRecord(stage.inputs)
+  const configured = asBoolean(outputs.configured)
+  const missing = asStringList(outputs.missing)
+  const invalid = asStringList(outputs.invalid)
+  const collected = asStringList(outputs.collected)
+
+  if (stage.kind === 'availability_check') {
+    return (
+      <Section title="Readiness">
         <KeyValueList
           rows={[
-            { label: 'Status', value: stage.status },
-            { label: 'Reason', value: stage.reason },
-            { label: 'Duration', value: stage.durationMs },
+            { label: 'Contact workflow', value: configured === true ? 'Ready' : configured === false ? 'Not configured' : undefined },
+            { label: 'Result', value: configured === true ? 'The assistant can queue a request.' : configured === false ? 'Complete contact settings before requests can be queued.' : undefined },
           ]}
         />
       </Section>
-      <RawBlock label="Metrics" value={stage.metrics} />
-      <RawBlock label="Inputs" value={stage.inputs} />
-      <RawBlock label="Outputs" value={stage.outputs} />
-    </>
+    )
+  }
+
+  if (stage.kind === 'intake_collect') {
+    return (
+      <Section title="Details">
+        <KeyValueList
+          rows={[
+            { label: 'Collected details', value: collected.length ? joinHumanList(collected) : undefined },
+            { label: 'Still needed', value: missing.length ? joinHumanList(missing) : 'Nothing else needed' },
+            { label: 'Needs correction', value: invalid.length ? joinHumanList(invalid) : undefined },
+          ]}
+        />
+      </Section>
+    )
+  }
+
+  if (stage.kind === 'trigger_evaluation') {
+    return (
+      <Section title="Why this ran">
+        <KeyValueList
+          rows={[
+            { label: 'Trigger source', value: formatLabel(outputs.triggerSource) },
+            { label: 'Reason', value: asString(outputs.triggerReason) ?? stage.reason },
+          ]}
+        />
+      </Section>
+    )
+  }
+
+  if (stage.kind === 'request_submit') {
+    return (
+      <Section title="Queued request">
+        <KeyValueList
+          rows={[
+            { label: 'Request', value: outputs.requestId ? 'Queued' : undefined },
+            { label: 'Conversation', value: asString(outputs.conversationId) },
+            { label: 'Assistant message', value: asString(outputs.assistantMessageId) },
+            { label: 'Source channel', value: formatLabel(outputs.sourceChannel) },
+          ]}
+        />
+      </Section>
+    )
+  }
+
+  if (stage.kind === 'delivery_dispatch') {
+    return (
+      <Section title="Notification">
+        <KeyValueList
+          rows={[
+            { label: 'State', value: formatLabel(outputs.status) ?? formatLabel(stage.status) },
+            { label: 'Reason', value: stage.reason },
+          ]}
+        />
+      </Section>
+    )
+  }
+
+  if (stage.kind === 'audit_record') {
+    return (
+      <Section title="Audit">
+        <KeyValueList
+          rows={[
+            { label: 'Recorded event', value: formatLabel(outputs.eventType) },
+            { label: 'Reason', value: stage.reason },
+          ]}
+        />
+      </Section>
+    )
+  }
+
+  return (
+    <Section title={stage.label}>
+      <KeyValueList
+        rows={[
+          { label: 'Status', value: formatLabel(stage.status) },
+          { label: 'Reason', value: stage.reason },
+          { label: 'Input', value: asString(inputs.query) },
+        ]}
+      />
+    </Section>
   )
 }
 
@@ -699,14 +842,21 @@ function StageOverview({ stage, trace }: { stage: ActivityStage; trace?: Activit
 
   return (
     <>
-      {explanation ? (
-        <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
-          <p className="text-sm text-foreground">{explanation}</p>
+      <section className="rounded-lg border border-border/50 bg-muted/20 p-3">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Selected step</p>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <p className="text-base font-medium text-foreground">{stage.label}</p>
+          <span className="rounded-full bg-background/70 px-2 py-0.5 text-xs text-muted-foreground">
+            {formatLabel(stage.status) ?? stage.status}
+          </span>
+        </div>
+        {explanation ? (
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{explanation}</p>
+        ) : null}
           {typeof stage.durationMs === 'number' ? (
             <p className="mt-1 text-xs text-muted-foreground">{stage.durationMs}ms</p>
           ) : null}
-        </div>
-      ) : null}
+      </section>
       {passages.length > 0 ? (
         <ChunkList label={`Selected passages (${passages.length})`} chunks={passages} />
       ) : null}
@@ -722,6 +872,8 @@ export function ActivityTraceDetail({
   activityTrace?: ActivityTrace
   selectedStageId?: string
 }) {
+  const [chunkInspectorRequest, setChunkInspectorRequest] = useState<ChunkInspectorRequest>(null)
+
   if (!activityTrace) {
     return (
       <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
@@ -742,8 +894,9 @@ export function ActivityTraceDetail({
   }
 
   return (
-    <div className="space-y-4 select-text">
-      <StageOverview stage={selectedStage} trace={activityTrace} />
+    <ChunkInspectorContext.Provider value={setChunkInspectorRequest}>
+      <div className="space-y-4 select-text">
+        <StageOverview stage={selectedStage} trace={activityTrace} />
 
       <details className="group rounded-lg border border-border/70 bg-background/60 p-3 text-xs text-muted-foreground">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-medium text-foreground">
@@ -768,5 +921,12 @@ export function ActivityTraceDetail({
         </pre>
       </details>
     </div>
+    <ChunkInspectorSheet
+      request={chunkInspectorRequest}
+      onOpenChange={(open) => {
+        if (!open) setChunkInspectorRequest(null)
+      }}
+    />
+    </ChunkInspectorContext.Provider>
   )
 }

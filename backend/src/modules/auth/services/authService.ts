@@ -1,5 +1,5 @@
 import type { Env } from "../../../app/config/env.js";
-import { conflict, serviceUnavailable, unauthorized } from "../../../shared/domain/errors.js";
+import { conflict, forbidden, serviceUnavailable, unauthorized } from "../../../shared/domain/errors.js";
 import type { AccountAccessService, AccountInvitationService } from "../../account/public.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { WorkspaceService } from "../../workspace/public.js";
@@ -48,6 +48,12 @@ export interface WorkspaceTokenRecord {
   createdAt: Date;
   lastUsedAt: Date | null;
 }
+
+export type WorkspaceApiTokenPrincipal = {
+  type: "workspace_api_token";
+  role: "admin";
+  tokenId: string;
+};
 
 export interface AccountRepositoryPort {
   create(params: { name: string; email: string; passwordHash: string }): Promise<AccountRecord>;
@@ -435,6 +441,46 @@ export class AuthService {
     };
   }
 
+  async deleteOrganization(input: {
+    accountId: string;
+    userId: string;
+  }): Promise<{ accountId: string }> {
+    const membership = await this.dependencies.accountAccessService.requireActiveMembership(
+      input.accountId,
+      input.userId,
+    );
+    if (membership.role !== "owner") {
+      await this.dependencies.auditService.record({
+        accountId: input.accountId,
+        eventType: "account.delete",
+        eventStatus: "failure",
+        metadata: {
+          actorUserId: input.userId,
+          reason: "not_owner",
+        },
+      });
+      throw forbidden("Only the organization owner can delete the organization");
+    }
+
+    const account = await this.dependencies.accountRepository.findById(input.accountId);
+    const deleted = await this.dependencies.accountRepository.deleteById(input.accountId);
+    if (!deleted) {
+      throw conflict("Organization could not be deleted");
+    }
+
+    await this.dependencies.auditService.record({
+      accountId: input.accountId,
+      eventType: "account.delete",
+      eventStatus: "success",
+      metadata: {
+        actorUserId: input.userId,
+        organizationName: account?.name ?? null,
+      },
+    });
+
+    return { accountId: input.accountId };
+  }
+
   async renameOrganization(input: {
     accountId: string;
     userId: string;
@@ -516,7 +562,11 @@ export class AuthService {
     return token;
   }
 
-  async authenticateApiToken(token: string): Promise<{ workspaceId: string; accountId: string }> {
+  async authenticateApiToken(token: string): Promise<{
+    workspaceId: string;
+    accountId: string;
+    principal: WorkspaceApiTokenPrincipal;
+  }> {
     const tokenHash = sha256(token);
     const workspaceToken = await this.dependencies.workspaceTokenRepository.findByTokenHash(tokenHash);
 
@@ -525,7 +575,15 @@ export class AuthService {
     }
 
     await this.dependencies.workspaceTokenRepository.touch(workspaceToken.workspaceId, new Date());
-    return { workspaceId: workspaceToken.workspaceId, accountId: workspaceToken.accountId };
+    return {
+      workspaceId: workspaceToken.workspaceId,
+      accountId: workspaceToken.accountId,
+      principal: {
+        type: "workspace_api_token",
+        role: "admin",
+        tokenId: workspaceToken.id,
+      },
+    };
   }
 
   private async issueWorkspaceToken(workspaceId: string, accountId: string): Promise<{ token: string }> {

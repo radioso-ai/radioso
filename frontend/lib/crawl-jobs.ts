@@ -1,16 +1,30 @@
 import type { WebsiteCrawlJobStatus, WebsiteCrawlJobSummary } from '@/lib/api'
+import { getApiErrorMessage } from '@/lib/api-error'
 
 export type ParsedCrawlForm =
-  | { ok: true; url: string; limit?: number }
+  | {
+      ok: true
+      url: string
+      limit?: number
+      includeUrlPatterns: string[]
+      excludeUrlPatterns: string[]
+      preserveContentLinks: boolean
+    }
   | { ok: false; error: string }
 
 export function parseCrawlForm({
   url,
   limit,
+  includeUrlPatterns = '',
+  excludeUrlPatterns = '',
+  preserveContentLinks = true,
   maxLimit,
 }: {
   url: string
   limit: string
+  includeUrlPatterns?: string
+  excludeUrlPatterns?: string
+  preserveContentLinks?: boolean
   maxLimit: number
 }): ParsedCrawlForm {
   const trimmedUrl = url.trim()
@@ -30,7 +44,13 @@ export function parseCrawlForm({
 
   const trimmedLimit = limit.trim()
   if (!trimmedLimit) {
-    return { ok: true, url: trimmedUrl }
+    return {
+      ok: true,
+      url: trimmedUrl,
+      includeUrlPatterns: parsePatternLines(includeUrlPatterns),
+      excludeUrlPatterns: parsePatternLines(excludeUrlPatterns),
+      preserveContentLinks,
+    }
   }
 
   const value = Number.parseInt(trimmedLimit, 10)
@@ -38,7 +58,28 @@ export function parseCrawlForm({
     return { ok: false, error: 'Page limit must be a positive whole number.' }
   }
 
-  return { ok: true, url: trimmedUrl, limit: Math.min(value, maxLimit) }
+  return {
+    ok: true,
+    url: trimmedUrl,
+    limit: Math.min(value, maxLimit),
+    includeUrlPatterns: parsePatternLines(includeUrlPatterns),
+    excludeUrlPatterns: parsePatternLines(excludeUrlPatterns),
+    preserveContentLinks,
+  }
+}
+
+const parsePatternLines = (value: string): string[] => {
+  const seen = new Set<string>()
+  const patterns: string[] = []
+  for (const line of value.split(/\r?\n/)) {
+    const pattern = line.trim()
+    if (!pattern) continue
+    const key = pattern.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    patterns.push(pattern)
+  }
+  return patterns
 }
 
 export interface CrawlJobMergeResult {
@@ -49,6 +90,74 @@ export interface CrawlJobMergeResult {
   // appear in the incoming server payload. Safe to drop from the dismissal
   // tracking set on the next render so the set does not grow unbounded.
   deletedJobIdsToForget: string[]
+}
+
+export function getCrawlPageIssueSummaries(
+  job: Pick<WebsiteCrawlJobSummary, 'failedPageCount' | 'skippedPageCount'> | null | undefined,
+): Array<{ kind: 'failed' | 'skipped'; label: string }> {
+  const summaries: Array<{ kind: 'failed' | 'skipped'; label: string }> = []
+  const failedPageCount = job?.failedPageCount ?? 0
+  const skippedPageCount = job?.skippedPageCount ?? 0
+  if (failedPageCount > 0) {
+    summaries.push({ kind: 'failed', label: `${failedPageCount} failed during crawl` })
+  }
+  if (skippedPageCount > 0) {
+    summaries.push({ kind: 'skipped', label: `${skippedPageCount} skipped during crawl` })
+  }
+  return summaries
+}
+
+export function applySourceResumeResult({
+  sourceId,
+  resumedJobCount,
+  pendingResumeJobCount,
+  pausedSourceIds,
+  crawlingSourceIds,
+}: {
+  sourceId: string
+  resumedJobCount: number
+  pendingResumeJobCount?: number | null
+  pausedSourceIds: ReadonlySet<string>
+  crawlingSourceIds: ReadonlySet<string>
+}): { pausedSourceIds: Set<string>; crawlingSourceIds: Set<string> } {
+  const nextPaused = new Set(pausedSourceIds)
+  const nextCrawling = new Set(crawlingSourceIds)
+  if (resumedJobCount > 0 || (pendingResumeJobCount ?? 0) > 0) {
+    nextPaused.delete(sourceId)
+    nextCrawling.add(sourceId)
+  }
+  return {
+    pausedSourceIds: nextPaused,
+    crawlingSourceIds: nextCrawling,
+  }
+}
+
+export async function runSourceCrawlAction<T>({
+  request,
+  fallbackMessage,
+}: {
+  request: () => Promise<T>
+  fallbackMessage: string
+}): Promise<{ ok: true; result: T } | { ok: false; error: string }> {
+  try {
+    return { ok: true, result: await request() }
+  } catch (error) {
+    return { ok: false, error: getApiErrorMessage(error, fallbackMessage) }
+  }
+}
+
+export function getResumeDispatchWarning(result: {
+  resumedJobCount: number
+  resumeDispatchFailureCount?: number | null
+}): string | null {
+  const failureCount = result.resumeDispatchFailureCount ?? 0
+  if (failureCount <= 0) {
+    return null
+  }
+  if (result.resumedJobCount <= 0) {
+    return 'The crawl was queued in the database, but dispatch failed. Try resuming again in a moment.'
+  }
+  return `${failureCount} resumed crawl ${failureCount === 1 ? 'job was' : 'jobs were'} not dispatched. Database polling may still pick them up.`
 }
 
 export function mergeCrawlJobs({

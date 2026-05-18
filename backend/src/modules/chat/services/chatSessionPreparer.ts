@@ -43,6 +43,10 @@ export interface PrepareChatSessionInput {
   sourceOrigin?: string | null;
 }
 
+export interface PrepareChatSessionOptions {
+  skipRetrieval?: boolean;
+}
+
 export class ChatSessionPreparer {
   private readonly chatTurnIntentService = new ChatTurnIntentService();
 
@@ -55,7 +59,7 @@ export class ChatSessionPreparer {
     private readonly agentService?: Pick<AgentService, "resolve">,
   ) {}
 
-  async prepare(input: PrepareChatSessionInput): Promise<PreparedSession> {
+  async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
     const conversation = input.conversationId
       ? await this.ensureConversation(input.conversationId, input.workspaceId, input.anonymousSessionId)
       : null;
@@ -75,26 +79,6 @@ export class ChatSessionPreparer {
     const rewriteContinuityState = conversation
       ? await this.loadRewriteContinuityState(input.workspaceId, conversation.id)
       : undefined;
-    const responseIdentity = this.resolveResponseIdentity(agent);
-    const pipelineInput = {
-      workspaceId: input.workspaceId,
-      query: input.query,
-      history,
-      responseIdentity,
-      responseBehavior: {
-        customInstruction: agent.customInstruction,
-        suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-        suggestedQuestionsCount: 3,
-      },
-      responseBehaviorEnabled: true,
-      metadataFilter: input.metadataFilter,
-      sourceScope: agent.sourceScope,
-    };
-
-    const retrievalPipeline = this.retrievalPipeline as ChatIntentCapableRetrievalPipeline;
-    const { retrieval, turnRoute } = isAgentRetrievalEnabled(agent)
-      ? await this.prepareRetrievalEnabledTurn(retrievalPipeline, pipelineInput)
-      : this.prepareDirectOnlyTurn(pipelineInput, agent);
     const persistedConversation =
       conversation ?? await this.conversationRepository.create(
         input.workspaceId,
@@ -111,6 +95,18 @@ export class ChatSessionPreparer {
       content: input.query,
       inputMetadata: input.inputMetadata,
     });
+    const { retrieval, turnRoute } = options.skipRetrieval
+      ? this.prepareDirectOnlyTurn(this.buildPipelineInput(input, agent, history), agent)
+      : await this.prepareRetrieval(input, {
+          agent,
+          conversation: persistedConversation,
+          history,
+          retrieval: this.prepareDirectOnlyTurn(this.buildPipelineInput(input, agent, history), agent).retrieval,
+          turnRoute: CHAT_TURN_ROUTE.SOCIAL_ONLY,
+          userMessage,
+          pageContext: input.pageContext ?? null,
+          priorRewriteContinuityState: rewriteContinuityState,
+        });
 
     return {
       agent,
@@ -121,6 +117,37 @@ export class ChatSessionPreparer {
       userMessage,
       pageContext: input.pageContext ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
+    };
+  }
+
+  async prepareRetrieval(input: PrepareChatSessionInput, session: PreparedSession): Promise<PreparedSession> {
+    const pipelineInput = this.buildPipelineInput(input, session.agent, session.history);
+    const retrievalPipeline = this.retrievalPipeline as ChatIntentCapableRetrievalPipeline;
+    const { retrieval, turnRoute } = isAgentRetrievalEnabled(session.agent)
+      ? await this.prepareRetrievalEnabledTurn(retrievalPipeline, pipelineInput)
+      : this.prepareDirectOnlyTurn(pipelineInput, session.agent);
+
+    return {
+      ...session,
+      retrieval,
+      turnRoute,
+    };
+  }
+
+  private buildPipelineInput(input: PrepareChatSessionInput, agent: AgentRecord, history: MessageRecord[]) {
+    return {
+      workspaceId: input.workspaceId,
+      query: input.query,
+      history,
+      responseIdentity: this.resolveResponseIdentity(agent),
+      responseBehavior: {
+        customInstruction: agent.customInstruction,
+        suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
+        suggestedQuestionsCount: 3,
+      },
+      responseBehaviorEnabled: true,
+      metadataFilter: input.metadataFilter,
+      sourceScope: agent.sourceScope,
     };
   }
 

@@ -253,6 +253,15 @@ describe("public chat contract", () => {
         },
       });
 
+    expect(chat.body).not.toHaveProperty("citations");
+    expect(chat.body.answerSegments).toEqual(
+      expect.arrayContaining([
+        expect.not.objectContaining({
+          citationIndices: expect.any(Array),
+        }),
+      ]),
+    );
+
     const cookies = chat.headers["set-cookie"];
     const anonCookie = findAnonymousCookie(cookies);
 
@@ -274,8 +283,6 @@ describe("public chat contract", () => {
         }),
         expect.objectContaining({
           role: "assistant",
-          citations: expect.any(Array),
-          answerSegments: expect.any(Array),
           answerFeedbackEntries: [
             expect.objectContaining({
               value: "down",
@@ -283,6 +290,15 @@ describe("public chat contract", () => {
               actorType: "anonymous_user",
             }),
           ],
+        }),
+      ]),
+    );
+    const assistantTurn = detail.body.messages.find((message: { role: string }) => message.role === "assistant");
+    expect(assistantTurn).not.toHaveProperty("citations");
+    expect(assistantTurn?.answerSegments).toEqual(
+      expect.arrayContaining([
+        expect.not.objectContaining({
+          citationIndices: expect.any(Array),
         }),
       ]),
     );

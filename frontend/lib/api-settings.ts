@@ -207,6 +207,12 @@ export const agentsApi = {
     }, { withApiToken: true })
   },
 
+  async deleteAgent(agentId: string): Promise<void> {
+    await request<void>(`/agents/${agentId}`, {
+      method: 'DELETE',
+    }, { withSession: true })
+  },
+
   async getGeneralSettings(agentId: string): Promise<GeneralSettings> {
     return agentToGeneralSettings(await this.getAgent(agentId))
   },

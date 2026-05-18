@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { ThumbsDown, ThumbsUp, UserRound } from 'lucide-react'
-import type { WebsiteEmbedTheme } from '@/lib/embed-widget'
-import { editionController } from '@/lib/edition-controller'
+import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
+import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
+import { getSkillDisplay } from '@/lib/skill-display'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
 import type {
   AnswerFeedbackEntry,
@@ -17,6 +18,7 @@ import type {
   ChatSuggestion,
   ChatUserInputMetadata,
   Citation,
+  SkillStreamPayload,
 } from '@/lib/api'
 
 const dayFormatter = new Intl.DateTimeFormat(undefined, {
@@ -44,6 +46,98 @@ export interface ChatThreadMessage {
   answerFeedbackEntries?: AnswerFeedbackEntry[]
   persistedAssistantMessageId?: string
   status?: 'streaming' | 'done' | 'complete' | 'error'
+  skill?: SkillStreamPayload
+}
+
+const SKILL_ACCENT_FALLBACK = '#0f172a'
+
+const accentTint = (accent: string | undefined, percent: number): string =>
+  `color-mix(in srgb, ${accent ?? SKILL_ACCENT_FALLBACK} ${percent}%, transparent)`
+
+function SkillChip({
+  skill,
+  theme,
+}: {
+  skill: SkillStreamPayload
+  theme?: WebsiteEmbedTheme | null
+}) {
+  const display = getSkillDisplay(skill.skillName)
+  const Icon = display.icon
+  const title = skill.localizedTitle?.trim() || display.fallbackTitle
+  const accent = theme?.accent ?? SKILL_ACCENT_FALLBACK
+  return (
+    <div
+      data-skill-chip
+      data-skill-name={skill.skillName}
+      className="inline-flex w-fit items-center gap-1.5 self-start rounded-full border px-2.5 py-1 text-xs font-medium"
+      style={{
+        background: accentTint(accent, 6),
+        borderColor: accentTint(accent, 18),
+        color: accent,
+      }}
+    >
+      <Icon className="size-3.5" aria-hidden style={{ color: accent }} />
+      <span>{title}</span>
+    </div>
+  )
+}
+
+function SkillReceiptCard({
+  skill,
+  theme,
+  copy,
+}: {
+  skill: SkillStreamPayload
+  theme?: WebsiteEmbedTheme | null
+  copy: WebsiteEmbedCopy
+}) {
+  const isFailed = skill.phase === 'failed'
+  const statusLabel = skill.receipt?.statusLabel?.trim()
+    || (isFailed ? copy.skillReceiptFailedLabel : copy.skillReceiptSubmittedLabel)
+  const fields = skill.receipt?.fields ?? []
+  const accent = theme?.accent ?? SKILL_ACCENT_FALLBACK
+  const accentForeground = theme?.assistantBubbleForeground ?? '#0f172a'
+  const mutedForeground = theme?.mutedForeground ?? '#64748b'
+  return (
+    <div
+      data-skill-receipt
+      data-skill-name={skill.skillName}
+      data-skill-phase={skill.phase}
+      className="w-fit max-w-full self-start rounded-2xl border px-4 py-3 text-sm"
+      style={{
+        background: theme?.assistantBubbleBackground ?? '#ffffff',
+        borderColor: accentTint(accent, 18),
+        color: accentForeground,
+      }}
+    >
+      <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: accent }}>
+        <span
+          className="inline-flex size-5 items-center justify-center rounded-full"
+          style={{ background: accentTint(accent, 12) }}
+        >
+          <Check className="size-3" aria-hidden />
+        </span>
+        <span>{statusLabel}</span>
+      </div>
+      {fields.length > 0 ? (
+        <dl className="mt-1.5 flex flex-col gap-1">
+          {fields.map((field) => (
+            <div key={field.name} className="flex flex-col">
+              <dt
+                className="text-[10px] font-medium uppercase tracking-wider"
+                style={{ color: mutedForeground }}
+              >
+                {field.displayName}
+              </dt>
+              <dd className="text-sm" style={{ color: accentForeground }}>
+                {field.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </div>
+  )
 }
 
 type FeedbackHandler = (input: {
@@ -51,6 +145,54 @@ type FeedbackHandler = (input: {
   value: AnswerFeedbackValue
   comment?: string | null
 }) => Promise<AnswerFeedbackState | void> | AnswerFeedbackState | void
+
+function MessageCopyButton({
+  content,
+  theme,
+}: {
+  content: string
+  theme?: WebsiteEmbedTheme | null
+}) {
+  const [copied, setCopied] = useState(false)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current)
+      }
+    },
+    [],
+  )
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current)
+      }
+      timeoutRef.current = setTimeout(() => {
+        timeoutRef.current = null
+        setCopied(false)
+      }, 1500)
+    } catch {
+      // Clipboard write may fail in insecure contexts; intentional silent fail.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      aria-label={copied ? 'Copied' : 'Copy message'}
+      className="inline-flex size-5 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+      style={theme ? { color: theme.mutedForeground } : undefined}
+    >
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+    </button>
+  )
+}
 
 export function ChatMessageThread({
   messages,
@@ -63,6 +205,8 @@ export function ChatMessageThread({
   onAnswerFeedback,
   onClearAnswerFeedback,
   hideFeedbackEntries = false,
+  copy = DEFAULT_WEBSITE_EMBED_COPY,
+  showCitations = true,
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
@@ -77,7 +221,10 @@ export function ChatMessageThread({
   theme?: WebsiteEmbedTheme | null
   themedSuggestionButtons?: boolean
   hideFeedbackEntries?: boolean
+  copy?: WebsiteEmbedCopy
+  showCitations?: boolean
 }) {
+  const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
   const [localFeedback, setLocalFeedback] = useState<Record<string, AnswerFeedbackState | null | undefined>>({})
   const [pendingFeedbackId, setPendingFeedbackId] = useState<string | null>(null)
   const [feedbackError, setFeedbackError] = useState<Record<string, string | undefined>>({})
@@ -227,9 +374,20 @@ export function ChatMessageThread({
           Boolean(onAnswerFeedback && onClearAnswerFeedback && assistantMessageId) &&
           message.role === 'assistant' &&
           message.status !== 'streaming'
+        const groupInfo = skillGroupInfo[index]
+        const showReceipt =
+          groupInfo?.isGroupEnd
+          && groupInfo.skill
+          && (groupInfo.skill.phase === 'completed' || groupInfo.skill.phase === 'failed')
 
         return (
-          <div key={message.id} className="space-y-2">
+          <div
+            key={message.id}
+            data-message-id={message.id}
+            data-message-role={message.role}
+            data-skill-group={groupInfo?.groupKey ?? undefined}
+            className="group/message space-y-2"
+          >
             {showDayDivider ? (
               <div className="flex justify-center">
                 <div
@@ -283,7 +441,10 @@ export function ChatMessageThread({
                   </>
                 ) : (
                   <div className="flex w-full items-start">
-                    <div className="min-w-0 flex-1 flex flex-col gap-2">
+                    <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+                      {groupInfo?.isGroupStart && groupInfo.skill ? (
+                        <SkillChip skill={groupInfo.skill} theme={theme} />
+                      ) : null}
                       <div
                         {...getSelectableMessageProps(message.id)}
                         className={`self-start w-fit max-w-full rounded-2xl rounded-tl-md bg-card px-4 py-3 text-left text-foreground animate-in fade-in-50 slide-in-from-bottom-2 duration-300 ${
@@ -308,18 +469,22 @@ export function ChatMessageThread({
                               answerSegments={message.answerSegments}
                               onOpenDocument={onOpenDocument}
                               theme={theme}
+                              isStreaming={message.status === 'streaming'}
+                              showCitations={showCitations}
                             />
                           </div>
                         )}
                       </div>
+                      {showReceipt && groupInfo.skill ? (
+                        <SkillReceiptCard skill={groupInfo.skill} theme={theme} copy={copy} />
+                      ) : null}
                       {(() => {
-                        const visibleSuggestions = editionController.filterChatSuggestions(message.suggestions)
+                        const visibleSuggestions = message.suggestions ?? []
                         return visibleSuggestions.length > 0 ? (
                           <div className="flex flex-wrap gap-1.5">
                             {visibleSuggestions
                               .filter((suggestion) => suggestion.text.trim())
                               .map((suggestion, suggestionIndex) => {
-                              const isContactAction = suggestion.action?.kind === 'contact_human'
                               return onSuggestionSelect ? (
                                 <Button
                                   key={`${message.id}-suggestion-${suggestionIndex}`}
@@ -337,7 +502,6 @@ export function ChatMessageThread({
                                     onSuggestionSelect(suggestion, message.id)
                                   }}
                                 >
-                                  {isContactAction ? <UserRound className="mr-1.5 h-3.5 w-3.5 shrink-0" /> : null}
                                   {suggestion.text}
                                 </Button>
                               ) : (
@@ -361,41 +525,48 @@ export function ChatMessageThread({
                           </div>
                         ) : null
                       })()}
+                      {message.status === 'streaming' ? null : (
                       <div className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
                         <p style={theme ? { color: theme.mutedForeground } : undefined}>
                           {timeFormatter.format(new Date(message.createdAt))}
                         </p>
-                        {canSubmitFeedback && assistantMessageId ? (
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              type="button"
-                              className="group inline-flex size-5 items-center justify-center text-muted-foreground transition-colors disabled:pointer-events-none disabled:opacity-50"
-                              style={theme ? { color: theme.mutedForeground } : undefined}
-                              disabled={pendingFeedbackId === assistantMessageId}
-                              aria-pressed={feedbackState?.value === 'up'}
-                              aria-label="Thumbs up"
-                              onClick={() => void handleFeedbackClick(message, assistantMessageId, 'up')}
-                            >
-                              <ThumbsUp
-                                className={`size-3.5 fill-transparent group-hover:stroke-[#ffc720] ${feedbackState?.value === 'up' ? 'stroke-[#ffc720]' : ''}`}
-                              />
-                            </button>
-                            <button
-                              type="button"
-                              className="group inline-flex size-5 items-center justify-center text-muted-foreground transition-colors disabled:pointer-events-none disabled:opacity-50"
-                              style={theme ? { color: theme.mutedForeground } : undefined}
-                              disabled={pendingFeedbackId === assistantMessageId}
-                              aria-pressed={feedbackState?.value === 'down'}
-                              aria-label="Thumbs down"
-                              onClick={() => void handleFeedbackClick(message, assistantMessageId, 'down')}
-                            >
-                              <ThumbsDown
-                                className={`size-3.5 fill-transparent group-hover:stroke-[#ffc720] ${feedbackState?.value === 'down' ? 'stroke-[#ffc720]' : ''}`}
-                              />
-                            </button>
-                          </div>
-                        ) : null}
+                        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100">
+                          {message.content ? (
+                            <MessageCopyButton content={message.content} theme={theme} />
+                          ) : null}
+                          {canSubmitFeedback && assistantMessageId ? (
+                            <>
+                              <button
+                                type="button"
+                                className="group inline-flex size-5 items-center justify-center text-muted-foreground transition-colors disabled:pointer-events-none disabled:opacity-50"
+                                style={theme ? { color: theme.mutedForeground } : undefined}
+                                disabled={pendingFeedbackId === assistantMessageId}
+                                aria-pressed={feedbackState?.value === 'up'}
+                                aria-label="Thumbs up"
+                                onClick={() => void handleFeedbackClick(message, assistantMessageId, 'up')}
+                              >
+                                <ThumbsUp
+                                  className={`size-3.5 fill-transparent group-hover:stroke-[#ffc720] ${feedbackState?.value === 'up' ? 'stroke-[#ffc720]' : ''}`}
+                                />
+                              </button>
+                              <button
+                                type="button"
+                                className="group inline-flex size-5 items-center justify-center text-muted-foreground transition-colors disabled:pointer-events-none disabled:opacity-50"
+                                style={theme ? { color: theme.mutedForeground } : undefined}
+                                disabled={pendingFeedbackId === assistantMessageId}
+                                aria-pressed={feedbackState?.value === 'down'}
+                                aria-label="Thumbs down"
+                                onClick={() => void handleFeedbackClick(message, assistantMessageId, 'down')}
+                              >
+                                <ThumbsDown
+                                  className={`size-3.5 fill-transparent group-hover:stroke-[#ffc720] ${feedbackState?.value === 'down' ? 'stroke-[#ffc720]' : ''}`}
+                                />
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
                       </div>
+                      )}
                       {canSubmitFeedback && assistantMessageId ? (
                         <div className="flex flex-col gap-2 px-1">
                           {downvoteComposer?.assistantMessageId === assistantMessageId ? (

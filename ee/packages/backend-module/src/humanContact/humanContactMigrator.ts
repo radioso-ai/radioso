@@ -54,39 +54,47 @@ export const humanContactMigrator: ApplicationDatabaseMigrator = {
     `);
 
     await database.query(`
-      CREATE TABLE IF NOT EXISTS ee_contact_requests (
-        id UUID PRIMARY KEY,
-        account_id UUID REFERENCES accounts(id) ON DELETE SET NULL,
-        workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-        conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-        assistant_message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
-        source_channel TEXT,
-        source_origin TEXT,
-        user_email TEXT NOT NULL,
-        message TEXT NOT NULL,
-        generated_summary TEXT NOT NULL,
-        trigger_source TEXT NOT NULL,
-        trigger_reason TEXT,
-        status TEXT NOT NULL DEFAULT 'pending',
-        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-        next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        final_delivery_error TEXT,
-        activity_trace JSONB,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        CONSTRAINT ee_contact_requests_status_check
-          CHECK (status IN ('pending', 'delivering', 'delivered', 'failed'))
-      )
-    `);
+      DO $$
+      BEGIN
+        IF to_regclass('public.ee_contact_requests') IS NOT NULL THEN
+          ALTER TABLE ee_contact_requests
+            ADD COLUMN IF NOT EXISTS idempotency_key TEXT,
+            ADD COLUMN IF NOT EXISTS activity_trace JSONB;
 
-    await database.query(`
-      ALTER TABLE ee_contact_requests
-        ADD COLUMN IF NOT EXISTS activity_trace JSONB
-    `);
+          INSERT INTO skill_submissions (
+            id, account_id, workspace_id, conversation_id, assistant_message_id,
+            skill_name, source_channel, source_origin, trigger_source, trigger_reason,
+            idempotency_key, fields, subject_identity, status, attempts,
+            next_retry_at, final_delivery_error, activity_trace, created_at, updated_at
+          )
+          -- HUMAN_CONTACT_SKILL_NAME is 'human_contact.request'; SQL migrations cannot import TS constants.
+          SELECT
+            id, account_id, workspace_id, conversation_id, assistant_message_id,
+            'human_contact.request', source_channel, source_origin, trigger_source, trigger_reason,
+            idempotency_key,
+            jsonb_build_object('email', btrim(user_email), 'message', message),
+            lower(btrim(user_email)), status, attempts,
+            next_retry_at, final_delivery_error, activity_trace, created_at, updated_at
+          FROM ee_contact_requests
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM skill_submissions existing
+            WHERE existing.id = ee_contact_requests.id
+          )
+            AND (
+              ee_contact_requests.idempotency_key IS NULL
+              OR NOT EXISTS (
+                SELECT 1
+                FROM skill_submissions existing
+                WHERE existing.workspace_id = ee_contact_requests.workspace_id
+                  AND existing.skill_name = 'human_contact.request'
+                  AND existing.idempotency_key = ee_contact_requests.idempotency_key
+              )
+            );
 
-    await database.query(`
-      CREATE INDEX IF NOT EXISTS idx_ee_contact_requests_due
-        ON ee_contact_requests (status, next_retry_at, created_at)
+          DROP TABLE ee_contact_requests;
+        END IF;
+      END $$;
     `);
   },
 };

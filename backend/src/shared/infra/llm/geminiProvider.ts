@@ -3,11 +3,11 @@ import {
   type LlmCapabilityConfig,
   type TextGenerationClient,
 } from "./providerTypes.js";
+import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
 import { parseSseEvents } from "./sse.js";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const STORAGE_VECTOR_DIMENSIONS = 1536;
-const GEMINI_EMBEDDING_TIMEOUT_MS = 60_000;
 
 const buildGenerateBody = (input: {
   prompt: string;
@@ -126,22 +126,27 @@ export class GeminiEmbeddingClient implements EmbeddingClient {
     const model = options?.model ?? this.config.model;
 
     for (const text of texts) {
-      const response = await fetch(
-        `${GEMINI_BASE_URL}/${model}:embedContent?key=${encodeURIComponent(this.config.apiKey)}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          signal: AbortSignal.timeout(GEMINI_EMBEDDING_TIMEOUT_MS),
-          body: JSON.stringify({
-            model: `models/${model}`,
-            output_dimensionality: STORAGE_VECTOR_DIMENSIONS,
-            content: {
-              parts: [{ text }],
+      const response = await runProviderRequestWithTimeout(
+        "Gemini embeddings request",
+        EMBEDDING_REQUEST_TIMEOUT_MS,
+        (signal) =>
+          fetch(
+            `${GEMINI_BASE_URL}/${model}:embedContent?key=${encodeURIComponent(this.config.apiKey)}`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              signal,
+              body: JSON.stringify({
+                model: `models/${model}`,
+                output_dimensionality: STORAGE_VECTOR_DIMENSIONS,
+                content: {
+                  parts: [{ text }],
+                },
+              }),
             },
-          }),
-        },
+          ),
       );
 
       if (!response.ok) {

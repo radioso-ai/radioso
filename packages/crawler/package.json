@@ -20,6 +20,10 @@
     "vitest": "^2.1.5"
   },
   "dependencies": {
+    "cheerio": "1.0.0-rc.12",
     "crawlee": "^3.16.0"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.60.0"
   }
 }

@@ -193,57 +193,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/support/impersonations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Approve a support impersonation session */
-        post: operations["approveSupportImpersonation"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/support/impersonations/{id}/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Start an approved support impersonation session */
-        post: operations["startSupportImpersonation"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/support/impersonations/{id}/end": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** End a support impersonation session */
-        post: operations["endSupportImpersonation"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/account/switch": {
         parameters: {
             query?: never;
@@ -782,6 +731,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/document/sources/{sourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a source and all its documents */
+        delete: operations["deleteDocumentSource"];
+        options?: never;
+        head?: never;
+        /** Update a website source's crawl settings */
+        patch: operations["updateDocumentSource"];
+        trace?: never;
+    };
     "/api/v1/document/sources/{sourceId}/recrawl": {
         parameters: {
             query?: never;
@@ -799,7 +766,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/document/sources/{sourceId}": {
+    "/api/v1/document/sources/{sourceId}/pause-crawl": {
         parameters: {
             query?: never;
             header?: never;
@@ -808,9 +775,26 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post?: never;
-        /** Delete a source and all its documents */
-        delete: operations["deleteDocumentSource"];
+        /** Pause active crawl jobs for a website source */
+        post: operations["pauseDocumentSourceCrawl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}/resume-crawl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume paused crawl jobs for a website source */
+        post: operations["resumeDocumentSourceCrawl"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1291,13 +1275,6 @@ export interface components {
             /** @enum {string} */
             role: "admin" | "member";
         };
-        SupportImpersonationApproveRequest: {
-            /** Format: uuid */
-            accountId: string;
-            /** Format: uuid */
-            staffUserId?: string;
-            reason: string;
-        };
         WorkspaceCreateRequest: {
             name: string;
         };
@@ -1346,28 +1323,6 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
-        SupportImpersonation: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            accountId: string;
-            /** Format: uuid */
-            staffUserId: string;
-            /** Format: uuid */
-            approverUserId: string;
-            reason: string;
-            /** @enum {string} */
-            status: "approved" | "active" | "ended" | "expired" | "revoked";
-            /** Format: date-time */
-            approvedAt: string;
-            /** Format: date-time */
-            startedAt: string | null;
-            /** Format: date-time */
-            expiresAt: string;
-            /** Format: date-time */
-            endedAt: string | null;
-            active: boolean;
-        };
         AccountUsersResponse: {
             /** Format: uuid */
             accountId: string;
@@ -1376,7 +1331,6 @@ export interface components {
             users: components["schemas"]["AccountUser"][];
             invitations: components["schemas"]["AccountInvitation"][];
             workspaceGrants: components["schemas"]["WorkspaceGrant"][];
-            supportImpersonations: components["schemas"]["SupportImpersonation"][];
         };
         AccessibleAccount: {
             /** Format: uuid */
@@ -1545,7 +1499,7 @@ export interface components {
             /** Format: uuid */
             workspaceId: string;
             /** @enum {string} */
-            chunkingStrategy: "fixed_window" | "structured_semantic";
+            chunkingStrategy: "fixed_window" | "structured_semantic" | "recursive_text";
             /** @enum {string} */
             embeddingModel: "text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001";
             /** @enum {string|null} */
@@ -1562,7 +1516,7 @@ export interface components {
         };
         UpdateIngestionSettingsRequest: {
             /** @enum {string} */
-            chunkingStrategy: "fixed_window" | "structured_semantic";
+            chunkingStrategy: "fixed_window" | "structured_semantic" | "recursive_text";
             fixedWindowChunkSize: number;
             fixedWindowChunkOverlap: number;
             structuredMinChunkSize: number;
@@ -1993,9 +1947,10 @@ export interface components {
                 surface: string;
                 text: string;
             };
-            actions?: {
-                [key: string]: unknown;
-            };
+            intakeActions?: {
+                skillName: string;
+                intentName: string;
+            }[];
             /** Format: date-time */
             expiresAt: string;
         };
@@ -2047,6 +2002,13 @@ export interface components {
             name: string;
             externalId: string | null;
         };
+        DocumentSourceCrawlSettings: {
+            url: string | null;
+            limit: number;
+            includeUrlPatterns: string[];
+            excludeUrlPatterns: string[];
+            preserveContentLinks: boolean;
+        };
         DocumentSourceListItem: {
             /** Format: uuid */
             id: string;
@@ -2058,10 +2020,19 @@ export interface components {
             /** Format: date-time */
             lastSyncedAt: string | null;
             documentCount: number;
+            crawlSettings?: components["schemas"]["DocumentSourceCrawlSettings"];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        DocumentSourceUpdateRequest: {
+            crawlSettings?: {
+                limit?: number;
+                includeUrlPatterns?: string[];
+                excludeUrlPatterns?: string[];
+                preserveContentLinks?: boolean;
+            };
         };
         DocumentSourceListResponse: {
             sources: components["schemas"]["DocumentSourceListItem"][];
@@ -2166,6 +2137,9 @@ export interface components {
             /** Format: uri */
             url: string;
             limit?: number;
+            includeUrlPatterns?: string[];
+            excludeUrlPatterns?: string[];
+            preserveContentLinks?: boolean;
         };
         WebsiteCrawlJobResponse: {
             /** Format: uuid */
@@ -2183,6 +2157,7 @@ export interface components {
             status: string | null;
             requestedUrl: string;
             accepted: number;
+            skipped: number;
             failed: number;
             documents: {
                 externalDocumentId: string;
@@ -2197,7 +2172,7 @@ export interface components {
             }[];
         };
         /** @enum {string} */
-        WebsiteCrawlJobStatus: "queued" | "processing" | "completed" | "failed";
+        WebsiteCrawlJobStatus: "queued" | "processing" | "paused" | "completed" | "failed";
         CrawlPageFailure: {
             sourceUrl: string;
             reason: string;
@@ -2213,6 +2188,7 @@ export interface components {
             sourceId: string | null;
             documentCount: number | null;
             failedPageCount: number | null;
+            skippedPageCount: number | null;
             failures: components["schemas"]["CrawlPageFailure"][];
             lastError: string | null;
             /** Format: date-time */
@@ -2604,6 +2580,52 @@ export interface components {
                 inputSchemaRef: string;
                 settingsSchemaRef?: string;
             };
+            intake?: {
+                enabled: boolean;
+                supportedCallers: ("assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed")[];
+                intent: {
+                    description: string;
+                    examples: string[];
+                };
+                fields: {
+                    name: string;
+                    displayName: string;
+                    /** @enum {string} */
+                    type: "string" | "email" | "phone" | "number" | "date" | "enum";
+                    required: boolean;
+                    sensitive?: boolean;
+                    ttlSeconds?: number;
+                    pattern?: string;
+                    enumValues?: string[];
+                    maxLength?: number;
+                    extractionHint?: string;
+                }[];
+                subjectIdentityField?: string;
+                /** @enum {string} */
+                confirmation: "none" | "before_execute" | "always";
+                /** @enum {string} */
+                interruptionPolicy: "pause_and_resume" | "cancel_on_topic_change";
+            };
+            execution?: {
+                /** @enum {string} */
+                kind: "internal";
+                adapter: string;
+                enqueue?: boolean;
+            } | {
+                /** @enum {string} */
+                kind: "webhook";
+                /** @enum {string} */
+                provider: "make" | "zapier" | "custom";
+                endpointId: string;
+                enqueue: boolean;
+                timeoutMs?: number;
+            } | {
+                /** @enum {string} */
+                kind: "delivery_pipeline";
+                adapter: string;
+                destinations: ("email" | "webhook")[];
+                enqueue: boolean;
+            };
             diagnostics: components["schemas"]["SkillDiagnosticsSummary"];
             steps?: {
                 name: string;
@@ -2625,12 +2647,6 @@ export interface components {
             text: string;
             kind: string;
             citation?: components["schemas"]["Citation"];
-            action?: {
-                kind: string;
-                payload?: {
-                    [key: string]: unknown;
-                };
-            };
         };
         AssistantRoute: {
             /** @enum {string} */
@@ -2702,9 +2718,13 @@ export interface components {
             userExpectedLocale?: string;
             inputMetadata?: {
                 /** @enum {string} */
-                method: "typed" | "suggestion_click";
+                method: "typed" | "suggestion_click" | "intent_click";
                 /** Format: uuid */
                 suggestionSourceMessageId?: string;
+                intent?: {
+                    skillName: string;
+                    intentName?: string;
+                };
             };
             sourceContext?: {
                 /** @enum {string} */
@@ -2733,9 +2753,13 @@ export interface components {
             };
             inputMetadata?: {
                 /** @enum {string} */
-                method: "typed" | "suggestion_click";
+                method: "typed" | "suggestion_click" | "intent_click";
                 /** Format: uuid */
                 suggestionSourceMessageId?: string;
+                intent?: {
+                    skillName: string;
+                    intentName?: string;
+                };
             };
         };
         ChatConversationSummary: {
@@ -2767,6 +2791,10 @@ export interface components {
                 surface: string;
                 text: string;
             };
+            intakeActions?: {
+                skillName: string;
+                intentName: string;
+            }[];
             total: number;
             nextCursor: string | null;
             hasMore: boolean;
@@ -2840,9 +2868,13 @@ export interface components {
             createdAt: string;
             inputMetadata?: {
                 /** @enum {string} */
-                method: "typed" | "suggestion_click";
+                method: "typed" | "suggestion_click" | "intent_click";
                 /** Format: uuid */
                 suggestionSourceMessageId?: string;
+                intent?: {
+                    skillName: string;
+                    intentName?: string;
+                };
             };
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
@@ -3026,6 +3058,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Public chat session exchange rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"];
                 };
             };
         };
@@ -3452,74 +3493,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    approveSupportImpersonation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SupportImpersonationApproveRequest"];
-            };
-        };
-        responses: {
-            /** @description Support impersonation approved */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SupportImpersonation"];
-                };
-            };
-        };
-    };
-    startSupportImpersonation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Support impersonation started */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SupportImpersonation"];
-                };
-            };
-        };
-    };
-    endSupportImpersonation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Support impersonation ended */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SupportImpersonation"];
-                };
             };
         };
     };
@@ -5184,6 +5157,106 @@ export interface operations {
             };
         };
     };
+    deleteDocumentSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Source and documents deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Source cannot be deleted */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDocumentSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DocumentSourceUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Source updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceListItem"];
+                };
+            };
+            /** @description Source is not a website or the manually-added bucket */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     recrawlDocumentSource: {
         parameters: {
             query?: never;
@@ -5233,7 +5306,7 @@ export interface operations {
             };
         };
     };
-    deleteDocumentSource: {
+    pauseDocumentSourceCrawl: {
         parameters: {
             query?: never;
             header?: never;
@@ -5244,14 +5317,71 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Source and documents deleted */
-            204: {
+            /** @description Active crawl jobs paused */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        pausedJobCount: number;
+                    };
+                };
             };
-            /** @description Source cannot be deleted */
+            /** @description Source is not a website source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resumeDocumentSourceCrawl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paused crawl jobs queued for processing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        resumedJobCount: number;
+                        pendingResumeJobCount: number;
+                        resumeDispatchFailureCount: number;
+                    };
+                };
+            };
+            /** @description Source is not a website source */
             400: {
                 headers: {
                     [name: string]: unknown;

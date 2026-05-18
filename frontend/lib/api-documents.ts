@@ -1,10 +1,14 @@
 import { request, requestLongRunning } from './api-client'
 import { withQuery } from './api-query'
 import type {
+  DocumentChunkDetail,
+  DocumentChunkListResponse,
   DocumentCreateRequest,
   DocumentCreateResponse,
   DocumentDetails,
   DocumentListResponse,
+  DocumentSourceCrawlSettings,
+  DocumentSourceListItem,
   DocumentSourceListResponse,
   DocumentSearchHistoryListResponse,
   DocumentSearchResponse,
@@ -23,6 +27,18 @@ export const documentsApi = {
 
   async getDocument(documentId: string): Promise<DocumentDetails> {
     return request<DocumentDetails>(`/document/${documentId}`, {
+      method: "GET",
+    }, { withApiToken: true })
+  },
+
+  async listDocumentChunks(documentId: string): Promise<DocumentChunkListResponse> {
+    return request<DocumentChunkListResponse>(`/document/${documentId}/chunks`, {
+      method: "GET",
+    }, { withApiToken: true })
+  },
+
+  async getDocumentChunk(documentId: string, chunkId: string): Promise<DocumentChunkDetail> {
+    return request<DocumentChunkDetail>(`/document/${documentId}/chunks/${chunkId}`, {
       method: "GET",
     }, { withApiToken: true })
   },
@@ -75,12 +91,21 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async crawlWebsite(input: { url: string; limit?: number }): Promise<WebsiteCrawlEnqueueResponse> {
+  async crawlWebsite(input: {
+    url: string
+    limit?: number
+    includeUrlPatterns?: string[]
+    excludeUrlPatterns?: string[]
+    preserveContentLinks?: boolean
+  }): Promise<WebsiteCrawlEnqueueResponse> {
     return request<WebsiteCrawlEnqueueResponse>("/document/crawl", {
       method: "POST",
       body: JSON.stringify({
         url: input.url,
         ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        ...(input.includeUrlPatterns !== undefined ? { includeUrlPatterns: input.includeUrlPatterns } : {}),
+        ...(input.excludeUrlPatterns !== undefined ? { excludeUrlPatterns: input.excludeUrlPatterns } : {}),
+        ...(input.preserveContentLinks !== undefined ? { preserveContentLinks: input.preserveContentLinks } : {}),
       }),
     }, { withApiToken: true })
   },
@@ -118,9 +143,31 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
+  async pauseSourceCrawl(sourceId: string): Promise<{ pausedJobCount: number }> {
+    return request<{ pausedJobCount: number }>(`/document/sources/${encodeURIComponent(sourceId)}/pause-crawl`, {
+      method: "POST",
+    }, { withApiToken: true })
+  },
+
+  async resumeSourceCrawl(sourceId: string): Promise<{ resumedJobCount: number; pendingResumeJobCount?: number; resumeDispatchFailureCount?: number }> {
+    return request<{ resumedJobCount: number; pendingResumeJobCount?: number; resumeDispatchFailureCount?: number }>(`/document/sources/${encodeURIComponent(sourceId)}/resume-crawl`, {
+      method: "POST",
+    }, { withApiToken: true })
+  },
+
   async deleteSource(sourceId: string): Promise<void> {
     await request<void>(`/document/sources/${encodeURIComponent(sourceId)}`, {
       method: "DELETE",
+    }, { withApiToken: true })
+  },
+
+  async updateSourceCrawlSettings(
+    sourceId: string,
+    crawlSettings: Partial<Omit<DocumentSourceCrawlSettings, 'url'>>,
+  ): Promise<DocumentSourceListItem> {
+    return request<DocumentSourceListItem>(`/document/sources/${encodeURIComponent(sourceId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ crawlSettings }),
     }, { withApiToken: true })
   },
 

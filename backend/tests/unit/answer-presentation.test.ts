@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { AnswerPresentationService } from "../../src/modules/chat/services/answerPresentationService.js";
 
 describe("answer presentation service", () => {
-  it("retains normalized segments and citation evidence for validation even when citation display is disabled", () => {
+  it("normalize() retains citation evidence and segments for validation", () => {
     const service = new AnswerPresentationService();
 
     const normalized = service.normalize({
@@ -39,30 +39,13 @@ describe("answer presentation service", () => {
       ],
       unsupportedNoticeMarked: false,
     });
-    expect(
-      service.present({
-        answer: "Arudra is a leader[[1]].",
-        citationDisplayEnabled: false,
-        citations: [
-          {
-            documentId: "doc-1",
-            chunkId: "chunk-1",
-            title: "Arudra",
-            content: "Arudra is a leader.",
-          },
-        ],
-      }),
-    ).toEqual({
-      answer: "Arudra is a leader.",
-    });
   });
 
-  it("strips raw citation anchors when citation display is disabled", () => {
+  it("present() emits citations for resolved anchors", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
       answer: "Arudra is a leader[[1]].",
-      citationDisplayEnabled: false,
       citations: [
         {
           documentId: "doc-1",
@@ -75,6 +58,11 @@ describe("answer presentation service", () => {
 
     expect(result).toEqual({
       answer: "Arudra is a leader.",
+      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Arudra" }],
+      answerSegments: [
+        { text: "Arudra is a leader", citationIndices: [0] },
+        { text: "." },
+      ],
     });
   });
 
@@ -83,7 +71,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "Ananda Yoga can lead naturally into meditation[[1]] . It also supports inner silence[[1]] .",
-      citationDisplayEnabled: false,
       citations: [
         {
           documentId: "doc-1",
@@ -94,9 +81,9 @@ describe("answer presentation service", () => {
       ],
     });
 
-    expect(result).toEqual({
-      answer: "Ananda Yoga can lead naturally into meditation. It also supports inner silence.",
-    });
+    expect(result.answer).toBe(
+      "Ananda Yoga can lead naturally into meditation. It also supports inner silence.",
+    );
   });
 
   it("adds punctuation when a terminal markdown link is followed by a new sentence", () => {
@@ -105,7 +92,6 @@ describe("answer presentation service", () => {
     const result = service.present({
       answer:
         "You can explore the main overview here: [Meditation and Kriya Yoga](https://anandaeurope.org/meditation-and-kriya-yoga) \nIf you want to look at course options, here are the residential pages: [Il sentiero del Kriya Yoga 4 giorni](https://corsi.ananda.it/corso/0007963-corso-residenziale-il-sentiero-del-kriya-yoga-4-giorni) and [Il sentiero del Kriya Yoga 5 giorni](https://corsi.ananda.it/en/course/0007995-corso-residenziale-il-sentiero-del-kriya-yoga-5-days) ",
-      citationDisplayEnabled: false,
       citations: [],
     });
 
@@ -141,7 +127,6 @@ describe("answer presentation service", () => {
     const result = service.present({
       answer:
         "Arudra is a leader/facilitator featured by Ananda Europe[[1]], leads morning meditations and Purification ceremonies[[2]], and events are offered in Italian and English[[3]].",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",
@@ -196,7 +181,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "Narayani's books are available from Ananda Edizioni[[1]][[2]].",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",
@@ -234,7 +218,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "The retreat is offered in Assisi[[9]][[2]][[3]].",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",
@@ -278,7 +261,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "Narayani's books are available from Ananda Edizioni[[1]][[2]][[3]].",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",
@@ -322,7 +304,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "Author page: https://anandaedizioni.it/autore/narayani-anaya[[1]]. Price: EUR 18,00[[9]]. Broken [[abc]] token and dangling [[ marker.",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",
@@ -355,7 +336,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "Arudra leads morning meditations[[1]]. He also leads Purification ceremonies[[1]].",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",
@@ -388,7 +368,6 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer: "First grounded paragraph[[1]].\n\nSecond grounded paragraph[[1]].",
-      citationDisplayEnabled: true,
       citations: [
         {
           documentId: "doc-1",

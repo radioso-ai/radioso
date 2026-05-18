@@ -191,6 +191,8 @@ export interface AgentRepositoryPort {
   listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]>;
   update(agentId: string, workspaceId: string, input: AgentInput): Promise<AgentRecord>;
   setDefault(workspaceId: string, agentId: string): Promise<void>;
+  deleteByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<boolean>;
+  countByWorkspaceId(workspaceId: string): Promise<number>;
 }
 
 export class AgentRepository implements AgentRepositoryPort {
@@ -351,6 +353,22 @@ export class AgentRepository implements AgentRepositoryPort {
       `UPDATE workspaces SET default_agent_id = $1, updated_at = NOW() WHERE id = $2`,
       [agentId, workspaceId],
     );
+  }
+
+  async deleteByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<boolean> {
+    const affected = await this.database.execute(
+      `DELETE FROM agents WHERE id = $1 AND workspace_id = $2`,
+      [agentId, workspaceId],
+    );
+    return affected > 0;
+  }
+
+  async countByWorkspaceId(workspaceId: string): Promise<number> {
+    const row = await this.database.queryOptional<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM agents WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+    return row ? Number(row.count) : 0;
   }
 
   private async replaceSourceScope(

@@ -1,4 +1,5 @@
 import { serviceUnavailable } from "../../domain/errors.js";
+import { isProviderRequestTimeoutError } from "./providerTimeouts.js";
 
 type ProviderErrorShape = {
   status?: number;
@@ -44,6 +45,10 @@ export const normalizeProviderCredentialError = (error: unknown) => {
 };
 
 export const getProviderFailureReason = (error: unknown) => {
+  if (isProviderRequestTimeoutError(error)) {
+    return error.message;
+  }
+
   if (isProviderCredentialError(error)) {
     return getProviderCredentialErrorMessage();
   }

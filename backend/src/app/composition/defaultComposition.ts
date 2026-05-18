@@ -14,10 +14,13 @@ import {
   type DocumentStoragePort,
 } from "../../modules/documents/composition.js";
 import {
+  ChonkieChunkingProvider,
   ChunkingStrategyRegistry,
   FixedWindowChunkingStrategy,
+  RecursiveTextChunkingStrategy,
   StructuredSemanticChunkingStrategy,
   type EmbeddingService,
+  type TextChunkingProviderPort,
 } from "../../modules/retrieval/composition.js";
 import { buildAnalyticsSinks } from "../../shared/analytics/buildAnalyticsSinks.js";
 import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
@@ -61,9 +64,10 @@ export interface ApplicationComposition {
   documentJobDispatcher?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobDispatcher"];
   documentJobConsumer?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobConsumer"];
   websiteCrawlerProvider?: ReturnType<typeof createApplicationExtensionRegistry>["websiteCrawlerProvider"];
+  chunkingProvider?: ReturnType<typeof createApplicationExtensionRegistry>["chunkingProvider"];
   websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
-  chatActionProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["chatActionProviderRegistration"];
+  chatIntakeProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["chatIntakeProviderRegistration"];
   contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
   answerFeedbackHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["answerFeedbackHistoryProviderRegistration"];
   agentSurfaceExtensions: ReturnType<typeof createApplicationExtensionRegistry>["agentSurfaceExtensions"];
@@ -95,9 +99,10 @@ export const createDefaultApplicationComposition = (options: {
     documentJobDispatcher: registry.documentJobDispatcher,
     documentJobConsumer: registry.documentJobConsumer,
     websiteCrawlerProvider: registry.websiteCrawlerProvider,
+    chunkingProvider: registry.chunkingProvider,
     websiteEmbedIntegration: registry.websiteEmbedIntegration,
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
-    chatActionProviderRegistration: registry.chatActionProviderRegistration,
+    chatIntakeProviderRegistration: registry.chatIntakeProviderRegistration,
     contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
     answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,
     agentSurfaceExtensions: registry.agentSurfaceExtensions,
@@ -151,6 +156,7 @@ export const createDefaultDocumentJobDispatcher = (
     | "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
     | "WORKER_AMQP_URL"
     | "WORKER_AMQP_QUEUE_NAME"
+    | "WORKER_AMQP_DLQ_NAME"
     | "WORKER_AMQP_PREFETCH"
   >,
   logger: AppLogger,
@@ -168,6 +174,7 @@ export const createDefaultDocumentJobDispatcher = (
       ? new AmqpDocumentJobDispatcher({
           amqpUrl: env.WORKER_AMQP_URL!,
           queueName: env.WORKER_AMQP_QUEUE_NAME!,
+          deadLetterQueueName: env.WORKER_AMQP_DLQ_NAME,
           logger,
         })
     : new NoopDocumentJobDispatcher();
@@ -177,6 +184,7 @@ export const createDefaultDocumentJobConsumer = (
     | "WORKER_DISPATCH_DRIVER"
     | "WORKER_AMQP_URL"
     | "WORKER_AMQP_QUEUE_NAME"
+    | "WORKER_AMQP_DLQ_NAME"
     | "WORKER_AMQP_PREFETCH"
   >,
   logger: AppLogger,
@@ -186,6 +194,7 @@ export const createDefaultDocumentJobConsumer = (
     ? new AmqpDocumentJobConsumer({
         amqpUrl: env.WORKER_AMQP_URL!,
         queueName: env.WORKER_AMQP_QUEUE_NAME!,
+        deadLetterQueueName: env.WORKER_AMQP_DLQ_NAME,
         prefetch: env.WORKER_AMQP_PREFETCH,
         logger,
         worker,
@@ -205,6 +214,8 @@ export const createDefaultWebsiteCrawlJobDispatcher = (
     | "WORKER_AMQP_URL"
     | "WORKER_AMQP_QUEUE_NAME"
     | "WORKER_AMQP_CRAWL_QUEUE_NAME"
+    | "WORKER_AMQP_DLQ_NAME"
+    | "WORKER_AMQP_CRAWL_DLQ_NAME"
   >,
   logger: AppLogger,
 ): WebsiteCrawlJobDispatcherPort =>
@@ -221,6 +232,7 @@ export const createDefaultWebsiteCrawlJobDispatcher = (
       ? new AmqpWebsiteCrawlJobDispatcher({
           amqpUrl: env.WORKER_AMQP_URL!,
           queueName: env.WORKER_AMQP_CRAWL_QUEUE_NAME ?? env.WORKER_AMQP_QUEUE_NAME!,
+          deadLetterQueueName: env.WORKER_AMQP_CRAWL_DLQ_NAME ?? env.WORKER_AMQP_DLQ_NAME,
           logger,
         })
       : new NoopWebsiteCrawlJobDispatcher();
@@ -231,6 +243,8 @@ export const createDefaultWebsiteCrawlJobConsumer = (
     | "WORKER_AMQP_URL"
     | "WORKER_AMQP_CRAWL_QUEUE_NAME"
     | "WORKER_AMQP_QUEUE_NAME"
+    | "WORKER_AMQP_CRAWL_DLQ_NAME"
+    | "WORKER_AMQP_DLQ_NAME"
   >,
   logger: AppLogger,
   worker: { runJobById(jobId: string): Promise<"processed" | "noop" | "busy"> },
@@ -239,13 +253,18 @@ export const createDefaultWebsiteCrawlJobConsumer = (
     ? new AmqpWebsiteCrawlJobConsumer({
         amqpUrl: env.WORKER_AMQP_URL!,
         queueName: env.WORKER_AMQP_CRAWL_QUEUE_NAME ?? env.WORKER_AMQP_QUEUE_NAME!,
+        deadLetterQueueName: env.WORKER_AMQP_CRAWL_DLQ_NAME ?? env.WORKER_AMQP_DLQ_NAME,
         logger,
         worker,
       })
     : undefined;
 
-export const createDefaultChunkingStrategyRegistry = (embeddingService: EmbeddingService): ChunkingStrategyRegistry =>
+export const createDefaultChunkingStrategyRegistry = (
+  embeddingService: EmbeddingService,
+  chunkingProvider: TextChunkingProviderPort = new ChonkieChunkingProvider(embeddingService),
+): ChunkingStrategyRegistry =>
   new ChunkingStrategyRegistry([
-    new FixedWindowChunkingStrategy(),
-    new StructuredSemanticChunkingStrategy(embeddingService),
+    new FixedWindowChunkingStrategy(chunkingProvider),
+    new StructuredSemanticChunkingStrategy(chunkingProvider),
+    new RecursiveTextChunkingStrategy(chunkingProvider),
   ]);

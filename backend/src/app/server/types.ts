@@ -27,6 +27,7 @@ import type { AuditService } from "../../modules/audit/composition.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import type { WorkspaceSummaryService } from "../../modules/workspace/services/workspaceSummaryService.js";
 import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
+import type { ChunkRepositoryPort } from "../../modules/documents/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
@@ -44,16 +45,17 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../composition/applicationModule.js";
-import type { ChatActionProviderPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
+import type { ChatIntakeProviderPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillCatalogService } from "../../modules/skills/public.js";
 import type { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type { DocumentSourceRepositoryPort } from "../../db/repositories/documentSourceRepository.js";
-import type { SupportImpersonationService } from "../../modules/support/services/supportImpersonationService.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import type { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
+import type { TextGenerationClient } from "../../shared/infra/llm/providerTypes.js";
+import type { EmailService } from "../../modules/mail/public.js";
 
 export interface AppDependencies {
   env: Env;
@@ -64,21 +66,22 @@ export interface AppDependencies {
   productAnalyticsService: ProductAnalyticsPort;
   capabilityPolicy: CapabilityPolicy;
   usageLimitPolicy: UsageLimitPolicy;
-  chatActionProvider: ChatActionProviderPort;
+  chatIntakeProvider: ChatIntakeProviderPort;
   contactHistoryProvider: ContactHistoryProviderPort;
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;
   authService: AuthService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
-  supportImpersonationService: SupportImpersonationService;
   workspaceSessionService: WorkspaceSessionService;
   abuseControlService: AbuseControlService;
   auditService: AuditService;
+  mailService: EmailService;
   workspaceService: WorkspaceService;
   workspaceSummaryService: WorkspaceSummaryService;
   ingestionSettingsService: IngestionSettingsService;
   retrievalSettingsService: RetrievalSettingsService;
+  chunkRepository: ChunkRepositoryPort;
   documentIngestionService: DocumentIngestionService;
   documentSourceRepository: DocumentSourceRepositoryPort;
   documentImportService: DocumentImportService;
@@ -113,4 +116,40 @@ export interface AppDependencies {
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;
   connectorDb: Database;
+  chatTextGenerationClient: TextGenerationClient;
+  crawlerProvider: {
+    fetchPageWithScreenshot(url: string, options?: {
+      signal?: AbortSignal;
+      validateNavigationUrl?: (url: string) => Promise<void> | void;
+      [key: string]: unknown;
+    }): Promise<{
+      url: string;
+      title: string | null;
+      text: string;
+      links: string[];
+      screenshot: Uint8Array | null;
+      faviconUrl: string | null;
+    }>;
+    crawlSite(params: {
+      baseUrl: string;
+      pageLimit: number;
+      seedPendingUrls?: string[];
+      includeBaseUrl?: boolean;
+      signal?: AbortSignal;
+    }): Promise<Array<{
+      url: string;
+      title: string | null;
+      text: string;
+      status: string;
+      links?: string[];
+      httpStatus?: number | null;
+      error?: string | null;
+    }>>;
+    isBrowserTransportAvailable(): Promise<boolean>;
+  };
+  assertPublicWebsiteUrl: (url: string) => Promise<void>;
+  websiteCrawlerLimits: {
+    defaultLimit: number;
+    maxLimit: number;
+  };
 }

@@ -16,13 +16,16 @@ import { createRetrievalRoutes } from "./retrievalRoutes.js";
 import { createConnectorRoutes } from "../../../modules/connectors/http/connectorRoutes.js";
 import { createPublicChatRoutes } from "./publicChatRoutes.js";
 import { createSkillRoutes } from "./skillRoutes.js";
-import { createSupportRoutes } from "./supportRoutes.js";
+import { getMcpMountStatus } from "../../server/mcpMount.js";
 
 export const createApiRouter = (dependencies: AppDependencies): Router => {
   const router = Router();
 
   router.get("/health", (_req, res) => {
-    res.status(200).json({ status: "ok" });
+    res.status(200).json({
+      mcp: getMcpMountStatus(dependencies.env),
+      status: "ok",
+    });
   });
   if (dependencies.env.METRICS_ENABLED) {
     if (!dependencies.metricsRegistry || !dependencies.env.METRICS_AUTH_TOKEN) {
@@ -35,7 +38,6 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
     );
   }
   router.use("/api/v1/auth", createAuthRoutes(dependencies));
-  router.use("/api/v1/support", createSupportRoutes(dependencies));
   router.use("/api/v1/account", createAccountRoutes(dependencies));
   router.use("/api/v1/account", createAccountUserRoutes(dependencies));
   router.use("/api/v1/workspace", createWorkspaceRoutes(dependencies));

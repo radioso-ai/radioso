@@ -28,6 +28,17 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     }),
   );
 
+  const DocumentSourceCrawlSettingsSchema = registry.register(
+    "DocumentSourceCrawlSettings",
+    z.object({
+      url: z.string().nullable(),
+      limit: z.number().int().min(1),
+      includeUrlPatterns: z.array(z.string()),
+      excludeUrlPatterns: z.array(z.string()),
+      preserveContentLinks: z.boolean(),
+    }),
+  );
+
   const DocumentSourceListItemSchema = registry.register(
     "DocumentSourceListItem",
     z.object({
@@ -38,8 +49,23 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       lastSyncStatus: z.string().nullable(),
       lastSyncedAt: z.string().datetime().nullable(),
       documentCount: z.number().int().min(0),
+      crawlSettings: DocumentSourceCrawlSettingsSchema.optional(),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
+    }),
+  );
+
+  const DocumentSourceUpdateRequestSchema = registry.register(
+    "DocumentSourceUpdateRequest",
+    z.object({
+      crawlSettings: z
+        .object({
+          limit: z.number().int().min(1).optional(),
+          includeUrlPatterns: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+          excludeUrlPatterns: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+          preserveContentLinks: z.boolean().optional(),
+        })
+        .optional(),
     }),
   );
 
@@ -176,6 +202,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       status: z.string().nullable(),
       requestedUrl: z.string(),
       accepted: z.number().int().min(0),
+      skipped: z.number().int().min(0),
       failed: z.number().int().min(0),
       documents: z.array(z.object({
         externalDocumentId: z.string(),
@@ -193,7 +220,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
 
   const WebsiteCrawlJobStatusSchema = registry.register(
     "WebsiteCrawlJobStatus",
-    z.enum(["queued", "processing", "completed", "failed"]),
+    z.enum(["queued", "processing", "paused", "completed", "failed"]),
   );
 
   const CrawlPageFailureSchema = registry.register(
@@ -214,6 +241,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       sourceId: z.string().uuid().nullable(),
       documentCount: z.number().int().min(0).nullable(),
       failedPageCount: z.number().int().min(0).nullable(),
+      skippedPageCount: z.number().int().min(0).nullable(),
       failures: z.array(CrawlPageFailureSchema),
       lastError: z.string().nullable(),
       createdAt: z.string().datetime(),
@@ -514,7 +542,9 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     RagStatusSchema,
     DocumentCreateRequestSchema,
     DocumentSourceSummarySchema,
+    DocumentSourceCrawlSettingsSchema,
     DocumentSourceListItemSchema,
+    DocumentSourceUpdateRequestSchema,
     DocumentSourceListResponseSchema,
     DocumentImportRequestSchema,
     DocumentOperationResponseSchema,

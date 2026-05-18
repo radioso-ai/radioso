@@ -17,11 +17,8 @@ import type {
   AccessibleAccountsResponse,
   CreateAccountInvitationResponse,
   HumanContactAvailability,
-  HumanContactDraftResponse,
   HumanContactSettingsUpdate,
   HumanContactSigningSecretResponse,
-  HumanContactSubmitInput,
-  HumanContactSubmitResponse,
   LoginResponse,
   RenameOrganizationResponse,
   WorkspaceGrantRole,
@@ -39,20 +36,6 @@ export const humanContactApi = {
   async revealSigningSecret(): Promise<HumanContactSigningSecretResponse> {
     return request<HumanContactSigningSecretResponse>('/ee/contact/settings/signing-secret', {
       method: 'GET',
-    }, { withApiToken: true })
-  },
-
-  async draft(input: { conversationId: string; assistantMessageId?: string }): Promise<HumanContactDraftResponse> {
-    return request<HumanContactDraftResponse>('/ee/contact/draft', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }, { withApiToken: true })
-  },
-
-  async submit(input: HumanContactSubmitInput): Promise<HumanContactSubmitResponse> {
-    return request<HumanContactSubmitResponse>('/ee/contact/submit', {
-      method: 'POST',
-      body: JSON.stringify(input),
     }, { withApiToken: true })
   },
 
@@ -141,6 +124,12 @@ export const accountApi = {
     return request<RenameOrganizationResponse>('/account', {
       method: 'PATCH',
       body: JSON.stringify({ organizationName }),
+    }, { withSession: true })
+  },
+
+  async deleteOrganization(): Promise<void> {
+    await request<void>('/account', {
+      method: 'DELETE',
     }, { withSession: true })
   },
 

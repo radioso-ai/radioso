@@ -24,6 +24,8 @@ import {
   listSupportedEmbeddingModels,
 } from "./dependencyBuilders.js";
 import { EmbeddingService } from "../../modules/retrieval/composition.js";
+import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
+import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { SkillCatalogService } from "../../modules/skills/public.js";
 
 export interface BuildDependenciesOptions {
@@ -44,7 +46,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions });
   const access = buildAccessServices({
     auditService: infrastructure.auditService,
-    env,
     repositories,
   });
   const llmRegistry = buildLlmRegistry(env, logger);
@@ -114,9 +115,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     composition,
     conversationRepository: repositories.conversationRepository,
     database: infrastructure.database,
+    env,
     historyItemsRepository: repositories.historyItemsRepository,
     llmRegistry,
     logger,
+    mailService: infrastructure.mailService,
     messageRepository: repositories.messageRepository,
     productAnalyticsService: infrastructure.productAnalyticsService,
     retrievalPipeline: retrieval.retrievalPipeline,
@@ -152,6 +155,34 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const connectorRegistry = buildConnectorRegistry({ composition, env, logger });
 
+  const chatTextGenerationClient = llmRegistry.createChatTextClient();
+
+  // Lazy-loaded crawler provider for EE agent wizard
+  const crawlerProvider = {
+    async fetchPageWithScreenshot(url: string, options?: {
+      signal?: AbortSignal;
+      validateNavigationUrl?: (url: string) => Promise<void> | void;
+      [key: string]: unknown;
+    }) {
+      const { fetchPageWithScreenshot } = await import("@radioso/crawler");
+      return fetchPageWithScreenshot(url, options);
+    },
+    async crawlSite(params: {
+      baseUrl: string;
+      pageLimit: number;
+      seedPendingUrls?: string[];
+      includeBaseUrl?: boolean;
+      signal?: AbortSignal;
+    }) {
+      const { crawlSite } = await import("@radioso/crawler");
+      return crawlSite(params);
+    },
+    async isBrowserTransportAvailable() {
+      const { isPlaywrightAvailable } = await import("@radioso/crawler");
+      return isPlaywrightAvailable();
+    },
+  };
+
   return {
     env,
     logger,
@@ -161,21 +192,22 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     productAnalyticsService: infrastructure.productAnalyticsService,
     capabilityPolicy: composition.capabilityPolicy,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
-    chatActionProvider: chat.chatActionProvider,
+    chatIntakeProvider: chat.chatIntakeProvider,
     contactHistoryProvider: chat.contactHistoryProvider,
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
     authService,
     accountAccessService: access.accountAccessService,
     accountInvitationService: access.accountInvitationService,
-    supportImpersonationService: access.supportImpersonationService,
     workspaceSessionService: workspace.workspaceSessionService,
     abuseControlService: chat.abuseControlService,
     auditService: infrastructure.auditService,
+    mailService: infrastructure.mailService,
     workspaceService: workspace.workspaceService,
     workspaceSummaryService: workspace.workspaceSummaryService,
     ingestionSettingsService: settings.ingestionSettingsService,
     retrievalSettingsService: settings.retrievalSettingsService,
+    chunkRepository: repositories.chunkRepository,
     documentIngestionService: documents.documentIngestionService,
     documentSourceRepository: repositories.documentSourceRepository,
     documentImportService: documents.documentImportService,
@@ -210,5 +242,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     messageRepository: repositories.messageRepository,
     connectorRegistry,
     connectorDb: infrastructure.database,
+    chatTextGenerationClient,
+    crawlerProvider,
+    assertPublicWebsiteUrl,
+    websiteCrawlerLimits: (() => {
+      const config = resolveWebsiteCrawlerConfig();
+      return { defaultLimit: config.defaultLimit, maxLimit: config.maxLimit };
+    })(),
   };
 };

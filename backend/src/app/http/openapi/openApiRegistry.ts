@@ -79,7 +79,9 @@ export interface OpenApiSchemaCatalog {
   DocumentSearchResultSchema: z.ZodTypeAny;
   DocumentSourceDocumentsQuerySchema: RouteParameterSchema;
   DocumentSourceSummarySchema: z.ZodTypeAny;
+  DocumentSourceCrawlSettingsSchema: z.ZodTypeAny;
   DocumentSourceListItemSchema: z.ZodTypeAny;
+  DocumentSourceUpdateRequestSchema: z.ZodTypeAny;
   DocumentSourceListResponseSchema: z.ZodTypeAny;
   DocumentStatusSchema: z.ZodTypeAny;
   sourceParamsSchema: RouteParameterSchema;
@@ -135,9 +137,6 @@ export interface OpenApiSchemaCatalog {
   SkillDiagnosticEvidenceSchema: z.ZodTypeAny;
   SkillDiagnosticsSummarySchema: z.ZodTypeAny;
   SkillParamsSchema: RouteParameterSchema;
-  SupportImpersonationApproveRequestSchema: z.ZodTypeAny;
-  supportImpersonationParamsSchema: RouteParameterSchema;
-  SupportImpersonationSchema: z.ZodTypeAny;
   tokenPathParamsSchema: z.AnyZodObject;
   TriggerAnalysisRuleSchema: z.ZodTypeAny;
   TriggerAnalysisSchema: z.ZodTypeAny;

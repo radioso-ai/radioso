@@ -323,6 +323,7 @@ const reconstructActivityTrace = (input: {
   summary: ActivitySummary | undefined;
   diagnostics: RetrievalExecutionDiagnostics;
   answerOutcome?: AssistantTurnOutcome;
+  citations?: ChatCitation[];
 }): ActivityTrace => {
   const execution = input.summary?.execution ?? toRetrievalExecutionPath(input.route);
   const stages: ActivityTrace["stages"] = [
@@ -416,6 +417,12 @@ const reconstructActivityTrace = (input: {
     });
   }
 
+  const citationChunkRefs = (input.citations ?? []).map((citation) => ({
+    chunkId: citation.chunkId,
+    documentId: citation.documentId,
+    title: citation.title,
+  }));
+
   stages.push(
     {
       stageId: "candidate_summary",
@@ -426,6 +433,7 @@ const reconstructActivityTrace = (input: {
       outputs: {
         fallbackApplied: input.diagnostics.fallbackApplied,
         continuityDecision: input.diagnostics.continuityDecision,
+        ...(citationChunkRefs.length > 0 ? { finalContexts: citationChunkRefs } : {}),
       },
       metrics: {
         semanticCandidateCount: input.diagnostics.originalCandidateCount + input.diagnostics.rewrittenCandidateCount,
@@ -698,6 +706,7 @@ export class ChatHistoryService {
                 summary: activitySummary,
                 diagnostics: metadata.retrieval as RetrievalExecutionDiagnostics,
                 answerOutcome: metadata.answerOutcome,
+                citations: metadata.citations,
               })
             : undefined
         );

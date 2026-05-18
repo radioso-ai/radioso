@@ -5,6 +5,7 @@ import {
   type LlmCapabilityConfig,
   type TextGenerationClient,
 } from "./providerTypes.js";
+import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
 import type { AppLogger } from "../../observability/logger.js";
 
 const STORAGE_VECTOR_DIMENSIONS = 1536;
@@ -107,11 +108,19 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
       ? STORAGE_VECTOR_DIMENSIONS
       : undefined;
     try {
-      const response = await this.client.embeddings.create({
-        model,
-        input: texts,
-        ...(dimensions ? { dimensions } : {}),
-      });
+      const response = await runProviderRequestWithTimeout(
+        "OpenAI embeddings request",
+        EMBEDDING_REQUEST_TIMEOUT_MS,
+        (signal) =>
+          this.client.embeddings.create(
+            {
+              model,
+              input: texts,
+              ...(dimensions ? { dimensions } : {}),
+            },
+            { signal },
+          ),
+      );
       const durationMs = Math.max(0, Date.now() - startedAt);
       this.logger?.info(
         {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { badRequest } from "../../../shared/domain/errors.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isDynamicDateToken, normalizeDateRuleValue } from "./dynamicDateToken.js";
 
 export const metadataRuleOperators = [
@@ -119,11 +120,13 @@ export interface RetrievalSettingsInput {
 }
 
 // Kept for internal retrieval tests that still exercise query-derived attribute logic.
-export const DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS =
-  "Rewrite for semantic retrieval with the same meaning. Keep the query standalone, preserve proper nouns and technical terms, and avoid adding new topics.";
+export const DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS = loadPromptTemplate(
+  "retrieval/semantic-rewrite-instructions.md",
+);
 
-export const DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS =
-  "Rewrite for lexical retrieval using exact literals likely to appear in the corpus. Prefer aliases, abbreviations, citation forms, and corpus-native notation when grounded.";
+export const DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS = loadPromptTemplate(
+  "retrieval/lexical-rewrite-instructions.md",
+);
 
 export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettingsRecord => ({
   workspaceId,

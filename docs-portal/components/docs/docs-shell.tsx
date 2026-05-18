@@ -4,7 +4,7 @@ import { useState } from 'react'
 
 import { DocsHeader } from '@/components/docs/docs-header'
 import { DocsSidebar } from '@/components/docs/docs-sidebar'
-import { cn } from '@/lib/utils'
+import { cn } from '@radioso/ui/utils'
 
 export function DocsShell({
   children,

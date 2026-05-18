@@ -215,7 +215,7 @@ const createComponents = (variant: MarkdownVariant, inline: boolean): Components
       <li className={cn('ml-1 text-foreground', className)}>{children}</li>
     ),
     ol: ({ children, className }) => (
-      <ol className={cn('my-2 ml-5 list-decimal space-y-1 text-foreground', className)}>
+      <ol className={cn('my-3 ml-5 list-decimal space-y-1.5 text-foreground first:mt-0', className)}>
         {children}
       </ol>
     ),
@@ -223,7 +223,7 @@ const createComponents = (variant: MarkdownVariant, inline: boolean): Components
       inline ? (
         <Fragment>{children}</Fragment>
       ) : (
-        <p className={cn('m-0 text-foreground', className)}>{children}</p>
+        <p className={cn('mt-3 text-foreground first:mt-0', className)}>{children}</p>
       ),
     pre: ({ children, node }: PreProps) => {
       const fenced = extractFencedCode(node)
@@ -274,7 +274,7 @@ const createComponents = (variant: MarkdownVariant, inline: boolean): Components
       <td className={cn('px-3 py-2 align-top', className)}>{children}</td>
     ),
     ul: ({ children, className }) => (
-      <ul className={cn('my-2 ml-5 list-disc space-y-1 text-foreground', className)}>
+      <ul className={cn('my-3 ml-5 list-disc space-y-1.5 text-foreground first:mt-0', className)}>
         {children}
       </ul>
     ),

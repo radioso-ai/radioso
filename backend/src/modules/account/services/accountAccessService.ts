@@ -18,13 +18,37 @@ export type AccountPermission =
   | "account.membership.remove"
   | "account.membership.role.update"
   | "account.organization.rename"
+  | "account.organization.delete"
   | "workspace.create"
+  | "workspace.summary.read"
   | "workspace.rename"
   | "workspace.delete"
+  | "workspace.chat.use"
+  | "workspace.retrieval.query"
+  | "workspace.history.read"
+  | "workspace.skills.read"
+  | "workspace.agents.read"
+  | "workspace.agents.manage"
   | "workspace.settings.manage"
+  | "workspace.settings.read"
   | "workspace.documents.manage"
+  | "workspace.documents.read"
+  | "workspace.agents.delete"
   | "workspace.token.read"
   | "workspace.token.rotate";
+
+export type WorkspaceApiTokenRole = "admin" | "member";
+
+export type AuthenticatedPrincipal =
+  | {
+    type: "session_user";
+    userId: string;
+  }
+  | {
+    type: "workspace_api_token";
+    role: WorkspaceApiTokenRole;
+    tokenId?: string | null;
+  };
 
 export interface WorkspaceGrantSummary {
   workspaceId: string;
@@ -323,9 +347,9 @@ export class AccountAccessService {
   async requirePermission(input: {
     accountId: string;
     userId?: string | null;
+    principal?: AuthenticatedPrincipal | null;
     permission: AccountPermission;
     workspaceId?: string | null;
-    supportImpersonationId?: string | null;
   }): Promise<void> {
     if (input.workspaceId && !(await this.workspaceBelongsToAccount(input.accountId, input.workspaceId))) {
       throw notFound("Workspace not found");
@@ -342,8 +366,8 @@ export class AccountAccessService {
       eventStatus: "failure",
       metadata: {
         userId: input.userId ?? null,
+        principalType: input.principal?.type ?? null,
         permission: input.permission,
-        supportImpersonationId: input.supportImpersonationId ?? null,
         reason: "permission_denied",
       },
     });
@@ -353,18 +377,20 @@ export class AccountAccessService {
   async hasPermission(input: {
     accountId: string;
     userId?: string | null;
+    principal?: AuthenticatedPrincipal | null;
     permission: AccountPermission;
     workspaceId?: string | null;
-    supportImpersonationId?: string | null;
   }): Promise<boolean> {
-    if (input.supportImpersonationId) {
-      return this.supportRoleAllows(input.permission);
+    if (input.principal?.type === "workspace_api_token") {
+      return this.tokenRoleAllows(input.principal.role, input.permission);
     }
-    if (!input.userId) {
+
+    const userId = input.principal?.type === "session_user" ? input.principal.userId : input.userId;
+    if (!userId) {
       return false;
     }
 
-    const membership = await this.findActiveMembership(input.accountId, input.userId);
+    const membership = await this.findActiveMembership(input.accountId, userId);
     if (!membership) {
       return false;
     }
@@ -418,21 +444,32 @@ export class AccountAccessService {
     }
 
     if (role === "admin") {
-      return permission !== "account.membership.remove";
+      return permission !== "account.membership.remove"
+        && permission !== "account.organization.delete";
     }
 
     return [
+      "workspace.summary.read",
+      "workspace.chat.use",
+      "workspace.retrieval.query",
+      "workspace.history.read",
+      "workspace.skills.read",
+      "workspace.agents.read",
+      "workspace.agents.manage",
       "workspace.settings.manage",
+      "workspace.settings.read",
       "workspace.documents.manage",
+      "workspace.documents.read",
       "workspace.token.read",
     ].includes(permission);
   }
 
-  private supportRoleAllows(permission: AccountPermission): boolean {
-    return [
-      "workspace.create",
-      "workspace.settings.manage",
-      "workspace.documents.manage",
-    ].includes(permission);
+  private tokenRoleAllows(role: WorkspaceApiTokenRole, permission: AccountPermission): boolean {
+    if (!permission.startsWith("workspace.") || permission.startsWith("workspace.token.")) {
+      return false;
+    }
+
+    return this.roleAllows(role, permission);
   }
+
 }

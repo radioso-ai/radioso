@@ -21,6 +21,8 @@ const booleanish = (defaultValue: boolean) =>
     return value;
   }, z.boolean());
 
+const mcpToolList = emptyStringToUndefined(z.string().min(1));
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8080),
@@ -91,6 +93,8 @@ const envSchema = z.object({
   WORKER_AMQP_URL: emptyStringToUndefined(z.string().url()),
   WORKER_AMQP_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
   WORKER_AMQP_CRAWL_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
+  WORKER_AMQP_DLQ_NAME: emptyStringToUndefined(z.string().min(1)),
+  WORKER_AMQP_CRAWL_DLQ_NAME: emptyStringToUndefined(z.string().min(1)),
   WORKER_AMQP_PREFETCH: z.coerce.number().int().positive().default(1),
   DOCUMENT_PROCESSING_JOB_LEASE_MS: z.coerce.number().int().positive().default(300_000),
   WEBSITE_CRAWL_JOB_LEASE_MS: z.coerce.number().int().positive().default(900_000),
@@ -98,8 +102,27 @@ const envSchema = z.object({
   WEBSITE_CRAWLER_ENABLED: booleanish(true),
   APP_BASE_URL: emptyStringToUndefined(z.string().url()),
   PUBLIC_CHAT_BASE_URL: emptyStringToUndefined(z.string().min(1)),
+  RADIOSO_BASE_URL: emptyStringToUndefined(z.string().url()),
+  RADIOSO_MCP_ENABLED: booleanish(false),
+  RADIOSO_MCP_STANDALONE: booleanish(false),
+  RADIOSO_MCP_MOUNT_PATH: z.string().min(1).default("/mcp").refine((value) => value.startsWith("/"), {
+    message: "RADIOSO_MCP_MOUNT_PATH must start with /",
+  }),
+  RADIOSO_MCP_MERGED_CORS_ORIGINS: z.string().min(1).default("*"),
+  RADIOSO_MCP_ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  RADIOSO_MCP_ALLOWED_READ_TOOLS: mcpToolList,
+  RADIOSO_MCP_ALLOWED_WRITE_TOOLS: mcpToolList,
+  RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: mcpToolList,
+  RADIOSO_MCP_APPROVAL_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  RADIOSO_MCP_AUDIT_LOG_PATH: emptyStringToUndefined(z.string().min(1)),
+  RADIOSO_MCP_BIND_HOST: z.string().min(1).default("127.0.0.1"),
+  RADIOSO_MCP_BIND_PORT: z.coerce.number().int().min(1).max(65535).default(8787),
+  RADIOSO_MCP_REDIS_KEY_PREFIX: z.string().min(1).default("radioso-mcp"),
+  RADIOSO_MCP_REDIS_URL: emptyStringToUndefined(z.string().url()),
+  RADIOSO_MCP_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().max(120_000).default(30_000),
+  RADIOSO_MCP_SERVER_NAME: z.string().min(1).default("radioso-context"),
+  RADIOSO_MCP_WORKSPACE_POLICIES_PATH: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_APPLICATION_MODULES: emptyStringToUndefined(z.string().min(1)),
-  SUPPORT_STAFF_EMAILS: z.string().default(""),
 }).superRefine((value, ctx) => {
   const invalidAnalyticsSinks = findInvalidConfiguredSinks(value.PRODUCT_ANALYTICS_SINKS, ["audit", "posthog"]);
   if (invalidAnalyticsSinks.length > 0) {
@@ -194,6 +217,22 @@ const envSchema = z.object({
         });
       }
     }
+  }
+
+  if (value.RADIOSO_MCP_ENABLED && !value.RADIOSO_MCP_STANDALONE && !value.RADIOSO_BASE_URL && !value.APP_BASE_URL) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["RADIOSO_BASE_URL"],
+      message: "RADIOSO_BASE_URL or APP_BASE_URL is required when backend MCP is enabled",
+    });
+  }
+
+  if (value.RADIOSO_MCP_ENABLED && !value.RADIOSO_MCP_STANDALONE && !value.RADIOSO_MCP_SIGNING_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["RADIOSO_MCP_SIGNING_SECRET"],
+      message: "RADIOSO_MCP_SIGNING_SECRET is required when backend MCP is enabled",
+    });
   }
 
 });

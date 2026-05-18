@@ -5,7 +5,9 @@ description: Create public chat sessions and use the public chat routes that pre
 
 # Public chat and embed
 
-These routes support anonymous or embedded chat experiences. They do not use the workspace API token.
+These routes support anonymous public chat and Enterprise website embed sessions. They do not use the workspace API token.
+
+<span style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid rgba(79, 70, 229, 0.35)', borderRadius: '999px', padding: '0.125rem 0.55rem', fontSize: '0.72rem', fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#4f46e5', background: 'rgba(79, 70, 229, 0.08)' }}>Enterprise Edition</span> The hosted website widget, `/api/embed/*` frontend proxy routes, and backend `/embed-config` route require the website-embed surface extension. Public chat links are available separately.
 
 ## Relevant endpoints
 
@@ -43,7 +45,7 @@ For a public link:
 }
 ```
 
-For a website embed, call the route from an approved origin:
+For an Enterprise website embed, call the route from an approved origin:
 
 ```json
 {
@@ -53,7 +55,6 @@ For a website embed, call the route from an approved origin:
 ```
 
 The response includes `publicChatToken`, `publicSessionId`, `publicSessionToken`, `workspaceName`, `assistantBootstrapActive`, and `expiresAt`.
-Builds with optional chat-action modules may also include an `actions` object with extension-owned metadata.
 
 ## Send a public chat message
 
@@ -68,6 +69,11 @@ Builds with optional chat-action modules may also include an `actions` object wi
 The public chat request also supports `startConversation: true` for bootstrap greeting requests, `userExpectedLocale`, and `inputMetadata`.
 
 Bootstrap greetings are not saved as conversations by themselves. A `startConversation: true` response can omit `conversationId`; use the `conversationId` returned by the first normal message when you need history or follow-up continuity.
+
+Chat suggestions are text-only follow-up prompts. Clients should render each
+suggestion as a normal message option and send `suggestion.text` when selected.
+Suggestions do not carry action payloads. Workflows that need typed intake or
+side effects run through the chat skill intake path.
 
 ## History in the anonymous flow
 

@@ -1,20 +1,26 @@
 ---
 title: Chat and history
-description: Ask grounded questions, continue conversations, and inspect saved conversation history.
+description: Ask knowledge-agent questions, continue conversations, and inspect saved conversation history.
 ---
 
 # Chat and history
 
-This is the main grounded-answer workflow for authenticated API clients.
+This is the main knowledge-agent workflow for authenticated API clients.
 
 ## Relevant endpoints
 
 ```text
 GET  /api/v1/agents
 POST /api/v1/agents
+GET  /api/v1/agents/{agentId}
+PUT  /api/v1/agents/{agentId}
+POST /api/v1/agents/{agentId}/default
 POST /api/v1/assistant/chat
 GET  /api/v1/history
-GET  /api/v1/history/{conversationId}
+GET  /api/v1/history/chat
+GET  /api/v1/history/chat/{conversationId}
+GET  /api/v1/history/search
+GET  /api/v1/history/search/{searchId}
 ```
 
 ## How it works
@@ -59,9 +65,11 @@ Use the [API Reference](/api-reference) for the exact streaming and non-streamin
 
 ## Conversation history
 
-Use `GET /api/v1/history` to list saved conversations.
+Use `GET /api/v1/history` to list merged chat and document-search history.
 
-Use `GET /api/v1/history/{conversationId}` to retrieve one conversation and its debug metadata.
+Use `GET /api/v1/history/chat` to list saved conversations.
+
+Use `GET /api/v1/history/chat/{conversationId}` to retrieve one conversation and its debug metadata. The older `GET /api/v1/history/{conversationId}` route is a compatibility alias.
 
 That second route is the one to use when you need to inspect how a specific answer was produced.
 
@@ -75,5 +83,6 @@ That second route is the one to use when you need to inspect how a specific answ
 ## Read next
 
 - [Documents and search](/api/documents-and-search)
+- [Agents and skills](/api/agents-and-skills)
 - [Settings](/api/settings)
 - [API Reference](/api-reference)

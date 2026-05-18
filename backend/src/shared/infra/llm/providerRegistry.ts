@@ -114,6 +114,10 @@ export class LlmProviderRegistry {
     return new ModelChatGateway(this.createTextClient(this.config.chat));
   }
 
+  createChatTextClient(): TextGenerationClient {
+    return this.createTextClient(this.config.chat);
+  }
+
   createGroundedMissResponseComposer() {
     return new ModelGroundedMissResponseComposer(this.createTextClient(this.config.chat));
   }

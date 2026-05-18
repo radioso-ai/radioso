@@ -346,22 +346,6 @@ components:
             - member
       required:
         - role
-    SupportImpersonationApproveRequest:
-      type: object
-      properties:
-        accountId:
-          type: string
-          format: uuid
-        staffUserId:
-          type: string
-          format: uuid
-        reason:
-          type: string
-          minLength: 1
-          maxLength: 1000
-      required:
-        - accountId
-        - reason
     WorkspaceCreateRequest:
       type: object
       properties:
@@ -478,61 +462,6 @@ components:
         - role
         - createdAt
         - updatedAt
-    SupportImpersonation:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        accountId:
-          type: string
-          format: uuid
-        staffUserId:
-          type: string
-          format: uuid
-        approverUserId:
-          type: string
-          format: uuid
-        reason:
-          type: string
-        status:
-          type: string
-          enum:
-            - approved
-            - active
-            - ended
-            - expired
-            - revoked
-        approvedAt:
-          type: string
-          format: date-time
-        startedAt:
-          type:
-            - string
-            - "null"
-          format: date-time
-        expiresAt:
-          type: string
-          format: date-time
-        endedAt:
-          type:
-            - string
-            - "null"
-          format: date-time
-        active:
-          type: boolean
-      required:
-        - id
-        - accountId
-        - staffUserId
-        - approverUserId
-        - reason
-        - status
-        - approvedAt
-        - startedAt
-        - expiresAt
-        - endedAt
-        - active
     AccountUsersResponse:
       type: object
       properties:
@@ -554,17 +483,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceGrant"
-        supportImpersonations:
-          type: array
-          items:
-            $ref: "#/components/schemas/SupportImpersonation"
       required:
         - accountId
         - currentUserId
         - users
         - invitations
         - workspaceGrants
-        - supportImpersonations
     AccessibleAccount:
       type: object
       properties:
@@ -997,6 +921,7 @@ components:
           enum: &a7
             - fixed_window
             - structured_semantic
+            - recursive_text
         embeddingModel:
           type: string
           enum: &a6
@@ -2134,9 +2059,18 @@ components:
             - brandText
             - surface
             - text
-        actions:
-          type: object
-          additionalProperties: {}
+        intakeActions:
+          type: array
+          items:
+            type: object
+            properties:
+              skillName:
+                type: string
+              intentName:
+                type: string
+            required:
+              - skillName
+              - intentName
         expiresAt:
           type: string
           format: date-time
@@ -2284,6 +2218,32 @@ components:
         - kind
         - name
         - externalId
+    DocumentSourceCrawlSettings:
+      type: object
+      properties:
+        url:
+          type:
+            - string
+            - "null"
+        limit:
+          type: integer
+          minimum: 1
+        includeUrlPatterns:
+          type: array
+          items:
+            type: string
+        excludeUrlPatterns:
+          type: array
+          items:
+            type: string
+        preserveContentLinks:
+          type: boolean
+      required:
+        - url
+        - limit
+        - includeUrlPatterns
+        - excludeUrlPatterns
+        - preserveContentLinks
     DocumentSourceListItem:
       type: object
       properties:
@@ -2315,6 +2275,8 @@ components:
         documentCount:
           type: integer
           minimum: 0
+        crawlSettings:
+          $ref: "#/components/schemas/DocumentSourceCrawlSettings"
         createdAt:
           type: string
           format: date-time
@@ -2331,6 +2293,31 @@ components:
         - documentCount
         - createdAt
         - updatedAt
+    DocumentSourceUpdateRequest:
+      type: object
+      properties:
+        crawlSettings:
+          type: object
+          properties:
+            limit:
+              type: integer
+              minimum: 1
+            includeUrlPatterns:
+              type: array
+              items:
+                type: string
+                minLength: 1
+                maxLength: 200
+              maxItems: 50
+            excludeUrlPatterns:
+              type: array
+              items:
+                type: string
+                minLength: 1
+                maxLength: 200
+              maxItems: 50
+            preserveContentLinks:
+              type: boolean
     DocumentSourceListResponse:
       type: object
       properties:
@@ -2614,6 +2601,22 @@ components:
         limit:
           type: integer
           exclusiveMinimum: 0
+        includeUrlPatterns:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+          maxItems: 50
+        excludeUrlPatterns:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+          maxItems: 50
+        preserveContentLinks:
+          type: boolean
       required:
         - url
     WebsiteCrawlJobResponse:
@@ -2655,6 +2658,9 @@ components:
         requestedUrl:
           type: string
         accepted:
+          type: integer
+          minimum: 0
+        skipped:
           type: integer
           minimum: 0
         failed:
@@ -2701,6 +2707,7 @@ components:
         - status
         - requestedUrl
         - accepted
+        - skipped
         - failed
         - documents
         - failures
@@ -2709,6 +2716,7 @@ components:
       enum:
         - queued
         - processing
+        - paused
         - completed
         - failed
     CrawlPageFailure:
@@ -2750,6 +2758,11 @@ components:
             - integer
             - "null"
           minimum: 0
+        skippedPageCount:
+          type:
+            - integer
+            - "null"
+          minimum: 0
         failures:
           type: array
           items:
@@ -2777,6 +2790,7 @@ components:
         - sourceId
         - documentCount
         - failedPageCount
+        - skippedPageCount
         - failures
         - lastError
         - createdAt
@@ -3695,6 +3709,151 @@ components:
               type: string
           required:
             - inputSchemaRef
+        intake:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            supportedCallers:
+              type: array
+              items:
+                type: string
+                enum: *a13
+            intent:
+              type: object
+              properties:
+                description:
+                  type: string
+                examples:
+                  type: array
+                  items:
+                    type: string
+              required:
+                - description
+                - examples
+            fields:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  displayName:
+                    type: string
+                  type:
+                    type: string
+                    enum:
+                      - string
+                      - email
+                      - phone
+                      - number
+                      - date
+                      - enum
+                  required:
+                    type: boolean
+                  sensitive:
+                    type: boolean
+                  ttlSeconds:
+                    type: integer
+                    exclusiveMinimum: 0
+                  pattern:
+                    type: string
+                  enumValues:
+                    type: array
+                    items:
+                      type: string
+                  maxLength:
+                    type: integer
+                    exclusiveMinimum: 0
+                  extractionHint:
+                    type: string
+                required:
+                  - name
+                  - displayName
+                  - type
+                  - required
+            subjectIdentityField:
+              type: string
+            confirmation:
+              type: string
+              enum:
+                - none
+                - before_execute
+                - always
+            interruptionPolicy:
+              type: string
+              enum:
+                - pause_and_resume
+                - cancel_on_topic_change
+          required:
+            - enabled
+            - supportedCallers
+            - intent
+            - fields
+            - confirmation
+            - interruptionPolicy
+        execution:
+          oneOf:
+            - type: object
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - internal
+                adapter:
+                  type: string
+                enqueue:
+                  type: boolean
+              required:
+                - kind
+                - adapter
+            - type: object
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - webhook
+                provider:
+                  type: string
+                  enum:
+                    - make
+                    - zapier
+                    - custom
+                endpointId:
+                  type: string
+                enqueue:
+                  type: boolean
+                timeoutMs:
+                  type: integer
+                  exclusiveMinimum: 0
+              required:
+                - kind
+                - provider
+                - endpointId
+                - enqueue
+            - type: object
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - delivery_pipeline
+                adapter:
+                  type: string
+                destinations:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - email
+                      - webhook
+                  minItems: 1
+                enqueue:
+                  type: boolean
+              required:
+                - kind
+                - adapter
+                - destinations
+                - enqueue
         diagnostics:
           $ref: "#/components/schemas/SkillDiagnosticsSummary"
         steps:
@@ -3759,16 +3918,6 @@ components:
           type: string
         citation:
           $ref: "#/components/schemas/Citation"
-        action:
-          type: object
-          properties:
-            kind:
-              type: string
-            payload:
-              type: object
-              additionalProperties: {}
-          required:
-            - kind
       required:
         - text
         - kind
@@ -3930,9 +4079,23 @@ components:
               enum:
                 - typed
                 - suggestion_click
+                - intent_click
             suggestionSourceMessageId:
               type: string
               format: uuid
+            intent:
+              type: object
+              properties:
+                skillName:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                intentName:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+              required:
+                - skillName
           required:
             - method
         sourceContext:
@@ -4006,9 +4169,23 @@ components:
               enum:
                 - typed
                 - suggestion_click
+                - intent_click
             suggestionSourceMessageId:
               type: string
               format: uuid
+            intent:
+              type: object
+              properties:
+                skillName:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                intentName:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+              required:
+                - skillName
           required:
             - method
       description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`."
@@ -4102,6 +4279,18 @@ components:
             - brandText
             - surface
             - text
+        intakeActions:
+          type: array
+          items:
+            type: object
+            properties:
+              skillName:
+                type: string
+              intentName:
+                type: string
+            required:
+              - skillName
+              - intentName
         total:
           type: integer
           minimum: 0
@@ -4309,9 +4498,19 @@ components:
               enum:
                 - typed
                 - suggestion_click
+                - intent_click
             suggestionSourceMessageId:
               type: string
               format: uuid
+            intent:
+              type: object
+              properties:
+                skillName:
+                  type: string
+                intentName:
+                  type: string
+              required:
+                - skillName
           required:
             - method
         citations:
@@ -4671,6 +4870,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Public chat session exchange rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitExceededResponse"
   /api/v1/auth/register:
     post:
       tags:
@@ -5022,71 +5227,6 @@ paths:
       responses:
         "204":
           description: Workspace grant removed
-  /api/v1/support/impersonations:
-    post:
-      tags:
-        - Support
-      summary: Approve a support impersonation session
-      operationId: approveSupportImpersonation
-      security:
-        - sessionCookie: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SupportImpersonationApproveRequest"
-      responses:
-        "201":
-          description: Support impersonation approved
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SupportImpersonation"
-  /api/v1/support/impersonations/{id}/start:
-    post:
-      tags:
-        - Support
-      summary: Start an approved support impersonation session
-      operationId: startSupportImpersonation
-      security:
-        - sessionCookie: []
-      parameters:
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: id
-          in: path
-      responses:
-        "200":
-          description: Support impersonation started
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SupportImpersonation"
-  /api/v1/support/impersonations/{id}/end:
-    post:
-      tags:
-        - Support
-      summary: End a support impersonation session
-      operationId: endSupportImpersonation
-      security:
-        - sessionCookie: []
-      parameters:
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: id
-          in: path
-      responses:
-        "200":
-          description: Support impersonation ended
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SupportImpersonation"
   /api/v1/account/switch:
     post:
       tags:
@@ -6437,6 +6577,86 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/document/sources/{sourceId}:
+    patch:
+      tags:
+        - Documents
+      summary: Update a website source's crawl settings
+      operationId: updateDocumentSource
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: sourceId
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentSourceUpdateRequest"
+      responses:
+        "200":
+          description: Source updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentSourceListItem"
+        "400":
+          description: Source is not a website or the manually-added bucket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Source not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - Documents
+      summary: Delete a source and all its documents
+      operationId: deleteDocumentSource
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: sourceId
+          in: path
+      responses:
+        "204":
+          description: Source and documents deleted
+        "400":
+          description: Source cannot be deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Source not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/document/sources/{sourceId}/recrawl:
     post:
       tags:
@@ -6477,12 +6697,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/document/sources/{sourceId}:
-    delete:
+  /api/v1/document/sources/{sourceId}/pause-crawl:
+    post:
       tags:
         - Documents
-      summary: Delete a source and all its documents
-      operationId: deleteDocumentSource
+      summary: Pause active crawl jobs for a website source
+      operationId: pauseDocumentSourceCrawl
       security:
         - bearerAuth: []
       parameters:
@@ -6493,10 +6713,74 @@ paths:
           name: sourceId
           in: path
       responses:
-        "204":
-          description: Source and documents deleted
+        "200":
+          description: Active crawl jobs paused
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pausedJobCount:
+                    type: integer
+                    minimum: 0
+                required:
+                  - pausedJobCount
         "400":
-          description: Source cannot be deleted
+          description: Source is not a website source
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Source not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/document/sources/{sourceId}/resume-crawl:
+    post:
+      tags:
+        - Documents
+      summary: Resume paused crawl jobs for a website source
+      operationId: resumeDocumentSourceCrawl
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: sourceId
+          in: path
+      responses:
+        "200":
+          description: Paused crawl jobs queued for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resumedJobCount:
+                    type: integer
+                    minimum: 0
+                  pendingResumeJobCount:
+                    type: integer
+                    minimum: 0
+                  resumeDispatchFailureCount:
+                    type: integer
+                    minimum: 0
+                required:
+                  - resumedJobCount
+                  - pendingResumeJobCount
+                  - resumeDispatchFailureCount
+        "400":
+          description: Source is not a website source
           content:
             application/json:
               schema:

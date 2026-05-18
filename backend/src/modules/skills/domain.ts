@@ -46,6 +46,56 @@ export const skillSchemaReferencesSchema = z.object({
 });
 export type SkillSchemaReferences = z.infer<typeof skillSchemaReferencesSchema>;
 
+export const skillIntakeFieldSchema = z.object({
+  name: z.string(),
+  displayName: z.string(),
+  type: z.enum(["string", "email", "phone", "number", "date", "enum"]),
+  required: z.boolean(),
+  sensitive: z.boolean().optional(),
+  ttlSeconds: z.number().int().positive().optional(),
+  pattern: z.string().optional(),
+  enumValues: z.array(z.string()).optional(),
+  maxLength: z.number().int().positive().optional(),
+  extractionHint: z.string().optional(),
+});
+export type SkillIntakeField = z.infer<typeof skillIntakeFieldSchema>;
+
+export const skillExecutionSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("internal"),
+    adapter: z.string(),
+    enqueue: z.boolean().optional(),
+  }),
+  z.object({
+    kind: z.literal("webhook"),
+    provider: z.enum(["make", "zapier", "custom"]),
+    endpointId: z.string(),
+    enqueue: z.boolean(),
+    timeoutMs: z.number().int().positive().optional(),
+  }),
+  z.object({
+    kind: z.literal("delivery_pipeline"),
+    adapter: z.string(),
+    destinations: z.array(z.enum(["email", "webhook"])).min(1),
+    enqueue: z.boolean(),
+  }),
+]);
+export type SkillExecution = z.infer<typeof skillExecutionSchema>;
+
+export const skillIntakeDefinitionSchema = z.object({
+  enabled: z.boolean(),
+  supportedCallers: z.array(skillCallerSurfaceSchema),
+  intent: z.object({
+    description: z.string(),
+    examples: z.array(z.string()),
+  }),
+  fields: z.array(skillIntakeFieldSchema),
+  subjectIdentityField: z.string().optional(),
+  confirmation: z.enum(["none", "before_execute", "always"]),
+  interruptionPolicy: z.enum(["pause_and_resume", "cancel_on_topic_change"]),
+});
+export type SkillIntakeDefinition = z.infer<typeof skillIntakeDefinitionSchema>;
+
 export const skillGeneratedContractSchema = z.object({
   path: z.string(),
 });
@@ -75,6 +125,8 @@ export const skillCatalogEntrySchema = z.object({
   requiredCapabilities: z.array(z.string()),
   contractReferences: z.array(skillContractReferenceSchema),
   schemaReferences: skillSchemaReferencesSchema.optional(),
+  intake: skillIntakeDefinitionSchema.optional(),
+  execution: skillExecutionSchema.optional(),
   diagnostics: skillDiagnosticsSummarySchema,
   steps: z.array(skillStepSummarySchema).optional(),
   shapes: z.array(skillShapeSummarySchema).optional(),

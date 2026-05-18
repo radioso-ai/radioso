@@ -114,6 +114,8 @@ const ingestion = await client.settings.getIngestion();
 
 Update ingestion settings:
 
+Supported chunking strategies are `"fixed_window"`, `"structured_semantic"`, and `"recursive_text"`.
+
 ```ts
 await client.settings.updateIngestion({
   chunkingStrategy: "fixed_window",
@@ -280,11 +282,12 @@ try {
 ## Notes
 
 - `baseUrl` should be the Radioso server origin, without a trailing slash.
-- The SDK sends the API token as `Authorization: Bearer <token>`.
+- The SDK sends the workspace API token as `Authorization: Bearer <token>`.
+- Public chat and website embed launch credentials are intentionally public and are not accepted as SDK API tokens.
 - Streaming chat is layered on top of the assistant chat contract, `POST /api/v1/assistant/chat`, with `stream: true`.
 - Skill discovery is exposed through `client.skills.list()` and `client.skills.get(name)`. The catalog describes current assistant, retrieval, document, and MCP contracts; it does not execute skills directly.
 - Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history. `retrieval.answer` responses expose shape and resolved-step diagnostics through `activityTrace`; callers do not select shapes directly.
 - Shared workspace settings are exposed by the REST platform settings resource, `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
 - Workspace creation, rename, and deletion are not exposed because those routes are currently session-authenticated rather than token-authenticated.
-- Run `pnpm run sync` in [`typescript-sdk/`](/Users/dm/conductor/workspaces/radioso/typescript-sdk/typescript-sdk) after backend API changes so the generated types stay up to date.
+- Run `pnpm run sync` in [`typescript-sdk/`](../typescript-sdk/) after backend API changes so the generated types stay up to date.
 - Search and answer settings are documented separately in [Retrieval Settings](./typescript-sdk-retrieval-settings.md).

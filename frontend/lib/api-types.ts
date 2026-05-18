@@ -61,9 +61,38 @@ export type DocumentSourceKind = DocumentSourceSummary['kind']
 export type AgentSourceScope = ApiSchemas['AgentSourceScope']
 export type DocumentSourceListItem = ApiSchemas['DocumentSourceListItem']
 export type DocumentSourceListResponse = ApiSchemas['DocumentSourceListResponse']
+export type DocumentSourceCrawlSettings = ApiSchemas['DocumentSourceCrawlSettings']
 export type DocumentSummary = ApiSchemas['DocumentSummary']
 export type DocumentDetails = ApiSchemas['DocumentDetails']
 export type DocumentListResponse = ApiSchemas['DocumentListResponse']
+
+export interface DocumentChunkSummary {
+  id: string
+  chunkIndex: number
+  contentPreview: string
+  contentLength: number
+  startOffset: number
+  endOffset: number
+}
+
+export interface DocumentChunkListResponse {
+  documentId: string
+  chunks: DocumentChunkSummary[]
+}
+
+export interface DocumentChunkDetail {
+  id: string
+  documentId: string
+  workspaceId: string
+  chunkIndex: number
+  content: string
+  searchText: string | null
+  startOffset: number
+  endOffset: number
+  metadata: Record<string, unknown>
+  createdAt: string
+  embeddingDimensions: number | null
+}
 
 export type DocumentSearchAction = ApiSchemas['DocumentSearchAction']
 export type DocumentSearchResult = ApiSchemas['DocumentSearchResult']
@@ -86,7 +115,13 @@ export interface ChatRequest {
 }
 
 export type WebsiteEmbedPageContext = NonNullable<ApiSchemas['PublicChatSessionRequest']['pageContext']>
-export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse']
+export interface PublicChatIntakeAction {
+  skillName: string
+  intentName?: string
+}
+export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse'] & {
+  intakeActions?: PublicChatIntakeAction[]
+}
 
 export const toAssistantChatPayload = (data: ChatRequest) => ({
   agentId: data.agentId,
@@ -117,44 +152,18 @@ export const toGeneralSettings = (settings: PlatformSettings): GeneralSettings =
   assistantLogoUrl: settings.assistant.assistantLogoUrl,
 })
 
-export type ChatUserInputMetadata = NonNullable<
+type GeneratedChatUserInputMetadata = NonNullable<
   Extract<ApiSchemas['AssistantChatRequest'], { inputMetadata?: unknown }>['inputMetadata']
 >
+export type ChatUserInputMetadata = Omit<GeneratedChatUserInputMetadata, 'method' | 'intent'> & {
+  method: 'typed' | 'suggestion_click' | 'intent_click'
+  intent?: PublicChatIntakeAction
+}
 export type Citation = ApiSchemas['Citation']
 export type AnswerSegment = ApiSchemas['AnswerSegment']
 export type ChatSuggestionKind = ApiSchemas['ChatSuggestion']['kind']
 export type ChatSuggestion = Omit<ApiSchemas['ChatSuggestion'], 'kind'> & {
   kind?: ChatSuggestionKind
-}
-
-export type HumanContactTriggerSource =
-  | 'manual'
-  | 'assistant_suggestion'
-  | 'no_context_refusal'
-  | 'grounded_degraded_unsupported_segments'
-  | 'explicit_user_request'
-  | 'llm_classifier'
-
-export interface HumanContactDraftResponse {
-  draftMessage: string
-  defaultEmail?: string | null
-  activitySummary?: ActivitySummary
-  activityTrace?: ActivityTrace
-}
-
-export interface HumanContactSubmitResponse {
-  requestId: string
-  activitySummary?: ActivitySummary
-  activityTrace?: ActivityTrace
-}
-
-export interface HumanContactSubmitInput {
-  conversationId: string
-  assistantMessageId?: string
-  email: string
-  message: string
-  triggerSource: HumanContactTriggerSource
-  triggerReason?: string
 }
 
 export interface HumanContactAvailability {
@@ -226,6 +235,30 @@ export interface ChatStreamSuggestions {
   suggestions?: ChatSuggestion[]
 }
 
+export type SkillStreamPhase = 'active' | 'completed' | 'failed'
+
+export interface SkillReceiptField {
+  name: string
+  displayName: string
+  value: string
+}
+
+export interface SkillReceipt {
+  fields: SkillReceiptField[]
+  statusLabel?: string
+}
+
+export interface SkillStreamPayload {
+  skillName: string
+  phase: SkillStreamPhase
+  localizedTitle?: string
+  receipt?: SkillReceipt
+}
+
+export interface ChatStreamSkill extends SkillStreamPayload {
+  conversationId?: string
+}
+
 export interface ChatStreamCompletion {
   agentId?: string
   agentName?: string
@@ -238,6 +271,7 @@ export interface ChatStreamCompletion {
   suggestions?: ChatSuggestion[]
   activitySummary?: ActivitySummary
   activityTrace?: ActivityTrace
+  skill?: SkillStreamPayload
 }
 
 export type ChatConversationSummary = ApiSchemas['ChatConversationSummary']
@@ -289,6 +323,7 @@ export interface ContactHistoryDetailResponse {
 export type ChatHistoryListResponse = ApiSchemas['ChatHistoryListResponse'] & {
   workspaceName?: string
   assistantBootstrapActive?: boolean
+  intakeActions?: PublicChatIntakeAction[]
 }
 
 export type HistoryItem =
@@ -370,6 +405,7 @@ export interface ChatStreamHandlers {
   onChunk?: (payload: ChatStreamChunk) => void
   onDone?: (payload: ChatStreamCompletion) => void
   onSuggestions?: (payload: ChatStreamSuggestions) => void
+  onSkill?: (payload: ChatStreamSkill) => void
 }
 
 export type ErrorResponse = ApiSchemas['ErrorResponse'] & {
@@ -387,7 +423,6 @@ export type WorkspaceGrantRole = ApiSchemas['WorkspaceGrant']['role']
 export type AccountInvitationSummary = ApiSchemas['AccountInvitation']
 export type WorkspaceGrantSummary = ApiSchemas['WorkspaceGrant']
 
-export type SupportImpersonationSummary = ApiSchemas['SupportImpersonation']
 
 export type AccountUsersResponse = ApiSchemas['AccountUsersResponse']
 export type AccessibleAccountSummary = ApiSchemas['AccessibleAccount']

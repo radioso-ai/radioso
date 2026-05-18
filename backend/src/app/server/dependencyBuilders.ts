@@ -15,7 +15,6 @@ import { IngestionSettingsRepository } from "../../db/repositories/ingestionSett
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSettingsRepository.js";
 import { SessionRepository } from "../../db/repositories/sessionRepository.js";
-import { SupportImpersonationRepository } from "../../db/repositories/supportImpersonationRepository.js";
 import { UserRepository } from "../../db/repositories/userRepository.js";
 import { WebsiteCrawlJobRepository } from "../../db/repositories/websiteCrawlJobRepository.js";
 import { WorkspaceGrantRepository } from "../../db/repositories/workspaceGrantRepository.js";
@@ -32,8 +31,9 @@ import {
   ChatBootstrapService,
   ChatHistoryService,
   ChatService,
+  ChainedChatIntakeProvider,
   NoopAnswerFeedbackHistoryProvider,
-  NoopChatActionProvider,
+  NoopChatIntakeProvider,
   NoopContactHistoryProvider,
 } from "../../modules/chat/composition.js";
 import {
@@ -59,19 +59,10 @@ import {
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
 import {
-  CandidatePreparationService,
-  ConversationContextService,
   EmbeddingService,
-  PgLexicalSearch,
-  PgVectorSearch,
-  PromptBuilder,
-  PromptContextSelectorService,
-  QueryRewriteService,
-  RerankService,
+  createDefaultRetrievalServices,
   RetrievalAnswerService,
-  RetrievalExecutionTelemetryService,
-  RetrievalPipelineService,
-  RetrievalSearchService,
+  type RetrievalPipelineService,
 } from "../../modules/retrieval/composition.js";
 import { AbuseControlRepository } from "../../db/repositories/abuseControlRepository.js";
 import { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
@@ -83,7 +74,6 @@ import {
 } from "../../modules/settings/composition.js";
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
 import { SkillCatalogService } from "../../modules/skills/public.js";
-import { SupportImpersonationService } from "../../modules/support/services/supportImpersonationService.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
@@ -94,6 +84,7 @@ import { IncidentReportingService } from "../../shared/incidents/incidentReporti
 import { Database } from "../../shared/infra/database.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
+import { createMailService } from "../../modules/mail/public.js";
 import { createLogger, type AppLogger } from "../../shared/observability/logger.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import {
@@ -160,12 +151,14 @@ export const buildInfrastructure = (input: {
     : typeof composition.usageLimitPolicyRegistration === "function"
       ? composition.usageLimitPolicyRegistration({ database, logger })
       : composition.usageLimitPolicyRegistration;
+  const mailService = createMailService(process.env);
 
   return {
     auditEventRepository,
     auditService,
     database,
     incidentReportingService,
+    mailService,
     metricsRegistry,
     productAnalyticsService,
     telemetryService,
@@ -191,7 +184,6 @@ export const buildRepositories = (
   messageRepository: new MessageRepository(database),
   retrievalSettingsRepository: new RetrievalSettingsRepository(database),
   sessionRepository: new SessionRepository(database),
-  supportImpersonationRepository: new SupportImpersonationRepository(database),
   userRepository: new UserRepository(database),
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database),
   workspaceGrantRepository: new WorkspaceGrantRepository(database),
@@ -203,16 +195,9 @@ export const buildRepositories = (
 
 export const buildAccessServices = (input: {
   auditService: AuditService;
-  env: Env;
   repositories: ReturnType<typeof buildRepositories>;
 }) => {
-  const { auditService, env, repositories } = input;
-  const supportImpersonationService = new SupportImpersonationService(
-    repositories.supportImpersonationRepository,
-    repositories.userRepository,
-    auditService,
-    env,
-  );
+  const { auditService, repositories } = input;
   const accountAccessService = new AccountAccessService(
     repositories.accountMembershipRepository,
     auditService,
@@ -229,7 +214,6 @@ export const buildAccessServices = (input: {
   return {
     accountAccessService,
     accountInvitationService,
-    supportImpersonationService,
   };
 };
 
@@ -318,7 +302,10 @@ export const buildDocumentServices = (input: {
     input.documentJobDispatcher ?? composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
   const websiteCrawlJobDispatcher = createDefaultWebsiteCrawlJobDispatcher(env, logger);
   const websiteCrawlerProvider = composition.websiteCrawlerProvider ?? new RadiosoCrawlerProvider();
-  const chunkingStrategyRegistry = createDefaultChunkingStrategyRegistry(embeddingService);
+  const chunkingStrategyRegistry = createDefaultChunkingStrategyRegistry(
+    embeddingService,
+    composition.chunkingProvider,
+  );
   const documentProcessingService = new DocumentProcessingService(
     repositories.documentRepository,
     repositories.chunkRepository,
@@ -426,33 +413,14 @@ export const buildRetrievalServices = (input: {
   retrievalSettingsService: RetrievalSettingsService;
   telemetryService: TelemetryService;
 }) => {
-  const retrievalPipeline = new RetrievalPipelineService(
-    input.retrievalSettingsService,
-    input.embeddingService,
-    new PgVectorSearch(input.database),
-    new PgLexicalSearch(input.database),
-    new ConversationContextService(),
-    new QueryRewriteService(input.llmRegistry.createRewriteGateway(), input.llmRegistry.createTriggerAnalysisGateway()),
-    new CandidatePreparationService(),
-    undefined,
-    new RerankService(input.llmRegistry.createRerankGateway(), input.logger),
-    new PromptContextSelectorService(),
-    new PromptBuilder(),
-    new RetrievalExecutionTelemetryService(input.telemetryService),
-    undefined,
-    input.ingestionSettingsService,
-  );
-  const documentSearchService = new DocumentSearchService(
-    input.documentRepository,
-    retrievalPipeline,
-    input.auditService,
-  );
-  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
-
+  const retrieval = createDefaultRetrievalServices(input);
   return {
-    documentSearchService,
-    retrievalPipeline,
-    retrievalSearchService,
+    ...retrieval,
+    documentSearchService: new DocumentSearchService(
+      input.documentRepository,
+      retrieval.retrievalPipeline,
+      input.auditService,
+    ),
   };
 };
 
@@ -486,30 +454,54 @@ export const buildChatServices = (input: {
   composition: ApplicationComposition;
   conversationRepository: ConversationRepository;
   database: Database;
+  env: Env;
   historyItemsRepository: HistoryItemsRepository;
   llmRegistry: LlmProviderRegistry;
   logger: AppLogger;
   messageRepository: MessageRepository;
   productAnalyticsService: ProductAnalyticsService;
+  mailService: ReturnType<typeof buildInfrastructure>["mailService"];
   retrievalPipeline: RetrievalPipelineService;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   workspaceRepository: WorkspaceRepository;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway();
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database));
-  const chatActionProvider = !input.composition.chatActionProviderRegistration
-    ? new NoopChatActionProvider()
-    : typeof input.composition.chatActionProviderRegistration === "function"
-      ? input.composition.chatActionProviderRegistration({
+  const registeredChatIntakeProvider = !input.composition.chatIntakeProviderRegistration
+    ? null
+    : typeof input.composition.chatIntakeProviderRegistration === "function"
+      ? input.composition.chatIntakeProviderRegistration({
           database: input.database,
           chatGateway,
           logger: input.logger,
           conversationRepository: input.conversationRepository,
           messageRepository: input.messageRepository,
+          workspaceContactInfoRepository: {
+            async findById(workspaceId) {
+              const workspace = await input.workspaceRepository.findById(workspaceId);
+              return workspace
+                ? {
+                    id: workspace.id,
+                    name: workspace.name,
+                    publicRouteKey: workspace.publicRouteKey,
+                  }
+                : null;
+            },
+          },
           auditService: input.auditService,
           abuseControlService,
+          mailService: input.mailService,
+          dashboardBaseUrl: input.env.APP_BASE_URL ?? null,
         })
-      : input.composition.chatActionProviderRegistration;
+      : input.composition.chatIntakeProviderRegistration;
+  const chatIntakeProviders = [
+    ...(registeredChatIntakeProvider ? [registeredChatIntakeProvider] : []),
+  ];
+  const chatIntakeProvider = chatIntakeProviders.length === 0
+    ? new NoopChatIntakeProvider()
+    : chatIntakeProviders.length === 1
+      ? chatIntakeProviders[0]!
+      : new ChainedChatIntakeProvider(chatIntakeProviders);
   const contactHistoryProvider = !input.composition.contactHistoryProviderRegistration
     ? new NoopContactHistoryProvider()
     : typeof input.composition.contactHistoryProviderRegistration === "function"
@@ -536,8 +528,8 @@ export const buildChatServices = (input: {
     input.productAnalyticsService,
     input.workspaceRepository,
     input.usageLimitPolicy,
-    chatActionProvider,
     input.agentService,
+    chatIntakeProvider,
   );
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,
@@ -560,13 +552,14 @@ export const buildChatServices = (input: {
     retrievalPipeline: input.retrievalPipeline,
     chatGateway,
     usageLimitPolicy: input.usageLimitPolicy,
+    auditService: input.auditService,
   });
 
   return {
     abuseControlService,
     assistantChatService: new AssistantChatService(chatService, chatBootstrapService),
     assistantHistoryService: new AssistantHistoryService(chatHistoryService),
-    chatActionProvider,
+    chatIntakeProvider,
     chatBootstrapService,
     chatGateway,
     chatHistoryService,

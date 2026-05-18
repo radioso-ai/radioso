@@ -55,7 +55,7 @@ export const createWorkspaceRoutes = (dependencies: WorkspaceRouteDependencies):
     }
   });
 
-  router.get("/summary", workspaceSession, async (_req, res, next) => {
+  router.get("/summary", workspaceSession, requireWorkspacePermission(dependencies, "workspace.summary.read"), async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const summary = await dependencies.workspaceSummaryService.getSummary(workspaceId);

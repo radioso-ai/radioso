@@ -8,7 +8,7 @@ This guide shows how to install the SDK, configure a client, and make your first
 - A Radioso base URL
 - An API token
 
-The current SDK uses API tokens. It does not cover browser sign-in or admin-only actions.
+The current SDK uses workspace API tokens. These are secret bearer credentials bound to one workspace. Public chat URLs and website embed launch values are not API tokens and cannot be used with the SDK.
 
 ## Install
 
@@ -43,7 +43,7 @@ const documents = await client.documents.list({ limit: 10 });
 
 ## Common Development Commands
 
-From [`typescript-sdk/`](/Users/dm/conductor/workspaces/radioso/typescript-sdk/typescript-sdk):
+From [`typescript-sdk/`](../typescript-sdk/):
 
 ```bash
 pnpm run sync
@@ -64,6 +64,15 @@ client.settings.reprocessIngestion()
 client.settings.getGeneral(...)
 client.settings.updateGeneral(...)
 
+client.workspace.getSummary()
+client.skills.list(...)
+client.skills.get(...)
+client.agents.list(...)
+client.agents.create(...)
+client.agents.get(...)
+client.agents.update(...)
+client.agents.setDefault(...)
+
 client.documents.list(...)
 client.documents.create(...)
 client.documents.importFile(...)
@@ -74,6 +83,12 @@ client.documents.search(...)
 client.documents.listHistory(...)
 client.documents.getHistory(...)
 client.documents.reprocess(...)
+
+client.history.list(...)
+client.history.listChats(...)
+client.history.listSearches(...)
+client.history.getChat(...)
+client.history.getSearch(...)
 
 client.chat.create(...)              // assistant chat
 client.chat.listHistory(...)

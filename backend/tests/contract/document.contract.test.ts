@@ -1,9 +1,112 @@
+import { randomUUID } from "node:crypto";
+
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("document contract", () => {
+  it("lists chunk summaries for a document and returns chunk detail", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "document-chunks@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Chunk inspectable document",
+        content: "Body content for chunk inspection.",
+      })
+      .expect(202);
+
+    const documentId = createResponse.body.documentId as string;
+    const document = repositories.documentRepository.items.get(documentId);
+    if (!document) {
+      throw new Error("document missing after create");
+    }
+    const workspaceId = document.workspaceId;
+
+    const chunkAlpha = {
+      id: randomUUID(),
+      documentId,
+      workspaceId,
+      chunkIndex: 0,
+      content: "First chunk content that the inspector should preview.",
+      searchText: "first chunk searchable",
+      embedding: Array.from({ length: 4 }, () => 0.1),
+      startOffset: 0,
+      endOffset: 54,
+      metadata: { heading: "Intro" },
+      createdAt: new Date("2025-01-01T00:00:00.000Z"),
+    };
+    const chunkBravo = {
+      id: randomUUID(),
+      documentId,
+      workspaceId,
+      chunkIndex: 1,
+      content: "Second chunk content for the next page.",
+      searchText: "second chunk searchable",
+      embedding: Array.from({ length: 4 }, () => 0.2),
+      startOffset: 54,
+      endOffset: 93,
+      metadata: {},
+      createdAt: new Date("2025-01-01T00:00:01.000Z"),
+    };
+    await repositories.chunkRepository.replaceForDocument(documentId, [chunkAlpha, chunkBravo]);
+
+    const listResponse = await request(app)
+      .get(`/api/v1/document/${documentId}/chunks`)
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    expect(listResponse.body).toEqual({
+      documentId,
+      chunks: [
+        {
+          id: chunkAlpha.id,
+          chunkIndex: 0,
+          contentPreview: chunkAlpha.content,
+          contentLength: chunkAlpha.content.length,
+          startOffset: 0,
+          endOffset: 54,
+        },
+        {
+          id: chunkBravo.id,
+          chunkIndex: 1,
+          contentPreview: chunkBravo.content,
+          contentLength: chunkBravo.content.length,
+          startOffset: 54,
+          endOffset: 93,
+        },
+      ],
+    });
+
+    const detailResponse = await request(app)
+      .get(`/api/v1/document/${documentId}/chunks/${chunkBravo.id}`)
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    expect(detailResponse.body).toEqual({
+      id: chunkBravo.id,
+      documentId,
+      workspaceId,
+      chunkIndex: 1,
+      content: chunkBravo.content,
+      searchText: "second chunk searchable",
+      startOffset: 54,
+      endOffset: 93,
+      metadata: {},
+      createdAt: "2025-01-01T00:00:01.000Z",
+      embeddingDimensions: 4,
+    });
+
+    await request(app)
+      .get(`/api/v1/document/${documentId}/chunks/${randomUUID()}`)
+      .set(adminSessionHeaders(session))
+      .expect(404);
+  });
+
+
   it("lists persisted document sources with document counts", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "document-sources@example.com");
@@ -71,7 +174,7 @@ describe("document contract", () => {
   });
 
   it("searches documents and returns a stable search snapshot with shared diagnostics", async () => {
-    const { app } = createTestApp();
+    const { app, repositories } = createTestApp();
 
     const session = await issueTestSession(app, "document-search@example.com");
 
@@ -110,6 +213,42 @@ describe("document contract", () => {
       activityTrace: expect.objectContaining({
         traceId: expect.any(String),
       }),
+    });
+
+    const auditEvent = await repositories.auditEventRepository.findDocumentSearchEventBySearchId(
+      session.workspaceId,
+      response.body.searchId,
+    );
+    expect(auditEvent?.metadata).toMatchObject({
+      executionSurface: "documents",
+    });
+  });
+
+  it("marks MCP capability-originated document searches in audit metadata", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "document-search-mcp@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Pricing FAQ",
+        content: "Annual pricing includes support and onboarding details.",
+      });
+
+    const response = await request(app)
+      .post("/api/v1/document/search")
+      .set(adminSessionHeaders(session))
+      .set("x-radioso-capability-client", "mcp")
+      .send({ query: "pricing support" });
+
+    expect(response.status).toBe(200);
+    const auditEvent = await repositories.auditEventRepository.findDocumentSearchEventBySearchId(
+      session.workspaceId,
+      response.body.searchId,
+    );
+    expect(auditEvent?.metadata).toMatchObject({
+      executionSurface: "mcp_capability",
     });
   });
 
@@ -1028,6 +1167,87 @@ describe("document contract", () => {
     await request(app)
       .delete("/api/v1/document/sources/00000000-0000-0000-0000-000000000001")
       .set(adminSessionHeaders(session))
+      .expect(400);
+  });
+
+  it("updates crawl settings for a website source and exposes them via listSources", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "source-config-update@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Page",
+        content: "Body",
+        source: { kind: "website", url: "https://patch-source.example.com" },
+      })
+      .expect(202);
+
+    const sourcesResponse = await request(app)
+      .get("/api/v1/document/sources")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+    const source = sourcesResponse.body.sources.find(
+      (entry: { kind: string }) => entry.kind === "website",
+    );
+    expect(source.crawlSettings).toEqual(
+      expect.objectContaining({
+        url: "https://patch-source.example.com",
+        includeUrlPatterns: [],
+        excludeUrlPatterns: [],
+        preserveContentLinks: true,
+      }),
+    );
+
+    const patchResponse = await request(app)
+      .patch(`/api/v1/document/sources/${source.id}`)
+      .set(adminSessionHeaders(session))
+      .send({
+        crawlSettings: {
+          limit: 42,
+          includeUrlPatterns: ["/docs/.*"],
+          excludeUrlPatterns: ["/admin/.*"],
+          preserveContentLinks: false,
+        },
+      })
+      .expect(200);
+
+    expect(patchResponse.body.crawlSettings).toEqual(
+      expect.objectContaining({
+        url: "https://patch-source.example.com",
+        limit: 42,
+        includeUrlPatterns: ["/docs/.*"],
+        excludeUrlPatterns: ["/admin/.*"],
+        preserveContentLinks: false,
+      }),
+    );
+
+    const afterResponse = await request(app)
+      .get("/api/v1/document/sources")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+    const refreshed = afterResponse.body.sources.find(
+      (entry: { id: string }) => entry.id === source.id,
+    );
+    expect(refreshed.crawlSettings).toEqual(
+      expect.objectContaining({
+        limit: 42,
+        includeUrlPatterns: ["/docs/.*"],
+        excludeUrlPatterns: ["/admin/.*"],
+        preserveContentLinks: false,
+      }),
+    );
+  });
+
+  it("rejects PATCH /sources for the manually-added bucket", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "source-config-manual@example.com");
+
+    await request(app)
+      .patch("/api/v1/document/sources/00000000-0000-0000-0000-000000000001")
+      .set(adminSessionHeaders(session))
+      .send({ crawlSettings: { limit: 5 } })
       .expect(400);
   });
 });

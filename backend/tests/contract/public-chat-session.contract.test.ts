@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import request from "supertest";
 
 import { issuePublicChatSession } from "../../src/modules/settings/contracts/publicChatSession.js";
+import type { ChatIntakeProviderPort } from "../../src/modules/chat/services/chatIntakeProvider.js";
 import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
 describe("public chat session contract", () => {
@@ -43,6 +44,41 @@ describe("public chat session contract", () => {
       assistantBootstrapActive: false,
     });
     expect(response.body.expiresAt).toEqual(expect.any(String));
+  });
+
+  it("exposes configured public intake actions on website embed sessions and conversation lists", async () => {
+    const chatIntakeProvider: ChatIntakeProviderPort = {
+      async handle() {
+        return null;
+      },
+      async getPublicIntakeActions(input) {
+        expect(input.sourceChannel).toBe("website_embed");
+        return [{
+          skillName: "human_contact.request",
+          intentName: "explicit_contact_request",
+        }];
+      },
+    };
+    const { app } = createTestApp({ chatIntakeProvider });
+    const session = await issueTestSession(app, "public-embed-intake-actions@example.com");
+
+    const token = await enableWebsiteEmbed(app, session);
+    const publicSession = await createWebsiteEmbedPublicSession(app, token);
+
+    expect(publicSession.status).toBe(200);
+    expect(publicSession.body.intakeActions).toEqual([
+      {
+        skillName: "human_contact.request",
+        intentName: "explicit_contact_request",
+      },
+    ]);
+
+    const conversations = await request(app)
+      .get(`/api/v1/public/chat/${publicSession.body.publicChatToken}`)
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken);
+
+    expect(conversations.status).toBe(200);
+    expect(conversations.body.intakeActions).toEqual(publicSession.body.intakeActions);
   });
 
   it("returns 503 when website embed secret is unset", async () => {
@@ -153,6 +189,37 @@ describe("public chat session contract", () => {
       publicChatToken: anonymousChatToken,
       publicSessionId: expect.any(String),
       publicSessionToken: expect.any(String),
+    });
+  });
+
+  it("rate limits repeated public session exchanges before session issuance", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
+      },
+    });
+    const session = await issueTestSession(app, "public-chat-session-rate-limit@example.com");
+
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+      });
+
+    const anonymousChatToken = new URL(settings.body.anonymousChatUrl).pathname.split("/").at(-1);
+    await request(app)
+      .post(`/api/v1/public/chat/${anonymousChatToken}/sessions`)
+      .send({ channel: "anonymous_link" })
+      .expect(200);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${anonymousChatToken}/sessions`)
+      .send({ channel: "anonymous_link" });
+
+    expect(response.status).toBe(429);
+    expect(response.body.error).toMatchObject({
+      code: "rate_limit_exceeded",
     });
   });
 

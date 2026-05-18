@@ -27,7 +27,7 @@ resource "google_cloud_run_v2_service" "backend" {
 
     scaling {
       min_instance_count = var.backend_min_instances
-      max_instance_count = var.backend_max_instances
+      max_instance_count = var.radioso_mcp_enabled ? 1 : var.backend_max_instances
     }
 
     vpc_access {
@@ -166,6 +166,25 @@ resource "google_cloud_run_v2_service" "backend" {
           value = env.value
         }
       }
+      env {
+        name  = "RADIOSO_MCP_ENABLED"
+        value = tostring(var.radioso_mcp_enabled)
+      }
+      env {
+        name  = "RADIOSO_MCP_STANDALONE"
+        value = "false"
+      }
+      env {
+        name  = "RADIOSO_MCP_MOUNT_PATH"
+        value = "/mcp"
+      }
+      dynamic "env" {
+        for_each = local.radioso_mcp_base_url == null ? [] : [local.radioso_mcp_base_url]
+        content {
+          name  = "RADIOSO_BASE_URL"
+          value = trimsuffix(env.value, "/")
+        }
+      }
       dynamic "env" {
         for_each = local.public_chat_base_url == null ? [] : [local.public_chat_base_url]
         content {
@@ -249,6 +268,18 @@ resource "google_cloud_run_v2_service" "backend" {
           }
         }
       }
+      dynamic "env" {
+        for_each = var.radioso_mcp_enabled && local.radioso_mcp_signing_secret_configured ? [google_secret_manager_secret.secrets["radioso-mcp-signing-secret"].secret_id] : []
+        content {
+          name = "RADIOSO_MCP_SIGNING_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
       env {
         name = "CONNECTOR_ENCRYPTION_KEY"
         value_source {
@@ -268,6 +299,16 @@ resource "google_cloud_run_v2_service" "backend" {
   ]
 
   lifecycle {
+    precondition {
+      condition     = !var.radioso_mcp_enabled || local.radioso_mcp_base_url != null && can(regex("^https?://", local.radioso_mcp_base_url))
+      error_message = "radioso_mcp_base_url_override, connector_public_base_url, or app_base_url_override must be set when radioso_mcp_enabled is true."
+    }
+
+    precondition {
+      condition     = !var.radioso_mcp_enabled || local.radioso_mcp_signing_secret_configured
+      error_message = "radioso_mcp_signing_secret must be set when radioso_mcp_enabled is true."
+    }
+
     ignore_changes = [
       client,
       client_version,

@@ -1,7 +1,10 @@
 import type { Request, RequestHandler, Response } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
-import type { AccountPermission } from "../../../modules/account/services/accountAccessService.js";
+import type {
+  AccountPermission,
+  AuthenticatedPrincipal,
+} from "../../../modules/account/services/accountAccessService.js";
 
 export type PermissionDependencies = Pick<AppDependencies, "accountAccessService">;
 
@@ -10,16 +13,16 @@ export const requireAccountPermission = (
   permission: AccountPermission,
 ): RequestHandler => async (_req, res, next) => {
   try {
-    const { accountId, userId, supportImpersonationId } = res.locals as {
+    const { accountId, userId, authPrincipal } = res.locals as {
       accountId: string;
       userId?: string;
-      supportImpersonationId?: string;
+      authPrincipal?: AuthenticatedPrincipal;
     };
     await dependencies.accountAccessService.requirePermission({
       accountId,
       userId,
+      principal: authPrincipal,
       permission,
-      supportImpersonationId,
     });
     next();
   } catch (error) {
@@ -33,23 +36,18 @@ export const requireWorkspacePermission = (
   resolveWorkspaceId?: (req: Request, res: Response) => string | null | undefined,
 ): RequestHandler => async (req, res, next) => {
   try {
-    const { accountId, userId, workspaceId, supportImpersonationId } = res.locals as {
+    const { accountId, userId, workspaceId, authPrincipal } = res.locals as {
       accountId: string;
       userId?: string;
       workspaceId?: string;
-      supportImpersonationId?: string;
-      authMode?: string;
+      authPrincipal?: AuthenticatedPrincipal;
     };
-    if (res.locals.authMode === "bearer" && permission.startsWith("workspace.") && !permission.startsWith("workspace.token.")) {
-      next();
-      return;
-    }
     await dependencies.accountAccessService.requirePermission({
       accountId,
       userId,
+      principal: authPrincipal,
       permission,
       workspaceId: resolveWorkspaceId?.(req, res) ?? workspaceId,
-      supportImpersonationId,
     });
     next();
   } catch (error) {

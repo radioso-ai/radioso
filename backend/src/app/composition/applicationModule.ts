@@ -15,7 +15,8 @@ import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/contracts/websiteEmbedIntegration.js";
 import type {
-  ChatActionProviderPort,
+  ChatGateway,
+  ChatIntakeProviderPort,
   ContactHistoryProviderPort,
 } from "../../modules/chat/contracts/index.js";
 import type { AnswerFeedbackHistoryProviderPort } from "../../modules/chat/composition.js";
@@ -27,6 +28,7 @@ import type { MessageRepositoryPort } from "../../db/repositories/messageReposit
 import type { SkillCatalogEntryDefinition, SkillDefinition } from "../../modules/skills/public.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { AgentSurfaceExtension } from "../../modules/agents/public.js";
+import type { TextChunkingProviderPort } from "../../modules/retrieval/public.js";
 
 export interface ApplicationDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
@@ -49,17 +51,39 @@ export type ApplicationUsageLimitPolicyRegistration =
       logger: AppLogger;
     }) => UsageLimitPolicy);
 
-export type ApplicationChatActionProviderRegistration =
-  | ChatActionProviderPort
+export interface WorkspaceContactInfoRepositoryPort {
+  findById(workspaceId: string): Promise<{
+    id: string;
+    name: string;
+    publicRouteKey: string;
+  } | null>;
+}
+
+export interface MailTransportPort {
+  send(message: {
+    to: string;
+    replyTo?: string | null;
+    subject: string;
+    text: string;
+    html?: string;
+    metadata?: Record<string, string>;
+  }): Promise<void>;
+}
+
+export type ApplicationChatIntakeProviderRegistration =
+  | ChatIntakeProviderPort
   | ((context: {
       database: ApplicationDatabasePort;
-      chatGateway?: unknown;
+      chatGateway: ChatGateway;
       logger: AppLogger;
       conversationRepository: ConversationRepositoryPort;
       messageRepository: MessageRepositoryPort;
+      workspaceContactInfoRepository: WorkspaceContactInfoRepositoryPort;
       auditService: AuditService;
       abuseControlService: AbuseControlService;
-    }) => ChatActionProviderPort);
+      mailService: MailTransportPort;
+      dashboardBaseUrl: string | null;
+    }) => ChatIntakeProviderPort);
 
 export type ApplicationContactHistoryProviderRegistration =
   | ContactHistoryProviderPort
@@ -95,8 +119,9 @@ export interface ApplicationExtensionRegistry {
   documentJobDispatcher?: DocumentJobDispatcherPort;
   documentJobConsumer?: DocumentJobConsumerPort;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
+  chunkingProvider?: TextChunkingProviderPort;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
-  chatActionProviderRegistration?: ApplicationChatActionProviderRegistration;
+  chatIntakeProviderRegistration?: ApplicationChatIntakeProviderRegistration;
   contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
   answerFeedbackHistoryProviderRegistration?: ApplicationAnswerFeedbackHistoryProviderRegistration;
   skillCatalogEntries: SkillCatalogEntryDefinition[];
@@ -118,8 +143,9 @@ export interface ApplicationModuleRegistrationContext {
   registerDocumentJobDispatcher(dispatcher: DocumentJobDispatcherPort): void;
   registerDocumentJobConsumer(consumer: DocumentJobConsumerPort): void;
   registerWebsiteCrawlerProvider(provider: WebsiteCrawlerProvider): void;
+  registerChunkingProvider(provider: TextChunkingProviderPort): void;
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
-  registerChatActionProvider(provider: ApplicationChatActionProviderRegistration): void;
+  registerChatIntakeProvider(provider: ApplicationChatIntakeProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillCatalogEntry(entry: SkillCatalogEntryDefinition): void;
@@ -188,11 +214,14 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   registerWebsiteCrawlerProvider(provider) {
     registry.websiteCrawlerProvider = provider;
   },
+  registerChunkingProvider(provider) {
+    registry.chunkingProvider = provider;
+  },
   registerWebsiteEmbedIntegration(provider) {
     registry.websiteEmbedIntegration = provider;
   },
-  registerChatActionProvider(provider) {
-    registry.chatActionProviderRegistration = provider;
+  registerChatIntakeProvider(provider) {
+    registry.chatIntakeProviderRegistration = provider;
   },
   registerContactHistoryProvider(provider) {
     registry.contactHistoryProviderRegistration = provider;

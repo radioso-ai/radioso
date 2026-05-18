@@ -3,11 +3,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import request from "supertest";
 import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
+import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";
 
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
-import { SupportImpersonationService } from "../../src/modules/support/services/supportImpersonationService.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
@@ -29,7 +29,9 @@ import { DocumentSourceContentService } from "../../src/modules/documents/servic
 import { WorkspaceIngestionReprocessService } from "../../src/modules/documents/services/workspaceIngestionReprocessService.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
-import { StructuredSemanticChunkingStrategy, type ChunkingSimilarityPort } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
+import { RecursiveTextChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/recursiveTextChunkingStrategy.js";
+import { StructuredSemanticChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
+import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
 import type { LexicalSearchPort } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import { AttributeMatchScoringService } from "../../src/modules/retrieval/services/attributeMatchScoringService.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
@@ -68,7 +70,11 @@ import type { AppDependencies } from "../../src/app/server/types.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
-import { NoopChatActionProvider } from "../../src/modules/chat/services/chatActionProvider.js";
+import {
+  ChainedChatIntakeProvider,
+  NoopChatIntakeProvider,
+  type ChatIntakeProviderPort,
+} from "../../src/modules/chat/services/chatIntakeProvider.js";
 import { NoopContactHistoryProvider } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { AnswerFeedbackHistoryProviderPort } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
 import {
@@ -84,7 +90,6 @@ import {
   InMemoryAccountRepository,
   InMemoryAccountInvitationRepository,
   InMemoryAccountMembershipRepository,
-  InMemorySupportImpersonationRepository,
   InMemoryUserRepository,
   InMemoryWorkspaceGrantRepository,
   InMemoryWorkspaceTokenRepository,
@@ -166,8 +171,27 @@ export const createTestEnv = (): Env => ({
   WEBSITE_CRAWL_JOB_LEASE_MS: 900_000,
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
   WEBSITE_CRAWLER_ENABLED: true,
+  APP_BASE_URL: undefined,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
-  SUPPORT_STAFF_EMAILS: "support@example.com,approver@example.com",
+  RADIOSO_BASE_URL: undefined,
+  RADIOSO_MCP_ENABLED: false,
+  RADIOSO_MCP_STANDALONE: false,
+  RADIOSO_MCP_MOUNT_PATH: "/mcp",
+  RADIOSO_MCP_MERGED_CORS_ORIGINS: "*",
+  RADIOSO_MCP_ACCESS_TOKEN_TTL_SECONDS: 900,
+  RADIOSO_MCP_ALLOWED_READ_TOOLS: undefined,
+  RADIOSO_MCP_ALLOWED_WRITE_TOOLS: undefined,
+  RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: undefined,
+  RADIOSO_MCP_APPROVAL_TTL_SECONDS: 300,
+  RADIOSO_MCP_AUDIT_LOG_PATH: undefined,
+  RADIOSO_MCP_BIND_HOST: "127.0.0.1",
+  RADIOSO_MCP_BIND_PORT: 8787,
+  RADIOSO_MCP_REDIS_KEY_PREFIX: "radioso-mcp",
+  RADIOSO_MCP_REDIS_URL: undefined,
+  RADIOSO_MCP_REQUEST_TIMEOUT_MS: 30_000,
+  RADIOSO_MCP_SERVER_NAME: "radioso-context",
+  RADIOSO_MCP_WORKSPACE_POLICIES_PATH: undefined,
+  RADIOSO_APPLICATION_MODULES: undefined,
 });
 
 interface TestRepositories {
@@ -205,7 +229,6 @@ class TestGroundedMissResponseComposer implements GroundedMissResponseComposer {
 
 export const createTestDependencies = (overrides: {
   chatGateway?: ChatGateway;
-  chunkingSimilarityPort?: ChunkingSimilarityPort;
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
   triggerAnalysisGateway?: TriggerAnalysisGateway;
@@ -215,6 +238,7 @@ export const createTestDependencies = (overrides: {
   groundedMissResponseComposer?: GroundedMissResponseComposer;
   usageLimitPolicy?: UsageLimitPolicy;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
+  chatIntakeProvider?: ChatIntakeProviderPort;
   applicationRouteMounts?: ApplicationRouteMount[];
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = {
@@ -261,12 +285,6 @@ export const createTestDependencies = (overrides: {
   accountMembershipRepository.setUserRepository(userRepository);
   const workspaceRepository = new InMemoryWorkspaceRepository();
   const workspaceGrantRepository = new InMemoryWorkspaceGrantRepository();
-  const supportImpersonationService = new SupportImpersonationService(
-    new InMemorySupportImpersonationRepository(),
-    userRepository,
-    auditService,
-    env,
-  );
   const accountAccessService = new AccountAccessService(
     accountMembershipRepository,
     auditService,
@@ -379,16 +397,11 @@ export const createTestDependencies = (overrides: {
       return embeddingGateway.embedTexts(texts);
     },
   });
-  const chunkingSimilarityPort =
-    overrides.chunkingSimilarityPort ??
-    ({
-      async embedTexts(texts: string[]): Promise<number[][]> {
-        return texts.map((text) => keywordEmbedding(text));
-      },
-    } satisfies ChunkingSimilarityPort);
+  const chunkingProvider = new ChonkieChunkingProvider(embeddingService);
   const chunkingStrategyRegistry = new ChunkingStrategyRegistry([
-    new FixedWindowChunkingStrategy(),
-    new StructuredSemanticChunkingStrategy(chunkingSimilarityPort),
+    new FixedWindowChunkingStrategy(chunkingProvider),
+    new StructuredSemanticChunkingStrategy(chunkingProvider),
+    new RecursiveTextChunkingStrategy(chunkingProvider),
   ]);
   const defaultQueryRewriteGateway: QueryRewriteGateway = {
     async rewrite(input) {
@@ -625,6 +638,14 @@ export const createTestDependencies = (overrides: {
     new NoopContactHistoryProvider(),
     overrides.answerFeedbackHistoryProvider,
   );
+  const chatIntakeProviders = [
+    ...(overrides.chatIntakeProvider ? [overrides.chatIntakeProvider] : []),
+  ];
+  const chatIntakeProvider = chatIntakeProviders.length === 0
+    ? new NoopChatIntakeProvider()
+    : chatIntakeProviders.length === 1
+      ? chatIntakeProviders[0]!
+      : new ChainedChatIntakeProvider(chatIntakeProviders);
   const chatService = new ChatService(
     conversationRepository,
     messageRepository,
@@ -635,8 +656,8 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     workspaceRepository,
     usageLimitPolicy,
-    new NoopChatActionProvider(),
     agentService,
+    chatIntakeProvider,
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -654,6 +675,7 @@ export const createTestDependencies = (overrides: {
     retrievalPipeline,
     chatGateway,
     usageLimitPolicy,
+    auditService,
   });
   const capabilityPolicy = new DefaultAllowCapabilityPolicy();
   const skillCatalogService = new SkillCatalogService({
@@ -676,7 +698,7 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     capabilityPolicy,
     usageLimitPolicy,
-    chatActionProvider: new NoopChatActionProvider(),
+    chatIntakeProvider,
     contactHistoryProvider: new NoopContactHistoryProvider(),
     applicationRouteMounts: overrides.applicationRouteMounts ?? [],
     applicationModules: new ApplicationModuleCoordinator({
@@ -684,9 +706,9 @@ export const createTestDependencies = (overrides: {
       registry: createApplicationExtensionRegistry(),
     }),
     auditService,
+    mailService: createMailService({ EE_MAIL_DRIVER: "noop" }),
     accountAccessService,
     accountInvitationService,
-    supportImpersonationService,
     workspaceSessionService,
     abuseControlService,
     authService: new AuthService({
@@ -704,6 +726,7 @@ export const createTestDependencies = (overrides: {
     workspaceSummaryService,
     ingestionSettingsService,
     retrievalSettingsService,
+    chunkRepository,
     documentIngestionService,
     documentSourceRepository,
     documentImportService,
@@ -748,6 +771,18 @@ export const createTestDependencies = (overrides: {
     messageRepository,
     connectorRegistry,
     connectorDb: connectorDb as any,
+    chatTextGenerationClient: {
+      metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
+      async complete() { return ""; },
+      async *stream() { yield ""; },
+    },
+    crawlerProvider: {
+      async fetchPageWithScreenshot() { return { url: "", title: null, text: "", links: [], screenshot: null, faviconUrl: null }; },
+      async crawlSite() { return []; },
+      async isBrowserTransportAvailable() { return false; },
+    },
+    assertPublicWebsiteUrl: async () => {},
+    websiteCrawlerLimits: { defaultLimit: 100, maxLimit: 1000 },
   };
 
   void connectorRegistry.initializeAll({
@@ -774,7 +809,6 @@ export const createTestDependencies = (overrides: {
 
 export const createTestApp = (overrides: {
   chatGateway?: ChatGateway;
-  chunkingSimilarityPort?: ChunkingSimilarityPort;
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
   triggerAnalysisGateway?: TriggerAnalysisGateway;
@@ -784,6 +818,7 @@ export const createTestApp = (overrides: {
   groundedMissResponseComposer?: GroundedMissResponseComposer;
   usageLimitPolicy?: UsageLimitPolicy;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
+  chatIntakeProvider?: ChatIntakeProviderPort;
   applicationRouteMounts?: ApplicationRouteMount[];
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);

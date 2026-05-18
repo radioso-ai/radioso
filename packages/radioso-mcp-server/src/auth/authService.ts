@@ -6,7 +6,7 @@ import type { CapabilityPolicyRegistry } from "../policy/capabilityPolicy.js";
 import { CapabilityPolicyError } from "../policy/capabilityPolicy.js";
 import { RadiosoApiError } from "../radiosoApiAdapter.js";
 import { toMcpRequestAuthInfo, type McpRequestAuthInfo } from "./authInfo.js";
-import { issueOpaqueToken } from "./token.js";
+import { hashToken, issueOpaqueToken } from "./token.js";
 import type { ApprovalGrantRecord, ApprovalStore } from "./approvalStore.js";
 import type { AccessSessionRecord, SessionStore } from "./sessionStore.js";
 
@@ -308,6 +308,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
           remainingUses: resolution.grantedTools.length || 1,
           resourceHints: input.resourceHints,
           sessionId: session.sessionId,
+          upstreamApiTokenHash: hashToken(session.upstreamApiToken),
         });
 
         await emit({
@@ -370,6 +371,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
         {
           sessionId: session.sessionId,
           toolName,
+          upstreamApiTokenHash: hashToken(session.upstreamApiToken),
         },
         now(),
       );

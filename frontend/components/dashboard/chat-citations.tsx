@@ -56,6 +56,8 @@ interface AssistantMessageContentProps {
   answerSegments?: AnswerSegment[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
   theme?: WebsiteEmbedTheme | null
+  isStreaming?: boolean
+  showCitations?: boolean
 }
 
 const getCitationLabel = (citation: Citation, index: number) =>
@@ -159,10 +161,14 @@ export function AssistantMessageContent({
   answerSegments,
   onOpenDocument,
   theme,
+  isStreaming = false,
+  showCitations = true,
 }: AssistantMessageContentProps) {
   const [citationNotice, setCitationNotice] = useState<{ scope: string; message: string } | null>(null)
-  const noticeScope = `${content}|${citations.length}|${answerSegments?.length ?? 0}`
-  const segments = getRenderableSegments(content, answerSegments)
+  const effectiveCitations = showCitations ? citations : []
+  const effectiveAnswerSegments = showCitations ? answerSegments : undefined
+  const noticeScope = `${content}|${effectiveCitations.length}|${effectiveAnswerSegments?.length ?? 0}`
+  const segments = getRenderableSegments(content, effectiveAnswerSegments)
   const contentThemeVars = theme
     ? ({
         '--message-link-fg': theme.accent,
@@ -200,7 +206,7 @@ export function AssistantMessageContent({
 
   const renderCitations = (citationIndices: number[]) =>
     citationIndices.map((citationIndex) => {
-      const citation = citations[citationIndex]
+      const citation = effectiveCitations[citationIndex]
       if (!citation) {
         return null
       }
@@ -241,7 +247,7 @@ export function AssistantMessageContent({
           key: `segment-${listIndex}`,
           number: listItem.number,
           content: listItem.content,
-          citationIndices: getSegmentCitationIndices(listSegment, citations),
+          citationIndices: getSegmentCitationIndices(listSegment, effectiveCitations),
         })
         segmentIndex = listIndex
       }
@@ -259,7 +265,7 @@ export function AssistantMessageContent({
       continue
     }
 
-    const dedupedIndices = getSegmentCitationIndices(segment, citations)
+    const dedupedIndices = getSegmentCitationIndices(segment, effectiveCitations)
     contentNodes.push(
       <Fragment key={`segment-${segmentIndex}`}>
         <AssistantMarkdownContent content={segment.text} inline={dedupedIndices.length > 0 && !hasBlockMarkdown(segment.text)} />
@@ -270,7 +276,13 @@ export function AssistantMessageContent({
 
   return (
     <div className="space-y-2" style={contentThemeVars}>
-      <div className="text-sm break-words leading-6">
+      <div
+        className={
+          isStreaming
+            ? 'radioso-streaming-content text-sm break-words leading-6'
+            : 'text-sm break-words leading-6'
+        }
+      >
         {contentNodes}
       </div>
       {citationNotice && citationNotice.scope === noticeScope ? (

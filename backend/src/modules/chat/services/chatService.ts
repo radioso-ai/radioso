@@ -5,23 +5,10 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AgentService } from "../../agents/public.js";
-import {
-  ActivitySummaryPresenter,
-  ActivityTracePresenter,
-  type RetrievalPipelineService,
-  type ActivityTrace,
-  type RewriteContinuityState,
-} from "../../retrieval/public.js";
+import type { RetrievalPipelineService } from "../../retrieval/public.js";
 import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
-import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
-import type { ChatStreamEvent } from "../contracts/streamEvents.js";
-import {
-  ASSISTANT_TURN_OUTCOME,
-  type AnswerSegmentValidationResult,
-  type AnswerValidationSummary,
-  type AssistantTurnOutcome,
-} from "./answerSupportValidationTypes.js";
+import type { ChatStreamEvent, SkillStreamPayload, SkillStreamPhase } from "../contracts/streamEvents.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import {
   MissingGroundedMissResponseComposer,
@@ -29,7 +16,7 @@ import {
 } from "./groundedMissResponseComposer.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { AssistantSuggestionExpansionService } from "./assistantSuggestionExpansionService.js";
-import type { ChatResponse, ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
+import type { ChatResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
@@ -39,10 +26,10 @@ import {
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
-import { NoopChatActionProvider, type ChatActionProviderPort } from "./chatActionProvider.js";
+import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
-import { buildRewriteContinuityState } from "./rewriteContinuityState.js";
 import { ChatAnswerPresenter, type ChatPresentedAnswer } from "./chatAnswerPresenter.js";
+import { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -86,25 +73,148 @@ export class ModelChatGateway implements ChatGateway {
 
 export class OpenAIChatGateway extends ModelChatGateway {}
 
+const SKILL_CHIP_TAG_PATTERN = /<skill_chip>([\s\S]*?)<\/skill_chip>\s*/i;
+const SKILL_RECEIPT_TAG_PATTERN = /<skill_receipt>([\s\S]*?)<\/skill_receipt>\s*/i;
+
+export interface ExtractedSkillReceiptOverrides {
+  statusLabel?: string;
+  fieldLabels?: Record<string, string>;
+}
+
+export interface ExtractedSkillTags {
+  localizedTitle?: string;
+  receiptOverrides?: ExtractedSkillReceiptOverrides;
+  cleanedAnswer: string;
+}
+
+const parseReceiptOverrides = (raw: string): ExtractedSkillReceiptOverrides | undefined => {
+  try {
+    const parsed = JSON.parse(raw.trim()) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return undefined;
+    }
+    const record = parsed as Record<string, unknown>;
+    const statusLabel = typeof record.status === "string" && record.status.trim() ? record.status.trim() : undefined;
+    let fieldLabels: Record<string, string> | undefined;
+    if (record.fields && typeof record.fields === "object" && !Array.isArray(record.fields)) {
+      fieldLabels = {};
+      for (const [name, label] of Object.entries(record.fields as Record<string, unknown>)) {
+        if (typeof label === "string" && label.trim()) {
+          fieldLabels[name] = label.trim();
+        }
+      }
+      if (Object.keys(fieldLabels).length === 0) {
+        fieldLabels = undefined;
+      }
+    }
+    if (!statusLabel && !fieldLabels) {
+      return undefined;
+    }
+    return { statusLabel, fieldLabels };
+  } catch {
+    return undefined;
+  }
+};
+
+export const extractSkillTags = (answer: string): ExtractedSkillTags => {
+  let cleanedAnswer = answer;
+  let localizedTitle: string | undefined;
+  const chipMatch = cleanedAnswer.match(SKILL_CHIP_TAG_PATTERN);
+  if (chipMatch) {
+    const candidate = chipMatch[1].trim();
+    localizedTitle = candidate || undefined;
+    cleanedAnswer = cleanedAnswer.replace(SKILL_CHIP_TAG_PATTERN, "");
+  }
+  let receiptOverrides: ExtractedSkillReceiptOverrides | undefined;
+  const receiptMatch = cleanedAnswer.match(SKILL_RECEIPT_TAG_PATTERN);
+  if (receiptMatch) {
+    receiptOverrides = parseReceiptOverrides(receiptMatch[1]);
+    cleanedAnswer = cleanedAnswer.replace(SKILL_RECEIPT_TAG_PATTERN, "");
+  }
+  const trimmed = cleanedAnswer.trimStart();
+  return {
+    localizedTitle,
+    receiptOverrides,
+    cleanedAnswer: trimmed || answer,
+  };
+};
+
+// Kept for backward compatibility with any external callers; thin wrapper around extractSkillTags.
+export const extractSkillChipTitle = (answer: string): { localizedTitle?: string; cleanedAnswer: string } => {
+  const { localizedTitle, cleanedAnswer } = extractSkillTags(answer);
+  return { localizedTitle, cleanedAnswer };
+};
+
+const intakeStatusToSkillPhase = (status: ChatIntakeResult["status"]): SkillStreamPhase => {
+  if (status === "completed") {
+    return "completed";
+  }
+  if (status === "failed" || status === "cancelled" || status === "expired") {
+    return "failed";
+  }
+  return "active";
+};
+
+const applyReceiptOverrides = (
+  receipt: ChatIntakeResult["receipt"],
+  overrides: ExtractedSkillReceiptOverrides | undefined,
+): ChatIntakeResult["receipt"] => {
+  if (!overrides) {
+    return receipt;
+  }
+  if (!receipt) {
+    return overrides.statusLabel
+      ? { fields: [], statusLabel: overrides.statusLabel }
+      : undefined;
+  }
+  const fields = overrides.fieldLabels
+    ? receipt.fields.map((field) =>
+        overrides.fieldLabels && overrides.fieldLabels[field.name]
+          ? { ...field, displayName: overrides.fieldLabels[field.name] }
+          : field,
+      )
+    : receipt.fields;
+  return {
+    ...receipt,
+    fields,
+    statusLabel: overrides.statusLabel ?? receipt.statusLabel,
+  };
+};
+
+const buildSkillStreamPayload = (
+  intakeResult: ChatIntakeResult,
+  localizedTitle: string | undefined,
+): SkillStreamPayload => ({
+  skillName: intakeResult.skillName,
+  phase: intakeStatusToSkillPhase(intakeResult.status),
+  localizedTitle,
+  receipt: intakeResult.receipt,
+});
+
 export class ChatService {
-  private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
-  private readonly activityTracePresenter = new ActivityTracePresenter();
   private readonly assistantInstructionBuilder = new AssistantInstructionBuilder();
   private readonly chatAnswerPresenter: ChatAnswerPresenter;
   private readonly chatSessionPreparer: ChatSessionPreparer;
+  private readonly chatTurnLifecycle: ChatTurnLifecycle;
   constructor(
-    private readonly conversationRepository: ConversationRepositoryPort,
-    private readonly messageRepository: MessageRepositoryPort,
+    conversationRepository: ConversationRepositoryPort,
+    messageRepository: MessageRepositoryPort,
     retrievalPipeline: RetrievalPipelineService,
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
-    private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
+    productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
     workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
-    private readonly chatActionProvider: ChatActionProviderPort = new NoopChatActionProvider(),
     agentService?: Pick<AgentService, "resolve">,
+    private readonly chatIntakeProvider: ChatIntakeProviderPort = new NoopChatIntakeProvider(),
   ) {
+    this.chatTurnLifecycle = new ChatTurnLifecycle(
+      conversationRepository,
+      messageRepository,
+      auditService,
+      productAnalyticsService,
+    );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
       messageRepository,
@@ -122,22 +232,6 @@ export class ChatService {
           prompt,
         })),
     );
-  }
-
-  private getRoute(session: PreparedSession): ChatRoute {
-    if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
-      return {
-        type: "direct",
-        reason: session.retrieval.diagnostics.responseIntent === "assistant_identity"
-          ? "assistant_identity"
-          : "social_only",
-      };
-    }
-
-    return {
-      type: "retrieval",
-      reason: "evidence_required",
-    };
   }
 
   private buildAnswerInstructionBlock(session: PreparedSession): string {
@@ -262,88 +356,43 @@ export class ChatService {
     });
 
     try {
-      session = await this.chatSessionPreparer.prepare(input);
+      session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
+      const intakeResult = await this.handleSkillIntake(input, session);
+      if (intakeResult) {
+        const { cleanedAnswer, receiptOverrides } = extractSkillTags(intakeResult.answer);
+        const response = await this.persistSkillIntakeTurn({
+          input,
+          session,
+          intakeResult: {
+            ...intakeResult,
+            answer: cleanedAnswer,
+            receipt: applyReceiptOverrides(intakeResult.receipt, receiptOverrides),
+          },
+          stream: input.stream,
+        });
+        assistantMessageId = response.assistantMessageId;
+        await usageReservation.commit();
+        return response;
+      }
+      session = await this.chatSessionPreparer.prepareRetrieval(input, session);
       const answerStartedAt = Date.now();
       const presentation = await this.generateAnswerPresentation(session, input.query, input.userExpectedLocale);
-      const route = this.getRoute(session);
-      const activitySummary = this.activitySummaryPresenter.present(session.retrieval.diagnostics, {
-        execution: {
-          surface: "assistant",
-          path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
-          retrievalInvoked: route.type === "retrieval",
-        },
-      });
-      const activityTrace = this.activityTracePresenter.appendAnswerOutcome({
-        trace: session.retrieval.trace,
-        summary: activitySummary,
-        outcome: {
-          answer: presentation.answer,
-          stream: input.stream,
-          hadContexts: session.retrieval.contexts.length > 0,
-          retrievalSkipped: session.retrieval.diagnostics.retrievalSkipped,
-          durationMs: Date.now() - answerStartedAt,
-          answerOutcome: presentation.answerOutcome,
-          validation: presentation.validation,
-        },
-      });
-      const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
-
-      const assistantMessage = await this.messageRepository.create({
-        conversationId: session.conversation.id,
-        workspaceId: input.workspaceId,
-        role: "assistant",
-        content: presentation.answer,
-      });
-      assistantMessageId = assistantMessage.id;
-      const suggestions = await this.applySuggestionActions({
+      const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
-        conversationId: session.conversation.id,
-        assistantMessageId,
-        query: input.query,
-        answer: presentation.answer,
-        answerOutcome: presentation.answerOutcome,
-        sourceChannel: input.sourceChannel,
-        sourceOrigin: input.sourceOrigin,
-        suggestions: presentation.suggestions,
-      });
-      await this.finalizeAssistantTurn({
-        workspaceId: input.workspaceId,
-        accountId: input.accountId,
-        conversationId: session.conversation.id,
-        userMessageId: session.userMessage.id,
-        assistantMessageId,
-        answerOutcome: presentation.answerOutcome,
-        validation: presentation.validation,
-        segmentResults: presentation.segmentResults,
-        citations: presentation.citations ?? [],
-        answerSegments: presentation.answerSegments,
-        suggestions,
-        priorRewriteContinuityState: session.priorRewriteContinuityState,
-        diagnostics: session.retrieval.diagnostics,
-        activityTrace,
-        route,
+        session,
+        presentation,
+        answerStartedAt,
         stream: input.stream,
       });
+      assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();
 
-      return {
-        conversationId: session.conversation.id,
-        agentId: session.agent.id,
-        agentName: session.agent.name,
-        assistantMessageId,
-        route,
-        answer: presentation.answer,
-        citations: presentation.citations,
-        answerSegments: presentation.answerSegments,
-        suggestions,
-        activitySummary: resolvedActivitySummary,
-        activityTrace,
-      };
+      return completedTurn.response;
     } catch (error) {
       await usageReservation.release();
       const normalizedError = normalizeProviderCredentialError(error);
-      await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
+      await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     }
   }
@@ -385,13 +434,60 @@ export class ChatService {
     };
 
     try {
-      session = await this.chatSessionPreparer.prepare(input);
+      session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
 
       yield {
         type: "conversation",
         conversationId: session.conversation.id,
       };
 
+      const intakeResult = await this.handleSkillIntake(input, session);
+      if (intakeResult) {
+        const { localizedTitle, receiptOverrides, cleanedAnswer } = extractSkillTags(intakeResult.answer);
+        const cleanedIntakeResult: ChatIntakeResult = {
+          ...intakeResult,
+          answer: cleanedAnswer,
+          receipt: applyReceiptOverrides(intakeResult.receipt, receiptOverrides),
+        };
+        const skill = buildSkillStreamPayload(cleanedIntakeResult, localizedTitle);
+        yield {
+          type: "skill",
+          conversationId: session.conversation.id,
+          ...skill,
+        };
+        yield {
+          type: "chunk",
+          text: cleanedAnswer,
+        };
+        const response = await this.persistSkillIntakeTurn({
+          input,
+          session,
+          intakeResult: cleanedIntakeResult,
+          stream: input.stream,
+        });
+        assistantMessageId = response.assistantMessageId;
+        await usageReservation.commit();
+        usageReservationCommitted = true;
+
+        yield {
+          type: "done",
+          conversationId: response.conversationId,
+          agentId: response.agentId,
+          agentName: response.agentName,
+          assistantMessageId: response.assistantMessageId,
+          route: response.route,
+          answer: response.answer,
+          citations: response.citations,
+          answerSegments: response.answerSegments,
+          suggestions: response.suggestions,
+          activitySummary: response.activitySummary,
+          activityTrace: response.activityTrace,
+          skill,
+        };
+        return;
+      }
+
+      session = await this.chatSessionPreparer.prepareRetrieval(input, session);
       let rawAnswer = "";
       let noContextPresentation: ChatPresentedAnswer | null = null;
       const answerStartedAt = Date.now();
@@ -473,88 +569,27 @@ export class ChatService {
         suggestions: undefined,
       };
 
-      const route = this.getRoute(session);
-      const activitySummary = this.activitySummaryPresenter.present(session.retrieval.diagnostics, {
-        execution: {
-          surface: "assistant",
-          path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
-          retrievalInvoked: route.type === "retrieval",
-        },
-      });
-      const activityTrace = this.activityTracePresenter.appendAnswerOutcome({
-        trace: session.retrieval.trace,
-        summary: activitySummary,
-        outcome: {
-          answer: presentation.answer,
-          stream: input.stream,
-          hadContexts: session.retrieval.contexts.length > 0,
-          retrievalSkipped: session.retrieval.diagnostics.retrievalSkipped,
-          durationMs: Date.now() - answerStartedAt,
-          answerOutcome: presentation.answerOutcome,
-          validation: presentation.validation,
-        },
-      });
-      const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
-
-      const assistantMessage = await this.messageRepository.create({
-        conversationId: session.conversation.id,
-        workspaceId: input.workspaceId,
-        role: "assistant",
-        content: presentation.answer,
-      });
-      assistantMessageId = assistantMessage.id;
-      const actionSuggestions = await this.applySuggestionActions({
+      const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
-        conversationId: session.conversation.id,
-        assistantMessageId,
-        query: input.query,
-        answer: presentation.answer,
-        answerOutcome: presentation.answerOutcome,
-        sourceChannel: input.sourceChannel,
-        sourceOrigin: input.sourceOrigin,
-        suggestions: presentation.suggestions,
-      });
-      await this.finalizeAssistantTurn({
-        workspaceId: input.workspaceId,
-        accountId: input.accountId,
-        conversationId: session.conversation.id,
-        userMessageId: session.userMessage.id,
-        assistantMessageId,
-        answerOutcome: presentation.answerOutcome,
-        validation: presentation.validation,
-        segmentResults: presentation.segmentResults,
-        citations: presentation.citations ?? [],
-        answerSegments: presentation.answerSegments,
-        suggestions: actionSuggestions,
-        priorRewriteContinuityState: session.priorRewriteContinuityState,
-        diagnostics: session.retrieval.diagnostics,
-        activityTrace,
-        route,
+        session,
+        presentation,
+        answerStartedAt,
         stream: input.stream,
       });
+      assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();
       usageReservationCommitted = true;
 
       yield {
         type: "done",
-        conversationId: session.conversation.id,
-        agentId: session.agent.id,
-        agentName: session.agent.name,
-        assistantMessageId,
-        route,
-        answer: presentation.answer,
-        citations: presentation.citations,
-        answerSegments: presentation.answerSegments,
-        suggestions: actionSuggestions,
-        activitySummary: resolvedActivitySummary,
-        activityTrace,
+        ...completedTurn.response,
       };
 
     } catch (error) {
       await releaseUsageReservation();
       const normalizedError = normalizeProviderCredentialError(error);
-      await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
+      await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     } finally {
       await releaseUsageReservation();
@@ -563,20 +598,9 @@ export class ChatService {
     try {
       const lazySuggestions = await lazySuggestionsPromise;
       if (lazySuggestions.suggestions && lazySuggestions.suggestions.length > 0) {
-        const suggestions = (await this.applySuggestionActions({
-          workspaceId: input.workspaceId,
-          accountId: input.accountId,
-          conversationId: session.conversation.id,
-          assistantMessageId: assistantMessageId!,
-          query: input.query,
-          answer: "",
-          answerOutcome: ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS,
-          sourceChannel: input.sourceChannel,
-          sourceOrigin: input.sourceOrigin,
-          suggestions: lazySuggestions.suggestions,
-        })) ?? [];
+        const suggestions = lazySuggestions.suggestions ?? [];
         if (assistantMessageId) {
-          await this.auditService.updateChatAnswerSuggestions({
+          await this.chatTurnLifecycle.updateSuggestions({
             workspaceId: input.workspaceId,
             conversationId: session.conversation.id,
             assistantMessageId,
@@ -624,184 +648,72 @@ export class ChatService {
     return this.chatAnswerPresenter.presentWithSuggestions(session, answer, query, userExpectedLocale);
   }
 
-  private async finalizeAssistantTurn(input: {
-    workspaceId: string;
-    accountId?: string;
-    conversationId: string;
-    userMessageId: string;
-    assistantMessageId: string;
-    answerOutcome: AssistantTurnOutcome;
-    validation: AnswerValidationSummary;
-    segmentResults: AnswerSegmentValidationResult[];
-    citations: ChatCitation[];
-    answerSegments?: AnswerSegment[];
-    suggestions?: ChatSuggestion[];
-    priorRewriteContinuityState?: RewriteContinuityState;
-    diagnostics: PreparedSession["retrieval"]["diagnostics"];
-    activityTrace: ActivityTrace;
-    route: ChatRoute;
-    stream: boolean;
-  }): Promise<void> {
-    const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
-    await this.conversationRepository.touch(input.conversationId, input.workspaceId);
-    await this.auditService.record({
-      accountId: input.accountId,
-      workspaceId: input.workspaceId,
-      eventType: "chat.answer",
-      eventStatus: "success",
-      metadata: {
-        workflow: workflowPolicy.workflow,
-        executionClass: workflowPolicy.executionClass,
-        conversationId: input.conversationId,
-        userMessageId: input.userMessageId,
-        assistantMessageId: input.assistantMessageId,
-        stream: input.stream,
-        answerOutcome: input.answerOutcome,
-        route: {
-          generator: "assistant",
-          routeType: input.route.type,
-          routeReason: input.route.reason,
-          retrievalInvoked: input.route.type === "retrieval",
-        },
-        validation: {
-          ...input.validation,
-          segmentResults: input.segmentResults.map((segment) => ({
-            originalText: segment.originalText,
-            text: segment.text,
-            disposition: segment.disposition,
-            replacementApplied: segment.replacementApplied,
-            reason: segment.reason,
-            citationIndices: segment.citationIndices,
-          })),
-        },
-        citationCount: input.citations.length,
-        citations: input.citations,
-        answerSegments: input.answerSegments,
-        suggestions: input.suggestions,
-        rewriteContinuityState: buildRewriteContinuityState({
-          previousState: input.priorRewriteContinuityState,
-          diagnostics: input.diagnostics,
-          citations: input.citations,
-        }),
-        retrieval: input.diagnostics,
-        activityTrace: input.activityTrace,
-      },
-    });
-    try {
-      await this.productAnalyticsService.track({
-        eventName: "chat.completed",
-        workspaceId: input.workspaceId,
-        accountId: input.accountId,
-        subjectType: "conversation",
-        subjectId: input.conversationId,
-        properties: {
-          stream: input.stream,
-          answerOutcome: input.answerOutcome,
-          citationCount: input.citations.length,
-          suggestionCount: input.suggestions?.length ?? 0,
-        },
-        source: "backend",
-      });
-    } catch {
-      // Analytics fan-out must not change successful chat behavior.
-    }
-  }
-
-  private async applySuggestionActions(input: {
-    workspaceId: string;
-    accountId?: string;
-    conversationId: string;
-    assistantMessageId: string;
-    query: string;
-    answer: string;
-    answerOutcome: AssistantTurnOutcome;
-    sourceChannel?: string | null;
-    sourceOrigin?: string | null;
-    suggestions?: ChatSuggestion[];
-  }): Promise<ChatSuggestion[] | undefined> {
-    const action = await this.chatActionProvider.evaluate(input);
-    if (!action) {
-      return input.suggestions;
-    }
-    const suggestions = input.suggestions ?? [];
-    if (suggestions.some((suggestion) => suggestion.action?.kind === action.action?.kind || suggestion.kind === action.kind)) {
-      return suggestions;
-    }
-    return [...suggestions, action];
-  }
-
-  private async recordFailure(
+  private async handleSkillIntake(
     input: {
       workspaceId: string;
       accountId?: string;
-      conversationId?: string;
       query: string;
       stream: boolean;
+      userExpectedLocale?: string | null;
+      sourceChannel?: string | null;
+      anonymousSessionId?: string | null;
+      sourceOrigin?: string | null;
+      inputMetadata?: UserMessageInputMetadata;
     },
-    session: PreparedSession | null,
-    existingAssistantMessageId: string | undefined,
-    error: unknown,
-    workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn"),
-  ) {
-    let assistantMessageId = existingAssistantMessageId;
-
-    if (session && assistantMessageId) {
-      await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
-    }
-
-    await this.auditService.record({
-      accountId: input.accountId,
-      workspaceId: input.workspaceId,
-      eventType: "chat.answer",
-      eventStatus: "failure",
-      metadata: {
-        stage: "chat.answer",
-        workflow: workflowPolicy.workflow,
-        executionClass: workflowPolicy.executionClass,
-        conversationId: session?.conversation.id ?? input.conversationId,
-        userMessageId: session?.userMessage.id,
-        assistantMessageId,
-        stream: input.stream,
-        citationCount: 0,
-        retrieval: session?.retrieval.diagnostics,
-        activityTrace: session?.retrieval.trace
-          ? this.activityTracePresenter.appendAnswerOutcome({
-              trace: session.retrieval.trace,
-              summary: this.activitySummaryPresenter.present(session.retrieval.diagnostics, {
-                execution: {
-                  surface: "assistant",
-                  path: this.getRoute(session).type === "direct" ? "assistant_direct" : "assistant_retrieval",
-                  retrievalInvoked: this.getRoute(session).type === "retrieval",
-                },
-              }),
-              outcome: {
-                answer: "",
-                stream: input.stream,
-                hadContexts: session.retrieval.contexts.length > 0,
-                retrievalSkipped: session.retrieval.diagnostics.retrievalSkipped,
-                durationMs: 0,
-              },
-            })
-          : undefined,
-        errorMessage: error instanceof Error ? error.message : "Unknown error",
-      },
-    });
+    session: PreparedSession,
+  ): Promise<ChatIntakeResult | null> {
     try {
-      await this.productAnalyticsService.track({
-        eventName: "chat.failed",
+      return await this.chatIntakeProvider.handle({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
-        subjectType: "conversation",
-        subjectId: session?.conversation.id ?? input.conversationId,
-        properties: {
-          stream: input.stream,
-          errorMessage: error instanceof Error ? error.message : "Unknown error",
-        },
-        source: "backend",
+        agentId: session.agent.id,
+        conversationId: session.conversation.id,
+        userMessageId: session.userMessage.id,
+        query: input.query,
+        history: [...session.history, session.userMessage],
+        sourceChannel: input.sourceChannel,
+        sourceOrigin: input.sourceOrigin,
+        anonymousSessionId: input.anonymousSessionId,
+        userExpectedLocale: input.userExpectedLocale,
+        inputMetadata: input.inputMetadata,
       });
-    } catch {
-      // Analytics fan-out must not change failure behavior.
+    } catch (error) {
+      try {
+        await this.auditService.record({
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          eventType: "chat.skill_intake",
+          eventStatus: "failure",
+          metadata: {
+            conversationId: session.conversation.id,
+            userMessageId: session.userMessage.id,
+            stream: input.stream,
+            errorMessage: error instanceof Error ? error.message : "Unknown error",
+          },
+        });
+      } catch {
+        // Intake failure reporting is best effort; the chat turn should remain recoverable.
+      }
+      return null;
     }
+  }
+
+  private async persistSkillIntakeTurn(input: {
+    input: {
+      workspaceId: string;
+      accountId?: string;
+    };
+    session: PreparedSession;
+    intakeResult: ChatIntakeResult;
+    stream: boolean;
+  }): Promise<ChatResponse> {
+    return this.chatTurnLifecycle.completeSkillIntakeTurn({
+      workspaceId: input.input.workspaceId,
+      accountId: input.input.accountId,
+      session: input.session,
+      intakeResult: input.intakeResult,
+      stream: input.stream,
+    });
   }
 
 }

@@ -46,7 +46,7 @@ Use these terms consistently.
 |---|---|---|
 | Skill | Product-facing unit of work that a caller can discover or invoke | `retrieval.answer`, `retrieval.search`, `human_contact.request` |
 | Capability | Internal permission or runtime primitive used to allow, deny, or compose work | document read, retrieval answer, email delivery |
-| Intent | A routing or classification signal derived from input | definition lookup, contact human, unsupported social turn |
+| Intent | A routing or classification signal derived from input | definition lookup, support handoff, unsupported social turn |
 | Shape | A named partial specialization of a skill definition | definition lookup, event/date lookup, broad semantic summary |
 | Step | A typed data-only clause inside a skill definition | candidate retrieval, context selection, delivery dispatch |
 | Agent | One possible caller or orchestrator of skills | assistant chat, MCP client, SDK integration |
@@ -178,7 +178,7 @@ The first catalog includes these built-in entries:
 
 These entries are discovery metadata. Callers still use the listed existing contracts to perform work.
 
-When the Enterprise backend module is installed, the catalog can also include `human_contact.request`. That skill is owned by the contact module and describes the existing human-contact mechanics: availability check, trigger evaluation, draft build, request submit, delivery dispatch, and audit record. The OSS catalog does not advertise it unless the EE module registers the definition.
+When the Enterprise backend module is installed, the catalog can also include `human_contact.request`. That skill is owned by the contact module and describes the contact intake mechanics: availability check, intent evaluation, draft build, request submit, delivery dispatch, and audit record. The OSS catalog does not advertise it unless the EE module registers the definition.
 
 ## Skill Definitions
 
@@ -186,7 +186,27 @@ A skill definition is data, not an executor. It contains stable catalog metadata
 
 For `retrieval.answer`, the retrieval pipeline still owns query interpretation, candidate retrieval, context selection, prompt assembly, and diagnostics. The skill definition only describes those steps and the shape-specific clauses. For example, `definition_lookup` overrides the `context_selection` step so rerank is disabled and lexical bias is preferred; the context-selection stage reads that resolved clause instead of checking the shape name directly.
 
-For `human_contact.request`, the EE contact service still owns settings, draft creation, submit, delivery, and audit behavior. The skill definition makes that work discoverable and diagnosable without adding a generic `POST /skills/{name}/execute` surface.
+For `human_contact.request`, the EE contact service still owns settings, intake state, submit, delivery, and audit behavior. The skill definition makes that work discoverable and diagnosable without adding a generic `POST /skills/{name}/execute` surface.
+
+The direct contact draft and submit routes are intentionally retired. Human
+contact now enters through normal chat messages and the `human_contact.request`
+intake provider. Chat suggestions remain text-only prompts; they do not carry
+action payloads or bypass the intake provider.
+
+## Skill Intake And Execution
+
+Some skills can be started from natural chat and need the assistant surface to collect typed inputs before execution. These skills may declare an optional `intake` block alongside their catalog metadata.
+
+A skill definition uses the same interface for retrieval, contact handoff, webhooks, and future integrations:
+
+- `intake` describes fields that must be available before execution, how interruption should work, and whether confirmation is required.
+- `execution` describes the adapter that runs after required intake is valid, such as an internal retrieval adapter, a webhook, or a durable delivery pipeline.
+
+The LLM may propose field candidates from user language, but deterministic application code owns required fields, validation, permissions, sensitive-field TTLs, confirmation policy, state transitions, and execution.
+
+For example, `retrieval.answer` declares a `query` intake field and an internal `retrieval_answer` execution adapter. A Make-backed appointment scheduling skill can declare required `email` and `preferred_date` fields, deterministic validators, `pause_and_resume` interruption, and a webhook execution adapter. The chat runtime can then ask only for missing or invalid fields before calling the configured webhook.
+
+For `human_contact.request`, execution is a durable delivery pipeline, not an internal service. The submission is accepted and audited, then delivered through the workspace's configured email and/or webhook adapters.
 
 ## Diagnostic Definition
 

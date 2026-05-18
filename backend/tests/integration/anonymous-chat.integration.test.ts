@@ -173,6 +173,14 @@ describe("anonymous chat bootstrap integration", () => {
       type: "retrieval",
       reason: "evidence_required",
     });
+    expect(response.body).not.toHaveProperty("citations");
+    expect(response.body.answerSegments).toEqual(
+      expect.arrayContaining([
+        expect.not.objectContaining({
+          citationIndices: expect.any(Array),
+        }),
+      ]),
+    );
     expect(response.body.activitySummary.execution).toMatchObject({
       surface: "assistant",
       path: "assistant_retrieval",
@@ -194,6 +202,14 @@ describe("anonymous chat bootstrap integration", () => {
       .set("Cookie", anonCookie!)
       .expect(200);
     const assistantTurn = history.body.messages.find((message: { role: string }) => message.role === "assistant");
+    expect(assistantTurn).not.toHaveProperty("citations");
+    expect(assistantTurn?.answerSegments).toEqual(
+      expect.arrayContaining([
+        expect.not.objectContaining({
+          citationIndices: expect.any(Array),
+        }),
+      ]),
+    );
     expect(assistantTurn?.debug?.route).toMatchObject({
       generator: "assistant",
       routeType: "retrieval",

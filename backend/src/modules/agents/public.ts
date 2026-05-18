@@ -1,5 +1,6 @@
 export {
   agentSurfacePositions,
+  defaultAgentBrandingSettings,
   defaultAgentEmbedTheme,
   getWebsiteEmbedSurfaceSettings,
   isAgentBootstrapActive,
@@ -7,6 +8,7 @@ export {
   resolveAgentDisplayName,
   validateAgentInput,
   type AgentBehaviorSettings,
+  type AgentBrandingSettings,
   type AgentSourceScope,
   type Agent,
   type AgentInput,

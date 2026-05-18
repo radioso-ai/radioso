@@ -23,12 +23,18 @@ const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
 const DEFAULT_AGENT_SURFACE_POSITION: AgentSurfacePosition = "bottom-right";
 const MAX_EMBED_COPY_LOCALES = 10;
 
+export interface AgentBrandingSettings {
+  hidePoweredBy: boolean;
+  privacyPolicyUrl: string | null;
+}
+
 export interface AgentBehaviorSettings {
   customInstruction: string;
   suggestedQuestionsEnabled: boolean;
   retrievalEnabled: boolean;
   logo: AgentLogo | null;
   theme: AgentEmbedTheme;
+  branding: AgentBrandingSettings;
 }
 
 export type AgentSourceScope =
@@ -203,6 +209,54 @@ const normalizeSurfacePosition = (value: unknown): AgentSurfacePosition => {
 };
 
 export const defaultAgentEmbedTheme = (): AgentEmbedTheme => defaultWebsiteEmbedTheme();
+
+export const defaultAgentBrandingSettings = (): AgentBrandingSettings => ({
+  hidePoweredBy: false,
+  privacyPolicyUrl: null,
+});
+
+const MAX_PRIVACY_POLICY_URL_LENGTH = 2048;
+
+const normalizePrivacyPolicyUrl = (value: unknown): string | null => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    throw badRequest("branding.privacyPolicyUrl must be a string");
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.length > MAX_PRIVACY_POLICY_URL_LENGTH) {
+    throw badRequest(`branding.privacyPolicyUrl must not exceed ${MAX_PRIVACY_POLICY_URL_LENGTH} characters`);
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw badRequest("branding.privacyPolicyUrl must be a valid URL");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw badRequest("branding.privacyPolicyUrl must use http or https");
+  }
+  return parsed.toString();
+};
+
+const normalizeBrandingSettings = (value: unknown): AgentBrandingSettings => {
+  const defaults = defaultAgentBrandingSettings();
+  if (value === undefined || value === null) {
+    return defaults;
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest("branding must be an object");
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    hidePoweredBy: typeof record.hidePoweredBy === "boolean" ? record.hidePoweredBy : defaults.hidePoweredBy,
+    privacyPolicyUrl: normalizePrivacyPolicyUrl(record.privacyPolicyUrl),
+  };
+};
 
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
@@ -428,6 +482,7 @@ export const validateAgentInput = (
     sourceScope: normalizeSourceScope(input.sourceScope),
     logo: normalizeAgentLogo(input.logo),
     theme: normalizeEmbedTheme(input.theme ?? input.surfaceSettings?.websiteEmbed?.theme),
+    branding: normalizeBrandingSettings(input.branding),
     greetingInstruction: normalizeText(input.greetingInstruction, "greetingInstruction", 200),
     assistantDefaultLocale: normalizeLocaleTag(input.assistantDefaultLocale),
     proactiveGreetingEnabled: Boolean(input.proactiveGreetingEnabled),

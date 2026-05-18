@@ -150,6 +150,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         surface: z.string(),
         text: z.string(),
       }).optional(),
+      branding: z.object({
+        hidePoweredBy: z.boolean(),
+        privacyPolicyUrl: z.string().nullable(),
+      }).optional(),
       intakeActions: z.array(z.object({
         skillName: z.string(),
         intentName: z.string(),

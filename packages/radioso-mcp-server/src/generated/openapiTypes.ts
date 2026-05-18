@@ -1835,6 +1835,10 @@ export interface components {
                 surface: string;
                 text: string;
             };
+            branding: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
+            };
             retrievalEnabled: boolean;
             sourceScope: components["schemas"]["AgentSourceScope"];
             logo: {
@@ -1863,6 +1867,10 @@ export interface components {
                 brandText?: string;
                 surface?: string;
                 text?: string;
+            };
+            branding?: {
+                hidePoweredBy?: boolean;
+                privacyPolicyUrl?: string | null;
             };
             retrievalEnabled?: boolean;
             sourceScope?: {
@@ -1922,6 +1930,10 @@ export interface components {
                 brandText: string;
                 surface: string;
                 text: string;
+            };
+            branding?: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
             };
             intakeActions?: {
                 skillName: string;
@@ -2765,6 +2777,10 @@ export interface components {
                 brandText: string;
                 surface: string;
                 text: string;
+            };
+            branding?: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
             };
             intakeActions?: {
                 skillName: string;

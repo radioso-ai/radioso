@@ -4,6 +4,7 @@ import type { Database } from "../../shared/infra/database.js";
 import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
+  type AgentBrandingSettings,
   type AgentInput,
   type AgentRecord,
   type AgentEmbedCopyPacks,
@@ -95,6 +96,7 @@ const toBehaviorSettings = (agent: NormalizedAgentInput): Record<string, unknown
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
   logo: agent.logo,
   theme: agent.theme,
+  branding: agent.branding,
 });
 
 const toGreetingSettings = (agent: NormalizedAgentInput): Record<string, unknown> => ({
@@ -147,6 +149,7 @@ const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegist
       : { mode: "all" },
     logo: (behavior.logo ?? websiteEmbedSource.logo) as AgentLogo | null | undefined,
     theme: (behavior.theme ?? websiteEmbedSource.theme) as AgentEmbedTheme | undefined,
+    branding: behavior.branding as AgentBrandingSettings | undefined,
     greetingInstruction: readString(greeting, "greetingInstruction"),
     assistantDefaultLocale: readString(greeting, "assistantDefaultLocale") ?? null,
     proactiveGreetingEnabled: readBoolean(greeting, "proactiveGreetingEnabled"),

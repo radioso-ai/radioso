@@ -201,6 +201,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         launcherLabel: websiteEmbed.launcherLabel,
         launcherPosition: websiteEmbed.launcherPosition,
         theme: agent.theme,
+        branding: agent.branding,
         copy: copyResponse,
         expertOverrides: websiteEmbed.expertOverrides,
         assistantLogoUrl: buildAssistantLogoUrl(req, launchToken, Boolean(agent.logo)),
@@ -295,6 +296,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           assistantBootstrapActive: isAgentBootstrapActive(agent),
           assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
           theme: agent.theme,
+          branding: agent.branding,
           intakeActions: await resolvePublicIntakeActions({
             workspaceId: workspace.id,
             agentId: agent.id,
@@ -438,6 +440,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         assistantBootstrapActive: isAgentBootstrapActive(agent),
         assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
         theme: agent.theme,
+        branding: agent.branding,
         intakeActions: await resolvePublicIntakeActions({
           workspaceId: workspace.id,
           agentId: agent.id,
@@ -539,6 +542,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         workspaceName,
         assistantAvatarUrl: buildAssistantLogoUrl(req, String(req.params.token), Boolean((res.locals as { assistantLogoAvailable?: boolean }).assistantLogoAvailable)),
         theme: (res.locals as { assistantTheme?: unknown }).assistantTheme,
+        branding: (res.locals as { assistantBranding?: unknown }).assistantBranding,
         assistantBootstrapActive: Boolean((res.locals as { assistantBootstrapActive?: boolean }).assistantBootstrapActive),
         intakeActions: await resolvePublicIntakeActions({
           workspaceId,

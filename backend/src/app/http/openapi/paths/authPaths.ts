@@ -112,6 +112,166 @@ export const registerAuthPaths = (
   });
 
   registry.registerPath({
+    method: "post",
+    path: "/api/v1/auth/password-reset/request",
+    tags: ["Auth"],
+    summary: "Request a password reset email",
+    operationId: "requestPasswordReset",
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.PasswordResetRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      202: {
+        description: "Password reset request accepted",
+        content: {
+          "application/json": {
+            schema: schemas.AcceptedResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/auth/password-reset/confirm",
+    tags: ["Auth"],
+    summary: "Confirm password reset and establish a new session",
+    operationId: "confirmPasswordReset",
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.PasswordResetConfirmRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Password reset confirmed and session established",
+        content: {
+          "application/json": {
+            schema: schemas.PasswordResetConfirmResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Reset token is invalid or expired",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/auth/email-verification/verify",
+    tags: ["Auth"],
+    summary: "Verify an email address",
+    operationId: "verifyEmail",
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.EmailVerificationVerifyRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Email address verified",
+        content: {
+          "application/json": {
+            schema: schemas.EmailVerificationVerifyResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Verification token is invalid or expired",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/auth/email-verification/resend",
+    tags: ["Auth"],
+    summary: "Request an email verification email",
+    operationId: "resendEmailVerification",
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.EmailVerificationResendRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      202: {
+        description: "Email verification request accepted",
+        content: {
+          "application/json": {
+            schema: schemas.AcceptedResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "get",
     path: "/api/v1/auth/invitations/{invitationToken}",
     tags: ["Auth"],

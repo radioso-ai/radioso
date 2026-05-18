@@ -97,8 +97,15 @@ export interface OpenApiSchemaCatalog {
   InvitationAcceptRequestSchema: z.ZodTypeAny;
   InvitationDetailsResponseSchema: z.ZodTypeAny;
   invitationTokenParamsSchema: RouteParameterSchema;
+  AcceptedResponseSchema: z.ZodTypeAny;
+  EmailVerificationResendRequestSchema: z.ZodTypeAny;
+  EmailVerificationVerifyRequestSchema: z.ZodTypeAny;
+  EmailVerificationVerifyResponseSchema: z.ZodTypeAny;
   LoginRequestSchema: z.ZodTypeAny;
   LoginResponseSchema: z.ZodTypeAny;
+  PasswordResetConfirmRequestSchema: z.ZodTypeAny;
+  PasswordResetConfirmResponseSchema: z.ZodTypeAny;
+  PasswordResetRequestSchema: z.ZodTypeAny;
   ParsedQuerySchema: z.ZodTypeAny;
   PlatformChannelsSettingsSectionSchema: z.ZodTypeAny;
   PlatformRetrievalSettingsSectionSchema: z.ZodTypeAny;

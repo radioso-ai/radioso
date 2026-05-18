@@ -1,26 +1,60 @@
 import { request } from './api-client'
-import { AUTH_RECOVERY_ENABLED } from './enterprise-features'
 import type {
+  AcceptedResponse,
+  EmailVerificationResendRequest,
+  EmailVerificationVerifyRequest,
+  EmailVerificationVerifyResponse,
   InvitationDetailsResponse,
   LoginRequest,
   LoginResponse,
+  PasswordResetConfirmRequest,
+  PasswordResetConfirmResponse,
+  PasswordResetRequest,
   RegisterRequest,
   RegisterResponse,
 } from './api-types'
 
 export const authApi = {
   async register(data: RegisterRequest): Promise<RegisterResponse> {
-    return request<RegisterResponse>(AUTH_RECOVERY_ENABLED ? "/ee/auth/register" : "/auth/register", {
+    return request<RegisterResponse>("/auth/register", {
       method: "POST",
       body: JSON.stringify(data),
     }, { withSession: true })
   },
 
   async login(data: LoginRequest): Promise<LoginResponse> {
-    return request<LoginResponse>(AUTH_RECOVERY_ENABLED ? "/ee/auth/login" : "/auth/login", {
+    return request<LoginResponse>("/auth/login", {
       method: "POST",
       body: JSON.stringify(data),
     }, { withSession: true })
+  },
+
+  async requestPasswordReset(data: PasswordResetRequest): Promise<AcceptedResponse> {
+    return request<AcceptedResponse>("/auth/password-reset/request", {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
+  },
+
+  async confirmPasswordReset(data: PasswordResetConfirmRequest): Promise<PasswordResetConfirmResponse> {
+    return request<PasswordResetConfirmResponse>("/auth/password-reset/confirm", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }, { withSession: true })
+  },
+
+  async verifyEmail(data: EmailVerificationVerifyRequest): Promise<EmailVerificationVerifyResponse> {
+    return request<EmailVerificationVerifyResponse>("/auth/email-verification/verify", {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
+  },
+
+  async resendEmailVerification(data: EmailVerificationResendRequest): Promise<AcceptedResponse> {
+    return request<AcceptedResponse>("/auth/email-verification/resend", {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
   },
 
   async getInvitation(invitationToken: string): Promise<InvitationDetailsResponse> {
@@ -34,5 +68,5 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }, { withSession: true })
-  }
+  },
 }

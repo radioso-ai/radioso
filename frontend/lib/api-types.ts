@@ -19,6 +19,13 @@ export type RegisterResponse = ApiSchemas['RegisterResponse'] & {
 }
 export type LoginRequest = ApiSchemas['LoginRequest']
 export type LoginResponse = ApiSchemas['LoginResponse']
+export type AcceptedResponse = ApiSchemas['AcceptedResponse']
+export type PasswordResetRequest = ApiSchemas['PasswordResetRequest']
+export type PasswordResetConfirmRequest = ApiSchemas['PasswordResetConfirmRequest']
+export type PasswordResetConfirmResponse = ApiSchemas['PasswordResetConfirmResponse']
+export type EmailVerificationVerifyRequest = ApiSchemas['EmailVerificationVerifyRequest']
+export type EmailVerificationVerifyResponse = ApiSchemas['EmailVerificationVerifyResponse']
+export type EmailVerificationResendRequest = ApiSchemas['EmailVerificationResendRequest']
 
 export type RetrievalSettings = PlatformRetrievalSettings &
   Pick<

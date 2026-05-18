@@ -10,8 +10,8 @@ project_id = "your-gcp-project-id"
 # radioso_mcp_signing_secret    = ""
 # connector_encryption_key = ""
 # resend_mail_api_key      = ""
-# ee_mail_from_email       = "noreply@your-verified-domain.example"
-# ee_mail_from_name        = "Radioso"
+# mail_from_email       = "noreply@your-verified-domain.example"
+# mail_from_name        = "Radioso"
 # metrics_auth_token       = ""
 
 # Optional overrides (defaults shown)

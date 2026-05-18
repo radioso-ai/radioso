@@ -1,24 +1,26 @@
-import { button } from "../layout/index.js";
-import type { RenderedEmail } from "./passwordResetEmail.js";
+import type { EmailMessage } from "../emailService.js";
+import { button } from "./layout.js";
 
 export interface EmailVerificationInput {
   to: string;
   verificationUrl: string;
 }
 
-export const renderEmailVerificationEmail = (input: EmailVerificationInput): RenderedEmail => ({
+export const renderEmailVerificationEmail = (
+  input: EmailVerificationInput,
+): Omit<EmailMessage, "from"> => ({
   to: input.to,
   subject: "Verify your email",
   text: [
     "Welcome to Radioso.",
     "",
-    `Verify your email address to finish setting up your account: ${input.verificationUrl}`,
+    `Verify your email address: ${input.verificationUrl}`,
     "",
     "If you did not create this account, you can ignore this email.",
   ].join("\n"),
   html: [
     "<p>Welcome to Radioso.</p>",
-    "<p>Verify your email address to finish setting up your account.</p>",
+    "<p>Verify your email address.</p>",
     button({ href: input.verificationUrl, label: "Verify email address" }),
     "<p>If you did not create this account, you can ignore this email.</p>",
   ].join(""),

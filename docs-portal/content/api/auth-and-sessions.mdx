@@ -27,7 +27,7 @@ Registration creates the account and default workspace bootstrap data. Invitatio
 
 ### Establish the session
 
-Registration, login, and invitation acceptance return a session cookie.
+After registration, verify the email address. Login and invitation acceptance return a session cookie. Password reset confirmation also returns a session cookie after a valid reset.
 
 ### Use the session for account and workspace routes
 
@@ -49,7 +49,21 @@ curl -sS \
 
 `organizationName` is optional. The required fields are `email` and `password`.
 
-Registration returns account and default workspace bootstrap data and sets a session cookie. The open-source API does not include transactional email or password reset.
+Registration returns account and default workspace bootstrap data, sends a verification email, and does not set a session cookie. The response includes `requiresEmailVerification: true`.
+
+Password reset is also available from the open-source auth API:
+
+- `POST /api/v1/auth/password-reset/request`
+- `POST /api/v1/auth/password-reset/confirm`
+
+The request endpoint always returns `202 Accepted` with `{ "accepted": true }`, including for unknown email addresses. The confirm endpoint sets a new session cookie after a valid reset and revokes older sessions for that user.
+
+Email verification is available through:
+
+- `POST /api/v1/auth/email-verification/resend`
+- `POST /api/v1/auth/email-verification/verify`
+
+Verification records email ownership. Normal login requires a verified email address.
 
 ## Log in
 

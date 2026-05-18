@@ -21,6 +21,8 @@ import type { PlatformSettingsService } from "../../modules/settings/composition
 import type { RetrievalSettingsService } from "../../modules/settings/composition.js";
 import type { RetrievalAnswerService, RetrievalSearchService } from "../../modules/retrieval/composition.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
+import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
+import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import type { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
 import type { AuditService } from "../../modules/audit/composition.js";
@@ -71,6 +73,8 @@ export interface AppDependencies {
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;
   authService: AuthService;
+  passwordResetService: PasswordResetService;
+  emailVerificationService: EmailVerificationService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
   workspaceSessionService: WorkspaceSessionService;

@@ -13,7 +13,7 @@ locals {
     var.radioso_mcp_enabled && local.radioso_mcp_signing_secret_configured ? {
       "radioso-mcp-signing-secret" = var.radioso_mcp_signing_secret
     } : {},
-    var.radioso_edition == "enterprise" ? {
+    var.resend_mail_api_key != null ? {
       "resend-mail-api-key" = var.resend_mail_api_key
     } : {},
     nonsensitive(var.metrics_auth_token) == null ? {} : {
@@ -33,7 +33,7 @@ locals {
     var.radioso_mcp_enabled && local.radioso_mcp_signing_secret_configured ? {
       "radioso-mcp-signing-secret" = true
     } : {},
-    var.radioso_edition == "enterprise" ? {
+    var.resend_mail_api_key != null ? {
       "resend-mail-api-key" = true
     } : {},
     nonsensitive(var.metrics_auth_token) == null ? {} : {

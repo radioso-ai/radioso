@@ -1,6 +1,6 @@
-# Enterprise Auth Frontend
+# Enterprise Auth Frontend Manifest
 
-Commercial Radioso auth UI package.
+Commercial Radioso auth frontend compatibility package.
 
 This package does not add routes to the frontend by itself. Generate the
 Enterprise Edition frontend route files from the repository root before running
@@ -11,9 +11,7 @@ node scripts/sync-ee-frontend-routes.mjs enable
 RADIOSO_EDITION=enterprise pnpm --dir frontend run build
 ```
 
-It provides:
-
-- `/reset-password` page implementation
-- `/verify-email` page implementation
+Password reset and email verification routes are OSS frontend routes now, so
+this package currently contributes no Enterprise auth pages.
 
 The package does not run a separate server.

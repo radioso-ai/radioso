@@ -1,20 +1,14 @@
-import { button } from "../layout/index.js";
+import type { EmailMessage } from "../emailService.js";
+import { button } from "./layout.js";
 
 export interface PasswordResetEmailInput {
   to: string;
   resetUrl: string;
 }
 
-export interface RenderedEmail {
-  to: string;
-  replyTo?: string | null;
-  subject: string;
-  text: string;
-  html?: string;
-  metadata?: Record<string, string>;
-}
-
-export const renderPasswordResetEmail = (input: PasswordResetEmailInput): RenderedEmail => ({
+export const renderPasswordResetEmail = (
+  input: PasswordResetEmailInput,
+): Omit<EmailMessage, "from"> => ({
   to: input.to,
   subject: "Reset your password",
   text: [

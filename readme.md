@@ -17,13 +17,13 @@ The bootstrap prompts for your AI provider credentials, generates secrets, and s
 
 In the Docker development stack, frontend and backend source changes are bind-mounted into the containers. TypeScript backend changes restart automatically, and backend prompt markdown under `backend/prompts/` is re-read on each request in development without a container restart.
 
-For Enterprise Edition development, run:
+For Enterprise Edition embed development, run:
 
 ```bash
 ./run-ee-dev.sh
 ```
 
-This starts Postgres in Docker, builds and installs the commercial packages from `ee/packages` locally without saving them to the OSS package manifests, generates the local Enterprise Edition frontend routes from Enterprise feature manifests, updates `.env` with embed settings, and runs the backend, worker, frontend, and embed harness on the host. The normal `./run-dev.sh` path removes those generated routes before starting the OSS stack.
+This starts Postgres in Docker, builds and installs the commercial packages from `ee/packages` locally without saving them to the OSS package manifests, generates the local Enterprise Edition frontend routes from Enterprise feature manifests, updates `.env` with Enterprise Edition embed settings, and runs the backend, worker, frontend, and embed harness on the host. The normal `./run-dev.sh` path removes those generated routes before starting the OSS stack.
 
 | Surface | URL |
 |---|---|
@@ -71,6 +71,8 @@ The backend stores application state, document metadata, chunks, and vectors in 
 
 ### Website embed
 
+Enterprise Edition feature.
+
 One script tag. Paste it on any page of an approved origin. The launcher opens a Radioso-hosted chat iframe — no backend work required on the host site, and origin policy stays under your control.
 
 ### Web app
@@ -82,7 +84,7 @@ One script tag. Paste it on any page of an approved origin. The launcher opens a
 5. Wait for document processing to finish.
 6. Ask one of the suggested questions in chat.
 
-Open-source Radioso does not include transactional email. Registration creates a session immediately, and password reset is not exposed in the OSS auth API. Mail-backed account recovery belongs to Enterprise Edition modules.
+Registration creates the account and default workspace, then sends a verification email. It does not create a session until the email is verified. Password reset and email verification are part of the open-source auth API, and sign-in requires a verified email address. Set `MAIL_DRIVER`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`, and `RESEND_MAIL_API_KEY` when you want hosted transactional email delivery; local development defaults to log output when no Resend key is configured.
 
 Authenticated dashboard URLs are workspace-first. After sign-in, the app navigates under `/w/<workspace-public-route-key>/...`. Older `/account/<account-id>/...` dashboard links still work, but they redirect to the canonical workspace URL after the app restores the correct organization and workspace context.
 
@@ -138,7 +140,7 @@ curl -sS -b cookies.txt \
 
 Each workspace payload includes both `id` and `publicRouteKey`. Use `id` for API calls that require a workspace identifier. Use `publicRouteKey` when you need to inspect or build the canonical dashboard URL.
 
-If a workspace token, public chat link, or website embed token is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
+If a workspace token, public chat link, or Enterprise embed token is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
 
 Public chat and website embed rate limits are configured by operators, not workspace users. The optional `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS`, `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS`, and `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` environment variables tune those limits; backend defaults apply when they are unset.
 

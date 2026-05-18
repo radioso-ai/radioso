@@ -132,14 +132,14 @@ variable "resend_mail_api_key" {
   default     = null
 }
 
-variable "ee_mail_from_email" {
+variable "mail_from_email" {
   description = "Verified sender email address for Enterprise auth mail in live."
   type        = string
   default     = null
 }
 
-variable "ee_mail_from_name" {
-  description = "Sender display name for Enterprise auth mail in live."
+variable "mail_from_name" {
+  description = "Sender display name for auth mail in live."
   type        = string
   default     = "Radioso"
 }

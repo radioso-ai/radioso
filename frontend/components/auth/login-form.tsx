@@ -8,7 +8,6 @@ import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { authApi, getStoredActiveWorkspaceId, seedWorkspaceSession } from '@/lib/api'
 import { getStoredLastAccountId, useOptionalAuth } from '@/lib/auth-context'
-import { AUTH_RECOVERY_ENABLED } from '@/lib/enterprise-features'
 
 interface LoginFormProps {
   onSwitchToRegister: () => void
@@ -102,13 +101,11 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
           Register
         </button>
       </p>
-      {AUTH_RECOVERY_ENABLED ? (
-        <p className="text-center text-sm">
-          <Link href="/reset-password" className="font-medium text-primary hover:underline">
-            Forgot password?
-          </Link>
-        </p>
-      ) : null}
+      <p className="text-center text-sm">
+        <Link href="/reset-password" className="font-medium text-primary hover:underline">
+          Forgot password?
+        </Link>
+      </p>
     </form>
   )
 }

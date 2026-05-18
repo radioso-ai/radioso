@@ -27,7 +27,7 @@ describe("architecture boundary validation", () => {
       },
       {
         filePath: "frontend/components/example.tsx",
-        specifier: "@radioso/enterprise-auth-frontend/reset-password-page",
+        specifier: "@radioso/enterprise-agent-wizard-frontend/wizard-page",
       },
       {
         filePath: "packages/radioso-mcp-server/src/server.ts",

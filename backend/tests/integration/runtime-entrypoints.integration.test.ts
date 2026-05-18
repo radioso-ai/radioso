@@ -48,6 +48,8 @@ const createEnv = (port: number): Env => ({
   SESSION_TTL_HOURS: 168,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
+  PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
+  EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: 30,
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
   WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 30,
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
@@ -282,7 +284,7 @@ describe("runtime entrypoints", () => {
   });
 
   it("serves session-authenticated admin routes after login bootstrap", async () => {
-    const { dependencies } = createTestDependencies({
+    const { dependencies, repositories } = createTestDependencies({
       envOverrides: {
       },
     });
@@ -302,19 +304,28 @@ describe("runtime entrypoints", () => {
         email: "runtime-session@example.com",
         password: "verysecurepassword",
       });
+    expect(register.status).toBe(201);
+
+    await repositories.userRepository.markEmailVerified(register.body.userId as string, new Date());
+    const login = await request(runtime.server!)
+      .post("/api/v1/auth/login")
+      .send({
+        email: "runtime-session@example.com",
+        password: "verysecurepassword",
+      });
+    expect(login.status).toBe(200);
 
     const settings = await request(runtime.server!)
       .get("/api/v1/settings/general")
-      .set("Cookie", register.headers["set-cookie"][0] as string)
+      .set("Cookie", login.headers["set-cookie"][0] as string)
       .set("X-Workspace-Id", register.body.workspaceId as string);
 
-    expect(register.status).toBe(201);
     expect(settings.status).toBe(200);
     expect(settings.body.anonymousChatEnabled).toBe(false);
   });
 
   it("reports unhandled request failures through the incident reporting seam", async () => {
-    const { dependencies } = createTestDependencies({
+    const { dependencies, repositories } = createTestDependencies({
       envOverrides: {
       },
     });
@@ -336,10 +347,20 @@ describe("runtime entrypoints", () => {
         email: "runtime-failure@example.com",
         password: "verysecurepassword",
       });
+    expect(register.status).toBe(201);
+
+    await repositories.userRepository.markEmailVerified(register.body.userId as string, new Date());
+    const login = await request(runtime.server!)
+      .post("/api/v1/auth/login")
+      .send({
+        email: "runtime-failure@example.com",
+        password: "verysecurepassword",
+      });
+    expect(login.status).toBe(200);
 
     const response = await request(runtime.server!)
       .get("/api/v1/settings/retrieval")
-      .set("Cookie", register.headers["set-cookie"][0] as string)
+      .set("Cookie", login.headers["set-cookie"][0] as string)
       .set("X-Workspace-Id", register.body.workspaceId as string);
 
     expect(response.status).toBe(500);

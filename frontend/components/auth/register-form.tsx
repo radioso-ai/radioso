@@ -34,13 +34,16 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isResendingVerification, setIsResendingVerification] = useState(false)
   const [error, setError] = useState('')
-  const [pendingEmail, setPendingEmail] = useState<string | null>(null)
+  const [message, setMessage] = useState('')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setMessage('')
 
     if (password !== confirmPassword) {
       setError('Passwords do not match')
@@ -61,7 +64,10 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
         organizationName: organizationName.trim() || undefined,
       })
       if (response.requiresEmailVerification) {
-        setPendingEmail(email)
+        setPendingVerificationEmail(email)
+        setPassword('')
+        setConfirmPassword('')
+        setMessage('Check your email to verify your account before signing in.')
         return
       }
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
@@ -76,12 +82,47 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
     }
   }
 
-  if (pendingEmail) {
+  const handleResendVerification = async () => {
+    if (!pendingVerificationEmail) return
+    setError('')
+    setMessage('')
+    setIsResendingVerification(true)
+
+    try {
+      await authApi.resendEmailVerification({ email: pendingVerificationEmail })
+      setMessage('Verification email sent.')
+    } catch (error) {
+      setError(getErrorMessage(error))
+    } finally {
+      setIsResendingVerification(false)
+    }
+  }
+
+  if (pendingVerificationEmail) {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          Check <span className="font-medium text-foreground">{pendingEmail}</span> for a verification link before you sign in.
-        </p>
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold text-foreground">Verify your email</h2>
+          <p className="text-sm text-muted-foreground">
+            We sent a verification link to {pendingVerificationEmail}. Verify your email before signing in.
+          </p>
+        </div>
+        {message ? (
+          <p className="text-sm text-muted-foreground">{message}</p>
+        ) : null}
+        {error ? (
+          <p className="text-sm text-destructive">{error}</p>
+        ) : null}
+        <Button
+          type="button"
+          className="w-full"
+          variant="outline"
+          disabled={isResendingVerification}
+          onClick={handleResendVerification}
+        >
+          {isResendingVerification ? <Spinner className="mr-2" /> : null}
+          Resend verification email
+        </Button>
         <Button type="button" className="w-full" onClick={onSwitchToLogin}>
           Back to Sign In
         </Button>
@@ -141,6 +182,9 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       </div>
       {error && (
         <p className="text-sm text-destructive">{error}</p>
+      )}
+      {message && (
+        <p className="text-sm text-muted-foreground">{message}</p>
       )}
       <Button type="submit" className="w-full" disabled={isLoading}>
         {isLoading ? <Spinner className="mr-2" /> : null}

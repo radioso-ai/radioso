@@ -40,7 +40,7 @@ jobs:
       RADIOSO_MCP_ENABLED: ${{ vars.RADIOSO_MCP_ENABLED }}
       TF_IN_AUTOMATION: true
       TF_VAR_connector_encryption_key: ${{ secrets.CONNECTOR_ENCRYPTION_KEY }}
-      TF_VAR_ee_mail_from_email: ${{ vars.EE_MAIL_FROM_EMAIL }}
+      TF_VAR_mail_from_email: ${{ vars.MAIL_FROM_EMAIL }}
       TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
       TF_VAR_region: ${{ vars.GCP_REGION }}
       TF_VAR_resend_mail_api_key: ${{ secrets.RESEND_MAIL_API_KEY }}
@@ -57,7 +57,7 @@ jobs:
             GCP_REGION \
             GCP_WORKLOAD_IDENTITY_PROVIDER \
             TF_VAR_connector_encryption_key \
-            TF_VAR_ee_mail_from_email \
+            TF_VAR_mail_from_email \
             TF_VAR_openai_api_key \
             TF_VAR_resend_mail_api_key \
             TF_VAR_session_cookie_secret \
@@ -86,7 +86,7 @@ jobs:
 
       - name: Export optional Terraform secrets
         env:
-          EE_MAIL_FROM_NAME: ${{ vars.EE_MAIL_FROM_NAME }}
+          MAIL_FROM_NAME: ${{ vars.MAIL_FROM_NAME }}
           METRICS_AUTH_TOKEN: ${{ secrets.METRICS_AUTH_TOKEN }}
           RADIOSO_MCP_SIGNING_SECRET: ${{ secrets.RADIOSO_MCP_SIGNING_SECRET }}
         run: |
@@ -94,8 +94,8 @@ jobs:
             echo "TF_VAR_metrics_auth_token=${METRICS_AUTH_TOKEN}" >> "$GITHUB_ENV"
           fi
 
-          if [ -n "${EE_MAIL_FROM_NAME}" ]; then
-            echo "TF_VAR_ee_mail_from_name=${EE_MAIL_FROM_NAME}" >> "$GITHUB_ENV"
+          if [ -n "${MAIL_FROM_NAME}" ]; then
+            echo "TF_VAR_mail_from_name=${MAIL_FROM_NAME}" >> "$GITHUB_ENV"
           fi
 
           if [ "${RADIOSO_MCP_ENABLED}" = "true" ]; then

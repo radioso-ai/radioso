@@ -10,9 +10,11 @@ import { ConversationRepository } from "../../db/repositories/conversationReposi
 import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
 import { DocumentRepository } from "../../db/repositories/documentRepository.js";
 import { DocumentSourceRepository } from "../../db/repositories/documentSourceRepository.js";
+import { EmailVerificationTokenRepository } from "../../db/repositories/emailVerificationTokenRepository.js";
 import { HistoryItemsRepository } from "../../db/repositories/historyItemsRepository.js";
 import { IngestionSettingsRepository } from "../../db/repositories/ingestionSettingsRepository.js";
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
+import { PasswordResetTokenRepository } from "../../db/repositories/passwordResetTokenRepository.js";
 import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSettingsRepository.js";
 import { SessionRepository } from "../../db/repositories/sessionRepository.js";
 import { UserRepository } from "../../db/repositories/userRepository.js";
@@ -24,6 +26,8 @@ import { AccountAccessService, AccountInvitationService } from "../../modules/ac
 import { AgentService } from "../../modules/agents/public.js";
 import { AuditService } from "../../modules/audit/composition.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
+import { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
+import { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import {
   AssistantChatService,
@@ -181,9 +185,11 @@ export const buildRepositories = (
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database),
   documentRepository: new DocumentRepository(database),
   documentSourceRepository: new DocumentSourceRepository(database),
+  emailVerificationTokenRepository: new EmailVerificationTokenRepository(database),
   historyItemsRepository: new HistoryItemsRepository(database),
   ingestionSettingsRepository: new IngestionSettingsRepository(database),
   messageRepository: new MessageRepository(database),
+  passwordResetTokenRepository: new PasswordResetTokenRepository(database),
   retrievalSettingsRepository: new RetrievalSettingsRepository(database),
   sessionRepository: new SessionRepository(database),
   userRepository: new UserRepository(database),
@@ -634,6 +640,40 @@ export const buildAuthService = (input: {
     accountAccessService: input.access.accountAccessService,
     accountInvitationService: input.access.accountInvitationService,
     onAccountCreated: input.onAccountCreated,
+    auditService: input.auditService,
+  });
+
+export const buildPasswordResetService = (input: {
+  access: ReturnType<typeof buildAccessServices>;
+  auditService: AuditService;
+  env: Env;
+  infrastructure: ReturnType<typeof buildInfrastructure>;
+  repositories: ReturnType<typeof buildRepositories>;
+  workspaceService: WorkspaceService;
+}): PasswordResetService =>
+  new PasswordResetService({
+    env: input.env,
+    userRepository: input.repositories.userRepository,
+    accountRepository: input.repositories.accountRepository,
+    accountAccessService: input.access.accountAccessService,
+    workspaceService: input.workspaceService,
+    sessionRepository: input.repositories.sessionRepository,
+    passwordResetTokenRepository: input.repositories.passwordResetTokenRepository,
+    mailService: input.infrastructure.mailService,
+    auditService: input.auditService,
+  });
+
+export const buildEmailVerificationService = (input: {
+  auditService: AuditService;
+  env: Env;
+  infrastructure: ReturnType<typeof buildInfrastructure>;
+  repositories: ReturnType<typeof buildRepositories>;
+}): EmailVerificationService =>
+  new EmailVerificationService({
+    env: input.env,
+    userRepository: input.repositories.userRepository,
+    emailVerificationTokenRepository: input.repositories.emailVerificationTokenRepository,
+    mailService: input.infrastructure.mailService,
     auditService: input.auditService,
   });
 

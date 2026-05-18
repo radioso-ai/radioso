@@ -6,6 +6,7 @@ import {
   updateSettingsSchema,
 } from "../../routes/settingsRoutes.js";
 import { websiteEmbedLauncherPositions } from "../../../../modules/settings/contracts/websiteEmbed.js";
+import { embeddingModelIds } from "../../../../modules/settings/contracts/ingestion.js";
 import { chunkingStrategyIds } from "../../../../modules/retrieval/public.js";
 import {
   metadataRuleEffects,
@@ -80,6 +81,9 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     z.object({
       workspaceId: z.string().uuid(),
       chunkingStrategy: z.enum(chunkingStrategyIds),
+      embeddingModel: z.enum(embeddingModelIds),
+      pendingEmbeddingModel: z.enum(embeddingModelIds).nullable(),
+      supportedEmbeddingModels: z.array(z.enum(embeddingModelIds)),
       fixedWindowChunkSize: z.number().int(),
       fixedWindowChunkOverlap: z.number().int(),
       structuredMinChunkSize: z.number().int(),

@@ -36,7 +36,13 @@ import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import type { AssistantBehaviorSettings, DocumentSourceListItem, GeneralSettings } from '@/lib/api'
+import type { AgentBrandingSettings, AssistantBehaviorSettings, DocumentSourceListItem, GeneralSettings } from '@/lib/api'
+import { editionController } from '@/lib/edition-controller'
+
+const DEFAULT_BRANDING_SETTINGS: AgentBrandingSettings = {
+  hidePoweredBy: false,
+  privacyPolicyUrl: null,
+}
 
 const INSTRUCTION_PRESETS: { label: string; text: string }[] = [
   {
@@ -58,6 +64,66 @@ function SubsectionHeading({ title, description }: { title: string; description?
     <div className="space-y-0.5">
       <h4 className="text-sm font-semibold text-foreground">{title}</h4>
       {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+    </div>
+  )
+}
+
+function BrandingSubsection({
+  branding,
+  onBrandingChange,
+}: {
+  branding: AgentBrandingSettings
+  onBrandingChange: (next: AgentBrandingSettings) => void
+}) {
+  const canHideBranding = editionController.canHideAssistantBranding()
+  return (
+    <div className="space-y-4">
+      <SubsectionHeading
+        title="Branding & disclaimers"
+        description="What appears below the chat composer."
+      />
+      <div className="divide-y divide-border rounded-lg border border-border">
+        <div className="space-y-2 p-3">
+          <Label htmlFor="brandingPrivacyPolicyUrl" className="text-foreground">
+            Privacy policy URL
+          </Label>
+          <Input
+            id="brandingPrivacyPolicyUrl"
+            type="url"
+            inputMode="url"
+            placeholder="https://example.com/privacy"
+            value={branding.privacyPolicyUrl ?? ''}
+            maxLength={2048}
+            onChange={(event) => {
+              const trimmed = event.target.value.trim()
+              onBrandingChange({
+                ...branding,
+                privacyPolicyUrl: trimmed.length > 0 ? event.target.value : null,
+              })
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            When set, a &ldquo;Privacy&rdquo; link is shown in the chat footer.
+          </p>
+        </div>
+        {canHideBranding ? (
+          <div className="flex items-start justify-between gap-4 p-3">
+            <div className="min-w-0">
+              <Label htmlFor="brandingHidePoweredBy" className="text-foreground">
+                Hide &ldquo;Answers by Radioso&rdquo;
+              </Label>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Removes Radioso attribution from the chat footer.
+              </p>
+            </div>
+            <Switch
+              id="brandingHidePoweredBy"
+              checked={branding.hidePoweredBy}
+              onCheckedChange={(checked) => onBrandingChange({ ...branding, hidePoweredBy: checked })}
+            />
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -523,6 +589,16 @@ export function AssistantBehaviorSection({
               ) : null}
             </div>
           </div>
+
+          <BrandingSubsection
+            branding={assistantBehaviorSettings.branding ?? DEFAULT_BRANDING_SETTINGS}
+            onBrandingChange={(next) =>
+              onAssistantBehaviorDraft((current) => ({
+                ...current,
+                branding: next,
+              }))
+            }
+          />
         </div>
         </div>
       </SettingsCard>

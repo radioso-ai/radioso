@@ -31,6 +31,7 @@ export type AssistantBehaviorSettings = Pick<
   'suggestedQuestionsEnabled' | 'customInstruction'
 > & {
   theme: WebsiteEmbedThemeSettings
+  branding?: AgentBrandingSettings
   sourceScope?: AgentSourceScope
 }
 
@@ -40,6 +41,7 @@ export type PlatformSettings = Omit<ApiSchemas['PlatformSettingsResponse'], 'ret
 
 export type GeneralSettings = ApiSchemas['GeneralSettingsResponse']
 export type WebsiteEmbedThemeSettings = ApiSchemas['GeneralSettingsResponse']['websiteEmbedTheme']
+export type AgentBrandingSettings = ApiSchemas['ConversationAgent']['branding']
 export type WebsiteEmbedCopyPacks = ApiSchemas['GeneralSettingsResponse']['websiteEmbedCopy']
 export type WebsiteEmbedExpertOverrides = ApiSchemas['GeneralSettingsResponse']['websiteEmbedExpertOverrides']
 
@@ -469,6 +471,7 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
   customInstruction: agent.customInstruction,
   theme: agent.theme,
+  branding: agent.branding,
   sourceScope: agent.sourceScope,
 })
 

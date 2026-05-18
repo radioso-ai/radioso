@@ -1,8 +1,8 @@
 # Feature Specification: Token Authorization Phase 1
 
-**Feature Branch**: `062-multiple-role-tokens`  
-**Created**: 2026-05-17  
-**Status**: Approved for Phase 1 implementation  
+**Feature Branch**: `062-multiple-role-tokens`
+**Created**: 2026-05-17
+**Status**: Approved for Phase 1 implementation
 **Input**: User description: "Implement Phase 1 of the S1 remediation: remove the blanket bearer-token permission bypass, model workspace API tokens as explicit principals, preserve existing tokens as admin workspace API tokens, add route permission declarations and regression tests, and record multiple-token/productized access management as a follow-up issue."
 
 ## User Scenarios & Testing *(mandatory)*

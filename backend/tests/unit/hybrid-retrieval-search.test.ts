@@ -205,9 +205,11 @@ describe("hybrid retrieval search", () => {
             transactionalQueryCount += 1;
             expect(sql).toContain("WITH nearest_results AS MATERIALIZED");
             expect(sql).toContain("WHERE c.workspace_id = $1");
-            expect(sql).toContain("ORDER BY c.embedding <=> $2::vector ASC");
+            expect(sql).toContain("ORDER BY COALESCE(c.embedding_unbounded, c.embedding) <=> $2::vector ASC");
             expect(sql).toContain("WHERE distance <= $4");
             expect(sql).toContain("AND d.status = 'ready'");
+            expect(sql).toContain("AND c.embedding_model = $5");
+            expect(sql).toContain("AND vector_dims(COALESCE(c.embedding_unbounded, c.embedding)) = $6");
             return { rows: [] };
           },
         };
@@ -233,9 +235,11 @@ describe("hybrid retrieval search", () => {
     const search = new PgVectorSearch({
       async query(sql: string, params: unknown[]) {
         fallbackSql = sql;
-        expect(params).toEqual(["workspace-1", "[0.1,0.2]", 2, 0.8]);
+        expect(params).toEqual(["workspace-1", "[0.1,0.2]", 2, 0.8, "text-embedding-3-small", 2]);
         expect(sql).toContain("WITH nearest_results AS MATERIALIZED");
         expect(sql).toContain("WHERE c.workspace_id = $1");
+        expect(sql).toContain("AND c.embedding_model = $5");
+        expect(sql).toContain("AND vector_dims(COALESCE(c.embedding_unbounded, c.embedding)) = $6");
         expect(sql).toContain("AND d.status = 'ready'");
         return [
           {
@@ -271,7 +275,15 @@ describe("hybrid retrieval search", () => {
   it("keeps metadata filters inside the nearest-neighbor CTE", async () => {
     const search = new PgVectorSearch({
       async query(_sql: string, params: unknown[]) {
-        expect(params).toEqual(["workspace-1", "[0.1,0.2]", 2, 0.8, JSON.stringify({ language: "en" })]);
+        expect(params).toEqual([
+          "workspace-1",
+          "[0.1,0.2]",
+          2,
+          0.8,
+          "text-embedding-3-small",
+          2,
+          JSON.stringify({ language: "en" }),
+        ]);
         return [];
       },
       async withTransaction() {
@@ -285,6 +297,41 @@ describe("hybrid retrieval search", () => {
       topK: 2,
       similarityThreshold: 0.2,
       metadataFilter: { language: "en" },
+    });
+
+    expect(results).toEqual([]);
+  });
+
+  it("uses the indexed 1536-dimensional embedding column for legacy-sized embeddings", async () => {
+    const queryEmbedding = new Array<number>(1536).fill(0);
+    queryEmbedding[0] = 1;
+    const search = new PgVectorSearch({
+      async query() {
+        return [];
+      },
+      async withTransaction(callback: (client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> }) => Promise<unknown>) {
+        const client = {
+          async query(sql: string, params?: unknown[]) {
+            if (sql.startsWith("SET LOCAL")) {
+              return { rows: [] };
+            }
+
+            expect(params?.[5]).toBe(1536);
+            expect(sql).toContain("c.embedding <=> $2::vector(1536)");
+            expect(sql).toContain("AND vector_dims(c.embedding) = $6");
+            return { rows: [] };
+          },
+        };
+
+        return callback(client);
+      },
+    } as never);
+
+    const results = await search.search({
+      workspaceId: "workspace-1",
+      queryEmbedding,
+      topK: 2,
+      similarityThreshold: 0.2,
     });
 
     expect(results).toEqual([]);

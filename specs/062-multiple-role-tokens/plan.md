@@ -9,14 +9,14 @@ Remove the broad bearer-token permission bypass by modeling workspace API tokens
 
 ## Technical Context
 
-**Language/Version**: TypeScript on Node.js 24  
-**Primary Dependencies**: Express, Zod, Pino, existing auth/account modules  
-**Storage**: PostgreSQL with existing `workspace_tokens` records  
-**Testing**: Vitest, Supertest  
-**Target Platform**: Backend API and MCP routes  
-**Project Type**: Web application backend  
-**Performance Goals**: No new network or database round trips beyond existing token lookup and membership checks for protected routes  
-**Constraints**: Preserve existing single-token automation; do not introduce Phase 2 token-management UI or multi-token lifecycle  
+**Language/Version**: TypeScript on Node.js 24
+**Primary Dependencies**: Express, Zod, Pino, existing auth/account modules
+**Storage**: PostgreSQL with existing `workspace_tokens` records
+**Testing**: Vitest, Supertest
+**Target Platform**: Backend API and MCP routes
+**Project Type**: Web application backend
+**Performance Goals**: No new network or database round trips beyond existing token lookup and membership checks for protected routes
+**Constraints**: Preserve existing single-token automation; do not introduce Phase 2 token-management UI or multi-token lifecycle
 **Scale/Scope**: Existing workspace API, SDK, crawler, and MCP clients
 
 ## Constitution Check

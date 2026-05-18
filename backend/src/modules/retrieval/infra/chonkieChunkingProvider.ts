@@ -297,6 +297,7 @@ export class ChonkieChunkingProvider implements TextChunkingProviderPort {
       "semantic",
       request.chunkSize,
       request.minCharactersPerChunk ?? "",
+      request.embeddingModel ?? "",
     ].join(":");
     const cached = this.semanticChunkersByConfig.get(cacheKey);
 
@@ -375,7 +376,7 @@ const createSemanticChunker = async (
   const { SemanticChunker } = await import("@chonkiejs/core");
 
   return SemanticChunker.create({
-    embeddings: (texts: string[]) => embeddings.embedTexts(texts),
+    embeddings: (texts: string[]) => embeddings.embedTexts(texts, { model: request.embeddingModel }),
     chunkSize: request.chunkSize,
     minCharactersPerSentence: request.minCharactersPerChunk,
   });

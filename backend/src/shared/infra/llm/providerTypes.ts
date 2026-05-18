@@ -22,7 +22,7 @@ export interface TextGenerationClient {
 
 export interface EmbeddingClient {
   readonly metadata: LlmProviderMetadata;
-  embedTexts(texts: string[]): Promise<number[][]>;
+  embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]>;
 }
 
 export interface LlmCapabilityConfig extends LlmProviderMetadata {
@@ -35,6 +35,7 @@ export interface ResolvedLlmConfig {
   rewrite: LlmCapabilityConfig;
   rerank: LlmCapabilityConfig;
   embeddings: LlmCapabilityConfig;
+  embeddingProviderConfigs: LlmCapabilityConfig[];
 }
 
 export class ProviderConfigurationError extends Error {

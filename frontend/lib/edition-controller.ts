@@ -12,6 +12,7 @@ export const editionController = {
 
   canUseAuthRecovery: () => isEnterprise,
   canUseEnterpriseUsageLimits: () => isEnterprise,
+  canHideAssistantBranding: () => isEnterprise,
   canUseHumanContact: () => isEnterprise,
   canUseAssistantAnswerFeedback: () => isEnterprise,
   canUseAgentCreationExtensions: () => isEnterprise,

@@ -99,8 +99,9 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
     };
   }
 
-  async embedTexts(texts: string[]): Promise<number[][]> {
+  async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
     const startedAt = Date.now();
+    const model = options?.model ?? this.config.model;
     try {
       const response = await runProviderRequestWithTimeout(
         "OpenAI embeddings request",
@@ -108,7 +109,7 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
         (signal) =>
           this.client.embeddings.create(
             {
-              model: this.config.model,
+              model,
               input: texts,
             },
             { signal },
@@ -119,7 +120,7 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
         {
           llmCapability: this.metadata.capability,
           llmProvider: this.metadata.provider,
-          llmModel: this.metadata.model,
+          llmModel: model,
           embeddingInputCount: texts.length,
           embeddingCharacterCount: texts.reduce((sum, text) => sum + text.length, 0),
           embeddingDurationMs: durationMs,
@@ -136,7 +137,7 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
           error,
           llmCapability: this.metadata.capability,
           llmProvider: this.metadata.provider,
-          llmModel: this.metadata.model,
+          llmModel: model,
           embeddingInputCount: texts.length,
           embeddingCharacterCount: texts.reduce((sum, text) => sum + text.length, 0),
           embeddingDurationMs: durationMs,

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createHumanContactApplicationModule } from "./applicationModule.js";
 import type {
+  ApplicationChatActionSuggestionProviderRegistration,
   ApplicationChatIntakeProviderRegistration,
   ApplicationDatabaseMigrator,
   ApplicationModuleRegistrationContext,
@@ -143,5 +144,35 @@ describe("human contact application module", () => {
     expect(state.service).not.toBe(previousService);
 
     await module.shutdown?.();
+  });
+
+  it("registers an action suggestion provider that names contact_human", () => {
+    let actionFactory: ApplicationChatActionSuggestionProviderRegistration | undefined;
+    const module = createHumanContactApplicationModule();
+
+    module.register?.({
+      registerDatabaseMigrator: vi.fn(),
+      registerSkillDefinition: vi.fn(),
+      registerChatIntakeProvider: vi.fn(),
+      registerChatActionSuggestionProvider(registration) {
+        actionFactory = registration;
+      },
+      registerContactHistoryProvider: vi.fn(),
+      registerRouteMount: vi.fn(),
+      registerWebsiteEmbedIntegration: vi.fn(),
+      registerUsageLimitPolicy: vi.fn(),
+      registerAccountCreatedHandler: vi.fn(),
+    } satisfies ApplicationModuleRegistrationContext);
+
+    if (typeof actionFactory !== "function") {
+      throw new Error("chat action suggestion provider factory was not registered");
+    }
+    const provider = actionFactory({
+      database: { query: vi.fn().mockResolvedValue([]) },
+      chatGateway: { answer: vi.fn().mockResolvedValue("Contact us") },
+      logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      auditService: { record: vi.fn() },
+    });
+    expect(provider.name).toBe("contact_human");
   });
 });

@@ -28,6 +28,8 @@ import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSe
 import {
   AssistantChatService,
   AssistantHistoryService,
+  ChatActionSuggestionRegistry,
+  ChatActionSuggestionService,
   ChatBootstrapService,
   ChatHistoryService,
   ChatService,
@@ -47,6 +49,7 @@ import {
   type ApplicationComposition,
 } from "../composition/index.js";
 import {
+  type DocumentJobDispatcherPort,
   DocumentDeletionService,
   DocumentImportService,
   DocumentIngestionService,
@@ -66,10 +69,12 @@ import {
 import { AbuseControlRepository } from "../../db/repositories/abuseControlRepository.js";
 import { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import {
+  embeddingModelIds,
   IngestionSettingsService,
   PlatformSettingsService,
   RetrievalSettingsService,
 } from "../../modules/settings/composition.js";
+import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
 import { SkillCatalogService } from "../../modules/skills/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
@@ -226,10 +231,15 @@ export const buildSettingsServices = (input: {
   ingestionSettingsRepository: IngestionSettingsRepository;
   productAnalyticsService: ProductAnalyticsService;
   retrievalSettingsRepository: RetrievalSettingsRepository;
+  supportedEmbeddingModels?: readonly EmbeddingModelId[];
+  workspaceIngestionReprocessService?: Pick<WorkspaceIngestionReprocessService, "reprocessWorkspace">;
 }) => {
   const ingestionSettingsService = new IngestionSettingsService(
     input.ingestionSettingsRepository,
     input.auditService,
+    input.documentRepository,
+    input.supportedEmbeddingModels,
+    input.workspaceIngestionReprocessService,
   );
   const retrievalSettingsService = new RetrievalSettingsService(
     input.retrievalSettingsRepository,
@@ -244,9 +254,25 @@ export const buildSettingsServices = (input: {
   };
 };
 
+export const listSupportedEmbeddingModels = (llmRegistry: LlmProviderRegistry): readonly EmbeddingModelId[] =>
+  embeddingModelIds.filter((model) => llmRegistry.canServeEmbeddingModel(model));
+
+export const buildWorkspaceIngestionReprocessService = (input: {
+  auditService: AuditService;
+  documentJobDispatcher: DocumentJobDispatcherPort;
+  repositories: ReturnType<typeof buildRepositories>;
+}): WorkspaceIngestionReprocessService =>
+  new WorkspaceIngestionReprocessService(
+    input.repositories.documentRepository,
+    input.auditService,
+    input.repositories.documentProcessingJobRepository,
+    input.documentJobDispatcher,
+  );
+
 export const buildDocumentServices = (input: {
   auditService: AuditService;
   composition: ApplicationComposition;
+  documentJobDispatcher?: DocumentJobDispatcherPort;
   documentSourceRepository: DocumentSourceRepository;
   env: Env;
   logger: AppLogger;
@@ -257,6 +283,7 @@ export const buildDocumentServices = (input: {
   telemetryService: TelemetryService;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   embeddingService: EmbeddingService;
+  workspaceIngestionReprocessService?: WorkspaceIngestionReprocessService;
 }) => {
   const {
     auditService,
@@ -273,7 +300,8 @@ export const buildDocumentServices = (input: {
   } = input;
   const documentStorage = composition.documentStorage ?? createDefaultDocumentStorage(env);
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
-  const documentJobDispatcher = composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
+  const documentJobDispatcher =
+    input.documentJobDispatcher ?? composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
   const websiteCrawlJobDispatcher = createDefaultWebsiteCrawlJobDispatcher(env, logger);
   const websiteCrawlerProvider = composition.websiteCrawlerProvider ?? new RadiosoCrawlerProvider();
   const chunkingStrategyRegistry = createDefaultChunkingStrategyRegistry(
@@ -348,12 +376,13 @@ export const buildDocumentServices = (input: {
     auditService,
     composition.capabilityPolicy,
   );
-  const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(
-    repositories.documentRepository,
-    auditService,
-    repositories.documentProcessingJobRepository,
-    documentJobDispatcher,
-  );
+  const workspaceIngestionReprocessService =
+    input.workspaceIngestionReprocessService ??
+    buildWorkspaceIngestionReprocessService({
+      auditService,
+      documentJobDispatcher,
+      repositories,
+    });
   const documentSearchHistoryService = new DocumentSearchHistoryService(
     input.auditEventRepository,
     repositories.documentRepository,
@@ -380,6 +409,7 @@ export const buildRetrievalServices = (input: {
   database: Database;
   documentRepository: DocumentRepository;
   embeddingService: EmbeddingService;
+  ingestionSettingsService: IngestionSettingsService;
   llmRegistry: LlmProviderRegistry;
   logger: AppLogger;
   retrievalSettingsService: RetrievalSettingsService;
@@ -490,6 +520,31 @@ export const buildChatServices = (input: {
           logger: input.logger,
         })
       : input.composition.answerFeedbackHistoryProviderRegistration;
+  const resolvedChatActionSuggestionProviders = input.composition.chatActionSuggestionProviders.map(
+    (registration) =>
+      typeof registration === "function"
+        ? registration({
+            database: input.database,
+            chatGateway,
+            logger: input.logger,
+            auditService: input.auditService,
+          })
+        : registration,
+  );
+  const chatActionSuggestionService = new ChatActionSuggestionService(
+    new ChatActionSuggestionRegistry(resolvedChatActionSuggestionProviders),
+    {
+      onError: (providerName, error) => {
+        input.logger.error(
+          {
+            providerName,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          "Chat action suggestion provider failed",
+        );
+      },
+    },
+  );
   const chatService = new ChatService(
     input.conversationRepository,
     input.messageRepository,
@@ -502,6 +557,7 @@ export const buildChatServices = (input: {
     input.usageLimitPolicy,
     input.agentService,
     chatIntakeProvider,
+    chatActionSuggestionService,
   );
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,

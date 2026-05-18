@@ -20,6 +20,7 @@ export interface VectorSearchPort {
     queryEmbedding: number[];
     topK: number;
     similarityThreshold: number;
+    embeddingModel?: string;
     metadataFilter?: Record<string, unknown>;
     sourceFilter?: RetrievalSourceFilter;
   }): Promise<RetrievedChunk[]>;
@@ -46,16 +47,26 @@ export class PgVectorSearch implements VectorSearchPort {
     queryEmbedding: number[];
     topK: number;
     similarityThreshold: number;
+    embeddingModel?: string;
     metadataFilter?: Record<string, unknown>;
     sourceFilter?: RetrievalSourceFilter;
   }): Promise<RetrievedChunk[]> {
     const maxDistance = 1 - input.similarityThreshold;
+    const queryEmbeddingDimensions = input.queryEmbedding.length;
+    const embeddingExpression = queryEmbeddingDimensions === 1536
+      ? "c.embedding"
+      : "COALESCE(c.embedding_unbounded, c.embedding)";
+    const distanceExpression = queryEmbeddingDimensions === 1536
+      ? `${embeddingExpression} <=> $2::vector(1536)`
+      : `${embeddingExpression} <=> $2::vector`;
     const hasMetadataFilter = hasNonEmptyFilter(input.metadataFilter);
     const params: unknown[] = [
       input.workspaceId,
       `[${input.queryEmbedding.join(",")}]`,
       input.topK,
       maxDistance,
+      input.embeddingModel ?? "text-embedding-3-small",
+      queryEmbeddingDimensions,
     ];
     const hasConstrainedSourceFilter = input.sourceFilter?.constrained ?? false;
     let includeUnassignedDocuments = false;
@@ -102,15 +113,17 @@ export class PgVectorSearch implements VectorSearchPort {
              c.start_offset,
              c.end_offset,
              c.metadata,
-             c.embedding <=> $2::vector AS distance
+             ${distanceExpression} AS distance
       FROM chunks c
       JOIN documents d ON d.id = c.document_id
       WHERE c.workspace_id = $1
         AND d.status = 'ready'
-        AND c.embedding IS NOT NULL
+        AND ${embeddingExpression} IS NOT NULL
+        AND c.embedding_model = $5
+        AND vector_dims(${embeddingExpression}) = $6
         ${sourceClause}
         ${metadataClause}
-      ORDER BY c.embedding <=> $2::vector ASC
+      ORDER BY ${distanceExpression} ASC
       LIMIT $3
     )
     SELECT chunk_id,

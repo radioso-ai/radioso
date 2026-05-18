@@ -1379,6 +1379,39 @@
               "recursive_text"
             ]
           },
+          "embeddingModel": {
+            "type": "string",
+            "enum": [
+              "text-embedding-3-small",
+              "text-embedding-3-large",
+              "text-embedding-ada-002",
+              "gemini-embedding-001"
+            ]
+          },
+          "pendingEmbeddingModel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "text-embedding-3-small",
+              "text-embedding-3-large",
+              "text-embedding-ada-002",
+              "gemini-embedding-001"
+            ]
+          },
+          "supportedEmbeddingModels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "text-embedding-3-small",
+                "text-embedding-3-large",
+                "text-embedding-ada-002",
+                "gemini-embedding-001"
+              ]
+            }
+          },
           "fixedWindowChunkSize": {
             "type": "integer"
           },
@@ -1403,6 +1436,9 @@
         "required": [
           "workspaceId",
           "chunkingStrategy",
+          "embeddingModel",
+          "pendingEmbeddingModel",
+          "supportedEmbeddingModels",
           "fixedWindowChunkSize",
           "fixedWindowChunkOverlap",
           "structuredMinChunkSize",
@@ -1441,6 +1477,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 2000
+          },
+          "embeddingModel": {
+            "type": "string",
+            "enum": [
+              "text-embedding-3-small",
+              "text-embedding-3-large",
+              "text-embedding-ada-002",
+              "gemini-embedding-001"
+            ]
           }
         },
         "required": [
@@ -2768,6 +2813,24 @@
                   "text"
                 ]
               },
+              "branding": {
+                "type": "object",
+                "properties": {
+                  "hidePoweredBy": {
+                    "type": "boolean"
+                  },
+                  "privacyPolicyUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "hidePoweredBy",
+                  "privacyPolicyUrl"
+                ]
+              },
               "retrievalEnabled": {
                 "type": "boolean"
               },
@@ -2834,6 +2897,7 @@
               "customInstruction",
               "suggestedQuestionsEnabled",
               "theme",
+              "branding",
               "retrievalEnabled",
               "sourceScope",
               "logo",
@@ -2888,6 +2952,21 @@
               },
               "text": {
                 "type": "string"
+              }
+            }
+          },
+          "branding": {
+            "type": "object",
+            "properties": {
+              "hidePoweredBy": {
+                "type": "boolean"
+              },
+              "privacyPolicyUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 2048
               }
             }
           },
@@ -3084,6 +3163,24 @@
               "brandText",
               "surface",
               "text"
+            ]
+          },
+          "branding": {
+            "type": "object",
+            "properties": {
+              "hidePoweredBy": {
+                "type": "boolean"
+              },
+              "privacyPolicyUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "hidePoweredBy",
+              "privacyPolicyUrl"
             ]
           },
           "intakeActions": {
@@ -5791,6 +5888,54 @@
           "skillName"
         ]
       },
+      "ChatSuggestionAction": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ask_followup"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "start_intent"
+                ]
+              },
+              "intent": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string"
+                  },
+                  "intentName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "skillName"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "intent"
+            ]
+          }
+        ],
+        "description": "Behavior triggered when the user activates the suggestion chip. Absent means ask_followup (default: submit the chip text as a new user turn)."
+      },
       "ChatSuggestion": {
         "type": "object",
         "properties": {
@@ -5802,6 +5947,9 @@
           },
           "citation": {
             "$ref": "#/components/schemas/Citation"
+          },
+          "action": {
+            "$ref": "#/components/schemas/ChatSuggestionAction"
           }
         },
         "required": [
@@ -6311,6 +6459,24 @@
               "brandText",
               "surface",
               "text"
+            ]
+          },
+          "branding": {
+            "type": "object",
+            "properties": {
+              "hidePoweredBy": {
+                "type": "boolean"
+              },
+              "privacyPolicyUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "hidePoweredBy",
+              "privacyPolicyUrl"
             ]
           },
           "intakeActions": {
@@ -8639,6 +8805,42 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/ingestion/embedding-model/cancel": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Cancel a pending workspace embedding model change",
+        "operationId": "cancelPendingEmbeddingModel",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending embedding model change cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionSettings"
                 }
               }
             }

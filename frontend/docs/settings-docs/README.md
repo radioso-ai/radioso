@@ -30,7 +30,7 @@ The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts
 The dashboard presents settings in product order:
 
 1. Workspace, Assistant, and Channels: workspace access, assistant behavior, anonymous chat, and danger zone
-2. Ingestion: Choose a chunking strategy -> Tune active chunking -> Apply changes to existing documents
+2. Ingestion: Choose chunking and embedding settings -> Tune active chunking -> Apply changes to existing documents
 3. Retrieval: Rewrite the incoming question -> Tune search and reranking -> Prioritize by metadata -> Present grounded evidence
 4. Connectors: connector list and configuration, without a per-page side menu
 

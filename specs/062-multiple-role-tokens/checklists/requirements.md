@@ -1,7 +1,7 @@
 # Specification Quality Checklist: Token Authorization Phase 1
 
-**Purpose**: Validate specification completeness and quality before proceeding to planning  
-**Created**: 2026-05-17  
+**Purpose**: Validate specification completeness and quality before proceeding to planning
+**Created**: 2026-05-17
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality

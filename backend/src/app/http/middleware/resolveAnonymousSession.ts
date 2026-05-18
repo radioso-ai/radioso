@@ -6,7 +6,7 @@ import { AppError, notFound } from "../../../shared/domain/errors.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import type { AgentRecord, AgentService } from "../../../modules/agents/public.js";
-import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../../modules/agents/public.js";
+import { defaultAgentBrandingSettings, getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../../modules/agents/public.js";
 import {
   resolveAssistantDisplayName,
 } from "../../../modules/settings/contracts/assistantBootstrap.js";
@@ -22,7 +22,7 @@ const anonymousTokenParamsSchema = z.object({
   token: z.string().min(1),
 });
 
-type PublicSessionAgent = Pick<AgentRecord, "id" | "workspaceId" | "name" | "logo" | "theme" | "proactiveGreetingEnabled" | "surfaceSettings">;
+type PublicSessionAgent = Pick<AgentRecord, "id" | "workspaceId" | "name" | "logo" | "theme" | "branding" | "proactiveGreetingEnabled" | "surfaceSettings">;
 
 const isLoopbackHost = (host: string | undefined) => {
   if (!host) {
@@ -106,6 +106,7 @@ const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionA
     logo: null,
     // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
     theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
+    branding: defaultAgentBrandingSettings(),
     proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
     surfaceSettings: {
       authenticatedChat: {
@@ -236,6 +237,7 @@ export const resolveAnonymousSession = (
       res.locals.assistantBootstrapActive = isAgentBootstrapActive(agent);
       res.locals.assistantLogoAvailable = Boolean(agent.logo);
       res.locals.assistantTheme = agent.theme;
+      res.locals.assistantBranding = agent.branding;
       next();
     } catch (error) {
       next(error);

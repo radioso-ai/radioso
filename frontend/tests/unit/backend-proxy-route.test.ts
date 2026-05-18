@@ -138,7 +138,7 @@ describe('backend proxy route', () => {
 
     const { POST } = await import('@/app/backend/[...path]/route')
 
-    const request = new Request('https://frontend.example.com/backend/api/v1/ee/auth/login', {
+    const request = new Request('https://frontend.example.com/backend/api/v1/auth/login', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -150,7 +150,7 @@ describe('backend proxy route', () => {
     })
 
     const response = await POST(request, {
-      params: Promise.resolve({ path: ['api', 'v1', 'ee', 'auth', 'login'] }),
+      params: Promise.resolve({ path: ['api', 'v1', 'auth', 'login'] }),
     })
 
     expect(response.status).toBe(401)

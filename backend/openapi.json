@@ -5791,6 +5791,54 @@
           "skillName"
         ]
       },
+      "ChatSuggestionAction": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ask_followup"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "start_intent"
+                ]
+              },
+              "intent": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string"
+                  },
+                  "intentName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "skillName"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "intent"
+            ]
+          }
+        ],
+        "description": "Behavior triggered when the user activates the suggestion chip. Absent means ask_followup (default: submit the chip text as a new user turn)."
+      },
       "ChatSuggestion": {
         "type": "object",
         "properties": {
@@ -5802,6 +5850,9 @@
           },
           "citation": {
             "$ref": "#/components/schemas/Citation"
+          },
+          "action": {
+            "$ref": "#/components/schemas/ChatSuggestionAction"
           }
         },
         "required": [

@@ -30,6 +30,7 @@ import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeRes
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import { ChatAnswerPresenter, type ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
+import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -208,6 +209,7 @@ export class ChatService {
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
     agentService?: Pick<AgentService, "resolve">,
     private readonly chatIntakeProvider: ChatIntakeProviderPort = new NoopChatIntakeProvider(),
+    private readonly chatActionSuggestionService?: ChatActionSuggestionService,
   ) {
     this.chatTurnLifecycle = new ChatTurnLifecycle(
       conversationRepository,
@@ -231,6 +233,7 @@ export class ChatService {
           history,
           prompt,
         })),
+      chatActionSuggestionService,
     );
   }
 
@@ -559,11 +562,12 @@ export class ChatService {
         input.query,
         input.userExpectedLocale,
       );
-      lazySuggestionsPromise = noContextPresentation
-        ? Promise.resolve({
-            suggestions: noContextPresentation.suggestions,
-          })
-        : this.chatAnswerPresenter.applyAssistantSuggestions(session, presentationWithoutSuggestions);
+      lazySuggestionsPromise = this.composeLazySuggestions({
+        session,
+        presentationWithoutSuggestions,
+        noContextPresentation,
+        userExpectedLocale: input.userExpectedLocale,
+      });
       const presentation: ChatPresentedAnswer = {
         ...presentationWithoutSuggestions,
         suggestions: undefined,
@@ -617,6 +621,32 @@ export class ChatService {
     } catch {
       // Lazy follow-up suggestions are best effort after the answer is already complete.
     }
+  }
+
+  private async composeLazySuggestions(input: {
+    session: PreparedSession;
+    presentationWithoutSuggestions: ChatPresentedAnswer;
+    noContextPresentation: ChatPresentedAnswer | null;
+    userExpectedLocale?: string | null;
+  }): Promise<Pick<ChatPresentedAnswer, "suggestions">> {
+    const { session, presentationWithoutSuggestions, noContextPresentation, userExpectedLocale } = input;
+    const questionSuggestionsPromise = noContextPresentation
+      ? Promise.resolve(noContextPresentation.suggestions ?? [])
+      : this.chatAnswerPresenter
+          .applyAssistantSuggestions(session, presentationWithoutSuggestions)
+          .then((result) => result.suggestions ?? []);
+    const actionSuggestionsPromise = this.chatAnswerPresenter
+      .applyActionSuggestions(session, presentationWithoutSuggestions, userExpectedLocale)
+      .then((result) => result.suggestions ?? []);
+
+    const [questionSuggestions, actionMergedSuggestions] = await Promise.all([
+      questionSuggestionsPromise,
+      actionSuggestionsPromise,
+    ]);
+    // applyActionSuggestions returns the merge of presentation.suggestions (none here) + action chips,
+    // so its result is the canonical action-chip list to prepend.
+    const merged = [...actionMergedSuggestions, ...questionSuggestions];
+    return { suggestions: merged };
   }
 
   private async generateAnswerPresentation(

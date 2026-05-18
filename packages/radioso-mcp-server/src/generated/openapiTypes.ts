@@ -2619,10 +2619,23 @@ export interface components {
         SkillParams: {
             skillName: string;
         };
+        /** @description Behavior triggered when the user activates the suggestion chip. Absent means ask_followup (default: submit the chip text as a new user turn). */
+        ChatSuggestionAction: {
+            /** @enum {string} */
+            kind: "ask_followup";
+        } | {
+            /** @enum {string} */
+            kind: "start_intent";
+            intent: {
+                skillName: string;
+                intentName?: string;
+            };
+        };
         ChatSuggestion: {
             text: string;
             kind: string;
             citation?: components["schemas"]["Citation"];
+            action?: components["schemas"]["ChatSuggestionAction"];
         };
         AssistantRoute: {
             /** @enum {string} */

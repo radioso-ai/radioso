@@ -28,6 +28,8 @@ import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSe
 import {
   AssistantChatService,
   AssistantHistoryService,
+  ChatActionSuggestionRegistry,
+  ChatActionSuggestionService,
   ChatBootstrapService,
   ChatHistoryService,
   ChatService,
@@ -490,6 +492,31 @@ export const buildChatServices = (input: {
           logger: input.logger,
         })
       : input.composition.answerFeedbackHistoryProviderRegistration;
+  const resolvedChatActionSuggestionProviders = input.composition.chatActionSuggestionProviders.map(
+    (registration) =>
+      typeof registration === "function"
+        ? registration({
+            database: input.database,
+            chatGateway,
+            logger: input.logger,
+            auditService: input.auditService,
+          })
+        : registration,
+  );
+  const chatActionSuggestionService = new ChatActionSuggestionService(
+    new ChatActionSuggestionRegistry(resolvedChatActionSuggestionProviders),
+    {
+      onError: (providerName, error) => {
+        input.logger.error(
+          {
+            providerName,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          "Chat action suggestion provider failed",
+        );
+      },
+    },
+  );
   const chatService = new ChatService(
     input.conversationRepository,
     input.messageRepository,
@@ -502,6 +529,7 @@ export const buildChatServices = (input: {
     input.usageLimitPolicy,
     input.agentService,
     chatIntakeProvider,
+    chatActionSuggestionService,
   );
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,

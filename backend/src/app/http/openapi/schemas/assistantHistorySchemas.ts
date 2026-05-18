@@ -36,12 +36,30 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   void SkillDiagnosticEvidenceSchema;
   void SkillDiagnosticDefinitionSchema;
 
+  const ChatSuggestionActionSchema = registry.register(
+    "ChatSuggestionAction",
+    z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("ask_followup") }),
+      z.object({
+        kind: z.literal("start_intent"),
+        intent: z.object({
+          skillName: z.string(),
+          intentName: z.string().optional(),
+        }),
+      }),
+    ]).openapi({
+      description:
+        "Behavior triggered when the user activates the suggestion chip. Absent means ask_followup (default: submit the chip text as a new user turn).",
+    }),
+  );
+
   const ChatSuggestionSchema = registry.register(
     "ChatSuggestion",
     z.object({
       text: z.string(),
       kind: z.string(),
       citation: schemas.CitationSchema.optional(),
+      action: ChatSuggestionActionSchema.optional(),
     }),
   );
 
@@ -324,6 +342,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     SkillCatalogEntrySchema,
     SkillCatalogResponseSchema,
     SkillParamsSchema,
+    ChatSuggestionActionSchema,
     ChatSuggestionSchema,
     AssistantRouteSchema,
     AssistantRouteDiagnosticsSchema,

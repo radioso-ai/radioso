@@ -27,6 +27,7 @@ import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 import {
   answerFeedbackApi,
+  type AgentBrandingSettings,
   type AnswerFeedbackState,
   type AnswerFeedbackValue,
   type ChatSuggestion,
@@ -283,6 +284,7 @@ function PublicChatCenteredIntro({
   greetingMessage,
   onSuggestionSelect,
   isLoading,
+  branding,
   children,
 }: {
   copy: ReturnType<typeof getWebsiteEmbedCopy>
@@ -293,6 +295,7 @@ function PublicChatCenteredIntro({
   greetingMessage: ChatThreadMessage | null
   onSuggestionSelect: (suggestion: ChatSuggestion, messageId: string) => void
   isLoading: boolean
+  branding?: AgentBrandingSettings | null
   children: ReactNode
 }) {
   const visibleSuggestions = greetingMessage?.suggestions ?? []
@@ -366,7 +369,7 @@ function PublicChatCenteredIntro({
           </div>
         ) : null}
         <div className="w-full pt-2">{children}</div>
-        <PublicChatBubbleDisclaimer theme={theme} copy={copy} workspaceName={workspaceName} />
+        <PublicChatBubbleDisclaimer theme={theme} copy={copy} workspaceName={workspaceName} branding={branding} />
       </div>
     </div>
   )
@@ -402,6 +405,7 @@ function PublicChatContent({
     workspaceName,
     assistantAvatarUrl,
     assistantTheme,
+    branding,
     intakeActions,
     isLoading,
     isHydrating,
@@ -689,6 +693,7 @@ function PublicChatContent({
           greetingMessage={greetingMessage}
           onSuggestionSelect={handleSuggestionSelect}
           isLoading={isLoading}
+          branding={branding}
         >
           <PublicChatBubbleComposerForm
             theme={theme}
@@ -787,13 +792,6 @@ function PublicChatContent({
               </div>
             ) : null}
             <PublicChatBubbleComposerSurface theme={theme} compact={isCompactKeyboardLayout}>
-              {!isCompactKeyboardLayout ? (
-                <PublicChatBubbleDisclaimer
-                  theme={theme}
-                  copy={copy}
-                  workspaceName={resolvedWorkspaceName}
-                />
-              ) : null}
               <PublicChatBubbleComposerForm
                 theme={theme}
                 copy={copy}
@@ -805,6 +803,14 @@ function PublicChatContent({
                 isLoading={isLoading}
                 compact={isCompactKeyboardLayout}
               />
+              {!isCompactKeyboardLayout ? (
+                <PublicChatBubbleDisclaimer
+                  theme={theme}
+                  copy={copy}
+                  workspaceName={resolvedWorkspaceName}
+                  branding={branding}
+                />
+              ) : null}
             </PublicChatBubbleComposerSurface>
           </div>
         </>

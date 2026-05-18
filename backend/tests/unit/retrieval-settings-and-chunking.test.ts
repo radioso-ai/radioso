@@ -7,11 +7,14 @@ import {
   validateIngestionSettings,
 } from "../../src/modules/settings/domain/ingestionSettings.js";
 import {
+  DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
+  DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS,
   type RetrievalSettingsInput,
   defaultRetrievalSettings,
   createDefaultMetadataRule,
   validateRetrievalSettings,
 } from "../../src/modules/settings/domain/retrievalSettings.js";
+import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 
 describe("settings and chunking", () => {
   it("rejects invalid retrieval settings", () => {
@@ -116,6 +119,17 @@ describe("settings and chunking", () => {
     expect(defaults.suggestedQuestionsCount).toBe(3);
   });
 
+  it("loads default rewrite instructions from prompt markdown files", () => {
+    const semanticPrompt = loadPromptTemplate("retrieval/semantic-rewrite-instructions.md");
+    const lexicalPrompt = loadPromptTemplate("retrieval/lexical-rewrite-instructions.md");
+    const defaults = defaultRetrievalSettings("workspace-1");
+
+    expect(DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS).toBe(semanticPrompt);
+    expect(DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS).toBe(lexicalPrompt);
+    expect(defaults.semanticRewriteInstructions).toBe(semanticPrompt);
+    expect(defaults.lexicalRewriteInstructions).toBe(lexicalPrompt);
+  });
+
   it("rejects customInstruction exceeding 2000 characters", () => {
     const metadataRule = {
       ...createDefaultMetadataRule(),
@@ -182,8 +196,12 @@ describe("settings and chunking", () => {
       customInstruction: "",
     });
 
-    expect(normalized.semanticRewriteInstructions).not.toBe("");
-    expect(normalized.lexicalRewriteInstructions).not.toBe("");
+    expect(normalized.semanticRewriteInstructions).toBe(
+      loadPromptTemplate("retrieval/semantic-rewrite-instructions.md"),
+    );
+    expect(normalized.lexicalRewriteInstructions).toBe(
+      loadPromptTemplate("retrieval/lexical-rewrite-instructions.md"),
+    );
   });
 
   it("rejects invalid boolean settings values", () => {

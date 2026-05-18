@@ -6,7 +6,7 @@ const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_STANDALONE_MCP_URL = process.env.NODE_ENV === "production" ? "" : "http://localhost:8787/mcp";
 const backendProxyMcpUrl = (mountPath) => `/backend${mountPath.startsWith("/") ? mountPath : `/${mountPath}`}`;
 
-const cspDirectives = [
+const buildCspDirectives = ({ frameAncestors }) => [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
   "script-src-attr 'none'",
@@ -18,9 +18,12 @@ const cspDirectives = [
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
-  "frame-ancestors 'self'",
+  frameAncestors,
   "worker-src 'self' blob:",
-].join("; ");
+].filter(Boolean).join("; ");
+
+const cspDirectives = buildCspDirectives({ frameAncestors: "frame-ancestors 'self'" });
+const embedCspDirectives = buildCspDirectives({ frameAncestors: "" });
 
 const securityHeaders = [
   {
@@ -40,6 +43,12 @@ const securityHeaders = [
     value: "camera=(), microphone=(), geolocation=()",
   },
 ];
+
+const embedSecurityHeaders = securityHeaders.map((header) => (
+  header.key === "Content-Security-Policy"
+    ? { ...header, value: embedCspDirectives }
+    : header
+));
 
 const resolvePublicMcpUrl = () => {
   if (process.env.NEXT_PUBLIC_MCP_URL) {
@@ -145,6 +154,10 @@ const nextConfig = {
       {
         source: "/:path*",
         headers: securityHeaders,
+      },
+      {
+        source: "/embed/:path*",
+        headers: embedSecurityHeaders,
       },
     ];
   },

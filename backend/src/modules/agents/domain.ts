@@ -443,26 +443,56 @@ const normalizeSourceScope = (value: unknown): AgentSourceScope => {
   };
 };
 
+export const defaultWebsiteEmbedSurfaceSettings = (): WebsiteEmbedSurfaceSettings => ({
+  enabled: false,
+  token: null,
+  allowedOrigins: [],
+  launcherLabel: "Chat with us",
+  launcherPosition: DEFAULT_AGENT_SURFACE_POSITION,
+  theme: defaultAgentEmbedTheme(),
+  copy: {},
+  expertOverrides: {},
+});
+
+export const normalizeWebsiteEmbedSurfaceSettings = (
+  input: unknown,
+  options: { themeFallback?: unknown } = {},
+): WebsiteEmbedSurfaceSettings => {
+  if (input === undefined || input === null) {
+    return {
+      ...defaultWebsiteEmbedSurfaceSettings(),
+      theme: normalizeEmbedTheme(options.themeFallback),
+    };
+  }
+  if (typeof input !== "object" || Array.isArray(input)) {
+    throw badRequest("websiteEmbed surface settings must be an object");
+  }
+  const record = input as Record<string, unknown>;
+  const enabled = Boolean(record.enabled);
+  const allowedOrigins = normalizeWebsiteEmbedAllowedOrigins(record.allowedOrigins);
+  if (enabled && allowedOrigins.length === 0) {
+    throw badRequest("At least one allowed origin is required when website embed is enabled");
+  }
+
+  return {
+    enabled,
+    token: typeof record.token === "string" ? record.token : null,
+    allowedOrigins,
+    launcherLabel: normalizeText((record.launcherLabel as string | undefined) ?? "Chat with us", "websiteEmbedLauncherLabel", 80),
+    launcherPosition: normalizeSurfacePosition(record.launcherPosition),
+    theme: normalizeEmbedTheme(record.theme ?? options.themeFallback),
+    copy: normalizeEmbedCopy(record.copy),
+    expertOverrides: normalizeEmbedExpertOverrides(record.expertOverrides),
+  };
+};
+
 export const validateAgentInput = (
   input: AgentInput = {},
   options: ValidateAgentInputOptions = {},
 ): NormalizedAgentInput => {
-  const websiteEmbedEnabled = Boolean(input.surfaceSettings?.websiteEmbed?.enabled);
-  const websiteEmbedAllowedOrigins = normalizeWebsiteEmbedAllowedOrigins(input.surfaceSettings?.websiteEmbed?.allowedOrigins);
-  if (websiteEmbedEnabled && websiteEmbedAllowedOrigins.length === 0) {
-    throw badRequest("At least one allowed origin is required when website embed is enabled");
-  }
-
-  const websiteEmbed: WebsiteEmbedSurfaceSettings = {
-    enabled: websiteEmbedEnabled,
-    token: input.surfaceSettings?.websiteEmbed?.token ?? null,
-    allowedOrigins: websiteEmbedAllowedOrigins,
-    launcherLabel: normalizeText(input.surfaceSettings?.websiteEmbed?.launcherLabel ?? "Chat with us", "websiteEmbedLauncherLabel", 80),
-    launcherPosition: normalizeSurfacePosition(input.surfaceSettings?.websiteEmbed?.launcherPosition),
-    theme: normalizeEmbedTheme(input.surfaceSettings?.websiteEmbed?.theme ?? input.theme),
-    copy: normalizeEmbedCopy(input.surfaceSettings?.websiteEmbed?.copy),
-    expertOverrides: normalizeEmbedExpertOverrides(input.surfaceSettings?.websiteEmbed?.expertOverrides),
-  };
+  const websiteEmbed = normalizeWebsiteEmbedSurfaceSettings(input.surfaceSettings?.websiteEmbed, {
+    themeFallback: input.theme,
+  });
 
   // Transitional auto-mirror: the new home for website-embed data is
   // `surfaceSettings.extensions.websiteEmbed`, but the hardcoded

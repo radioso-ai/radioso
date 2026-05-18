@@ -6,7 +6,6 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 
 const manifestModulePaths = [
   "ee/packages/auth-frontend/feature-manifest.mjs",
-  "ee/packages/embed-widget/feature-manifest.mjs",
   "ee/packages/agent-wizard-frontend/feature-manifest.mjs",
 ];
 
@@ -154,7 +153,6 @@ const readEnterprisePackageExports = async () => {
   const exportsByPackage = new Map();
   for (const packageJsonPath of [
     "ee/packages/auth-frontend/package.json",
-    "ee/packages/embed-widget/package.json",
     "ee/packages/agent-wizard-frontend/package.json",
   ]) {
     try {
@@ -173,7 +171,6 @@ const findExistingDocs = async () => {
   for (const relativePath of [
     "ee/readme.md",
     "readme.md",
-    "docs-portal/content/quickstarts/website-embed.mdx",
   ]) {
     try {
       await fs.access(path.join(repoRoot, relativePath));

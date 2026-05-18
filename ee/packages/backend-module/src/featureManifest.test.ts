@@ -21,15 +21,15 @@ describe("feature manifests", () => {
     const result = validateFeatureManifests([
       baseManifest(),
       baseManifest({
-        id: "enterprise-embed-widget",
-        name: "Enterprise Embed Widget",
+        id: "enterprise-agent-wizard",
+        name: "Enterprise Agent Wizard",
         backendModuleId: undefined,
         apiNamespaces: undefined,
         frontendRoutes: [
           {
-            relativePath: "app/embed/[token]/page.tsx",
-            packageName: "@radioso/enterprise-embed-widget",
-            exportPath: "embed-page",
+            relativePath: "app/agents/wizard/page.tsx",
+            packageName: "@radioso/enterprise-agent-wizard-frontend",
+            exportPath: "wizard-page",
             exports: ["default"],
           },
         ],

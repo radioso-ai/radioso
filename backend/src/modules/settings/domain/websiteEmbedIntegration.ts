@@ -15,11 +15,29 @@ export interface WebsiteEmbedIntegrationProvider {
   buildSnippet(workspace: WebsiteEmbedIntegrationWorkspace): string | null;
 }
 
+const SCRIPT_PATH = "/radioso-embed.js";
+
+export interface DefaultWebsiteEmbedIntegrationProviderOptions {
+  widgetOrigin?: string;
+}
+
 export class DefaultWebsiteEmbedIntegrationProvider implements WebsiteEmbedIntegrationProvider {
-  constructor(_publicChatBaseUrl?: string) {}
+  private readonly widgetOrigin?: string;
+
+  constructor(options: DefaultWebsiteEmbedIntegrationProviderOptions = {}) {
+    this.widgetOrigin = options.widgetOrigin;
+  }
 
   buildScriptUrl(): string | null {
-    return null;
+    if (!this.widgetOrigin) {
+      return null;
+    }
+
+    try {
+      return new URL(SCRIPT_PATH, this.widgetOrigin).toString();
+    } catch {
+      return null;
+    }
   }
 
   buildSnippet(workspace: WebsiteEmbedIntegrationWorkspace): string | null {

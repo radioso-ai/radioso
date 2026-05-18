@@ -136,6 +136,69 @@ describe("agents contract", () => {
       .expect(400);
   });
 
+  it("persists branding privacy policy URL through agent update, GET, and public chat session", async () => {
+    const privacyPolicyUrl = "https://example.com/privacy";
+    const { app } = createTestApp();
+    const session = await issueTestToken(app, "agents-branding-round-trip@example.com");
+    const authorization = `Bearer ${session.token}`;
+
+    const list = await request(app)
+      .get("/api/v1/agents")
+      .set("Authorization", authorization)
+      .expect(200);
+    const agentId = list.body.agents[0].id as string;
+
+    const updated = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({
+        branding: {
+          hidePoweredBy: false,
+          privacyPolicyUrl,
+        },
+      })
+      .expect(200);
+    expect(updated.body.branding).toEqual({
+      hidePoweredBy: false,
+      privacyPolicyUrl,
+    });
+
+    const reloaded = await request(app)
+      .get(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .expect(200);
+    expect(reloaded.body.branding).toEqual({
+      hidePoweredBy: false,
+      privacyPolicyUrl,
+    });
+
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({ anonymousChatEnabled: true })
+      .expect(200);
+    const anonymousChatToken = new URL(settings.body.anonymousChatUrl).pathname.split("/").at(-1);
+    expect(anonymousChatToken).toBeTruthy();
+
+    const publicSession = await request(app)
+      .post(`/api/v1/public/chat/${anonymousChatToken}/sessions`)
+      .send({ channel: "anonymous_link" })
+      .expect(200);
+    expect(publicSession.body.branding).toEqual({
+      hidePoweredBy: false,
+      privacyPolicyUrl,
+    });
+
+    const historyList = await request(app)
+      .get(`/api/v1/public/chat/${anonymousChatToken}?limit=1`)
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken)
+      .expect(200);
+    expect(historyList.body.branding).toEqual({
+      hidePoweredBy: false,
+      privacyPolicyUrl,
+    });
+  });
+
   it("limits assistant retrieval to the selected agent sources", async () => {
     const { app } = createTestApp();
     const { token } = await issueTestToken(app, "agents-source-retrieval@example.com");

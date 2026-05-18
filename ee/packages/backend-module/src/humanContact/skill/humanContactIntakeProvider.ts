@@ -24,6 +24,7 @@ import type { ChatGateway, UsageLimitDatabasePort } from "../../radiosoModuleTyp
 type ChatIntakeInput = Parameters<ChatIntakeProvider["handle"]>[0];
 
 const MESSAGE_MAX_LENGTH = 6000;
+const INTAKE_LANGUAGE_CONTEXT_FIELD = "__languageContext";
 
 const looksLikeEmailCandidate = (value: string): boolean => {
   const trimmed = value.trim();
@@ -85,18 +86,40 @@ export const resolveLanguageContext = (
     history: ReadonlyArray<{ role: "user" | "assistant" | "system"; content: string }>;
     query: string;
   },
-  _collected?: Record<string, unknown>,
+  collected?: Record<string, unknown>,
 ): string => {
-  // Anchor language on the user's most recent meaningful natural-language message.
-  // We deliberately ignore `collected.message` because it is the auto-built contact-request draft
-  // ("Contact request:\n...") whose English boilerplate would mislead the LLM on follow-up turns,
-  // and we ignore short answer-only turns like "test@test" that carry no language signal.
+  /*
+   * Anchor language on the user's most recent meaningful natural-language message.
+   * We deliberately ignore `collected.message` because it is the auto-built contact-request draft
+   * ("Contact request:\n...") whose English boilerplate would mislead the LLM on follow-up turns,
+   * and we ignore short answer-only turns like "test@test" that carry no language signal. A dedicated
+   * internal anchor is stored when intake starts so resumed/email-only turns do not fall back to browser locale.
+   */
+  const storedLanguageContext = typeof collected?.[INTAKE_LANGUAGE_CONTEXT_FIELD] === "string"
+    ? collected[INTAKE_LANGUAGE_CONTEXT_FIELD].trim()
+    : "";
+  if (storedLanguageContext && isUsefulLanguageAnchor(storedLanguageContext)) {
+    return storedLanguageContext;
+  }
   const userMessages = input.history
     .filter((message) => message.role === "user")
     .map((message) => message.content.trim())
     .filter(Boolean);
   const latestUsefulMessage = [...userMessages].reverse().find(isUsefulLanguageAnchor);
   return latestUsefulMessage || input.query;
+};
+
+const withLanguageContext = (
+  collected: Record<string, unknown>,
+  input: ChatIntakeInput,
+): Record<string, unknown> => {
+  if (!input.userExpectedLocale) {
+    return collected;
+  }
+  const languageContext = resolveLanguageContext(input, collected);
+  return isUsefulLanguageAnchor(languageContext)
+    ? { ...collected, [INTAKE_LANGUAGE_CONTEXT_FIELD]: languageContext }
+    : collected;
 };
 
 const buildFallbackDraft = (input: ChatIntakeInput): { draftMessage: string } => {
@@ -232,6 +255,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       ...(email ? { email } : {}),
       ...(message ? { message } : {}),
     };
+    const collectedWithLanguageContext = withLanguageContext(collected, input);
 
     if (email && message) {
       const submitResult = await this.input.requestExecutor.submit({
@@ -256,7 +280,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       }).catch(async (error) => {
         const failureAnswer = await this.composeAnswerOrFallback({
           kind: "failed",
-          languageContext: resolveLanguageContext(input, collected),
+          languageContext: resolveLanguageContext(input, collectedWithLanguageContext),
           userExpectedLocale: input.userExpectedLocale,
         }, failedFallbackAnswer);
         const activityTrace = failedContactTrace(error instanceof Error ? error.message : "Contact request submit failed.");
@@ -276,7 +300,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       }
       const answer = await this.composeAnswerOrFallback({
         kind: "submitted",
-        languageContext: resolveLanguageContext(input, collected),
+        languageContext: resolveLanguageContext(input, collectedWithLanguageContext),
         userExpectedLocale: input.userExpectedLocale,
       }, submittedFallbackAnswer);
       let state: SkillIntakeStateRow | null = null;
@@ -311,14 +335,14 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
     const answer = await this.intakePrompts.composeAnswer({
       kind: "missing",
       fieldName: nextField,
-      languageContext: resolveLanguageContext(input, collected),
+      languageContext: resolveLanguageContext(input, collectedWithLanguageContext),
       userExpectedLocale: input.userExpectedLocale,
     });
     const state = await this.insertIntakeState({
       workspaceId: input.workspaceId,
       conversationId: input.conversationId,
       status: "active",
-      collected,
+      collected: collectedWithLanguageContext,
       missing,
       lastPromptedField: nextField,
     });
@@ -358,7 +382,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
     state: SkillIntakeStateRow,
     input: ChatIntakeInput,
   ): Promise<ChatIntakeResult | null> {
-    const collected = normalizeCollected(state.collected);
+    const collected = withLanguageContext(normalizeCollected(state.collected), input);
     const requestedByIntent = hasHumanContactIntent(input);
     const email = await this.extractEmailSlot(input.query);
     if (
@@ -471,7 +495,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
     state: SkillIntakeStateRow,
     input: ChatIntakeInput,
   ): Promise<ChatIntakeResult | null> {
-    const collected = normalizeCollected(state.collected);
+    const collected = withLanguageContext(normalizeCollected(state.collected), input);
     const email = normalizeEmailField(collected.email);
     if (!email) {
       // The state is corrupt: message was prompted without a stored email. Fall back to email collection.

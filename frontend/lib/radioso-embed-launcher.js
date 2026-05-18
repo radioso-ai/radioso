@@ -252,6 +252,15 @@
     return normalized === 'bubble' || normalized === 'panel' ? normalized : null
   }
 
+  const normalizeIcon = (value) => {
+    if (!value) {
+      return null
+    }
+
+    const normalized = value.trim().toLowerCase()
+    return Object.prototype.hasOwnProperty.call(iconMarkup, normalized) ? normalized : null
+  }
+
   const normalizeLocale = (value) =>
     typeof value === 'string' ? value.trim().toLowerCase().replace('_', '-') : ''
 
@@ -333,6 +342,40 @@
     } catch {
       return null
     }
+  }
+
+  const readDatasetValue = (dataset, key) =>
+    dataset && Object.prototype.hasOwnProperty.call(dataset, key) && typeof dataset[key] === 'string'
+      ? dataset[key]
+      : null
+
+  const mergeDatasetStringOverride = (target, dataset, datasetKey, overrideKey) => {
+    const value = readDatasetValue(dataset, datasetKey)
+    if (value === null) {
+      return
+    }
+    const trimmed = value.trim()
+    if (trimmed) {
+      target[overrideKey] = trimmed
+    }
+  }
+
+  const readScriptExpertOverrides = (script) => {
+    const dataset = script?.dataset || {}
+    const scriptOverrideJson = parseJsonOverrides(dataset.radiosoExpertOverrides)
+    const overrides =
+      scriptOverrideJson && typeof scriptOverrideJson === 'object' && !Array.isArray(scriptOverrideJson)
+        ? { ...scriptOverrideJson }
+        : {}
+
+    mergeDatasetStringOverride(overrides, dataset, 'radiosoDisplayMode', 'displayMode')
+    mergeDatasetStringOverride(overrides, dataset, 'radiosoInitialState', 'initialState')
+    mergeDatasetStringOverride(overrides, dataset, 'radiosoPageContext', 'pageContext')
+    mergeDatasetStringOverride(overrides, dataset, 'radiosoLauncherAttention', 'launcherAttention')
+    mergeDatasetStringOverride(overrides, dataset, 'radiosoLauncherTeaserDelayMs', 'launcherTeaserDelayMs')
+    mergeDatasetStringOverride(overrides, dataset, 'radiosoProactiveGreetingTeaser', 'proactiveGreetingTeaser')
+
+    return overrides
   }
 
   const sanitizeOverrides = (input, keys, maxLength) => {
@@ -690,13 +733,11 @@
 
     const scriptUrl = getScriptUrl(script)
     const config = await fetchEmbedConfig(scriptUrl, token)
-    const scriptOverrideJson = parseJsonOverrides(script.dataset.radiosoExpertOverrides)
-    const scriptOverrides =
-      scriptOverrideJson && typeof scriptOverrideJson === 'object' && !Array.isArray(scriptOverrideJson)
-        ? scriptOverrideJson
-        : {}
+    const scriptOverrides = readScriptExpertOverrides(script)
     const configOverrides = config && typeof config.expertOverrides === 'object' ? config.expertOverrides : {}
     const expertOverrides = { ...configOverrides, ...scriptOverrides }
+    const scriptCopyOverrides = sanitizeOverrides(parseJsonOverrides(script.dataset.radiosoCopy), copyOverrideKeys, 280)
+    const scriptThemeOverrides = sanitizeOverrides(parseJsonOverrides(script.dataset.radiosoTheme), themeOverrideKeys, 160)
     // The server's `/embed-config` endpoint already merges a built-in locale
     // pack (matched against this visitor's Accept-Language) into `config.copy`
     // under the `default` key, so `resolveLocaleCopy` picks it up via its
@@ -704,16 +745,28 @@
     const copyOverrides = {
       ...resolveLocaleCopy(config.copy),
       ...sanitizeOverrides(expertOverrides, copyOverrideKeys, 280),
+      ...scriptCopyOverrides,
     }
-    const themeOverrides = sanitizeOverrides(expertOverrides, themeOverrideKeys, 160)
+    const themeOverrides = {
+      ...sanitizeOverrides(expertOverrides, themeOverrideKeys, 160),
+      ...scriptThemeOverrides,
+    }
     const copy = getCopy(copyOverrides)
     const theme = deriveTheme(config.theme, themeOverrides)
-    const rawLabel = typeof config.launcherLabel === 'string' ? config.launcherLabel : null
+    const rawLabel =
+      readDatasetValue(script.dataset, 'radiosoLauncherLabel') ??
+      (typeof config.launcherLabel === 'string' ? config.launcherLabel : null)
     const normalizedLabel = rawLabel === null ? null : rawLabel.trim().replace(/\s+/g, ' ')
     const label =
       normalizedLabel === null || normalizedLabel === DEFAULT_LABEL ? copy.launcherDefaultLabel : normalizedLabel
-    const icon = DEFAULT_ICON
-    const position = config.launcherPosition === 'bottom-left' ? 'bottom-left' : DEFAULT_POSITION
+    const icon = normalizeIcon(readDatasetValue(script.dataset, 'radiosoLauncherIcon')) || DEFAULT_ICON
+    const scriptPosition = readDatasetValue(script.dataset, 'radiosoLauncherPosition')
+    const position =
+      scriptPosition === 'bottom-left' || scriptPosition === 'bottom-right'
+        ? scriptPosition
+        : config.launcherPosition === 'bottom-left'
+          ? 'bottom-left'
+          : DEFAULT_POSITION
     const displayMode = normalizeDisplayMode(expertOverrides.displayMode) || DEFAULT_DISPLAY_MODE
     const initialState = normalizeInitialState(expertOverrides.initialState) || DEFAULT_INITIAL_STATE
     const pageContextMode = normalizePageContextMode(expertOverrides.pageContext)

@@ -411,22 +411,23 @@
     container.innerHTML = iconMarkup[icon] ?? iconMarkup[DEFAULT_ICON]
     const svg = container.querySelector('svg')
     if (svg) {
-      svg.setAttribute('width', '18')
-      svg.setAttribute('height', '18')
+      svg.style.width = '70%'
+      svg.style.height = '70%'
     }
   }
 
-  const styleLauncherAvatarContainer = (container, theme) => {
+  const styleLauncherAvatarContainer = (container, theme, size = 'compact') => {
+    const isLarge = size === 'large'
     container.setAttribute('aria-hidden', 'true')
     container.dataset.radiosoLauncherAvatar = 'true'
     container.className = 'radioso-launcher-avatar'
     container.style.display = 'inline-flex'
     container.style.alignItems = 'center'
     container.style.justifyContent = 'center'
-    container.style.width = '2rem'
-    container.style.height = '2rem'
+    container.style.width = isLarge ? '3rem' : '2rem'
+    container.style.height = isLarge ? '3rem' : '2rem'
     container.style.overflow = 'hidden'
-    container.style.borderRadius = '0.65rem'
+    container.style.borderRadius = isLarge ? '0.85rem' : '0.65rem'
     container.style.flexShrink = '0'
     container.style.background = theme.mutedBackground
     container.style.color = theme.accent
@@ -512,7 +513,7 @@
     button.setAttribute('title', accessibleLabel)
 
     const iconContainer = document.createElement('span')
-    styleLauncherAvatarContainer(iconContainer, theme)
+    styleLauncherAvatarContainer(iconContainer, theme, 'large')
     setLauncherAvatarMarkup(iconContainer, icon, avatarUrl)
 
     const dot = document.createElement('span')
@@ -602,13 +603,14 @@
     button.type = 'button'
     button.className = 'radioso-launcher'
     button.setAttribute('aria-label', label || defaultCopy.launcherDefaultLabel)
+    const hasVisibleLabel = Boolean(label)
 
     const iconContainer = document.createElement('span')
-    styleLauncherAvatarContainer(iconContainer, theme)
+    styleLauncherAvatarContainer(iconContainer, theme, hasVisibleLabel ? 'compact' : 'large')
     setLauncherAvatarMarkup(iconContainer, icon, avatarUrl)
 
     button.appendChild(iconContainer)
-    if (label) {
+    if (hasVisibleLabel) {
       const labelNode = document.createElement('span')
       labelNode.textContent = label
       button.appendChild(labelNode)
@@ -625,8 +627,8 @@
     button.style.display = 'inline-flex'
     button.style.alignItems = 'center'
     button.style.gap = '0.75rem'
-    button.style.padding = '0.875rem 1rem'
-    button.style.borderRadius = '18px'
+    button.style.padding = hasVisibleLabel ? '0.875rem 1rem' : '0.5rem'
+    button.style.borderRadius = hasVisibleLabel ? '18px' : '24px'
     button.style.cursor = 'pointer'
     button.style.background = theme.launcherBackground
     button.style.color = theme.launcherForeground

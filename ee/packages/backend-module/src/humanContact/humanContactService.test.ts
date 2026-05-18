@@ -1413,6 +1413,84 @@ describe("enterprise human contact service", () => {
     ]);
   });
 
+  it("reuses the stored intake language anchor when a later email turn has no language signal", async () => {
+    const database = new FakeSkillSubmissionDatabase();
+    const prompts: string[] = [];
+    const responses = [
+      "{\"shouldStart\":true}",
+      "{}",
+      "Sure, what email address should the team use to follow up?",
+      "Received. The team will follow up with you.",
+    ];
+    const { service } = createService({
+      database,
+      chatGateway: {
+        async answer(input: { prompt: string }) {
+          prompts.push(input.prompt);
+          return responses.shift() ?? "{}";
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-2",
+      query: "Can I book with a human?",
+      history: [
+        {
+          id: "user-message-1",
+          role: "user",
+          content: "I need help booking an appointment.",
+          createdAt: new Date("2026-05-04T09:58:00.000Z"),
+        },
+        {
+          id: "assistant-message-1",
+          role: "assistant",
+          content: "I could not find appointment booking details in the indexed documents.",
+          createdAt: new Date("2026-05-04T09:59:00.000Z"),
+        },
+        {
+          id: "user-message-2",
+          role: "user",
+          content: "Can I book with a human?",
+          createdAt: new Date("2026-05-04T10:00:00.000Z"),
+        },
+      ],
+      sourceChannel: "website_embed",
+      userExpectedLocale: "pl-PL",
+    });
+
+    await service.handle({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      userMessageId: "user-message-3",
+      query: "alex@example.com",
+      history: [
+        {
+          id: "user-message-3",
+          role: "user",
+          content: "alex@example.com",
+          createdAt: new Date("2026-05-04T10:01:00.000Z"),
+        },
+      ],
+      sourceChannel: "website_embed",
+      userExpectedLocale: "pl-PL",
+    });
+
+    expect(prompts.at(-1)).toContain("The user's anchor message in this conversation was: Can I book with a human?");
+    expect(prompts.at(-1)).not.toContain("fall back to locale pl-PL");
+    expect([...database.submissions.values()]).toHaveLength(1);
+  });
+
   it("returns a completed resumed intake response when post-submit state update fails", async () => {
     const database = new FakeSkillSubmissionDatabase();
     database.intakeStates.set("state-1", {

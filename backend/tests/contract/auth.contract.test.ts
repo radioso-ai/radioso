@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
 describe("auth contract", () => {
-  it("registers a user, returns workspace bootstrap data, and sets a session cookie", async () => {
+  it("registers a user, returns workspace bootstrap data, and requires email verification", async () => {
     const { app } = createTestApp();
 
     const response = await request(app).post("/api/v1/auth/register").send({
@@ -26,8 +26,29 @@ describe("auth contract", () => {
     expect(response.body.workspaceName).toBe("Default");
     expect(response.body.workspacePublicRouteKey).toMatch(/^\d{10}$/);
     expect(response.body.token).toBeUndefined();
-    expect(response.body.requiresEmailVerification).toBeUndefined();
-    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
+    expect(response.body.requiresEmailVerification).toBe(true);
+    expect(response.headers["set-cookie"]).toBeUndefined();
+  });
+
+  it("rejects login for users who have not verified their email", async () => {
+    const { app } = createTestApp();
+
+    await request(app).post("/api/v1/auth/register").send({
+      email: "unverified@example.com",
+      password: "verysecurepassword",
+    });
+
+    const response = await request(app).post("/api/v1/auth/login").send({
+      email: "unverified@example.com",
+      password: "verysecurepassword",
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toMatchObject({
+      code: "forbidden",
+      message: "Email verification required",
+    });
+    expect(response.headers["set-cookie"]).toBeUndefined();
   });
 
   it("logs in an existing user, returns workspace bootstrap data, and sets a session cookie", async () => {
@@ -49,6 +70,63 @@ describe("auth contract", () => {
     expect(response.body.workspacePublicRouteKey).toMatch(/^\d{10}$/);
     expect(response.body.token).toBeUndefined();
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
+  });
+
+  it("accepts password reset requests without revealing whether the email exists", async () => {
+    const { app } = createTestApp();
+    await issueTestSession(app, "reset-known@example.com");
+
+    const known = await request(app).post("/api/v1/auth/password-reset/request").send({
+      email: "reset-known@example.com",
+    });
+    const unknown = await request(app).post("/api/v1/auth/password-reset/request").send({
+      email: "reset-unknown@example.com",
+    });
+
+    expect(known.status).toBe(202);
+    expect(known.body).toEqual({ accepted: true });
+    expect(unknown.status).toBe(202);
+    expect(unknown.body).toEqual({ accepted: true });
+  });
+
+  it("rejects invalid password reset confirmation tokens", async () => {
+    const { app } = createTestApp();
+
+    const response = await request(app).post("/api/v1/auth/password-reset/confirm").send({
+      token: "not-valid",
+      password: "newsecurepassword",
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe("unauthorized");
+  });
+
+  it("accepts email verification resends without revealing whether the email exists", async () => {
+    const { app } = createTestApp();
+    await issueTestSession(app, "verify-known@example.com");
+
+    const known = await request(app).post("/api/v1/auth/email-verification/resend").send({
+      email: "verify-known@example.com",
+    });
+    const unknown = await request(app).post("/api/v1/auth/email-verification/resend").send({
+      email: "verify-unknown@example.com",
+    });
+
+    expect(known.status).toBe(202);
+    expect(known.body).toEqual({ accepted: true });
+    expect(unknown.status).toBe(202);
+    expect(unknown.body).toEqual({ accepted: true });
+  });
+
+  it("rejects invalid email verification tokens", async () => {
+    const { app } = createTestApp();
+
+    const response = await request(app).post("/api/v1/auth/email-verification/verify").send({
+      token: "not-valid",
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe("unauthorized");
   });
 
   it("accepts JSON auth requests when the content type includes charset UTF-8", async () => {

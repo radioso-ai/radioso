@@ -166,12 +166,15 @@ const createAuthService = (options: {
 };
 
 describe("AuthService rollback", () => {
-  it("deletes the newly created account and user if session creation fails after provisioning starts", async () => {
+  it("deletes the newly created account and user if post-registration provisioning fails", async () => {
     const accountRepository = new TrackingAccountRepository();
     const userRepository = new InMemoryUserRepository();
     const { authService } = createAuthService({
       accountRepository,
       userRepository,
+      onAccountCreated: async () => {
+        throw new Error("account hook failed");
+      },
     });
 
     await expect(
@@ -179,7 +182,7 @@ describe("AuthService rollback", () => {
         email: "rollback-register@example.com",
         password: "verysecurepassword",
       }),
-    ).rejects.toThrow("session create failed");
+    ).rejects.toThrow("account hook failed");
 
     expect(accountRepository.deletedIds).toEqual(["account-1"]);
     expect(await accountRepository.findById("account-1")).toBeNull();
@@ -295,5 +298,48 @@ describe("AuthService rollback", () => {
     });
 
     expect(accountIds).toEqual([accountId]);
+  });
+
+  it("registers new users as unverified without creating an immediate session", async () => {
+    const { authService, userRepository } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    const result = await authService.register({
+      email: "verify-after-register@example.com",
+      password: "verysecurepassword",
+    });
+
+    const user = await userRepository.findById(result.userId);
+    expect(result.sessionCookie).toBeUndefined();
+    expect(user?.emailVerifiedAt).toBeNull();
+  });
+
+  it("rejects login until the user email is verified", async () => {
+    const { authService, userRepository } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const { userId } = await authService.register({
+      email: "login-after-verify@example.com",
+      password: "verysecurepassword",
+    });
+
+    await expect(authService.login({
+      email: "login-after-verify@example.com",
+      password: "verysecurepassword",
+    })).rejects.toMatchObject({
+      statusCode: 403,
+      code: "forbidden",
+    });
+
+    await userRepository.markEmailVerified(userId, new Date());
+
+    await expect(authService.login({
+      email: "login-after-verify@example.com",
+      password: "verysecurepassword",
+    })).resolves.toMatchObject({
+      userId,
+      sessionCookie: expect.stringContaining("radioso_session="),
+    });
   });
 });

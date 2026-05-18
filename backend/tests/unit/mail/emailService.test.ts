@@ -72,8 +72,8 @@ describe("mail service", () => {
 
   it("builds a Resend-backed service from environment configuration", () => {
     const service = createMailService({
-      EE_MAIL_DRIVER: "resend",
-      EE_MAIL_FROM_EMAIL: "support@example.com",
+      MAIL_DRIVER: "resend",
+      MAIL_FROM_EMAIL: "support@example.com",
       RESEND_MAIL_API_KEY: "re_test",
     });
 
@@ -82,20 +82,20 @@ describe("mail service", () => {
   });
 
   it("requires a Resend API key when the Resend driver is selected", () => {
-    expect(() => createMailService({ EE_MAIL_DRIVER: "resend" })).toThrow(
+    expect(() => createMailService({ MAIL_DRIVER: "resend" })).toThrow(
       "RESEND_MAIL_API_KEY is required",
     );
   });
 
   it("rejects blank Resend API keys", () => {
-    expect(() => createMailService({ EE_MAIL_DRIVER: "resend", RESEND_MAIL_API_KEY: "   " })).toThrow(
+    expect(() => createMailService({ MAIL_DRIVER: "resend", RESEND_MAIL_API_KEY: "   " })).toThrow(
       "RESEND_MAIL_API_KEY is required",
     );
   });
 
   it("logs plaintext mail body and redacts sensitive metadata keys", async () => {
     const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
-    const service = createMailService({ EE_MAIL_DRIVER: "log" });
+    const service = createMailService({ MAIL_DRIVER: "log" });
 
     await service.send({
       to: "grace@example.com",

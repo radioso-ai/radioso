@@ -39,7 +39,7 @@ Enterprise deployments use the same Cloud Run services, but the deploy workflow 
 - the backend image installs `@radioso/enterprise-backend-module`
 - Terraform injects `RADIOSO_APPLICATION_MODULES` and edition flags into Cloud Run
 
-Keep `app_base_url_override` set to the public frontend origin after the first service rollout, for example `https://app.example.com`. If you use the included Terraform workflow, set the GitHub environment variable `APP_BASE_URL` to that origin. If you deploy another way, set the backend runtime `APP_BASE_URL` to the same origin. Terraform also forwards this value as `RADIOSO_WIDGET_ORIGIN` so the website embed snippet can build hosted links.
+Keep `app_base_url_override` set to the public frontend origin after the first service rollout, for example `https://app.example.com`. If you use the included Terraform workflow, set the GitHub environment variable `APP_BASE_URL` to that origin. If you deploy another way, set the backend runtime `APP_BASE_URL` to the same origin. Terraform also forwards this value as `RADIOSO_WIDGET_ORIGIN`. Password reset emails, email verification emails, and the website embed snippet use these values when they build hosted links.
 
 ## Required secrets
 
@@ -50,8 +50,11 @@ The Terraform workflow expects these GitHub environment secrets for each deploye
 - `WORKSPACE_TOKEN_SECRET`
 - `PUBLIC_CHAT_SESSION_SECRET`
 - `CONNECTOR_ENCRYPTION_KEY`
+- `RESEND_MAIL_API_KEY`
 
 `PUBLIC_CHAT_SESSION_SECRET` signs public chat session tokens for anonymous chat links and website embeds. In Terraform this maps to `public_chat_session_secret`, which is stored in Secret Manager and injected into the backend as `PUBLIC_CHAT_SESSION_SECRET`.
+
+Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`.
 
 ## Optional public chat limits
 

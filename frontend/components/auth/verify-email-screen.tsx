@@ -1,50 +1,50 @@
-'use client';
+'use client'
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import Link from 'next/link'
+import { useEffect, useState } from 'react'
 
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
-import { enterpriseAuthApi } from "./api.js";
-import { getErrorMessage } from "./errors.js";
+import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
+import { authApi } from '@/lib/api'
+import { getErrorMessage } from './auth-errors'
 
 export function VerifyEmailScreen({ token }: { token?: string }) {
-  const [status, setStatus] = useState<"verifying" | "success" | "error">(() => (token ? "verifying" : "error"));
-  const [error, setError] = useState(() => (token ? "" : "Verification link is missing or incomplete."));
+  const [status, setStatus] = useState<'verifying' | 'success' | 'error'>(() => (token ? 'verifying' : 'error'))
+  const [error, setError] = useState(() => (token ? '' : 'Verification link is missing or incomplete.'))
 
   useEffect(() => {
     if (!token) {
-      return;
+      return
     }
 
-    let cancelled = false;
+    let cancelled = false
 
     const run = async () => {
       try {
-        await enterpriseAuthApi.verifyEmail({ token });
+        await authApi.verifyEmail({ token })
         if (!cancelled) {
-          setStatus("success");
+          setStatus('success')
         }
       } catch (error) {
         if (!cancelled) {
-          setStatus("error");
-          setError(getErrorMessage(error, "Verification failed. Request a new link and try again."));
+          setStatus('error')
+          setError(getErrorMessage(error, 'Verification failed. Request a new link and try again.'))
         }
       }
-    };
+    }
 
-    void run();
+    void run()
 
     return () => {
-      cancelled = true;
-    };
-  }, [token]);
+      cancelled = true
+    }
+  }, [token])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm rounded-lg border border-border bg-card p-6 shadow-sm">
         <h1 className="mb-2 text-xl font-semibold text-card-foreground">Verify your email</h1>
-        {status === "verifying" ? (
+        {status === 'verifying' ? (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">Confirming your email address now.</p>
             <div className="flex items-center text-sm text-muted-foreground">
@@ -53,7 +53,7 @@ export function VerifyEmailScreen({ token }: { token?: string }) {
             </div>
           </div>
         ) : null}
-        {status === "success" ? (
+        {status === 'success' ? (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Your email is verified. You can sign in now.
@@ -63,7 +63,7 @@ export function VerifyEmailScreen({ token }: { token?: string }) {
             </Button>
           </div>
         ) : null}
-        {status === "error" ? (
+        {status === 'error' ? (
           <div className="space-y-4">
             <p className="text-sm text-destructive">{error}</p>
             <Button asChild className="w-full" variant="outline">
@@ -73,5 +73,5 @@ export function VerifyEmailScreen({ token }: { token?: string }) {
         ) : null}
       </div>
     </div>
-  );
+  )
 }

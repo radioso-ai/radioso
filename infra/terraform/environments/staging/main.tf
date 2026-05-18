@@ -65,8 +65,8 @@ module "radioso" {
   radioso_mcp_signing_secret            = var.radioso_mcp_signing_secret
   connector_encryption_key              = var.connector_encryption_key
   resend_mail_api_key                   = var.resend_mail_api_key
-  ee_mail_from_email                    = var.ee_mail_from_email
-  ee_mail_from_name                     = var.ee_mail_from_name
+  mail_from_email                       = var.mail_from_email
+  mail_from_name                        = var.mail_from_name
   metrics_auth_token                    = var.metrics_auth_token
   openai_chat_model                     = var.openai_chat_model
   openai_rerank_model                   = var.openai_rerank_model

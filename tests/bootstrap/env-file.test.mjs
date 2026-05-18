@@ -30,7 +30,7 @@ test("buildEnvValues preserves existing values unless overridden", () => {
   assert.equal(values.PUBLIC_CHAT_SESSION_SECRET, "public-session-secret");
 });
 
-test("env contract does not include OSS mail settings", () => {
+test("env bootstrap leaves optional mail settings unset", () => {
   const values = buildEnvValues(
     { OPENAI_API_KEY: "existing", LLM_PROVIDER: "openai" },
     {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
   IndexedStorageReservationInput,
+  MonthlyIndexedContentReservationInput,
   UsageLimitDatabaseClient,
   UsageLimitDatabasePort,
   UsageLimitPolicy,
@@ -34,6 +35,12 @@ export interface AccountUsageSummary {
     limit: number | null;
   };
   storedIndexedBytes: {
+    used: number;
+    limit: number | null;
+  };
+  monthlyIndexedBytes: {
+    periodStart: string;
+    resetAt: string;
     used: number;
     limit: number | null;
   };
@@ -201,6 +208,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     const persistedAnswerCount = await this.countPersistedAssistantAnswers(accountId, periodStart);
     const storedDocumentCount = await this.countStoredDocuments(accountId, this.database, false);
     const storedIndexedBytes = await this.sumStoredIndexedBytes(accountId, this.database, false);
+    const monthlyIndexedBytes = await this.readMonthlyIndexedBytes(accountId, periodStart);
 
     return {
       accountId,
@@ -218,6 +226,12 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       storedIndexedBytes: {
         used: storedIndexedBytes,
         limit: profile?.storedIndexedByteLimit ?? null,
+      },
+      monthlyIndexedBytes: {
+        periodStart,
+        resetAt: nextPeriodStart(periodStart),
+        used: monthlyIndexedBytes,
+        limit: profile?.monthlyIndexedByteLimit ?? null,
       },
     };
   }
@@ -287,6 +301,71 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
                updated_at = NOW()
            WHERE account_id = $1 AND period_start = $2::date`,
           [accountId, periodStart],
+        );
+      },
+    };
+  }
+
+  async reserveMonthlyIndexedContent(input: MonthlyIndexedContentReservationInput): Promise<UsageLimitReservation> {
+    const accountId = await this.resolveAccountId(input);
+    if (!accountId) {
+      return noopReservation;
+    }
+
+    const profile = await this.findProfileForAccount(accountId);
+    const limit = profile?.monthlyIndexedByteLimit;
+    if (!profile || typeof limit !== "number") {
+      return noopReservation;
+    }
+
+    const requestedBytes = Math.max(0, Math.floor(input.contentSizeBytes ?? 0));
+    if (requestedBytes === 0) {
+      return noopReservation;
+    }
+
+    const periodStart = currentPeriodStart();
+    await queryRows(
+      this.database,
+      `INSERT INTO ee_usage_limit_monthly_indexed_byte_counters (account_id, period_start, used_bytes)
+       VALUES ($1, $2::date, 0)
+       ON CONFLICT (account_id, period_start) DO NOTHING`,
+      [accountId, periodStart],
+    );
+
+    const rows = await queryRows<{ used_bytes: string | number }>(
+      this.database,
+      `UPDATE ee_usage_limit_monthly_indexed_byte_counters
+       SET used_bytes = used_bytes + $3,
+           updated_at = NOW()
+       WHERE account_id = $1
+         AND period_start = $2::date
+         AND used_bytes + $3 <= $4
+       RETURNING used_bytes`,
+      [accountId, periodStart, requestedBytes, limit],
+    );
+
+    if (rows.length === 0) {
+      const used = await this.readMonthlyIndexedBytes(accountId, periodStart);
+      throw new UsageLimitExceededError({
+        profileKey: profile.key,
+        resource: "monthly_indexed_bytes",
+        limit,
+        used,
+        periodStart,
+        resetAt: nextPeriodStart(periodStart),
+      });
+    }
+
+    return {
+      async commit() {},
+      release: async () => {
+        await queryRows(
+          this.database,
+          `UPDATE ee_usage_limit_monthly_indexed_byte_counters
+           SET used_bytes = GREATEST(used_bytes - $3, 0),
+               updated_at = NOW()
+           WHERE account_id = $1 AND period_start = $2::date`,
+          [accountId, periodStart, requestedBytes],
         );
       },
     };
@@ -506,6 +585,17 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     );
 
     return documentBytes + Number(reservations?.bytes ?? "0");
+  }
+
+  private async readMonthlyIndexedBytes(accountId: string, periodStart: string): Promise<number> {
+    const [row] = await queryRows<{ used_bytes: string | number }>(
+      this.database,
+      `SELECT used_bytes
+       FROM ee_usage_limit_monthly_indexed_byte_counters
+       WHERE account_id = $1 AND period_start = $2::date`,
+      [accountId, periodStart],
+    );
+    return Number(row?.used_bytes ?? 0);
   }
 
   private async releaseStorageReservation(reservationId: string): Promise<void> {

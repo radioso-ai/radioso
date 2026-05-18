@@ -109,6 +109,9 @@ const sessionDatabase: UsageLimitDatabasePort = {
     if (text.includes("SUM(d.content_size_bytes)")) {
       return [{ bytes: "131072" }];
     }
+    if (text.includes("FROM ee_usage_limit_monthly_indexed_byte_counters")) {
+      return [{ used_bytes: "65536" }];
+    }
     if (text.includes("COUNT(*)::text AS count")) {
       return [{ count: "17" }];
     }
@@ -173,6 +176,10 @@ describe("usage limit account routes", () => {
         used: 131_072,
         limit: 5_000_000,
       },
+      monthlyIndexedBytes: expect.objectContaining({
+        used: 65_536,
+        limit: 2_000_000,
+      }),
     }));
   });
 

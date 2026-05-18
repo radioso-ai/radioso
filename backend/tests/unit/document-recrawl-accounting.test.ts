@@ -29,6 +29,10 @@ class RecordingUsageLimitPolicy implements UsageLimitPolicy {
     this.indexedStorageCalls.push(input);
     return noopReservation;
   }
+
+  async reserveMonthlyIndexedContent(): Promise<UsageLimitReservation> {
+    return noopReservation;
+  }
 }
 
 const noopReservation: UsageLimitReservation = {

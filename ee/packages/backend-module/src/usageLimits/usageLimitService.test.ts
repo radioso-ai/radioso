@@ -31,6 +31,7 @@ class FakeUsageLimitDatabase implements UsageLimitDatabasePort {
   }> = [];
   readonly reservations = new Map<string, { accountId: string; workspaceId: string; expiresAt: Date }>();
   readonly storageReservations = new Map<string, { accountId: string; workspaceId: string; bytesReserved: number; expiresAt: Date }>();
+  readonly monthlyIndexedByteCounters = new Map<string, number>();
 
   async query<T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> {
     if (text.includes("pg_advisory_xact_lock")) {
@@ -77,6 +78,38 @@ class FakeUsageLimitDatabase implements UsageLimitDatabasePort {
     if (text.includes("FROM ee_usage_limit_answer_counters")) {
       const key = answerCounterKey(String(params[0]), String(params[1]));
       return [{ used_count: this.answerCounters.get(key) ?? 0 }] as T[];
+    }
+
+    if (text.includes("INSERT INTO ee_usage_limit_monthly_indexed_byte_counters") && text.includes("ON CONFLICT")) {
+      const key = answerCounterKey(String(params[0]), String(params[1]));
+      if (!this.monthlyIndexedByteCounters.has(key)) {
+        this.monthlyIndexedByteCounters.set(key, 0);
+      }
+      return [] as T[];
+    }
+
+    if (text.includes("UPDATE ee_usage_limit_monthly_indexed_byte_counters") && text.includes("used_bytes + $3 <=")) {
+      const key = answerCounterKey(String(params[0]), String(params[1]));
+      const delta = Number(params[2]);
+      const limit = Number(params[3]);
+      const current = this.monthlyIndexedByteCounters.get(key) ?? 0;
+      if (current + delta > limit) {
+        return [] as T[];
+      }
+      this.monthlyIndexedByteCounters.set(key, current + delta);
+      return [{ used_bytes: current + delta }] as T[];
+    }
+
+    if (text.includes("UPDATE ee_usage_limit_monthly_indexed_byte_counters") && text.includes("GREATEST")) {
+      const key = answerCounterKey(String(params[0]), String(params[1]));
+      const delta = Number(params[2]);
+      this.monthlyIndexedByteCounters.set(key, Math.max((this.monthlyIndexedByteCounters.get(key) ?? 0) - delta, 0));
+      return [] as T[];
+    }
+
+    if (text.includes("SELECT used_bytes") && text.includes("FROM ee_usage_limit_monthly_indexed_byte_counters")) {
+      const key = answerCounterKey(String(params[0]), String(params[1]));
+      return [{ used_bytes: this.monthlyIndexedByteCounters.get(key) ?? 0 }] as T[];
     }
 
     if (text.includes("FROM messages m")) {
@@ -401,5 +434,63 @@ describe("enterprise usage limit service", () => {
     const usage = await service.getAccountUsage("account-1", "2026-05-01");
 
     expect(usage.storedIndexedBytes).toEqual({ used: 0, limit: null });
+    expect(usage.monthlyIndexedBytes).toEqual({
+      periodStart: "2026-05-01",
+      resetAt: expect.any(String),
+      used: 0,
+      limit: null,
+    });
+  });
+
+  it("reserves monthly indexed content and rejects once the period budget is exhausted", async () => {
+    const database = new FakeUsageLimitDatabase();
+    configureStarter(database, { monthlyIndexedByteLimit: 10_000 });
+    const service = new EnterpriseUsageLimitService(database);
+
+    const first = await service.reserveMonthlyIndexedContent({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      contentSizeBytes: 6_000,
+    });
+    await first.commit();
+
+    await expect(service.reserveMonthlyIndexedContent({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      contentSizeBytes: 5_000,
+    })).rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    const second = await service.reserveMonthlyIndexedContent({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      contentSizeBytes: 4_000,
+    });
+    await second.commit();
+  });
+
+  it("releases monthly indexed content reservations on failure", async () => {
+    const database = new FakeUsageLimitDatabase();
+    configureStarter(database, { monthlyIndexedByteLimit: 1_000 });
+    const service = new EnterpriseUsageLimitService(database);
+
+    const reservation = await service.reserveMonthlyIndexedContent({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      contentSizeBytes: 800,
+    });
+
+    await expect(service.reserveMonthlyIndexedContent({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      contentSizeBytes: 300,
+    })).rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    await reservation.release();
+
+    await expect(service.reserveMonthlyIndexedContent({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      contentSizeBytes: 300,
+    })).resolves.toBeDefined();
   });
 });

@@ -4,7 +4,11 @@ import { describe, expect, it } from "vitest";
 import type { UsageLimitPolicy, UsageLimitReservation } from "../../src/shared/domain/usageLimitPolicy.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 
-type BlockedResource = "monthly_answers" | "stored_documents" | "stored_indexed_bytes";
+type BlockedResource =
+  | "monthly_answers"
+  | "stored_documents"
+  | "stored_indexed_bytes"
+  | "monthly_indexed_bytes";
 
 class BlockingUsageLimitPolicy implements UsageLimitPolicy {
   constructor(private readonly blockedResource: BlockedResource) {}
@@ -29,6 +33,13 @@ class BlockingUsageLimitPolicy implements UsageLimitPolicy {
     }
     return noopReservation;
   }
+
+  async reserveMonthlyIndexedContent(): Promise<UsageLimitReservation> {
+    if (this.blockedResource === "monthly_indexed_bytes") {
+      throw usageLimitExceeded("monthly_indexed_bytes");
+    }
+    return noopReservation;
+  }
 }
 
 const noopReservation: UsageLimitReservation = {
@@ -43,8 +54,14 @@ const usageLimitExceeded = (resource: BlockedResource) => ({
   details: {
     profileKey: "starter_250",
     resource,
-    limit: resource === "stored_indexed_bytes" ? 1_000_000 : 250,
-    used: resource === "stored_indexed_bytes" ? 1_000_000 : 250,
+    limit:
+      resource === "stored_indexed_bytes" || resource === "monthly_indexed_bytes"
+        ? 1_000_000
+        : 250,
+    used:
+      resource === "stored_indexed_bytes" || resource === "monthly_indexed_bytes"
+        ? 1_000_000
+        : 250,
     ...(resource === "monthly_answers"
       ? {
           periodStart: "2026-05-01",

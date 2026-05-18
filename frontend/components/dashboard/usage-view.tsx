@@ -161,6 +161,7 @@ export function UsageView() {
                 <CardDescription>
                   Limits: {formatUsageLimit(usage.monthlyAnswers.limit)} monthly answers,{' '}
                   {formatByteLimit(usage.storedIndexedBytes.limit)} indexed storage,{' '}
+                  {formatByteLimit(usage.monthlyIndexedBytes.limit)} monthly indexed content,{' '}
                   {formatUsageLimit(usage.storedDocuments.limit)} stored documents
                 </CardDescription>
               </CardHeader>
@@ -186,6 +187,13 @@ export function UsageView() {
               used={usage?.storedIndexedBytes.used ?? 0}
               limit={usage?.storedIndexedBytes.limit ?? null}
               caption="Current size of content Radioso keeps searchable."
+            />
+            <UsageMeter
+              label="Monthly indexed content"
+              unit="bytes"
+              used={usage?.monthlyIndexedBytes.used ?? 0}
+              limit={usage?.monthlyIndexedBytes.limit ?? null}
+              caption="Content added or refreshed this month."
             />
             <UsageMeter
               label="Monthly answers"

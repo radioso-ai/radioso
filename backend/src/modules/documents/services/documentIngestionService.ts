@@ -359,6 +359,17 @@ export class DocumentIngestionService {
       await usageReservation.release();
       throw error;
     });
+    const monthlyReservation = await this.usageLimitPolicy.reserveMonthlyIndexedContent({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      contentSizeBytes,
+      sourceKind: "inline_text",
+      externalDocumentId: input.externalDocumentId,
+    }).catch(async (error) => {
+      await usageReservation.release();
+      await storageReservation.release();
+      throw error;
+    });
 
     try {
       document = await this.documentRepository.createAndQueue({
@@ -383,6 +394,7 @@ export class DocumentIngestionService {
     } catch (error) {
       await usageReservation.release();
       await storageReservation.release();
+      await monthlyReservation.release();
       await this.auditService.record({
         workspaceId: input.workspaceId,
         eventType: "document.ingest",
@@ -444,6 +456,7 @@ export class DocumentIngestionService {
     });
     await usageReservation.commit();
     await storageReservation.commit();
+    await monthlyReservation.commit();
 
     return {
       documentId: document.id,

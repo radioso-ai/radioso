@@ -75,6 +75,7 @@ export class DocumentImportService {
         sourceKind: "uploaded_file",
       });
     let storageReservation: UsageLimitReservation | undefined;
+    let monthlyReservation: UsageLimitReservation | undefined;
     try {
       if (!Buffer.isBuffer(input.buffer) || input.buffer.length === 0) {
         throw badRequest("Uploaded file is empty");
@@ -93,6 +94,12 @@ export class DocumentImportService {
       }
 
       storageReservation = await this.usageLimitPolicy.reserveIndexedStorage({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        contentSizeBytes: input.buffer.length,
+        sourceKind: "uploaded_file",
+      });
+      monthlyReservation = await this.usageLimitPolicy.reserveMonthlyIndexedContent({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
         contentSizeBytes: input.buffer.length,
@@ -131,6 +138,9 @@ export class DocumentImportService {
       await usageReservation.release();
       if (storageReservation) {
         await storageReservation.release();
+      }
+      if (monthlyReservation) {
+        await monthlyReservation.release();
       }
       if (storedObject && !document) {
         try {
@@ -174,6 +184,9 @@ export class DocumentImportService {
     await usageReservation.commit();
     if (storageReservation) {
       await storageReservation.commit();
+    }
+    if (monthlyReservation) {
+      await monthlyReservation.commit();
     }
 
     return {

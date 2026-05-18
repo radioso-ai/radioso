@@ -1,6 +1,6 @@
 export interface UsageLimitExceededDetails {
   profileKey: string;
-  resource: "monthly_answers" | "stored_documents" | "stored_indexed_bytes";
+  resource: "monthly_answers" | "stored_documents" | "stored_indexed_bytes" | "monthly_indexed_bytes";
   limit: number;
   used: number;
   periodStart?: string;

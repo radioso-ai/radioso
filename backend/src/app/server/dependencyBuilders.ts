@@ -82,6 +82,7 @@ import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 import { WorkspaceService, WorkspaceSummaryService } from "../../modules/workspace/public.js";
 import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
+import { NoopUsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import { IncidentReportingService } from "../../shared/incidents/incidentReportingService.js";
 import { Database } from "../../shared/infra/database.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
@@ -153,6 +154,11 @@ export const buildInfrastructure = (input: {
     : typeof composition.usageLimitPolicyRegistration === "function"
       ? composition.usageLimitPolicyRegistration({ database, logger })
       : composition.usageLimitPolicyRegistration;
+  const usageEventRecorder = !composition.usageEventRecorderRegistration
+    ? new NoopUsageEventRecorder()
+    : typeof composition.usageEventRecorderRegistration === "function"
+      ? composition.usageEventRecorderRegistration({ database, logger })
+      : composition.usageEventRecorderRegistration;
   const mailService = createMailService(process.env);
 
   return {
@@ -165,6 +171,7 @@ export const buildInfrastructure = (input: {
     productAnalyticsService,
     telemetryService,
     usageLimitPolicy,
+    usageEventRecorder,
   };
 };
 
@@ -282,6 +289,7 @@ export const buildDocumentServices = (input: {
   settings: ReturnType<typeof buildSettingsServices>;
   telemetryService: TelemetryService;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
+  usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   embeddingService: EmbeddingService;
   workspaceIngestionReprocessService?: WorkspaceIngestionReprocessService;
 }) => {
@@ -296,6 +304,7 @@ export const buildDocumentServices = (input: {
     settings,
     telemetryService,
     usageLimitPolicy,
+    usageEventRecorder,
     embeddingService,
   } = input;
   const documentStorage = composition.documentStorage ?? createDefaultDocumentStorage(env);
@@ -317,6 +326,7 @@ export const buildDocumentServices = (input: {
     chunkingStrategyRegistry,
     documentSourceContentService,
     logger,
+    usageEventRecorder,
   );
   const documentIngestionService = new DocumentIngestionService(
     repositories.documentRepository,

@@ -48,6 +48,10 @@ class RecordingUsageLimitPolicy implements UsageLimitPolicy {
       },
     };
   }
+
+  async reserveMonthlyIndexedContent(): Promise<UsageLimitReservation> {
+    return noopReservation;
+  }
 }
 
 const noopReservation: UsageLimitReservation = {

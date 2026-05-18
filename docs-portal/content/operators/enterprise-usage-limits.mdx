@@ -6,9 +6,10 @@ title: Enterprise usage limits
 
 Radioso Enterprise tracks three customer-facing usage dimensions and lets operators cap them per account.
 
-## The three meters
+## The customer-facing meters
 
 - **Indexed storage bytes.** The current size of content Radioso keeps searchable for an account. This is the primary storage meter. It increases when new content is ingested and decreases when content is removed.
+- **Monthly indexed content bytes.** New or changed content embedded during the current calendar month. Resets at the start of each month. Recrawls of pages whose normalized content has not changed do not increment this meter.
 - **Monthly answers.** Generated assistant or retrieval answers in the current calendar month. Resets at the start of each month.
 - **Stored document count.** Kept as a secondary guardrail against accounts that create extremely large numbers of tiny documents. It is not the primary storage meter and should not be used for plan sizing.
 
@@ -65,6 +66,7 @@ The account usage endpoint returns current usage and limits for the three meters
   "accountId": "…",
   "profile": { … },
   "storedIndexedBytes": { "used": 134217728, "limit": 5368709120 },
+  "monthlyIndexedBytes": { "used": 8388608, "limit": 1073741824, "periodStart": "2026-05-01", "resetAt": "2026-06-01T00:00:00.000Z" },
   "monthlyAnswers": { "used": 42, "limit": 2000, "periodStart": "2026-05-01", "resetAt": "2026-06-01T00:00:00.000Z" },
   "storedDocuments": { "used": 17, "limit": null }
 }
@@ -80,4 +82,8 @@ Limits are enforced before expensive work begins, so customers cannot race past 
 - Assistant and retrieval answers reserve a monthly answer slot before the model is called.
 - The reservation is released if the work fails before commit.
 
-Requests that exceed a cap receive a `429` response with `code: "usage_limit_exceeded"` and a `details.resource` of `stored_indexed_bytes`, `stored_documents`, or `monthly_answers`.
+Requests that exceed a cap receive a `429` response with `code: "usage_limit_exceeded"` and a `details.resource` of `stored_indexed_bytes`, `monthly_indexed_bytes`, `stored_documents`, or `monthly_answers`.
+
+## Internal usage ledger
+
+In addition to the customer-facing meters, Enterprise Edition records an immutable usage event for every embedding call so cost and reliability can be analysed without scanning request logs. Each event captures the account, workspace, document revision, provider, model, input bytes, vector count, and either provider-reported or estimated tokens. Events are written with a deterministic idempotency key per `(workspace, document, revision, provider, model)`, so retries do not double-count, and they are summarised into a daily rollup (`ee_usage_daily_rollups`) for fast internal reporting. Answer-side model usage uses the same ledger structure and will be progressively instrumented at chat and retrieval call sites.

@@ -519,4 +519,10 @@ export interface AccountUsageSummary {
     used: number
     limit: number | null
   }
+  monthlyIndexedBytes: {
+    periodStart: string
+    resetAt: string
+    used: number
+    limit: number | null
+  }
 }

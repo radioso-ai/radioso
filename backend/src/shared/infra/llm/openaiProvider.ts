@@ -8,8 +8,6 @@ import {
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
 import type { AppLogger } from "../../observability/logger.js";
 
-const STORAGE_VECTOR_DIMENSIONS = 1536;
-
 const buildMessages = (input: { systemPrompt?: string; prompt: string }) => {
   const messages: Array<{ role: "system" | "user"; content: string }> = [];
   if (input.systemPrompt) {
@@ -104,9 +102,6 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
   async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
     const startedAt = Date.now();
     const model = options?.model ?? this.config.model;
-    const dimensions = this.config.provider === "openai" && model.startsWith("text-embedding-3-")
-      ? STORAGE_VECTOR_DIMENSIONS
-      : undefined;
     try {
       const response = await runProviderRequestWithTimeout(
         "OpenAI embeddings request",
@@ -116,7 +111,6 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
             {
               model,
               input: texts,
-              ...(dimensions ? { dimensions } : {}),
             },
             { signal },
           ),

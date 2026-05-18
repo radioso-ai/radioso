@@ -37,6 +37,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const composition = createDefaultApplicationComposition({
     logger,
     modules: options.modules,
+    widgetOrigin: env.RADIOSO_WIDGET_ORIGIN ?? env.APP_BASE_URL,
   });
   const infrastructure = buildInfrastructure({ env, logger, composition });
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();

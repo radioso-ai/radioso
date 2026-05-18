@@ -144,7 +144,6 @@ export interface AssistantBehaviorSectionProps {
   isSourceListLoading?: boolean
   sourceListError?: string | null
   channelsTabHref?: string
-  websiteEmbedAvailable?: boolean
 }
 
 export function AssistantBehaviorSection({
@@ -163,7 +162,6 @@ export function AssistantBehaviorSection({
   isSourceListLoading = false,
   sourceListError = null,
   channelsTabHref,
-  websiteEmbedAvailable = false,
 }: AssistantBehaviorSectionProps) {
   const theme = assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME
   const surfaceMode = getSurfaceMode(theme)
@@ -650,17 +648,15 @@ export function AssistantBehaviorSection({
                 {publicChatOn ? 'On' : 'Off'}
               </span>
             </li>
-            {websiteEmbedAvailable ? (
-              <li className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-2 text-foreground">
-                  <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-                  Website chat widget
-                </span>
-                <span className={websiteEmbedOn ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}>
-                  {websiteEmbedOn ? 'On' : 'Off'}
-                </span>
-              </li>
-            ) : null}
+            <li className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-foreground">
+                <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                Website chat widget
+              </span>
+              <span className={websiteEmbedOn ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}>
+                {websiteEmbedOn ? 'On' : 'Off'}
+              </span>
+            </li>
           </ul>
         </div>
       </aside>

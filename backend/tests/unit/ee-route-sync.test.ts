@@ -36,9 +36,9 @@ describe("Enterprise frontend route sync", () => {
         exports: ["default"],
       },
       {
-        relativePath: "app/api/embed/session/[token]/route.ts",
-        packageName: "@radioso/enterprise-embed-widget",
-        exportPath: "routes/embed-session",
+        relativePath: "app/api/ee/auth/email-verification/resend/route.ts",
+        packageName: "@radioso/enterprise-auth-frontend",
+        exportPath: "routes/email-verification-resend",
         exports: ["OPTIONS", "POST"],
         runtime: "nodejs",
         dynamic: "force-dynamic",
@@ -54,7 +54,7 @@ describe("Enterprise frontend route sync", () => {
         ].join("\n"),
       },
       {
-        relativePath: "app/api/embed/session/[token]/route.ts",
+        relativePath: "app/api/ee/auth/email-verification/resend/route.ts",
         content: [
           "export const runtime = 'nodejs'",
           "export const dynamic = 'force-dynamic'",
@@ -62,7 +62,7 @@ describe("Enterprise frontend route sync", () => {
           "export {",
           "  OPTIONS,",
           "  POST,",
-          "} from '@radioso/enterprise-embed-widget/routes/embed-session'",
+          "} from '@radioso/enterprise-auth-frontend/routes/email-verification-resend'",
           "",
         ].join("\n"),
       },
@@ -231,13 +231,10 @@ describe("Enterprise frontend route sync", () => {
 
     expect(dockerfile).toContain("scripts/enterprise-feature-manifests.mjs");
     expect(dockerfile).toContain("ee/packages/auth-frontend/feature-manifest.mjs");
-    expect(dockerfile).toContain("ee/packages/embed-widget/feature-manifest.mjs");
     expect(dockerfile).toContain("ee/packages/agent-wizard-frontend/feature-manifest.mjs");
     expect(dockerfile).toContain("ee/packages/auth-frontend/package.json");
-    expect(dockerfile).toContain("ee/packages/embed-widget/package.json");
     expect(dockerfile).toContain("ee/packages/agent-wizard-frontend/package.json");
     expect(dockerfile).toContain("ee/readme.md");
-    expect(dockerfile).toContain("docs-portal/content/quickstarts/website-embed.mdx");
     expect(dockerfile).toContain("COPY packages/ui/package.json ./packages/ui/package.json");
     expect(dockerfile).toContain("COPY packages/ui ./packages/ui");
     expect(dockerfile).toContain("COPY --chown=node:node --from=builder /app/packages/ui ./packages/ui");

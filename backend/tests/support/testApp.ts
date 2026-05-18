@@ -14,6 +14,7 @@ import { ChatService, type ChatGateway } from "../../src/modules/chat/services/c
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../src/modules/agents/public.js";
+import { createWebsiteEmbedSurfaceExtension } from "../../src/modules/agents/services/websiteEmbedSurfaceExtension.js";
 import {
   type GroundedMissResponseComposer,
 } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
@@ -619,16 +620,7 @@ export const createTestDependencies = (overrides: {
   const agentRepository = new InMemoryAgentRepository();
   const agentService = new AgentService(agentRepository, workspaceRepository, retrievalSettingsService, documentSourceRepository);
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
-  // Mimic an EE deployment for OSS contract/unit tests so the runtime gate on
-  // embed-only routes (settingsRoutes, agentRoutes, publicChatRoutes) doesn't
-  // 404 them. A pass-through normalize keeps existing fixtures intact.
-  agentSurfaceExtensions.register({
-    key: "websiteEmbed",
-    defaults: () => ({}),
-    normalize: (value: unknown) => value,
-    serialize: (value: unknown) => value,
-    parse: (value: unknown) => value,
-  });
+  agentSurfaceExtensions.register(createWebsiteEmbedSurfaceExtension());
 
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,

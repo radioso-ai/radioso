@@ -191,11 +191,10 @@ const main = async () => {
   const envPath = path.join(repoRoot, ".env");
   const enterpriseAuthFrontendPackage = path.join(eeRoot, "packages/auth-frontend");
   const enterpriseBackendPackage = path.join(eeRoot, "packages/backend-module");
-  const enterpriseWidgetPackage = path.join(eeRoot, "packages/embed-widget");
   const enterpriseAgentWizardFrontendPackage = path.join(eeRoot, "packages/agent-wizard-frontend");
   const appOrigin = process.env.RADIOSO_EE_APP_ORIGIN ?? "http://localhost:3000";
 
-  for (const requiredPath of [eeRoot, enterpriseAuthFrontendPackage, enterpriseBackendPackage, enterpriseWidgetPackage, enterpriseAgentWizardFrontendPackage]) {
+  for (const requiredPath of [eeRoot, enterpriseAuthFrontendPackage, enterpriseBackendPackage, enterpriseAgentWizardFrontendPackage]) {
     if (!(await pathExists(requiredPath))) {
       throw new Error(`Missing Enterprise Edition path: ${requiredPath}`);
     }
@@ -217,6 +216,7 @@ const main = async () => {
   await removeEnvFileKeys(envPath, [
     "RADIOSO_APPLICATION_MODULES",
     "RADIOSO_ENTERPRISE_WIDGET_ORIGIN",
+    "RADIOSO_WIDGET_ORIGIN",
   ]);
   const backendEnvFileValues = Object.fromEntries(await readEnvValues(envPath));
 
@@ -242,8 +242,6 @@ const main = async () => {
     "--filter",
     "@radioso/enterprise-backend-module...",
     "--filter",
-    "@radioso/enterprise-embed-widget...",
-    "--filter",
     "@radioso/enterprise-auth-frontend...",
     "--filter",
     "@radioso/enterprise-agent-wizard-frontend...",
@@ -263,14 +261,11 @@ const main = async () => {
     "--filter",
     "@radioso/enterprise-backend-module...",
     "--filter",
-    "@radioso/enterprise-embed-widget...",
-    "--filter",
     "@radioso/enterprise-auth-frontend...",
     "--filter",
     "@radioso/enterprise-agent-wizard-frontend...",
   ]);
   await linkPackage(backendDir, "@radioso/enterprise-backend-module", enterpriseBackendPackage);
-  await linkPackage(frontendDir, "@radioso/enterprise-embed-widget", enterpriseWidgetPackage);
   await linkPackage(frontendDir, "@radioso/enterprise-auth-frontend", enterpriseAuthFrontendPackage);
   await linkPackage(frontendDir, "@radioso/enterprise-agent-wizard-frontend", enterpriseAgentWizardFrontendPackage);
 
@@ -290,7 +285,7 @@ const main = async () => {
     ...backendEnvFileValues,
     ...process.env,
     RADIOSO_APPLICATION_MODULES: "@radioso/enterprise-backend-module",
-    RADIOSO_ENTERPRISE_WIDGET_ORIGIN: appOrigin,
+    RADIOSO_WIDGET_ORIGIN: appOrigin,
     PUBLIC_CHAT_BASE_URL: `${appOrigin}/chat`,
     APP_BASE_URL: appOrigin,
   };

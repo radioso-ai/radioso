@@ -5,7 +5,6 @@ import { createAnswerFeedbackApplicationModule } from "./answerFeedback/applicat
 import { createHumanContactApplicationModule } from "./humanContact/applicationModule.js";
 import { createEnterpriseAuthApplicationModule } from "./mail/applicationModule.js";
 import { createUsageLimitsApplicationModule } from "./usageLimits/applicationModule.js";
-import { createWebsiteEmbedApplicationModule } from "./websiteEmbedApplicationModule.js";
 
 export {
   collectFrontendRouteContributions,
@@ -17,8 +16,6 @@ export { createUsageLimitsApplicationModule } from "./usageLimits/applicationMod
 export { createAnswerFeedbackApplicationModule } from "./answerFeedback/applicationModule.js";
 export { createEnterpriseAuthApplicationModule } from "./mail/applicationModule.js";
 export { createHumanContactApplicationModule } from "./humanContact/applicationModule.js";
-export { createWebsiteEmbedApplicationModule } from "./websiteEmbedApplicationModule.js";
-export { createWebsiteEmbedSurfaceExtension } from "./websiteEmbedSurfaceExtension.js";
 export { createAgentWizardApplicationModule } from "./agentWizard/applicationModule.js";
 
 export const createEnterpriseBackendModule = (): ApplicationModule => {
@@ -27,7 +24,6 @@ export const createEnterpriseBackendModule = (): ApplicationModule => {
     createEnterpriseAuthApplicationModule(),
     createHumanContactApplicationModule(),
     createAnswerFeedbackApplicationModule(),
-    createWebsiteEmbedApplicationModule(),
     createAgentWizardApplicationModule(),
   ];
 

@@ -135,6 +135,7 @@ export function EmbeddedChatFrame({
       storedSession ? readStoredAnonymousSessionId(storedSession.publicChatToken) : null
 
     if (storedSession?.workspaceName) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Bootstrapping handshake reads sessionStorage on mount; this hydrates the workspace name from the stored session before the parent posts the launch payload.
       setState((current) =>
         current.status === 'bootstrapping'
           ? { ...current, workspaceName: storedSession.workspaceName }

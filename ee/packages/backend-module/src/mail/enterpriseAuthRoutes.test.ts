@@ -186,7 +186,7 @@ describe("enterprise auth routes", () => {
   afterEach(() => {
     delete process.env.SESSION_COOKIE_NAME;
     delete process.env.APP_BASE_URL;
-    delete process.env.RADIOSO_ENTERPRISE_WIDGET_ORIGIN;
+    delete process.env.RADIOSO_WIDGET_ORIGIN;
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -204,7 +204,7 @@ describe("enterprise auth routes", () => {
   });
 
   it("uses the configured app base URL for password reset links", async () => {
-    process.env.RADIOSO_ENTERPRISE_WIDGET_ORIGIN = "https://radioso-live-frontend.example.run.app";
+    process.env.RADIOSO_WIDGET_ORIGIN = "https://radioso-live-frontend.example.run.app";
     const database = new FakeEnterpriseAuthDatabase();
     const mailService = createMailServiceStub();
 

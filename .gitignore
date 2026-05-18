@@ -22,10 +22,6 @@ yarn-error.log*
 *.seed
 
 # Generated Enterprise Edition frontend routes
-frontend/app/api/embed/
-frontend/app/embed/
-frontend/app/embed-test/
-frontend/app/radioso-embed.js/
 frontend/app/reset-password/
 frontend/app/verify-email/
 frontend/public/agent-creation-actions.json

@@ -10,7 +10,6 @@ import type {
   ApplicationModuleRegistrationContext,
   ApplicationRouteMount,
   ApplicationUsageLimitPolicyRegistration,
-  WebsiteEmbedIntegrationProvider,
 } from "./radiosoModuleTypes.js";
 
 const createCaptureContext = () => {
@@ -21,7 +20,6 @@ const createCaptureContext = () => {
   let chatIntakeProvider: ApplicationChatIntakeProviderRegistration | undefined;
   let contactHistoryProvider: ApplicationContactHistoryProviderRegistration | undefined;
   let answerFeedbackHistoryProvider: ApplicationAnswerFeedbackHistoryProviderRegistration | undefined;
-  let websiteEmbedIntegration: WebsiteEmbedIntegrationProvider | undefined;
 
   const context: ApplicationModuleRegistrationContext = {
     registerDatabaseMigrator(migrator) {
@@ -45,9 +43,6 @@ const createCaptureContext = () => {
     registerAnswerFeedbackHistoryProvider(provider) {
       answerFeedbackHistoryProvider = provider;
     },
-    registerWebsiteEmbedIntegration(provider) {
-      websiteEmbedIntegration = provider;
-    },
   };
 
   return {
@@ -65,9 +60,6 @@ const createCaptureContext = () => {
     },
     get usageLimitPolicy() {
       return usageLimitPolicy;
-    },
-    get websiteEmbedIntegration() {
-      return websiteEmbedIntegration;
     },
     routeMounts,
   };
@@ -100,7 +92,6 @@ describe("Enterprise backend module aggregation", () => {
     expect(capture.chatIntakeProvider).toBeTypeOf("function");
     expect(capture.contactHistoryProvider).toBeTypeOf("function");
     expect(capture.answerFeedbackHistoryProvider).toBeTypeOf("function");
-    expect(capture.websiteEmbedIntegration).toBeDefined();
   });
 
   it("registers chat intake through the public provider contract", async () => {

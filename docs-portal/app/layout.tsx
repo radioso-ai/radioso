@@ -49,7 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
         </ThemeProvider>
         <Script
-          src="https://platform.radioso.dev/embed-widget.js"
+          src="https://platform.radioso.dev/radioso-embed.js"
           data-radioso-token="--kUGFPoIm-fe1Mg2Lvrlw"
           strategy="afterInteractive"
         />

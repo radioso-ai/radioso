@@ -204,7 +204,7 @@ const createEnterpriseRateLimitMiddleware = (
 const getAppBaseUrl = (env: EnterpriseAuthRouteDependencies["env"]): string =>
   env.APP_BASE_URL ??
   process.env.APP_BASE_URL ??
-  process.env.RADIOSO_ENTERPRISE_WIDGET_ORIGIN ??
+  process.env.RADIOSO_WIDGET_ORIGIN ??
   "http://localhost:3000";
 
 const getTokenTtlMinutes = (): number => {

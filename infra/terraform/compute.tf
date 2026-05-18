@@ -65,12 +65,9 @@ resource "google_cloud_run_v2_service" "backend" {
           value = env.value
         }
       }
-      dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [local.app_base_url] : []
-        content {
-          name  = "RADIOSO_ENTERPRISE_WIDGET_ORIGIN"
-          value = env.value
-        }
+      env {
+        name  = "RADIOSO_WIDGET_ORIGIN"
+        value = local.app_base_url
       }
       dynamic "env" {
         for_each = var.radioso_edition == "enterprise" ? [local.app_base_url] : []
@@ -431,12 +428,9 @@ resource "google_cloud_run_v2_service" "document_worker" {
           value = env.value
         }
       }
-      dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [local.app_base_url] : []
-        content {
-          name  = "RADIOSO_ENTERPRISE_WIDGET_ORIGIN"
-          value = env.value
-        }
+      env {
+        name  = "RADIOSO_WIDGET_ORIGIN"
+        value = local.app_base_url
       }
       env {
         name  = "GOOGLE_CLOUD_PROJECT"
@@ -673,12 +667,9 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
           value = env.value
         }
       }
-      dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [local.app_base_url] : []
-        content {
-          name  = "RADIOSO_ENTERPRISE_WIDGET_ORIGIN"
-          value = env.value
-        }
+      env {
+        name  = "RADIOSO_WIDGET_ORIGIN"
+        value = local.app_base_url
       }
       env {
         name  = "GOOGLE_CLOUD_PROJECT"

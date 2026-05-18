@@ -1,4 +1,4 @@
-import { EmbeddedChatFrame } from "../components/chat/embedded-chat-frame.js";
+import { EmbeddedChatFrame } from "@/components/chat/embedded-chat-frame";
 import {
   buildWebsiteEmbedSurfaceCssVars,
   getWebsiteEmbedTheme,

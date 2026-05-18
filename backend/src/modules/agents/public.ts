@@ -1,9 +1,11 @@
 export {
   agentSurfacePositions,
   defaultAgentEmbedTheme,
+  defaultWebsiteEmbedSurfaceSettings,
   getWebsiteEmbedSurfaceSettings,
   isAgentBootstrapActive,
   isAgentRetrievalEnabled,
+  normalizeWebsiteEmbedSurfaceSettings,
   resolveAgentDisplayName,
   validateAgentInput,
   type AgentBehaviorSettings,

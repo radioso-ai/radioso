@@ -38,6 +38,7 @@ import {
   createApplicationExtensionRegistry,
   type ApplicationModule,
 } from "./applicationModule.js";
+import { createWebsiteEmbedApplicationModule } from "./builtIn/websiteEmbedModule.js";
 import {
   createDefaultSkillCatalogRegistry,
   type SkillCatalogRegistry,
@@ -79,13 +80,19 @@ export interface ApplicationComposition {
 export const createDefaultApplicationComposition = (options: {
   logger: Pick<AppLogger, "error">;
   modules?: ApplicationModule[];
+  widgetOrigin?: string;
 }): ApplicationComposition => {
   const registry = createApplicationExtensionRegistry();
   const coordinator = new ApplicationModuleCoordinator({
     logger: options.logger,
     registry,
   });
-  coordinator.apply(options.modules ?? []);
+  // Built-in OSS modules first; user-supplied modules can override their
+  // registrations (e.g. a custom website-embed integration provider).
+  coordinator.apply([
+    createWebsiteEmbedApplicationModule({ widgetOrigin: options.widgetOrigin }),
+    ...(options.modules ?? []),
+  ]);
 
   return {
     capabilityPolicy: registry.capabilityPolicy ?? new DefaultAllowCapabilityPolicy(),

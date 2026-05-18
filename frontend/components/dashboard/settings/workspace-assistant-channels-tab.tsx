@@ -1061,7 +1061,6 @@ export function WorkspaceAssistantChannelsTab({
                 isSourceListLoading={isSourceListLoading}
                 sourceListError={sourceListError}
                 channelsTabHref={channelsTabHref}
-                websiteEmbedAvailable={editionController.canUseWebsiteEmbed()}
               />
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load assistant settings.</p>

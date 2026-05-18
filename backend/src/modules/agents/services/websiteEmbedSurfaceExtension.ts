@@ -1,21 +1,15 @@
-import type { AgentSurfaceExtension } from "./radiosoModuleTypes.js";
-
-import { resolveCopyForAcceptLanguage } from "./websiteEmbed/localeCopy.js";
 import {
   defaultWebsiteEmbedSurfaceSettings,
+  normalizeWebsiteEmbedSurfaceSettings,
   type WebsiteEmbedSurfaceSettings,
-} from "./websiteEmbed/types.js";
-import { normalizeWebsiteEmbedSurfaceSettings } from "./websiteEmbed/normalize.js";
+} from "../domain.js";
+import type { AgentSurfaceExtension } from "../surfaceExtensions.js";
+
+import { resolveCopyForAcceptLanguage } from "./websiteEmbed/localeCopy.js";
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-/**
- * Owns the full website-embed surface settings shape. OSS still mirrors the
- * same type on `agent.surfaceSettings.websiteEmbed` during the reader
- * migration; once OSS readers consume from `surfaceSettings.extensions`,
- * this extension becomes the single source of truth.
- */
 export const createWebsiteEmbedSurfaceExtension = (): AgentSurfaceExtension<WebsiteEmbedSurfaceSettings> => ({
   key: "websiteEmbed",
   defaults() {
@@ -28,8 +22,8 @@ export const createWebsiteEmbedSurfaceExtension = (): AgentSurfaceExtension<Webs
     return settings;
   },
   parse(raw) {
-    // Tolerant read path: legacy/unknown shapes return defaults rather than
-    // throwing. Bad fields are silently coerced. The strict path is normalize().
+    // Tolerant read path: unknown shapes fall back to defaults rather than
+    // throwing. Use normalize() for the strict path.
     if (!isPlainObject(raw)) return defaultWebsiteEmbedSurfaceSettings();
     try {
       return normalizeWebsiteEmbedSurfaceSettings(raw);

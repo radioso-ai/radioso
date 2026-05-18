@@ -102,6 +102,7 @@ const envSchema = z.object({
   WEBSITE_CRAWLER_ENABLED: booleanish(true),
   APP_BASE_URL: emptyStringToUndefined(z.string().url()),
   PUBLIC_CHAT_BASE_URL: emptyStringToUndefined(z.string().min(1)),
+  RADIOSO_WIDGET_ORIGIN: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_BASE_URL: emptyStringToUndefined(z.string().url()),
   RADIOSO_MCP_ENABLED: booleanish(false),
   RADIOSO_MCP_STANDALONE: booleanish(false),

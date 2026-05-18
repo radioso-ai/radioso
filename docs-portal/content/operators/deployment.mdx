@@ -34,13 +34,12 @@ Relevant runtime flags are defined in `.env.example` and enforced by `backend/sr
 
 <span style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid rgba(79, 70, 229, 0.35)', borderRadius: '999px', padding: '0.125rem 0.55rem', fontSize: '0.72rem', fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#4f46e5', background: 'rgba(79, 70, 229, 0.08)' }}>Enterprise Edition</span>
 
-Enterprise deployments use the same Cloud Run services, but the deploy workflow builds the images with `radioso_edition: enterprise`. In practice, that does three things:
+Enterprise deployments use the same Cloud Run services, but the deploy workflow builds the images with `radioso_edition: enterprise`. In practice, that does two things:
 
 - the backend image installs `@radioso/enterprise-backend-module`
-- the frontend image installs `@radioso/enterprise-embed-widget` and generates the embed routes before `next build`
-- Terraform injects `RADIOSO_APPLICATION_MODULES`, `RADIOSO_ENTERPRISE_WIDGET_ORIGIN`, and edition flags into Cloud Run
+- Terraform injects `RADIOSO_APPLICATION_MODULES` and edition flags into Cloud Run
 
-Keep `app_base_url_override` set to the public frontend origin after the first service rollout, for example `https://app.example.com`. If you use the included Terraform workflow, set the GitHub environment variable `APP_BASE_URL` to that origin. If you deploy another way, set the backend runtime `APP_BASE_URL` to the same origin. Enterprise account-recovery emails and the website embed snippet use this value when they build hosted links.
+Keep `app_base_url_override` set to the public frontend origin after the first service rollout, for example `https://app.example.com`. If you use the included Terraform workflow, set the GitHub environment variable `APP_BASE_URL` to that origin. If you deploy another way, set the backend runtime `APP_BASE_URL` to the same origin. Terraform also forwards this value as `RADIOSO_WIDGET_ORIGIN` so the website embed snippet can build hosted links.
 
 ## Required secrets
 

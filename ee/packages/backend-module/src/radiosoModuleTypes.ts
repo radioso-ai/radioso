@@ -1,7 +1,6 @@
 import type { Router } from "express";
 
 export interface ApplicationModuleRegistrationContext {
-  registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
   registerDatabaseMigrator(migrator: ApplicationDatabaseMigrator): void;
   registerRouteMount(mount: ApplicationRouteMount): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
@@ -120,11 +119,6 @@ export interface SkillDefinition {
     description?: string;
     stepOverrides: Record<string, Record<string, unknown>>;
   }>;
-}
-
-export interface WebsiteEmbedIntegrationProvider {
-  buildScriptUrl(): string | null;
-  buildSnippet(workspace: WebsiteEmbedIntegrationWorkspace): string | null;
 }
 
 export interface UsageLimitReservation {
@@ -606,12 +600,3 @@ export type ApplicationAnswerFeedbackHistoryProviderRegistration =
       };
     }) => AnswerFeedbackHistoryProvider);
 
-export interface WebsiteEmbedIntegrationWorkspace {
-  name: string;
-  assistantName: string;
-  websiteEmbedEnabled: boolean;
-  websiteEmbedToken: string | null;
-  websiteEmbedAllowedOrigins: string[];
-  websiteEmbedLauncherLabel: string;
-  websiteEmbedLauncherPosition: string;
-}

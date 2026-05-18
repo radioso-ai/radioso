@@ -27,7 +27,7 @@ jobs:
       crawler: ${{ steps.filter.outputs.crawler }}
       ee: ${{ steps.filter.outputs.ee }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           fetch-depth: 0
 
@@ -137,7 +137,7 @@ jobs:
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -177,7 +177,7 @@ jobs:
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -220,7 +220,7 @@ jobs:
     env:
       INTEGRATION_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/radioso_test
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -247,7 +247,7 @@ jobs:
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -301,7 +301,7 @@ jobs:
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -352,7 +352,7 @@ jobs:
       - backend-build-openapi
     if: always() && needs.changes.outputs.docs == 'true' && (needs.changes.outputs.backend_openapi != 'true' || needs['backend-build-openapi'].result == 'success')
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -392,7 +392,7 @@ jobs:
       - backend-build-openapi
     if: always() && needs.changes.outputs.typescript_sdk == 'true' && (needs.changes.outputs.backend_openapi != 'true' || needs['backend-build-openapi'].result == 'success')
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -444,7 +444,7 @@ jobs:
     env:
       RADIOSO_MCP_SMOKE_REDIS_URL: redis://127.0.0.1:6379
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -486,7 +486,7 @@ jobs:
     if: needs.changes.outputs.crawler == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -517,7 +517,7 @@ jobs:
     if: needs.changes.outputs.ee == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate

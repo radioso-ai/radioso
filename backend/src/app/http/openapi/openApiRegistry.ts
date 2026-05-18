@@ -47,6 +47,7 @@ export interface OpenApiSchemaCatalog {
   ChatConversationSummarySchema: z.ZodTypeAny;
   ChatHistoryListResponseSchema: z.ZodTypeAny;
   ChatResponseSchema: z.ZodTypeAny;
+  ChatSuggestionActionSchema: z.ZodTypeAny;
   ChatSuggestionSchema: z.ZodTypeAny;
   CitationSchema: z.ZodTypeAny;
   ConnectorConfigUpdateSchema: z.ZodTypeAny;

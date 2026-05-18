@@ -8,6 +8,8 @@ import { humanContactMigrator } from "./humanContactMigrator.js";
 import { createHumanContactRoutes } from "./humanContactRoutes.js";
 import { EnterpriseHumanContactService } from "./humanContactService.js";
 import { humanContactRequestSkillDefinition } from "./skill/definition.js";
+import { DefinitionBackedIntakePrompts } from "./skill/definitionBackedIntakePrompts.js";
+import { HumanContactActionSuggestionProvider } from "./skill/humanContactActionSuggestionProvider.js";
 import type { HumanContactDependencies } from "./humanContactTypes.js";
 
 export interface HumanContactModuleState {
@@ -34,6 +36,20 @@ export const createHumanContactApplicationModule = (
     context.registerSkillDefinition?.(humanContactRequestSkillDefinition);
     context.registerChatIntakeProvider?.((dependencies) => {
       return replaceService(state, dependencies).asChatIntakeProvider();
+    });
+    context.registerChatActionSuggestionProvider?.((dependencies) => {
+      const settingsService = new HumanContactSettingsService({
+        database: dependencies.database,
+        auditService: dependencies.auditService,
+      });
+      const intakePrompts = new DefinitionBackedIntakePrompts({
+        skill: humanContactRequestSkillDefinition,
+        chatGateway: dependencies.chatGateway,
+      });
+      return new HumanContactActionSuggestionProvider({
+        settingsService,
+        intakePrompts,
+      });
     });
     context.registerContactHistoryProvider((dependencies) => {
       const submissions = createHumanContactSkillSubmissionRepository(dependencies.database, {

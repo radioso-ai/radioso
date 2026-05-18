@@ -80,7 +80,13 @@ const missingFields = (collected: Record<string, unknown>): string[] => {
   return missing;
 };
 
-export const resolveLanguageContext = (input: ChatIntakeInput, _collected?: Record<string, unknown>): string => {
+export const resolveLanguageContext = (
+  input: {
+    history: ReadonlyArray<{ role: "user" | "assistant" | "system"; content: string }>;
+    query: string;
+  },
+  _collected?: Record<string, unknown>,
+): string => {
   // Anchor language on the user's most recent meaningful natural-language message.
   // We deliberately ignore `collected.message` because it is the auto-built contact-request draft
   // ("Contact request:\n...") whose English boilerplate would mislead the LLM on follow-up turns,

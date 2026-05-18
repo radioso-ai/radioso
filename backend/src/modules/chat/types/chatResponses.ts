@@ -3,10 +3,21 @@ import type { ActivitySummary, ActivityTrace } from "../../retrieval/public.js";
 
 export type ChatSuggestionKind = string;
 
+export type ChatSuggestionAction =
+  | { kind: "ask_followup" }
+  | {
+      kind: "start_intent";
+      intent: {
+        skillName: string;
+        intentName?: string;
+      };
+    };
+
 export interface ChatSuggestion {
   text: string;
   kind: ChatSuggestionKind;
   citation?: ChatCitation;
+  action?: ChatSuggestionAction;
 }
 
 export interface ChatRoute {

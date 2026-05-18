@@ -133,6 +133,15 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
       return
     }
 
+    if (suggestion.action?.kind === 'start_intent') {
+      void sendMessage(suggestion.text, {
+        method: 'intent_click',
+        intent: suggestion.action.intent,
+        suggestionSourceMessageId: messageId,
+      })
+      return
+    }
+
     void sendMessage(suggestion.text, {
       method: 'suggestion_click',
       suggestionSourceMessageId: messageId,

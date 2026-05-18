@@ -10,6 +10,9 @@ import {
 const INTENT_CHECK_TEMPLATE = "humanContact/intake-intent-check.md";
 const FIELD_EXTRACTION_TEMPLATE = "humanContact/intake-field-extraction.md";
 const ANSWER_TEMPLATE = "humanContact/intake-answer.md";
+const CHIP_LABEL_TEMPLATE = "humanContact/contact-chip-label.md";
+
+const CHIP_LABEL_MAX_LENGTH = 60;
 
 const DEFAULT_INTAKE_PROMPT_TIMEOUT_MS = 5_000;
 
@@ -195,6 +198,54 @@ export class DefinitionBackedIntakePrompts {
       throw new Error(`Skill intake answer generation failed for ${this.input.skill.name}.`);
     }
     return trimmed;
+  }
+
+  async composeChipLabel(input: {
+    languageContext?: string | null;
+    userExpectedLocale?: string | null;
+  }): Promise<string> {
+    let languageInstruction: string;
+    if (input.languageContext) {
+      languageInstruction = renderPromptSection(ANSWER_TEMPLATE, "language.with_context", {
+        anchor_message: input.languageContext.slice(0, 500),
+      });
+    } else if (input.userExpectedLocale) {
+      languageInstruction = renderPromptSection(ANSWER_TEMPLATE, "language.with_locale", {
+        user_expected_locale: input.userExpectedLocale,
+      });
+    } else {
+      languageInstruction = renderPromptSection(ANSWER_TEMPLATE, "language.default", {});
+    }
+
+    const localeFallback = !input.languageContext && input.userExpectedLocale
+      ? renderPromptSection(ANSWER_TEMPLATE, "locale_fallback", {
+          user_expected_locale: input.userExpectedLocale,
+        })
+      : "";
+
+    const prompt = renderPromptTemplate(loadPromptTemplate(CHIP_LABEL_TEMPLATE), {
+      language_instruction: languageInstruction,
+      locale_fallback: localeFallback,
+    });
+
+    const response = await withTimeout(
+      this.input.chatGateway.answer({
+        query: input.languageContext ?? "contact_chip_label",
+        history: [],
+        prompt,
+      }),
+      this.timeoutMs,
+      `Skill intake ${this.input.skill.name} chip label prompt`,
+    );
+    const sanitized = response
+      .trim()
+      .replace(/^["'`]+|["'`]+$/g, "")
+      .replace(/\s+/g, " ")
+      .slice(0, CHIP_LABEL_MAX_LENGTH);
+    if (!sanitized) {
+      throw new Error(`Skill intake chip label generation produced empty result for ${this.input.skill.name}.`);
+    }
+    return sanitized;
   }
 
   private requireIntake() {

@@ -11,6 +11,7 @@ export interface ApplicationModuleRegistrationContext {
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillDefinition?(definition: SkillDefinition): void;
   registerAgentSurfaceExtension?(extension: AgentSurfaceExtension): void;
+  registerChatActionSuggestionProvider?(provider: ApplicationChatActionSuggestionProviderRegistration): void;
 }
 
 /**
@@ -455,6 +456,75 @@ export interface ChatIntakeProvider {
 export interface ChatGateway {
   answer(input: { query: string; history: Array<{ role: string; content: string }>; prompt: string; systemPrompt?: string }): Promise<string>;
 }
+
+export type AssistantTurnOutcomeName =
+  | "grounded_success"
+  | "grounded_degraded_unsupported_segments"
+  | "no_context_refusal"
+  | "non_retrieval_response";
+
+export interface ChatActionSuggestion {
+  text: string;
+  kind: string;
+  citation?: {
+    documentId: string;
+    chunkId?: string;
+    title: string;
+  };
+  action?:
+    | { kind: "ask_followup" }
+    | {
+        kind: "start_intent";
+        intent: {
+          skillName: string;
+          intentName?: string;
+        };
+      };
+}
+
+export interface ChatActionSuggestionContext {
+  workspaceId: string;
+  conversationId: string;
+  agentId?: string;
+  query: string;
+  answer: string;
+  answerOutcome: AssistantTurnOutcomeName;
+  history: Array<{
+    id: string;
+    role: "user" | "assistant" | "system";
+    content: string;
+    createdAt: Date;
+  }>;
+  userExpectedLocale?: string;
+  sourceChannel?: string | null;
+  sourceOrigin?: string | null;
+}
+
+export interface ChatActionSuggestionProvider {
+  readonly name: string;
+  evaluate(context: ChatActionSuggestionContext): Promise<ChatActionSuggestion | null>;
+}
+
+export type ApplicationChatActionSuggestionProviderRegistration =
+  | ChatActionSuggestionProvider
+  | ((context: {
+      database: UsageLimitDatabasePort;
+      chatGateway: ChatGateway;
+      logger: {
+        info?(entry: unknown, message?: string): void;
+        warn?(entry: unknown, message?: string): void;
+        error(entry: unknown, message?: string): void;
+      };
+      auditService: {
+        record(input: {
+          accountId?: string | null;
+          workspaceId?: string | null;
+          eventType: string;
+          eventStatus: "success" | "failure";
+          metadata?: Record<string, unknown>;
+        }): Promise<void>;
+      };
+    }) => ChatActionSuggestionProvider);
 
 export type ApplicationChatIntakeProviderRegistration =
   | ChatIntakeProvider

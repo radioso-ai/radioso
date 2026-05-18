@@ -31,3 +31,9 @@ export {
   type ChatAnswerFeedbackEntry,
   type ChatAnswerFeedbackValue,
 } from "./services/answerFeedbackHistoryProvider.js";
+export { ChatActionSuggestionRegistry } from "./services/actionSuggestions/chatActionSuggestionRegistry.js";
+export { ChatActionSuggestionService } from "./services/actionSuggestions/chatActionSuggestionService.js";
+export type {
+  ChatActionSuggestionContext,
+  ChatActionSuggestionProvider,
+} from "./services/actionSuggestions/chatActionSuggestionProvider.js";

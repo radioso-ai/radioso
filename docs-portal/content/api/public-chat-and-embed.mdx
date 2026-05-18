@@ -70,10 +70,53 @@ The public chat request also supports `startConversation: true` for bootstrap gr
 
 Bootstrap greetings are not saved as conversations by themselves. A `startConversation: true` response can omit `conversationId`; use the `conversationId` returned by the first normal message when you need history or follow-up continuity.
 
-Chat suggestions are text-only follow-up prompts. Clients should render each
-suggestion as a normal message option and send `suggestion.text` when selected.
-Suggestions do not carry action payloads. Workflows that need typed intake or
-side effects run through the chat skill intake path.
+## Chat suggestions
+
+A chat response can include `suggestions`. Each suggestion has `text`, a
+provider-defined `kind` string, and an optional `action`.
+
+Two kinds of chips can appear together:
+
+- **Follow-up question chips** have no `action` (or `action.kind` is
+  `"ask_followup"`). They are pure text prompts: render `suggestion.text` and,
+  when the visitor selects one, send it as a new user message with
+  `inputMetadata.method = "suggestion_click"` and
+  `suggestionSourceMessageId = <assistant message id>`.
+- **Action chips** carry `action.kind === "start_intent"` with an
+  `intent.skillName` (and an optional `intent.intentName`). They route to a
+  specific assistant skill instead of asking a follow-up question. When the
+  visitor activates one, send `inputMetadata.method = "intent_click"` together
+  with the `intent` object verbatim, plus `suggestionSourceMessageId`. Sending
+  `suggestion_click` for an action chip will work as a plain text turn but will
+  bypass the structured skill handoff the chip was meant to trigger.
+
+At most one action chip is returned per assistant turn. Action chips are
+in addition to the up-to-two follow-up question chips.
+
+Example response fragment:
+
+```json
+{
+  "suggestions": [
+    {
+      "text": "Contact us",
+      "kind": "contact_human",
+      "action": {
+        "kind": "start_intent",
+        "intent": {
+          "skillName": "human_contact.request",
+          "intentName": "no_context_refusal"
+        }
+      }
+    },
+    { "text": "What's covered here?", "kind": "deeper" }
+  ]
+}
+```
+
+The set of action `kind` values is open: new modules can register additional
+providers, so clients should treat `kind` as an opaque string and decide
+behavior from `action` rather than from `kind`.
 
 ## History in the anonymous flow
 

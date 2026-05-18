@@ -238,11 +238,44 @@ const normalizeSuggestionCitation = (value: unknown): ChatCitation | undefined =
 };
 
 const normalizeSuggestionKind = (value: unknown): ChatSuggestion["kind"] | null => {
-  if (value === undefined || value === "deeper") {
+  // Legacy rows persisted before `kind` was required defaulted to deeper suggestions.
+  if (value === undefined) {
     return "deeper";
   }
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
 
-  return value === "broader" ? "broader" : null;
+const normalizeSuggestionAction = (
+  value: unknown,
+): NonNullable<ChatSuggestion["action"]> | undefined => {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const candidate = value as { kind?: unknown; intent?: unknown };
+  if (candidate.kind === "ask_followup") {
+    return { kind: "ask_followup" };
+  }
+  if (candidate.kind !== "start_intent") {
+    return undefined;
+  }
+  if (!candidate.intent || typeof candidate.intent !== "object") {
+    return undefined;
+  }
+  const intentCandidate = candidate.intent as { skillName?: unknown; intentName?: unknown };
+  if (typeof intentCandidate.skillName !== "string" || intentCandidate.skillName.trim().length === 0) {
+    return undefined;
+  }
+  const intent: { skillName: string; intentName?: string } = {
+    skillName: intentCandidate.skillName.trim(),
+  };
+  if (typeof intentCandidate.intentName === "string" && intentCandidate.intentName.trim().length > 0) {
+    intent.intentName = intentCandidate.intentName.trim();
+  }
+  return { kind: "start_intent", intent };
 };
 
 const normalizeChatSuggestion = (value: unknown): ChatSuggestion | null => {
@@ -250,7 +283,12 @@ const normalizeChatSuggestion = (value: unknown): ChatSuggestion | null => {
     return null;
   }
 
-  const candidate = value as { text?: unknown; kind?: unknown; citation?: unknown };
+  const candidate = value as {
+    text?: unknown;
+    kind?: unknown;
+    citation?: unknown;
+    action?: unknown;
+  };
   if (typeof candidate.text !== "string") {
     return null;
   }
@@ -265,11 +303,17 @@ const normalizeChatSuggestion = (value: unknown): ChatSuggestion | null => {
     return null;
   }
 
-  return {
-    text,
-    kind,
-    citation: normalizeSuggestionCitation(candidate.citation),
-  };
+  const citation = normalizeSuggestionCitation(candidate.citation);
+  const action = normalizeSuggestionAction(candidate.action);
+
+  const result: ChatSuggestion = { text, kind };
+  if (citation) {
+    result.citation = citation;
+  }
+  if (action) {
+    result.action = action;
+  }
+  return result;
 };
 
 const toIsoString = (value: Date): string => value.toISOString();

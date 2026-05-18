@@ -369,6 +369,113 @@ describe("chat history service", () => {
     });
   });
 
+  it("preserves provider-defined suggestion kinds and action payloads on reload", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+
+    const conversation = await conversationRepository.create("workspace-1");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Can you help with billing?",
+    });
+    const assistant = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "I don't have information about that.",
+    });
+
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        assistantMessageId: assistant.id,
+        citationCount: 0,
+        suggestions: [
+          {
+            text: "Contact us",
+            kind: "contact_human",
+            action: {
+              kind: "start_intent",
+              intent: { skillName: "human_contact.request", intentName: "no_context_refusal" },
+            },
+          },
+          {
+            text: "What's covered here?",
+            kind: "deeper",
+          },
+        ],
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+    const assistantMessage = detail.messages.find((message) => message.role === "assistant");
+
+    expect(assistantMessage?.suggestions).toEqual([
+      {
+        text: "Contact us",
+        kind: "contact_human",
+        action: {
+          kind: "start_intent",
+          intent: { skillName: "human_contact.request", intentName: "no_context_refusal" },
+        },
+      },
+      {
+        text: "What's covered here?",
+        kind: "deeper",
+      },
+    ]);
+  });
+
+  it("drops malformed action payloads while keeping the rest of the suggestion", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+
+    const conversation = await conversationRepository.create("workspace-1");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Anything?",
+    });
+    const assistant = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "Hmm.",
+    });
+
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        assistantMessageId: assistant.id,
+        citationCount: 0,
+        suggestions: [
+          {
+            text: "Broken action chip",
+            kind: "contact_human",
+            action: { kind: "start_intent" },
+          },
+        ],
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+    const assistantMessage = detail.messages.find((message) => message.role === "assistant");
+
+    expect(assistantMessage?.suggestions).toEqual([
+      {
+        text: "Broken action chip",
+        kind: "contact_human",
+      },
+    ]);
+  });
+
   it("normalizes legacy stored suggestions without kind as deeper suggestions", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 

@@ -20,6 +20,7 @@ import type { ChatSuggestion } from "../types/chatResponses.js";
 import type { AssistantSuggestionExpansionService } from "./assistantSuggestionExpansionService.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
+import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
 
 export interface ChatPresentedAnswer {
   answer: string;
@@ -103,6 +104,7 @@ export class ChatAnswerPresenter {
   constructor(
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer,
     private readonly assistantSuggestionExpansionService: AssistantSuggestionExpansionService,
+    private readonly chatActionSuggestionService?: ChatActionSuggestionService,
   ) {}
 
   presentNonRetrievalAnswer(answer: string): ChatPresentedAnswer {
@@ -126,10 +128,9 @@ export class ChatAnswerPresenter {
     query: string,
     userExpectedLocale?: string | null,
   ): Promise<ChatPresentedAnswer> {
-    return await this.applyAssistantSuggestions(
-      session,
-      await this.presentWithoutSuggestions(session, answer, query, userExpectedLocale),
-    );
+    const presentation = await this.presentWithoutSuggestions(session, answer, query, userExpectedLocale);
+    const withQuestionSuggestions = await this.applyAssistantSuggestions(session, presentation);
+    return await this.applyActionSuggestions(session, withQuestionSuggestions, userExpectedLocale);
   }
 
   async presentWithoutSuggestions(
@@ -234,6 +235,35 @@ export class ChatAnswerPresenter {
     return {
       ...presentation,
       suggestions: expanded.suggestions,
+    };
+  }
+
+  async applyActionSuggestions(
+    session: PreparedSession,
+    presentation: ChatPresentedAnswer,
+    userExpectedLocale?: string | null,
+  ): Promise<ChatPresentedAnswer> {
+    if (!this.chatActionSuggestionService) {
+      return presentation;
+    }
+    const actionSuggestions = await this.chatActionSuggestionService.evaluate({
+      workspaceId: session.conversation.workspaceId,
+      conversationId: session.conversation.id,
+      agentId: session.agent.id,
+      query: session.userMessage.content,
+      answer: presentation.answer,
+      answerOutcome: presentation.answerOutcome,
+      history: session.history,
+      userExpectedLocale: userExpectedLocale ?? undefined,
+      sourceChannel: session.conversation.sourceChannel,
+      sourceOrigin: session.conversation.sourceOrigin,
+    });
+    if (actionSuggestions.length === 0) {
+      return presentation;
+    }
+    return {
+      ...presentation,
+      suggestions: [...actionSuggestions, ...(presentation.suggestions ?? [])],
     };
   }
 

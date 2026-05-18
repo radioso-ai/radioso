@@ -12,6 +12,8 @@ Radioso uses those vectors for semantic retrieval.
 
 Radioso supports OpenAI embedding models and Google Gemini Embedding for workspace indexing. Google embedding models require `GEMINI_API_KEY` to be configured on the backend.
 
+Each workspace stores vectors with the dimensionality returned by its active embedding model. For example, OpenAI `text-embedding-3-large` can use its native vector size instead of being reduced to the default OpenAI small-model size.
+
 Anthropic does not currently provide a native embedding model. Claude can still be used for chat, rewrite, and reranking flows when configured separately.
 
 Models without configured provider credentials are shown as unavailable.
@@ -39,6 +41,6 @@ You can cancel a pending model change. If some documents were already re-indexed
 
 If you change the embedding model, let the re-indexing job finish so stored chunks and new search queries use the same vector space.
 
-Until reprocessing finishes, semantic search stays on the active model. This avoids mixing vectors from different embedding models in one search.
+Until reprocessing finishes, semantic search stays on the active model. This avoids mixing vectors from different embedding models or vector dimensions in one search.
 
 Existing installations label pre-upgrade chunks with the default OpenAI embedding model. This matches the default deployment path. If an installation used a different embedding model before this setting existed, re-index the workspace after upgrade.

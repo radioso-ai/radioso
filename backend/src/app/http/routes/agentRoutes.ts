@@ -49,11 +49,17 @@ const sourceScopeSchema = z.discriminatedUnion("mode", [
   }),
 ]).optional();
 
+const brandingSchema = z.object({
+  hidePoweredBy: z.boolean().optional(),
+  privacyPolicyUrl: z.string().max(2048).nullable().optional(),
+}).optional();
+
 const agentBodySchema = z.object({
   name: z.string().max(200).optional(),
   customInstruction: z.string().max(2000).optional(),
   suggestedQuestionsEnabled: z.boolean().optional(),
   theme: assistantThemeSchema.optional(),
+  branding: brandingSchema,
   retrievalEnabled: z.boolean().optional(),
   sourceScope: sourceScopeSchema,
   greetingInstruction: z.string().max(200).optional(),

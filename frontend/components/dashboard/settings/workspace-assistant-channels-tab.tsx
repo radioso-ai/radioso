@@ -607,7 +607,9 @@ export function WorkspaceAssistantChannelsTab({
           getAssistantBehaviorSourceScopeKey(assistantBehaviorSettings) !==
             getAssistantBehaviorSourceScopeKey(savedAssistantBehaviorSettings) ||
           JSON.stringify(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) !==
-            JSON.stringify(savedAssistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME)
+            JSON.stringify(savedAssistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) ||
+          JSON.stringify(assistantBehaviorSettings.branding ?? null) !==
+            JSON.stringify(savedAssistantBehaviorSettings.branding ?? null)
         )
       : false
 

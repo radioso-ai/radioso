@@ -269,6 +269,7 @@ export const agentsApi = {
       suggestedQuestionsEnabled: data.suggestedQuestionsEnabled,
       customInstruction: data.customInstruction,
       theme: data.theme,
+      branding: data.branding,
       sourceScope: data.sourceScope,
     }))
   },

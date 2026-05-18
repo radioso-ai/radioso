@@ -69,6 +69,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         surface: z.string(),
         text: z.string(),
       }),
+      branding: z.object({
+        hidePoweredBy: z.boolean(),
+        privacyPolicyUrl: z.string().nullable(),
+      }),
       retrievalEnabled: z.boolean(),
       sourceScope: AgentSourceScopeSchema,
       logo: schemas.AgentLogoSchema,
@@ -98,6 +102,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         brandText: z.string().optional(),
         surface: z.string().optional(),
         text: z.string().optional(),
+      }).optional(),
+      branding: z.object({
+        hidePoweredBy: z.boolean().optional(),
+        privacyPolicyUrl: z.string().max(2048).nullable().optional(),
       }).optional(),
       retrievalEnabled: z.boolean().optional(),
       sourceScope: z.discriminatedUnion("mode", [
@@ -157,6 +165,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         brandText: z.string(),
         surface: z.string(),
         text: z.string(),
+      }).optional(),
+      branding: z.object({
+        hidePoweredBy: z.boolean(),
+        privacyPolicyUrl: z.string().nullable(),
       }).optional(),
       intakeActions: z.array(z.object({
         skillName: z.string(),

@@ -24,6 +24,7 @@ import {
   readStoredAnonymousSessionId,
   readStoredEffectivePublicChatToken,
   readStoredPublicSessionToken,
+  type AgentBrandingSettings,
   type AnswerFeedbackEntry,
   type AnswerFeedbackState,
   type AnswerSegment,
@@ -107,6 +108,7 @@ interface AnonymousChatContextValue {
   workspaceName: string | null
   assistantAvatarUrl: string | null
   assistantTheme: WebsiteEmbedThemeOverrides | null
+  branding: AgentBrandingSettings | null
   intakeActions: PublicChatIntakeAction[]
   isLoading: boolean
   isHydrating: boolean
@@ -302,6 +304,7 @@ export function AnonymousChatProvider({
   const [workspaceName, setWorkspaceName] = useState<string | null>(null)
   const [assistantAvatarUrl, setAssistantAvatarUrl] = useState<string | null>(null)
   const [assistantTheme, setAssistantTheme] = useState<WebsiteEmbedThemeOverrides | null>(null)
+  const [branding, setBranding] = useState<AgentBrandingSettings | null>(null)
   const [intakeActions, setIntakeActions] = useState<PublicChatIntakeAction[]>([])
   const [conversationId, setConversationId] = useState<string | undefined>()
   const [isLoading, setIsLoading] = useState(false)
@@ -329,6 +332,7 @@ export function AnonymousChatProvider({
       setEffectivePublicChatToken(session.publicChatToken)
       setAssistantAvatarUrl(session.assistantAvatarUrl ?? null)
       setAssistantTheme(deriveThemeOverridesFromModel(session.theme))
+      setBranding(session.branding ?? null)
       setIntakeActions(session.intakeActions ?? [])
       return session
     },
@@ -371,6 +375,7 @@ export function AnonymousChatProvider({
     setWorkspaceName(null)
     setAssistantAvatarUrl(null)
     setAssistantTheme(null)
+    setBranding(null)
     setIntakeActions([])
     setConversationId(undefined)
     setHasOlderMessages(false)
@@ -383,6 +388,7 @@ export function AnonymousChatProvider({
       setWorkspaceName(response.workspaceName ?? null)
       setAssistantAvatarUrl(response.assistantAvatarUrl ?? null)
       setAssistantTheme(deriveThemeOverridesFromModel(response.theme))
+      setBranding(response.branding ?? null)
       setIntakeActions(response.intakeActions ?? [])
 
       if (response.conversations.length === 0) {
@@ -739,6 +745,7 @@ export function AnonymousChatProvider({
       workspaceName,
       assistantAvatarUrl,
       assistantTheme,
+      branding,
       intakeActions,
       isLoading,
       isHydrating,
@@ -758,6 +765,7 @@ export function AnonymousChatProvider({
       workspaceName,
       assistantAvatarUrl,
       assistantTheme,
+      branding,
       intakeActions,
       isLoading,
       isHydrating,

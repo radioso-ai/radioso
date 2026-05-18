@@ -6,6 +6,14 @@ export const FIXED_WINDOW_CHUNK_SIZE_DEFAULT = RETRIEVAL_BEHAVIOR.chunking.fixed
 export const FIXED_WINDOW_CHUNK_OVERLAP_DEFAULT = RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapDefault;
 export const STRUCTURED_MIN_CHUNK_SIZE_DEFAULT = RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeDefault;
 export const STRUCTURED_MAX_CHUNK_SIZE_DEFAULT = RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeDefault;
+export const embeddingModelIds = [
+  "text-embedding-3-small",
+  "text-embedding-3-large",
+  "text-embedding-ada-002",
+  "gemini-embedding-001",
+] as const;
+export type EmbeddingModelId = (typeof embeddingModelIds)[number];
+export const EMBEDDING_MODEL_DEFAULT: EmbeddingModelId = "text-embedding-3-small";
 
 export interface IngestionSettingsRecord {
   workspaceId: string;
@@ -14,6 +22,8 @@ export interface IngestionSettingsRecord {
   fixedWindowChunkOverlap: number;
   structuredMinChunkSize: number;
   structuredMaxChunkSize: number;
+  embeddingModel: EmbeddingModelId;
+  pendingEmbeddingModel: EmbeddingModelId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,6 +34,13 @@ export interface IngestionSettingsInput {
   fixedWindowChunkOverlap: number;
   structuredMinChunkSize: number;
   structuredMaxChunkSize: number;
+  embeddingModel?: EmbeddingModelId;
+  pendingEmbeddingModel?: EmbeddingModelId | null;
+}
+
+export interface ValidatedIngestionSettingsInput extends IngestionSettingsInput {
+  embeddingModel: EmbeddingModelId;
+  pendingEmbeddingModel: EmbeddingModelId | null;
 }
 
 export const defaultIngestionSettings = (workspaceId: string): IngestionSettingsRecord => ({
@@ -33,13 +50,23 @@ export const defaultIngestionSettings = (workspaceId: string): IngestionSettings
   fixedWindowChunkOverlap: FIXED_WINDOW_CHUNK_OVERLAP_DEFAULT,
   structuredMinChunkSize: STRUCTURED_MIN_CHUNK_SIZE_DEFAULT,
   structuredMaxChunkSize: STRUCTURED_MAX_CHUNK_SIZE_DEFAULT,
+  embeddingModel: EMBEDDING_MODEL_DEFAULT,
+  pendingEmbeddingModel: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
 
-export const validateIngestionSettings = (input: IngestionSettingsInput): IngestionSettingsInput => {
+export const validateIngestionSettings = (input: IngestionSettingsInput): ValidatedIngestionSettingsInput => {
   if (!chunkingStrategyIds.includes(input.chunkingStrategy)) {
     throw badRequest("chunkingStrategy must be a supported strategy");
+  }
+  const embeddingModel = input.embeddingModel ?? EMBEDDING_MODEL_DEFAULT;
+  if (!embeddingModelIds.includes(embeddingModel)) {
+    throw badRequest("embeddingModel must be a supported embedding model");
+  }
+  const pendingEmbeddingModel = input.pendingEmbeddingModel ?? null;
+  if (pendingEmbeddingModel && !embeddingModelIds.includes(pendingEmbeddingModel)) {
+    throw badRequest("pendingEmbeddingModel must be a supported embedding model");
   }
   if (
     !Number.isInteger(input.fixedWindowChunkSize) ||
@@ -84,5 +111,9 @@ export const validateIngestionSettings = (input: IngestionSettingsInput): Ingest
     throw badRequest("structuredMinChunkSize must be less than or equal to structuredMaxChunkSize");
   }
 
-  return input;
+  return {
+    ...input,
+    embeddingModel,
+    pendingEmbeddingModel,
+  };
 };

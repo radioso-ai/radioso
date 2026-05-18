@@ -1,15 +1,21 @@
 import type { EmbeddingService } from "./embeddingService.js";
+import type { IngestionSettingsRecord } from "../../settings/contracts/ingestion.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import type { RetrievedChunk, VectorSearchPort } from "../infra/vectorSearch.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalPipelineTypes.js";
 import type { CandidateRetrievalStage as CandidateRetrievalStageContract, QueryInterpretationStageResult } from "./retrievalPipelineStages.js";
 
+export interface IngestionSettingsReaderPort {
+  getForWorkspace(workspaceId: string): Promise<IngestionSettingsRecord>;
+}
+
 export class CandidateRetrievalStageService implements CandidateRetrievalStageContract {
   constructor(
     private readonly embeddingService: EmbeddingService,
     private readonly vectorSearch: VectorSearchPort,
     private readonly lexicalSearch: LexicalSearchPort,
+    private readonly ingestionSettingsService?: IngestionSettingsReaderPort,
   ) {}
 
   async execute(input: QueryInterpretationStageResult) {
@@ -17,7 +23,11 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     const sourceFilter = input.request.sourceFilter;
     const semanticQueries = input.activeRetrievalSubqueries.map((subquery) => subquery.semanticQuery);
     const uniqueSemanticQueries = [...new Set(semanticQueries)];
-    const embeddings = await this.embeddingService.embedChunks(uniqueSemanticQueries);
+    const ingestionSettings = await this.ingestionSettingsService?.getForWorkspace(input.request.workspaceId);
+    const embeddingModel = ingestionSettings?.embeddingModel;
+    const embeddings = await this.embeddingService.embedChunks(uniqueSemanticQueries, {
+      model: embeddingModel,
+    });
     const embeddingBySemanticQuery = new Map(
       uniqueSemanticQueries.map((query, index) => [query, embeddings[index] ?? []] as const),
     );
@@ -30,6 +40,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           queryEmbedding: embeddingBySemanticQuery.get(query) ?? [],
           topK: input.settings.vectorTopK,
           similarityThreshold: input.settings.similarityThreshold,
+          embeddingModel,
           metadataFilter: input.request.metadataFilter,
           sourceFilter,
         }),
@@ -89,6 +100,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     queryEmbedding: number[];
     topK: number;
     similarityThreshold: number;
+    embeddingModel?: string;
     metadataFilter?: Record<string, unknown>;
     sourceFilter?: RetrievalSourceFilter;
   }): Promise<{ contexts: RetrievedChunk[]; fallbackApplied: boolean }> {

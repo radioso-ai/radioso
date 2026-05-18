@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
+import type { IngestionSettingsService, RetrievalSettingsService } from "../../settings/contracts/services.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { EmbeddingService } from "./embeddingService.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
@@ -95,6 +95,7 @@ export class RetrievalPipelineService {
     promptBuilder: PromptBuilder,
     retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
     _semanticQueryConstraintService?: unknown,
+    ingestionSettingsService?: IngestionSettingsService,
   ) {
     this.retrievalContextStage = new RetrievalContextStageService(
       retrievalSettingsService,
@@ -105,6 +106,7 @@ export class RetrievalPipelineService {
       embeddingService,
       vectorSearch,
       lexicalSearch,
+      ingestionSettingsService,
     );
     this.candidatePreparationStage = new CandidatePreparationStageService(
       candidatePreparationService,

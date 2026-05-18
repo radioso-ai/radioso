@@ -53,9 +53,12 @@ export class PgVectorSearch implements VectorSearchPort {
   }): Promise<RetrievedChunk[]> {
     const maxDistance = 1 - input.similarityThreshold;
     const queryEmbeddingDimensions = input.queryEmbedding.length;
+    const embeddingExpression = queryEmbeddingDimensions === 1536
+      ? "c.embedding"
+      : "COALESCE(c.embedding_unbounded, c.embedding)";
     const distanceExpression = queryEmbeddingDimensions === 1536
-      ? "c.embedding::vector(1536) <=> $2::vector(1536)"
-      : "c.embedding <=> $2::vector";
+      ? `${embeddingExpression} <=> $2::vector(1536)`
+      : `${embeddingExpression} <=> $2::vector`;
     const hasMetadataFilter = hasNonEmptyFilter(input.metadataFilter);
     const params: unknown[] = [
       input.workspaceId,
@@ -115,9 +118,9 @@ export class PgVectorSearch implements VectorSearchPort {
       JOIN documents d ON d.id = c.document_id
       WHERE c.workspace_id = $1
         AND d.status = 'ready'
-        AND c.embedding IS NOT NULL
+        AND ${embeddingExpression} IS NOT NULL
         AND c.embedding_model = $5
-        AND vector_dims(c.embedding) = $6
+        AND vector_dims(${embeddingExpression}) = $6
         ${sourceClause}
         ${metadataClause}
       ORDER BY ${distanceExpression} ASC

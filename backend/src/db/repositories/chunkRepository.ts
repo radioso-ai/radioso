@@ -17,7 +17,10 @@ export const insertChunks = async (client: PoolClient, chunks: ChunkRecord[]): P
 
   const values: unknown[] = [];
   const placeholders = chunks.map((chunk, index) => {
-    const offset = index * 11;
+    const offset = index * 12;
+    const serializedEmbedding = `[${chunk.embedding.join(",")}]`;
+    const boundedEmbedding = chunk.embedding.length === 1536 ? serializedEmbedding : null;
+    const unboundedEmbedding = chunk.embedding.length === 1536 ? null : serializedEmbedding;
     values.push(
       chunk.id,
       chunk.documentId,
@@ -25,18 +28,19 @@ export const insertChunks = async (client: PoolClient, chunks: ChunkRecord[]): P
       chunk.chunkIndex,
       chunk.content,
       chunk.searchText ?? chunk.content,
-      `[${chunk.embedding.join(",")}]`,
+      boundedEmbedding,
+      unboundedEmbedding,
       chunk.embeddingModel ?? "text-embedding-3-small",
       chunk.startOffset,
       chunk.endOffset,
       JSON.stringify(chunk.metadata ?? {}),
     );
 
-    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}::vector, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}::jsonb)`;
+    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}::vector, $${offset + 8}::vector, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}::jsonb)`;
   });
 
   await client.query(
-    `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, embedding, embedding_model, start_offset, end_offset, metadata)
+    `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, embedding, embedding_unbounded, embedding_model, start_offset, end_offset, metadata)
      VALUES ${placeholders.join(", ")}`,
     values,
   );
@@ -154,7 +158,7 @@ export class ChunkRepository implements ChunkRepositoryPort {
               end_offset,
               metadata,
               created_at,
-              vector_dims(embedding) AS embedding_dimensions
+              COALESCE(vector_dims(embedding_unbounded), vector_dims(embedding)) AS embedding_dimensions
        FROM chunks
        WHERE id = $1 AND document_id = $2 AND workspace_id = $3`,
       [input.chunkId, input.documentId, input.workspaceId],

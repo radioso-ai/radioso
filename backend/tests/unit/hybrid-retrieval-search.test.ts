@@ -205,11 +205,11 @@ describe("hybrid retrieval search", () => {
             transactionalQueryCount += 1;
             expect(sql).toContain("WITH nearest_results AS MATERIALIZED");
             expect(sql).toContain("WHERE c.workspace_id = $1");
-            expect(sql).toContain("ORDER BY c.embedding <=> $2::vector ASC");
+            expect(sql).toContain("ORDER BY COALESCE(c.embedding_unbounded, c.embedding) <=> $2::vector ASC");
             expect(sql).toContain("WHERE distance <= $4");
             expect(sql).toContain("AND d.status = 'ready'");
             expect(sql).toContain("AND c.embedding_model = $5");
-            expect(sql).toContain("AND vector_dims(c.embedding) = $6");
+            expect(sql).toContain("AND vector_dims(COALESCE(c.embedding_unbounded, c.embedding)) = $6");
             return { rows: [] };
           },
         };
@@ -239,7 +239,7 @@ describe("hybrid retrieval search", () => {
         expect(sql).toContain("WITH nearest_results AS MATERIALIZED");
         expect(sql).toContain("WHERE c.workspace_id = $1");
         expect(sql).toContain("AND c.embedding_model = $5");
-        expect(sql).toContain("AND vector_dims(c.embedding) = $6");
+        expect(sql).toContain("AND vector_dims(COALESCE(c.embedding_unbounded, c.embedding)) = $6");
         expect(sql).toContain("AND d.status = 'ready'");
         return [
           {
@@ -302,7 +302,7 @@ describe("hybrid retrieval search", () => {
     expect(results).toEqual([]);
   });
 
-  it("uses the 1536-dimensional expression index path for legacy-sized embeddings", async () => {
+  it("uses the indexed 1536-dimensional embedding column for legacy-sized embeddings", async () => {
     const queryEmbedding = new Array<number>(1536).fill(0);
     queryEmbedding[0] = 1;
     const search = new PgVectorSearch({
@@ -317,7 +317,7 @@ describe("hybrid retrieval search", () => {
             }
 
             expect(params?.[5]).toBe(1536);
-            expect(sql).toContain("c.embedding::vector(1536) <=> $2::vector(1536)");
+            expect(sql).toContain("c.embedding <=> $2::vector(1536)");
             expect(sql).toContain("AND vector_dims(c.embedding) = $6");
             return { rows: [] };
           },

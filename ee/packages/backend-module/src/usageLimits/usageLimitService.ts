@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type {
+  IndexedStorageReservationInput,
   UsageLimitDatabaseClient,
   UsageLimitDatabasePort,
   UsageLimitPolicy,
@@ -13,6 +14,8 @@ export interface UsageLimitProfile {
   displayName: string;
   monthlyAnswerLimit: number | null;
   storedDocumentLimit: number | null;
+  storedIndexedByteLimit: number | null;
+  monthlyIndexedByteLimit: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -30,9 +33,14 @@ export interface AccountUsageSummary {
     used: number;
     limit: number | null;
   };
+  storedIndexedBytes: {
+    used: number;
+    limit: number | null;
+  };
 }
 
 const DOCUMENT_RESERVATION_TTL_MS = 10 * 60 * 1000;
+const STORAGE_RESERVATION_TTL_MS = 10 * 60 * 1000;
 
 const queryRows = async <T = Record<string, unknown>>(
   client: UsageLimitDatabaseClient,
@@ -54,11 +62,30 @@ const nextPeriodStart = (periodStart: string): string => {
   return date.toISOString();
 };
 
+const toNullableNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  return null;
+};
+
 const mapProfile = (row: {
   key: string;
   display_name: string;
   monthly_answer_limit: number | null;
   stored_document_limit: number | null;
+  stored_indexed_byte_limit: number | string | null;
+  monthly_indexed_byte_limit: number | string | null;
   created_at: Date;
   updated_at: Date;
 }): UsageLimitProfile => ({
@@ -66,24 +93,32 @@ const mapProfile = (row: {
   displayName: row.display_name,
   monthlyAnswerLimit: row.monthly_answer_limit,
   storedDocumentLimit: row.stored_document_limit,
+  storedIndexedByteLimit: toNullableNumber(row.stored_indexed_byte_limit),
+  monthlyIndexedByteLimit: toNullableNumber(row.monthly_indexed_byte_limit),
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
 });
+
+type ProfileRow = Parameters<typeof mapProfile>[0];
+
+const PROFILE_COLUMNS = `
+  key,
+  display_name,
+  monthly_answer_limit,
+  stored_document_limit,
+  stored_indexed_byte_limit,
+  monthly_indexed_byte_limit,
+  created_at,
+  updated_at
+`;
 
 export class EnterpriseUsageLimitService implements UsageLimitPolicy {
   constructor(private readonly database: UsageLimitDatabasePort) {}
 
   async listProfiles(): Promise<UsageLimitProfile[]> {
-    const rows = await queryRows<{
-      key: string;
-      display_name: string;
-      monthly_answer_limit: number | null;
-      stored_document_limit: number | null;
-      created_at: Date;
-      updated_at: Date;
-    }>(
+    const rows = await queryRows<ProfileRow>(
       this.database,
-      `SELECT key, display_name, monthly_answer_limit, stored_document_limit, created_at, updated_at
+      `SELECT ${PROFILE_COLUMNS}
        FROM ee_usage_limit_profiles
        ORDER BY key ASC`,
     );
@@ -96,31 +131,37 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     displayName: string;
     monthlyAnswerLimit: number | null;
     storedDocumentLimit: number | null;
+    storedIndexedByteLimit?: number | null;
+    monthlyIndexedByteLimit?: number | null;
   }): Promise<UsageLimitProfile> {
-    const [row] = await queryRows<{
-      key: string;
-      display_name: string;
-      monthly_answer_limit: number | null;
-      stored_document_limit: number | null;
-      created_at: Date;
-      updated_at: Date;
-    }>(
+    const [row] = await queryRows<ProfileRow>(
       this.database,
       `INSERT INTO ee_usage_limit_profiles (
          key,
          display_name,
          monthly_answer_limit,
-         stored_document_limit
+         stored_document_limit,
+         stored_indexed_byte_limit,
+         monthly_indexed_byte_limit
        )
-       VALUES ($1, $2, $3, $4)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (key)
        DO UPDATE SET
          display_name = EXCLUDED.display_name,
          monthly_answer_limit = EXCLUDED.monthly_answer_limit,
          stored_document_limit = EXCLUDED.stored_document_limit,
+         stored_indexed_byte_limit = EXCLUDED.stored_indexed_byte_limit,
+         monthly_indexed_byte_limit = EXCLUDED.monthly_indexed_byte_limit,
          updated_at = NOW()
-       RETURNING key, display_name, monthly_answer_limit, stored_document_limit, created_at, updated_at`,
-      [input.key, input.displayName, input.monthlyAnswerLimit, input.storedDocumentLimit],
+       RETURNING ${PROFILE_COLUMNS}`,
+      [
+        input.key,
+        input.displayName,
+        input.monthlyAnswerLimit,
+        input.storedDocumentLimit,
+        input.storedIndexedByteLimit ?? null,
+        input.monthlyIndexedByteLimit ?? null,
+      ],
     );
 
     return mapProfile(row);
@@ -159,6 +200,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     );
     const persistedAnswerCount = await this.countPersistedAssistantAnswers(accountId, periodStart);
     const storedDocumentCount = await this.countStoredDocuments(accountId, this.database, false);
+    const storedIndexedBytes = await this.sumStoredIndexedBytes(accountId, this.database, false);
 
     return {
       accountId,
@@ -172,6 +214,10 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       storedDocuments: {
         used: storedDocumentCount,
         limit: profile?.storedDocumentLimit ?? null,
+      },
+      storedIndexedBytes: {
+        used: storedIndexedBytes,
+        limit: profile?.storedIndexedByteLimit ?? null,
       },
     };
   }
@@ -242,6 +288,72 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
            WHERE account_id = $1 AND period_start = $2::date`,
           [accountId, periodStart],
         );
+      },
+    };
+  }
+
+  async reserveIndexedStorage(input: IndexedStorageReservationInput): Promise<UsageLimitReservation> {
+    const accountId = await this.resolveAccountId(input);
+    if (!accountId) {
+      return noopReservation;
+    }
+
+    const profile = await this.findProfileForAccount(accountId);
+    const limit = profile?.storedIndexedByteLimit;
+    if (!profile || typeof limit !== "number") {
+      return noopReservation;
+    }
+
+    const requestedBytes = Math.max(0, Math.floor(input.contentSizeBytes ?? 0));
+    if (requestedBytes === 0) {
+      return noopReservation;
+    }
+
+    const reservationId = randomUUID();
+    await this.withTransaction(async (client) => {
+      await this.lockAccountUsage(client, accountId);
+      await queryRows(
+        client,
+        `DELETE FROM ee_usage_limit_storage_reservations
+         WHERE account_id = $1 AND expires_at <= NOW()`,
+        [accountId],
+      );
+      const used = await this.sumStoredIndexedBytes(accountId, client, true);
+      if (used + requestedBytes > limit) {
+        throw new UsageLimitExceededError({
+          profileKey: profile.key,
+          resource: "stored_indexed_bytes",
+          limit,
+          used,
+        });
+      }
+
+      await queryRows(
+        client,
+        `INSERT INTO ee_usage_limit_storage_reservations (
+           id,
+           account_id,
+           workspace_id,
+           bytes_reserved,
+           expires_at
+         )
+         VALUES ($1, $2, $3, $4, $5::timestamptz)`,
+        [
+          reservationId,
+          accountId,
+          input.workspaceId,
+          requestedBytes,
+          new Date(Date.now() + STORAGE_RESERVATION_TTL_MS).toISOString(),
+        ],
+      );
+    });
+
+    return {
+      commit: async () => {
+        await this.releaseStorageReservation(reservationId);
+      },
+      release: async () => {
+        await this.releaseStorageReservation(reservationId);
       },
     };
   }
@@ -347,16 +459,17 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
   }
 
   private async findProfileForAccount(accountId: string): Promise<UsageLimitProfile | null> {
-    const [row] = await queryRows<{
-      key: string;
-      display_name: string;
-      monthly_answer_limit: number | null;
-      stored_document_limit: number | null;
-      created_at: Date;
-      updated_at: Date;
-    }>(
+    const [row] = await queryRows<ProfileRow>(
       this.database,
-      `SELECT p.key, p.display_name, p.monthly_answer_limit, p.stored_document_limit, p.created_at, p.updated_at
+      `SELECT
+         p.key,
+         p.display_name,
+         p.monthly_answer_limit,
+         p.stored_document_limit,
+         p.stored_indexed_byte_limit,
+         p.monthly_indexed_byte_limit,
+         p.created_at,
+         p.updated_at
        FROM ee_usage_limit_account_assignments a
        JOIN ee_usage_limit_profiles p ON p.key = a.profile_key
        WHERE a.account_id = $1`,
@@ -364,6 +477,43 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     );
 
     return row ? mapProfile(row) : null;
+  }
+
+  private async sumStoredIndexedBytes(
+    accountId: string,
+    client: UsageLimitDatabaseClient,
+    includeReservations: boolean,
+  ): Promise<number> {
+    const [row] = await queryRows<{ bytes: string | null }>(
+      client,
+      `SELECT COALESCE(SUM(d.content_size_bytes), 0)::text AS bytes
+       FROM documents d
+       JOIN workspaces w ON w.id = d.workspace_id
+       WHERE w.account_id = $1`,
+      [accountId],
+    );
+    const documentBytes = Number(row?.bytes ?? "0");
+    if (!includeReservations) {
+      return documentBytes;
+    }
+
+    const [reservations] = await queryRows<{ bytes: string | null }>(
+      client,
+      `SELECT COALESCE(SUM(bytes_reserved), 0)::text AS bytes
+       FROM ee_usage_limit_storage_reservations
+       WHERE account_id = $1 AND expires_at > NOW()`,
+      [accountId],
+    );
+
+    return documentBytes + Number(reservations?.bytes ?? "0");
+  }
+
+  private async releaseStorageReservation(reservationId: string): Promise<void> {
+    await queryRows(
+      this.database,
+      `DELETE FROM ee_usage_limit_storage_reservations WHERE id = $1`,
+      [reservationId],
+    );
   }
 
   private async countPersistedAssistantAnswers(accountId: string, periodStart: string): Promise<number> {

@@ -39,6 +39,7 @@ export interface DocumentSourceRecord {
   sourceStorageObject?: string | null;
   sourceStorageGeneration?: string | null;
   sourceSizeBytes?: number | null;
+  contentSizeBytes?: number | null;
 }
 
 export interface DocumentSourceInput {
@@ -49,6 +50,7 @@ export interface DocumentSourceInput {
   sourceStorageObject?: string | null;
   sourceStorageGeneration?: string | null;
   sourceSizeBytes?: number | null;
+  contentSizeBytes?: number | null;
 }
 
 export interface DocumentRecord extends DocumentSourceRecord {
@@ -235,6 +237,7 @@ export interface DocumentSummary {
   sourceFilename?: string | null;
   sourceMimeType?: string | null;
   contentSize?: number | null;
+  contentSizeBytes?: number | null;
 }
 
 export interface DocumentListPage {
@@ -261,6 +264,7 @@ export interface DocumentSummaryRecord extends DocumentSourceRecord {
   source?: DocumentSourceSummary | null;
   externalDocumentId?: string | null;
   contentSize?: number | null;
+  contentSizeBytes?: number | null;
 }
 
 export class DocumentIngestionService {
@@ -289,6 +293,7 @@ export class DocumentIngestionService {
       sourceContent: input.content,
       metadata: input.metadata,
     });
+    const contentSizeBytes = Buffer.byteLength(sanitizedContent.sourceContent, "utf8");
     let document:
       | {
           id: string;
@@ -303,6 +308,16 @@ export class DocumentIngestionService {
       workspaceId: input.workspaceId,
       sourceKind: "inline_text",
       externalDocumentId: input.externalDocumentId,
+    });
+    const storageReservation = await this.usageLimitPolicy.reserveIndexedStorage({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      contentSizeBytes,
+      sourceKind: "inline_text",
+      externalDocumentId: input.externalDocumentId,
+    }).catch(async (error) => {
+      await usageReservation.release();
+      throw error;
     });
 
     try {
@@ -321,10 +336,12 @@ export class DocumentIngestionService {
         sourceStorageObject: null,
         sourceStorageGeneration: null,
         sourceSizeBytes: null,
+        contentSizeBytes,
       });
 
     } catch (error) {
       await usageReservation.release();
+      await storageReservation.release();
       await this.auditService.record({
         workspaceId: input.workspaceId,
         eventType: "document.ingest",
@@ -385,6 +402,7 @@ export class DocumentIngestionService {
       revision: document.revision,
     });
     await usageReservation.commit();
+    await storageReservation.commit();
 
     return {
       documentId: document.id,
@@ -627,7 +645,8 @@ export class DocumentIngestionService {
       sourceKind: document.sourceKind,
       sourceFilename: document.sourceFilename ?? null,
       sourceMimeType: document.sourceMimeType ?? null,
-      contentSize: document.contentSize ?? null,
+      contentSize: document.contentSize ?? document.contentSizeBytes ?? null,
+      contentSizeBytes: document.contentSizeBytes ?? null,
     };
   }
 

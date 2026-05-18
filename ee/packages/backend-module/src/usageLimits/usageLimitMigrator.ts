@@ -53,6 +53,54 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
     `);
 
     await database.query(`
+      ALTER TABLE ee_usage_limit_profiles
+      ADD COLUMN IF NOT EXISTS stored_indexed_byte_limit BIGINT
+    `);
+
+    await database.query(`
+      ALTER TABLE ee_usage_limit_profiles
+      ADD COLUMN IF NOT EXISTS monthly_indexed_byte_limit BIGINT
+    `);
+
+    await database.query(`
+      ALTER TABLE ee_usage_limit_profiles
+      DROP CONSTRAINT IF EXISTS ee_usage_limit_profiles_stored_indexed_byte_limit_check
+    `);
+
+    await database.query(`
+      ALTER TABLE ee_usage_limit_profiles
+      ADD CONSTRAINT ee_usage_limit_profiles_stored_indexed_byte_limit_check
+      CHECK (stored_indexed_byte_limit IS NULL OR stored_indexed_byte_limit >= 0)
+    `);
+
+    await database.query(`
+      ALTER TABLE ee_usage_limit_profiles
+      DROP CONSTRAINT IF EXISTS ee_usage_limit_profiles_monthly_indexed_byte_limit_check
+    `);
+
+    await database.query(`
+      ALTER TABLE ee_usage_limit_profiles
+      ADD CONSTRAINT ee_usage_limit_profiles_monthly_indexed_byte_limit_check
+      CHECK (monthly_indexed_byte_limit IS NULL OR monthly_indexed_byte_limit >= 0)
+    `);
+
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_usage_limit_storage_reservations (
+        id UUID PRIMARY KEY,
+        account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        bytes_reserved BIGINT NOT NULL CHECK (bytes_reserved >= 0),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL
+      )
+    `);
+
+    await database.query(`
+      CREATE INDEX IF NOT EXISTS idx_ee_usage_limit_storage_reservations_account_active
+        ON ee_usage_limit_storage_reservations (account_id, expires_at)
+    `);
+
+    await database.query(`
       INSERT INTO ee_usage_limit_profiles (
         key,
         display_name,

@@ -30,6 +30,7 @@ export interface DocumentRow {
   source_storage_object: string | null;
   source_storage_generation: string | null;
   source_size_bytes: number | null;
+  content_size_bytes: number | null;
   content_size?: number | null;
 }
 
@@ -63,7 +64,8 @@ export const documentSelect = `
   source_storage_bucket,
   source_storage_object,
   source_storage_generation,
-  source_size_bytes
+  source_size_bytes,
+  content_size_bytes
 `;
 
 export const documentSummarySelect = `
@@ -94,7 +96,8 @@ export const documentSummarySelect = `
   source_storage_object,
   source_storage_generation,
   source_size_bytes,
-  COALESCE(source_size_bytes, OCTET_LENGTH(source_content)) AS content_size
+  content_size_bytes,
+  COALESCE(content_size_bytes, source_size_bytes, OCTET_LENGTH(source_content)) AS content_size
 `;
 
 export const mapDocument = (row: DocumentRow): DocumentRecord => ({
@@ -119,6 +122,7 @@ export const mapDocument = (row: DocumentRow): DocumentRecord => ({
   sourceStorageObject: row.source_storage_object,
   sourceStorageGeneration: row.source_storage_generation,
   sourceSizeBytes: row.source_size_bytes,
+  contentSizeBytes: row.content_size_bytes,
 });
 
 export const mapDocumentSummary = (row: DocumentRow): DocumentSummaryRecord => ({
@@ -140,7 +144,8 @@ export const mapDocumentSummary = (row: DocumentRow): DocumentSummaryRecord => (
   sourceStorageObject: row.source_storage_object,
   sourceStorageGeneration: row.source_storage_generation,
   sourceSizeBytes: row.source_size_bytes,
-  contentSize: row.content_size ?? row.source_size_bytes ?? null,
+  contentSizeBytes: row.content_size_bytes,
+  contentSize: row.content_size ?? row.content_size_bytes ?? row.source_size_bytes ?? null,
 });
 
 const mapDocumentSourceSummary = (value: DocumentSourceSummary | null): DocumentSourceSummary | null => {

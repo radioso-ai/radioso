@@ -496,6 +496,8 @@ export interface UsageLimitProfile {
   displayName: string
   monthlyAnswerLimit: number | null
   storedDocumentLimit: number | null
+  storedIndexedByteLimit: number | null
+  monthlyIndexedByteLimit: number | null
   createdAt: string
   updatedAt: string
 }
@@ -510,6 +512,10 @@ export interface AccountUsageSummary {
     limit: number | null
   }
   storedDocuments: {
+    used: number
+    limit: number | null
+  }
+  storedIndexedBytes: {
     used: number
     limit: number | null
   }

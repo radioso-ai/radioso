@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest";
 import type { UsageLimitPolicy, UsageLimitReservation } from "../../src/shared/domain/usageLimitPolicy.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 
+type BlockedResource = "monthly_answers" | "stored_documents" | "stored_indexed_bytes";
+
 class BlockingUsageLimitPolicy implements UsageLimitPolicy {
-  constructor(private readonly blockedResource: "monthly_answers" | "stored_documents") {}
+  constructor(private readonly blockedResource: BlockedResource) {}
 
   async reserveAnswer(): Promise<UsageLimitReservation> {
     if (this.blockedResource === "monthly_answers") {
@@ -20,6 +22,13 @@ class BlockingUsageLimitPolicy implements UsageLimitPolicy {
     }
     return noopReservation;
   }
+
+  async reserveIndexedStorage(): Promise<UsageLimitReservation> {
+    if (this.blockedResource === "stored_indexed_bytes") {
+      throw usageLimitExceeded("stored_indexed_bytes");
+    }
+    return noopReservation;
+  }
 }
 
 const noopReservation: UsageLimitReservation = {
@@ -27,15 +36,15 @@ const noopReservation: UsageLimitReservation = {
   async release() {},
 };
 
-const usageLimitExceeded = (resource: "monthly_answers" | "stored_documents") => ({
+const usageLimitExceeded = (resource: BlockedResource) => ({
   statusCode: 429,
   code: "usage_limit_exceeded",
   message: "Usage limit exceeded",
   details: {
     profileKey: "starter_250",
     resource,
-    limit: 250,
-    used: 250,
+    limit: resource === "stored_indexed_bytes" ? 1_000_000 : 250,
+    used: resource === "stored_indexed_bytes" ? 1_000_000 : 250,
     ...(resource === "monthly_answers"
       ? {
           periodStart: "2026-05-01",
@@ -133,6 +142,36 @@ describe("usage limit policy integration", () => {
     await request(sizeLimitedApp)
       .post("/api/v1/document/import")
       .set("Authorization", `Bearer ${sizeLimitedToken}`)
+      .attach("file", Buffer.from("blocked import"), {
+        filename: "blocked.txt",
+        contentType: "text/plain",
+      })
+      .expect(429);
+  });
+
+  it("hard-blocks inline document creation and file import when indexed storage bytes are exhausted", async () => {
+    const { app } = createTestApp({
+      usageLimitPolicy: new BlockingUsageLimitPolicy("stored_indexed_bytes"),
+    });
+    const { token } = await issueTestToken(app, "indexed-bytes-limit@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const inlineResponse = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Blocked",
+        content: "This should not be stored.",
+      })
+      .expect(429);
+
+    expect(inlineResponse.body.error.details).toEqual(expect.objectContaining({
+      resource: "stored_indexed_bytes",
+    }));
+
+    await request(app)
+      .post("/api/v1/document/import")
+      .set("Authorization", authorization)
       .attach("file", Buffer.from("blocked import"), {
         filename: "blocked.txt",
         contentType: "text/plain",

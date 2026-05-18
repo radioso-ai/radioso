@@ -74,6 +74,7 @@ export class DocumentImportService {
         workspaceId: input.workspaceId,
         sourceKind: "uploaded_file",
       });
+    let storageReservation: UsageLimitReservation | undefined;
     try {
       if (!Buffer.isBuffer(input.buffer) || input.buffer.length === 0) {
         throw badRequest("Uploaded file is empty");
@@ -90,6 +91,13 @@ export class DocumentImportService {
         }
         throw error;
       }
+
+      storageReservation = await this.usageLimitPolicy.reserveIndexedStorage({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        contentSizeBytes: input.buffer.length,
+        sourceKind: "uploaded_file",
+      });
 
       const storageDocumentId = randomUUID();
       storedObject = await this.storage.upload({
@@ -116,10 +124,14 @@ export class DocumentImportService {
         sourceStorageObject: storedObject.objectPath,
         sourceStorageGeneration: storedObject.generation ?? null,
         sourceSizeBytes: storedObject.sizeBytes,
+        contentSizeBytes: storedObject.sizeBytes,
       });
 
     } catch (error) {
       await usageReservation.release();
+      if (storageReservation) {
+        await storageReservation.release();
+      }
       if (storedObject && !document) {
         try {
           await this.storage.delete({
@@ -160,6 +172,9 @@ export class DocumentImportService {
       revision: document.revision,
     });
     await usageReservation.commit();
+    if (storageReservation) {
+      await storageReservation.commit();
+    }
 
     return {
       documentId: document.id,

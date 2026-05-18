@@ -21,7 +21,20 @@ const formatDate = (value: string) => (
   }).format(new Date(value))
 )
 
+const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
+
+const formatBytes = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) {
+    return '0 B'
+  }
+  const exponent = Math.min(BYTE_UNITS.length - 1, Math.floor(Math.log(value) / Math.log(1024)))
+  const scaled = value / Math.pow(1024, exponent)
+  const formatted = exponent === 0 ? scaled.toFixed(0) : scaled.toFixed(scaled >= 10 ? 0 : 1)
+  return `${formatted} ${BYTE_UNITS[exponent]}`
+}
+
 const formatUsageLimit = (value: number | null) => (value === null ? 'Unlimited' : formatCount(value))
+const formatByteLimit = (value: number | null) => (value === null ? 'Unlimited' : formatBytes(value))
 
 const usagePercent = (used: number, limit: number | null) => {
   if (limit === null || limit === 0) {
@@ -36,13 +49,16 @@ function UsageMeter({
   used,
   limit,
   caption,
+  unit = 'count',
 }: {
   label: string
   used: number
   limit: number | null
   caption?: string
+  unit?: 'count' | 'bytes'
 }) {
   const percent = usagePercent(used, limit)
+  const formatValue = unit === 'bytes' ? formatBytes : formatCount
 
   return (
     <Card>
@@ -53,11 +69,11 @@ function UsageMeter({
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div className="text-3xl font-semibold tracking-normal text-foreground">
-            {formatCount(used)}
+            {formatValue(used)}
           </div>
           {limit === null ? null : (
             <div className="text-sm text-muted-foreground">
-              of {formatCount(limit)}
+              of {formatValue(limit)}
             </div>
           )}
         </div>
@@ -143,7 +159,9 @@ export function UsageView() {
               <CardHeader>
                 <CardTitle>{usage.profile.displayName}</CardTitle>
                 <CardDescription>
-                  Limits: {formatUsageLimit(usage.monthlyAnswers.limit)} monthly answers, {formatUsageLimit(usage.storedDocuments.limit)} stored documents
+                  Limits: {formatUsageLimit(usage.monthlyAnswers.limit)} monthly answers,{' '}
+                  {formatByteLimit(usage.storedIndexedBytes.limit)} indexed storage,{' '}
+                  {formatUsageLimit(usage.storedDocuments.limit)} stored documents
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 text-sm text-muted-foreground sm:grid-cols-2">
@@ -163,6 +181,13 @@ export function UsageView() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <UsageMeter
+              label="Indexed storage"
+              unit="bytes"
+              used={usage?.storedIndexedBytes.used ?? 0}
+              limit={usage?.storedIndexedBytes.limit ?? null}
+              caption="Current size of content Radioso keeps searchable."
+            />
+            <UsageMeter
               label="Monthly answers"
               used={usage?.monthlyAnswers.used ?? 0}
               limit={usage?.monthlyAnswers.limit ?? null}
@@ -172,7 +197,7 @@ export function UsageView() {
               label="Stored documents"
               used={usage?.storedDocuments.used ?? 0}
               limit={usage?.storedDocuments.limit ?? null}
-              caption="Documents currently stored across the account."
+              caption="Document count guardrail across the account."
             />
           </div>
         </div>

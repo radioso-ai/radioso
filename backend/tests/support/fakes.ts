@@ -1260,6 +1260,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceStorageObject: input.sourceStorageObject ?? null,
       sourceStorageGeneration: input.sourceStorageGeneration ?? null,
       sourceSizeBytes: input.sourceSizeBytes ?? null,
+      contentSizeBytes: input.contentSizeBytes ?? null,
       status: "queued",
       revision: 1,
       failureReason: null,
@@ -1333,6 +1334,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceStorageObject: input.sourceStorageObject ?? null,
       sourceStorageGeneration: input.sourceStorageGeneration ?? null,
       sourceSizeBytes: input.sourceSizeBytes ?? null,
+      contentSizeBytes: input.contentSizeBytes ?? null,
       status: input.status,
       revision: 1,
       failureReason: null,
@@ -1391,6 +1393,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         sourceStorageObject: item.sourceStorageObject,
         sourceStorageGeneration: item.sourceStorageGeneration,
         sourceSizeBytes: item.sourceSizeBytes,
+        contentSizeBytes: item.contentSizeBytes ?? null,
+        contentSize: item.contentSizeBytes ?? item.sourceSizeBytes ?? null,
       }));
   }
 
@@ -1500,6 +1504,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceStorageObject: input.sourceStorageObject ?? existing.sourceStorageObject ?? null,
       sourceStorageGeneration: input.sourceStorageGeneration ?? existing.sourceStorageGeneration ?? null,
       sourceSizeBytes: input.sourceSizeBytes ?? existing.sourceSizeBytes ?? null,
+      contentSizeBytes: input.contentSizeBytes ?? existing.contentSizeBytes ?? null,
       status: input.status,
       revision: existing.revision + 1,
       failureReason: null,
@@ -1544,6 +1549,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceStorageObject: input.sourceStorageObject ?? existing.sourceStorageObject ?? null,
       sourceStorageGeneration: input.sourceStorageGeneration ?? existing.sourceStorageGeneration ?? null,
       sourceSizeBytes: input.sourceSizeBytes ?? existing.sourceSizeBytes ?? null,
+      contentSizeBytes: input.contentSizeBytes ?? existing.contentSizeBytes ?? null,
       status: "queued",
       revision: existing.revision + 1,
       failureReason: null,

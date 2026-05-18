@@ -113,9 +113,10 @@ export class DocumentRepository implements DocumentRepositoryPort {
              source_storage_bucket,
              source_storage_object,
              source_storage_generation,
-             source_size_bytes
+             source_size_bytes,
+             content_size_bytes
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', 1, $8::jsonb, $9, $10, $11, $12, $13, $14, $15)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', 1, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16)
            ON CONFLICT ${conflictTarget}
            DO UPDATE
              SET title = EXCLUDED.title,
@@ -134,7 +135,8 @@ export class DocumentRepository implements DocumentRepositoryPort {
                  source_storage_bucket = EXCLUDED.source_storage_bucket,
                  source_storage_object = EXCLUDED.source_storage_object,
                  source_storage_generation = EXCLUDED.source_storage_generation,
-                 source_size_bytes = EXCLUDED.source_size_bytes
+                 source_size_bytes = EXCLUDED.source_size_bytes,
+                 content_size_bytes = EXCLUDED.content_size_bytes
            WHERE documents.source_kind = EXCLUDED.source_kind
            RETURNING ${documentSelect}`,
           [
@@ -153,6 +155,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
             input.sourceStorageObject ?? null,
             input.sourceStorageGeneration ?? null,
             input.sourceSizeBytes ?? null,
+            input.contentSizeBytes ?? null,
           ],
         )
       ).rows;
@@ -190,9 +193,10 @@ export class DocumentRepository implements DocumentRepositoryPort {
          source_storage_bucket,
          source_storage_object,
          source_storage_generation,
-         source_size_bytes
+         source_size_bytes,
+         content_size_bytes
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9::jsonb, $10, $11, $12, $13, $14, $15, $16)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9::jsonb, $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING ${documentSelect}`,
       [
         randomUUID(),
@@ -211,6 +215,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         input.sourceStorageObject ?? null,
         input.sourceStorageGeneration ?? null,
         input.sourceSizeBytes ?? null,
+        input.contentSizeBytes ?? null,
       ],
     );
 
@@ -238,7 +243,8 @@ export class DocumentRepository implements DocumentRepositoryPort {
              source_storage_bucket = COALESCE($12, source_storage_bucket),
              source_storage_object = COALESCE($13, source_storage_object),
              source_storage_generation = COALESCE($14, source_storage_generation),
-             source_size_bytes = COALESCE($15, source_size_bytes)
+             source_size_bytes = COALESCE($15, source_size_bytes),
+             content_size_bytes = COALESCE($16, content_size_bytes)
          WHERE id = $1 AND workspace_id = $2
          RETURNING ${documentSelect}`,
         [
@@ -257,6 +263,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
           input.sourceStorageObject ?? null,
           input.sourceStorageGeneration ?? null,
           input.sourceSizeBytes ?? null,
+          input.contentSizeBytes ?? null,
         ],
       ).catch((error: unknown) => {
         throw this.mapDocumentConflict(error);
@@ -398,7 +405,8 @@ export class DocumentRepository implements DocumentRepositoryPort {
            source_storage_bucket = COALESCE($13, source_storage_bucket),
            source_storage_object = COALESCE($14, source_storage_object),
            source_storage_generation = COALESCE($15, source_storage_generation),
-           source_size_bytes = COALESCE($16, source_size_bytes)
+           source_size_bytes = COALESCE($16, source_size_bytes),
+           content_size_bytes = COALESCE($17, content_size_bytes)
        WHERE id = $1 AND workspace_id = $2
        RETURNING ${documentSelect}`,
       [
@@ -418,6 +426,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         input.sourceStorageObject ?? null,
         input.sourceStorageGeneration ?? null,
         input.sourceSizeBytes ?? null,
+        input.contentSizeBytes ?? null,
       ],
     ).catch((error: unknown) => {
       throw this.mapDocumentConflict(error);

@@ -127,6 +127,14 @@ export interface UsageLimitReservation {
   release(): Promise<void>;
 }
 
+export interface IndexedStorageReservationInput {
+  accountId?: string | null;
+  workspaceId: string;
+  contentSizeBytes: number;
+  sourceKind?: string;
+  externalDocumentId?: string | null;
+}
+
 export interface UsageLimitPolicy {
   reserveAnswer(input: {
     accountId?: string | null;
@@ -139,6 +147,7 @@ export interface UsageLimitPolicy {
     sourceKind: string;
     externalDocumentId?: string | null;
   }): Promise<UsageLimitReservation>;
+  reserveIndexedStorage(input: IndexedStorageReservationInput): Promise<UsageLimitReservation>;
 }
 
 export interface ApplicationDatabasePort {

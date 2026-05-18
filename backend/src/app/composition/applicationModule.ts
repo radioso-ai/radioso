@@ -29,6 +29,16 @@ import type { SkillCatalogEntryDefinition, SkillDefinition } from "../../modules
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { AgentSurfaceExtension } from "../../modules/agents/public.js";
 import type { TextChunkingProviderPort } from "../../modules/retrieval/public.js";
+import type { ChatActionSuggestionProvider } from "../../modules/chat/services/actionSuggestions/chatActionSuggestionProvider.js";
+
+export type ApplicationChatActionSuggestionProviderRegistration =
+  | ChatActionSuggestionProvider
+  | ((context: {
+      database: ApplicationDatabasePort;
+      chatGateway: ChatGateway;
+      logger: AppLogger;
+      auditService: AuditService;
+    }) => ChatActionSuggestionProvider);
 
 export interface ApplicationDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
@@ -127,6 +137,7 @@ export interface ApplicationExtensionRegistry {
   skillCatalogEntries: SkillCatalogEntryDefinition[];
   skillDefinitions: SkillDefinition[];
   agentSurfaceExtensions: AgentSurfaceExtension[];
+  chatActionSuggestionProviders: ApplicationChatActionSuggestionProviderRegistration[];
 }
 
 export interface ApplicationModuleRegistrationContext {
@@ -151,6 +162,7 @@ export interface ApplicationModuleRegistrationContext {
   registerSkillCatalogEntry(entry: SkillCatalogEntryDefinition): void;
   registerSkillDefinition(definition: SkillDefinition): void;
   registerAgentSurfaceExtension(extension: AgentSurfaceExtension): void;
+  registerChatActionSuggestionProvider(provider: ApplicationChatActionSuggestionProviderRegistration): void;
 }
 
 export interface ApplicationModule {
@@ -172,6 +184,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   skillCatalogEntries: [],
   skillDefinitions: [],
   agentSurfaceExtensions: [],
+  chatActionSuggestionProviders: [],
 });
 
 const createRegistrationContext = (registry: ApplicationExtensionRegistry): ApplicationModuleRegistrationContext => ({
@@ -237,6 +250,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerAgentSurfaceExtension(extension) {
     registry.agentSurfaceExtensions.push(extension);
+  },
+  registerChatActionSuggestionProvider(provider) {
+    registry.chatActionSuggestionProviders.push(provider);
   },
 });
 

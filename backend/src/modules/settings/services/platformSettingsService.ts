@@ -40,7 +40,7 @@ export class PlatformSettingsService {
 
   private get websiteEmbedIntegration(): WebsiteEmbedIntegrationProvider {
     return this.dependencies.websiteEmbedIntegration
-      ?? new DefaultWebsiteEmbedIntegrationProvider(this.dependencies.publicChatBaseUrl);
+      ?? new DefaultWebsiteEmbedIntegrationProvider();
   }
 
   async getForWorkspace(workspaceId: string): Promise<PlatformSettingsResource> {

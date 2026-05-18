@@ -53,7 +53,6 @@ describe("human contact application module", () => {
       registerChatIntakeProvider: vi.fn(),
       registerContactHistoryProvider: vi.fn(),
       registerRouteMount: vi.fn(),
-      registerWebsiteEmbedIntegration: vi.fn(),
       registerUsageLimitPolicy: vi.fn(),
       registerAccountCreatedHandler: vi.fn(),
     } satisfies ApplicationModuleRegistrationContext);
@@ -128,7 +127,6 @@ describe("human contact application module", () => {
       },
       registerContactHistoryProvider: vi.fn(),
       registerRouteMount: vi.fn(),
-      registerWebsiteEmbedIntegration: vi.fn(),
       registerUsageLimitPolicy: vi.fn(),
       registerAccountCreatedHandler: vi.fn(),
     } satisfies ApplicationModuleRegistrationContext);

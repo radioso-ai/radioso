@@ -12,7 +12,6 @@ export const editionController = {
 
   canUseAuthRecovery: () => isEnterprise,
   canUseEnterpriseUsageLimits: () => isEnterprise,
-  canUseWebsiteEmbed: () => isEnterprise,
   canHideAssistantBranding: () => isEnterprise,
   canUseHumanContact: () => isEnterprise,
   canUseAssistantAnswerFeedback: () => isEnterprise,
@@ -22,7 +21,7 @@ export const editionController = {
     isEnterprise && mode === 'assistant',
 
   shouldRenderWebsiteEmbedSettings: (mode: 'workspace' | 'assistant' | 'channels') =>
-    isEnterprise && mode === 'channels',
+    mode === 'channels',
 
   getActivityDescription: () =>
     isEnterprise

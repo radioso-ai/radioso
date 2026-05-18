@@ -45,11 +45,26 @@ Composition code assembles defaults and optional modules. This is where adapter 
 
 Persistence and integration adapters talk to databases, queues, object storage, external telemetry targets, and similar systems. Their details stay behind focused ports.
 
-Chat suggestions are text-only prompts that clients may send back as normal chat
-messages. They are not an execution transport. Stateful workflows that need
-typed inputs, validation, permissions, durable side effects, or audit records
-should register a chat skill intake provider and expose only the provider
-contract to the rest of the application.
+Chat suggestions are clickable chips returned alongside an assistant answer.
+Most are text-only follow-up prompts that clients send back as normal chat
+messages. A suggestion may also carry an optional `action` payload that routes
+the click into a registered skill intake instead of producing a free-text turn.
+
+In practice there are two roles. Question chips carry no `action` (or
+`ask_followup`); clients send `suggestion.text` with `inputMetadata.method =
+"suggestion_click"`. Action chips carry `action.kind = "start_intent"` with an
+`intent.skillName`; clients must send `inputMetadata.method = "intent_click"`
+and the `intent` object so the intake provider receives the structured trigger.
+
+Action chips themselves are not the execution transport. They are a hint surface
+that opens a registered skill intake. Stateful workflows that need typed inputs,
+validation, permissions, durable side effects, or audit records still belong
+behind a chat skill intake provider; the chip only invites the visitor into it.
+
+Modules contribute action chips by registering a `ChatActionSuggestionProvider`
+through composition. Each provider receives the validated answer outcome and
+decides whether to offer a chip; the registry caps the result at one action
+chip per turn and dedupes by `kind`.
 
 Worker dispatch has two parts. The dispatcher publishes a wake-up notification after a durable document processing job exists. The optional consumer listens for broker deliveries in worker runtimes and delegates back to the worker's job-by-id processing path. The PostgreSQL job table remains authoritative for status, retries, leases, and recovery. AMQP dispatch intentionally keeps the worker polling loop active; broker messages improve wake-up latency, while polling preserves recovery and scheduled retry behavior through `available_at`.
 

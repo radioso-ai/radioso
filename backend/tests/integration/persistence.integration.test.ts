@@ -200,6 +200,69 @@ describeIfDatabase("persistence integration", () => {
     await database.query("DELETE FROM accounts WHERE id = $1 OR id = $2", [accountA.id, accountB.id]);
   });
 
+  it("persists and searches workspace chunks with non-1536-dimensional embeddings", async () => {
+    const accountRepository = new AccountRepository(database);
+    const documentRepository = new DocumentRepository(database);
+    const chunkRepository = new ChunkRepository(database);
+    const vectorSearch = new PgVectorSearch(database);
+
+    const account = await accountRepository.create({
+      name: "Variable Dimension Organization",
+      email: `variable-dimension-${randomUUID()}@example.com`,
+      passwordHash: "hash-variable-dimension",
+    });
+    const workspace = await workspaceRepository.create(account.id, "Variable Dimension Workspace");
+    const document = await documentRepository.create({
+      workspaceId: workspace.id,
+      title: "Three Dimensional Guide",
+      sourceContent: "The test page uses a three dimensional embedding.",
+      markdownContent: "The test page uses a three dimensional embedding.",
+      status: "ready",
+    });
+
+    await chunkRepository.replaceForDocument(document.id, [
+      {
+        id: randomUUID(),
+        documentId: document.id,
+        workspaceId: workspace.id,
+        chunkIndex: 0,
+        content: "The matching chunk.",
+        embedding: [1, 0, 0],
+        embeddingModel: "gemini-embedding-001",
+        startOffset: 0,
+        endOffset: 19,
+        createdAt: new Date(),
+      },
+      {
+        id: randomUUID(),
+        documentId: document.id,
+        workspaceId: workspace.id,
+        chunkIndex: 1,
+        content: "The non-matching chunk.",
+        embedding: [0, 1, 0],
+        embeddingModel: "gemini-embedding-001",
+        startOffset: 20,
+        endOffset: 43,
+        createdAt: new Date(),
+      },
+    ]);
+
+    const matches = await vectorSearch.search({
+      workspaceId: workspace.id,
+      queryEmbedding: [1, 0, 0],
+      topK: 5,
+      similarityThreshold: 0.1,
+      embeddingModel: "gemini-embedding-001",
+    });
+
+    expect(matches[0]?.content).toBe("The matching chunk.");
+
+    await database.query("DELETE FROM chunks WHERE workspace_id = $1", [workspace.id]);
+    await database.query("DELETE FROM documents WHERE workspace_id = $1", [workspace.id]);
+    await database.query("DELETE FROM workspaces WHERE id = $1", [workspace.id]);
+    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
+  });
+
   it("does not create duplicate default workspaces when migrations rerun", async () => {
     const accountRepository = new AccountRepository(database);
     const account = await accountRepository.create({

@@ -241,6 +241,33 @@ export const registerSettingsPaths = (
 
   registry.registerPath({
     method: "post",
+    path: "/api/v1/settings/ingestion/embedding-model/cancel",
+    tags: ["Settings"],
+    summary: "Cancel a pending workspace embedding model change",
+    operationId: "cancelPendingEmbeddingModel",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    responses: {
+      200: {
+        description: "Pending embedding model change cancelled",
+        content: {
+          "application/json": {
+            schema: schemas.IngestionSettingsSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
     path: "/api/v1/settings/ingestion/reprocess",
     tags: ["Settings"],
     summary: "Queue eligible workspace documents for reprocessing using current ingestion settings",

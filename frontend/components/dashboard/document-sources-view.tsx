@@ -207,7 +207,7 @@ function SourceExpandedPanel({
       return
     }
     let cancelled = false
-     
+
     setIsLoading(true)
     void documentsApi
       .listCrawlJobs({ sourceId: source.id, limit: 1 })

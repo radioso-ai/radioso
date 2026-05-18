@@ -284,6 +284,101 @@ describe("document ingestion", () => {
     expect(chunkRepository.items.get(document.id)).toHaveLength(1);
   });
 
+  it("uses the workspace embedding model when processing document chunks", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const auditService = createAuditService();
+    const seenModels: Array<string | undefined> = [];
+    const ingestionService = new DocumentIngestionService(documentRepository, auditService);
+    const processingWorker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      new DocumentProcessingService(
+        documentRepository,
+        chunkRepository,
+        new EmbeddingService({
+          async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
+            seenModels.push(options?.model);
+            return texts.map(() => [1, 2, 3]);
+          },
+        }),
+        auditService,
+        {
+          async getForWorkspace(workspaceId: string) {
+            return {
+              ...defaultIngestionSettings(workspaceId),
+              embeddingModel: "text-embedding-3-large",
+            };
+          },
+        },
+        new ChunkingStrategyRegistry([fixedWindowStrategy]),
+      ),
+      auditService,
+      createLogger("silent"),
+    );
+
+    await ingestionService.ingest({
+      workspaceId: "workspace-1",
+      title: "Model-specific",
+      content: "Model-specific content",
+    });
+
+    expect(await processingWorker.runOnce()).toBe(true);
+    expect(seenModels).toEqual(["text-embedding-3-large"]);
+  });
+
+  it("uses a pending embedding model for reprocessed document chunks before promotion", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const auditService = createAuditService();
+    const seenModels: Array<string | undefined> = [];
+    const promotePendingEmbeddingModelIfReady = vi.fn().mockResolvedValue(null);
+    const ingestionService = new DocumentIngestionService(documentRepository, auditService);
+    const processingWorker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      new DocumentProcessingService(
+        documentRepository,
+        chunkRepository,
+        new EmbeddingService({
+          async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
+            seenModels.push(options?.model);
+            return texts.map(() => [1, 2, 3]);
+          },
+        }),
+        auditService,
+        {
+          async getForWorkspace(workspaceId: string) {
+            return {
+              ...defaultIngestionSettings(workspaceId),
+              embeddingModel: "text-embedding-3-small",
+              pendingEmbeddingModel: "text-embedding-3-large",
+            };
+          },
+          promotePendingEmbeddingModelIfReady,
+        },
+        new ChunkingStrategyRegistry([fixedWindowStrategy]),
+      ),
+      auditService,
+      createLogger("silent"),
+    );
+
+    await ingestionService.ingest({
+      workspaceId: "workspace-1",
+      title: "Pending model",
+      content: "Pending model content",
+    });
+
+    expect(await processingWorker.runOnce()).toBe(true);
+    expect(seenModels).toEqual(["text-embedding-3-large"]);
+    expect(chunkRepository.items.get((await documentRepository.listByWorkspaceId("workspace-1"))[0]!.id)?.[0]?.embeddingModel).toBe("text-embedding-3-large");
+    expect(promotePendingEmbeddingModelIfReady).toHaveBeenCalledWith("workspace-1");
+  });
+
   it("skips stale jobs when a newer revision is queued", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

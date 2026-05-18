@@ -23,6 +23,7 @@ import type { MaterializedDocumentContent } from "./documentSourceContentService
 
 export interface IngestionSettingsReaderPort {
   getForWorkspace(workspaceId: string): Promise<IngestionSettingsRecord>;
+  promotePendingEmbeddingModelIfReady?(workspaceId: string): Promise<IngestionSettingsRecord | null>;
 }
 
 export interface ChunkingStrategyRegistryPort {
@@ -111,6 +112,7 @@ export class DocumentProcessingService {
       content: normalizeMarkdown(documentWithContent.sourceContent),
     });
     const settings = await this.ingestionSettingsService.getForWorkspace(job.workspaceId);
+    const embeddingModel = settings.pendingEmbeddingModel ?? settings.embeddingModel;
     const chunkingStrategy = this.chunkingStrategyRegistry.get(settings.chunkingStrategy);
     const chunkingStartedAt = Date.now();
     const chunks = await chunkingStrategy.chunk({
@@ -121,6 +123,7 @@ export class DocumentProcessingService {
         fixedWindowChunkOverlap: settings.fixedWindowChunkOverlap,
         structuredMinChunkSize: settings.structuredMinChunkSize,
         structuredMaxChunkSize: settings.structuredMaxChunkSize,
+        embeddingModel,
       },
     });
     const chunkingDurationMs = Math.max(0, Date.now() - chunkingStartedAt);
@@ -138,6 +141,7 @@ export class DocumentProcessingService {
     const embeddingStartedAt = Date.now();
     const embeddings = await this.embeddingService.embedChunks(
       enrichedChunks.map((chunk) => chunk.searchText),
+      { model: embeddingModel },
     );
     const storageEmbeddingDurationMs = Math.max(0, Date.now() - embeddingStartedAt);
     this.logger?.info(
@@ -147,6 +151,7 @@ export class DocumentProcessingService {
         documentId: documentWithContent.id,
         revision: job.documentRevision,
         chunkingStrategy: settings.chunkingStrategy,
+        embeddingModel,
         chunkCount: enrichedChunks.length,
         chunkingDurationMs,
         storageEmbeddingDurationMs,
@@ -161,6 +166,7 @@ export class DocumentProcessingService {
       content: chunk.content,
       searchText: chunk.searchText,
       embedding: embeddings[index] ?? [],
+      embeddingModel,
       startOffset: chunk.startOffset,
       endOffset: chunk.endOffset,
       metadata: documentWithContent.metadata ?? {},
@@ -188,6 +194,7 @@ export class DocumentProcessingService {
         revision: job.documentRevision,
       },
     });
+    await this.ingestionSettingsService.promotePendingEmbeddingModelIfReady?.(job.workspaceId);
 
     return "completed";
   }

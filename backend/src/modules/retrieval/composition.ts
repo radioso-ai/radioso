@@ -1,4 +1,4 @@
-import type { RetrievalSettingsService } from "../settings/composition.js";
+import type { IngestionSettingsService, RetrievalSettingsService } from "../settings/contracts/services.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
@@ -94,6 +94,7 @@ export const createDefaultRetrievalServices = (input: {
   logger: AppLogger;
   retrievalSettingsService: RetrievalSettingsService;
   telemetryService: TelemetryService;
+  ingestionSettingsService?: IngestionSettingsService;
 }) => {
   const retrievalPipeline = new RetrievalPipelineService(
     input.retrievalSettingsService,
@@ -108,6 +109,8 @@ export const createDefaultRetrievalServices = (input: {
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(input.telemetryService),
+    undefined,
+    input.ingestionSettingsService,
   );
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
 

@@ -20,6 +20,7 @@ export interface VectorSearchPort {
     queryEmbedding: number[];
     topK: number;
     similarityThreshold: number;
+    embeddingModel?: string;
     metadataFilter?: Record<string, unknown>;
     sourceFilter?: RetrievalSourceFilter;
   }): Promise<RetrievedChunk[]>;
@@ -46,6 +47,7 @@ export class PgVectorSearch implements VectorSearchPort {
     queryEmbedding: number[];
     topK: number;
     similarityThreshold: number;
+    embeddingModel?: string;
     metadataFilter?: Record<string, unknown>;
     sourceFilter?: RetrievalSourceFilter;
   }): Promise<RetrievedChunk[]> {
@@ -56,6 +58,7 @@ export class PgVectorSearch implements VectorSearchPort {
       `[${input.queryEmbedding.join(",")}]`,
       input.topK,
       maxDistance,
+      input.embeddingModel ?? "text-embedding-3-small",
     ];
     const hasConstrainedSourceFilter = input.sourceFilter?.constrained ?? false;
     let includeUnassignedDocuments = false;
@@ -108,6 +111,7 @@ export class PgVectorSearch implements VectorSearchPort {
       WHERE c.workspace_id = $1
         AND d.status = 'ready'
         AND c.embedding IS NOT NULL
+        AND c.embedding_model = $5
         ${sourceClause}
         ${metadataClause}
       ORDER BY c.embedding <=> $2::vector ASC

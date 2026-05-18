@@ -13,6 +13,7 @@ const PROVIDERS: LlmProviderName[] = ["openai", "openai-compatible", "gemini", "
 const DEFAULT_PROVIDER: LlmProviderName = "openai";
 const DEFAULT_CHAT_MODEL = "gpt-5.2";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
+const DEFAULT_GEMINI_EMBEDDING_MODEL = "gemini-embedding-001";
 const DEFAULT_GEMINI_TEXT_MODEL = "gemini-2.5-flash";
 const DEFAULT_CLAUDE_TEXT_MODEL = "claude-sonnet-4-5";
 
@@ -111,7 +112,49 @@ const resolveEmbeddingModel = (
     return DEFAULT_EMBEDDING_MODEL;
   }
 
-  return provider === "gemini" ? "gemini-embedding-001" : DEFAULT_CLAUDE_TEXT_MODEL;
+  return provider === "gemini" ? DEFAULT_GEMINI_EMBEDDING_MODEL : DEFAULT_CLAUDE_TEXT_MODEL;
+};
+
+const hasRequiredProviderCredentials = (provider: LlmProviderName, env: ProviderEnv): boolean => {
+  switch (provider) {
+    case "openai":
+      return typeof env.OPENAI_API_KEY === "string" && env.OPENAI_API_KEY.trim().length > 0;
+    case "openai-compatible":
+      return (
+        typeof (env.OPENAI_COMPATIBLE_API_KEY ?? env.OPENAI_API_KEY) === "string" &&
+        String(env.OPENAI_COMPATIBLE_API_KEY ?? env.OPENAI_API_KEY).trim().length > 0 &&
+        typeof env.OPENAI_COMPATIBLE_BASE_URL === "string" &&
+        env.OPENAI_COMPATIBLE_BASE_URL.trim().length > 0
+      );
+    case "gemini":
+      return typeof env.GEMINI_API_KEY === "string" && env.GEMINI_API_KEY.trim().length > 0;
+    case "claude":
+      return typeof env.ANTHROPIC_API_KEY === "string" && env.ANTHROPIC_API_KEY.trim().length > 0;
+  }
+};
+
+const resolveSupplementalEmbeddingConfigs = (
+  primary: LlmCapabilityConfig,
+  env: ProviderEnv,
+): LlmCapabilityConfig[] => {
+  const configs = new Map<LlmProviderName, LlmCapabilityConfig>();
+  configs.set(primary.provider, primary);
+
+  if (!configs.has("openai") && hasRequiredProviderCredentials("openai", env)) {
+    const model = resolveEmbeddingModel("openai", undefined, env.OPENAI_VECTOR_MODEL);
+    configs.set("openai", resolveCapability("embeddings", "openai", model, env));
+  }
+
+  if (!configs.has("openai-compatible") && hasRequiredProviderCredentials("openai-compatible", env)) {
+    const model = resolveEmbeddingModel("openai-compatible", undefined, env.OPENAI_VECTOR_MODEL);
+    configs.set("openai-compatible", resolveCapability("embeddings", "openai-compatible", model, env));
+  }
+
+  if (!configs.has("gemini") && hasRequiredProviderCredentials("gemini", env)) {
+    configs.set("gemini", resolveCapability("embeddings", "gemini", DEFAULT_GEMINI_EMBEDDING_MODEL, env));
+  }
+
+  return [...configs.values()];
 };
 
 export const resolveLlmConfig = (env: ProviderEnv): ResolvedLlmConfig => {
@@ -132,11 +175,13 @@ export const resolveLlmConfig = (env: ProviderEnv): ResolvedLlmConfig => {
   const embeddingProvider = asProvider(env.LLM_EMBEDDING_PROVIDER, "LLM_EMBEDDING_PROVIDER") ?? DEFAULT_PROVIDER;
   const embeddingModel = resolveEmbeddingModel(embeddingProvider, env.LLM_EMBEDDING_MODEL, env.OPENAI_VECTOR_MODEL);
   const embeddings = resolveCapability("embeddings", embeddingProvider, embeddingModel, env);
+  const embeddingProviderConfigs = resolveSupplementalEmbeddingConfigs(embeddings, env);
 
   return {
     chat,
     rewrite,
     rerank,
     embeddings,
+    embeddingProviderConfigs,
   };
 };

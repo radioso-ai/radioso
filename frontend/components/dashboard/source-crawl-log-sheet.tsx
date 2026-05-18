@@ -31,14 +31,14 @@ export function SourceCrawlLogSheet({ source, onOpenChange }: SourceCrawlLogShee
     if (!source) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear cached crawl log when sheet closes (source becomes null).
       setCrawlJob(null)
-       
+
       setError(null)
       return
     }
     let cancelled = false
-     
+
     setIsLoading(true)
-     
+
     setError(null)
     void documentsApi
       .listCrawlJobs({ sourceId: source.id, limit: 1 })

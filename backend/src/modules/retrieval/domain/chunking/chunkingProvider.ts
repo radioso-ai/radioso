@@ -1,7 +1,7 @@
 export type TextChunkingMethod = "fixed_window" | "recursive" | "semantic";
 
 export interface TextChunkingEmbeddingPort {
-  embedTexts(texts: string[]): Promise<number[][]>;
+  embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]>;
 }
 
 export interface TextChunkingProviderRequest {
@@ -11,6 +11,7 @@ export interface TextChunkingProviderRequest {
   chunkSize: number;
   chunkOverlap?: number;
   minCharactersPerChunk?: number;
+  embeddingModel?: string;
 }
 
 export interface TextChunkingProviderChunk {

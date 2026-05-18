@@ -80,8 +80,8 @@ import type {
   MessageRepositoryPort,
 } from "../../src/db/repositories/messageRepository.js";
 import type {
-  IngestionSettingsInput,
   IngestionSettingsRecord,
+  ValidatedIngestionSettingsInput,
 } from "../../src/modules/settings/contracts/ingestion.js";
 import {
   inferMetadataValueType,
@@ -913,7 +913,7 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
     return this.items.get(workspaceId) ?? null;
   }
 
-  async upsert(workspaceId: string, input: IngestionSettingsInput): Promise<IngestionSettingsRecord> {
+  async upsert(workspaceId: string, input: ValidatedIngestionSettingsInput): Promise<IngestionSettingsRecord> {
     const existing = this.items.get(workspaceId);
     const record: IngestionSettingsRecord = {
       workspaceId,
@@ -922,7 +922,38 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
       fixedWindowChunkOverlap: input.fixedWindowChunkOverlap,
       structuredMinChunkSize: input.structuredMinChunkSize,
       structuredMaxChunkSize: input.structuredMaxChunkSize,
+      embeddingModel: input.embeddingModel,
+      pendingEmbeddingModel: input.pendingEmbeddingModel,
       createdAt: existing?.createdAt ?? new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(workspaceId, record);
+    return record;
+  }
+
+  async clearPendingEmbeddingModel(workspaceId: string): Promise<IngestionSettingsRecord | null> {
+    const existing = this.items.get(workspaceId);
+    if (!existing) {
+      return null;
+    }
+    const record = {
+      ...existing,
+      pendingEmbeddingModel: null,
+      updatedAt: new Date(),
+    };
+    this.items.set(workspaceId, record);
+    return record;
+  }
+
+  async promotePendingEmbeddingModelIfReady(workspaceId: string): Promise<IngestionSettingsRecord | null> {
+    const existing = this.items.get(workspaceId);
+    if (!existing?.pendingEmbeddingModel) {
+      return existing ?? null;
+    }
+    const record = {
+      ...existing,
+      embeddingModel: existing.pendingEmbeddingModel,
+      pendingEmbeddingModel: null,
       updatedAt: new Date(),
     };
     this.items.set(workspaceId, record);

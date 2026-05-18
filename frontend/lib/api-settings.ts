@@ -67,6 +67,7 @@ export const settingsApi = {
       method: "PUT",
       body: JSON.stringify({
         chunkingStrategy: data.chunkingStrategy,
+        embeddingModel: data.embeddingModel,
         fixedWindowChunkSize: data.fixedWindowChunkSize,
         fixedWindowChunkOverlap: data.fixedWindowChunkOverlap,
         structuredMinChunkSize: data.structuredMinChunkSize,
@@ -77,6 +78,12 @@ export const settingsApi = {
 
   async reprocessWorkspaceIngestion(): Promise<WorkspaceIngestionReprocessResponse> {
     return request<WorkspaceIngestionReprocessResponse>("/settings/ingestion/reprocess", {
+      method: "POST",
+    }, { withApiToken: true })
+  },
+
+  async cancelPendingEmbeddingModel(): Promise<IngestionSettings> {
+    return request<IngestionSettings>("/settings/ingestion/embedding-model/cancel", {
       method: "POST",
     }, { withApiToken: true })
   }

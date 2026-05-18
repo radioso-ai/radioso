@@ -2768,6 +2768,24 @@
                   "text"
                 ]
               },
+              "branding": {
+                "type": "object",
+                "properties": {
+                  "hidePoweredBy": {
+                    "type": "boolean"
+                  },
+                  "privacyPolicyUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "hidePoweredBy",
+                  "privacyPolicyUrl"
+                ]
+              },
               "retrievalEnabled": {
                 "type": "boolean"
               },
@@ -2834,6 +2852,7 @@
               "customInstruction",
               "suggestedQuestionsEnabled",
               "theme",
+              "branding",
               "retrievalEnabled",
               "sourceScope",
               "logo",
@@ -2888,6 +2907,21 @@
               },
               "text": {
                 "type": "string"
+              }
+            }
+          },
+          "branding": {
+            "type": "object",
+            "properties": {
+              "hidePoweredBy": {
+                "type": "boolean"
+              },
+              "privacyPolicyUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 2048
               }
             }
           },
@@ -3084,6 +3118,24 @@
               "brandText",
               "surface",
               "text"
+            ]
+          },
+          "branding": {
+            "type": "object",
+            "properties": {
+              "hidePoweredBy": {
+                "type": "boolean"
+              },
+              "privacyPolicyUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "hidePoweredBy",
+              "privacyPolicyUrl"
             ]
           },
           "intakeActions": {
@@ -6311,6 +6363,24 @@
               "brandText",
               "surface",
               "text"
+            ]
+          },
+          "branding": {
+            "type": "object",
+            "properties": {
+              "hidePoweredBy": {
+                "type": "boolean"
+              },
+              "privacyPolicyUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "hidePoweredBy",
+              "privacyPolicyUrl"
             ]
           },
           "intakeActions": {

@@ -65,6 +65,10 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   customInstruction: settings.assistant.customInstruction,
   suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
   theme: settings.channels.websiteEmbedTheme,
+  branding: {
+    hidePoweredBy: false,
+    privacyPolicyUrl: null,
+  },
   greetingInstruction: settings.assistant.greetingInstruction,
   assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
   proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,

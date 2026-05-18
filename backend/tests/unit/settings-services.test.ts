@@ -44,6 +44,10 @@ describe("settings services", () => {
       surface: "#ffffff",
       text: "#0f172a",
     },
+    branding: {
+      hidePoweredBy: false,
+      privacyPolicyUrl: null,
+    },
     surfaceSettings: {
       authenticatedChat: {
         enabled: true,

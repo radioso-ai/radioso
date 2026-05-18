@@ -1824,6 +1824,18 @@ components:
                 - brandText
                 - surface
                 - text
+            branding:
+              type: object
+              properties:
+                hidePoweredBy:
+                  type: boolean
+                privacyPolicyUrl:
+                  type:
+                    - string
+                    - "null"
+              required:
+                - hidePoweredBy
+                - privacyPolicyUrl
             retrievalEnabled:
               type: boolean
             sourceScope:
@@ -1870,6 +1882,7 @@ components:
             - customInstruction
             - suggestedQuestionsEnabled
             - theme
+            - branding
             - retrievalEnabled
             - sourceScope
             - logo
@@ -1909,6 +1922,16 @@ components:
               type: string
             text:
               type: string
+        branding:
+          type: object
+          properties:
+            hidePoweredBy:
+              type: boolean
+            privacyPolicyUrl:
+              type:
+                - string
+                - "null"
+              maxLength: 2048
         retrievalEnabled:
           type: boolean
         sourceScope:
@@ -2036,6 +2059,18 @@ components:
             - brandText
             - surface
             - text
+        branding:
+          type: object
+          properties:
+            hidePoweredBy:
+              type: boolean
+            privacyPolicyUrl:
+              type:
+                - string
+                - "null"
+          required:
+            - hidePoweredBy
+            - privacyPolicyUrl
         intakeActions:
           type: array
           items:
@@ -4256,6 +4291,18 @@ components:
             - brandText
             - surface
             - text
+        branding:
+          type: object
+          properties:
+            hidePoweredBy:
+              type: boolean
+            privacyPolicyUrl:
+              type:
+                - string
+                - "null"
+          required:
+            - hidePoweredBy
+            - privacyPolicyUrl
         intakeActions:
           type: array
           items:

@@ -53,6 +53,12 @@ pnpm run build
 pnpm test
 ```
 
+## Auth email cutover
+
+Password reset and email verification now live in the OSS auth module. Enterprise no longer owns `/api/v1/ee/auth/*` reset or verification routes, frontend reset or verification pages, mail token migrators, or `ee_*` auth email token tables.
+
+This is an intentional hard cutover. Active links issued by the old Enterprise implementation are not migrated into `password_reset_tokens` or `email_verification_tokens`. After upgrading, users with old reset or verification emails should request fresh links.
+
 ## Usage limit profiles
 
 The Enterprise backend module adds hosted usage limit profiles. Accounts without

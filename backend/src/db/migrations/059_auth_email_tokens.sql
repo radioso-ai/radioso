@@ -1,3 +1,8 @@
+-- Auth email tokens are intentionally cut over from the former Enterprise
+-- tables to these OSS tables without copying ee_password_reset_tokens or
+-- ee_email_verification_tokens. Any reset or verification links issued before
+-- this migration must be requested again after deployment.
+
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
   id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

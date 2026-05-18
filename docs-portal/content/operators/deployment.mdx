@@ -56,6 +56,10 @@ The Terraform workflow expects these GitHub environment secrets for each deploye
 
 Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`.
 
+## Auth email cutover
+
+Password reset and email verification tokens are stored in OSS tables. Deployments upgrading from the older Enterprise auth email implementation do not migrate active `ee_password_reset_tokens` or `ee_email_verification_tokens` rows. In practice, reset or verification links sent before this deployment stop working after the migration runs. Users should request a new password reset or verification email after the rollout.
+
 ## Optional public chat limits
 
 Public chat and website embed rate limits are operator tuning knobs, not workspace settings. When unset, the backend uses built-in defaults.
@@ -91,7 +95,8 @@ The docs portal is its own Next.js app under `docs-portal/`. It syncs the backen
 3. Confirm worker runtime can claim or receive jobs.
 4. Confirm frontend points at the current backend service.
 5. Confirm public URLs used for auth and embed flows are correct.
-6. Confirm docs portal build synced the current OpenAPI document.
+6. Ask users with old Enterprise reset or verification links to request fresh links.
+7. Confirm docs portal build synced the current OpenAPI document.
 
 <Callout type="info" emoji="i">
   If the app is live but document uploads never become searchable, treat that as a worker-path or dispatch-path incident first.

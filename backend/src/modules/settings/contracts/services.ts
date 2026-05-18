@@ -1,9 +1,15 @@
-import type { IngestionSettingsInput, IngestionSettingsRecord } from "./ingestion.js";
+import type { IngestionSettingsInput, IngestionSettingsRecord, ValidatedIngestionSettingsInput } from "./ingestion.js";
 import type { MetadataFieldSuggestion, RetrievalSettingsInput, RetrievalSettingsRecord } from "./retrieval.js";
 
 export interface IngestionSettingsRepositoryPort {
   findByWorkspaceId(workspaceId: string): Promise<IngestionSettingsRecord | null>;
-  upsert(workspaceId: string, input: IngestionSettingsInput): Promise<IngestionSettingsRecord>;
+  upsert(workspaceId: string, input: ValidatedIngestionSettingsInput): Promise<IngestionSettingsRecord>;
+  clearPendingEmbeddingModel?(workspaceId: string): Promise<IngestionSettingsRecord | null>;
+  promotePendingEmbeddingModelIfReady?(workspaceId: string): Promise<IngestionSettingsRecord | null>;
+}
+
+export interface WorkspaceReprocessPort {
+  reprocessWorkspace(workspaceId: string): Promise<unknown>;
 }
 
 export interface RetrievalSettingsRepositoryPort {
@@ -17,7 +23,10 @@ export interface RetrievalMetadataFieldSourcePort {
 
 export interface IngestionSettingsPort {
   getForWorkspace(workspaceId: string): Promise<IngestionSettingsRecord>;
+  cancelPendingEmbeddingModel?(workspaceId: string): Promise<IngestionSettingsRecord>;
+  listSupportedEmbeddingModels?(): readonly IngestionSettingsRecord["embeddingModel"][];
   updateForWorkspace(workspaceId: string, input: IngestionSettingsInput): Promise<IngestionSettingsRecord>;
+  promotePendingEmbeddingModelIfReady?(workspaceId: string): Promise<IngestionSettingsRecord | null>;
 }
 
 export interface RetrievalSettingsPort {

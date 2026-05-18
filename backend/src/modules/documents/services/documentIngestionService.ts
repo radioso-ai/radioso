@@ -120,6 +120,7 @@ export interface ChunkRecord {
   content: string;
   searchText?: string | null;
   embedding: number[];
+  embeddingModel?: string | null;
   startOffset: number;
   endOffset: number;
   metadata?: Record<string, unknown>;

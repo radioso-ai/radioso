@@ -24,6 +24,7 @@ export class StructuredSemanticChunkingStrategy implements ChunkingStrategy {
       content: normalized,
       chunkSize: request.config.structuredMaxChunkSize,
       minCharactersPerChunk: request.config.structuredMinChunkSize,
+      embeddingModel: request.config.embeddingModel,
     });
 
     return normalizeProviderChunks(normalized, chunks);
@@ -34,6 +35,7 @@ export class StructuredSemanticChunkingStrategy implements ChunkingStrategy {
     content: string;
     chunkSize: number;
     minCharactersPerChunk: number;
+    embeddingModel?: string;
   }) {
     try {
       return await this.provider.chunkText({

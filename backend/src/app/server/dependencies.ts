@@ -1,6 +1,7 @@
 import { getEnv, type Env } from "../config/env.js";
 import {
   createDefaultApplicationComposition,
+  createDefaultDocumentJobDispatcher,
   type ApplicationModule,
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
@@ -18,7 +19,9 @@ import {
   buildRepositories,
   buildRetrievalServices,
   buildSettingsServices,
+  buildWorkspaceIngestionReprocessService,
   buildWorkspaceServices,
+  listSupportedEmbeddingModels,
 } from "./dependencyBuilders.js";
 import { EmbeddingService } from "../../modules/retrieval/composition.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
@@ -47,17 +50,27 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const llmRegistry = buildLlmRegistry(env, logger);
   const embeddingService = new EmbeddingService(llmRegistry.createEmbeddingGateway());
+  const documentJobDispatcher = composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
+  const workspaceIngestionReprocessService = buildWorkspaceIngestionReprocessService({
+    auditService: infrastructure.auditService,
+    documentJobDispatcher,
+    repositories,
+  });
+  const supportedEmbeddingModels = listSupportedEmbeddingModels(llmRegistry);
   const settings = buildSettingsServices({
     auditService: infrastructure.auditService,
     documentRepository: repositories.documentRepository,
     ingestionSettingsRepository: repositories.ingestionSettingsRepository,
     productAnalyticsService: infrastructure.productAnalyticsService,
     retrievalSettingsRepository: repositories.retrievalSettingsRepository,
+    supportedEmbeddingModels,
+    workspaceIngestionReprocessService,
   });
   const documents = buildDocumentServices({
     auditEventRepository: infrastructure.auditEventRepository,
     auditService: infrastructure.auditService,
     composition,
+    documentJobDispatcher,
     documentSourceRepository: repositories.documentSourceRepository,
     embeddingService,
     env,
@@ -67,12 +80,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     settings,
     telemetryService: infrastructure.telemetryService,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
+    workspaceIngestionReprocessService,
   });
   const retrieval = buildRetrievalServices({
     auditService: infrastructure.auditService,
     database: infrastructure.database,
     documentRepository: repositories.documentRepository,
     embeddingService,
+    ingestionSettingsService: settings.ingestionSettingsService,
     llmRegistry,
     logger,
     retrievalSettingsService: settings.retrievalSettingsService,

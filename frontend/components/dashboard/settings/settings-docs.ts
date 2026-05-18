@@ -1,4 +1,5 @@
 import chunkingStrategySource from '../../../docs/settings-docs/ingestion/chunking-strategy.md'
+import embeddingModelSource from '../../../docs/settings-docs/ingestion/embedding-model.md'
 import fixedWindowChunkOverlapSource from '../../../docs/settings-docs/ingestion/fixed-window-chunk-overlap.md'
 import fixedWindowChunkSizeSource from '../../../docs/settings-docs/ingestion/fixed-window-chunk-size.md'
 import reprocessSource from '../../../docs/settings-docs/ingestion/reprocess-existing-documents.md'
@@ -69,6 +70,7 @@ const parseSettingDoc = (source: string): SettingDoc => {
 
 export const ingestionSettingDocs = {
   chunkingStrategy: parseSettingDoc(chunkingStrategySource),
+  embeddingModel: parseSettingDoc(embeddingModelSource),
   fixedWindowChunkSize: parseSettingDoc(fixedWindowChunkSizeSource),
   fixedWindowChunkOverlap: parseSettingDoc(fixedWindowChunkOverlapSource),
   structuredMinChunkSize: parseSettingDoc(structuredMinChunkSizeSource),

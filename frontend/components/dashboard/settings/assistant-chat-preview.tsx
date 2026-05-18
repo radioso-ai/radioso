@@ -10,7 +10,7 @@ import {
   PublicChatBubbleHeader,
 } from '@/components/chat/public-chat-bubble-view'
 import { ChatMessageThread, type ChatThreadMessage } from '@/components/dashboard/chat-message-thread'
-import type { ChatSuggestion } from '@/lib/api'
+import type { AgentBrandingSettings, ChatSuggestion } from '@/lib/api'
 import { deriveThemeOverridesFromModel } from '@/lib/anonymous-chat-context'
 import type { WebsiteEmbedThemeSettings } from '@/lib/api'
 import { contrastRatio } from '@/lib/color'
@@ -61,12 +61,14 @@ export function ChatPreview({
   logoUrl,
   showSuggestedQuestions,
   showProactiveGreeting,
+  branding,
 }: {
   themeSettings: WebsiteEmbedThemeSettings
   assistantName: string
   logoUrl: string | null
   showSuggestedQuestions: boolean
   showProactiveGreeting: boolean
+  branding?: AgentBrandingSettings | null
 }) {
   const displayName = assistantName.trim() || 'Assistant'
   const resolvedLogo = logoUrl ?? '/radioso-icon.svg'
@@ -156,16 +158,17 @@ export function ChatPreview({
       </div>
 
       <PublicChatBubbleComposerSurface theme={embedTheme}>
-        <PublicChatBubbleDisclaimer
-          theme={embedTheme}
-          copy={DEFAULT_WEBSITE_EMBED_COPY}
-          workspaceName={displayName}
-        />
         <PublicChatBubbleComposerForm
           theme={embedTheme}
           copy={DEFAULT_WEBSITE_EMBED_COPY}
           value=""
           readOnly
+        />
+        <PublicChatBubbleDisclaimer
+          theme={embedTheme}
+          copy={DEFAULT_WEBSITE_EMBED_COPY}
+          workspaceName={displayName}
+          branding={branding}
         />
       </PublicChatBubbleComposerSurface>
     </div>

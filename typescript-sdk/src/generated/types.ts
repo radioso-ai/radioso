@@ -72,6 +72,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/password-reset/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request a password reset email */
+        post: operations["requestPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm password reset and establish a new session */
+        post: operations["confirmPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/email-verification/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify an email address */
+        post: operations["verifyEmail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/email-verification/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request an email verification email */
+        post: operations["resendEmailVerification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/invitations/{invitationToken}": {
         parameters: {
             query?: never;
@@ -1175,6 +1243,8 @@ export interface components {
             workspaceId: string;
             workspaceName: string;
             workspacePublicRouteKey: string;
+            /** @enum {boolean} */
+            requiresEmailVerification: true;
         };
         LoginResponse: {
             /** Format: uuid */
@@ -1186,6 +1256,18 @@ export interface components {
             workspaceId: string;
             workspaceName: string;
             workspacePublicRouteKey: string;
+        };
+        AcceptedResponse: {
+            /** @enum {boolean} */
+            accepted: true;
+        };
+        PasswordResetConfirmResponse: components["schemas"]["LoginResponse"] & {
+            /** Format: email */
+            email: string;
+        };
+        EmailVerificationVerifyResponse: {
+            /** @enum {boolean} */
+            verified: true;
         };
         Workspace: {
             /** Format: uuid */
@@ -1252,6 +1334,25 @@ export interface components {
             preferredWorkspaceId?: string;
             /** Format: uuid */
             preferredAccountId?: string;
+        };
+        PasswordResetRequest: {
+            /** Format: email */
+            email: string;
+        };
+        PasswordResetConfirmRequest: {
+            token: string;
+            password: string;
+            /** Format: uuid */
+            preferredWorkspaceId?: string;
+            /** Format: uuid */
+            preferredAccountId?: string;
+        };
+        EmailVerificationVerifyRequest: {
+            token: string;
+        };
+        EmailVerificationResendRequest: {
+            /** Format: email */
+            email: string;
         };
         InvitationAcceptRequest: {
             /** Format: email */
@@ -3193,6 +3294,156 @@ export interface operations {
             };
             /** @description Unexpected server error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    requestPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Password reset request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptedResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    confirmPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Password reset confirmed and session established */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetConfirmResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Reset token is invalid or expired */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    verifyEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailVerificationVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Email address verified */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailVerificationVerifyResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Verification token is invalid or expired */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resendEmailVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailVerificationResendRequest"];
+            };
+        };
+        responses: {
+            /** @description Email verification request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptedResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

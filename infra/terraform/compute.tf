@@ -202,7 +202,7 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
+        for_each = var.resend_mail_api_key != null ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
         content {
           name = "RESEND_MAIL_API_KEY"
           value_source {
@@ -214,16 +214,16 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [var.ee_mail_from_email] : []
+        for_each = var.mail_from_email != null ? [var.mail_from_email] : []
         content {
-          name  = "EE_MAIL_FROM_EMAIL"
+          name  = "MAIL_FROM_EMAIL"
           value = env.value
         }
       }
       dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [var.ee_mail_from_name] : []
+        for_each = var.mail_from_name != null ? [var.mail_from_name] : []
         content {
-          name  = "EE_MAIL_FROM_NAME"
+          name  = "MAIL_FROM_NAME"
           value = env.value
         }
       }
@@ -523,7 +523,7 @@ resource "google_cloud_run_v2_service" "document_worker" {
         }
       }
       dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
+        for_each = var.resend_mail_api_key != null ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
         content {
           name = "RESEND_MAIL_API_KEY"
           value_source {
@@ -535,16 +535,16 @@ resource "google_cloud_run_v2_service" "document_worker" {
         }
       }
       dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [var.ee_mail_from_email] : []
+        for_each = var.mail_from_email != null ? [var.mail_from_email] : []
         content {
-          name  = "EE_MAIL_FROM_EMAIL"
+          name  = "MAIL_FROM_EMAIL"
           value = env.value
         }
       }
       dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [var.ee_mail_from_name] : []
+        for_each = var.mail_from_name != null ? [var.mail_from_name] : []
         content {
-          name  = "EE_MAIL_FROM_NAME"
+          name  = "MAIL_FROM_NAME"
           value = env.value
         }
       }

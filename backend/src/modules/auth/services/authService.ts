@@ -161,7 +161,7 @@ export class AuthService {
         id: account.id,
         email,
         passwordHash,
-        emailVerifiedAt: new Date(),
+        emailVerifiedAt: null,
       });
       await this.dependencies.accountAccessService.ensureMembership({
         accountId: account.id,
@@ -170,7 +170,6 @@ export class AuthService {
       });
       const workspace = await this.dependencies.workspaceService.createDefault(account.id);
       await this.dependencies.onAccountCreated?.({ accountId: account.id });
-      const sessionCookie = await this.createSessionCookie(user.id, account.id);
 
       await this.dependencies.auditService.record({
         accountId: account.id,
@@ -186,7 +185,6 @@ export class AuthService {
         workspaceId: workspace.id,
         workspaceName: workspace.name,
         workspacePublicRouteKey: workspace.publicRouteKey,
-        sessionCookie,
       };
     } catch (error) {
       await this.rollbackCreatedAccount(account.id, account.id);
@@ -278,6 +276,15 @@ export class AuthService {
       throw unauthorized("Invalid email or password");
     }
 
+    if (!user.emailVerifiedAt) {
+      await this.dependencies.auditService.record({
+        eventType: "auth.login",
+        eventStatus: "failure",
+        metadata: { email, reason: "email_unverified" },
+      });
+      throw forbidden("Email verification required");
+    }
+
     const membership = await this.dependencies.accountAccessService.resolveLoginAccount(user.id, input.preferredAccountId);
     const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(
       membership.accountId,
@@ -357,7 +364,7 @@ export class AuthService {
       : await this.dependencies.userRepository.create({
           email,
           passwordHash: await hashPassword(input.password),
-          emailVerifiedAt: new Date(),
+          emailVerifiedAt: null,
         });
 
     const createdUserId: string | null = existingUser ? null : user.id;
@@ -368,6 +375,7 @@ export class AuthService {
         input.invitationToken,
         user.id,
       ));
+      await this.dependencies.userRepository.markEmailVerified(user.id, new Date());
     } catch (error) {
       if (createdUserId) {
         await this.dependencies.userRepository.deleteById(createdUserId);

@@ -9,12 +9,13 @@ import { randomUUID } from "node:crypto";
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
+import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
+import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../src/modules/agents/public.js";
-import { createWebsiteEmbedSurfaceExtension } from "../../src/modules/agents/services/websiteEmbedSurfaceExtension.js";
 import {
   type GroundedMissResponseComposer,
 } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
@@ -105,6 +106,8 @@ import {
   InMemoryMessageRepository,
   InMemoryRetrievalSettingsRepository,
   InMemorySessionRepository,
+  InMemoryEmailVerificationTokenRepository,
+  InMemoryPasswordResetTokenRepository,
   InMemoryWorkspaceRepository,
   InMemoryAgentRepository,
   InMemoryConnectorDatabase,
@@ -147,6 +150,8 @@ export const createTestEnv = (): Env => ({
   SESSION_TTL_HOURS: 168,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
+  PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
+  EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: 30,
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
   WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 30,
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
@@ -197,6 +202,7 @@ export const createTestEnv = (): Env => ({
 
 interface TestRepositories {
   auditEventRepository: InMemoryAuditEventRepository;
+  userRepository: InMemoryUserRepository;
   ingestionSettingsRepository: InMemoryIngestionSettingsRepository;
   retrievalSettingsRepository: InMemoryRetrievalSettingsRepository;
   documentRepository: InMemoryDocumentRepository;
@@ -208,6 +214,7 @@ interface TestRepositories {
 }
 
 const appDependencyMap = new WeakMap<object, AppDependencies>();
+const appRepositoryMap = new WeakMap<object, TestRepositories>();
 
 class TestGroundedMissResponseComposer implements GroundedMissResponseComposer {
   async composeUnsupportedWithContext(input: {
@@ -464,11 +471,7 @@ export const createTestDependencies = (overrides: {
     },
   };
   const rerankGateway = overrides.rerankGateway ?? defaultRerankGateway;
-  const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(
-    documentRepository,
-    auditService,
-    documentProcessingJobRepository,
-  );
+  const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
   const ingestionSettingsService = new IngestionSettingsService(
     ingestionSettingsRepository,
     auditService,
@@ -573,8 +576,6 @@ export const createTestDependencies = (overrides: {
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(telemetryService),
-    undefined,
-    ingestionSettingsService,
   );
   const documentSearchService = new DocumentSearchService(
     documentRepository,
@@ -620,7 +621,16 @@ export const createTestDependencies = (overrides: {
   const agentRepository = new InMemoryAgentRepository();
   const agentService = new AgentService(agentRepository, workspaceRepository, retrievalSettingsService, documentSourceRepository);
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
-  agentSurfaceExtensions.register(createWebsiteEmbedSurfaceExtension());
+  // Mimic an EE deployment for OSS contract/unit tests so the runtime gate on
+  // embed-only routes (settingsRoutes, agentRoutes, publicChatRoutes) doesn't
+  // 404 them. A pass-through normalize keeps existing fixtures intact.
+  agentSurfaceExtensions.register({
+    key: "websiteEmbed",
+    defaults: () => ({}),
+    normalize: (value: unknown) => value,
+    serialize: (value: unknown) => value,
+    parse: (value: unknown) => value,
+  });
 
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
@@ -698,7 +708,7 @@ export const createTestDependencies = (overrides: {
       registry: createApplicationExtensionRegistry(),
     }),
     auditService,
-    mailService: createMailService({ EE_MAIL_DRIVER: "noop" }),
+    mailService: createMailService({ MAIL_DRIVER: "noop" }),
     accountAccessService,
     accountInvitationService,
     workspaceSessionService,
@@ -713,6 +723,24 @@ export const createTestDependencies = (overrides: {
       workspaceService,
       accountAccessService,
       accountInvitationService,
+    }),
+    passwordResetService: new PasswordResetService({
+      env,
+      auditService,
+      accountRepository,
+      userRepository,
+      sessionRepository,
+      accountAccessService,
+      workspaceService,
+      passwordResetTokenRepository: new InMemoryPasswordResetTokenRepository(),
+      mailService: createMailService({ MAIL_DRIVER: "noop" }),
+    }),
+    emailVerificationService: new EmailVerificationService({
+      env,
+      auditService,
+      userRepository,
+      emailVerificationTokenRepository: new InMemoryEmailVerificationTokenRepository(),
+      mailService: createMailService({ MAIL_DRIVER: "noop" }),
     }),
     workspaceService,
     workspaceSummaryService,
@@ -787,6 +815,7 @@ export const createTestDependencies = (overrides: {
     dependencies,
     repositories: {
       auditEventRepository,
+      userRepository,
       ingestionSettingsRepository,
       retrievalSettingsRepository,
       documentRepository,
@@ -816,6 +845,7 @@ export const createTestApp = (overrides: {
   const { dependencies, repositories } = createTestDependencies(overrides);
   const app = createApp(dependencies);
   appDependencyMap.set(app, dependencies);
+  appRepositoryMap.set(app, repositories);
   return {
     app,
     dependencies,
@@ -859,6 +889,11 @@ export const issueTestSession = async (
   if (register.status !== 201) {
     throw new Error(`Registration failed with status ${register.status}`);
   }
+  const repositories = appRepositoryMap.get(app);
+  if (!repositories) {
+    throw new Error("Test app repositories were not registered for session issuance");
+  }
+  await repositories.userRepository.markEmailVerified(register.body.userId as string, new Date());
 
   const login = await request(app).post("/api/v1/auth/login").send({
     email,

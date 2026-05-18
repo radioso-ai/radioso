@@ -10,7 +10,6 @@ const isEnterprise = edition === 'enterprise'
 export const editionController = {
   edition,
 
-  canUseAuthRecovery: () => isEnterprise,
   canUseEnterpriseUsageLimits: () => isEnterprise,
   canHideAssistantBranding: () => isEnterprise,
   canUseHumanContact: () => isEnterprise,

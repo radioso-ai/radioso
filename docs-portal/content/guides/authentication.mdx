@@ -25,7 +25,7 @@ The main auth routes are:
 - login
 - invitation accept
 
-The backend sets the session cookie on successful registration, login, and invitation acceptance. Open-source Radioso does not include transactional email, email verification, or password reset endpoints.
+Registration creates the account and default workspace, then sends a verification email. The backend sets the session cookie on successful login, invitation acceptance, and password reset confirmation. Open-source Radioso includes password reset and email verification endpoints, and normal sign-in requires a verified email address.
 
 ## Workspace API tokens
 

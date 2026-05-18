@@ -325,7 +325,7 @@ describe("OpenAITextGenerationClient", () => {
 });
 
 describe("OpenAIEmbeddingClient", () => {
-  it("requests the storage vector dimensions for native OpenAI text-embedding-3 models", async () => {
+  it("does not force storage dimensions for native OpenAI text-embedding-3 models", async () => {
     let request: Record<string, unknown> | undefined;
     const client = new OpenAIEmbeddingClient({
       capability: "embeddings",
@@ -352,8 +352,8 @@ describe("OpenAIEmbeddingClient", () => {
     expect(request).toMatchObject({
       model: "text-embedding-3-large",
       input: ["hello"],
-      dimensions: 1536,
     });
+    expect(request).not.toHaveProperty("dimensions");
   });
 
   it("does not send dimensions to OpenAI-compatible embedding endpoints", async () => {

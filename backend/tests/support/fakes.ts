@@ -46,6 +46,14 @@ import type {
 } from "../../src/db/repositories/bootstrapGreetingCacheRepository.js";
 import type { AbuseControlEntry, AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import type {
+  EmailVerificationTokenRecord,
+  EmailVerificationTokenRepositoryPort,
+} from "../../src/db/repositories/emailVerificationTokenRepository.js";
+import type {
+  PasswordResetTokenRecord,
+  PasswordResetTokenRepositoryPort,
+} from "../../src/db/repositories/passwordResetTokenRepository.js";
+import type {
   ChunkRecord,
   ChunkRepositoryPort,
   DocumentCreateInput,
@@ -232,7 +240,7 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
       userId: params.userId,
       accountId: params.accountId,
       sessionTokenHash: params.sessionTokenHash,
-      createdAt: new Date(),
+      createdAt: new Date(Date.now() + this.items.size),
       expiresAt: params.expiresAt,
       lastSeenAt: new Date(),
       revokedAt: null,
@@ -266,6 +274,110 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
       }
     }
 
+    return count;
+  }
+}
+
+export class InMemoryPasswordResetTokenRepository implements PasswordResetTokenRepositoryPort {
+  readonly items = new Map<string, PasswordResetTokenRecord>();
+
+  async create(params: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    requestIp?: string | null;
+    requestUserAgent?: string | null;
+  }): Promise<PasswordResetTokenRecord> {
+    const record: PasswordResetTokenRecord = {
+      id: randomUUID(),
+      userId: params.userId,
+      tokenHash: params.tokenHash,
+      expiresAt: params.expiresAt,
+      usedAt: null,
+      createdAt: new Date(Date.now() + this.items.size),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<PasswordResetTokenRecord | null> {
+    return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
+  }
+
+  async findLatestActiveForUser(userId: string, now: Date): Promise<PasswordResetTokenRecord | null> {
+    return [...this.items.values()]
+      .filter((item) => item.userId === userId && !item.usedAt && item.expiresAt > now)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
+  }
+
+  async markUsed(id: string, usedAt: Date): Promise<number> {
+    const existing = this.items.get(id);
+    if (existing && !existing.usedAt) {
+      this.items.set(id, { ...existing, usedAt });
+      return 1;
+    }
+    return 0;
+  }
+
+  async markAllActiveUsedForUser(userId: string, usedAt: Date): Promise<number> {
+    let count = 0;
+    for (const item of this.items.values()) {
+      if (item.userId === userId && !item.usedAt && item.expiresAt > usedAt) {
+        this.items.set(item.id, { ...item, usedAt });
+        count += 1;
+      }
+    }
+    return count;
+  }
+}
+
+export class InMemoryEmailVerificationTokenRepository implements EmailVerificationTokenRepositoryPort {
+  readonly items = new Map<string, EmailVerificationTokenRecord>();
+
+  async create(params: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    requestIp?: string | null;
+    requestUserAgent?: string | null;
+  }): Promise<EmailVerificationTokenRecord> {
+    const record: EmailVerificationTokenRecord = {
+      id: randomUUID(),
+      userId: params.userId,
+      tokenHash: params.tokenHash,
+      expiresAt: params.expiresAt,
+      usedAt: null,
+      createdAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<EmailVerificationTokenRecord | null> {
+    return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
+  }
+
+  async findLatestActiveForUser(userId: string, now: Date): Promise<EmailVerificationTokenRecord | null> {
+    return [...this.items.values()]
+      .filter((item) => item.userId === userId && !item.usedAt && item.expiresAt > now)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
+  }
+
+  async markUsed(id: string, usedAt: Date): Promise<void> {
+    const existing = this.items.get(id);
+    if (existing && !existing.usedAt) {
+      this.items.set(id, { ...existing, usedAt });
+    }
+  }
+
+  async markAllActiveUsedForUser(userId: string, usedAt: Date): Promise<number> {
+    let count = 0;
+    for (const item of this.items.values()) {
+      if (item.userId === userId && !item.usedAt && item.expiresAt > usedAt) {
+        this.items.set(item.id, { ...item, usedAt });
+        count += 1;
+      }
+    }
     return count;
   }
 }
@@ -918,12 +1030,12 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
     const record: IngestionSettingsRecord = {
       workspaceId,
       chunkingStrategy: input.chunkingStrategy,
+      embeddingModel: input.embeddingModel,
+      pendingEmbeddingModel: input.pendingEmbeddingModel,
       fixedWindowChunkSize: input.fixedWindowChunkSize,
       fixedWindowChunkOverlap: input.fixedWindowChunkOverlap,
       structuredMinChunkSize: input.structuredMinChunkSize,
       structuredMaxChunkSize: input.structuredMaxChunkSize,
-      embeddingModel: input.embeddingModel,
-      pendingEmbeddingModel: input.pendingEmbeddingModel,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
     };

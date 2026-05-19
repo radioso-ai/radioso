@@ -71,21 +71,21 @@ export class LogEmailDriver implements EmailDriver {
 }
 
 export interface MailEnv {
-  EE_MAIL_DRIVER?: string;
-  EE_MAIL_FROM_EMAIL?: string;
-  EE_MAIL_FROM_NAME?: string;
+  MAIL_DRIVER?: string;
+  MAIL_FROM_EMAIL?: string;
+  MAIL_FROM_NAME?: string;
   RESEND_MAIL_API_KEY?: string;
 }
 
 export const createMailService = (source: MailEnv = process.env): EmailService => {
   const resendApiKey = source.RESEND_MAIL_API_KEY?.trim();
-  const driverName = source.EE_MAIL_DRIVER ?? (resendApiKey ? "resend" : "log");
-  const fromEmail = source.EE_MAIL_FROM_EMAIL ?? "noreply@example.com";
-  const fromName = source.EE_MAIL_FROM_NAME ?? "Radioso";
+  const driverName = source.MAIL_DRIVER ?? (resendApiKey ? "resend" : "log");
+  const fromEmail = source.MAIL_FROM_EMAIL ?? "noreply@example.com";
+  const fromName = source.MAIL_FROM_NAME ?? "Radioso";
 
   if (driverName === "resend") {
     if (!resendApiKey) {
-      throw new Error("RESEND_MAIL_API_KEY is required when EE_MAIL_DRIVER is resend");
+      throw new Error("RESEND_MAIL_API_KEY is required when MAIL_DRIVER is resend");
     }
     return new EmailService(new ResendEmailDriver(resendApiKey), { fromEmail, fromName });
   }
@@ -95,5 +95,5 @@ export const createMailService = (source: MailEnv = process.env): EmailService =
   if (driverName === "log") {
     return new EmailService(new LogEmailDriver(), { fromEmail, fromName });
   }
-  throw new Error(`Unsupported EE_MAIL_DRIVER "${driverName}"`);
+  throw new Error(`Unsupported MAIL_DRIVER "${driverName}"`);
 };

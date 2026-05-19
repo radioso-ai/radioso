@@ -13,9 +13,11 @@ import {
   buildChatServices,
   buildConnectorRegistry,
   buildDocumentServices,
+  buildEmailVerificationService,
   buildInfrastructure,
   buildLlmRegistry,
   buildLogger,
+  buildPasswordResetService,
   buildRepositories,
   buildRetrievalServices,
   buildSettingsServices,
@@ -155,6 +157,20 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
     workspaceService: workspace.workspaceService,
   });
+  const passwordResetService = buildPasswordResetService({
+    access,
+    auditService: infrastructure.auditService,
+    env,
+    infrastructure,
+    repositories,
+    workspaceService: workspace.workspaceService,
+  });
+  const emailVerificationService = buildEmailVerificationService({
+    auditService: infrastructure.auditService,
+    env,
+    infrastructure,
+    repositories,
+  });
   const connectorRegistry = buildConnectorRegistry({ composition, env, logger });
 
   const chatTextGenerationClient = llmRegistry.createChatTextClient();
@@ -199,6 +215,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
     authService,
+    passwordResetService,
+    emailVerificationService,
     accountAccessService: access.accountAccessService,
     accountInvitationService: access.accountInvitationService,
     workspaceSessionService: workspace.workspaceSessionService,

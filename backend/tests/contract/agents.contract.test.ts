@@ -2,6 +2,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
 import { RESPONSE_INTENT, REWRITE_TURN_KIND } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import { adminSessionHeaders, createTestApp, issueTestToken } from "../support/testApp.js";
 
@@ -134,6 +135,159 @@ describe("agents contract", () => {
         },
       })
       .expect(400);
+  });
+
+  it("persists manually added documents in selected source scope", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-manual-source-scope@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Manual policy",
+        content: "Manual document body",
+      })
+      .expect(202);
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Website policy",
+        content: "Website document body",
+        source: {
+          kind: "website",
+          url: "https://manual-scope.example/docs",
+        },
+      })
+      .expect(202);
+
+    const sources = await request(app)
+      .get("/api/v1/document/sources")
+      .set("Authorization", authorization)
+      .expect(200);
+    const websiteSourceId = sources.body.sources.find(
+      (source: { externalId?: string }) => source.externalId === "https://manual-scope.example/docs",
+    )?.id;
+    expect(websiteSourceId).toEqual(expect.any(String));
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({
+        name: "Manual scoped",
+        sourceScope: {
+          mode: "selected",
+          sourceIds: [MANUALLY_ADDED_DOCUMENTS_SOURCE_ID],
+        },
+      })
+      .expect(201);
+
+    expect(agent.body.sourceScope).toEqual({
+      mode: "selected",
+      sourceIds: [MANUALLY_ADDED_DOCUMENTS_SOURCE_ID],
+    });
+
+    const manualOnly = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(manualOnly.body.sourceScope).toEqual({
+      mode: "selected",
+      sourceIds: [MANUALLY_ADDED_DOCUMENTS_SOURCE_ID],
+    });
+
+    const mixed = await request(app)
+      .put(`/api/v1/agents/${agent.body.id}`)
+      .set("Authorization", authorization)
+      .send({
+        sourceScope: {
+          mode: "selected",
+          sourceIds: [MANUALLY_ADDED_DOCUMENTS_SOURCE_ID, websiteSourceId],
+        },
+      })
+      .expect(200);
+
+    expect(mixed.body.sourceScope).toEqual({
+      mode: "selected",
+      sourceIds: [MANUALLY_ADDED_DOCUMENTS_SOURCE_ID, websiteSourceId],
+    });
+
+    const persistedMixed = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(persistedMixed.body.sourceScope).toEqual({
+      mode: "selected",
+      sourceIds: [MANUALLY_ADDED_DOCUMENTS_SOURCE_ID, websiteSourceId],
+    });
+  });
+
+  it("persists branding privacy policy URL through agent update, GET, and public chat session", async () => {
+    const privacyPolicyUrl = "https://example.com/privacy";
+    const { app } = createTestApp();
+    const session = await issueTestToken(app, "agents-branding-round-trip@example.com");
+    const authorization = `Bearer ${session.token}`;
+
+    const list = await request(app)
+      .get("/api/v1/agents")
+      .set("Authorization", authorization)
+      .expect(200);
+    const agentId = list.body.agents[0].id as string;
+
+    const updated = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({
+        branding: {
+          hidePoweredBy: false,
+          privacyPolicyUrl,
+        },
+      })
+      .expect(200);
+    expect(updated.body.branding).toEqual({
+      hidePoweredBy: false,
+      privacyPolicyUrl,
+    });
+
+    const reloaded = await request(app)
+      .get(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .expect(200);
+    expect(reloaded.body.branding).toEqual({
+      hidePoweredBy: false,
+      privacyPolicyUrl,
+    });
+
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({ anonymousChatEnabled: true })
+      .expect(200);
+    const anonymousChatToken = new URL(settings.body.anonymousChatUrl).pathname.split("/").at(-1);
+    expect(anonymousChatToken).toBeTruthy();
+
+    const publicSession = await request(app)
+      .post(`/api/v1/public/chat/${anonymousChatToken}/sessions`)
+      .send({ channel: "anonymous_link" })
+      .expect(200);
+    expect(publicSession.body.branding).toEqual({
+      hidePoweredBy: false,
+      privacyPolicyUrl,
+    });
+
+    const historyList = await request(app)
+      .get(`/api/v1/public/chat/${anonymousChatToken}?limit=1`)
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken)
+      .expect(200);
+    expect(historyList.body.branding).toEqual({
+      hidePoweredBy: false,
+      privacyPolicyUrl,
+    });
   });
 
   it("limits assistant retrieval to the selected agent sources", async () => {

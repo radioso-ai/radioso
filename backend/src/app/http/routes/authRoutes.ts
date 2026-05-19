@@ -29,7 +29,34 @@ export const invitationAcceptSchema = z.object({
   password: z.string().min(8),
 });
 
-type AuthRouteDependencies = Pick<AppDependencies, "env" | "authService" | "abuseControlService" | "auditService">;
+export const passwordResetRequestSchema = z.object({
+  email: z.string().email(),
+});
+
+export const passwordResetConfirmSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8),
+  preferredWorkspaceId: z.string().uuid().optional(),
+  preferredAccountId: z.string().uuid().optional(),
+});
+
+export const emailVerificationVerifySchema = z.object({
+  token: z.string().min(1),
+});
+
+export const emailVerificationResendSchema = z.object({
+  email: z.string().email(),
+});
+
+type AuthRouteDependencies = Pick<
+  AppDependencies,
+  | "env"
+  | "authService"
+  | "passwordResetService"
+  | "emailVerificationService"
+  | "abuseControlService"
+  | "auditService"
+>;
 
 export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router => {
   const router = Router();
@@ -70,10 +97,53 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
       return `${tokenHash}:${source}`;
     },
   });
+  const passwordResetRequestRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "auth.password_reset.request",
+    limit: authLimit,
+    windowMs: authWindowMs,
+    resolveSubjectKey: (req) => {
+      const email = typeof req.body?.email === "string" ? req.body.email : null;
+      return email ? normalizeEmail(email) : String(req.ip ?? "unknown");
+    },
+  });
+  const passwordResetConfirmRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "auth.password_reset.confirm",
+    limit: authLimit,
+    windowMs: authWindowMs,
+    resolveSubjectKey: (req) => String(req.ip ?? "unknown"),
+  });
+  const emailVerificationResendRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "auth.email_verification.resend",
+    limit: authLimit,
+    windowMs: authWindowMs,
+    resolveSubjectKey: (req) => {
+      const email = typeof req.body?.email === "string" ? req.body.email : null;
+      return email ? normalizeEmail(email) : String(req.ip ?? "unknown");
+    },
+  });
+  const emailVerificationVerifyRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "auth.email_verification.verify",
+    limit: authLimit,
+    windowMs: authWindowMs,
+    resolveSubjectKey: (req) => String(req.ip ?? "unknown"),
+  });
   router.post("/register", validateBody(registerSchema), registerRateLimit, async (req, res, next) => {
     try {
       const result = await dependencies.authService.register({
         ...req.body,
+        requestIp: req.ip,
+        requestUserAgent: req.get("user-agent"),
+      });
+      await dependencies.emailVerificationService.resend({
+        email: req.body.email,
         requestIp: req.ip,
         requestUserAgent: req.get("user-agent"),
       });
@@ -87,6 +157,7 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
         workspaceId: result.workspaceId,
         workspaceName: result.workspaceName,
         workspacePublicRouteKey: result.workspacePublicRouteKey,
+        requiresEmailVerification: true,
       });
     } catch (error) {
       next(error);
@@ -141,6 +212,79 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
           workspaceName: result.workspaceName,
           workspacePublicRouteKey: result.workspacePublicRouteKey,
         });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/password-reset/request",
+    validateBody(passwordResetRequestSchema),
+    passwordResetRequestRateLimit,
+    async (req, res, next) => {
+      try {
+        const result = await dependencies.passwordResetService.requestReset({
+          email: req.body.email,
+          requestIp: req.ip,
+          requestUserAgent: req.get("user-agent"),
+        });
+        res.status(202).json(result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/password-reset/confirm",
+    validateBody(passwordResetConfirmSchema),
+    passwordResetConfirmRateLimit,
+    async (req, res, next) => {
+      try {
+        const result = await dependencies.passwordResetService.confirmReset(req.body);
+        res.setHeader("Set-Cookie", result.sessionCookie);
+        res.status(200).json({
+          userId: result.userId,
+          accountId: result.accountId,
+          email: result.email,
+          organizationName: result.organizationName,
+          workspaceId: result.workspaceId,
+          workspaceName: result.workspaceName,
+          workspacePublicRouteKey: result.workspacePublicRouteKey,
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/email-verification/verify",
+    validateBody(emailVerificationVerifySchema),
+    emailVerificationVerifyRateLimit,
+    async (req, res, next) => {
+      try {
+        const result = await dependencies.emailVerificationService.verify(req.body);
+        res.status(200).json(result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/email-verification/resend",
+    validateBody(emailVerificationResendSchema),
+    emailVerificationResendRateLimit,
+    async (req, res, next) => {
+      try {
+        const result = await dependencies.emailVerificationService.resend({
+          email: req.body.email,
+          requestIp: req.ip,
+          requestUserAgent: req.get("user-agent"),
+        });
+        res.status(202).json(result);
       } catch (error) {
         next(error);
       }

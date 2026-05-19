@@ -7,11 +7,11 @@ import {
 } from "./featureManifest.js";
 
 const baseManifest = (overrides: Partial<FeatureManifest> = {}): FeatureManifest => ({
-  id: "enterprise-auth",
-  name: "Enterprise Auth",
+  id: "enterprise-agent-wizard",
+  name: "Enterprise Agent Wizard",
   edition: "enterprise",
-  backendModuleId: "radioso-enterprise-auth",
-  apiNamespaces: ["/api/v1/ee/auth"],
+  backendModuleId: "radioso-enterprise-agent-wizard",
+  apiNamespaces: ["/api/v1/ee/agent-wizard"],
   docs: ["ee/readme.md"],
   ...overrides,
 });
@@ -44,28 +44,28 @@ describe("feature manifests", () => {
   it("rejects duplicate feature identifiers", () => {
     const result = validateFeatureManifests([
       baseManifest(),
-      baseManifest({ name: "Duplicate Enterprise Auth" }),
+      baseManifest({ name: "Duplicate Enterprise Agent Wizard" }),
     ], {
       existingDocs: new Set(["ee/readme.md"]),
     });
 
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain('Duplicate feature id "enterprise-auth"');
+    expect(result.errors).toContain('Duplicate feature id "enterprise-agent-wizard"');
   });
 
   it("rejects duplicate frontend route ownership", () => {
     const frontendRoutes = [{
-      relativePath: "app/reset-password/page.tsx",
-      packageName: "@radioso/enterprise-auth-frontend",
-      exportPath: "reset-password-page",
+      relativePath: "app/agents/wizard/page.tsx",
+      packageName: "@radioso/enterprise-agent-wizard-frontend",
+      exportPath: "wizard-page",
       exports: ["default"],
     }];
 
     const result = validateFeatureManifests([
       baseManifest({ frontendRoutes }),
       baseManifest({
-        id: "other-auth",
-        name: "Other Auth",
+        id: "other-agent-wizard",
+        name: "Other Agent Wizard",
         frontendRoutes,
       }),
     ], {
@@ -74,7 +74,7 @@ describe("feature manifests", () => {
 
     expect(result.valid).toBe(false);
     expect(result.errors).toContain(
-      'Frontend route "app/reset-password/page.tsx" is owned by multiple features',
+      'Frontend route "app/agents/wizard/page.tsx" is owned by multiple features',
     );
   });
 
@@ -83,13 +83,13 @@ describe("feature manifests", () => {
       baseManifest({
         frontendRoutes: [
           {
-            relativePath: "app/reset-password/page.tsx",
-            exportPath: "reset-password-page",
+            relativePath: "app/agents/wizard/page.tsx",
+            exportPath: "wizard-page",
             exports: ["default"],
           } as any,
           {
-            relativePath: "app/verify-email/page.tsx",
-            packageName: "@radioso/enterprise-auth-frontend",
+            relativePath: "app/agents/wizard/settings/page.tsx",
+            packageName: "@radioso/enterprise-agent-wizard-frontend",
             exports: ["default"],
           } as any,
         ],
@@ -100,10 +100,10 @@ describe("feature manifests", () => {
 
     expect(result.valid).toBe(false);
     expect(result.errors).toContain(
-      'Enterprise feature "enterprise-auth" route "app/reset-password/page.tsx" must declare packageName',
+      'Enterprise feature "enterprise-agent-wizard" route "app/agents/wizard/page.tsx" must declare packageName',
     );
     expect(result.errors).toContain(
-      'Feature "enterprise-auth" route "app/verify-email/page.tsx" must declare exportPath',
+      'Feature "enterprise-agent-wizard" route "app/agents/wizard/settings/page.tsx" must declare exportPath',
     );
   });
 
@@ -115,14 +115,14 @@ describe("feature manifests", () => {
     });
 
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain('Feature "enterprise-auth" references missing doc "ee/missing.md"');
+    expect(result.errors).toContain('Feature "enterprise-agent-wizard" references missing doc "ee/missing.md"');
   });
 
   it("collects frontend route contributions in feature order", () => {
     const route = {
-      relativePath: "app/verify-email/page.tsx",
-      packageName: "@radioso/enterprise-auth-frontend",
-      exportPath: "verify-email-page",
+      relativePath: "app/agents/wizard/page.tsx",
+      packageName: "@radioso/enterprise-agent-wizard-frontend",
+      exportPath: "wizard-page",
       exports: ["default"],
     };
 

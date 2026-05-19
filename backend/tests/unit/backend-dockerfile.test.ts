@@ -19,6 +19,14 @@ describe("backend Dockerfile", () => {
 });
 
 describe("frontend Dockerfiles", () => {
+  it("includes the enterprise workspace manifest for Cloud Run frontend builds", async () => {
+    const repoRoot = path.resolve(new URL("../../..", import.meta.url).pathname);
+    const dockerfile = await readFile(path.join(repoRoot, "infra/frontend.Dockerfile"), "utf8");
+
+    expect(dockerfile).toContain("COPY ee/package.json ./ee/package.json");
+    expect(dockerfile).toContain("RUN pnpm --dir frontend run build");
+  });
+
   it("include shared UI workspace inputs for isolated frontend builds", async () => {
     const repoRoot = path.resolve(new URL("../../..", import.meta.url).pathname);
     const dockerfile = await readFile(path.join(repoRoot, "frontend/Dockerfile"), "utf8");

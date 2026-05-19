@@ -30,6 +30,7 @@ ARG RADIOSO_EDITION=oss
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json ./frontend/package.json
 COPY packages/ui/package.json ./packages/ui/package.json
+COPY ee/package.json ./ee/package.json
 COPY --from=ee-frontend-build /app/ee/packages/auth-frontend ./ee/packages/auth-frontend
 COPY --from=ee-frontend-build /app/ee/packages/agent-wizard-frontend ./ee/packages/agent-wizard-frontend
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \

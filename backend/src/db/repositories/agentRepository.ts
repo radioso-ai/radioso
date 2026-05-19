@@ -15,6 +15,7 @@ import {
   type AgentSurfacePosition,
   type NormalizedAgentInput,
 } from "../../modules/agents/public.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
 
 interface AgentRow {
   id: string;
@@ -38,7 +39,10 @@ const agentColumns = `
   source_scope_mode,
   COALESCE(
     (
-      SELECT ARRAY_AGG(source_id::text ORDER BY source_id::text)
+      SELECT ARRAY_AGG(
+        COALESCE(source_id::text, '${MANUALLY_ADDED_DOCUMENTS_SOURCE_ID}')
+        ORDER BY source_id IS NOT NULL, source_id::text
+      )
       FROM agent_document_sources
       WHERE agent_id = agents.id
     ),
@@ -125,6 +129,11 @@ const toOutputModes = (agent: NormalizedAgentInput): Record<string, unknown> => 
   },
   extensions: agent.surfaceSettings.extensions,
 });
+
+const persistableSourceIds = (sourceScope: NormalizedAgentInput["sourceScope"]): Array<string | null> =>
+  sourceScope.mode === "selected"
+    ? sourceScope.sourceIds.map((sourceId) => sourceId === MANUALLY_ADDED_DOCUMENTS_SOURCE_ID ? null : sourceId)
+    : [];
 
 const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegistry): AgentRecord => {
   const behavior = asRecord(row.behavior_settings);
@@ -384,14 +393,15 @@ export class AgentRepository implements AgentRepositoryPort {
        WHERE agent_id = $1`,
       [agentId],
     );
-    if (sourceScope.mode !== "selected" || sourceScope.sourceIds.length === 0) {
+    const sourceIds = persistableSourceIds(sourceScope);
+    if (sourceScope.mode !== "selected" || sourceIds.length === 0) {
       return;
     }
     await client.query(
       `INSERT INTO agent_document_sources (agent_id, source_id)
        SELECT $1::uuid, UNNEST($2::uuid[])
        ON CONFLICT DO NOTHING`,
-      [agentId, sourceScope.sourceIds],
+      [agentId, sourceIds],
     );
   }
 }

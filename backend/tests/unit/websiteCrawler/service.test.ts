@@ -878,6 +878,77 @@ describe("website crawler service", () => {
     });
   });
 
+  it("logs but does not fail when best-effort reaping fails", async () => {
+    const ingest = vi.fn().mockResolvedValueOnce({ documentId: "doc-1", status: "queued" });
+    const resolveSource = vi.fn().mockResolvedValue({ id: "source-1" });
+    const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
+    const reapMissingPages = vi.fn().mockRejectedValue(new Error("delete failed"));
+    const logger = { warn: vi.fn() };
+
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([
+        {
+          sourceUrl: "https://example.com/a",
+          canonicalUrl: "https://example.com/a",
+          title: "A",
+          content: "alpha",
+          metadata: { statusCode: 200 },
+        },
+      ]),
+      documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
+      auditService: { record: vi.fn() },
+      logger,
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    const result = await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 5,
+    });
+
+    expect(result.accepted).toBe(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "website-crawler",
+        workspaceId: "workspace-1",
+        sourceId: "source-1",
+        error: "delete failed",
+      }),
+      "Failed to reap missing website pages after crawl",
+    );
+  });
+
+  it("skips reaping when a successful crawl may have stopped at the page limit", async () => {
+    const ingest = vi.fn().mockResolvedValueOnce({ documentId: "doc-1", status: "queued" });
+    const resolveSource = vi.fn().mockResolvedValue({ id: "source-1" });
+    const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
+    const reapMissingPages = vi.fn();
+
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([
+        {
+          sourceUrl: "https://example.com/a",
+          canonicalUrl: "https://example.com/a",
+          title: "A",
+          content: "alpha",
+          metadata: { statusCode: 200 },
+        },
+      ]),
+      documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 1,
+    });
+
+    expect(reapMissingPages).not.toHaveBeenCalled();
+  });
+
   it("skips reaping when the crawl resumed from a checkpoint", async () => {
     const ingest = vi.fn().mockResolvedValueOnce({ documentId: "doc-1", status: "queued" });
     const resolveSource = vi.fn().mockResolvedValue({ id: "source-2" });

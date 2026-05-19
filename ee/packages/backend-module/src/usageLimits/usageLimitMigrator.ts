@@ -152,6 +152,71 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
     `);
 
     await database.query(`
+      CREATE INDEX IF NOT EXISTS idx_ee_usage_events_workspace_occurred_at
+        ON ee_usage_events (workspace_id, occurred_at)
+    `);
+
+    await database.query(`
+      CREATE INDEX IF NOT EXISTS idx_ee_usage_events_conversation_id
+        ON ee_usage_events (conversation_id)
+        WHERE conversation_id IS NOT NULL
+    `);
+
+    await database.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_events_account_id_fkey'
+        ) THEN
+          ALTER TABLE ee_usage_events
+          ADD CONSTRAINT ee_usage_events_account_id_fkey
+          FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+          NOT VALID;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_events_workspace_id_fkey'
+        ) THEN
+          ALTER TABLE ee_usage_events
+          ADD CONSTRAINT ee_usage_events_workspace_id_fkey
+          FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+          NOT VALID;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_events_source_id_fkey'
+        ) THEN
+          ALTER TABLE ee_usage_events
+          ADD CONSTRAINT ee_usage_events_source_id_fkey
+          FOREIGN KEY (source_id) REFERENCES document_sources(id) ON DELETE SET NULL
+          NOT VALID;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_events_document_id_fkey'
+        ) THEN
+          ALTER TABLE ee_usage_events
+          ADD CONSTRAINT ee_usage_events_document_id_fkey
+          FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE SET NULL
+          NOT VALID;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_events_conversation_id_fkey'
+        ) THEN
+          ALTER TABLE ee_usage_events
+          ADD CONSTRAINT ee_usage_events_conversation_id_fkey
+          FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+          NOT VALID;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_events_message_id_fkey'
+        ) THEN
+          ALTER TABLE ee_usage_events
+          ADD CONSTRAINT ee_usage_events_message_id_fkey
+          FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE SET NULL
+          NOT VALID;
+        END IF;
+      END $$;
+    `);
+
+    await database.query(`
       CREATE TABLE IF NOT EXISTS ee_embedding_usage_items (
         usage_event_id UUID NOT NULL REFERENCES ee_usage_events(id) ON DELETE CASCADE,
         document_id UUID NOT NULL,
@@ -179,6 +244,20 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
         vector_count BIGINT NOT NULL DEFAULT 0,
         PRIMARY KEY (account_id, usage_date, operation, provider, model)
       )
+    `);
+
+    await database.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_daily_rollups_account_id_fkey'
+        ) THEN
+          ALTER TABLE ee_usage_daily_rollups
+          ADD CONSTRAINT ee_usage_daily_rollups_account_id_fkey
+          FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+          NOT VALID;
+        END IF;
+      END $$;
     `);
 
     await database.query(`

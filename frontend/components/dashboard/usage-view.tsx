@@ -8,6 +8,7 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { enterpriseUsageApi, workspaceApi, type AccountUsageSummary, type WorkspaceSummaryResponse } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { editionController } from '@/lib/edition-controller'
+import { formatBytes } from '@/lib/format-bytes'
 
 const numberFormatter = new Intl.NumberFormat()
 
@@ -20,18 +21,6 @@ const formatDate = (value: string) => (
     year: 'numeric',
   }).format(new Date(value))
 )
-
-const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
-
-const formatBytes = (value: number) => {
-  if (!Number.isFinite(value) || value <= 0) {
-    return '0 B'
-  }
-  const exponent = Math.min(BYTE_UNITS.length - 1, Math.floor(Math.log(value) / Math.log(1024)))
-  const scaled = value / Math.pow(1024, exponent)
-  const formatted = exponent === 0 ? scaled.toFixed(0) : scaled.toFixed(scaled >= 10 ? 0 : 1)
-  return `${formatted} ${BYTE_UNITS[exponent]}`
-}
 
 const formatUsageLimit = (value: number | null) => (value === null ? 'Unlimited' : formatCount(value))
 const formatByteLimit = (value: number | null) => (value === null ? 'Unlimited' : formatBytes(value))

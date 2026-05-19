@@ -29,11 +29,20 @@ export interface DocumentRow {
   source_storage_bucket: string | null;
   source_storage_object: string | null;
   source_storage_generation: string | null;
-  source_size_bytes: number | null;
-  content_size_bytes: number | null;
+  // BIGINT columns arrive as strings from node-postgres unless a type parser is registered.
+  source_size_bytes: number | string | null;
+  content_size_bytes: number | string | null;
   content_hash: string | null;
-  content_size?: number | null;
+  content_size?: number | string | null;
 }
+
+const coerceByteCount = (value: number | string | null | undefined): number | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 export const documentSelect = `
   id,
@@ -124,8 +133,8 @@ export const mapDocument = (row: DocumentRow): DocumentRecord => ({
   sourceStorageBucket: row.source_storage_bucket,
   sourceStorageObject: row.source_storage_object,
   sourceStorageGeneration: row.source_storage_generation,
-  sourceSizeBytes: row.source_size_bytes,
-  contentSizeBytes: row.content_size_bytes,
+  sourceSizeBytes: coerceByteCount(row.source_size_bytes),
+  contentSizeBytes: coerceByteCount(row.content_size_bytes),
   contentHash: row.content_hash,
 });
 
@@ -147,9 +156,9 @@ export const mapDocumentSummary = (row: DocumentRow): DocumentSummaryRecord => (
   sourceStorageBucket: row.source_storage_bucket,
   sourceStorageObject: row.source_storage_object,
   sourceStorageGeneration: row.source_storage_generation,
-  sourceSizeBytes: row.source_size_bytes,
-  contentSizeBytes: row.content_size_bytes,
-  contentSize: row.content_size ?? row.content_size_bytes ?? row.source_size_bytes ?? null,
+  sourceSizeBytes: coerceByteCount(row.source_size_bytes),
+  contentSizeBytes: coerceByteCount(row.content_size_bytes),
+  contentSize: coerceByteCount(row.content_size ?? row.content_size_bytes ?? row.source_size_bytes),
 });
 
 const mapDocumentSourceSummary = (value: DocumentSourceSummary | null): DocumentSourceSummary | null => {

@@ -297,6 +297,7 @@ export const buildDocumentServices = (input: {
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   embeddingService: EmbeddingService;
+  llmRegistry: LlmProviderRegistry;
   workspaceIngestionReprocessService?: WorkspaceIngestionReprocessService;
 }) => {
   const {
@@ -312,6 +313,7 @@ export const buildDocumentServices = (input: {
     usageLimitPolicy,
     usageEventRecorder,
     embeddingService,
+    llmRegistry,
   } = input;
   const documentStorage = composition.documentStorage ?? createDefaultDocumentStorage(env);
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
@@ -333,6 +335,12 @@ export const buildDocumentServices = (input: {
     documentSourceContentService,
     logger,
     usageEventRecorder,
+    {
+      identifyForModel(model: string) {
+        const metadata = llmRegistry.identifyEmbeddingModel(model);
+        return { provider: metadata.provider, model: metadata.model };
+      },
+    },
   );
   const documentIngestionService = new DocumentIngestionService(
     repositories.documentRepository,

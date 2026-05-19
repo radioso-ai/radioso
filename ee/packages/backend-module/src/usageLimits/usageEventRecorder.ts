@@ -5,6 +5,19 @@ import type {
   UsageLimitDatabasePort,
 } from "../radiosoModuleTypes.js";
 
+export interface TransactionalUsageEventDatabasePort extends UsageLimitDatabasePort {
+  withTransaction<T>(callback: (client: UsageLimitDatabaseClient) => Promise<T>): Promise<T>;
+}
+
+export const requireTransactionalUsageEventDatabase = (
+  database: UsageLimitDatabasePort,
+): TransactionalUsageEventDatabasePort => {
+  if (!database.withTransaction) {
+    throw new Error("Usage event recording requires transactional database support");
+  }
+  return database as TransactionalUsageEventDatabasePort;
+};
+
 export type UsageEventStatus = "succeeded" | "failed";
 export type UsageEventQuality = "actual" | "estimated";
 
@@ -85,7 +98,7 @@ const resolveAccountId = async (
 };
 
 export class EnterpriseUsageEventRecorder {
-  constructor(private readonly database: UsageLimitDatabasePort) {}
+  constructor(private readonly database: TransactionalUsageEventDatabasePort) {}
 
   async recordEmbedding(event: EmbeddingUsageEvent): Promise<void> {
     const accountId = await resolveAccountId(this.database, {
@@ -97,9 +110,10 @@ export class EnterpriseUsageEventRecorder {
       (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
     const eventId = randomUUID();
 
-    const inserted = await queryRows<{ id: string }>(
-      this.database,
-      `INSERT INTO ee_usage_events (
+    await this.withTransaction(async (client) => {
+      const inserted = await queryRows<{ id: string }>(
+        client,
+        `INSERT INTO ee_usage_events (
          id,
          idempotency_key,
          account_id,
@@ -127,40 +141,90 @@ export class EnterpriseUsageEventRecorder {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'embedding', 'embedding', $9, $10, $11, $12, $13, $14, 0, $15, $16, $17, $18, $19, $20::timestamptz)
        ON CONFLICT (idempotency_key) DO NOTHING
        RETURNING id`,
-      [
-        eventId,
-        event.idempotencyKey,
-        accountId,
-        event.workspaceId,
-        event.sourceId ?? null,
-        event.documentId,
-        event.documentRevision,
-        event.jobId ?? null,
-        event.provider,
-        event.model,
-        event.inputTokens ?? 0,
-        event.outputTokens ?? 0,
-        totalTokens,
-        event.inputBytes,
-        event.vectorCount,
-        event.status,
-        event.usageQuality,
-        event.providerRequestId ?? null,
-        event.errorCode ?? null,
-        occurredAt.toISOString(),
-      ],
-    );
+        [
+          eventId,
+          event.idempotencyKey,
+          accountId,
+          event.workspaceId,
+          event.sourceId ?? null,
+          event.documentId,
+          event.documentRevision,
+          event.jobId ?? null,
+          event.provider,
+          event.model,
+          event.inputTokens ?? 0,
+          event.outputTokens ?? 0,
+          totalTokens,
+          event.inputBytes,
+          event.vectorCount,
+          event.status,
+          event.usageQuality,
+          event.providerRequestId ?? null,
+          event.errorCode ?? null,
+          occurredAt.toISOString(),
+        ],
+      );
 
-    if (inserted.length === 0) {
-      return;
-    }
-    const insertedId = inserted[0].id;
+      if (inserted.length === 0) {
+        return;
+      }
+      const insertedId = inserted[0].id;
 
-    if (event.chunks && event.chunks.length > 0) {
-      for (const chunk of event.chunks) {
-        await queryRows(
-          this.database,
-          `INSERT INTO ee_embedding_usage_items (
+      if (event.chunks && event.chunks.length > 0) {
+        await this.insertEmbeddingItems(client, {
+          usageEventId: insertedId,
+          documentId: event.documentId,
+          documentRevision: event.documentRevision,
+          chunks: event.chunks,
+        });
+      }
+
+      if (accountId && event.status === "succeeded") {
+        await this.upsertDailyRollup(client, accountId, occurredAt, {
+          operation: "embedding",
+          provider: event.provider,
+          model: event.model,
+          inputTokens: event.inputTokens ?? 0,
+          outputTokens: event.outputTokens ?? 0,
+          totalTokens,
+          inputBytes: event.inputBytes,
+          outputBytes: 0,
+          vectorCount: event.vectorCount,
+        });
+      }
+    });
+  }
+
+  private async insertEmbeddingItems(
+    client: UsageLimitDatabaseClient,
+    input: {
+      usageEventId: string;
+      documentId: string;
+      documentRevision: number;
+      chunks: NonNullable<EmbeddingUsageEvent["chunks"]>;
+    },
+  ): Promise<void> {
+    const valuePlaceholders: string[] = [];
+    const params: unknown[] = [];
+    input.chunks.forEach((chunk, index) => {
+      const offset = index * 7;
+      valuePlaceholders.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7})`,
+      );
+      params.push(
+        input.usageEventId,
+        input.documentId,
+        input.documentRevision,
+        chunk.chunkId ?? null,
+        chunk.chunkIndex,
+        chunk.contentBytes,
+        chunk.estimatedTokens ?? null,
+      );
+    });
+
+    await queryRows(
+      client,
+      `INSERT INTO ee_embedding_usage_items (
              usage_event_id,
              document_id,
              document_revision,
@@ -169,34 +233,10 @@ export class EnterpriseUsageEventRecorder {
              content_bytes,
              estimated_tokens
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT DO NOTHING`,
-          [
-            insertedId,
-            event.documentId,
-            event.documentRevision,
-            chunk.chunkId ?? null,
-            chunk.chunkIndex,
-            chunk.contentBytes,
-            chunk.estimatedTokens ?? null,
-          ],
-        );
-      }
-    }
-
-    if (accountId) {
-      await this.upsertDailyRollup(accountId, occurredAt, {
-        operation: "embedding",
-        provider: event.provider,
-        model: event.model,
-        inputTokens: event.inputTokens ?? 0,
-        outputTokens: event.outputTokens ?? 0,
-        totalTokens,
-        inputBytes: event.inputBytes,
-        outputBytes: 0,
-        vectorCount: event.vectorCount,
-      });
-    }
+       VALUES ${valuePlaceholders.join(", ")}
+       ON CONFLICT DO NOTHING`,
+      params,
+    );
   }
 
   async recordModelCall(event: ModelUsageEvent): Promise<void> {
@@ -208,9 +248,10 @@ export class EnterpriseUsageEventRecorder {
     const totalTokens = event.totalTokens ?? ((event.inputTokens ?? 0) + (event.outputTokens ?? 0));
     const eventId = randomUUID();
 
-    const inserted = await queryRows<{ id: string }>(
-      this.database,
-      `INSERT INTO ee_usage_events (
+    await this.withTransaction(async (client) => {
+      const inserted = await queryRows<{ id: string }>(
+        client,
+        `INSERT INTO ee_usage_events (
          id,
          idempotency_key,
          account_id,
@@ -236,50 +277,52 @@ export class EnterpriseUsageEventRecorder {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 0, $16, $17, $18, $19, $20::timestamptz)
        ON CONFLICT (idempotency_key) DO NOTHING
        RETURNING id`,
-      [
-        eventId,
-        event.idempotencyKey,
-        accountId,
-        event.workspaceId,
-        event.conversationId ?? null,
-        event.messageId ?? null,
-        event.surface,
-        event.operation,
-        event.provider,
-        event.model,
-        event.inputTokens ?? 0,
-        event.outputTokens ?? 0,
-        totalTokens,
-        event.inputBytes ?? 0,
-        event.outputBytes ?? 0,
-        event.status,
-        event.usageQuality,
-        event.providerRequestId ?? null,
-        event.errorCode ?? null,
-        occurredAt.toISOString(),
-      ],
-    );
+        [
+          eventId,
+          event.idempotencyKey,
+          accountId,
+          event.workspaceId,
+          event.conversationId ?? null,
+          event.messageId ?? null,
+          event.surface,
+          event.operation,
+          event.provider,
+          event.model,
+          event.inputTokens ?? 0,
+          event.outputTokens ?? 0,
+          totalTokens,
+          event.inputBytes ?? 0,
+          event.outputBytes ?? 0,
+          event.status,
+          event.usageQuality,
+          event.providerRequestId ?? null,
+          event.errorCode ?? null,
+          occurredAt.toISOString(),
+        ],
+      );
 
-    if (inserted.length === 0) {
-      return;
-    }
+      if (inserted.length === 0) {
+        return;
+      }
 
-    if (accountId) {
-      await this.upsertDailyRollup(accountId, occurredAt, {
-        operation: event.operation,
-        provider: event.provider,
-        model: event.model,
-        inputTokens: event.inputTokens ?? 0,
-        outputTokens: event.outputTokens ?? 0,
-        totalTokens,
-        inputBytes: event.inputBytes ?? 0,
-        outputBytes: event.outputBytes ?? 0,
-        vectorCount: 0,
-      });
-    }
+      if (accountId && event.status === "succeeded") {
+        await this.upsertDailyRollup(client, accountId, occurredAt, {
+          operation: event.operation,
+          provider: event.provider,
+          model: event.model,
+          inputTokens: event.inputTokens ?? 0,
+          outputTokens: event.outputTokens ?? 0,
+          totalTokens,
+          inputBytes: event.inputBytes ?? 0,
+          outputBytes: event.outputBytes ?? 0,
+          vectorCount: 0,
+        });
+      }
+    });
   }
 
   private async upsertDailyRollup(
+    client: UsageLimitDatabaseClient,
     accountId: string,
     occurredAt: Date,
     deltas: {
@@ -295,7 +338,7 @@ export class EnterpriseUsageEventRecorder {
     },
   ): Promise<void> {
     await queryRows(
-      this.database,
+      client,
       `INSERT INTO ee_usage_daily_rollups (
          account_id,
          usage_date,
@@ -332,5 +375,9 @@ export class EnterpriseUsageEventRecorder {
         deltas.vectorCount,
       ],
     );
+  }
+
+  private async withTransaction<T>(callback: (client: UsageLimitDatabaseClient) => Promise<T>): Promise<T> {
+    return this.database.withTransaction(callback);
   }
 }

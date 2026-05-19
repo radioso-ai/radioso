@@ -723,12 +723,13 @@ export class DocumentRepository implements DocumentRepositoryPort {
     contentSizeBytes: number | null;
     contentHash: string | null;
   } | null> {
-    const sourceFilter = input.sourceId === undefined || input.sourceId === null
+    const sourceId = input.sourceId ?? null;
+    const sourceFilter = sourceId === null
       ? "source_id IS NULL"
       : "source_id = $3";
     const params: unknown[] = [input.workspaceId, input.externalDocumentId];
-    if (input.sourceId) {
-      params.push(input.sourceId);
+    if (sourceId !== null) {
+      params.push(sourceId);
     }
 
     const [row] = await this.database.query<{
@@ -742,6 +743,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
        WHERE workspace_id = $1
          AND external_document_id = $2
          AND ${sourceFilter}
+         AND status <> 'failed'
        LIMIT 1`,
       params,
     );

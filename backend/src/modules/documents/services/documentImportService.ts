@@ -93,19 +93,6 @@ export class DocumentImportService {
         throw error;
       }
 
-      storageReservation = await this.usageLimitPolicy.reserveIndexedStorage({
-        accountId: input.accountId,
-        workspaceId: input.workspaceId,
-        contentSizeBytes: input.buffer.length,
-        sourceKind: "uploaded_file",
-      });
-      monthlyReservation = await this.usageLimitPolicy.reserveMonthlyIndexedContent({
-        accountId: input.accountId,
-        workspaceId: input.workspaceId,
-        contentSizeBytes: input.buffer.length,
-        sourceKind: "uploaded_file",
-      });
-
       const storageDocumentId = randomUUID();
       storedObject = await this.storage.upload({
         workspaceId: input.workspaceId,
@@ -113,6 +100,20 @@ export class DocumentImportService {
         filename: input.filename,
         mimeType: input.mimeType,
         buffer: input.buffer,
+      });
+      // Stored object size is authoritative for uploaded-file storage metering;
+      // adapters may transform payloads before persistence.
+      storageReservation = await this.usageLimitPolicy.reserveIndexedStorage({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        contentSizeBytes: storedObject.sizeBytes,
+        sourceKind: "uploaded_file",
+      });
+      monthlyReservation = await this.usageLimitPolicy.reserveMonthlyIndexedContent({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        contentSizeBytes: storedObject.sizeBytes,
+        sourceKind: "uploaded_file",
       });
       const title = input.title?.trim() || deriveTitleFromFilename(input.filename) || "Imported document";
       const source = await this.resolveUploadSource(input.workspaceId);

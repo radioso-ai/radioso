@@ -312,16 +312,16 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       return noopReservation;
     }
 
-    const profile = await this.findProfileForAccount(accountId);
-    const limit = profile?.monthlyIndexedByteLimit;
-    if (!profile || typeof limit !== "number") {
-      return noopReservation;
-    }
-
     const requestedBytes = Math.max(0, Math.floor(input.contentSizeBytes ?? 0));
     if (requestedBytes === 0) {
       return noopReservation;
     }
+
+    const profile = await this.findProfileForAccount(accountId);
+    const limit = profile?.monthlyIndexedByteLimit;
+    const enforcement = profile && typeof limit === "number"
+      ? { profileKey: profile.key, limit }
+      : null;
 
     const periodStart = currentPeriodStart();
     await queryRows(
@@ -332,24 +332,35 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       [accountId, periodStart],
     );
 
-    const rows = await queryRows<{ used_bytes: string | number }>(
-      this.database,
-      `UPDATE ee_usage_limit_monthly_indexed_byte_counters
-       SET used_bytes = used_bytes + $3,
-           updated_at = NOW()
-       WHERE account_id = $1
-         AND period_start = $2::date
-         AND used_bytes + $3 <= $4
-       RETURNING used_bytes`,
-      [accountId, periodStart, requestedBytes, limit],
-    );
+    const rows = enforcement
+      ? await queryRows<{ used_bytes: string | number }>(
+          this.database,
+          `UPDATE ee_usage_limit_monthly_indexed_byte_counters
+           SET used_bytes = used_bytes + $3,
+               updated_at = NOW()
+           WHERE account_id = $1
+             AND period_start = $2::date
+             AND used_bytes + $3 <= $4
+           RETURNING used_bytes`,
+          [accountId, periodStart, requestedBytes, enforcement.limit],
+        )
+      : await queryRows<{ used_bytes: string | number }>(
+          this.database,
+          `UPDATE ee_usage_limit_monthly_indexed_byte_counters
+           SET used_bytes = used_bytes + $3,
+               updated_at = NOW()
+           WHERE account_id = $1
+             AND period_start = $2::date
+           RETURNING used_bytes`,
+          [accountId, periodStart, requestedBytes],
+        );
 
-    if (rows.length === 0) {
+    if (enforcement && rows.length === 0) {
       const used = await this.readMonthlyIndexedBytes(accountId, periodStart);
       throw new UsageLimitExceededError({
-        profileKey: profile.key,
+        profileKey: enforcement.profileKey,
         resource: "monthly_indexed_bytes",
-        limit,
+        limit: enforcement.limit,
         used,
         periodStart,
         resetAt: nextPeriodStart(periodStart),

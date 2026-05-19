@@ -3,7 +3,7 @@ import type { ApplicationModule } from "../radiosoModuleTypes.js";
 import { usageLimitMigrator } from "./usageLimitMigrator.js";
 import { createUsageLimitRoutes } from "./usageLimitRoutes.js";
 import { EnterpriseUsageLimitService } from "./usageLimitService.js";
-import { EnterpriseUsageEventRecorder } from "./usageEventRecorder.js";
+import { EnterpriseUsageEventRecorder, requireTransactionalUsageEventDatabase } from "./usageEventRecorder.js";
 
 const STARTER_PROFILE_KEY = "starter_100";
 
@@ -16,7 +16,7 @@ export const createUsageLimitsApplicationModule = (): ApplicationModule => ({
       return new EnterpriseUsageLimitService(database);
     });
     context.registerUsageEventRecorder?.(({ database }) => {
-      return new EnterpriseUsageEventRecorder(database);
+      return new EnterpriseUsageEventRecorder(requireTransactionalUsageEventDatabase(database));
     });
     context.registerAccountCreatedHandler(async ({ accountId, database }) => {
       const resolvedService = new EnterpriseUsageLimitService(database);

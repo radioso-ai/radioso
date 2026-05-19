@@ -1844,6 +1844,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     const match = [...this.items.values()].find((doc) =>
       doc.workspaceId === input.workspaceId &&
       doc.externalDocumentId === input.externalDocumentId &&
+      doc.status !== "failed" &&
       (sourceId === null ? !doc.sourceId : doc.sourceId === sourceId),
     );
     if (!match) {

@@ -17,6 +17,7 @@ import {
   type WebsiteCrawlCheckpoint,
   type WebsiteCrawlPolicy,
 } from "./policy.js";
+import type { AppLogger } from "../../shared/observability/logger.js";
 
 // Pages exceeding this character count are skipped during ingestion to avoid
 // embedding auto-generated dumps, log outputs, or other oversized content that
@@ -86,6 +87,7 @@ export class WebsiteCrawlerService {
     provider: WebsiteCrawlerProvider;
     documentIngestionService: WebsiteCrawlerDocumentIngestionPort;
     auditService?: WebsiteCrawlerAuditPort;
+    logger?: Pick<AppLogger, "warn">;
     assertCrawlUrlAllowed?: (url: string) => Promise<void>;
   }) {}
 
@@ -399,7 +401,10 @@ export class WebsiteCrawlerService {
       const isFullSuccessfulCrawl =
         !input.checkpoint &&
         result.failed === 0 &&
-        result.status === "completed";
+        result.status === "completed" &&
+        // Until providers expose an explicit frontier-exhausted signal, exact
+        // limit-sized crawls are treated as possibly capped and do not reap.
+        result.accepted + result.skipped + result.failed < input.limit;
       if (isFullSuccessfulCrawl && this.dependencies.documentIngestionService.reapMissingPages) {
         try {
           await this.dependencies.documentIngestionService.reapMissingPages({
@@ -407,7 +412,17 @@ export class WebsiteCrawlerService {
             sourceId: documentSource.id,
             keepExternalDocumentIds: result.documents.map((document) => document.externalDocumentId),
           });
-        } catch {
+        } catch (error) {
+          this.dependencies.logger?.warn(
+            {
+              role: "website-crawler",
+              workspaceId: input.workspaceId,
+              sourceId: documentSource.id,
+              requestedUrl: safeWebsiteBaseUrl,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "Failed to reap missing website pages after crawl",
+          );
           // Reaping is best-effort cleanup; the crawl itself succeeded.
         }
       }

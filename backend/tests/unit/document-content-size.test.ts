@@ -4,6 +4,7 @@ import { DocumentIngestionService } from "../../src/modules/documents/services/d
 import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
 import type {
   IndexedStorageReservationInput,
+  MonthlyIndexedContentReservationInput,
   UsageLimitPolicy,
   UsageLimitReservation,
 } from "../../src/shared/domain/usageLimitPolicy.js";
@@ -16,8 +17,11 @@ import {
 
 class RecordingUsageLimitPolicy implements UsageLimitPolicy {
   readonly indexedStorageCalls: IndexedStorageReservationInput[] = [];
+  readonly monthlyIndexedContentCalls: MonthlyIndexedContentReservationInput[] = [];
   readonly storageCommits: number[] = [];
   readonly storageReleases: number[] = [];
+  readonly monthlyCommits: number[] = [];
+  readonly monthlyReleases: number[] = [];
   failIndexedStorage = false;
 
   async reserveAnswer(): Promise<UsageLimitReservation> {
@@ -49,8 +53,17 @@ class RecordingUsageLimitPolicy implements UsageLimitPolicy {
     };
   }
 
-  async reserveMonthlyIndexedContent(): Promise<UsageLimitReservation> {
-    return noopReservation;
+  async reserveMonthlyIndexedContent(input: MonthlyIndexedContentReservationInput): Promise<UsageLimitReservation> {
+    const callIndex = this.monthlyIndexedContentCalls.length;
+    this.monthlyIndexedContentCalls.push(input);
+    return {
+      commit: async () => {
+        this.monthlyCommits.push(callIndex);
+      },
+      release: async () => {
+        this.monthlyReleases.push(callIndex);
+      },
+    };
   }
 }
 
@@ -92,9 +105,106 @@ describe("document content size accounting", () => {
     }));
     expect(policy.storageCommits).toEqual([0]);
     expect(policy.storageReleases).toEqual([]);
+    expect(policy.monthlyIndexedContentCalls[0]).toEqual(expect.objectContaining({
+      contentSizeBytes: expectedBytes,
+    }));
+    expect(policy.monthlyCommits).toEqual([0]);
 
     const persisted = await documentRepository.findByIdAndWorkspaceId(response.documentId, "workspace-1");
     expect(persisted?.contentSizeBytes).toBe(expectedBytes);
+  });
+
+  it("updates inline documents with new byte accounting and reservations", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const policy = new RecordingUsageLimitPolicy();
+    const service = new DocumentIngestionService(
+      documentRepository,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      policy,
+    );
+
+    const created = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Inline doc",
+      content: "small",
+    });
+    policy.indexedStorageCalls.length = 0;
+    policy.monthlyIndexedContentCalls.length = 0;
+    policy.storageCommits.length = 0;
+    policy.monthlyCommits.length = 0;
+
+    await service.update({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      documentId: created.documentId,
+      title: "Inline doc",
+      content: "larger body",
+    });
+
+    const oldBytes = Buffer.byteLength("small", "utf8");
+    const newBytes = Buffer.byteLength("larger body", "utf8");
+    expect(policy.indexedStorageCalls).toHaveLength(1);
+    expect(policy.indexedStorageCalls[0]).toEqual(expect.objectContaining({
+      accountId: "account-1",
+      contentSizeBytes: newBytes - oldBytes,
+    }));
+    expect(policy.monthlyIndexedContentCalls[0]).toEqual(expect.objectContaining({
+      accountId: "account-1",
+      contentSizeBytes: newBytes,
+    }));
+    expect(policy.storageCommits).toEqual([0]);
+    expect(policy.monthlyCommits).toEqual([0]);
+
+    const persisted = await documentRepository.findByIdAndWorkspaceId(created.documentId, "workspace-1");
+    expect(persisted?.contentSizeBytes).toBe(newBytes);
+    expect(persisted?.contentHash).toBeTruthy();
+  });
+
+  it("does not charge monthly indexed bytes for unchanged inline body content", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const policy = new RecordingUsageLimitPolicy();
+    const service = new DocumentIngestionService(
+      documentRepository,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      policy,
+    );
+
+    const created = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Inline doc",
+      content: "same body",
+    });
+    policy.indexedStorageCalls.length = 0;
+    policy.monthlyIndexedContentCalls.length = 0;
+
+    await service.update({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      documentId: created.documentId,
+      title: "Renamed doc",
+      content: "same body",
+      metadata: { edited: true },
+    });
+
+    expect(policy.indexedStorageCalls[0]).toEqual(expect.objectContaining({
+      contentSizeBytes: 0,
+    }));
+    expect(policy.monthlyIndexedContentCalls[0]).toEqual(expect.objectContaining({
+      accountId: "account-1",
+      contentSizeBytes: 0,
+    }));
   });
 
   it("releases the storage reservation when ingest fails after reservation", async () => {
@@ -161,7 +271,16 @@ describe("document content size accounting", () => {
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
     const policy = new RecordingUsageLimitPolicy();
-    const storage = new InMemoryDocumentStorage();
+    class TransformedStorage extends InMemoryDocumentStorage {
+      override async upload(input: Parameters<InMemoryDocumentStorage["upload"]>[0]) {
+        const stored = await super.upload(input);
+        return {
+          ...stored,
+          sizeBytes: stored.sizeBytes + 7,
+        };
+      }
+    }
+    const storage = new TransformedStorage();
     const service = new DocumentImportService(
       documentRepository,
       createAuditService(),
@@ -173,6 +292,7 @@ describe("document content size accounting", () => {
     );
 
     const buffer = Buffer.from("hello text file");
+    const storedSizeBytes = buffer.length + 7;
     const response = await service.importDocument({
       workspaceId: "workspace-1",
       filename: "hello.txt",
@@ -182,12 +302,16 @@ describe("document content size accounting", () => {
 
     expect(policy.indexedStorageCalls).toHaveLength(1);
     expect(policy.indexedStorageCalls[0]).toEqual(expect.objectContaining({
-      contentSizeBytes: buffer.length,
+      contentSizeBytes: storedSizeBytes,
+      sourceKind: "uploaded_file",
+    }));
+    expect(policy.monthlyIndexedContentCalls[0]).toEqual(expect.objectContaining({
+      contentSizeBytes: storedSizeBytes,
       sourceKind: "uploaded_file",
     }));
 
     const persisted = await documentRepository.findByIdAndWorkspaceId(response.documentId, "workspace-1");
-    expect(persisted?.sourceSizeBytes).toBe(buffer.length);
-    expect(persisted?.contentSizeBytes).toBe(buffer.length);
+    expect(persisted?.sourceSizeBytes).toBe(storedSizeBytes);
+    expect(persisted?.contentSizeBytes).toBe(storedSizeBytes);
   });
 });

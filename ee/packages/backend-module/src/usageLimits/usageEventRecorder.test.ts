@@ -63,6 +63,7 @@ class FakeRecorderDatabase implements UsageLimitDatabasePort {
   readonly idempotencyKeys = new Map<string, string>();
   readonly embeddingItems: EmbeddingItemRow[] = [];
   readonly rollups = new Map<string, RollupRow>();
+  throwOnRollup = false;
 
   async query<T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> {
     if (text.includes("SELECT account_id FROM workspaces")) {
@@ -74,18 +75,23 @@ class FakeRecorderDatabase implements UsageLimitDatabasePort {
       return this.insertEvent(params, isEmbedding) as T[];
     }
     if (text.includes("INSERT INTO ee_embedding_usage_items")) {
-      this.embeddingItems.push({
-        usage_event_id: String(params[0]),
-        document_id: String(params[1]),
-        document_revision: Number(params[2]),
-        chunk_id: (params[3] as string | null) ?? null,
-        chunk_index: Number(params[4]),
-        content_bytes: Number(params[5]),
-        estimated_tokens: params[6] === null ? null : Number(params[6]),
-      });
+      for (let index = 0; index < params.length; index += 7) {
+        this.embeddingItems.push({
+          usage_event_id: String(params[index]),
+          document_id: String(params[index + 1]),
+          document_revision: Number(params[index + 2]),
+          chunk_id: (params[index + 3] as string | null) ?? null,
+          chunk_index: Number(params[index + 4]),
+          content_bytes: Number(params[index + 5]),
+          estimated_tokens: params[index + 6] === null ? null : Number(params[index + 6]),
+        });
+      }
       return [] as T[];
     }
     if (text.includes("INSERT INTO ee_usage_daily_rollups")) {
+      if (this.throwOnRollup) {
+        throw new Error("rollup unavailable");
+      }
       const key: RollupKey = {
         account_id: String(params[0]),
         usage_date: String(params[1]),
@@ -121,7 +127,22 @@ class FakeRecorderDatabase implements UsageLimitDatabasePort {
   }
 
   async withTransaction<T>(callback: (client: UsageLimitDatabaseClient) => Promise<T>): Promise<T> {
-    return callback(this);
+    const events = new Map(this.events);
+    const idempotencyKeys = new Map(this.idempotencyKeys);
+    const embeddingItems = [...this.embeddingItems];
+    const rollups = new Map(this.rollups);
+    try {
+      return await callback(this);
+    } catch (error) {
+      this.events.clear();
+      for (const [key, value] of events) this.events.set(key, value);
+      this.idempotencyKeys.clear();
+      for (const [key, value] of idempotencyKeys) this.idempotencyKeys.set(key, value);
+      this.embeddingItems.splice(0, this.embeddingItems.length, ...embeddingItems);
+      this.rollups.clear();
+      for (const [key, value] of rollups) this.rollups.set(key, value);
+      throw error;
+    }
   }
 
   private insertEvent(params: unknown[], isEmbedding: boolean): Array<{ id: string }> {
@@ -254,6 +275,59 @@ describe("enterprise usage event recorder", () => {
     expect(database.events.size).toBe(1);
     const [row] = [...database.rollups.values()];
     expect(row.input_tokens).toBe(100);
+  });
+
+  it("keeps failed embedding events diagnostic-only and out of daily rollups", async () => {
+    const database = new FakeRecorderDatabase();
+    database.workspaceAccounts.set("workspace-1", "account-1");
+    const recorder = new EnterpriseUsageEventRecorder(database);
+
+    await recorder.recordEmbedding({
+      idempotencyKey: "embed:workspace-1:doc-1:1:job-1:chunks:a:openai:text-embedding-3-small:failed",
+      workspaceId: "workspace-1",
+      documentId: "doc-1",
+      documentRevision: 1,
+      provider: "openai",
+      model: "text-embedding-3-small",
+      inputTokens: 100,
+      inputBytes: 256,
+      vectorCount: 1,
+      status: "failed",
+      usageQuality: "estimated",
+      errorCode: "provider_timeout",
+    });
+
+    expect(database.events.size).toBe(1);
+    const [event] = [...database.events.values()];
+    expect(event.input_tokens).toBe(100);
+    expect(event.vector_count).toBe(1);
+    expect(event.status).toBe("failed");
+    expect(database.rollups.size).toBe(0);
+  });
+
+  it("does not persist an event when rollup update fails in the same transaction", async () => {
+    const database = new FakeRecorderDatabase();
+    database.workspaceAccounts.set("workspace-1", "account-1");
+    database.throwOnRollup = true;
+    const recorder = new EnterpriseUsageEventRecorder(database);
+
+    await expect(recorder.recordEmbedding({
+      idempotencyKey: "embed:workspace-1:doc-1:1:job-1:chunks:a:openai:text-embedding-3-small:succeeded",
+      workspaceId: "workspace-1",
+      documentId: "doc-1",
+      documentRevision: 1,
+      provider: "openai",
+      model: "text-embedding-3-small",
+      inputTokens: 100,
+      inputBytes: 256,
+      vectorCount: 1,
+      status: "succeeded",
+      usageQuality: "actual",
+    })).rejects.toThrow("rollup unavailable");
+
+    expect(database.events.size).toBe(0);
+    expect(database.idempotencyKeys.size).toBe(0);
+    expect(database.rollups.size).toBe(0);
   });
 
   it("records model usage events with conversation lineage", async () => {

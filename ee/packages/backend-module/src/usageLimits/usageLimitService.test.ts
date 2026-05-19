@@ -100,6 +100,18 @@ class FakeUsageLimitDatabase implements UsageLimitDatabasePort {
       return [{ used_bytes: current + delta }] as T[];
     }
 
+    if (
+      text.includes("UPDATE ee_usage_limit_monthly_indexed_byte_counters")
+      && text.includes("used_bytes = used_bytes + $3")
+      && !text.includes("used_bytes + $3 <=")
+    ) {
+      const key = answerCounterKey(String(params[0]), String(params[1]));
+      const delta = Number(params[2]);
+      const current = this.monthlyIndexedByteCounters.get(key) ?? 0;
+      this.monthlyIndexedByteCounters.set(key, current + delta);
+      return [{ used_bytes: current + delta }] as T[];
+    }
+
     if (text.includes("UPDATE ee_usage_limit_monthly_indexed_byte_counters") && text.includes("GREATEST")) {
       const key = answerCounterKey(String(params[0]), String(params[1]));
       const delta = Number(params[2]);
@@ -466,6 +478,39 @@ describe("enterprise usage limit service", () => {
       contentSizeBytes: 4_000,
     });
     await second.commit();
+  });
+
+  it("meters monthly indexed content even when the account has no byte limit", async () => {
+    const database = new FakeUsageLimitDatabase();
+    database.workspaceAccounts.set("workspace-1", "account-1");
+    const service = new EnterpriseUsageLimitService(database);
+
+    const reservation = await service.reserveMonthlyIndexedContent({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      contentSizeBytes: 5_000,
+    });
+    await reservation.commit();
+
+    const usage = await service.getAccountUsage("account-1");
+    expect(usage.monthlyIndexedBytes.used).toBe(5_000);
+    expect(usage.monthlyIndexedBytes.limit).toBeNull();
+  });
+
+  it("releases the metered bytes on an unlimited account when the reservation is released", async () => {
+    const database = new FakeUsageLimitDatabase();
+    database.workspaceAccounts.set("workspace-1", "account-1");
+    const service = new EnterpriseUsageLimitService(database);
+
+    const reservation = await service.reserveMonthlyIndexedContent({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      contentSizeBytes: 2_500,
+    });
+    await reservation.release();
+
+    const usage = await service.getAccountUsage("account-1");
+    expect(usage.monthlyIndexedBytes.used).toBe(0);
   });
 
   it("releases monthly indexed content reservations on failure", async () => {

@@ -6,6 +6,8 @@ export type FetchedPageWithScreenshot = FetchedPage & {
   faviconUrl: string | null;
 };
 
+type ValidateNavigationUrl = (url: string) => Promise<void> | void;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let playwrightModule: any = null;
 let playwrightAvailability: boolean | null = null;
@@ -70,7 +72,11 @@ const extractLinksFromPage = async (page: any, baseUrl: string): Promise<string[
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const extractFaviconUrl = async (page: any, baseUrl: string): Promise<string | null> => {
+const extractFaviconUrl = async (
+  page: any,
+  baseUrl: string,
+  validateNavigationUrl?: ValidateNavigationUrl
+): Promise<string | null> => {
   const candidates: Array<{ href: string; priority: number }> = await page.$$eval(
     'link[rel*="icon"], link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]',
     (links: Element[]) =>
@@ -105,6 +111,9 @@ const extractFaviconUrl = async (page: any, baseUrl: string): Promise<string | n
 
   try {
     const fallback = new URL("/favicon.ico", baseUrl).toString();
+    if (validateNavigationUrl) {
+      await validateNavigationUrl(fallback);
+    }
     // Disable redirects on the probe. Playwright's API request context
     // doesn't go through context.route(), so a 301 here could send a request
     // to a private host before our SSRF validator ever sees it. If the
@@ -144,7 +153,7 @@ const fetchWithPlaywright = async (
      * Throw to abort the request. This runs before the request is sent to the
      * network, so it's safe to use for SSRF policy enforcement.
      */
-    validateNavigationUrl?: (url: string) => Promise<void> | void;
+    validateNavigationUrl?: ValidateNavigationUrl;
   }
 ): Promise<FetchedPageWithScreenshot> => {
   const pw = await loadPlaywright();
@@ -275,7 +284,7 @@ const fetchWithPlaywright = async (
           screenshot = (await page.screenshot({ type: "png" }).catch(() => null)) as Uint8Array | null;
         }
 
-        const faviconUrl = await extractFaviconUrl(page, loadedUrl);
+        const faviconUrl = await extractFaviconUrl(page, loadedUrl, options?.validateNavigationUrl);
 
         return {
           url: loadedUrl,
@@ -329,7 +338,7 @@ export const fetchPageWithScreenshot = async (
      * type-check that they're passing it; otherwise the validator would
      * only reach fetchWithPlaywright by lucky runtime spread.
      */
-    validateNavigationUrl?: (url: string) => Promise<void> | void;
+    validateNavigationUrl?: ValidateNavigationUrl;
   }
 ): Promise<FetchedPageWithScreenshot> => {
   return fetchWithPlaywright(url, {

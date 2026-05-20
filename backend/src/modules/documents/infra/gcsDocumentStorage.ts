@@ -7,13 +7,6 @@ import type {
   StoredDocumentObject,
 } from "../contracts/storage.js";
 
-export const sanitizePathSegment = (value: string): string =>
-  value
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 120) || "file";
-
 export class GcsDocumentStorage implements DocumentStoragePort {
   private readonly storage: Storage;
 
@@ -26,12 +19,14 @@ export class GcsDocumentStorage implements DocumentStoragePort {
 
   async upload(input: DocumentStorageUploadInput): Promise<StoredDocumentObject> {
     const bucket = this.storage.bucket(this.bucketName);
+    // Path leaf is the caller-generated random documentId; the original
+    // filename is untrusted client input, so it's kept on the document row's
+    // `sourceFilename` rather than the storage path.
     const objectPath = [
       "workspaces",
       input.workspaceId,
       "documents",
       input.documentId,
-      `${Date.now()}-${sanitizePathSegment(input.filename)}`,
     ].join("/");
     const file = bucket.file(objectPath);
 

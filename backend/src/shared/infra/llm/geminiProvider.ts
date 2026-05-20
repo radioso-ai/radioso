@@ -4,6 +4,7 @@ import {
   type TextGenerationClient,
 } from "./providerTypes.js";
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
+import { ProviderHttpError } from "./providerErrors.js";
 import { parseSseEvents } from "./sse.js";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -68,7 +69,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
     );
 
     if (!response.ok) {
-      throw new Error(`Gemini request failed: ${response.status}`);
+      throw new ProviderHttpError({ provider: "Gemini", operation: "generate", status: response.status });
     }
 
     const payload = await response.json();
@@ -93,7 +94,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
     );
 
     if (!response.ok || !response.body) {
-      throw new Error(`Gemini stream failed: ${response.status}`);
+      throw new ProviderHttpError({ provider: "Gemini", operation: "stream", status: response.status });
     }
 
     for await (const data of parseSseEvents(response.body)) {
@@ -150,7 +151,7 @@ export class GeminiEmbeddingClient implements EmbeddingClient {
       );
 
       if (!response.ok) {
-        throw new Error(`Gemini embedding request failed: ${response.status}`);
+        throw new ProviderHttpError({ provider: "Gemini", operation: "embedContent", status: response.status });
       }
 
       const payload = (await response.json()) as {

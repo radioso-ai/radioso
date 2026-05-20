@@ -7,7 +7,6 @@ import {
   type SkillDiagnostic,
 } from "../../skills/public.js";
 import type {
-  ContinuityDecision,
   RetrievalAnswerShapeName,
   RetrievalAnswerShapeSelection,
   RetrievalQueryShape,
@@ -20,8 +19,6 @@ export type { RetrievalAnswerShapeSelection } from "../domain/retrievalPipelineT
 export interface RetrievalShapeResolverInput {
   query: string;
   rewrittenQuery?: RewrittenRetrievalQuery;
-  continuityDecision?: ContinuityDecision;
-  historyMessageCount?: number;
 }
 
 export interface RetrievalAnswerSkillDiagnosticInput {
@@ -40,18 +37,6 @@ export interface RetrievalAnswerSkillDiagnosticInput {
 const resolver = new SkillRunResolver();
 const retrievalShapeNames = new Set(retrievalAnswerSkillDefinition.shapes?.map((shape) => shape.name) ?? []);
 
-const isFollowUp = (input: RetrievalShapeResolverInput): boolean => {
-  const turnKind = input.rewrittenQuery?.structuredResult?.turnKind;
-  if ((input.historyMessageCount ?? 0) === 0 || input.continuityDecision !== "updated") {
-    return false;
-  }
-  return (
-    turnKind === "referential_followup" ||
-    turnKind === "referential_relation" ||
-    turnKind === "comparative"
-  );
-};
-
 const shapeForQueryShape = (queryShape?: RetrievalQueryShape): RetrievalAnswerShapeName | undefined => {
   if (!queryShape || queryShape === "general_grounding" || queryShape === "follow_up_grounding") {
     return undefined;
@@ -69,17 +54,6 @@ const resolveSkillRun = (shapeName: RetrievalAnswerShapeName): ResolvedSkillRun 
 export const selectRetrievalAnswerShape = (
   input: RetrievalShapeResolverInput,
 ): RetrievalAnswerShapeSelection => {
-  if (isFollowUp(input)) {
-    return {
-      shapeName: "follow_up_grounding",
-      queryShape: "follow_up_grounding",
-      selectionMode: "deterministic",
-      selectionReason: "Conversation continuity metadata indicates this turn depends on prior grounded context.",
-      selectionConfidence: input.rewrittenQuery?.structuredResult?.confidence,
-      resolvedRun: resolveSkillRun("follow_up_grounding"),
-    };
-  }
-
   const queryShape = input.rewrittenQuery?.structuredResult?.queryShape;
   const selectedShape = shapeForQueryShape(queryShape);
   if (selectedShape) {

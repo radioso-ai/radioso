@@ -541,7 +541,7 @@ describe("retrieval pipeline stages", () => {
     expect(result.triggerAnalysis.matchCount).toBe(2);
   });
 
-  it("passes resolved follow-up context into trigger analysis", async () => {
+  it("calls trigger analysis with the active query and no raw history context", async () => {
     let triggerAnalysisInput:
       | {
           query: string;
@@ -668,21 +668,12 @@ describe("retrieval pipeline stages", () => {
     expect(triggerAnalysisInput).toEqual({
       query: "When is it?",
       activeQuery: "When is the conference in Riga?",
-      contextMessages: [
-        {
-          role: "user",
-          content: "Tell me about the conference in Riga.",
-        },
-        {
-          role: "assistant",
-          content: "The conference in Riga is our annual event.",
-        },
-      ],
+      contextMessages: [],
     });
     expect(result.triggerAnalysis.matchedRuleIds).toEqual(["events-filter"]);
   });
 
-  it("clears prompt history when rewrite marks a fresh subject", async () => {
+  it("keeps prompt history even when rewrite marks a fresh subject", async () => {
     const stage = new QueryInterpretationStageService(
       new QueryRewriteService({
         async rewrite() {
@@ -753,7 +744,8 @@ describe("retrieval pipeline stages", () => {
     expect(result.activeQuery).toBe("Eestis hetkel kehtiv kaibemaksumaar");
     expect(result.activeParsedQuery.semanticQuery).toBe("Eestis hetkel kehtiv kaibemaksumaar");
     expect(result.activeParsedQuery.lexicalQuery).toBe("Eestis kehtiv km maar (kaibemaks)");
-    expect(result.promptHistory).toEqual([]);
+    expect(result.promptHistory).toEqual(history);
+    expect(result.promptHistoryReset).toBe(false);
   });
 
   it("uses distinct semantic and lexical rewritten queries when both are provided", async () => {

@@ -16,8 +16,6 @@ export interface ConversationIntentSnapshot {
 }
 
 const MAX_RECENT_TURNS = 6;
-const EXPLICIT_RECENTER_KINDS = new Set(["fresh_subject", "explicit_recenter"]);
-const CONTINUITY_TURN_KINDS = new Set(["referential_followup", "referential_relation", "comparative"]);
 
 const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
 
@@ -37,20 +35,7 @@ const resolveActiveSubject = (input: {
   priorRewriteContinuityState?: RewriteContinuityState;
   rewriteProposal?: StructuredRewriteResult;
 }): string | undefined => {
-  const rewriteTurnKind = input.rewriteProposal?.turnKind;
   const continuitySubject = resolveContinuitySubject(input.priorRewriteContinuityState);
-
-  if (rewriteTurnKind && EXPLICIT_RECENTER_KINDS.has(rewriteTurnKind)) {
-    return normalizeWhitespace(
-      input.rewriteProposal?.proposedActiveSubject
-        ?? input.latestQuery,
-    );
-  }
-
-  if (rewriteTurnKind && CONTINUITY_TURN_KINDS.has(rewriteTurnKind) && continuitySubject) {
-    return continuitySubject;
-  }
-
   return normalizeWhitespace(
     input.rewriteProposal?.proposedActiveSubject
       ?? continuitySubject
@@ -66,18 +51,8 @@ const resolveActiveGoal = (input: {
   rewriteProposal?: StructuredRewriteResult;
 }): string => {
   const normalizedLatestQuery = normalizeWhitespace(input.latestQuery);
-  const rewriteTurnKind = input.rewriteProposal?.turnKind;
   const continuitySubject = resolveContinuitySubject(input.priorRewriteContinuityState);
-
-  if (rewriteTurnKind && EXPLICIT_RECENTER_KINDS.has(rewriteTurnKind)) {
-    return normalizedLatestQuery;
-  }
-
-  if (rewriteTurnKind && CONTINUITY_TURN_KINDS.has(rewriteTurnKind) && continuitySubject) {
-    return `${continuitySubject}: ${normalizedLatestQuery}`;
-  }
-
-  return normalizedLatestQuery;
+  return continuitySubject ? `${continuitySubject}: ${normalizedLatestQuery}` : normalizedLatestQuery;
 };
 
 export const buildConversationIntentSnapshot = (input: {

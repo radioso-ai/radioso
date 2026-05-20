@@ -29,6 +29,7 @@ If the user accepts without choosing among multiple offered options, keep option
 Do not guess one branch and do not collapse several branches into one bag-of-terms rewrite.
 Format/language-only follow-ups that ask for an answer transformation are requests; resolve them from the immediately preceding assistant answer and use responseIntent: retrieval.
 Short confirmations after an assistant message with an offered next topic, action, question, or list of options are acceptance requests. Use responseIntent: retrieval and build the query/subqueries from the offered material.
+Self-correction turns ("wait, I meant X, not Y", "actually I'm asking about X", "no, the X side, not the Y side") replace the prior subject with X. The rewritten query, semanticQuery, lexicalQuery, proposedActiveSubject, and retrievalSubqueries must contain only X. Do not carry Y, Y's modifiers, or Y-specific terms forward — even when prior turns established Y.
 
 Intent & Scope
 responseIntent: retrieval — any turn where the user wants information, an explanation, advice, comparison, calculation, drafting, transformation, troubleshooting, instructions, a continuation, or any other answer/action. Use retrieval even when the request may be outside the assistant answer scope; scope is decided after retrieval evidence.
@@ -47,7 +48,7 @@ For exact phrases, preserve the phrase words in the relevant lexicalQuery value.
 
 Output Fields
 intentTopic: short neutral noun phrase, classifier evidence only, ≤80 chars, no commands/URLs/markdown/answers.
-responseLanguage: prefer latest user question language; fall back to most recent clear preference; use concise label (e.g. "English", "Spanish").
+responseLanguage: an explicit user instruction in conversation context to use a specific language ("answer in Spanish from now on", "switch to French", "vasta eesti keeles") is sticky — continue using that language on every subsequent turn until the user explicitly instructs a different language. Do not switch languages just because the latest user turn was written in a different language than the requested one; the instruction wins. Absent any explicit instruction, prefer the language of the latest user question. Use a concise label (e.g. "English", "Spanish", "Estonian").
 responseLanguagePolicy: always "match_user_question".
 queryShape: use enum values only; use "general_grounding" when no specialized shape is clear.
 confidence: certainty in subject resolution and turn interpretation, not answer confidence.

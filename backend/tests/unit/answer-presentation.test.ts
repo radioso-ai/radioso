@@ -213,6 +213,19 @@ describe("answer presentation service", () => {
     ]);
   });
 
+  it("preserves natural single-bracket numeric text", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer: "Read [1](https://example.com), inspect arr[0], and keep the [2024] label.",
+      citations: [],
+    });
+
+    expect(result).toEqual({
+      answer: "Read [1](https://example.com), inspect arr[0], and keep the [2024] label.",
+    });
+  });
+
   it("falls through to later valid anchors and keeps all distinct cited documents", () => {
     const service = new AnswerPresentationService();
 

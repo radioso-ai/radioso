@@ -5,9 +5,12 @@ import {
   VALIDATION_DISPOSITION,
 } from "./answerSupportValidationTypes.js";
 import type { GroundedMissResponseComposer } from "./groundedMissResponseComposer.js";
+import {
+  resolveImplicitCitationIndices,
+  splitIntoSentenceLikeSegments,
+} from "./implicitCitationSupport.js";
 
 const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
-const sentenceSegmenter = new Intl.Segmenter(undefined, { granularity: "sentence" });
 
 const hasWordLikeContent = (value: string): boolean => {
   for (const segment of wordSegmenter.segment(value)) {
@@ -17,24 +20,6 @@ const hasWordLikeContent = (value: string): boolean => {
   }
 
   return false;
-};
-
-const extractSignificantTerms = (value: string): string[] => {
-  const terms: string[] = [];
-
-  for (const segment of wordSegmenter.segment(value.normalize("NFKC").toLowerCase())) {
-    if (!segment.isWordLike) {
-      continue;
-    }
-
-    const normalized = segment.segment.replace(/[^\p{L}\p{N}]+/gu, "");
-    if (normalized.length < 4) {
-      continue;
-    }
-    terms.push(normalized);
-  }
-
-  return [...new Set(terms)];
 };
 
 const extractNormalizedWordTokens = (value: string): string[] => {
@@ -84,40 +69,6 @@ const countWordLikeTokens = (value: string): number => {
 
 const isNonSubstantiveText = (value: string): boolean => {
   return !hasWordLikeContent(value);
-};
-
-const splitIntoSentenceLikeSegments = (value: string): string[] => {
-  const rawSegments = [...sentenceSegmenter.segment(value)]
-    .map((segment) => segment.segment)
-    .filter((segment) => segment.length > 0);
-
-  if (rawSegments.length <= 1) {
-    return [value];
-  }
-
-  const segments: string[] = [];
-  let carry = "";
-
-  for (const segment of rawSegments) {
-    if (!hasWordLikeContent(segment)) {
-      carry += segment;
-      continue;
-    }
-
-    segments.push(`${carry}${segment}`);
-    carry = "";
-  }
-
-  if (carry.length > 0) {
-    if (segments.length === 0) {
-      segments.push(carry);
-    } else {
-      segments[segments.length - 1] += carry;
-    }
-  }
-
-  const rebuilt = segments.join("");
-  return rebuilt === value ? segments : [value];
 };
 
 const preservePrefix = (value: string): string => value.match(/^[\s,.;:!?()/-]*/)?.[0] ?? "";
@@ -259,51 +210,6 @@ export class AnswerSupportValidator {
     return expandedSegments;
   }
 
-  private resolveImplicitCitationIndices(segment: AnswerSegment, citationEvidence: CitationEvidence[]): number[] | undefined {
-    if ((segment.citationIndices?.length ?? 0) > 0) {
-      return segment.citationIndices;
-    }
-
-    const segmentTerms = extractSignificantTerms(segment.text);
-    if (segmentTerms.length < 3) {
-      return undefined;
-    }
-
-    const scores = citationEvidence
-      .map((citation, index) => {
-        const citationTerms = new Set(extractSignificantTerms(`${citation.title} ${citation.content}`));
-        const matchedTerms = segmentTerms.filter((term) => citationTerms.has(term));
-        return {
-          index,
-          matches: matchedTerms.length,
-          ratio: matchedTerms.length / segmentTerms.length,
-        };
-      })
-      .filter((score) => score.matches >= 2)
-      .sort((left, right) => {
-        if (right.ratio !== left.ratio) {
-          return right.ratio - left.ratio;
-        }
-        return right.matches - left.matches;
-      });
-
-    const best = scores[0];
-    const second = scores[1];
-    if (!best) {
-      return undefined;
-    }
-
-    if (best.ratio < 0.5) {
-      return undefined;
-    }
-
-    if (second && best.ratio < 0.7 && best.matches <= second.matches) {
-      return undefined;
-    }
-
-    return [best.index];
-  }
-
   private resolveSourceUrlCitationSupport(
     segment: AnswerSegment,
     citationEvidence: CitationEvidence[],
@@ -438,7 +344,9 @@ export class AnswerSupportValidator {
       const sourceUrlSupport = this.resolveSourceUrlCitationSupport(segment, input.citationEvidence);
       const citationIndices =
         sourceUrlSupport?.citationIndices
-        ?? this.resolveImplicitCitationIndices(segment, input.citationEvidence);
+        ?? ((segment.citationIndices?.length ?? 0) > 0
+          ? segment.citationIndices
+          : resolveImplicitCitationIndices(segment.text, input.citationEvidence));
       const hiddenSupportKinds = this.resolveHiddenSupportEvidenceKinds(
         segment,
         input.hiddenSupportEvidence ?? [],

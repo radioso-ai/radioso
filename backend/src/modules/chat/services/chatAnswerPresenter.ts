@@ -21,6 +21,7 @@ import type { AssistantSuggestionExpansionService } from "./assistantSuggestionE
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
+import { resolveSkippedValidationArtifacts } from "./implicitCitationSupport.js";
 
 export interface ChatPresentedAnswer {
   answer: string;
@@ -156,10 +157,12 @@ export class ChatAnswerPresenter {
         answer,
         citations: citationEvidence,
       });
+      const citationArtifacts = resolveSkippedValidationArtifacts(presented, normalized, citationEvidence);
       const validation = buildSkippedValidationSummary();
 
       return {
         ...presented,
+        ...citationArtifacts,
         planningCitations,
         answerOutcome: this.assistantTurnOutcomeClassifier.classify({
           hadRetrievedContext: true,

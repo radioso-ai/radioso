@@ -1,12 +1,8 @@
 import { UNSUPPORTED_NOTICE_MARKER } from "./unsupportedNoticeMarker.js";
+import { removeDetachedPunctuationSpacing } from "./citationTextNormalization.js";
 
 const COMPLETE_ANCHOR = /\[\[\d+\]\]/g;
 const ANY_BRACKET_ANCHOR = /\[\[[^\]]*?\]\]/g;
-
-const removeDetachedPunctuationSpacing = (text: string): string =>
-  text
-    .replace(/[ \t]+([.,;:!?])/g, "$1")
-    .replace(/[ \t]+(\r?\n)/g, "$1");
 
 const stripCompleteAnchors = (text: string): string =>
   removeDetachedPunctuationSpacing(text

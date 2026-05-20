@@ -735,6 +735,199 @@ describe("chat service streaming", () => {
     });
   });
 
+  it("streams prose without citation tokens and attaches citations in the final event", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "how should i start meditating",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Meditation Tips",
+              content: "Keep meditation practice short and simple. Begin with a few minutes each day instead of starting with a long session.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Meditation Tips" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "start meditating",
+              lexicalQuery: "start meditating",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Keep meditation practice short and simple. Begin with a few minutes each day.";
+      },
+      async *streamAnswer() {
+        yield "Keep meditation practice short ";
+        yield "and simple. Begin with a few minutes each day.";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      asChatActivityPipeline(retrievalPipeline) as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "How should I start meditating?",
+      stream: true,
+    })) {
+      events.push(event);
+      if (event.type === "chunk") {
+        expect(event.text).not.toContain("[[");
+        expect(event.text).not.toContain("]]");
+      }
+    }
+
+    const streamedText = events
+      .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
+      .map((event) => event.text)
+      .join("");
+    const done = events.find((event): event is Extract<ChatStreamEvent, { type: "done" }> => event.type === "done");
+
+    expect(streamedText).toBe("Keep meditation practice short and simple. Begin with a few minutes each day.");
+    expect(done).toEqual(expect.objectContaining({
+      answer: "Keep meditation practice short and simple. Begin with a few minutes each day.",
+      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Meditation Tips" }],
+      answerSegments: [
+        {
+          text: "Keep meditation practice short and simple. Begin with a few minutes each day.",
+          citationIndices: [0],
+        },
+      ],
+    }));
+  });
+
+  it("streams clean prose and attaches final citations when support validation is disabled", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "how should i start meditating",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Meditation Tips",
+              content: "Keep meditation practice short and simple. Begin with a few minutes each day instead of starting with a long session.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Meditation Tips" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "start meditating",
+              lexicalQuery: "start meditating",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportValidationEnabled: false,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Keep meditation practice short and simple. Begin with a few minutes each day.";
+      },
+      async *streamAnswer() {
+        yield "Keep meditation practice short ";
+        yield "and simple. Begin with a few minutes each day.";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      asChatActivityPipeline(retrievalPipeline) as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "How should I start meditating?",
+      stream: true,
+    })) {
+      events.push(event);
+      if (event.type === "chunk") {
+        expect(event.text).not.toContain("[[");
+        expect(event.text).not.toContain("]]");
+      }
+    }
+
+    const streamedText = events
+      .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
+      .map((event) => event.text)
+      .join("");
+    const done = events.find((event): event is Extract<ChatStreamEvent, { type: "done" }> => event.type === "done");
+
+    expect(streamedText).toBe("Keep meditation practice short and simple. Begin with a few minutes each day.");
+    expect(done).toEqual(expect.objectContaining({
+      answer: "Keep meditation practice short and simple. Begin with a few minutes each day.",
+      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Meditation Tips" }],
+      answerSegments: [
+        {
+          text: "Keep meditation practice short and simple. Begin with a few minutes each day.",
+          citationIndices: [0],
+        },
+      ],
+      activityTrace: expect.objectContaining({
+        stages: expect.arrayContaining([
+          expect.objectContaining({
+            stageId: "answer",
+            outputs: expect.objectContaining({
+              validationRan: false,
+            }),
+          }),
+        ]),
+      }),
+    }));
+  });
+
   it("fails blank grounded streams instead of persisting an empty assistant turn", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
@@ -1733,7 +1926,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support.";
+        return "The page explains testing and parsing content for users. It also offers 24/7 phone support.";
       },
       async *streamAnswer() {
         yield "unused";
@@ -1759,7 +1952,6 @@ describe("chat service streaming", () => {
     expect(response.answer).not.toContain("24/7 phone support");
     expect(response.answerSegments).toEqual([
       expect.objectContaining({ text: expect.any(String), citationIndices: [0] }),
-      expect.objectContaining({ text: "." }),
     ]);
 
     const [conversationId] = conversationRepository.items.keys();
@@ -1832,6 +2024,16 @@ describe("chat service streaming", () => {
     });
 
     expect(response.answer).toContain("24/7 phone support");
+    expect(response.citations).toEqual([{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }]);
+    expect(response.answerSegments).toEqual([
+      {
+        text: "The page explains testing and parsing content for users",
+        citationIndices: [0],
+      },
+      {
+        text: ". It also offers 24/7 phone support.",
+      },
+    ]);
     expect(response.activityTrace.stages).toEqual(expect.arrayContaining([
       expect.objectContaining({
         stageId: "answer",
@@ -1896,7 +2098,7 @@ describe("chat service streaming", () => {
           });
         }
 
-        return "The guide covers parser setup and onboarding workflows[[1]].";
+        return "The guide covers parser setup and onboarding workflows.";
       },
       async *streamAnswer() {
         yield "unused";

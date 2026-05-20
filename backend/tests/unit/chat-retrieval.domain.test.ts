@@ -2117,6 +2117,77 @@ describe("chat retrieval domain", () => {
     ]);
   });
 
+  it("attaches implicit citations for retrieval answers when support validation is disabled", async () => {
+    const service = new RetrievalAnswerService({
+      retrievalPipeline: {
+        async interpret() {
+          return {
+            interpretation: {
+              result: {
+                responseIntent: "retrieval",
+              },
+            },
+          };
+        },
+        async runInterpreted() {
+          return {
+            rewrittenQuery: "what does the page explain",
+            contexts: [
+              {
+                chunkId: "chunk-1",
+                documentId: "doc-1",
+                title: "Guide",
+                content: "The page explains testing and parsing content for users.",
+              },
+            ],
+            systemPrompt: "system",
+            prompt: "prompt",
+            diagnostics: {
+              rewriteStatus: "skipped",
+              rerankStatus: "skipped",
+              originalCandidateCount: 1,
+              rewrittenCandidateCount: 0,
+              lexicalCandidateCount: 1,
+              normalizedCandidateCount: 1,
+              finalContextCount: 1,
+              candidateFallbackApplied: false,
+              fallbackApplied: false,
+              parsedQuery: {
+                semanticQuery: "page explain",
+                lexicalQuery: "page explain",
+                constraints: [],
+              },
+            },
+            trace: {
+              traceId: "trace-1",
+              startedAt: new Date().toISOString(),
+              stages: [],
+              links: [],
+            },
+            responseSettings: {
+              citationDisplayEnabled: true,
+              answerSupportValidationEnabled: false,
+            },
+          };
+        },
+      },
+      chatGateway: {
+        async answer() {
+          return "The page explains testing and parsing content for users.";
+        },
+      },
+    } as never);
+
+    await expect(service.answer({
+      workspaceId: "workspace-1",
+      query: "What does the page explain?",
+    })).resolves.toMatchObject({
+      outcome: "answer",
+      answer: "The page explains testing and parsing content for users.",
+      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+    });
+  });
+
   it("records a retrieval.answer failure when the retrieval pipeline throws", async () => {
     const recordedEvents: Array<{ eventType: string; eventStatus: string; metadata: Record<string, unknown> }> = [];
     const auditService = {

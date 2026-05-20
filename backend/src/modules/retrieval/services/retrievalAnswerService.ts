@@ -6,6 +6,7 @@ import {
   AnswerSupportValidator,
   MissingGroundedMissResponseComposer,
   remapAnswerSegmentsToCitationEvidence,
+  resolveSkippedValidationArtifacts,
   type ChatGateway,
 } from "../../chat/retrievalSupport.js";
 import type { RetrievalPipelineService } from "./retrievalPipelineService.js";
@@ -17,6 +18,7 @@ import type {
   RetrievalAnswerRequest,
   RetrievalAnswerResult,
 } from "../domain/retrievalCapabilityTypes.js";
+import type { CitationEvidence } from "../../chat/contracts/answerTypes.js";
 import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
 import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
@@ -107,21 +109,7 @@ export class RetrievalAnswerService {
         citations: evidence,
       });
       const validated = retrieval.responseSettings.answerSupportValidationEnabled === false
-        ? {
-            ...this.answerPresentationService.present({
-              answer: rawAnswer,
-              citations: evidence,
-            }),
-            validation: {
-              ran: false,
-              answerModified: false,
-              unsupportedSegmentCount: 0,
-              substantiveUnsupportedSegmentCount: 0,
-              supportedSegmentCount: 0,
-              nonSubstantiveSegmentCount: 0,
-            },
-            segmentResults: [],
-          }
+        ? this.presentWithoutValidation(rawAnswer, normalized, evidence)
         : await this.answerSupportValidator.validate({
             query: input.query,
             answer: normalized.answer,
@@ -180,6 +168,31 @@ export class RetrievalAnswerService {
       await usageReservation.release();
       throw error;
     }
+  }
+
+  private presentWithoutValidation(
+    rawAnswer: string,
+    normalized: ReturnType<AnswerPresentationService["normalize"]>,
+    evidence: CitationEvidence[],
+  ) {
+    const presented = this.answerPresentationService.present({
+      answer: rawAnswer,
+      citations: evidence,
+    });
+
+    return {
+      ...presented,
+      ...resolveSkippedValidationArtifacts(presented, normalized, evidence),
+      validation: {
+        ran: false,
+        answerModified: false,
+        unsupportedSegmentCount: 0,
+        substantiveUnsupportedSegmentCount: 0,
+        supportedSegmentCount: 0,
+        nonSubstantiveSegmentCount: 0,
+      },
+      segmentResults: [],
+    };
   }
 
   private async recordAuditAnswer(

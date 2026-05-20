@@ -83,6 +83,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     settings,
     telemetryService: infrastructure.telemetryService,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
+    usageEventRecorder: infrastructure.usageEventRecorder,
+    llmRegistry,
     workspaceIngestionReprocessService,
   });
   const retrieval = buildRetrievalServices({

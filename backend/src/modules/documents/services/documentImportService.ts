@@ -74,6 +74,8 @@ export class DocumentImportService {
         workspaceId: input.workspaceId,
         sourceKind: "uploaded_file",
       });
+    let storageReservation: UsageLimitReservation | undefined;
+    let monthlyReservation: UsageLimitReservation | undefined;
     try {
       if (!Buffer.isBuffer(input.buffer) || input.buffer.length === 0) {
         throw badRequest("Uploaded file is empty");
@@ -99,6 +101,20 @@ export class DocumentImportService {
         mimeType: input.mimeType,
         buffer: input.buffer,
       });
+      // Stored object size is authoritative for uploaded-file storage metering;
+      // adapters may transform payloads before persistence.
+      storageReservation = await this.usageLimitPolicy.reserveIndexedStorage({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        contentSizeBytes: storedObject.sizeBytes,
+        sourceKind: "uploaded_file",
+      });
+      monthlyReservation = await this.usageLimitPolicy.reserveMonthlyIndexedContent({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        contentSizeBytes: storedObject.sizeBytes,
+        sourceKind: "uploaded_file",
+      });
       const title = input.title?.trim() || deriveTitleFromFilename(input.filename) || "Imported document";
       const source = await this.resolveUploadSource(input.workspaceId);
       document = await this.documentRepository.createAndQueue({
@@ -116,10 +132,17 @@ export class DocumentImportService {
         sourceStorageObject: storedObject.objectPath,
         sourceStorageGeneration: storedObject.generation ?? null,
         sourceSizeBytes: storedObject.sizeBytes,
+        contentSizeBytes: storedObject.sizeBytes,
       });
 
     } catch (error) {
       await usageReservation.release();
+      if (storageReservation) {
+        await storageReservation.release();
+      }
+      if (monthlyReservation) {
+        await monthlyReservation.release();
+      }
       if (storedObject && !document) {
         try {
           await this.storage.delete({
@@ -160,6 +183,12 @@ export class DocumentImportService {
       revision: document.revision,
     });
     await usageReservation.commit();
+    if (storageReservation) {
+      await storageReservation.commit();
+    }
+    if (monthlyReservation) {
+      await monthlyReservation.commit();
+    }
 
     return {
       documentId: document.id,

@@ -9,11 +9,16 @@ type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
 const profileKeySchema = z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$/);
 const accountIdSchema = z.string().uuid();
 const nullableLimitSchema = z.number().int().min(0).nullable();
+const nullableByteLimitSchema = z
+  .union([z.number().int().min(0), z.null()])
+  .optional();
 
 const profileBodySchema = z.object({
   displayName: z.string().trim().min(1).max(120),
   monthlyAnswerLimit: nullableLimitSchema,
   storedDocumentLimit: nullableLimitSchema,
+  storedIndexedByteLimit: nullableByteLimitSchema,
+  monthlyIndexedByteLimit: nullableByteLimitSchema,
 });
 
 const assignmentBodySchema = z.object({
@@ -132,6 +137,8 @@ export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitData
         displayName: body.displayName,
         monthlyAnswerLimit: body.monthlyAnswerLimit,
         storedDocumentLimit: body.storedDocumentLimit,
+        storedIndexedByteLimit: body.storedIndexedByteLimit ?? null,
+        monthlyIndexedByteLimit: body.monthlyIndexedByteLimit ?? null,
       });
       res.status(200).json({ profile });
     } catch (error) {

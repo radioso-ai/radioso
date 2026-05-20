@@ -16,6 +16,7 @@ import {
 } from '@/components/dashboard/shared/dashboard-table'
 import type { DocumentSummary } from '@/lib/api'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { formatBytes } from '@/lib/format-bytes'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
 
 function DocumentsPagination({
@@ -125,6 +126,9 @@ function DocumentRow({
             {retryError ? <p className="truncate text-xs text-destructive">{retryError}</p> : null}
           </div>
         ) : null}
+      </DashboardTableCell>
+      <DashboardTableCell className="w-24 text-right text-sm tabular-nums text-muted-foreground">
+        {typeof document.contentSize === 'number' ? formatBytes(document.contentSize) : '—'}
       </DashboardTableCell>
       <DashboardTableCell className="w-40 text-sm text-muted-foreground">
         {formatDate(document.updatedAt)}
@@ -280,6 +284,7 @@ export function DocumentList({
           <DashboardTableHead>
             <DashboardTableHeader className="w-12" />
             <DashboardTableHeader>Name</DashboardTableHeader>
+            <DashboardTableHeader className="w-24 text-right">Size</DashboardTableHeader>
             <DashboardTableHeader className="w-40">Updated</DashboardTableHeader>
             <DashboardTableHeader className="w-32">Status</DashboardTableHeader>
             <DashboardTableHeader className="w-28 text-right" />

@@ -4,6 +4,7 @@ export interface ApplicationModuleRegistrationContext {
   registerDatabaseMigrator(migrator: ApplicationDatabaseMigrator): void;
   registerRouteMount(mount: ApplicationRouteMount): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
+  registerUsageEventRecorder?(recorder: ApplicationUsageEventRecorderRegistration): void;
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHandler): void;
   registerChatIntakeProvider?(provider: ApplicationChatIntakeProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
@@ -127,6 +128,22 @@ export interface UsageLimitReservation {
   release(): Promise<void>;
 }
 
+export interface IndexedStorageReservationInput {
+  accountId?: string | null;
+  workspaceId: string;
+  contentSizeBytes: number;
+  sourceKind?: string;
+  externalDocumentId?: string | null;
+}
+
+export interface MonthlyIndexedContentReservationInput {
+  accountId?: string | null;
+  workspaceId: string;
+  contentSizeBytes: number;
+  sourceKind?: string;
+  externalDocumentId?: string | null;
+}
+
 export interface UsageLimitPolicy {
   reserveAnswer(input: {
     accountId?: string | null;
@@ -139,6 +156,8 @@ export interface UsageLimitPolicy {
     sourceKind: string;
     externalDocumentId?: string | null;
   }): Promise<UsageLimitReservation>;
+  reserveIndexedStorage(input: IndexedStorageReservationInput): Promise<UsageLimitReservation>;
+  reserveMonthlyIndexedContent(input: MonthlyIndexedContentReservationInput): Promise<UsageLimitReservation>;
 }
 
 export interface ApplicationDatabasePort {
@@ -338,6 +357,69 @@ export type ApplicationUsageLimitPolicyRegistration =
         error(entry: unknown, message?: string): void;
       };
     }) => UsageLimitPolicy);
+
+export interface RecordedEmbeddingEvent {
+  idempotencyKey: string;
+  accountId?: string | null;
+  workspaceId: string;
+  sourceId?: string | null;
+  documentId: string;
+  documentRevision: number;
+  jobId?: string | null;
+  provider: string;
+  model: string;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  inputBytes: number;
+  vectorCount: number;
+  status: "succeeded" | "failed";
+  usageQuality: "actual" | "estimated";
+  providerRequestId?: string | null;
+  errorCode?: string | null;
+  occurredAt?: Date;
+  chunks?: Array<{
+    chunkIndex: number;
+    chunkId?: string | null;
+    contentBytes: number;
+    estimatedTokens?: number | null;
+  }>;
+}
+
+export interface RecordedModelCallEvent {
+  idempotencyKey: string;
+  accountId?: string | null;
+  workspaceId: string;
+  conversationId?: string | null;
+  messageId?: string | null;
+  surface: string;
+  operation: string;
+  provider: string;
+  model: string;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  inputBytes?: number | null;
+  outputBytes?: number | null;
+  status: "succeeded" | "failed";
+  usageQuality: "actual" | "estimated";
+  providerRequestId?: string | null;
+  errorCode?: string | null;
+  occurredAt?: Date;
+}
+
+export interface UsageEventRecorderPort {
+  recordEmbedding(event: RecordedEmbeddingEvent): Promise<void>;
+  recordModelCall(event: RecordedModelCallEvent): Promise<void>;
+}
+
+export type ApplicationUsageEventRecorderRegistration =
+  | UsageEventRecorderPort
+  | ((context: {
+      database: UsageLimitDatabasePort;
+      logger: {
+        error(entry: unknown, message?: string): void;
+      };
+    }) => UsageEventRecorderPort);
 
 export type ActivityStageStatus = "applied" | "skipped" | "fallback" | "rejected" | "unavailable" | "failed";
 

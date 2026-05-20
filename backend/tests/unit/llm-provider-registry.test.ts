@@ -182,6 +182,11 @@ describe("LlmProviderRegistry", () => {
 
     const registry = new LlmProviderRegistry(config);
     expect(registry.canServeEmbeddingModel("gemini-embedding-001")).toBe(true);
+    expect(registry.identifyEmbeddingModel("gemini-embedding-001")).toEqual({
+      capability: "embeddings",
+      provider: "gemini",
+      model: "gemini-embedding-001",
+    });
     const embeddings = await registry.createEmbeddingGateway().embedTexts(["hello"], {
       model: "gemini-embedding-001",
     });

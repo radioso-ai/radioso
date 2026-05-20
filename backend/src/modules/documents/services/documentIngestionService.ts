@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   DocumentProcessingJobRecord,
@@ -16,7 +18,11 @@ import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
-import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
+import {
+  NoopUsageLimitPolicy,
+  type UsageLimitPolicy,
+  type UsageLimitReservation,
+} from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
@@ -39,6 +45,10 @@ export interface DocumentSourceRecord {
   sourceStorageObject?: string | null;
   sourceStorageGeneration?: string | null;
   sourceSizeBytes?: number | null;
+  // Inline documents meter normalized markdown bytes. Uploaded files meter the
+  // stored object bytes because the original object is the durable storage unit.
+  contentSizeBytes?: number | null;
+  contentHash?: string | null;
 }
 
 export interface DocumentSourceInput {
@@ -49,6 +59,8 @@ export interface DocumentSourceInput {
   sourceStorageObject?: string | null;
   sourceStorageGeneration?: string | null;
   sourceSizeBytes?: number | null;
+  contentSizeBytes?: number | null;
+  contentHash?: string | null;
 }
 
 export interface DocumentRecord extends DocumentSourceRecord {
@@ -170,6 +182,21 @@ export interface DocumentRepositoryPort {
     count: number;
     storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }>;
   }>;
+  findActivePageState(input: {
+    workspaceId: string;
+    sourceId?: string | null;
+    externalDocumentId: string;
+  }): Promise<{
+    documentId: string;
+    revision: number;
+    contentSizeBytes: number | null;
+    contentHash: string | null;
+  } | null>;
+  deleteMissingPagesBySourceAndExternalIds(input: {
+    workspaceId: string;
+    sourceId: string;
+    keepExternalDocumentIds: string[];
+  }): Promise<{ deletedCount: number; deletedContentBytes: number }>;
 }
 
 export interface DocumentWorkspaceSummaryRecord {
@@ -235,6 +262,7 @@ export interface DocumentSummary {
   sourceFilename?: string | null;
   sourceMimeType?: string | null;
   contentSize?: number | null;
+  contentSizeBytes?: number | null;
 }
 
 export interface DocumentListPage {
@@ -261,6 +289,7 @@ export interface DocumentSummaryRecord extends DocumentSourceRecord {
   source?: DocumentSourceSummary | null;
   externalDocumentId?: string | null;
   contentSize?: number | null;
+  contentSizeBytes?: number | null;
 }
 
 export class DocumentIngestionService {
@@ -289,6 +318,30 @@ export class DocumentIngestionService {
       sourceContent: input.content,
       metadata: input.metadata,
     });
+    const indexedContent = describeIndexedContent(sanitizedContent.markdownContent);
+    const resolvedSource = await this.resolveSourceForInput(input.workspaceId, input.source);
+    const externalDocumentId = input.externalDocumentId ?? null;
+
+    const existingPage = externalDocumentId
+      ? await this.documentRepository.findActivePageState({
+          workspaceId: input.workspaceId,
+          sourceId: resolvedSource.sourceId ?? null,
+          externalDocumentId,
+        })
+      : null;
+
+    if (existingPage && existingPage.contentHash && existingPage.contentHash === indexedContent.contentHash) {
+      return {
+        documentId: existingPage.documentId,
+        status: "ready",
+      };
+    }
+
+    const previousBytes = existingPage?.contentSizeBytes ?? 0;
+    // Delta reservation is intentionally conservative for concurrent recrawls:
+    // the EE quota lock serializes the account cap check, but two workers can
+    // still observe the same previous page size before one commits.
+    const deltaBytes = Math.max(0, indexedContent.contentSizeBytes - previousBytes);
     let document:
       | {
           id: string;
@@ -304,14 +357,35 @@ export class DocumentIngestionService {
       sourceKind: "inline_text",
       externalDocumentId: input.externalDocumentId,
     });
+    const storageReservation = await this.usageLimitPolicy.reserveIndexedStorage({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      contentSizeBytes: deltaBytes,
+      sourceKind: "inline_text",
+      externalDocumentId: input.externalDocumentId,
+    }).catch(async (error) => {
+      await usageReservation.release();
+      throw error;
+    });
+    const monthlyReservation = await this.usageLimitPolicy.reserveMonthlyIndexedContent({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      contentSizeBytes: indexedContent.contentSizeBytes,
+      sourceKind: "inline_text",
+      externalDocumentId: input.externalDocumentId,
+    }).catch(async (error) => {
+      await usageReservation.release();
+      await storageReservation.release();
+      throw error;
+    });
 
     try {
       document = await this.documentRepository.createAndQueue({
         workspaceId: input.workspaceId,
         title: input.title,
         sourceContent: sanitizedContent.sourceContent,
-        markdownContent: normalizeMarkdown(sanitizedContent.markdownContent),
-        ...(await this.resolveSourceForInput(input.workspaceId, input.source)),
+        markdownContent: indexedContent.markdownContent,
+        ...resolvedSource,
         metadata: input.metadata,
         externalDocumentId: input.externalDocumentId,
         sourceKind: "inline_text",
@@ -321,10 +395,14 @@ export class DocumentIngestionService {
         sourceStorageObject: null,
         sourceStorageGeneration: null,
         sourceSizeBytes: null,
+        contentSizeBytes: indexedContent.contentSizeBytes,
+        contentHash: indexedContent.contentHash,
       });
 
     } catch (error) {
       await usageReservation.release();
+      await storageReservation.release();
+      await monthlyReservation.release();
       await this.auditService.record({
         workspaceId: input.workspaceId,
         eventType: "document.ingest",
@@ -385,6 +463,8 @@ export class DocumentIngestionService {
       revision: document.revision,
     });
     await usageReservation.commit();
+    await storageReservation.commit();
+    await monthlyReservation.commit();
 
     return {
       documentId: document.id,
@@ -393,6 +473,7 @@ export class DocumentIngestionService {
   }
 
   async update(input: {
+    accountId?: string | null;
     workspaceId: string;
     documentId: string;
     title: string;
@@ -406,6 +487,7 @@ export class DocumentIngestionService {
       sourceContent: input.content,
       metadata: input.metadata,
     });
+    const indexedContent = describeIndexedContent(sanitizedContent.markdownContent);
     let document:
       | {
           id: string;
@@ -415,9 +497,14 @@ export class DocumentIngestionService {
           status: string;
         }
       | undefined;
+    let storageReservation: UsageLimitReservation | undefined;
+    let monthlyReservation: UsageLimitReservation | undefined;
 
     try {
-      const existing = await this.getDocument(input.workspaceId, input.documentId);
+      const existing = await this.documentRepository.findByIdAndWorkspaceId(input.documentId, input.workspaceId);
+      if (!existing) {
+        throw notFound("Document not found");
+      }
       if (existing.sourceKind === "uploaded_file") {
         throw conflict("Imported documents cannot be updated through the inline document API");
       }
@@ -435,12 +522,33 @@ export class DocumentIngestionService {
         throw conflict("externalDocumentId cannot be changed once set");
       }
 
+      const previousBytes = existing.contentSizeBytes ?? 0;
+      const deltaBytes = Math.max(0, indexedContent.contentSizeBytes - previousBytes);
+      const monthlyIndexedBytes = existing.contentHash && existing.contentHash === indexedContent.contentHash
+        ? 0
+        : indexedContent.contentSizeBytes;
+      const reservationExternalDocumentId = input.externalDocumentId ?? existing.externalDocumentId;
+      storageReservation = await this.usageLimitPolicy.reserveIndexedStorage({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        contentSizeBytes: deltaBytes,
+        sourceKind: "inline_text",
+        externalDocumentId: reservationExternalDocumentId,
+      });
+      monthlyReservation = await this.usageLimitPolicy.reserveMonthlyIndexedContent({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        contentSizeBytes: monthlyIndexedBytes,
+        sourceKind: "inline_text",
+        externalDocumentId: reservationExternalDocumentId,
+      });
+
       document = await this.documentRepository.updateAndQueue({
         documentId: input.documentId,
         workspaceId: input.workspaceId,
         title: input.title,
         sourceContent: sanitizedContent.sourceContent,
-        markdownContent: normalizeMarkdown(sanitizedContent.markdownContent),
+        markdownContent: indexedContent.markdownContent,
         ...(await this.resolveSourceForInput(input.workspaceId, input.source)),
         metadata: input.metadata,
         externalDocumentId: input.externalDocumentId,
@@ -451,9 +559,13 @@ export class DocumentIngestionService {
         sourceStorageObject: null,
         sourceStorageGeneration: null,
         sourceSizeBytes: null,
+        contentSizeBytes: indexedContent.contentSizeBytes,
+        contentHash: indexedContent.contentHash,
       });
 
     } catch (error) {
+      await monthlyReservation?.release();
+      await storageReservation?.release();
       await this.auditService.record({
         workspaceId: input.workspaceId,
         eventType: "document.update",
@@ -485,6 +597,8 @@ export class DocumentIngestionService {
       workspaceId: input.workspaceId,
       revision: document.revision,
     });
+    await storageReservation?.commit();
+    await monthlyReservation?.commit();
 
     return {
       documentId: document.id,
@@ -627,7 +741,8 @@ export class DocumentIngestionService {
       sourceKind: document.sourceKind,
       sourceFilename: document.sourceFilename ?? null,
       sourceMimeType: document.sourceMimeType ?? null,
-      contentSize: document.contentSize ?? null,
+      contentSize: document.contentSize ?? document.contentSizeBytes ?? null,
+      contentSizeBytes: document.contentSizeBytes ?? null,
     };
   }
 
@@ -652,6 +767,14 @@ export class DocumentIngestionService {
     syncedAt?: Date | null;
   }): Promise<void> {
     await this.documentSourceRepository?.updateSyncState(input);
+  }
+
+  async reapMissingPages(input: {
+    workspaceId: string;
+    sourceId: string;
+    keepExternalDocumentIds: string[];
+  }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    return this.documentRepository.deleteMissingPagesBySourceAndExternalIds(input);
   }
 
   private async resolveSourceForInput(
@@ -781,6 +904,19 @@ const normalizeWebsiteSourceUrl = (value: string): string => {
     url.pathname = url.pathname.replace(/\/+$/, "");
   }
   return url.toString().replace(/\/$/, "");
+};
+
+const describeIndexedContent = (markdownContent: string): {
+  markdownContent: string;
+  contentSizeBytes: number;
+  contentHash: string;
+} => {
+  const normalizedMarkdown = normalizeMarkdown(markdownContent);
+  return {
+    markdownContent: normalizedMarkdown,
+    contentSizeBytes: Buffer.byteLength(normalizedMarkdown, "utf8"),
+    contentHash: createHash("sha256").update(normalizedMarkdown, "utf8").digest("hex"),
+  };
 };
 
 const deriveWebsiteSourceName = (url: string): string => {

@@ -1372,6 +1372,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceStorageObject: input.sourceStorageObject ?? null,
       sourceStorageGeneration: input.sourceStorageGeneration ?? null,
       sourceSizeBytes: input.sourceSizeBytes ?? null,
+      contentSizeBytes: input.contentSizeBytes ?? null,
+      contentHash: input.contentHash ?? null,
       status: "queued",
       revision: 1,
       failureReason: null,
@@ -1445,6 +1447,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceStorageObject: input.sourceStorageObject ?? null,
       sourceStorageGeneration: input.sourceStorageGeneration ?? null,
       sourceSizeBytes: input.sourceSizeBytes ?? null,
+      contentSizeBytes: input.contentSizeBytes ?? null,
+      contentHash: input.contentHash ?? null,
       status: input.status,
       revision: 1,
       failureReason: null,
@@ -1503,6 +1507,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         sourceStorageObject: item.sourceStorageObject,
         sourceStorageGeneration: item.sourceStorageGeneration,
         sourceSizeBytes: item.sourceSizeBytes,
+        contentSizeBytes: item.contentSizeBytes ?? null,
+        contentSize: item.contentSizeBytes ?? item.sourceSizeBytes ?? null,
       }));
   }
 
@@ -1612,6 +1618,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceStorageObject: input.sourceStorageObject ?? existing.sourceStorageObject ?? null,
       sourceStorageGeneration: input.sourceStorageGeneration ?? existing.sourceStorageGeneration ?? null,
       sourceSizeBytes: input.sourceSizeBytes ?? existing.sourceSizeBytes ?? null,
+      contentSizeBytes: input.contentSizeBytes ?? existing.contentSizeBytes ?? null,
+      contentHash: input.contentHash ?? existing.contentHash ?? null,
       status: input.status,
       revision: existing.revision + 1,
       failureReason: null,
@@ -1656,6 +1664,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceStorageObject: input.sourceStorageObject ?? existing.sourceStorageObject ?? null,
       sourceStorageGeneration: input.sourceStorageGeneration ?? existing.sourceStorageGeneration ?? null,
       sourceSizeBytes: input.sourceSizeBytes ?? existing.sourceSizeBytes ?? null,
+      contentSizeBytes: input.contentSizeBytes ?? existing.contentSizeBytes ?? null,
+      contentHash: input.contentHash ?? existing.contentHash ?? null,
       status: "queued",
       revision: existing.revision + 1,
       failureReason: null,
@@ -1818,6 +1828,57 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       }
     }
     return { count, storageRefs };
+  }
+
+  async findActivePageState(input: {
+    workspaceId: string;
+    sourceId?: string | null;
+    externalDocumentId: string;
+  }): Promise<{
+    documentId: string;
+    revision: number;
+    contentSizeBytes: number | null;
+    contentHash: string | null;
+  } | null> {
+    const sourceId = input.sourceId ?? null;
+    const match = [...this.items.values()].find((doc) =>
+      doc.workspaceId === input.workspaceId &&
+      doc.externalDocumentId === input.externalDocumentId &&
+      doc.status !== "failed" &&
+      (sourceId === null ? !doc.sourceId : doc.sourceId === sourceId),
+    );
+    if (!match) {
+      return null;
+    }
+    return {
+      documentId: match.id,
+      revision: match.revision,
+      contentSizeBytes: match.contentSizeBytes ?? null,
+      contentHash: match.contentHash ?? null,
+    };
+  }
+
+  async deleteMissingPagesBySourceAndExternalIds(input: {
+    workspaceId: string;
+    sourceId: string;
+    keepExternalDocumentIds: string[];
+  }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    const keep = new Set(input.keepExternalDocumentIds.filter((value) => Boolean(value)));
+    let deletedCount = 0;
+    let deletedContentBytes = 0;
+    for (const [id, doc] of this.items.entries()) {
+      if (
+        doc.workspaceId === input.workspaceId &&
+        doc.sourceId === input.sourceId &&
+        doc.externalDocumentId &&
+        !keep.has(doc.externalDocumentId)
+      ) {
+        deletedContentBytes += doc.contentSizeBytes ?? 0;
+        this.items.delete(id);
+        deletedCount += 1;
+      }
+    }
+    return { deletedCount, deletedContentBytes };
   }
 }
 

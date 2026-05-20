@@ -166,6 +166,33 @@ describe("hybrid retrieval search", () => {
     expect(executedSql).not.toContain("NOT (");
   });
 
+  it("does not bind an unused source id array for manual-only lexical scope", async () => {
+    let executedSql = "";
+    const search = new PgLexicalSearch({
+      async query(sql: string, params: unknown[]) {
+        executedSql = sql;
+        expect(params).toEqual(["workspace-1", "manual", 5]);
+        return [];
+      },
+    } as never);
+
+    await search.search({
+      workspaceId: "workspace-1",
+      query: "manual",
+      topK: 5,
+      sourceFilter: {
+        constrained: true,
+        sourceIds: [],
+        includeUnassignedDocuments: true,
+      },
+    });
+
+    expect(executedSql).toContain("AND d.source_id IS NULL");
+    expect(executedSql).toContain("plainto_tsquery('simple', $2)");
+    expect(executedSql).toContain("LIMIT $3");
+    expect(executedSql).not.toContain("$4");
+  });
+
   it("compiles exclusions from validated lexical plans as negative term filters", async () => {
     let executedSql = "";
     const search = new PgLexicalSearch({
@@ -299,6 +326,36 @@ describe("hybrid retrieval search", () => {
       metadataFilter: { language: "en" },
     });
 
+    expect(results).toEqual([]);
+  });
+
+  it("does not bind an unused source id array for manual-only vector scope", async () => {
+    let fallbackSql = "";
+    const search = new PgVectorSearch({
+      async query(sql: string, params: unknown[]) {
+        fallbackSql = sql;
+        expect(params).toEqual(["workspace-1", "[0.1,0.2]", 2, 0.8, "text-embedding-3-small", 2]);
+        return [];
+      },
+      async withTransaction() {
+        throw new Error('unrecognized configuration parameter "hnsw.iterative_scan"');
+      },
+    } as never);
+
+    const results = await search.search({
+      workspaceId: "workspace-1",
+      queryEmbedding: [0.1, 0.2],
+      topK: 2,
+      similarityThreshold: 0.2,
+      sourceFilter: {
+        constrained: true,
+        sourceIds: [],
+        includeUnassignedDocuments: true,
+      },
+    });
+
+    expect(fallbackSql).toContain("AND d.source_id IS NULL");
+    expect(fallbackSql).not.toContain("$7");
     expect(results).toEqual([]);
   });
 

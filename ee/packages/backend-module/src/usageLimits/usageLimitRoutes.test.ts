@@ -97,12 +97,20 @@ const sessionDatabase: UsageLimitDatabasePort = {
         display_name: "Growth",
         monthly_answer_limit: 1000,
         stored_document_limit: 250,
+        stored_indexed_byte_limit: 5_000_000,
+        monthly_indexed_byte_limit: 2_000_000,
         created_at: new Date("2026-01-01T00:00:00.000Z"),
         updated_at: new Date("2026-01-02T00:00:00.000Z"),
       }];
     }
     if (text.includes("FROM ee_usage_limit_answer_counters")) {
       return [{ used_count: 42 }];
+    }
+    if (text.includes("SUM(d.content_size_bytes)")) {
+      return [{ bytes: "131072" }];
+    }
+    if (text.includes("FROM ee_usage_limit_monthly_indexed_byte_counters")) {
+      return [{ used_bytes: "65536" }];
     }
     if (text.includes("COUNT(*)::text AS count")) {
       return [{ count: "17" }];
@@ -153,6 +161,8 @@ describe("usage limit account routes", () => {
         displayName: "Growth",
         monthlyAnswerLimit: 1000,
         storedDocumentLimit: 250,
+        storedIndexedByteLimit: 5_000_000,
+        monthlyIndexedByteLimit: 2_000_000,
       }),
       monthlyAnswers: expect.objectContaining({
         used: 42,
@@ -162,6 +172,14 @@ describe("usage limit account routes", () => {
         used: 17,
         limit: 250,
       },
+      storedIndexedBytes: {
+        used: 131_072,
+        limit: 5_000_000,
+      },
+      monthlyIndexedBytes: expect.objectContaining({
+        used: 65_536,
+        limit: 2_000_000,
+      }),
     }));
   });
 

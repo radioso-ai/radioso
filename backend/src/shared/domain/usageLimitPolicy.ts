@@ -3,6 +3,22 @@ export interface UsageLimitReservation {
   release(): Promise<void>;
 }
 
+export interface IndexedStorageReservationInput {
+  accountId?: string | null;
+  workspaceId: string;
+  contentSizeBytes: number;
+  sourceKind?: string;
+  externalDocumentId?: string | null;
+}
+
+export interface MonthlyIndexedContentReservationInput {
+  accountId?: string | null;
+  workspaceId: string;
+  contentSizeBytes: number;
+  sourceKind?: string;
+  externalDocumentId?: string | null;
+}
+
 export interface UsageLimitPolicy {
   reserveAnswer(input: {
     accountId?: string | null;
@@ -15,6 +31,8 @@ export interface UsageLimitPolicy {
     sourceKind: string;
     externalDocumentId?: string | null;
   }): Promise<UsageLimitReservation>;
+  reserveIndexedStorage(input: IndexedStorageReservationInput): Promise<UsageLimitReservation>;
+  reserveMonthlyIndexedContent(input: MonthlyIndexedContentReservationInput): Promise<UsageLimitReservation>;
 }
 
 const noopReservation: UsageLimitReservation = {
@@ -28,6 +46,14 @@ export class NoopUsageLimitPolicy implements UsageLimitPolicy {
   }
 
   async reserveDocument(): Promise<UsageLimitReservation> {
+    return noopReservation;
+  }
+
+  async reserveIndexedStorage(_input: IndexedStorageReservationInput): Promise<UsageLimitReservation> {
+    return noopReservation;
+  }
+
+  async reserveMonthlyIndexedContent(_input: MonthlyIndexedContentReservationInput): Promise<UsageLimitReservation> {
     return noopReservation;
   }
 }

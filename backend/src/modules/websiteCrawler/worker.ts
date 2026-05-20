@@ -164,6 +164,7 @@ export class WebsiteCrawlWorker {
         provider: this.dependencies.provider,
         documentIngestionService: this.dependencies.documentIngestionService,
         auditService: this.dependencies.auditService,
+        logger: this.dependencies.logger,
       });
       const result = await service.crawlAndPublish({
         accountId: job.accountId,

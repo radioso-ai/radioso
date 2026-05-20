@@ -13,6 +13,7 @@ import type {
 } from "../../modules/documents/contracts/index.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
+import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/contracts/websiteEmbedIntegration.js";
 import type {
   ChatGateway,
@@ -60,6 +61,13 @@ export type ApplicationUsageLimitPolicyRegistration =
       database: ApplicationDatabasePort;
       logger: AppLogger;
     }) => UsageLimitPolicy);
+
+export type ApplicationUsageEventRecorderRegistration =
+  | UsageEventRecorder
+  | ((context: {
+      database: ApplicationDatabasePort;
+      logger: AppLogger;
+    }) => UsageEventRecorder);
 
 export interface WorkspaceContactInfoRepositoryPort {
   findById(workspaceId: string): Promise<{
@@ -125,6 +133,7 @@ export interface ApplicationExtensionRegistry {
   accountCreatedHooks: ApplicationAccountCreatedHook[];
   capabilityPolicy?: CapabilityPolicy;
   usageLimitPolicyRegistration?: ApplicationUsageLimitPolicyRegistration;
+  usageEventRecorderRegistration?: ApplicationUsageEventRecorderRegistration;
   documentStorage?: DocumentStoragePort;
   documentJobDispatcher?: DocumentJobDispatcherPort;
   documentJobConsumer?: DocumentJobConsumerPort;
@@ -150,6 +159,7 @@ export interface ApplicationModuleRegistrationContext {
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHook): void;
   registerCapabilityPolicy(policy: CapabilityPolicy): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
+  registerUsageEventRecorder(recorder: ApplicationUsageEventRecorderRegistration): void;
   registerDocumentStorage(storage: DocumentStoragePort): void;
   registerDocumentJobDispatcher(dispatcher: DocumentJobDispatcherPort): void;
   registerDocumentJobConsumer(consumer: DocumentJobConsumerPort): void;
@@ -214,6 +224,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerUsageLimitPolicy(policy) {
     registry.usageLimitPolicyRegistration = policy;
+  },
+  registerUsageEventRecorder(recorder) {
+    registry.usageEventRecorderRegistration = recorder;
   },
   registerDocumentStorage(storage) {
     registry.documentStorage = storage;

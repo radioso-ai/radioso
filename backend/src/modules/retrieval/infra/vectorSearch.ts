@@ -93,7 +93,9 @@ export class PgVectorSearch implements VectorSearchPort {
               ? `AND d.source_id = ANY($${params.length + 1}::uuid[])`
               : "";
 
-    if (hasConstrainedSourceFilter) {
+    const sourceIdsParameterRequired = hasConstrainedSourceFilter && (hasSourceFilter || !includeUnassignedDocuments);
+
+    if (sourceIdsParameterRequired) {
       params.push(hasSourceFilter ? sourceIds : []);
     }
 

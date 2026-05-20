@@ -152,6 +152,25 @@ export class LlmProviderRegistry {
     );
   }
 
+  identifyEmbeddingModel(model: string): LlmProviderMetadata {
+    const providerFamily = providerFamilyForEmbeddingModel(model);
+    const config = !providerFamily || configMatchesEmbeddingFamily(this.config.embeddings, providerFamily)
+      ? this.config.embeddings
+      : this.config.embeddingProviderConfigs.find((candidate) =>
+          supportsEmbeddings(candidate) && configMatchesEmbeddingFamily(candidate, providerFamily),
+        );
+
+    if (!config) {
+      throw new ProviderConfigurationError(`No configured embedding provider can serve model ${model}`);
+    }
+
+    return {
+      capability: "embeddings",
+      provider: config.provider,
+      model,
+    };
+  }
+
   canServeEmbeddingModel(model: string): boolean {
     const providerFamily = providerFamilyForEmbeddingModel(model);
     if (!providerFamily) {

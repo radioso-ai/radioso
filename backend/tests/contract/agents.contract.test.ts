@@ -687,4 +687,48 @@ describe("agents contract", () => {
       })
       .expect(400);
   });
+
+  it("preserves an explicitly empty website embed launcher label in public config", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-empty-embed-label@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const list = await request(app)
+      .get("/api/v1/agents")
+      .set("Authorization", authorization)
+      .expect(200);
+    const agentId = list.body.agents[0].id as string;
+
+    const updated = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({
+        name: "Claudio",
+        surfaceSettings: {
+          websiteEmbed: {
+            enabled: true,
+            allowedOrigins: ["https://host.example.com"],
+            launcherLabel: "",
+          },
+        },
+      })
+      .expect(200);
+
+    expect(updated.body.name).toBe("Claudio");
+    expect(updated.body.surfaceSettings.websiteEmbed.launcherLabel).toBe("");
+
+    const tokenResponse = await request(app)
+      .post(`/api/v1/agents/${agentId}/website-embed-token/rotate`)
+      .set("Authorization", authorization)
+      .expect(200);
+    const embedToken = tokenResponse.body.surfaceSettings.websiteEmbed.token as string;
+
+    const config = await request(app)
+      .get(`/api/v1/public/chat/${embedToken}/embed-config`)
+      .set("Origin", "https://host.example.com")
+      .expect(200);
+
+    expect(config.body.launcherLabel).toBe("");
+    expect(config.body.launcherLabel).not.toBe("Claudio");
+  });
 });

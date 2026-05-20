@@ -502,14 +502,6 @@ export const buildWebsiteEmbedTestHarnessUrl = (
   const params = new URLSearchParams()
   params.set('appOrigin', resolveWebsiteEmbedAppOrigin(settings.websiteEmbedScriptUrl, appBaseUrl))
   params.set('token', settings.websiteEmbedToken)
-  params.set(
-    'label',
-    settings.websiteEmbedLauncherLabel ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL,
-  )
-  params.set(
-    'position',
-    settings.websiteEmbedLauncherPosition ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION,
-  )
 
   const displayMode = normalizeWebsiteEmbedDisplayMode(overrides?.displayMode)
   const initialState = normalizeWebsiteEmbedInitialState(overrides?.initialState)

@@ -94,6 +94,7 @@ describe("activity trace assembler", () => {
           matcherVersion: "test",
         },
         promptHistory: [],
+        promptHistoryReset: false,
         continuityDecision: "updated",
         activeEmbedding: [1, 0, 0],
         activeEmbeddingDurationMs: 12,

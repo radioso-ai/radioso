@@ -96,8 +96,8 @@ describe('embed widget helpers', () => {
     const url = new URL(harnessUrl ?? '')
     expect(url.searchParams.get('appOrigin')).toBe('https://app.example.com')
     expect(url.searchParams.get('token')).toBe('embed-token')
-    expect(url.searchParams.get('label')).toBe('Talk to us')
-    expect(url.searchParams.get('position')).toBe('bottom-left')
+    expect(url.searchParams.get('label')).toBeNull()
+    expect(url.searchParams.get('position')).toBeNull()
     expect(url.searchParams.get('displayMode')).toBe('panel')
     expect(url.searchParams.get('initialState')).toBe('open')
     expect(url.searchParams.get('avatarUrl')).toBeNull()
@@ -119,9 +119,11 @@ describe('embed widget helpers', () => {
     expect(url.pathname).toBe('/embed-test')
     expect(url.searchParams.get('appOrigin')).toBe('https://app.example.com')
     expect(url.searchParams.get('token')).toBe('embed-token')
+    expect(url.searchParams.get('label')).toBeNull()
+    expect(url.searchParams.get('position')).toBeNull()
   })
 
-  it('preserves an explicitly empty launcher label in the test harness URL', () => {
+  it('does not override the saved launcher label in the test harness URL', () => {
     const harnessUrl = buildWebsiteEmbedTestHarnessUrl(
       {
         websiteEmbedToken: 'embed-token',
@@ -133,8 +135,8 @@ describe('embed widget helpers', () => {
     )
 
     const url = new URL(harnessUrl ?? '')
-    expect(url.searchParams.has('label')).toBe(true)
-    expect(url.searchParams.get('label')).toBe('')
+    expect(url.searchParams.get('label')).toBeNull()
+    expect(url.searchParams.has('label')).toBe(false)
   })
 
   it('normalizes locale, display-mode, and initial-state overrides', () => {

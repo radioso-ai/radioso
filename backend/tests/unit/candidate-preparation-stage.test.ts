@@ -122,6 +122,7 @@ const buildInput = (rewrittenContexts: RetrievedChunk[]): CandidateRetrievalStag
     matcherVersion: "none",
   },
   promptHistory: [],
+  promptHistoryReset: false,
   continuityDecision: "unresolved",
   activeEmbedding: [0.1, 0.2],
   activeEmbeddingDurationMs: 10,

@@ -50,6 +50,7 @@ export interface QueryInterpretationStageResult extends RetrievalContextStageRes
   activeRetrievalSubqueries: RetrievalSubquery[];
   triggerAnalysis: TriggerAnalysisResult;
   promptHistory: MessageRecord[];
+  promptHistoryReset: boolean;
   continuityDecision: "unchanged" | "updated" | "unresolved" | "rejected";
   shapeSelection?: RetrievalAnswerShapeSelection;
 }

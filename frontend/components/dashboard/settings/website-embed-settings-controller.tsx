@@ -397,8 +397,8 @@ function WebsiteEmbedSettingsPanel({
                 />
                 <p className="text-xs text-muted-foreground">
                   {displayMode === 'panel'
-                    ? 'Shown when visitors hover the side tab. The tab itself only shows the icon.'
-                    : 'The words visitors see on the chat button.'}
+                    ? 'Shown when visitors hover the side tab. Leave blank for no tooltip text.'
+                    : 'The words visitors see on the chat button. Leave blank for an icon-only button.'}
                 </p>
               </div>
 

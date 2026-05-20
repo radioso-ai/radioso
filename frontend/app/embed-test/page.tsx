@@ -12,6 +12,7 @@ type EmbedTestConfig = {
   appOrigin: string
   token: string
   scriptVersion: string
+  labelOverride: boolean
   label: string
   icon: string
   position: string
@@ -32,9 +33,10 @@ const DEFAULT_CONFIG: EmbedTestConfig = {
   appOrigin: '',
   token: '',
   scriptVersion: '',
-  label: 'Chat with us',
-  icon: 'chat',
-  position: 'bottom-right',
+  labelOverride: false,
+  label: '',
+  icon: '',
+  position: '',
   displayMode: '',
   initialState: '',
   copy: '',
@@ -77,6 +79,7 @@ const resolveInitialConfig = () => {
     appOrigin: firstSearchValue(params, 'appOrigin') ?? stored.appOrigin ?? fallbackOrigin,
     token: firstSearchValue(params, 'token') ?? stored.token ?? '',
     scriptVersion: firstSearchValue(params, 'scriptVersion') ?? stored.scriptVersion ?? '',
+    labelOverride: params.has('label') ? true : Boolean(stored.labelOverride),
     label: firstSearchValue(params, 'label') ?? stored.label ?? DEFAULT_CONFIG.label,
     icon: firstSearchValue(params, 'icon') ?? stored.icon ?? DEFAULT_CONFIG.icon,
     position: firstSearchValue(params, 'position') ?? stored.position ?? DEFAULT_CONFIG.position,
@@ -117,9 +120,9 @@ const buildSnippet = (config: EmbedTestConfig) => {
     '  async',
     `  src="${buildScriptUrl(config)}"`,
     `  data-radioso-token="${config.token}"`,
-    `  data-radioso-launcher-label="${config.label}"`,
-    `  data-radioso-launcher-icon="${config.icon}"`,
-    `  data-radioso-launcher-position="${config.position}"`,
+    config.labelOverride ? `  data-radioso-launcher-label="${config.label}"` : null,
+    config.icon ? `  data-radioso-launcher-icon="${config.icon}"` : null,
+    config.position ? `  data-radioso-launcher-position="${config.position}"` : null,
     config.displayMode ? `  data-radioso-display-mode="${config.displayMode}"` : null,
     config.initialState ? `  data-radioso-initial-state="${config.initialState}"` : null,
     config.copy ? `  data-radioso-copy='${config.copy}'` : null,
@@ -174,11 +177,11 @@ export default function EmbedTestPage() {
     script.src = buildScriptUrl(config, String(Date.now()))
     script.dataset.radiosoTestScript = 'true'
     script.dataset.radiosoToken = config.token.trim()
-    script.dataset.radiosoLauncherLabel = config.label
-    script.dataset.radiosoLauncherIcon = config.icon || DEFAULT_CONFIG.icon
-    script.dataset.radiosoLauncherPosition = config.position || DEFAULT_CONFIG.position
     script.dataset.radiosoAllowedOrigins = window.location.origin
 
+    if (config.labelOverride) script.dataset.radiosoLauncherLabel = config.label
+    if (config.icon) script.dataset.radiosoLauncherIcon = config.icon
+    if (config.position) script.dataset.radiosoLauncherPosition = config.position
     if (config.displayMode) script.dataset.radiosoDisplayMode = config.displayMode
     if (config.initialState) script.dataset.radiosoInitialState = config.initialState
     if (config.copy.trim()) script.dataset.radiosoCopy = config.copy.trim()
@@ -229,9 +232,9 @@ export default function EmbedTestPage() {
     params.set('appOrigin', config.appOrigin)
     params.set('token', config.token)
     params.set('scriptVersion', config.scriptVersion)
-    params.set('label', config.label)
-    params.set('icon', config.icon)
-    params.set('position', config.position)
+    if (config.labelOverride) params.set('label', config.label)
+    if (config.icon) params.set('icon', config.icon)
+    if (config.position) params.set('position', config.position)
     if (config.displayMode) params.set('displayMode', config.displayMode)
     if (config.initialState) params.set('initialState', config.initialState)
     if (config.copy) params.set('copy', config.copy)
@@ -279,15 +282,39 @@ export default function EmbedTestPage() {
               </label>
               <label className="space-y-2">
                 <Label htmlFor="label">{config.displayMode === 'panel' ? 'Accessible name' : 'Launcher label'}</Label>
-                <Input id="label" value={config.label} maxLength={80} onChange={(event) => updateConfig('label', event.target.value)} />
+                <div className="flex items-center gap-2">
+                  <input
+                    id="label-override"
+                    type="checkbox"
+                    checked={config.labelOverride}
+                    onChange={(event) => updateConfig('labelOverride', event.target.checked)}
+                    className="size-4 rounded border-input"
+                  />
+                  <Label htmlFor="label-override" className="text-xs font-normal text-muted-foreground">
+                    Override
+                  </Label>
+                </div>
+                <Input
+                  id="label"
+                  value={config.label}
+                  maxLength={80}
+                  disabled={!config.labelOverride}
+                  onChange={(event) => updateConfig('label', event.target.value)}
+                  placeholder="server config"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave override off to test the saved launcher label from the server. Turn it on to test a script-tag label override, including an empty one.
+                </p>
               </label>
               <label className="space-y-2">
                 <Label htmlFor="icon">Icon</Label>
                 <select id="icon" value={config.icon} onChange={(event) => updateConfig('icon', event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  <option value="">server config</option>
                   <option value="chat">chat</option>
                   <option value="sparkles">sparkles</option>
                   <option value="message">message</option>
                 </select>
+                <p className="text-xs text-muted-foreground">Use server config unless you need to test a script-tag override.</p>
               </label>
               <label className="space-y-2">
                 <Label htmlFor="display-mode">Display mode</Label>
@@ -299,9 +326,11 @@ export default function EmbedTestPage() {
               <label className="space-y-2">
                 <Label htmlFor="position">{config.displayMode === 'panel' ? 'Panel side' : 'Position'}</Label>
                 <select id="position" value={config.position} onChange={(event) => updateConfig('position', event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  <option value="">server config</option>
                   <option value="bottom-right">{config.displayMode === 'panel' ? 'Right edge' : 'Bottom right'}</option>
                   <option value="bottom-left">{config.displayMode === 'panel' ? 'Left edge' : 'Bottom left'}</option>
                 </select>
+                <p className="text-xs text-muted-foreground">Use server config unless you need to test a script-tag override.</p>
               </label>
               <label className="space-y-2">
                 <Label htmlFor="initial-state">Initial state</Label>

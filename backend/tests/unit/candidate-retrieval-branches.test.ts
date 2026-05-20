@@ -123,6 +123,7 @@ describe("candidate retrieval branches", () => {
         matcherVersion: "test",
       },
       promptHistory: [],
+      promptHistoryReset: false,
       continuityDecision: "updated",
     });
 
@@ -249,6 +250,7 @@ describe("candidate retrieval branches", () => {
         matcherVersion: "test",
       },
       promptHistory: [],
+      promptHistoryReset: false,
       continuityDecision: "updated",
     });
 
@@ -394,6 +396,7 @@ describe("candidate retrieval branches", () => {
         matcherVersion: "test",
       },
       promptHistory: [],
+      promptHistoryReset: false,
       continuityDecision: "updated" as const,
     };
 

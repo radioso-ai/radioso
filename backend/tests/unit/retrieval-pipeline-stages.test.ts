@@ -1212,6 +1212,7 @@ describe("retrieval pipeline stages", () => {
         matcherVersion: "test",
       },
       promptHistory: [],
+      promptHistoryReset: false,
       continuityDecision: "rejected",
       activeEmbedding: [1, 0, 0],
       activeEmbeddingDurationMs: 0,

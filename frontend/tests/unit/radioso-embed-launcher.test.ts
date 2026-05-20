@@ -211,4 +211,84 @@ describe('radioso embed launcher', () => {
     expect(button.style.right).toBe('0')
     expect(button.style.left).toBeUndefined()
   })
+
+  it('keeps an explicitly empty server launcher label icon-only', async () => {
+    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const script = new FakeElement('script')
+    script.src = 'https://app.example.com/radioso-embed.js'
+    script.dataset.radiosoToken = 'embed-token'
+
+    const head = new FakeElement('head')
+    const body = new FakeElement('body')
+    const document = {
+      readyState: 'complete',
+      currentScript: script,
+      scripts: [script],
+      head,
+      body,
+      documentElement: { clientWidth: 1024, clientHeight: 768, lang: 'en' },
+      title: 'Host page',
+      createElement: (tagName: string) => new FakeElement(tagName),
+      getElementById: () => null,
+      addEventListener: vi.fn(),
+    }
+    const sessionStorage = {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+    }
+    const fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        launcherLabel: '',
+        launcherPosition: 'bottom-right',
+        theme: {
+          brand: '#0f172a',
+          brandText: '#f8fafc',
+          surface: '#ffffff',
+          text: '#0f172a',
+        },
+        copy: {
+          default: {
+            launcherDefaultLabel: 'Claudio',
+          },
+        },
+        expertOverrides: {},
+        proactiveGreetingEnabled: false,
+      }),
+    }))
+    const window = {
+      location: { href: 'https://host.example.com/page', origin: 'https://host.example.com' },
+      navigator: { languages: ['en-US'], language: 'en-US' },
+      sessionStorage,
+      matchMedia: vi.fn(() => ({ matches: false })),
+      innerWidth: 1024,
+      innerHeight: 768,
+      addEventListener: vi.fn(),
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        callback(0)
+        return 1
+      },
+      setTimeout: vi.fn(),
+      clearTimeout: vi.fn(),
+      visualViewport: null,
+    }
+
+    vm.runInNewContext(launcherSource, {
+      document,
+      window,
+      fetch,
+      URL,
+      setTimeout: vi.fn(),
+      clearTimeout: vi.fn(),
+      requestAnimationFrame: window.requestAnimationFrame,
+    })
+    for (let index = 0; index < 10; index += 1) {
+      await Promise.resolve()
+    }
+
+    const button = collectElements(body, (element) => element.tagName === 'BUTTON')[0]
+    expect(button.children).toHaveLength(2)
+    expect(button.children.some((child) => child.textContent === 'Claudio')).toBe(false)
+    expect(button.querySelector('[data-radioso-launcher-avatar="true"]')?.style.width).toBe('3rem')
+  })
 })

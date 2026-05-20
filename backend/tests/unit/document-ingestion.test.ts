@@ -905,7 +905,7 @@ describe("document ingestion", () => {
     expect([...jobRepository.items.values()].at(-1)?.status).toBe("failed");
   });
 
-  it("stores an actionable provider credential failure reason after exhausting retries", async () => {
+  it("stores an actionable provider credential failure reason without retrying", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
@@ -937,14 +937,16 @@ describe("document ingestion", () => {
     });
 
     expect(await processingWorker.runOnce()).toBe(true);
-    expect(await processingWorker.runOnce(new Date(Date.now() + 2_000))).toBe(true);
-    expect(await processingWorker.runOnce(new Date(Date.now() + 6_000))).toBe(true);
+    // Credential errors are permanent — the worker should not burn retry
+    // budget waiting for the operator to fix an .env value.
+    expect(await processingWorker.runOnce(new Date(Date.now() + 2_000))).toBe(false);
 
     const [document] = await documentRepository.listByWorkspaceId("workspace-1");
     expect(document.status).toBe("failed");
     expect(document.failureReason).toBe(
       "The configured AI provider rejected the credentials. Update .env and restart Radioso.",
     );
+    expect([...jobRepository.items.values()][0].attemptCount).toBe(1);
   });
 
   it("reprocesses imported documents from the stored original file", async () => {

@@ -2,6 +2,7 @@ import {
   buildResponseIdentityLines,
   type ResponseIdentity,
 } from "../../../shared/domain/responseIdentity.js";
+import { renderCustomResponseInstructionBlock } from "../../../shared/domain/customResponseInstructionBlock.js";
 import { normalizeLlmClassifierLanguageLabel } from "../../../shared/domain/llmClassifierFields.js";
 import type { ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 
@@ -52,16 +53,7 @@ export class SharedAnswerInstructionBuilder {
   }
 
   private renderCustomInstruction(customInstruction?: string): string | null {
-    if (!customInstruction) {
-      return null;
-    }
-
-    const sanitized = customInstruction.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
-    if (!sanitized.trim()) {
-      return null;
-    }
-
-    return `Configured response instructions:\n${sanitized}`;
+    return renderCustomResponseInstructionBlock(customInstruction);
   }
 
   private renderResponseIdentity(responseIdentity?: ResponseIdentity | null): string | null {

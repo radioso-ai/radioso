@@ -127,7 +127,7 @@ export function UsageView() {
   return (
     <DashboardPage
       title="Usage"
-      description={usageLimitsEnabled ? 'Account limits and current consumption.' : 'Current workspace usage.'}
+      description={usageLimitsEnabled ? 'Limits and totals summed across all workspaces in this account.' : 'Current workspace usage.'}
       contentClassName="p-6"
     >
       {isLoading ? (
@@ -175,7 +175,7 @@ export function UsageView() {
               unit="bytes"
               used={usage?.storedIndexedBytes.used ?? 0}
               limit={usage?.storedIndexedBytes.limit ?? null}
-              caption="Current size of content Radioso keeps searchable."
+              caption="Content Radioso keeps searchable."
             />
             <UsageMeter
               label="Monthly indexed content"
@@ -194,7 +194,7 @@ export function UsageView() {
               label="Stored documents"
               used={usage?.storedDocuments.used ?? 0}
               limit={usage?.storedDocuments.limit ?? null}
-              caption="Document count guardrail across the account."
+              caption="Document count guardrail."
             />
           </div>
         </div>

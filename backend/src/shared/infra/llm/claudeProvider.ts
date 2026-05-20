@@ -3,6 +3,7 @@ import {
   type TextGenerationClient,
 } from "./providerTypes.js";
 import { LLM_DEFAULTS } from "../../domain/behaviorConfig.js";
+import { ProviderHttpError } from "./providerErrors.js";
 import { parseSseEvents } from "./sse.js";
 
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
@@ -64,7 +65,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Claude request failed: ${response.status}`);
+      throw new ProviderHttpError({ provider: "Claude", operation: "messages", status: response.status });
     }
 
     const payload = await response.json();
@@ -88,7 +89,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
     });
 
     if (!response.ok || !response.body) {
-      throw new Error(`Claude stream failed: ${response.status}`);
+      throw new ProviderHttpError({ provider: "Claude", operation: "messages.stream", status: response.status });
     }
 
     for await (const data of parseSseEvents(response.body)) {

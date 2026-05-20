@@ -1918,7 +1918,7 @@ export class InMemoryDocumentStorage implements DocumentStoragePort {
   deleteFailures = new Set<string>();
 
   async upload(input: DocumentStorageUploadInput) {
-    const objectPath = `workspaces/${input.workspaceId}/documents/${input.documentId}/${input.filename}`;
+    const objectPath = `workspaces/${input.workspaceId}/documents/${input.documentId}`;
     const generation = `${this.objects.size + 1}`;
     this.objects.set(objectPath, {
       buffer: Buffer.from(input.buffer),

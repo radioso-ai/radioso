@@ -141,8 +141,6 @@ export class RetrievalPipelineService {
       ? await this.measure(() => selectRetrievalAnswerShape({
           query: input.request.query,
           rewrittenQuery: input.interpretation.result.rewrittenQuery,
-          continuityDecision: input.interpretation.result.continuityDecision,
-          historyMessageCount: input.context.result.contextWindow.selectedMessages.length,
         }))
       : undefined;
     const interpretation = {

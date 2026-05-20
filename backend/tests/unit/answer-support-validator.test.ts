@@ -735,6 +735,50 @@ it("omits consecutive unsupported claims within mixed answers", async () => {
     expect(result.validation.answerModified).toBe(true);
   });
 
+  it("uses a coherent grounded miss instead of degrading mixed answers to source-link fragments", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "What is Kriya?",
+      answer:
+        "Kriya Yoga is an ancient practice for liberation. If you’d like, I can point you to [the path of Kriya Yoga](https://www.ananda.it/sentiero-kriya-yoga).",
+      answerSegments: [
+        {
+          text: "Kriya Yoga is an ancient practice for liberation. If you’d like, I can point you to [the path of Kriya Yoga](https://www.ananda.it/sentiero-kriya-yoga).",
+        },
+      ],
+      citationEvidence: [
+        {
+          documentId: "doc-kriya",
+          chunkId: "chunk-kriya",
+          title: "Il sentiero del Kriya Yoga",
+          content: "Learn more at https://www.ananda.it/sentiero-kriya-yoga/",
+          sourceUrl: "https://www.ananda.it/sentiero-kriya-yoga/",
+        },
+      ],
+      retrievedContextSummaries: [
+        {
+          title: "Il sentiero del Kriya Yoga",
+          content: "Learn more at https://www.ananda.it/sentiero-kriya-yoga/",
+        },
+      ],
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("No se pudo verificar esa respuesta con los documentos recuperados.");
+    expect(result.citations).toEqual([]);
+    expect(result.answerSegments).toEqual([
+      { text: "No se pudo verificar esa respuesta con los documentos recuperados." },
+    ]);
+    expect(result.segmentResults.map((segment) => segment.reason)).toEqual([
+      "missing_support_reference",
+      "has_support_reference_link_only",
+    ]);
+    expect(result.validation.supportedSegmentCount).toBe(1);
+    expect(result.validation.unsupportedSegmentCount).toBe(1);
+    expect(result.validation.answerModified).toBe(true);
+  });
+
   it("preserves model-marked unsupported notices under strict validation", async () => {
     const validator = new AnswerSupportValidator();
 

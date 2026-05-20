@@ -185,6 +185,7 @@ const extractSupportedLinkText = (value: string): string | null => {
 
 const normalizeOmittedUnsupportedPrefix = (value: string): string => value.replace(/^\s+/g, "");
 const normalizePunctuationOnlySegment = (value: string): string => value.replace(/^\s+/, "");
+const SOURCE_LINK_ONLY_SUPPORT_REASON = "has_support_reference_link_only";
 
 const toChatCitation = (citation: CitationEvidence) => ({
   documentId: citation.documentId,
@@ -370,7 +371,7 @@ export class AnswerSupportValidator {
           disposition: VALIDATION_DISPOSITION.SUPPORTED,
           citationIndices,
           replacementApplied: sourceUrlSupport?.replacementApplied ?? false,
-          reason: sourceUrlSupport?.replacementApplied ? "has_support_reference_link_only" : "has_support_reference",
+          reason: sourceUrlSupport?.replacementApplied ? SOURCE_LINK_ONLY_SUPPORT_REASON : "has_support_reference",
         } as const;
       }
 
@@ -436,9 +437,17 @@ export class AnswerSupportValidator {
         ))
       : segmentResults;
 
+    const shouldComposeGroundedMiss =
+      supportedSegmentCount === 0 && unsupportedSegmentCount > 0
+      || (
+        supportedSegmentCount > 0
+        && unsupportedSegmentCount > 0
+        && this.hasOnlySourceLinkSupport(segmentResults)
+      );
+
     const visibleSegments = preserveModelUnsupportedNotice
       ? this.buildVisibleSegments(effectiveSegmentResults)
-      : supportedSegmentCount === 0 && unsupportedSegmentCount > 0
+      : shouldComposeGroundedMiss
         ? [{
             text: await input.groundedMissResponseComposer.composeUnsupportedWithContext({
               query: input.query,
@@ -470,6 +479,20 @@ export class AnswerSupportValidator {
       },
       segmentResults: effectiveSegmentResults,
     };
+  }
+
+  private hasOnlySourceLinkSupport(
+    segmentResults: Array<{
+      disposition: string;
+      reason: string;
+    }>,
+  ): boolean {
+    const supportedSegments = segmentResults.filter(
+      (segment) => segment.disposition === VALIDATION_DISPOSITION.SUPPORTED,
+    );
+
+    return supportedSegments.length > 0
+      && supportedSegments.every((segment) => segment.reason === SOURCE_LINK_ONLY_SUPPORT_REASON);
   }
 
   private buildVisibleSegments(

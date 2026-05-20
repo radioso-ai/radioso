@@ -8,7 +8,7 @@ import type {
   DocumentProcessingJobRepositoryPort,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { DocumentProcessingService } from "./documentProcessingService.js";
-import { getProviderFailureReason } from "../../../shared/infra/llm/providerErrors.js";
+import { getProviderFailureReason, isPermanentProviderFailure } from "../../../shared/infra/llm/providerErrors.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
@@ -186,7 +186,8 @@ export class DocumentProcessingWorker {
 
   private async handleFailure(job: DocumentProcessingJobRecord, error: unknown, durationMs: number): Promise<void> {
     const message = getProviderFailureReason(error);
-    const hasRetriesRemaining = job.attemptCount < MAX_ATTEMPTS;
+    const isPermanent = isPermanentProviderFailure(error);
+    const hasRetriesRemaining = !isPermanent && job.attemptCount < MAX_ATTEMPTS;
 
     if (hasRetriesRemaining) {
       const delayMs = RETRY_DELAYS_MS[Math.min(job.attemptCount - 1, RETRY_DELAYS_MS.length - 1)] ?? this.pollIntervalMs;
@@ -246,12 +247,13 @@ export class DocumentProcessingWorker {
         revision: job.documentRevision,
         attemptCount: job.attemptCount,
         retryScheduled: false,
+        permanent: isPermanent,
         reason: message,
       },
     });
     await this.emitJobTelemetry("document.worker.job_failed", job, {
       durationMs,
-      outcome: "failed",
+      outcome: isPermanent ? "failed_permanent" : "failed",
       reason: message,
     });
   }
@@ -328,7 +330,7 @@ export class DocumentProcessingWorker {
     job: DocumentProcessingJobRecord,
     input: {
       durationMs: number;
-      outcome: "completed" | "stale" | "deleted" | "retry_scheduled" | "failed";
+      outcome: "completed" | "stale" | "deleted" | "retry_scheduled" | "failed" | "failed_permanent";
       reason?: string;
     },
   ): Promise<void> {

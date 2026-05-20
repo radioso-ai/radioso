@@ -6,9 +6,11 @@
     "node": ">=24"
   },
   "scripts": {
-    "predev": "if [ ! -f ../scripts/sync-ee-frontend-routes.mjs ]; then :; elif [ \"${RADIOSO_EDITION:-oss}\" = \"enterprise\" ]; then pnpm --dir ../ee run build && node ../scripts/sync-ee-frontend-routes.mjs enable; else node ../scripts/sync-ee-frontend-routes.mjs disable; fi",
+    "sync-edition": "if [ ! -f ../scripts/sync-ee-frontend-routes.mjs ]; then :; elif [ \"${RADIOSO_EDITION:-oss}\" = \"enterprise\" ]; then pnpm --dir ../ee run build && node ../scripts/sync-ee-frontend-routes.mjs enable; else node ../scripts/sync-ee-frontend-routes.mjs disable; fi",
+    "postinstall": "pnpm run sync-edition",
+    "predev": "pnpm run sync-edition",
     "dev": "next dev --webpack --port 3000",
-    "prebuild": "if [ ! -f ../scripts/sync-ee-frontend-routes.mjs ]; then :; elif [ \"${RADIOSO_EDITION:-oss}\" = \"enterprise\" ]; then pnpm --dir ../ee run build && node ../scripts/sync-ee-frontend-routes.mjs enable; else node ../scripts/sync-ee-frontend-routes.mjs disable; fi",
+    "prebuild": "pnpm run sync-edition",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",

@@ -28,7 +28,8 @@ describe("LocalDocumentStorage", () => {
     });
 
     expect(uploaded.bucket).toBe("local");
-    expect(uploaded.objectPath).toContain("workspace-1/documents/document-1/");
+    expect(uploaded.objectPath).toBe("workspaces/workspace-1/documents/document-1");
+    expect(uploaded.objectPath).not.toContain("Quarterly");
     expect(uploaded.sizeBytes).toBe(Buffer.byteLength("hello local storage"));
 
     const buffer = await storage.read({

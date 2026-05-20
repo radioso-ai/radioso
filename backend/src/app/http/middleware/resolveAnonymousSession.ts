@@ -50,8 +50,18 @@ export const shouldUseSecureAnonymousCookie = (req: Request) => {
   return !isLoopbackHost(req.get("host"));
 };
 
+// Derive a per-purpose HMAC key so the rate-limit cookie cannot be forged or
+// substituted using any other HMAC produced from the same root secret (the
+// secret is also used to issue public chat session tokens). The label is a
+// stable domain-separation tag; bumping the version invalidates outstanding
+// rate-limit cookies on rotation.
+const RATE_LIMIT_COOKIE_KEY_LABEL = "radioso/anonymous-rate-limit-cookie/v1";
+
+const deriveRateLimitCookieKey = (secret: string): Buffer =>
+  createHmac("sha256", secret).update(RATE_LIMIT_COOKIE_KEY_LABEL).digest();
+
 const signRateLimitId = (secret: string, id: string) =>
-  createHmac("sha256", secret).update(id).digest("base64url");
+  createHmac("sha256", deriveRateLimitCookieKey(secret)).update(id).digest("base64url");
 
 const issueAnonymousRateLimitCookie = (secret: string, id: string) => `${id}.${signRateLimitId(secret, id)}`;
 

@@ -8,7 +8,6 @@ import type {
   DocumentStorageUploadInput,
   StoredDocumentObject,
 } from "../contracts/storage.js";
-import { sanitizePathSegment } from "./gcsDocumentStorage.js";
 
 const LOCAL_STORAGE_BUCKET = "local";
 
@@ -46,12 +45,14 @@ export class LocalDocumentStorage implements DocumentStoragePort {
   }
 
   async upload(input: DocumentStorageUploadInput): Promise<StoredDocumentObject> {
+    // Path leaf is the caller-generated random documentId; the original
+    // filename is untrusted client input, so it's kept on the document row's
+    // `sourceFilename` rather than the storage path.
     const objectPath = [
       "workspaces",
       input.workspaceId,
       "documents",
       input.documentId,
-      `${Date.now()}-${sanitizePathSegment(input.filename)}`,
     ].join("/");
     const targetPath = ensureWithinRoot(this.rootPath, objectPath);
 

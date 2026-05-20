@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
+import { ProviderHttpError } from "../../src/shared/infra/llm/providerErrors.js";
 import { startWorkerRuntime } from "../../src/runtime/startWorkerRuntime.js";
 import { startWorkerTaskRuntime } from "../../src/runtime/startWorkerTaskRuntime.js";
 import { createAuditService, InMemoryDocumentProcessingJobRepository, InMemoryDocumentRepository } from "../support/fakes.js";
@@ -173,6 +174,72 @@ describe("document processing worker runtime signals", () => {
       expect.objectContaining({
         eventType: "document.worker.job_failed",
         tags: { outcome: "retry_scheduled" },
+      }),
+    );
+  });
+
+  it("fails permanent provider errors immediately without scheduling a retry", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    };
+    const telemetryService = {
+      emit: vi.fn().mockResolvedValue(null),
+    };
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Bad payload",
+      sourceContent: "Bad payload",
+      markdownContent: "Bad payload",
+      status: "queued",
+      sourceKind: "inline_text",
+      sourceFilename: null,
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      sourceSizeBytes: null,
+    });
+    await jobRepository.enqueue({
+      documentId: document.id,
+      workspaceId: document.workspaceId,
+      documentRevision: document.revision,
+    });
+
+    // Use the real Gemini/Claude fetch-failure shape so a regression that
+    // drops the `status` field would re-introduce the silent-retry bug.
+    const permanentError = new ProviderHttpError({
+      provider: "Gemini",
+      operation: "embedContent",
+      status: 400,
+    });
+
+    const worker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      {
+        process: vi.fn().mockRejectedValue(permanentError),
+      } as any,
+      createAuditService(),
+      logger as any,
+      10_000,
+      undefined,
+      undefined,
+      telemetryService as any,
+    );
+
+    await expect(worker.runOnce()).resolves.toBe(true);
+
+    const job = [...jobRepository.items.values()][0];
+    expect(job.status).toBe("failed");
+    expect(job.attemptCount).toBe(1);
+    expect(telemetryService.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "document.worker.job_failed",
+        tags: { outcome: "failed_permanent" },
       }),
     );
   });

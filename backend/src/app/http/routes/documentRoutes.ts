@@ -580,9 +580,10 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
 
   router.put("/:documentId", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), validateBody(documentSchema), async (req, res, next) => {
     try {
-      const { workspaceId } = res.locals as { workspaceId: string };
+      const { accountId, workspaceId } = res.locals as { accountId?: string; workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
       const result = await dependencies.documentIngestionService.update({
+        accountId,
         workspaceId,
         documentId,
         title: req.body.title,

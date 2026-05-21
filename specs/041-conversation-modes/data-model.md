@@ -63,7 +63,7 @@
 ## Mode-Shaped Turn
 
 - **Represents**: The final delivered assistant turn after combining direct
-  answer content, existing support validation, and any optional focused or
+  answer content, citation-aware presentation, and any optional focused or
   expansive continuation.
 - **Fields**:
   - `answer`

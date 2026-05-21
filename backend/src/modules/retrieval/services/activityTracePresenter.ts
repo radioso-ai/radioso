@@ -12,15 +12,6 @@ export interface AnswerOutcomeInput {
   retrievalSkipped?: boolean;
   durationMs: number;
   answerOutcome?: string;
-  validation?: {
-    ran: boolean;
-    answerModified: boolean;
-    unsupportedSegmentCount: number;
-    supportedSegmentCount?: number;
-    substantiveUnsupportedSegmentCount?: number;
-    hiddenSupportUsed?: boolean;
-    hiddenSupportKindsUsed?: string[];
-  };
 }
 
 const ALLOWED_STATUSES = new Set<ActivityStageStatus>([
@@ -57,39 +48,6 @@ const sanitizeStage = (stage: ActivityStage): ActivityStage => ({
   outputs: stage.outputs ? (summarizeValue(stage.outputs) as Record<string, unknown>) : undefined,
 });
 
-const toSupportStatus = (
-  validation: AnswerOutcomeInput["validation"] | undefined,
-): "supported" | "unsupported" | "not_checked" => {
-  if (!validation?.ran) {
-    return "not_checked";
-  }
-
-  return (validation.supportedSegmentCount ?? 0) > 0 && (validation.substantiveUnsupportedSegmentCount ?? 0) === 0
-    ? "supported"
-    : "unsupported";
-};
-
-const withAnswerSupportDiagnostic = (
-  summary: ActivitySummary,
-  outcome: AnswerOutcomeInput,
-): ActivitySummary => {
-  if (!summary.skillDiagnostic?.evidence) {
-    return summary;
-  }
-
-  return {
-    ...summary,
-    skillDiagnostic: {
-      ...summary.skillDiagnostic,
-      evidence: {
-        ...summary.skillDiagnostic.evidence,
-        supportStatus: toSupportStatus(outcome.validation),
-        groundingOutcome: outcome.answerOutcome,
-      },
-    },
-  };
-};
-
 export class ActivityTracePresenter {
   present(input: ActivityTrace, summary: ActivitySummary): ActivityTrace {
     const sanitizedStages = input.stages.map((stage) => sanitizeStage(stage));
@@ -124,8 +82,6 @@ export class ActivityTracePresenter {
       outputs: {
         stream: input.outcome.stream,
         answerPreview: summarizeValue(input.outcome.answer),
-        validationRan: input.outcome.validation?.ran,
-        answerModified: input.outcome.validation?.answerModified,
       },
       metrics: {
         answerLength: input.outcome.answer.length,
@@ -145,15 +101,8 @@ export class ActivityTracePresenter {
               : input.outcome.hadContexts
                 ? "grounded_answer"
                 : "no_context"
-          ),
+        ),
         retrievalSkipped,
-        validationRan: input.outcome.validation?.ran,
-        answerModified: input.outcome.validation?.answerModified,
-        unsupportedSegmentCount: input.outcome.validation?.unsupportedSegmentCount,
-        supportedSegmentCount: input.outcome.validation?.supportedSegmentCount,
-        substantiveUnsupportedSegmentCount: input.outcome.validation?.substantiveUnsupportedSegmentCount,
-        hiddenSupportUsed: input.outcome.validation?.hiddenSupportUsed,
-        hiddenSupportKindsUsed: input.outcome.validation?.hiddenSupportKindsUsed,
       },
       metrics: {
         answerLength: input.outcome.answer.length,
@@ -182,7 +131,7 @@ export class ActivityTracePresenter {
           { fromStageId: generationStage.stageId, toStageId: "answer", kind: "sequence" },
         ],
       },
-      withAnswerSupportDiagnostic(input.summary, input.outcome),
+      input.summary,
     );
   }
 }

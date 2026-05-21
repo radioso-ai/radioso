@@ -57,7 +57,7 @@
 - [x] T013 [P] [US1] Create a focused chat turn-intent service in `backend/src/modules/chat/services/chatTurnIntentService.ts`
 - [x] T014 [P] [US1] Add non-retrieval social prompt assets under `backend/prompts/chat/`
 - [x] T015 [US1] Wire social-only routing into `backend/src/modules/chat/services/chatService.ts` using the chat turn-intent service and shared answer-instruction builder
-- [x] T016 [US1] Ensure social-only turns bypass grounded-miss fallback and support validation replacement logic in `backend/src/modules/chat/services/chatService.ts` and `backend/src/modules/chat/services/answerSupportValidator.ts`
+- [x] T016 [US1] Ensure social-only turns bypass grounded-miss fallback logic in `backend/src/modules/chat/services/chatService.ts`
 
 **Checkpoint**: Social-only turns are independently correct and no longer produce document-grounded miss replies.
 

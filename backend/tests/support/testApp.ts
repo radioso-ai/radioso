@@ -217,19 +217,6 @@ const appDependencyMap = new WeakMap<object, AppDependencies>();
 const appRepositoryMap = new WeakMap<object, TestRepositories>();
 
 class TestGroundedMissResponseComposer implements GroundedMissResponseComposer {
-  async composeUnsupportedWithContext(input: {
-    query: string;
-    unsupportedText: string;
-    contexts: Array<{ title: string; content: string }>;
-  }): Promise<string> {
-    const title = input.contexts.find((context) => context.title.trim().length > 0)?.title.trim();
-    if (title) {
-      return `I couldn't verify that from your workspace documents, but I did find related material in "${title}" if you'd like to explore that instead.`;
-    }
-
-    return "I couldn't find supporting material for that in your workspace documents, but I did find related material if you'd like to explore that instead.";
-  }
-
   async composeNoContext(): Promise<string> {
     return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
   }

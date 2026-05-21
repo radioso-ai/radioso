@@ -31,7 +31,6 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
       similarityThreshold: z.number().min(0).max(1),
       rerankTopK: z.number().int().min(1),
       citationDisplayEnabled: z.boolean(),
-      answerSupportValidationEnabled: z.boolean(),
       metadataFieldSuggestions: z.array(
         z.object({
           field: z.string(),
@@ -226,7 +225,6 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
       similarityThreshold: z.number().min(0).max(1),
       rerankTopK: z.number().int().min(1),
       citationDisplayEnabled: z.boolean(),
-      answerSupportValidationEnabled: z.boolean(),
       metadataRules: z.array(
         z.object({
           id: z.string(),

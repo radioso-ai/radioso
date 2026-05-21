@@ -39,7 +39,6 @@ export const retrievalPatchSchema = z.object({
   semanticRewriteInstructions: z.string().max(2000).optional(),
   similarityThreshold: z.number().min(0).max(1).optional(),
   suggestedQuestionsEnabled: z.boolean().optional(),
-  answerSupportValidationEnabled: z.boolean().optional(),
   vectorTopK: z.number().int().positive().optional(),
 });
 

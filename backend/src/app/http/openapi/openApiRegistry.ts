@@ -153,9 +153,6 @@ export interface OpenApiSchemaCatalog {
   UpdateIngestionSettingsRequestSchema: z.ZodTypeAny;
   UpdatePlatformSettingsRequestSchema: z.ZodTypeAny;
   UpdateRetrievalSettingsRequestSchema: z.ZodTypeAny;
-  ValidationDebugSchema: z.ZodTypeAny;
-  ValidationDispositionSchema: z.ZodTypeAny;
-  ValidationSegmentResultSchema: z.ZodTypeAny;
   WebsiteCrawlJobListQuerySchema: RouteParameterSchema;
   WebsiteCrawlJobListResponseSchema: z.ZodTypeAny;
   WebsiteCrawlJobResponseSchema: z.ZodTypeAny;

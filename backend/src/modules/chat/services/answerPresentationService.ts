@@ -1,5 +1,4 @@
 import { findCitationAnchorGroups, stripResidualCitationSyntax } from "./citationAnchorParser.js";
-import { hasUnsupportedNoticeMarker, stripUnsupportedNoticeMarker } from "./unsupportedNoticeMarker.js";
 import type {
   AnswerSegment,
   ChatCitation,
@@ -84,10 +83,7 @@ export class AnswerPresentationService {
     citations: CitationEvidence[];
   }): NormalizedPresentedAnswer {
     const trimmedAnswer = addMissingPunctuationAfterTerminalMarkdownLinks(input.answer.trim());
-    return {
-      ...this.normalizeAnchoredAnswer(stripUnsupportedNoticeMarker(trimmedAnswer), input.citations),
-      unsupportedNoticeMarked: hasUnsupportedNoticeMarker(trimmedAnswer),
-    };
+    return this.normalizeAnchoredAnswer(trimmedAnswer, input.citations);
   }
 
   present(input: {

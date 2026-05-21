@@ -1092,7 +1092,7 @@ describe("chat integration", () => {
     });
   });
 
-  it("records validator-triggered degradation in assistant-turn audit metadata", async () => {
+  it("records grounded answers in assistant-turn audit metadata without validation diagnostics", async () => {
     const mixedGateway: ChatGateway = {
       async answer() {
         return "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support.";
@@ -1122,24 +1122,12 @@ describe("chat integration", () => {
 
     expect(response.status).toBe(200);
     expect(chatAudit?.metadata).toMatchObject({
-      answerOutcome: "grounded_degraded_unsupported_segments",
-      validation: {
-        ran: true,
-        answerModified: true,
-        unsupportedSegmentCount: 1,
-        substantiveUnsupportedSegmentCount: 1,
-        supportedSegmentCount: 1,
-        nonSubstantiveSegmentCount: expect.any(Number),
-      },
+      answerOutcome: "grounded_success",
     });
-    const validation = chatAudit?.metadata?.validation as
-      | { segmentResults?: Array<Record<string, unknown>> }
-      | undefined;
-    expect(validation?.segmentResults?.every((segment) => !("content" in segment))).toBe(true);
-    expect(validation?.segmentResults?.every((segment) => "originalText" in segment)).toBe(true);
+    expect(chatAudit?.metadata).not.toHaveProperty("validation");
   });
 
-  it("keeps no-context refusals distinct from validator-triggered degradation in audit metadata", async () => {
+  it("keeps no-context refusals distinct in audit metadata", async () => {
     const { app, dependencies } = createTestApp();
 
     const { token } = await issueTestToken(app, "no-context-outcome@example.com");
@@ -1156,15 +1144,8 @@ describe("chat integration", () => {
     expect(response.status).toBe(200);
     expect(chatAudit?.metadata).toMatchObject({
       answerOutcome: "no_context_refusal",
-      validation: {
-        ran: false,
-        answerModified: false,
-        unsupportedSegmentCount: 0,
-        substantiveUnsupportedSegmentCount: 0,
-        supportedSegmentCount: 0,
-        nonSubstantiveSegmentCount: 0,
-      },
     });
+    expect(chatAudit?.metadata).not.toHaveProperty("validation");
   });
 
   it("records a failure turn that can be inspected through history", async () => {

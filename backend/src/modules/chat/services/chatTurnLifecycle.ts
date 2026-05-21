@@ -10,10 +10,8 @@ import {
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import {
   ASSISTANT_TURN_OUTCOME,
-  type AnswerSegmentValidationResult,
-  type AnswerValidationSummary,
   type AssistantTurnOutcome,
-} from "./answerSupportValidationTypes.js";
+} from "./assistantTurnOutcomeTypes.js";
 import type { ChatIntakeResult } from "./chatIntakeProvider.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { buildRewriteContinuityState } from "./rewriteContinuityState.js";
@@ -84,7 +82,6 @@ export class ChatTurnLifecycle {
         retrievalSkipped: input.session.retrieval.diagnostics.retrievalSkipped,
         durationMs: Date.now() - input.answerStartedAt,
         answerOutcome: input.presentation.answerOutcome,
-        validation: input.presentation.validation,
       },
     });
     const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
@@ -102,8 +99,6 @@ export class ChatTurnLifecycle {
       userMessageId: input.session.userMessage.id,
       assistantMessageId: assistantMessage.id,
       answerOutcome: input.presentation.answerOutcome,
-      validation: input.presentation.validation,
-      segmentResults: input.presentation.segmentResults,
       citations: input.presentation.citations ?? [],
       answerSegments: input.presentation.answerSegments,
       suggestions: input.presentation.suggestions,
@@ -164,15 +159,6 @@ export class ChatTurnLifecycle {
       userMessageId: input.session.userMessage.id,
       assistantMessageId: assistantMessage.id,
       answerOutcome: ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE,
-      validation: {
-        ran: false,
-        answerModified: false,
-        unsupportedSegmentCount: 0,
-        substantiveUnsupportedSegmentCount: 0,
-        supportedSegmentCount: 0,
-        nonSubstantiveSegmentCount: 0,
-      },
-      segmentResults: [],
       citations: [],
       answerSegments: undefined,
       suggestions: undefined,
@@ -290,8 +276,6 @@ export class ChatTurnLifecycle {
     userMessageId: string;
     assistantMessageId: string;
     answerOutcome: AssistantTurnOutcome;
-    validation: AnswerValidationSummary;
-    segmentResults: AnswerSegmentValidationResult[];
     citations: ChatCitation[];
     answerSegments?: AnswerSegment[];
     suggestions?: ChatSuggestion[];
@@ -326,17 +310,6 @@ export class ChatTurnLifecycle {
           routeType: input.route.type,
           routeReason: input.route.reason,
           retrievalInvoked: input.route.type === "retrieval",
-        },
-        validation: {
-          ...input.validation,
-          segmentResults: input.segmentResults.map((segment) => ({
-            originalText: segment.originalText,
-            text: segment.text,
-            disposition: segment.disposition,
-            replacementApplied: segment.replacementApplied,
-            reason: segment.reason,
-            citationIndices: segment.citationIndices,
-          })),
         },
         citationCount: input.citations.length,
         citations: input.citations,

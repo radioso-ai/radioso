@@ -77,7 +77,6 @@ describe('activity diagnostics presentation', () => {
         status: 'applied',
         settings: {
           citationDisplayEnabled: true,
-          answerSupportValidationEnabled: true,
           responseLanguagePolicy: 'match_user_question',
         },
       },
@@ -88,7 +87,7 @@ describe('activity diagnostics presentation', () => {
     expect(presentation?.title).toBe('Retrieval parameters')
     expect(presentation?.facts).toContainEqual({ label: 'Query rewrite', value: 'Enabled' })
     expect(presentation?.facts).toContainEqual({ label: 'Meaning search limit', value: '12' })
-    expect(presentation?.facts).toContainEqual({ label: 'Support validation', value: 'Enabled' })
+    expect(presentation?.facts).toContainEqual({ label: 'Citation display', value: 'Enabled' })
   })
 
   it('summarizes direct answers as agent activity instead of missing retrieval', () => {

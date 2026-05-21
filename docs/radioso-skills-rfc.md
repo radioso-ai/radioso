@@ -98,7 +98,7 @@ Example shapes for `retrieval.answer`:
 |---|---|---|
 | `definition_lookup` | entity, term, acronym, or concept identification | lexical-heavy search, semantic assist, minimal or no reranking unless ambiguous |
 | `event_date_lookup` | event, schedule, deadline, or date/time answers | keyword and entity boosting, date signal extraction, reranking, stricter evidence checks |
-| `policy_answer` | procedural, compliance, or support answers | hybrid search, support validation, citations, conservative answer synthesis |
+| `policy_answer` | procedural, compliance, or support answers | hybrid search, citations, conservative answer synthesis |
 | `exploratory_summary` | broad synthesis, overview, or comparison answers | broader candidate pool, diversity, synthesis across sources |
 | `follow_up_grounding` | conversational follow-ups | context-aware rewrite before search, then shape resolution |
 

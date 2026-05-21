@@ -117,9 +117,6 @@
         "citationDisplayEnabled": {
           "type": "boolean"
         },
-        "answerSupportValidationEnabled": {
-          "type": "boolean"
-        },
         "metadataRules": {
           "type": "array",
           "items": {

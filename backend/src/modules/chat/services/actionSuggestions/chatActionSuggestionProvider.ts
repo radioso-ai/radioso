@@ -1,6 +1,6 @@
 import type { MessageRecord } from "../../../../db/repositories/messageRepository.js";
 import type { ChatSuggestion } from "../../types/chatResponses.js";
-import type { AssistantTurnOutcome } from "../answerSupportValidationTypes.js";
+import type { AssistantTurnOutcome } from "../assistantTurnOutcomeTypes.js";
 
 export interface ChatActionSuggestionContext {
   workspaceId: string;

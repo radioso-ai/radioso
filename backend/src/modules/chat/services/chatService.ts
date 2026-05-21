@@ -226,7 +226,6 @@ export class ChatService {
       agentService,
     );
     this.chatAnswerPresenter = new ChatAnswerPresenter(
-      groundedMissResponseComposer,
       new AssistantSuggestionExpansionService(async ({ query, history, prompt }) =>
         this.chatGateway.answer({
           query,

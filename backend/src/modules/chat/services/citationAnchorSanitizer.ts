@@ -1,31 +1,12 @@
-import { UNSUPPORTED_NOTICE_MARKER } from "./unsupportedNoticeMarker.js";
+import { removeDetachedPunctuationSpacing } from "./citationTextNormalization.js";
 
 const COMPLETE_ANCHOR = /\[\[\d+\]\]/g;
 const ANY_BRACKET_ANCHOR = /\[\[[^\]]*?\]\]/g;
-
-const removeDetachedPunctuationSpacing = (text: string): string =>
-  text
-    .replace(/[ \t]+([.,;:!?])/g, "$1")
-    .replace(/[ \t]+(\r?\n)/g, "$1");
 
 const stripCompleteAnchors = (text: string): string =>
   removeDetachedPunctuationSpacing(text
     .replace(COMPLETE_ANCHOR, "")
     .replace(ANY_BRACKET_ANCHOR, ""));
-
-const stripUnsupportedNoticeMarkers = (text: string): string =>
-  text.split(UNSUPPORTED_NOTICE_MARKER).join("");
-
-const resolveUnsupportedMarkerCarryStart = (text: string): number | null => {
-  for (let length = Math.min(text.length, UNSUPPORTED_NOTICE_MARKER.length - 1); length > 0; length -= 1) {
-    const suffix = text.slice(-length);
-    if (UNSUPPORTED_NOTICE_MARKER.startsWith(suffix)) {
-      return text.length - length;
-    }
-  }
-
-  return null;
-};
 
 export class CitationAnchorSanitizer {
   private carry = "";
@@ -34,13 +15,7 @@ export class CitationAnchorSanitizer {
     const combined = `${this.carry}${chunk ?? ""}`;
     this.carry = "";
 
-    const stripped = stripUnsupportedNoticeMarkers(stripCompleteAnchors(combined));
-
-    const markerCarryStart = resolveUnsupportedMarkerCarryStart(stripped);
-    if (markerCarryStart !== null) {
-      this.carry = stripped.slice(markerCarryStart).slice(-UNSUPPORTED_NOTICE_MARKER.length);
-      return stripped.slice(0, markerCarryStart);
-    }
+    const stripped = stripCompleteAnchors(combined);
 
     const suffixMatch = stripped.match(/\[\[[^\]]*$/);
     if (suffixMatch && suffixMatch.index !== undefined) {

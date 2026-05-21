@@ -48,7 +48,6 @@ export interface RetrievalPipelineResult {
   responseIdentity: ResponseIdentity | null;
   responseSettings: {
     citationDisplayEnabled: boolean;
-    answerSupportValidationEnabled?: boolean;
     suggestedQuestionsEnabled: boolean;
     suggestedQuestionsCount: number;
     customInstruction?: string;
@@ -185,7 +184,6 @@ export class RetrievalPipelineService {
     const responseBehavior = input.request.responseBehavior;
     const responseSettings = {
       citationDisplayEnabled: input.context.result.settings.citationDisplayEnabled,
-      answerSupportValidationEnabled: input.context.result.settings.answerSupportValidationEnabled ?? true,
       suggestedQuestionsEnabled: responseBehavior?.suggestedQuestionsEnabled ?? input.context.result.settings.suggestedQuestionsEnabled,
       suggestedQuestionsCount: responseBehavior?.suggestedQuestionsCount ?? input.context.result.settings.suggestedQuestionsCount,
       customInstruction: responseBehavior?.customInstruction ?? input.context.result.settings.customInstruction,

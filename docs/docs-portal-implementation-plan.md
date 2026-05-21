@@ -143,7 +143,7 @@ Before deep reference material, the site should answer:
 - What Radioso is
 - Who it is for
 - Why grounded answers matter
-- How citations and support validation work
+- How citations work
 - Product architecture at a high level
 - Comparison pages and use-case pages
 

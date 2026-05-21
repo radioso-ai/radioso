@@ -86,7 +86,7 @@ audit metadata instead of introducing a new endpoint or standalone debug store.
 **Rationale**:
 
 - The feature needs inspectability but does not justify a new transport surface.
-- The chat stack already records additive metadata for validation outcomes,
+- The chat stack already records additive metadata for answer outcomes,
   conversation modes, and rewrite continuity state.
 - Additive metadata is sufficient for reviewers and support engineers to see
   whether a turn used social-only, assistant-identity-only, or normal retrieval

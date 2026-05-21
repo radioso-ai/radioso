@@ -1,6 +1,6 @@
 ---
 title: Grounded answers
-description: Why Radioso emphasizes grounding, citations, and support validation.
+description: Why Radioso emphasizes grounding, citations, and clear unsupported-answer behavior.
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -44,9 +44,9 @@ The system searches workspace documents and applies retrieval settings to gather
 
 The answer path keeps track of which chunks support which parts of the response.
 
-### Validate support before presenting it
+### Present answers with citations
 
-If substantive parts of the answer are unsupported, Radioso can preserve them, trim them, or replace them focusing on answer-support outcomes and validation status.
+The presented answer keeps citation metadata connected to the retrieved chunks that support the response.
 </Steps>
 
 ## Why this matters in practice

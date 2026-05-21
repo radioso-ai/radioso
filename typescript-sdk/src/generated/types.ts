@@ -1474,7 +1474,6 @@ export interface components {
             similarityThreshold: number;
             rerankTopK: number;
             citationDisplayEnabled: boolean;
-            answerSupportValidationEnabled: boolean;
             /** @default [] */
             metadataFieldSuggestions: {
                 field: string;
@@ -1528,7 +1527,6 @@ export interface components {
             similarityThreshold: number;
             rerankTopK: number;
             citationDisplayEnabled: boolean;
-            answerSupportValidationEnabled?: boolean;
             metadataRules?: {
                 id: string;
                 field?: string;
@@ -1567,7 +1565,6 @@ export interface components {
             similarityThreshold?: number;
             rerankTopK?: number;
             citationDisplayEnabled?: boolean;
-            answerSupportValidationEnabled?: boolean;
             metadataRules?: {
                 id: string;
                 field?: string;
@@ -1761,7 +1758,6 @@ export interface components {
             similarityThreshold: number;
             rerankTopK: number;
             citationDisplayEnabled: boolean;
-            answerSupportValidationEnabled: boolean;
             /** @default [] */
             metadataRules: {
                 id: string;
@@ -1849,7 +1845,6 @@ export interface components {
                 similarityThreshold?: number;
                 rerankTopK?: number;
                 citationDisplayEnabled?: boolean;
-                answerSupportValidationEnabled?: boolean;
                 metadataRules?: {
                     id: string;
                     field?: string;
@@ -2967,27 +2962,6 @@ export interface components {
             nextCursor: null;
             hasMore: boolean;
         };
-        /** @enum {string} */
-        ValidationDisposition: "supported" | "unsupported" | "non_substantive";
-        ValidationSegmentResult: {
-            originalText: string;
-            text: string;
-            disposition: components["schemas"]["ValidationDisposition"];
-            replacementApplied: boolean;
-            reason: string;
-            citationIndices?: number[];
-        };
-        ValidationDebug: {
-            ran: boolean;
-            answerModified: boolean;
-            unsupportedSegmentCount: number;
-            substantiveUnsupportedSegmentCount: number;
-            supportedSegmentCount: number;
-            nonSubstantiveSegmentCount: number;
-            hiddenSupportUsed?: boolean;
-            hiddenSupportKindsUsed?: "assistant_name"[];
-            segmentResults: components["schemas"]["ValidationSegmentResult"][];
-        };
         ChatConversationMessageDebug: {
             /** @enum {string} */
             eventStatus: "success" | "failure";
@@ -2996,9 +2970,8 @@ export interface components {
             stream: boolean;
             citationCount: number;
             /** @enum {string} */
-            answerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
+            answerOutcome?: "grounded_success" | "no_context_refusal" | "non_retrieval_response";
             route?: components["schemas"]["AssistantRouteDiagnostics"];
-            validation?: components["schemas"]["ValidationDebug"];
             activitySummary?: components["schemas"]["ActivitySummary"];
             activityTrace?: components["schemas"]["ActivityTrace"];
             errorMessage?: string | null;

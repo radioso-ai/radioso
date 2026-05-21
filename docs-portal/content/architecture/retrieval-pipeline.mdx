@@ -7,7 +7,7 @@ import { Callout, Steps } from 'nextra/components'
 
 # Retrieval pipeline
 
-Radioso is not a retrieval platform, but retrieval is one of the core pipelines that knowledge agents can use. It is not treated as a single search call. Radioso runs a staged pipeline that turns a user message into evidence, assembles a prompt, then validates the answer against the evidence that was actually retrieved.
+Radioso is not a retrieval platform, but retrieval is one of the core pipelines that knowledge agents can use. It is not treated as a single search call. Radioso runs a staged pipeline that turns a user message into evidence, assembles a prompt, and presents an answer with citations.
 
 The key point is simple: if answer quality is off, you need to know which stage is failing before you change settings or prompts.
 
@@ -52,7 +52,7 @@ The retrieval settings surface exists because the stages are intentionally adjus
 
 ## What happens after retrieval
 
-Retrieval does not directly become the user-visible answer. The agent chat layer presents the model output as answer segments with citations, then runs answer-support validation. Unsupported substantive segments can be preserved or replaced focusing on answer-support outcomes and validation status.
+Retrieval does not directly become the user-visible answer. The agent chat layer presents the model output as answer segments with citations derived from the retrieved evidence.
 
 <Callout type="info" emoji="i">
   In practice, poor answers usually come from weak retrieval inputs, weak candidate selection, or overly aggressive filtering. Prompt tweaking should usually come after you verify those earlier stages.

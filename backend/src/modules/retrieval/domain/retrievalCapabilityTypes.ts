@@ -53,9 +53,6 @@ export interface RetrievalAnswerSuccess {
     content: string;
     metadata?: Record<string, unknown>;
   }>;
-  validation: {
-    status: "supported" | "unsupported" | "not_checked";
-  };
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;
 }

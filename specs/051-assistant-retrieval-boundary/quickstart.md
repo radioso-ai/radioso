@@ -36,7 +36,7 @@ Use these scenarios to validate the feature after implementation.
 3. Confirm the response shows the updated assistant name.
 4. Confirm the `retrieval` and `channels` sections remain unchanged.
 
-## 5. Retrieval answer supports follow-up rewrite without assistant ownership
+## 5. Retrieval answer handles follow-up rewrite without assistant ownership
 
 1. Call `POST /api/v1/retrieval/answer` with a grounded question and capture the
    result.

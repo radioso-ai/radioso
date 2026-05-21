@@ -66,11 +66,11 @@ describe("HumanContactActionSuggestionProvider", () => {
     expect(composeChipLabel).not.toHaveBeenCalled();
   });
 
-  it("returns null on degraded grounded answers - the chip is opt-in only for strict refusals", async () => {
+  it("returns null on grounded answers - the chip is opt-in only for strict refusals", async () => {
     const { provider, composeChipLabel } = buildProvider();
     const suggestion = await provider.evaluate({
       ...baseContext,
-      answerOutcome: "grounded_degraded_unsupported_segments",
+      answerOutcome: "grounded_success",
     });
     expect(suggestion).toBeNull();
     expect(composeChipLabel).not.toHaveBeenCalled();

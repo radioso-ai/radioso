@@ -34,7 +34,7 @@ The dashboard presents settings in product order:
 3. Retrieval: Rewrite the incoming question -> Tune search and reranking -> Prioritize by metadata -> Present grounded evidence
 4. Connectors: connector list and configuration, without a per-page side menu
 
-Assistant behavior fields such as conversation mode, custom answer instruction, suggested follow-ups, identity, and first greeting belong to the assistant settings surface. Retrieval settings should stay focused on rewrite, ranking, metadata filters, validation outcomes, and citation presentation.
+Assistant behavior fields such as conversation mode, custom answer instruction, suggested follow-ups, identity, and first greeting belong to the assistant settings surface. Retrieval settings should stay focused on rewrite, ranking, metadata filters, and citation presentation.
 
 The settings navigation shell and per-tab section metadata now live in [`frontend/components/dashboard/settings/settings-tab-shell.tsx`](../../frontend/components/dashboard/settings/settings-tab-shell.tsx) and [`frontend/components/dashboard/settings/settings-tab-metadata.ts`](../../frontend/components/dashboard/settings/settings-tab-metadata.ts).
 

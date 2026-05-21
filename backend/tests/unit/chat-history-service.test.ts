@@ -142,7 +142,7 @@ describe("chat history service", () => {
           ],
           links: [],
         },
-        answerOutcome: "grounded_degraded_unsupported_segments",
+        answerOutcome: "grounded_success",
         suggestions: [
           {
             text: "What examples does it include?",
@@ -153,32 +153,6 @@ describe("chat history service", () => {
             },
           },
         ],
-        validation: {
-          ran: true,
-          answerModified: true,
-          unsupportedSegmentCount: 1,
-          substantiveUnsupportedSegmentCount: 1,
-          supportedSegmentCount: 1,
-          nonSubstantiveSegmentCount: 1,
-          hiddenSupportUsed: true,
-          hiddenSupportKindsUsed: ["assistant_name"],
-          segmentResults: [
-            {
-              originalText: "It answers questions.",
-              text: "It answers questions.",
-              disposition: "supported",
-              replacementApplied: false,
-              reason: "has_support_reference",
-            },
-            {
-              originalText: "I couldn't verify that part from the retrieved documents.",
-              text: "I couldn't verify that part from the retrieved documents.",
-              disposition: "unsupported",
-              replacementApplied: true,
-              reason: "missing_support_reference",
-            },
-          ],
-        },
       },
     });
 
@@ -212,7 +186,7 @@ describe("chat history service", () => {
         expect.objectContaining({ stageId: "answer" }),
       ],
     });
-    expect(debug?.answerOutcome).toBe("grounded_degraded_unsupported_segments");
+    expect(debug?.answerOutcome).toBe("grounded_success");
     expect(debug?.route).toEqual({
       generator: "assistant",
       routeType: "retrieval",
@@ -230,32 +204,7 @@ describe("chat history service", () => {
         },
       }),
     ]);
-    expect(debug?.validation).toEqual({
-      ran: true,
-      answerModified: true,
-      unsupportedSegmentCount: 1,
-      substantiveUnsupportedSegmentCount: 1,
-      supportedSegmentCount: 1,
-      nonSubstantiveSegmentCount: 1,
-      hiddenSupportUsed: true,
-      hiddenSupportKindsUsed: ["assistant_name"],
-      segmentResults: [
-        {
-          originalText: "It answers questions.",
-          text: "It answers questions.",
-          disposition: "supported",
-          replacementApplied: false,
-          reason: "has_support_reference",
-        },
-        {
-          originalText: "I couldn't verify that part from the retrieved documents.",
-          text: "I couldn't verify that part from the retrieved documents.",
-          disposition: "unsupported",
-          replacementApplied: true,
-          reason: "missing_support_reference",
-        },
-      ],
-    });
+    expect(debug).not.toHaveProperty("validation");
   });
 
   it("reconstructs an activity trace for historical assistant turns that only stored retrieval diagnostics", async () => {

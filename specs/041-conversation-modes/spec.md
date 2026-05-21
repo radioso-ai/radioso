@@ -89,10 +89,9 @@ consistent.
 
 **Acceptance Scenarios**:
 
-1. **Given** a workspace uses strict answer support behavior, **When** any
-   conversation mode is active, **Then** unsupported substantive content is
-   still handled by the strict policy rather than being allowed through because
-   the mode is more expansive.
+1. **Given** a workspace uses retrieval-backed answers, **When** any
+   conversation mode is active, **Then** citations and grounded context
+   remain available rather than being dropped because the mode is more expansive.
 2. **Given** a response is partially or fully unsupported, **When** guided or
    exploratory mode is active, **Then** any recovery, pivot, or follow-up stays
    grounded in retrieved workspace material and does not become a generic model

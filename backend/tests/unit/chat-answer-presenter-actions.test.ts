@@ -6,20 +6,10 @@ import { ChatActionSuggestionService } from "../../src/modules/chat/services/act
 import type { ChatActionSuggestionProvider } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionProvider.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { AssistantSuggestionExpansionService } from "../../src/modules/chat/services/assistantSuggestionExpansionService.js";
-import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
 import type { ChatSuggestion } from "../../src/modules/chat/types/chatResponses.js";
 import type { ConversationRecord } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import type { AgentRecord } from "../../src/modules/agents/public.js";
-
-const stubGroundedMissComposer: GroundedMissResponseComposer = {
-  async composeUnsupportedWithContext() {
-    return "stub";
-  },
-  async composeNoContext() {
-    return "stub";
-  },
-};
 
 const stubExpansionService = {
   async apply() {
@@ -62,15 +52,6 @@ const basePresentation: ChatPresentedAnswer = {
   answer: "I cannot answer.",
   citations: [],
   answerOutcome: "no_context_refusal",
-  validation: {
-    ran: false,
-    answerModified: false,
-    unsupportedSegmentCount: 0,
-    substantiveUnsupportedSegmentCount: 0,
-    supportedSegmentCount: 0,
-    nonSubstantiveSegmentCount: 0,
-  },
-  segmentResults: [],
 };
 
 const buildProvider = (suggestion: ChatSuggestion): ChatActionSuggestionProvider => ({
@@ -80,7 +61,7 @@ const buildProvider = (suggestion: ChatSuggestion): ChatActionSuggestionProvider
 
 describe("ChatAnswerPresenter.applyActionSuggestions", () => {
   it("returns the presentation unchanged when no action service is wired", async () => {
-    const presenter = new ChatAnswerPresenter(stubGroundedMissComposer, stubExpansionService);
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
     const result = await presenter.applyActionSuggestions(buildSession(), basePresentation);
     expect(result).toEqual(basePresentation);
   });
@@ -94,7 +75,7 @@ describe("ChatAnswerPresenter.applyActionSuggestions", () => {
     const service = new ChatActionSuggestionService(
       new ChatActionSuggestionRegistry([buildProvider(actionChip)]),
     );
-    const presenter = new ChatAnswerPresenter(stubGroundedMissComposer, stubExpansionService, service);
+    const presenter = new ChatAnswerPresenter(stubExpansionService, service);
 
     const presentationWithQuestions: ChatPresentedAnswer = {
       ...basePresentation,
@@ -120,7 +101,7 @@ describe("ChatAnswerPresenter.applyActionSuggestions", () => {
       },
     };
     const service = new ChatActionSuggestionService(new ChatActionSuggestionRegistry([provider]));
-    const presenter = new ChatAnswerPresenter(stubGroundedMissComposer, stubExpansionService, service);
+    const presenter = new ChatAnswerPresenter(stubExpansionService, service);
 
     await presenter.applyActionSuggestions(buildSession(), basePresentation);
 

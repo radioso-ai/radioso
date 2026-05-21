@@ -12,7 +12,6 @@ const createAdapter = (): RadiosoApiAdapter => ({
   getRetrievalSettings: vi.fn().mockResolvedValue({
     citationDisplayEnabled: true,
     customInstruction: "",
-    answerSupportValidationEnabled: true,
     lexicalRewriteInstructions: "",
     metadataFieldSuggestions: [],
     metadataRules: [],

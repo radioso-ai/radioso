@@ -217,38 +217,6 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
-  const ValidationDispositionSchema = registry.register(
-    "ValidationDisposition",
-    z.enum(["supported", "unsupported", "non_substantive"]),
-  );
-
-  const ValidationSegmentResultSchema = registry.register(
-    "ValidationSegmentResult",
-    z.object({
-      originalText: z.string(),
-      text: z.string(),
-      disposition: ValidationDispositionSchema,
-      replacementApplied: z.boolean(),
-      reason: z.string(),
-      citationIndices: z.array(z.number().int().min(0)).optional(),
-    }),
-  );
-
-  const ValidationDebugSchema = registry.register(
-    "ValidationDebug",
-    z.object({
-      ran: z.boolean(),
-      answerModified: z.boolean(),
-      unsupportedSegmentCount: z.number().int().min(0),
-      substantiveUnsupportedSegmentCount: z.number().int().min(0),
-      supportedSegmentCount: z.number().int().min(0),
-      nonSubstantiveSegmentCount: z.number().int().min(0),
-      hiddenSupportUsed: z.boolean().optional(),
-      hiddenSupportKindsUsed: z.array(z.enum(["assistant_name"])).optional(),
-      segmentResults: z.array(ValidationSegmentResultSchema),
-    }),
-  );
-
   const ChatConversationMessageDebugSchema = registry.register(
     "ChatConversationMessageDebug",
     z.object({
@@ -256,9 +224,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       recordedAt: z.string().datetime(),
       stream: z.boolean(),
       citationCount: z.number().int().min(0),
-      answerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal", "non_retrieval_response"]).optional(),
+      answerOutcome: z.enum(["grounded_success", "no_context_refusal", "non_retrieval_response"]).optional(),
       route: AssistantRouteDiagnosticsSchema.optional(),
-      validation: ValidationDebugSchema.optional(),
       activitySummary: schemas.ActivitySummarySchema.optional(),
       activityTrace: schemas.ActivityTraceSchema.optional(),
       errorMessage: z.string().nullable().optional(),
@@ -367,9 +334,6 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ChatHistoryListResponseSchema,
     HistoryItemSchema,
     HistoryItemsResponseSchema,
-    ValidationDispositionSchema,
-    ValidationSegmentResultSchema,
-    ValidationDebugSchema,
     ChatConversationMessageDebugSchema,
     ChatConversationMessageSchema,
     ChatConversationDetailSchema,

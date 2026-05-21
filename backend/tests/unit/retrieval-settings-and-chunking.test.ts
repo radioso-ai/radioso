@@ -110,7 +110,6 @@ describe("settings and chunking", () => {
     expect(defaults.vectorTopK).toBe(15);
     expect(defaults.similarityThreshold).toBe(0.2);
     expect(defaults.citationDisplayEnabled).toBe(true);
-    expect(defaults.answerSupportValidationEnabled).toBe(true);
     expect(defaults.metadataRules).toEqual([]);
     expect(defaults.customInstruction).toBe("");
     expect(defaults.semanticRewriteInstructions).not.toBe("");

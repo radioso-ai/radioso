@@ -15,7 +15,6 @@ export interface DiagnosticPresentation {
 }
 
 type RouteDiagnostics = NonNullable<ChatConversationTurnDebug['route']>
-type ValidationDiagnostics = NonNullable<ChatConversationTurnDebug['validation']>
 
 const CONTACT_STAGE_KINDS = new Set([
   'availability_check',
@@ -101,23 +100,11 @@ const routeReason = (route?: RouteDiagnostics): string | undefined => {
   }
 }
 
-const supportCheck = (
-  validation: ValidationDiagnostics | undefined,
-  defaultWhenMissing: string,
-): string => {
-  if (!validation?.ran) return defaultWhenMissing
-  if (validation.answerModified) return 'Adjusted the answer before showing it'
-  if ((validation.substantiveUnsupportedSegmentCount ?? 0) > 0) return 'Found unsupported claims'
-  if (validation.hiddenSupportUsed) return 'Passed using internal evidence'
-  return 'Passed'
-}
-
 export function presentActivityOutcome(input: {
   trace?: ActivityTrace
   route?: RouteDiagnostics
-  validation?: ValidationDiagnostics
 }): DiagnosticPresentation {
-  const { trace, route, validation } = input
+  const { trace, route } = input
   const summary = trace?.summary
   const facts: DiagnosticFact[] = []
 
@@ -141,7 +128,6 @@ export function presentActivityOutcome(input: {
     const counts = summary?.candidateCounts
     pushFact(facts, 'Route', 'Used workspace documents')
     pushFact(facts, 'Reason', routeReason(route))
-    pushFact(facts, 'Support check', supportCheck(validation, 'Not recorded'))
     pushFact(facts, 'Selected passages', counts?.final)
     pushFact(facts, 'Fallback', summary?.fallbackApplied === true ? 'Used fallback behavior' : summary?.fallbackApplied === false ? 'Not used' : undefined)
 
@@ -157,9 +143,6 @@ export function presentActivityOutcome(input: {
 
   pushFact(facts, 'Activity route', 'Direct assistant reply')
   pushFact(facts, 'Reason', routeReason(route))
-  if (validation?.ran) {
-    pushFact(facts, 'Support check', supportCheck(validation, 'Not recorded'))
-  }
 
   return {
     title: 'Direct assistant reply',
@@ -192,14 +175,13 @@ export function presentRunParameters(trace: ActivityTrace | undefined): Diagnost
     pushFact(facts, 'Rerank', enabled(selectionSettings.effectiveRerankEnabled ?? selectionSettings.rerankEnabled ?? contextSettings.rerankEnabled))
     pushFact(facts, 'Rerank limit', asNumber(selectionSettings.rerankTopK ?? contextSettings.rerankTopK))
     pushFact(facts, 'Citation display', enabled(promptSettings.citationDisplayEnabled))
-    pushFact(facts, 'Support validation', enabled(promptSettings.answerSupportValidationEnabled))
     pushFact(facts, 'Language policy', asString(promptSettings.responseLanguagePolicy) ?? asString(interpretationOutputs.responseLanguagePolicy))
     pushFact(facts, 'Answer strategy', asString(shapeOutputs.shapeName)?.replaceAll('_', ' '))
 
     return facts.length
       ? {
           title: 'Retrieval parameters',
-          summary: 'These settings shaped how workspace documents were searched, ranked, and checked.',
+          summary: 'These settings shaped how workspace documents were searched and ranked.',
           facts,
           tone: 'neutral',
         }

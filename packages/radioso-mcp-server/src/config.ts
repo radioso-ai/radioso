@@ -28,7 +28,6 @@ const configSchema = z.object({
   RADIOSO_MCP_ALLOWED_READ_TOOLS: toolListSchema.optional(),
   RADIOSO_MCP_ALLOWED_WRITE_TOOLS: toolListSchema.optional(),
   RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: toolListSchema.optional(),
-  RADIOSO_MCP_APPROVAL_TTL_SECONDS: z.coerce.number().int().positive().optional(),
   RADIOSO_MCP_AUDIT_LOG_PATH: z.string().trim().min(1).optional(),
   RADIOSO_MCP_BIND_HOST: z.string().trim().min(1).optional(),
   RADIOSO_MCP_BIND_PORT: z.coerce.number().int().min(1).max(65535).optional(),
@@ -48,7 +47,6 @@ export interface RadiosoMcpConfig {
   allowedReadTools: string[];
   allowedWriteTools: string[];
   approvalRequiredWriteTools: string[];
-  approvalTtlSeconds: number;
   auditLogPath?: string;
   baseUrl: string;
   bindHost: string;
@@ -90,7 +88,6 @@ const buildConfig = (parsed: ParsedConfig, signingSecret: string): RadiosoMcpCon
     allowedWriteTools: parsed.RADIOSO_MCP_ALLOWED_WRITE_TOOLS ?? DEFAULT_ALLOWED_WRITE_TOOLS,
     approvalRequiredWriteTools:
       parsed.RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS ?? DEFAULT_APPROVAL_REQUIRED_WRITE_TOOLS,
-    approvalTtlSeconds: parsed.RADIOSO_MCP_APPROVAL_TTL_SECONDS ?? 300,
     auditLogPath: parsed.RADIOSO_MCP_AUDIT_LOG_PATH,
     baseUrl: parsed.RADIOSO_BASE_URL.replace(/\/+$/, ""),
     bindHost: parsed.RADIOSO_MCP_BIND_HOST ?? "127.0.0.1",

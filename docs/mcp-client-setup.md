@@ -159,7 +159,7 @@ ChatGPT custom apps and OpenAI API integrations also require a public remote MCP
 2. Add app-compatible authentication. In practice that means OAuth or OpenID Connect with refresh-token support. The current package's `/v1/auth/exchange` flow is not enough for native ChatGPT app onboarding by itself.
 3. In ChatGPT workspace settings, enable developer mode and create a custom app from that MCP server URL.
 4. If your deployment uses OAuth or OpenID Connect, configure refresh-token-capable auth before publishing.
-5. Connect the app in ChatGPT and test both read paths and approval-gated writes.
+5. Connect the app in ChatGPT and test read and write paths. ChatGPT will prompt the user before any tool advertised with `requiresApproval: true`; that is the host-side approval gate for writes.
 
 ### OpenAI Responses API
 
@@ -181,4 +181,4 @@ The Responses API can call a remote MCP server directly. A typical tool stanza l
 }
 ```
 
-`require_approval: "never"` is suitable for read-only OpenAI API use. The current Radioso server uses explicit approval gating for write tools, so deep-research-style API clients should stay read-only unless you intentionally deploy a separate policy profile for that integration. If your hosted Radioso MCP endpoint is not public and unauthenticated, you will also need an OpenAI-compatible auth layer before this can be used from ChatGPT apps or OpenAI-hosted flows.
+`require_approval: "never"` skips the host-side prompt. The Radioso MCP server has no server-side approval gate — authorization is the workspace API token and the tools the MCP session was granted at exchange time, with the underlying workspace permission enforced at the upstream Radioso REST API. If you want a human-in-the-loop step for writes, run the integration through a host that honors the per-tool `requiresApproval: true` advertisement (such as Cursor, Claude Desktop, or the ChatGPT app UI) instead of through the headless Responses API. If your hosted Radioso MCP endpoint is not public and unauthenticated, you will also need an OpenAI-compatible auth layer before this can be used from ChatGPT apps or OpenAI-hosted flows.

@@ -77,15 +77,6 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
           stream: false,
           citationCount: 1,
           answerOutcome: "grounded_success",
-          validation: {
-            ran: true,
-            answerModified: false,
-            unsupportedSegmentCount: 0,
-            substantiveUnsupportedSegmentCount: 0,
-            supportedSegmentCount: 1,
-            nonSubstantiveSegmentCount: 0,
-            segmentResults: [],
-          },
           activitySummary: {
             execution: {
               surface: "assistant",

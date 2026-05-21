@@ -23,9 +23,9 @@ PUT /api/v1/settings
 
 ## How it works
 
-There are three setting groups:
+There are four setting groups:
 
-- retrieval settings for ranking, citations, rewrite behavior, and validation outcome
+- retrieval settings for ranking, citations, and rewrite behavior
 - ingestion settings for chunking behavior
 - general settings for anonymous chat, assistant defaults, and Enterprise website widget behavior
 - platform settings that merge `assistant`, `retrieval`, and `channels` into one resource
@@ -43,7 +43,6 @@ This payload includes fields such as:
 - `vectorTopK`
 - `similarityThreshold`
 - `rerankTopK`
-- `answerSupportValidationEnabled`
 - `metadataRules`
 - `customInstruction`
 

@@ -31,7 +31,7 @@ The Knowledge Base dashboard surface presents ingestion and retrieval controls i
 1. Ingestion: choose chunking and embedding settings -> tune chunk sizing -> reprocess existing documents
 2. Retrieval: rewrite query -> retrieve/filter candidates -> rerank -> present grounded evidence
 
-Assistant identity, conversation mode, custom answer instruction, proactive greeting, and suggested follow-up behavior belong to the Agent behavior surface. Retrieval controls should stay focused on evidence gathering, ranking, filters, validation outcomes, and citation presentation.
+Assistant identity, conversation mode, custom answer instruction, proactive greeting, and suggested follow-up behavior belong to the Agent behavior surface. Retrieval controls should stay focused on evidence gathering, ranking, filters, and citation presentation.
 
 The connector-style stage separators are rendered in [`frontend/components/dashboard/settings/settings-flow.tsx`](../../frontend/components/dashboard/settings/settings-flow.tsx) and reused by the activity trace graph for visual consistency.
 

@@ -22,7 +22,6 @@ export interface PlatformRetrievalSettingsSection {
   similarityThreshold: number;
   rerankTopK: number;
   citationDisplayEnabled: boolean;
-  answerSupportValidationEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   metadataFieldSuggestions: MetadataFieldSuggestion[];
 }
@@ -57,7 +56,6 @@ export interface PlatformRetrievalSettingsPatch {
   similarityThreshold?: number;
   rerankTopK?: number;
   citationDisplayEnabled?: boolean;
-  answerSupportValidationEnabled?: boolean;
   metadataRules?: RetrievalMetadataRule[];
 }
 

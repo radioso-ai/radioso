@@ -24,5 +24,4 @@ export interface NormalizedPresentedAnswer {
   answer: string;
   citationEvidence: CitationEvidence[];
   answerSegments: AnswerSegment[];
-  unsupportedNoticeMarked: boolean;
 }

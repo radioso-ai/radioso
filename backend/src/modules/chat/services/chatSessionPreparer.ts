@@ -193,7 +193,6 @@ export class ChatSessionPreparer {
         responseIdentity: input.responseIdentity ?? null,
         responseSettings: {
           citationDisplayEnabled: false,
-          answerSupportValidationEnabled: false,
           suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
           suggestedQuestionsCount: 3,
           customInstruction: agent.customInstruction,

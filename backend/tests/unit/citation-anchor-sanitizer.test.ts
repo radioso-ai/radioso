@@ -17,4 +17,18 @@ describe("citation anchor sanitizer", () => {
       "Ananda Yoga can lead naturally into meditation. It also supports inner silence.",
     );
   });
+
+  it("preserves natural single-bracket numeric text in streamed output", () => {
+    const sanitizer = new CitationAnchorSanitizer();
+
+    const chunks = [
+      sanitizer.push("Read [1](https://example.com), inspect arr[0],"),
+      sanitizer.push(" and keep the [2024] label."),
+      sanitizer.flush(),
+    ];
+
+    expect(chunks.join("")).toBe(
+      "Read [1](https://example.com), inspect arr[0], and keep the [2024] label.",
+    );
+  });
 });

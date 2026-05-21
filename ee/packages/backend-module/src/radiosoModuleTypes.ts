@@ -535,7 +535,6 @@ export interface ChatGateway {
 
 export type AssistantTurnOutcomeName =
   | "grounded_success"
-  | "grounded_degraded_unsupported_segments"
   | "no_context_refusal"
   | "non_retrieval_response";
 
@@ -751,4 +750,3 @@ export type ApplicationAnswerFeedbackHistoryProviderRegistration =
         error(entry: unknown, message?: string): void;
       };
     }) => AnswerFeedbackHistoryProvider);
-

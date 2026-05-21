@@ -94,7 +94,7 @@ As an engineer maintaining Radioso, I want the attribute-extraction feature remo
 - **FR-009**: The system MUST remove dedicated unit and integration coverage whose only purpose was validating the deleted attribute feature, while preserving or updating regression tests for the remaining retrieval path.
 - **FR-010**: The system MUST keep retrieval diagnostics coherent after the feature removal, including safe handling of legacy audit metadata produced before the removal.
 - **FR-011**: The system MUST remove product-facing or operator-facing references that imply the four fixed attribute families are still supported.
-- **FR-012**: The system MUST preserve baseline grounded-chat behavior for semantic retrieval, lexical retrieval, reranking, citations, and answer support policies.
+- **FR-012**: The system MUST preserve baseline grounded-chat behavior for semantic retrieval, lexical retrieval, reranking, and citations.
 
 ### Key Entities *(include if feature involves data)*
 

@@ -669,8 +669,6 @@ components:
           minimum: 1
         citationDisplayEnabled:
           type: boolean
-        answerSupportValidationEnabled:
-          type: boolean
         metadataFieldSuggestions:
           type: array
           items:
@@ -788,7 +786,6 @@ components:
         - similarityThreshold
         - rerankTopK
         - citationDisplayEnabled
-        - answerSupportValidationEnabled
         - customInstruction
         - createdAt
         - updatedAt
@@ -816,8 +813,6 @@ components:
           type: integer
           maximum: 50
         citationDisplayEnabled:
-          type: boolean
-        answerSupportValidationEnabled:
           type: boolean
         metadataRules:
           type: array
@@ -917,8 +912,6 @@ components:
           type: integer
           maximum: 50
         citationDisplayEnabled:
-          type: boolean
-        answerSupportValidationEnabled:
           type: boolean
         metadataRules:
           type: array
@@ -1434,8 +1427,6 @@ components:
           minimum: 1
         citationDisplayEnabled:
           type: boolean
-        answerSupportValidationEnabled:
-          type: boolean
         metadataRules:
           type: array
           items:
@@ -1526,7 +1517,6 @@ components:
         - similarityThreshold
         - rerankTopK
         - citationDisplayEnabled
-        - answerSupportValidationEnabled
     PlatformChannelsSettingsSection:
       type: object
       properties:
@@ -1655,8 +1645,6 @@ components:
             rerankTopK:
               type: integer
             citationDisplayEnabled:
-              type: boolean
-            answerSupportValidationEnabled:
               type: boolean
             metadataRules:
               type: array
@@ -4541,75 +4529,6 @@ components:
         - total
         - nextCursor
         - hasMore
-    ValidationDisposition:
-      type: string
-      enum:
-        - supported
-        - unsupported
-        - non_substantive
-    ValidationSegmentResult:
-      type: object
-      properties:
-        originalText:
-          type: string
-        text:
-          type: string
-        disposition:
-          $ref: "#/components/schemas/ValidationDisposition"
-        replacementApplied:
-          type: boolean
-        reason:
-          type: string
-        citationIndices:
-          type: array
-          items:
-            type: integer
-            minimum: 0
-      required:
-        - originalText
-        - text
-        - disposition
-        - replacementApplied
-        - reason
-    ValidationDebug:
-      type: object
-      properties:
-        ran:
-          type: boolean
-        answerModified:
-          type: boolean
-        unsupportedSegmentCount:
-          type: integer
-          minimum: 0
-        substantiveUnsupportedSegmentCount:
-          type: integer
-          minimum: 0
-        supportedSegmentCount:
-          type: integer
-          minimum: 0
-        nonSubstantiveSegmentCount:
-          type: integer
-          minimum: 0
-        hiddenSupportUsed:
-          type: boolean
-        hiddenSupportKindsUsed:
-          type: array
-          items:
-            type: string
-            enum:
-              - assistant_name
-        segmentResults:
-          type: array
-          items:
-            $ref: "#/components/schemas/ValidationSegmentResult"
-      required:
-        - ran
-        - answerModified
-        - unsupportedSegmentCount
-        - substantiveUnsupportedSegmentCount
-        - supportedSegmentCount
-        - nonSubstantiveSegmentCount
-        - segmentResults
     ChatConversationMessageDebug:
       type: object
       properties:
@@ -4630,13 +4549,10 @@ components:
           type: string
           enum:
             - grounded_success
-            - grounded_degraded_unsupported_segments
             - no_context_refusal
             - non_retrieval_response
         route:
           $ref: "#/components/schemas/AssistantRouteDiagnostics"
-        validation:
-          $ref: "#/components/schemas/ValidationDebug"
         activitySummary:
           $ref: "#/components/schemas/ActivitySummary"
         activityTrace:

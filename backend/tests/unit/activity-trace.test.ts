@@ -85,46 +85,6 @@ describe("activity trace presenter", () => {
     expect((result.stages[0]?.outputs as { answerPreview: string }).answerPreview.length).toBeLessThanOrEqual(240);
   });
 
-  it("records hidden support usage in the answer stage outputs", () => {
-    const presenter = new ActivityTracePresenter();
-
-    const result = presenter.appendAnswerOutcome({
-      summary: {
-        candidateCounts: {
-          semantic: 1,
-          lexical: 0,
-          merged: 1,
-          final: 1,
-        },
-        fallbackApplied: false,
-        rerankStatus: "skipped",
-      },
-      outcome: {
-        answer: "I'm Vikram. The page explains testing.",
-        stream: false,
-        hadContexts: true,
-        durationMs: 8,
-        validation: {
-          ran: true,
-          answerModified: false,
-          supportedSegmentCount: 2,
-          unsupportedSegmentCount: 0,
-          hiddenSupportUsed: true,
-          hiddenSupportKindsUsed: ["assistant_name"],
-        },
-      },
-    });
-
-    expect(result.stages.at(-1)).toMatchObject({
-      stageId: "answer",
-      outputs: expect.objectContaining({
-        hiddenSupportUsed: true,
-        hiddenSupportKindsUsed: ["assistant_name"],
-        supportedSegmentCount: 2,
-      }),
-    });
-  });
-
   it("preserves execution metadata in the trace summary", () => {
     const presenter = new ActivityTracePresenter();
 

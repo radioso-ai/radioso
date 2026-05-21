@@ -505,7 +505,6 @@ function ChatDiagnosticsPanel({
   const outcomePresentation = presentActivityOutcome({
     trace: resolvedActivityTrace,
     route: diagnosticsDebug?.route,
-    validation: diagnosticsDebug?.validation,
   })
   const runParameters = presentRunParameters(resolvedActivityTrace)
 

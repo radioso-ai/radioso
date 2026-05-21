@@ -116,7 +116,6 @@ const envSchema = z.object({
   RADIOSO_MCP_ALLOWED_READ_TOOLS: mcpToolList,
   RADIOSO_MCP_ALLOWED_WRITE_TOOLS: mcpToolList,
   RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: mcpToolList,
-  RADIOSO_MCP_APPROVAL_TTL_SECONDS: z.coerce.number().int().positive().default(300),
   RADIOSO_MCP_AUDIT_LOG_PATH: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_MCP_BIND_HOST: z.string().min(1).default("127.0.0.1"),
   RADIOSO_MCP_BIND_PORT: z.coerce.number().int().min(1).max(65535).default(8787),

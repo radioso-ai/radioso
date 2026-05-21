@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createAuditLogger } from "../src/audit/auditLogger.js";
 import { createAuthService } from "../src/auth/authService.js";
-import { createInMemoryApprovalStore } from "../src/auth/approvalStore.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { createHttpServer } from "../src/http/createHttpServer.js";
 import { DEFAULT_MAX_REQUEST_BODY_BYTES } from "../src/http/nodeHttp.js";
@@ -15,7 +14,6 @@ const createTestServer = async () => {
     approvalRequiredWriteTools: ["create_document"],
   });
   const authService = createAuthService({
-    approvalStore: createInMemoryApprovalStore(),
     auditLogger: createAuditLogger([]),
     policy,
     sessionStore: createInMemorySessionStore(),
@@ -29,7 +27,6 @@ const createTestServer = async () => {
       allowedReadTools: policy.listCapabilities().filter((tool) => tool.accessMode === "read").map((tool) => tool.name),
       allowedWriteTools: policy.listCapabilities().filter((tool) => tool.accessMode === "write").map((tool) => tool.name),
       approvalRequiredWriteTools: ["create_document"],
-      approvalTtlSeconds: 300,
       baseUrl: "http://radioso.test",
       bindHost: "127.0.0.1",
       bindPort: 0,

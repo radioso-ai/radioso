@@ -23,7 +23,7 @@ import {
   workspaceKeyParamsSchema,
   workspaceParamsSchema,
 } from "../../routes/workspaceRoutes.js";
-import { workspaceMcpContextSchema } from "../../routes/mcpContextRoutes.js";
+import { workspaceMcpContextSchema } from "../../mcpContextSupport.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 

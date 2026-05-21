@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import type { RemoteHttpDependencies } from "./types.js";
-import { createApprovalHandler, createAuthExchangeHandler } from "./authRoutes.js";
+import { createAuthExchangeHandler } from "./authRoutes.js";
 import { createMcpRouteHandler } from "./mcpRoutes.js";
 import { createSessionMcpServerManager } from "./sessionServerManager.js";
 import { isRequestBodyTooLargeError, writeJson, writeJsonRpcError } from "./nodeHttp.js";
@@ -14,13 +14,11 @@ export interface RadiosoRemoteHttpServer {
 
 export const createHttpServer = ({ authService, auditLogger, config }: RemoteHttpDependencies): RadiosoRemoteHttpServer => {
   const sessionServerManager = createSessionMcpServerManager({
-    authService,
     auditLogger,
     config,
     entryPoint: "standalone",
   });
   const handleExchange = createAuthExchangeHandler({ auditLogger, authService });
-  const handleApproval = createApprovalHandler({ auditLogger, authService });
   const handleMcp = createMcpRouteHandler({
     authService,
     config,
@@ -77,11 +75,6 @@ export const createHttpServer = ({ authService, auditLogger, config }: RemoteHtt
 
       if (req.method === "POST" && url.pathname === "/v1/auth/exchange") {
         await handleExchange(req, res);
-        return;
-      }
-
-      if (req.method === "POST" && url.pathname === "/v1/approvals") {
-        await handleApproval(req, res);
         return;
       }
 

@@ -5,6 +5,8 @@
 
 **Tests**: Backend tests are required and come before implementation. Frontend tests cover mode-selection logic only.
 
+> **Amendment 2026-05-19**: Task T017 ("Verify standalone `/v1/auth/exchange`, `/v1/approvals`, and `/mcp` tests still pass") was superseded by approval removal: `/v1/approvals` no longer exists; the equivalent verification covers `/v1/auth/exchange` and `/mcp` only.
+
 ## Phase 1: Setup
 
 - [X] T001 Update `specs/061-mcp-deployment-modes/spec.md` status to approved.

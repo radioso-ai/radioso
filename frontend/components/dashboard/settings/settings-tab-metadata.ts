@@ -29,7 +29,7 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
   providers: {
     id: 'providers',
     title: 'Providers',
-    summary: 'Connect AI provider API keys and pick which model handles chat, query rewrite, and rerank.',
+    summary: 'Connect AI provider API keys and pick which model handles chat, query rewrite, rerank, and embeddings.',
     sections: [
       {
         id: 'provider-credentials',
@@ -39,7 +39,7 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
       {
         id: 'provider-models',
         label: 'Models',
-        summary: 'Per-capability provider and model selection. Empty fields fall back to the deployment defaults.',
+        summary: 'Per-capability provider and model selection, including the workspace embedding model.',
       },
     ],
   },

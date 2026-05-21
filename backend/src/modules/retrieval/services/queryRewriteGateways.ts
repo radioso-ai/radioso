@@ -1,4 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.js";
 import type {
@@ -27,16 +28,20 @@ export interface TriggerAnalysisGatewayInput {
   activeQuery: string;
   contextMessages: MessageRecord[];
   rules: RetrievalMetadataRule[];
+  workspaceContext?: LlmCapabilityResolveInput;
+}
+
+export interface QueryRewriteGatewayInput {
+  query: string;
+  contextMessages: MessageRecord[];
+  semanticRewriteInstructions?: string;
+  lexicalRewriteInstructions?: string;
+  answerScopeReference?: string;
+  workspaceContext?: LlmCapabilityResolveInput;
 }
 
 export interface QueryRewriteGateway {
-  rewrite(input: {
-    query: string;
-    contextMessages: MessageRecord[];
-    semanticRewriteInstructions?: string;
-    lexicalRewriteInstructions?: string;
-    answerScopeReference?: string;
-  }): Promise<QueryRewriteGatewayResult>;
+  rewrite(input: QueryRewriteGatewayInput): Promise<QueryRewriteGatewayResult>;
 }
 
 export interface TriggerAnalysisGateway {
@@ -64,13 +69,7 @@ export class ModelTriggerAnalysisGateway implements TriggerAnalysisGateway {
 export class ModelQueryRewriteGateway implements QueryRewriteGateway {
   constructor(private readonly client: TextGenerationClient) {}
 
-  async rewrite(input: {
-    query: string;
-    contextMessages: MessageRecord[];
-    semanticRewriteInstructions?: string;
-    lexicalRewriteInstructions?: string;
-    answerScopeReference?: string;
-  }): Promise<StructuredRewriteResult> {
+  async rewrite(input: QueryRewriteGatewayInput): Promise<StructuredRewriteResult> {
     const raw = await this.client.complete({
       prompt: buildQueryRewritePrompt({
         context: formatConversationContext(input.contextMessages),

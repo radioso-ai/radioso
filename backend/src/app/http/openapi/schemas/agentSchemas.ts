@@ -80,6 +80,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       assistantDefaultLocale: z.string().nullable(),
       proactiveGreetingEnabled: z.boolean(),
       assistantBootstrapActive: z.boolean(),
+      chatModelOverride: z.object({
+        provider: z.enum(["openai", "openai-compatible", "gemini", "claude"]),
+        model: z.string(),
+      }).nullable(),
       surfaceSettings: ConversationAgentSurfaceSettingsSchema,
     }),
   );
@@ -120,6 +124,13 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       greetingInstruction: z.string().max(200).optional(),
       assistantDefaultLocale: z.string().max(35).nullable().optional(),
       proactiveGreetingEnabled: z.boolean().optional(),
+      chatModelOverride: z.union([
+        z.null(),
+        z.object({
+          provider: z.enum(["openai", "openai-compatible", "gemini", "claude"]),
+          model: z.string().min(1).max(200),
+        }),
+      ]).optional(),
       surfaceSettings: z.object({
         authenticatedChat: z.object({
           enabled: z.boolean().optional(),

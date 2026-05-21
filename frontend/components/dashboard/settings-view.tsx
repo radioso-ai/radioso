@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
+import { ProvidersPanel } from '@/components/dashboard/settings/providers-panel'
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
 import { UsersPanel } from '@/components/dashboard/users-view'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -15,6 +16,7 @@ import {
 
 const settingsTabSummaries: Record<SettingsTab, string> = {
   workspace: 'Control workspace identity, API access, and lifecycle.',
+  providers: 'Connect AI provider API keys and pick which model handles chat, query rewrite, and rerank.',
   users: 'Invite teammates and manage account access.',
 }
 
@@ -81,10 +83,11 @@ export function SettingsView({
       <DashboardPage
         title="Settings"
         description={settingsTabSummaries[activeTab]}
-        titleAccessory={activeTab === 'workspace' ? saveStateAccessory : null}
+        titleAccessory={activeTab === 'workspace' || activeTab === 'providers' ? saveStateAccessory : null}
         actions={
           <TabsList>
             <TabsTrigger value="workspace">Workspace</TabsTrigger>
+            <TabsTrigger value="providers">Providers</TabsTrigger>
             <TabsTrigger value="users">Users</TabsTrigger>
           </TabsList>
         }
@@ -94,6 +97,10 @@ export function SettingsView({
       >
         <TabsContent value="workspace" className="min-h-0 flex flex-1 flex-col overflow-hidden">
           <WorkspaceAssistantChannelsTab accountId={accountId} mode="workspace" onSaveStateChange={setSaveState} />
+        </TabsContent>
+
+        <TabsContent value="providers" className="min-h-0 flex flex-1 flex-col overflow-hidden">
+          <ProvidersPanel onSaveStateChange={setSaveState} />
         </TabsContent>
 
         <TabsContent value="users" className="settings-surface min-h-0 flex-1 overflow-y-auto">

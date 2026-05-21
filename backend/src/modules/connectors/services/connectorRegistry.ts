@@ -13,7 +13,14 @@ import type {
   ConnectorValidationIssue,
   ConfigFieldDefinition,
 } from "@radioso/connector-api";
-import { encryptField, decryptField, isEncryptedConnectorSecret, maskSecret } from "./configEncryption.js";
+import {
+  decryptField,
+  encryptField,
+  isEncryptedField,
+  maskSecret,
+} from "../../../shared/infra/crypto/fieldEncryption.js";
+
+const CONNECTOR_KEY_OPTIONS = { keyName: "CONNECTOR_ENCRYPTION_KEY" } as const;
 
 interface ConnectorSaveSuccess {
   kind: "success";
@@ -390,7 +397,7 @@ export class ConnectorRegistry {
     const secretKeys = new Set(schema.filter((f) => f.type === "secret").map((f) => f.key));
     const result: Record<string, string> = {};
     for (const [key, value] of Object.entries(config)) {
-      result[key] = secretKeys.has(key) ? encryptField(value, this.encryptionKey) : value;
+      result[key] = secretKeys.has(key) ? encryptField(value, this.encryptionKey, CONNECTOR_KEY_OPTIONS) : value;
     }
     return result;
   }
@@ -431,7 +438,7 @@ export class ConnectorRegistry {
       return null;
     }
     try {
-      return decryptField(value, this.encryptionKey);
+      return decryptField(value, this.encryptionKey, CONNECTOR_KEY_OPTIONS);
     } catch {
       return null;
     }
@@ -458,7 +465,7 @@ export class ConnectorRegistry {
       return SECRET_ENCRYPTION_REQUIRED_STATUS;
     }
 
-    return secretValues.every((value) => isEncryptedConnectorSecret(value, this.encryptionKey!))
+    return secretValues.every((value) => isEncryptedField(value, this.encryptionKey!, CONNECTOR_KEY_OPTIONS))
       ? null
       : SECRET_ROTATION_REQUIRED_STATUS;
   }

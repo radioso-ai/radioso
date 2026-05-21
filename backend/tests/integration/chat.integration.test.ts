@@ -719,7 +719,7 @@ describe("chat integration", () => {
     expect(response.body).toMatchObject({
       error: {
         code: "service_unavailable",
-        message: "The configured AI provider rejected the credentials. Update .env and restart Radioso.",
+        message: "The AI provider rejected the credentials. Replace the workspace API key at Settings → Credentials, or update the matching environment variable (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENAI_COMPATIBLE_API_KEY) and restart Radioso.",
       },
     });
   });

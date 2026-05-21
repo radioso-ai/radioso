@@ -40,6 +40,8 @@ import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
+import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
+import type { WorkspaceLlmCapabilitySettingsService } from "../../modules/settings/composition.js";
 import type { ProductAnalyticsPort } from "../../shared/analytics/productAnalyticsService.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import type { IncidentReportingService } from "../../shared/incidents/incidentReportingService.js";
@@ -79,6 +81,8 @@ export interface AppDependencies {
   accountInvitationService: AccountInvitationService;
   workspaceSessionService: WorkspaceSessionService;
   abuseControlService: AbuseControlService;
+  workspaceProviderCredentialsService: WorkspaceProviderCredentialsService;
+  workspaceLlmCapabilitySettingsService: WorkspaceLlmCapabilitySettingsService;
   auditService: AuditService;
   mailService: EmailService;
   workspaceService: WorkspaceService;

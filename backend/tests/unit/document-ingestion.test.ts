@@ -944,7 +944,7 @@ describe("document ingestion", () => {
     const [document] = await documentRepository.listByWorkspaceId("workspace-1");
     expect(document.status).toBe("failed");
     expect(document.failureReason).toBe(
-      "The configured AI provider rejected the credentials. Update .env and restart Radioso.",
+      "The AI provider rejected the credentials. Replace the workspace API key at Settings → Credentials, or update the matching environment variable (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENAI_COMPATIBLE_API_KEY) and restart Radioso.",
     );
     expect([...jobRepository.items.values()][0].attemptCount).toBe(1);
   });

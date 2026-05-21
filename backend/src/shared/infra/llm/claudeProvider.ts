@@ -2,8 +2,8 @@ import {
   type LlmCapabilityConfig,
   type TextGenerationClient,
 } from "./providerTypes.js";
+import { readProviderErrorBody } from "./providerErrors.js";
 import { LLM_DEFAULTS } from "../../domain/behaviorConfig.js";
-import { ProviderHttpError } from "./providerErrors.js";
 import { parseSseEvents } from "./sse.js";
 
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
@@ -65,7 +65,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
     });
 
     if (!response.ok) {
-      throw new ProviderHttpError({ provider: "Claude", operation: "messages", status: response.status });
+      throw await readProviderErrorBody("Claude", "messages", response);
     }
 
     const payload = await response.json();
@@ -88,8 +88,11 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
       body: JSON.stringify(buildClaudeBody(this.config, { ...input, stream: true })),
     });
 
-    if (!response.ok || !response.body) {
-      throw new ProviderHttpError({ provider: "Claude", operation: "messages.stream", status: response.status });
+    if (!response.ok) {
+      throw await readProviderErrorBody("Claude", "messages.stream", response);
+    }
+    if (!response.body) {
+      throw new Error(`Claude messages.stream failed: ${response.status} (no response body)`);
     }
 
     for await (const data of parseSseEvents(response.body)) {

@@ -20,11 +20,15 @@ import {
   buildPasswordResetService,
   buildRepositories,
   buildRetrievalServices,
+  buildLlmCapabilityResolver,
   buildSettingsServices,
   buildWorkspaceIngestionReprocessService,
+  buildWorkspaceLlmCapabilitySettingsService,
+  buildWorkspaceProviderCredentialsService,
   buildWorkspaceServices,
   listSupportedEmbeddingModels,
 } from "./dependencyBuilders.js";
+import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { EmbeddingService } from "../../modules/retrieval/composition.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
@@ -51,6 +55,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     repositories,
   });
+  const workspaceProviderCredentialsService = buildWorkspaceProviderCredentialsService({
+    auditService: infrastructure.auditService,
+    env,
+    logger,
+    repositories,
+  });
+  // Build the registry first (no resolver yet) so we can compute supported embedding
+  // models; embedding stays env-default and doesn't need the workspace-aware resolver.
   const llmRegistry = buildLlmRegistry(env, logger);
   const embeddingService = new EmbeddingService(llmRegistry.createEmbeddingGateway());
   const documentJobDispatcher = composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
@@ -69,6 +81,23 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     supportedEmbeddingModels,
     workspaceIngestionReprocessService,
   });
+  // Now that settings are available, build the capability service (backed by the
+  // retrieval_settings row through the repository) and the resolver, then attach
+  // the resolver to the registry before any chat/rewrite/rerank gateways are
+  // constructed downstream.
+  const workspaceLlmCapabilitySettingsService = buildWorkspaceLlmCapabilitySettingsService({
+    auditService: infrastructure.auditService,
+    capabilityRepository: repositories.retrievalSettingsRepository,
+    retrievalSettingsService: settings.retrievalSettingsService,
+    logger,
+  });
+  const llmCapabilityResolver = buildLlmCapabilityResolver({
+    env,
+    defaults: resolveLlmConfig(env),
+    settings: workspaceLlmCapabilitySettingsService,
+    credentials: workspaceProviderCredentialsService,
+  });
+  llmRegistry.setResolver(llmCapabilityResolver);
   const documents = buildDocumentServices({
     auditEventRepository: infrastructure.auditEventRepository,
     auditService: infrastructure.auditService,
@@ -222,6 +251,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     accountInvitationService: access.accountInvitationService,
     workspaceSessionService: workspace.workspaceSessionService,
     abuseControlService: chat.abuseControlService,
+    workspaceProviderCredentialsService,
+    workspaceLlmCapabilitySettingsService,
     auditService: infrastructure.auditService,
     mailService: infrastructure.mailService,
     workspaceService: workspace.workspaceService,

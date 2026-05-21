@@ -4,7 +4,21 @@ import {
   defaultWebsiteEmbedTheme,
   type WebsiteEmbedThemeSettings,
 } from "../settings/contracts/websiteEmbed.js";
+import { isKnownModelForProvider } from "../../shared/infra/llm/knownModels.js";
+import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 import type { AgentSurfaceExtensionRegistry } from "./surfaceExtensions.js";
+
+const AGENT_PROVIDER_NAMES: readonly LlmProviderName[] = [
+  "openai",
+  "openai-compatible",
+  "gemini",
+  "claude",
+];
+
+export interface AgentChatModelOverride {
+  provider: LlmProviderName;
+  model: string;
+}
 
 export interface ValidateAgentInputOptions {
   /**
@@ -106,6 +120,7 @@ export interface Agent {
 export interface ConversationAgent extends Agent, AgentBehaviorSettings, AgentGreetingSettings {
   sourceScope: AgentSourceScope;
   surfaceSettings: ConversationAgentSurfaceSettings;
+  chatModelOverride: AgentChatModelOverride | null;
 }
 
 export type AgentRecord = ConversationAgent;
@@ -124,6 +139,7 @@ export type AgentInput = Partial<
     | keyof AgentBehaviorSettings
     | keyof AgentGreetingSettings
     | "sourceScope"
+    | "chatModelOverride"
   >
 > & {
   surfaceSettings?: AgentSurfaceSettingsInput;
@@ -443,6 +459,43 @@ const normalizeSourceScope = (value: unknown): AgentSourceScope => {
   };
 };
 
+const normalizeChatModelOverride = (value: unknown): AgentChatModelOverride | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest("chatModelOverride must be an object with provider and model");
+  }
+  const record = value as Record<string, unknown>;
+  const provider = record.provider;
+  const model = record.model;
+  if (provider === null || provider === undefined || model === null || model === undefined) {
+    if (provider === null && model === null) {
+      return null;
+    }
+    if (provider === undefined && model === undefined) {
+      return null;
+    }
+    throw badRequest("chatModelOverride.provider and chatModelOverride.model must be set together");
+  }
+  if (typeof provider !== "string" || !AGENT_PROVIDER_NAMES.includes(provider as LlmProviderName)) {
+    throw badRequest(`Unknown chat provider: ${String(provider)}`);
+  }
+  if (typeof model !== "string" || model.trim().length === 0) {
+    throw badRequest("chatModelOverride.model must not be empty");
+  }
+  const trimmedModel = model.trim();
+  if (!isKnownModelForProvider(provider as LlmProviderName, trimmedModel)) {
+    throw badRequest(
+      `Model "${trimmedModel}" is not supported for provider "${provider}". See the workspace LLM models settings for the current catalog.`,
+    );
+  }
+  return {
+    provider: provider as LlmProviderName,
+    model: trimmedModel,
+  };
+};
+
 export const defaultWebsiteEmbedSurfaceSettings = (): WebsiteEmbedSurfaceSettings => ({
   enabled: false,
   token: null,
@@ -516,6 +569,7 @@ export const validateAgentInput = (
     greetingInstruction: normalizeText(input.greetingInstruction, "greetingInstruction", 200),
     assistantDefaultLocale: normalizeLocaleTag(input.assistantDefaultLocale),
     proactiveGreetingEnabled: Boolean(input.proactiveGreetingEnabled),
+    chatModelOverride: normalizeChatModelOverride(input.chatModelOverride),
     surfaceSettings: {
       authenticatedChat: {
         enabled: input.surfaceSettings?.authenticatedChat?.enabled ?? true,

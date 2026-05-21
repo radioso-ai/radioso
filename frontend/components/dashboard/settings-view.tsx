@@ -16,7 +16,7 @@ import {
 
 const settingsTabSummaries: Record<SettingsTab, string> = {
   workspace: 'Control workspace identity, API access, and lifecycle.',
-  providers: 'Connect AI provider API keys and pick which model handles chat, query rewrite, and rerank.',
+  providers: 'Connect AI provider API keys and pick which model handles chat, query rewrite, rerank, and embeddings.',
   users: 'Invite teammates and manage account access.',
 }
 

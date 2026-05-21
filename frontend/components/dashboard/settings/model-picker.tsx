@@ -25,14 +25,18 @@ export function ModelPicker({
   knownModelsByProvider,
   value,
   onChange,
+  onCommit,
   disabled,
+  className,
 }: {
   inputId: string
   provider: LlmProviderName | ''
   knownModelsByProvider: KnownModelsByProvider
   value: string
   onChange: (next: string) => void
+  onCommit?: (next: string) => void
   disabled?: boolean
+  className?: string
 }) {
   if (provider === '') {
     return (
@@ -47,12 +51,20 @@ export function ModelPicker({
           id={inputId}
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          onBlur={(event) => onCommit?.(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              onCommit?.(event.currentTarget.value)
+            }
+          }}
           placeholder="model identifier accepted by your endpoint"
           disabled={disabled}
+          className={className}
           autoComplete="off"
         />
         <p className="text-xs text-muted-foreground">
-          OpenAI-compatible endpoints serve whatever model the upstream advertises (vLLM, Ollama, LMStudio, …).
+          OpenAI-compatible endpoints serve whatever model the upstream advertises (vLLM, Ollama, LMStudio, …). Press Enter or tab out to save.
         </p>
       </>
     )
@@ -60,8 +72,15 @@ export function ModelPicker({
 
   const options = knownModelsByProvider[provider] ?? []
   return (
-    <Select value={value} onValueChange={onChange} disabled={disabled || options.length === 0}>
-      <SelectTrigger id={inputId}>
+    <Select
+      value={value}
+      onValueChange={(next) => {
+        onChange(next)
+        onCommit?.(next)
+      }}
+      disabled={disabled || options.length === 0}
+    >
+      <SelectTrigger id={inputId} className={className}>
         <SelectValue placeholder="Choose a model" />
       </SelectTrigger>
       <SelectContent>

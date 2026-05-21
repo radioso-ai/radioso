@@ -56,6 +56,27 @@ export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] =
 
 export type PlatformSettingsFixture = ReturnType<typeof basePlatformSettings>;
 
+export const baseIngestionSettings = (): ApiSchemas["IngestionSettings"] => ({
+  workspaceId,
+  chunkingStrategy: "fixed_window",
+  fixedWindowChunkSize: 1000,
+  fixedWindowChunkOverlap: 200,
+  structuredMinChunkSize: 200,
+  structuredMaxChunkSize: 1200,
+  embeddingModel: "text-embedding-3-small",
+  pendingEmbeddingModel: null,
+  supportedEmbeddingModels: [
+    "text-embedding-3-small",
+    "text-embedding-3-large",
+    "text-embedding-ada-002",
+    "gemini-embedding-001",
+  ],
+  createdAt: nowIso,
+  updatedAt: nowIso,
+});
+
+export type IngestionSettingsFixture = ReturnType<typeof baseIngestionSettings>;
+
 const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchemas["ConversationAgent"] => ({
   id: defaultAgentId,
   workspaceId,
@@ -205,9 +226,12 @@ export const installDashboardApiMocks = async (
     providerEncryptionConfigured?: boolean;
     providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
     llmModelUpdates?: Array<unknown>;
+    ingestionSettings?: IngestionSettingsFixture;
+    ingestionSettingsUpdates?: unknown[];
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
+  let ingestionSettings = options.ingestionSettings ?? baseIngestionSettings();
   let agentSettings = buildDefaultAgentSettings(platformSettings);
   const providerEncryptionConfigured = options.providerEncryptionConfigured ?? true;
   const providerCredentials: Record<string, { updatedAt: string } | null> = {
@@ -231,6 +255,7 @@ export const installDashboardApiMocks = async (
   const llmModelUpdates = options.llmModelUpdates;
   const documents = options.documentList ?? documentListResponse;
   const settingsUpdates = options.settingsUpdates;
+  const ingestionSettingsUpdates = options.ingestionSettingsUpdates;
   const agentUpdates = options.agentUpdates;
   const historyList = options.historyList ?? {
     conversations: [],
@@ -448,6 +473,44 @@ export const installDashboardApiMocks = async (
         rerank: 'rerank' in body ? body.rerank ?? null : llmModels.rerank,
       };
       await json(route, { ...llmModels, knownModelsByProvider });
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/settings/ingestion") {
+      await json(route, ingestionSettings);
+      return;
+    }
+
+    if (request.method() === "PUT" && path === "/settings/ingestion") {
+      const body = request.postDataJSON() as Partial<IngestionSettingsFixture>;
+      ingestionSettingsUpdates?.push(body);
+      const requestedEmbeddingModel = body.embeddingModel;
+      const embeddingFields =
+        requestedEmbeddingModel && requestedEmbeddingModel !== ingestionSettings.embeddingModel
+          ? {
+              embeddingModel: ingestionSettings.embeddingModel,
+              pendingEmbeddingModel: requestedEmbeddingModel,
+            }
+          : {
+              embeddingModel: requestedEmbeddingModel ?? ingestionSettings.embeddingModel,
+            };
+      ingestionSettings = {
+        ...ingestionSettings,
+        ...body,
+        ...embeddingFields,
+        updatedAt: nowIso,
+      };
+      await json(route, ingestionSettings);
+      return;
+    }
+
+    if (request.method() === "POST" && path === "/settings/ingestion/embedding-model/cancel") {
+      ingestionSettings = {
+        ...ingestionSettings,
+        pendingEmbeddingModel: null,
+        updatedAt: nowIso,
+      };
+      await json(route, ingestionSettings);
       return;
     }
 

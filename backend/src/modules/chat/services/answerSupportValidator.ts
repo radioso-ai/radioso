@@ -183,10 +183,6 @@ const extractSupportedLinkText = (value: string): string | null => {
   return `${preservePrefix(value.slice(0, firstSpan.start))}${value.slice(firstSpan.start, trailingIndex)}`;
 };
 
-const normalizeOmittedUnsupportedPrefix = (value: string): string => value.replace(/^\s+/g, "");
-const normalizePunctuationOnlySegment = (value: string): string => value.replace(/^\s+/, "");
-const SOURCE_LINK_ONLY_SUPPORT_REASON = "has_support_reference_link_only";
-
 const toChatCitation = (citation: CitationEvidence) => ({
   documentId: citation.documentId,
   chunkId: citation.chunkId,
@@ -371,7 +367,7 @@ export class AnswerSupportValidator {
           disposition: VALIDATION_DISPOSITION.SUPPORTED,
           citationIndices,
           replacementApplied: sourceUrlSupport?.replacementApplied ?? false,
-          reason: sourceUrlSupport?.replacementApplied ? SOURCE_LINK_ONLY_SUPPORT_REASON : "has_support_reference",
+          reason: sourceUrlSupport?.replacementApplied ? "has_support_reference_link_only" : "has_support_reference",
         } as const;
       }
 
@@ -437,17 +433,9 @@ export class AnswerSupportValidator {
         ))
       : segmentResults;
 
-    const shouldComposeGroundedMiss =
-      supportedSegmentCount === 0 && unsupportedSegmentCount > 0
-      || (
-        supportedSegmentCount > 0
-        && unsupportedSegmentCount > 0
-        && this.hasOnlySourceLinkSupport(segmentResults)
-      );
-
     const visibleSegments = preserveModelUnsupportedNotice
       ? this.buildVisibleSegments(effectiveSegmentResults)
-      : shouldComposeGroundedMiss
+      : supportedSegmentCount === 0 && unsupportedSegmentCount > 0
         ? [{
             text: await input.groundedMissResponseComposer.composeUnsupportedWithContext({
               query: input.query,
@@ -457,7 +445,10 @@ export class AnswerSupportValidator {
             }),
           }]
         : supportedSegmentCount > 0 && unsupportedSegmentCount > 0
-          ? this.buildVisibleSegmentsWithoutUnsupported(segmentResults)
+          // Segment-level lexical validation is diagnostic for mixed answers. Rebuilding
+          // a response from only validated slices can turn translated or paraphrased
+          // grounded answers into fragments.
+          ? this.buildVisibleSegmentsPreservingUnsupported(segmentResults)
           : this.buildVisibleSegments(segmentResults);
 
     const { citations, answerSegments } = this.compactVisibleArtifacts(visibleSegments, input.citationEvidence);
@@ -469,7 +460,7 @@ export class AnswerSupportValidator {
       answerSegments,
       validation: {
         ran: true,
-        answerModified: effectiveSegmentResults.some((segment) => segment.replacementApplied),
+        answerModified: answer !== input.answer,
         unsupportedSegmentCount,
         substantiveUnsupportedSegmentCount,
         supportedSegmentCount,
@@ -479,20 +470,6 @@ export class AnswerSupportValidator {
       },
       segmentResults: effectiveSegmentResults,
     };
-  }
-
-  private hasOnlySourceLinkSupport(
-    segmentResults: Array<{
-      disposition: string;
-      reason: string;
-    }>,
-  ): boolean {
-    const supportedSegments = segmentResults.filter(
-      (segment) => segment.disposition === VALIDATION_DISPOSITION.SUPPORTED,
-    );
-
-    return supportedSegments.length > 0
-      && supportedSegments.every((segment) => segment.reason === SOURCE_LINK_ONLY_SUPPORT_REASON);
   }
 
   private buildVisibleSegments(
@@ -578,67 +555,19 @@ export class AnswerSupportValidator {
     return visibleSegments;
   }
 
-  private buildVisibleSegmentsWithoutUnsupported(
+  private buildVisibleSegmentsPreservingUnsupported(
     segmentResults: Array<{
+      originalText: string;
       text: string;
       disposition: string;
       citationIndices?: number[];
-      replacementApplied: boolean;
     }>,
   ): AnswerSegment[] {
-    const visibleSegments: AnswerSegment[] = [];
-    let omittedUnsupported = false;
-
-    for (const segment of segmentResults) {
-      if (segment.disposition === VALIDATION_DISPOSITION.SUPPORTED) {
-        visibleSegments.push(
-          segment.citationIndices
-            ? {
-                text: segment.text,
-                citationIndices: segment.citationIndices,
-              }
-            : { text: segment.text },
-        );
-        omittedUnsupported = false;
-        continue;
-      }
-
-      if (segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED) {
-        const prefix = normalizeOmittedUnsupportedPrefix(preservePrefix(segment.text));
-        if (visibleSegments.length > 0 && /[.,;:!?()/-]/.test(prefix)) {
-          visibleSegments.push({ text: prefix });
-        }
-        omittedUnsupported = true;
-        continue;
-      }
-
-      const punctuationOnly = /^[\s,.;:!?()/-]*$/.test(segment.text);
-      if (omittedUnsupported && punctuationOnly) {
-        omittedUnsupported = false;
-        continue;
-      }
-
-      if (visibleSegments.length === 0 && punctuationOnly) {
-        continue;
-      }
-
-      visibleSegments.push({ text: punctuationOnly ? normalizePunctuationOnlySegment(segment.text) : segment.text });
-      omittedUnsupported = false;
-    }
-
-    while (visibleSegments.length > 0 && /^\s+$/.test(visibleSegments[visibleSegments.length - 1].text)) {
-      visibleSegments.pop();
-    }
-
-    const lastSegment = visibleSegments[visibleSegments.length - 1];
-    if (lastSegment) {
-      lastSegment.text = lastSegment.text.replace(/\s+$/g, "");
-      if (lastSegment.text.length === 0) {
-        visibleSegments.pop();
-      }
-    }
-
-    return visibleSegments;
+    return segmentResults.map((segment) => (
+      segment.disposition === VALIDATION_DISPOSITION.SUPPORTED && segment.citationIndices
+        ? { text: segment.originalText, citationIndices: segment.citationIndices }
+        : { text: segment.originalText }
+    ));
   }
 
   private compactVisibleArtifacts(

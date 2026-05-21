@@ -28,7 +28,7 @@ const groundedMissResponseComposer: GroundedMissResponseComposer = {
 };
 
 describe("answer support validator", () => {
-  it("keeps supported segments, omits unsupported substantive segments, and preserves non-substantive wrappers", async () => {
+  it("preserves mixed answers while reporting unsupported substantive segments", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -52,7 +52,9 @@ describe("answer support validator", () => {
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe("The page explains testing and parsing content for users.");
+    expect(result.answer).toBe(
+      "The page explains testing and parsing content for users. It also offers 24/7 phone support. Thanks!",
+    );
     expect(result.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Guide" },
     ]);
@@ -61,11 +63,14 @@ describe("answer support validator", () => {
         text: "The page explains testing and parsing content for users",
         citationIndices: [0],
       },
-      { text: "." },
+      { text: ". " },
+      { text: "It also offers 24/7 phone support" },
+      { text: ". " },
+      { text: "Thanks!" },
     ]);
     expect(result.validation).toEqual({
       ran: true,
-      answerModified: true,
+      answerModified: false,
       unsupportedSegmentCount: 2,
       substantiveUnsupportedSegmentCount: 2,
       supportedSegmentCount: 1,
@@ -219,7 +224,7 @@ describe("answer support validator", () => {
     expect(result.validation.hiddenSupportUsed).toBeUndefined();
   });
 
-it("omits consecutive unsupported claims within mixed answers", async () => {
+it("does not splice out consecutive unsupported claims from mixed answers", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -244,15 +249,22 @@ it("omits consecutive unsupported claims within mixed answers", async () => {
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe("The page explains testing and parsing content for users.");
+    expect(result.answer).toBe(
+      "The page explains testing and parsing content for users. It offers 24/7 phone support. It also offers a discount code.",
+    );
     expect(result.answerSegments).toEqual([
       { text: "The page explains testing and parsing content for users", citationIndices: [0] },
+      { text: ". " },
+      { text: "It offers 24/7 phone support" },
+      { text: ". " },
+      { text: "It also offers a discount code" },
       { text: "." },
     ]);
     expect(result.validation.unsupportedSegmentCount).toBe(2);
+    expect(result.validation.answerModified).toBe(false);
   });
 
-  it("does not preserve a leading space before punctuation when dropping an unsupported tail", async () => {
+  it("preserves punctuation in mixed answers instead of reconstructing them", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -284,9 +296,8 @@ it("omits consecutive unsupported claims within mixed answers", async () => {
     });
 
     expect(result.answer).toBe(
-      "Ananda Yoga is a classical style of Hatha Yoga. It is described as an inward practice rather than an athletic one.",
+      "Ananda Yoga is a classical style of Hatha Yoga. It is described as an inward practice rather than an athletic one . If you'd like, I can also point you to the Ananda Yoga page for more details .",
     );
-    expect(result.answer).not.toContain(" .");
     expect(result.answerSegments).toEqual([
       {
         text: "Ananda Yoga is a classical style of Hatha Yoga",
@@ -297,8 +308,11 @@ it("omits consecutive unsupported claims within mixed answers", async () => {
         text: "It is described as an inward practice rather than an athletic one",
         citationIndices: [0],
       },
-      { text: "." },
+      { text: " . " },
+      { text: "If you'd like, I can also point you to the Ananda Yoga page for more details" },
+      { text: " ." },
     ]);
+    expect(result.validation.answerModified).toBe(false);
   });
 
   it("counts unsupported non-Latin text as substantive", async () => {
@@ -324,9 +338,10 @@ it("omits consecutive unsupported claims within mixed answers", async () => {
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe("Страница объясняет тестирование.");
+    expect(result.answer).toBe("Страница объясняет тестирование. Она также обещает круглосуточную поддержку.");
     expect(result.validation.unsupportedSegmentCount).toBe(1);
     expect(result.validation.substantiveUnsupportedSegmentCount).toBe(1);
+    expect(result.validation.answerModified).toBe(false);
   });
 
   it("replaces fully unsupported content with a grounded-miss response", async () => {
@@ -391,7 +406,7 @@ it("omits consecutive unsupported claims within mixed answers", async () => {
     expect(result.validation.supportedSegmentCount).toBe(2);
   });
 
-  it("drops unsupported uncited lead-ins while preserving later grounded sentences", async () => {
+  it("preserves unsupported uncited lead-ins in mixed answers", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -420,16 +435,17 @@ it("omits consecutive unsupported claims within mixed answers", async () => {
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe("Posso aiutarti con informazioni su Ananda e sui corsi residenziali.");
+    expect(result.answer).toBe("Ciao Claudio. Posso aiutarti con informazioni su Ananda e sui corsi residenziali.");
     expect(result.answerSegments).toEqual([
+      { text: "Ciao Claudio. " },
       {
         text: "Posso aiutarti con informazioni su Ananda e sui corsi residenziali.",
         citationIndices: [0],
       },
     ]);
-    expect(result.validation).toEqual({
+    expect(result.validation).toMatchObject({
       ran: true,
-      answerModified: true,
+      answerModified: false,
       unsupportedSegmentCount: 1,
       substantiveUnsupportedSegmentCount: 1,
       supportedSegmentCount: 1,
@@ -473,9 +489,9 @@ it("omits consecutive unsupported claims within mixed answers", async () => {
         citationIndices: [0],
       },
     ]);
-    expect(result.validation).toEqual({
+    expect(result.validation).toMatchObject({
       ran: true,
-      answerModified: false,
+      answerModified: true,
       unsupportedSegmentCount: 0,
       substantiveUnsupportedSegmentCount: 0,
       supportedSegmentCount: 2,
@@ -735,7 +751,7 @@ it("omits consecutive unsupported claims within mixed answers", async () => {
     expect(result.validation.answerModified).toBe(true);
   });
 
-  it("uses a coherent grounded miss instead of degrading mixed answers to source-link fragments", async () => {
+  it("preserves mixed answers instead of degrading them to source-link fragments", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -765,10 +781,18 @@ it("omits consecutive unsupported claims within mixed answers", async () => {
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe("No se pudo verificar esa respuesta con los documentos recuperados.");
-    expect(result.citations).toEqual([]);
+    expect(result.answer).toBe(
+      "Kriya Yoga is an ancient practice for liberation. If you’d like, I can point you to [the path of Kriya Yoga](https://www.ananda.it/sentiero-kriya-yoga).",
+    );
+    expect(result.citations).toEqual([
+      { documentId: "doc-kriya", chunkId: "chunk-kriya", title: "Il sentiero del Kriya Yoga" },
+    ]);
     expect(result.answerSegments).toEqual([
-      { text: "No se pudo verificar esa respuesta con los documentos recuperados." },
+      { text: "Kriya Yoga is an ancient practice for liberation. " },
+      {
+        text: "If you’d like, I can point you to [the path of Kriya Yoga](https://www.ananda.it/sentiero-kriya-yoga).",
+        citationIndices: [0],
+      },
     ]);
     expect(result.segmentResults.map((segment) => segment.reason)).toEqual([
       "missing_support_reference",
@@ -776,7 +800,7 @@ it("omits consecutive unsupported claims within mixed answers", async () => {
     ]);
     expect(result.validation.supportedSegmentCount).toBe(1);
     expect(result.validation.unsupportedSegmentCount).toBe(1);
-    expect(result.validation.answerModified).toBe(true);
+    expect(result.validation.answerModified).toBe(false);
   });
 
   it("preserves model-marked unsupported notices under strict validation", async () => {

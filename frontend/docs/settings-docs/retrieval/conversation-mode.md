@@ -8,7 +8,7 @@ Choose how broadly the assistant responds in customer-facing chat.
 
 Conversation mode is an assistant behavior setting. It controls how much the assistant expands after answering the current question.
 
-It does not relax grounding. When the assistant uses retrieval, support validation still decides what happens when the model writes something the retrieved material does not support.
+It does not relax grounding. When the assistant uses retrieval, answers are still generated from retrieved evidence and shown with citation metadata when available.
 
 ### Factual
 
@@ -37,4 +37,4 @@ If the available material only supports one of those lanes, the assistant shows 
 
 ### Suggestion Count
 
-When suggested questions are enabled, the assistant asks the suggestion generator for the configured number of follow-up questions. Final display can still show fewer if returned suggestions fail validation or cannot be tied back to a retrieved context.
+When suggested questions are enabled, the assistant asks the suggestion generator for the configured number of follow-up questions. Final display can still show fewer if returned suggestions cannot be tied back to a retrieved context.

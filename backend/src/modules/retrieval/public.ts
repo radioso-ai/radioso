@@ -145,7 +145,6 @@ export interface RetrievalPipelineResult {
   responseIdentity: ResponseIdentity | null;
   responseSettings: {
     citationDisplayEnabled: boolean;
-    answerSupportValidationEnabled?: boolean;
     suggestedQuestionsEnabled: boolean;
     suggestedQuestionsCount: number;
     customInstruction?: string;

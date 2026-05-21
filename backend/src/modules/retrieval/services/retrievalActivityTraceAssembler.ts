@@ -310,7 +310,6 @@ export class ActivityTraceAssembler {
       buildStage("prompt", "prompt_assembly", "Prompt assembly", "applied", timings.promptAssembly, {
         settings: {
           citationDisplayEnabled: prompt.responseSettings.citationDisplayEnabled,
-          answerSupportValidationEnabled: prompt.responseSettings.answerSupportValidationEnabled,
           responseLanguagePolicy: prompt.responseSettings.responseLanguagePolicy,
         },
         outputs: {

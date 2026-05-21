@@ -1,3 +1,5 @@
+import { removeDetachedPunctuationSpacing } from "./citationTextNormalization.js";
+
 export interface CitationAnchorGroup {
   start: number;
   end: number;
@@ -5,11 +7,6 @@ export interface CitationAnchorGroup {
 }
 
 const ANCHOR_PATTERN = /\[\[(\d+)\]\]/g;
-
-const removeDetachedPunctuationSpacing = (text: string): string =>
-  text
-    .replace(/[ \t]+([.,;:!?])/g, "$1")
-    .replace(/[ \t]+(\r?\n)/g, "$1");
 
 export const findCitationAnchorGroups = (answer: string): CitationAnchorGroup[] => {
   const matches = [...answer.matchAll(ANCHOR_PATTERN)].map((match) => ({

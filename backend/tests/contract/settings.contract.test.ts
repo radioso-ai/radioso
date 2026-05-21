@@ -34,7 +34,6 @@ describe("settings contract", () => {
         similarityThreshold: expect.any(Number),
         rerankTopK: 5,
         citationDisplayEnabled: true,
-        answerSupportValidationEnabled: true,
         metadataRules: [],
         metadataFieldSuggestions: [],
       },
@@ -117,7 +116,6 @@ describe("settings contract", () => {
 
     expect(response.status).toBe(200);
     expect(Object.keys(response.body).sort()).toEqual([
-      "answerSupportValidationEnabled",
       "citationDisplayEnabled",
       "createdAt",
       "customInstruction",
@@ -136,7 +134,6 @@ describe("settings contract", () => {
     ]);
     expect(response.body.vectorTopK).toBe(15);
     expect(response.body.citationDisplayEnabled).toBe(true);
-    expect(response.body.answerSupportValidationEnabled).toBe(true);
     expect(response.body.customInstruction).toBe("");
     expect(response.body.semanticRewriteInstructions).toEqual(expect.any(String));
     expect(response.body.lexicalRewriteInstructions).toEqual(expect.any(String));

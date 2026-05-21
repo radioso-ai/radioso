@@ -67,7 +67,6 @@ interface RetrievalSettingsPayload {
   lexicalRewriteInstructions?: unknown;
   suggestedQuestionsEnabled?: unknown;
   suggestedQuestionsCount?: unknown;
-  answerSupportValidationEnabled?: unknown;
 }
 
 interface LegacyMetadataRule {
@@ -96,7 +95,6 @@ export interface RetrievalSettingsRecord {
   similarityThreshold: number;
   rerankTopK: number;
   citationDisplayEnabled: boolean;
-  answerSupportValidationEnabled?: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
   createdAt: Date;
@@ -114,7 +112,6 @@ export interface RetrievalSettingsInput {
   similarityThreshold: number;
   rerankTopK: number;
   citationDisplayEnabled: boolean;
-  answerSupportValidationEnabled?: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
 }
@@ -140,7 +137,6 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   similarityThreshold: RETRIEVAL_BEHAVIOR.defaultSimilarityThreshold,
   rerankTopK: 5,
   citationDisplayEnabled: true,
-  answerSupportValidationEnabled: true,
   metadataRules: [],
   customInstruction: "",
   createdAt: new Date(),
@@ -356,13 +352,6 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   if (!Array.isArray(input.metadataRules)) {
     throw badRequest("metadataRules must be an array");
   }
-  if (
-    typeof input.answerSupportValidationEnabled !== "undefined" &&
-    typeof input.answerSupportValidationEnabled !== "boolean"
-  ) {
-    throw badRequest("answerSupportValidationEnabled must be a boolean");
-  }
-
   const seenRuleIds = new Set<string>();
   for (const rule of input.metadataRules) {
     const conditions = getNormalizedMetadataConditions(rule);
@@ -464,7 +453,6 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
       MIN_SUGGESTED_QUESTIONS_COUNT,
       Math.min(MAX_SUGGESTED_QUESTIONS_COUNT, input.suggestedQuestionsCount),
     ),
-    answerSupportValidationEnabled: input.answerSupportValidationEnabled ?? true,
     metadataRules: input.metadataRules.map((rule) => ({
       ...rule,
       field: getNormalizedMetadataConditions(rule)[0]?.field ?? "",

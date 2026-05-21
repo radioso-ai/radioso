@@ -586,20 +586,8 @@ function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
           <KeyValueList
             rows={[
               { label: 'Outcome', value: outputs.outcome as string | undefined },
-              { label: 'Validation ran', value: outputs.validationRan as boolean | undefined },
-              { label: 'Answer modified', value: outputs.answerModified as boolean | undefined },
-              { label: 'Supported segments', value: outputs.supportedSegmentCount as number | undefined },
-              { label: 'Unsupported segments', value: outputs.unsupportedSegmentCount as number | undefined },
-              {
-                label: 'Substantive unsupported segments',
-                value: outputs.substantiveUnsupportedSegmentCount as number | undefined,
-              },
-              { label: 'Hidden support used', value: outputs.hiddenSupportUsed as boolean | undefined },
             ]}
           />
-        </Section>
-        <Section title="Hidden support kinds">
-          <StringList values={asStringList(outputs.hiddenSupportKindsUsed)} />
         </Section>
         <RawBlock label="Outputs" value={stage.outputs} />
       </>

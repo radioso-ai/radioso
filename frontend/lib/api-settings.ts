@@ -48,7 +48,6 @@ export const settingsApi = {
           similarityThreshold: payload.similarityThreshold,
           rerankTopK: payload.rerankTopK,
           citationDisplayEnabled: payload.citationDisplayEnabled,
-          answerSupportValidationEnabled: payload.answerSupportValidationEnabled,
           metadataRules: payload.metadataRules,
         },
       }),

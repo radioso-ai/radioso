@@ -1,26 +1,17 @@
-import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import { resolveContextSourceUrl } from "../../retrieval/public.js";
-import {
-  AnswerPresentationService,
-  remapAnswerSegmentsToCitationEvidence,
-} from "./answerPresentationService.js";
+import { AnswerPresentationService } from "./answerPresentationService.js";
 import type { AnswerSegment, ChatCitation, CitationEvidence } from "../contracts/answerTypes.js";
-import { AnswerSupportValidator } from "./answerSupportValidator.js";
 import {
   ASSISTANT_TURN_OUTCOME,
-  type AnswerSegmentValidationResult,
-  type AnswerValidationSummary,
   type AssistantTurnOutcome,
-  type HiddenSupportEvidence,
-} from "./answerSupportValidationTypes.js";
-import { AssistantTurnOutcomeClassifier } from "./assistantTurnOutcomeClassifier.js";
-import type { GroundedMissResponseComposer } from "./groundedMissResponseComposer.js";
+} from "./assistantTurnOutcomeTypes.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import type { AssistantSuggestionExpansionService } from "./assistantSuggestionExpansionService.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
+import { resolveCitationArtifacts } from "./implicitCitationSupport.js";
 
 export interface ChatPresentedAnswer {
   answer: string;
@@ -29,55 +20,18 @@ export interface ChatPresentedAnswer {
   suggestions?: ChatSuggestion[];
   planningCitations?: ChatCitation[];
   answerOutcome: AssistantTurnOutcome;
-  validation: AnswerValidationSummary;
-  segmentResults: AnswerSegmentValidationResult[];
 }
 
-const buildSkippedValidationSummary = (): AnswerValidationSummary => ({
-  ran: false,
-  answerModified: false,
-  unsupportedSegmentCount: 0,
-  substantiveUnsupportedSegmentCount: 0,
-  supportedSegmentCount: 0,
-  nonSubstantiveSegmentCount: 0,
-});
-
-const isAnswerSupportValidationEnabled = (session: PreparedSession): boolean =>
-  session.retrieval.responseSettings?.answerSupportValidationEnabled !== false;
-
 const hasGroundedSuggestionSupport = (input: {
-  validation: AnswerValidationSummary;
   answerOutcome: AssistantTurnOutcome;
   hasRetrievedContext: boolean;
+  hasCitedAnswer: boolean;
 }): boolean => {
-  if (!input.hasRetrievedContext) {
+  if (!input.hasRetrievedContext || !input.hasCitedAnswer) {
     return false;
   }
 
-  if (!input.validation.ran) {
-    return input.answerOutcome === ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS;
-  }
-
-  return input.validation.supportedSegmentCount > 0;
-};
-
-const buildHiddenSupportEvidence = (
-  responseIdentity?: ResponseIdentity | null,
-): HiddenSupportEvidence[] => {
-  if (!responseIdentity) {
-    return [];
-  }
-
-  const evidence: HiddenSupportEvidence[] = [];
-
-  if (responseIdentity.name) {
-    evidence.push({
-      kind: "assistant_name",
-      content: responseIdentity.name,
-    });
-  }
-
-  return evidence;
+  return input.answerOutcome === ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS;
 };
 
 const toCitationEvidence = (session: PreparedSession): CitationEvidence[] =>
@@ -98,11 +52,8 @@ const toPlanningCitations = (citationEvidence: CitationEvidence[]): ChatCitation
 
 export class ChatAnswerPresenter {
   private readonly answerPresentationService = new AnswerPresentationService();
-  private readonly answerSupportValidator = new AnswerSupportValidator();
-  private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
 
   constructor(
-    private readonly groundedMissResponseComposer: GroundedMissResponseComposer,
     private readonly assistantSuggestionExpansionService: AssistantSuggestionExpansionService,
     private readonly chatActionSuggestionService?: ChatActionSuggestionService,
   ) {}
@@ -117,8 +68,6 @@ export class ChatAnswerPresenter {
       ...presented,
       planningCitations: [],
       answerOutcome: ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE,
-      validation: buildSkippedValidationSummary(),
-      segmentResults: [],
     };
   }
 
@@ -149,55 +98,17 @@ export class ChatAnswerPresenter {
       answer,
       citations: citationEvidence,
     });
-    const planningCitations = toPlanningCitations(normalized.citationEvidence);
-
-    if (!isAnswerSupportValidationEnabled(session)) {
-      const presented = this.answerPresentationService.present({
-        answer,
-        citations: citationEvidence,
-      });
-      const validation = buildSkippedValidationSummary();
-
-      return {
-        ...presented,
-        planningCitations,
-        answerOutcome: this.assistantTurnOutcomeClassifier.classify({
-          hadRetrievedContext: true,
-          validation,
-        }),
-        validation,
-        segmentResults: [],
-      };
-    }
-
-    const validationAnswerSegments = remapAnswerSegmentsToCitationEvidence(
-      normalized.answerSegments,
-      normalized.citationEvidence,
-      citationEvidence,
-    );
-
-    const validated = await this.answerSupportValidator.validate({
-      query,
-      answer: normalized.answer,
-      answerSegments: validationAnswerSegments,
-      citationEvidence,
-      hiddenSupportEvidence: buildHiddenSupportEvidence(session.retrieval.responseIdentity),
-      retrievedContextSummaries: citationEvidence.map((citation) => ({
-        title: citation.title,
-        content: citation.content,
-      })),
-      groundedMissResponseComposer: this.groundedMissResponseComposer,
-      unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
-      userExpectedLocale,
+    const presented = this.answerPresentationService.present({
+      answer,
+      citations: citationEvidence,
     });
+    const citationArtifacts = resolveCitationArtifacts(presented, normalized, citationEvidence);
 
     return {
-      ...validated,
-      planningCitations,
-      answerOutcome: this.assistantTurnOutcomeClassifier.classify({
-        hadRetrievedContext: true,
-        validation: validated.validation,
-      }),
+      ...presented,
+      ...citationArtifacts,
+      planningCitations: toPlanningCitations(normalized.citationEvidence),
+      answerOutcome: ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS,
     };
   }
 
@@ -216,9 +127,12 @@ export class ChatAnswerPresenter {
       suggestedQuestionsEnabled: session.retrieval.responseSettings?.suggestedQuestionsEnabled ?? true,
       suggestedQuestionsCount: DEFAULT_SUGGESTED_QUESTIONS_COUNT,
       groundedAnswerSupported: hasGroundedSuggestionSupport({
-        validation: presentation.validation,
         answerOutcome: presentation.answerOutcome,
         hasRetrievedContext: session.retrieval.contexts.length > 0,
+        hasCitedAnswer: Boolean(
+          (presentation.citations?.length ?? 0) > 0
+          && presentation.answerSegments?.some((segment) => (segment.citationIndices?.length ?? 0) > 0),
+        ),
       }),
       answer: presentation.answer,
       citations: presentation.citations,
@@ -281,8 +195,6 @@ export class ChatAnswerPresenter {
       suggestions: undefined,
       planningCitations: [],
       answerOutcome: ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL,
-      validation: buildSkippedValidationSummary(),
-      segmentResults: [],
     };
   }
 }

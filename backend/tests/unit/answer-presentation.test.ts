@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { AnswerPresentationService } from "../../src/modules/chat/services/answerPresentationService.js";
 
 describe("answer presentation service", () => {
-  it("normalize() retains citation evidence and segments for validation", () => {
+  it("normalize() retains citation evidence and segments", () => {
     const service = new AnswerPresentationService();
 
     const normalized = service.normalize({
@@ -37,7 +37,6 @@ describe("answer presentation service", () => {
           text: ".",
         },
       ],
-      unsupportedNoticeMarked: false,
     });
   });
 
@@ -98,26 +97,6 @@ describe("answer presentation service", () => {
     expect(result).toEqual({
       answer:
         "You can explore the main overview here: [Meditation and Kriya Yoga](https://anandaeurope.org/meditation-and-kriya-yoga).\nIf you want to look at course options, here are the residential pages: [Il sentiero del Kriya Yoga 4 giorni](https://corsi.ananda.it/corso/0007963-corso-residenziale-il-sentiero-del-kriya-yoga-4-giorni) and [Il sentiero del Kriya Yoga 5 giorni](https://corsi.ananda.it/en/course/0007995-corso-residenziale-il-sentiero-del-kriya-yoga-5-days)",
-    });
-  });
-
-  it("strips unsupported notice markers while preserving the notice text", () => {
-    const service = new AnswerPresentationService();
-
-    const normalized = service.normalize({
-      answer: "No puedo verificar eso con certeza.<<UNSUPPORTED>>",
-      citations: [],
-    });
-
-    expect(normalized).toEqual({
-      answer: "No puedo verificar eso con certeza.",
-      citationEvidence: [],
-      answerSegments: [
-        {
-          text: "No puedo verificar eso con certeza.",
-        },
-      ],
-      unsupportedNoticeMarked: true,
     });
   });
 
@@ -211,6 +190,19 @@ describe("answer presentation service", () => {
         text: ".",
       },
     ]);
+  });
+
+  it("preserves natural single-bracket numeric text", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer: "Read [1](https://example.com), inspect arr[0], and keep the [2024] label.",
+      citations: [],
+    });
+
+    expect(result).toEqual({
+      answer: "Read [1](https://example.com), inspect arr[0], and keep the [2024] label.",
+    });
   });
 
   it("falls through to later valid anchors and keeps all distinct cited documents", () => {

@@ -210,6 +210,21 @@ describe("document contract", () => {
           ]),
         }),
       ],
+    });
+    expect(response.body).not.toHaveProperty("activityTrace");
+    expect(response.body).not.toHaveProperty("debug");
+
+    const debugResponse = await request(app)
+      .post("/api/v1/document/search")
+      .set(adminSessionHeaders(session))
+      .send({
+        query: "pricing support",
+        metadataFilter: { language: "en" },
+        includeDebug: true,
+      });
+
+    expect(debugResponse.status).toBe(200);
+    expect(debugResponse.body.debug).toMatchObject({
       activityTrace: expect.objectContaining({
         traceId: expect.any(String),
       }),
@@ -303,6 +318,16 @@ describe("document contract", () => {
           title: "Troubleshooting Guide",
         }),
       ],
+    });
+    expect(replayResponse.body).not.toHaveProperty("activityTrace");
+    expect(replayResponse.body).not.toHaveProperty("debug");
+
+    const debugReplayResponse = await request(app)
+      .get(`/api/v1/document/search/history/${searchResponse.body.searchId}?includeDebug=true`)
+      .set(adminSessionHeaders(session));
+
+    expect(debugReplayResponse.status).toBe(200);
+    expect(debugReplayResponse.body.debug).toMatchObject({
       activityTrace: expect.objectContaining({
         traceId: expect.any(String),
       }),

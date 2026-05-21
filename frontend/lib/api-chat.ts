@@ -23,12 +23,25 @@ import type {
   HistoryItemsResponse,
 } from './api-types'
 
+const normalizeChatResponse = (payload: ChatResponse): ChatResponse => ({
+  ...payload,
+  route: payload.route ?? payload.debug?.route,
+  activitySummary: payload.activitySummary ?? payload.debug?.activitySummary,
+  activityTrace: payload.activityTrace ?? payload.debug?.activityTrace,
+})
+
+const normalizeDocumentSearchResponse = (payload: DocumentSearchResponse): DocumentSearchResponse => ({
+  ...payload,
+  activityTrace: payload.activityTrace ?? payload.debug?.activityTrace,
+})
+
 export const chatApi = {
   async createChatResponse(data: ChatRequest): Promise<ChatResponse> {
-    return request<ChatResponse>("/assistant/chat", {
+    const payload = await request<ChatResponse>("/assistant/chat", {
       method: "POST",
-      body: JSON.stringify(toAssistantChatPayload(data)),
+      body: JSON.stringify(toAssistantChatPayload({ ...data, includeDebug: data.includeDebug ?? true })),
     }, { withApiToken: true })
+    return normalizeChatResponse(payload)
   },
 
   async streamChatResponse(
@@ -44,7 +57,7 @@ export const chatApi = {
       cache: "no-store",
       credentials: "omit",
       headers,
-      body: JSON.stringify(toAssistantChatPayload(data)),
+      body: JSON.stringify(toAssistantChatPayload({ ...data, includeDebug: data.includeDebug ?? true })),
     })
     let response = await executeFetch()
     if (canRetryWithFreshWorkspaceToken(response) && await refreshWorkspaceApiToken(headers)) {
@@ -58,7 +71,7 @@ export const chatApi = {
     const contentType = response.headers.get("content-type") ?? ""
 
     if (!contentType.includes("text/event-stream")) {
-      const payload = (await response.json()) as ChatResponse
+      const payload = normalizeChatResponse((await response.json()) as ChatResponse)
       if (payload.conversationId) {
         handlers.onConversation?.({ conversationId: payload.conversationId })
       }
@@ -70,13 +83,11 @@ export const chatApi = {
         assistantMessageId: payload.assistantMessageId,
         agentId: payload.agentId,
         agentName: payload.agentName,
-        route: payload.route,
         answer: payload.answer,
         citations: payload.citations,
         answerSegments: payload.answerSegments,
         suggestions: payload.suggestions,
-        activitySummary: payload.activitySummary,
-        activityTrace: payload.activityTrace,
+        debug: payload.debug,
       })
       return payload
     }
@@ -87,10 +98,11 @@ export const chatApi = {
   async bootstrapConversation(
     data: Pick<ChatRequest, 'agentId' | 'stream' | 'bootstrapGreeting' | 'userExpectedLocale'>,
   ): Promise<ChatResponse | undefined> {
-    return request<ChatResponse>('/assistant/chat', {
+    const payload = await request<ChatResponse>('/assistant/chat', {
       method: 'POST',
-      body: JSON.stringify(toAssistantChatPayload(data)),
+      body: JSON.stringify(toAssistantChatPayload({ ...data, includeDebug: true })),
     }, { withApiToken: true })
+    return payload ? normalizeChatResponse(payload) : payload
   },
 
   async listHistory(input?: { limit?: number; offset?: number }): Promise<HistoryItemsResponse> {
@@ -147,9 +159,10 @@ export const chatApi = {
   },
 
   async getSearchHistory(searchId: string): Promise<DocumentSearchResponse> {
-    return request<DocumentSearchResponse>(`/history/search/${searchId}`, {
+    const payload = await request<DocumentSearchResponse>(`/history/search/${searchId}?includeDebug=true`, {
       method: 'GET',
     }, { withApiToken: true })
+    return normalizeDocumentSearchResponse(payload)
   },
 
   async getContactHistory(

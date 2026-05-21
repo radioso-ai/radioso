@@ -94,9 +94,16 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     citations: z.array(schemas.CitationSchema).optional(),
     answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),
     suggestions: z.array(ChatSuggestionSchema).optional(),
-    activitySummary: schemas.ActivitySummarySchema,
-    activityTrace: schemas.ActivityTraceSchema,
   };
+
+  const AssistantChatDebugSchema = registry.register(
+    "AssistantChatDebug",
+    z.object({
+      route: AssistantRouteSchema,
+      activitySummary: schemas.ActivitySummarySchema,
+      activityTrace: schemas.ActivityTraceSchema,
+    }),
+  );
 
   const ChatResponseSchema = registry.register(
     "ChatResponse",
@@ -104,7 +111,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       conversationId: z.string().uuid(),
       assistantMessageId: z.string().uuid(),
       ...chatResponseCoreShape,
-      route: AssistantRouteSchema,
+      debug: AssistantChatDebugSchema.optional(),
     }),
   );
 
@@ -113,7 +120,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     z.object({
       conversationId: z.string().uuid().optional(),
       ...chatResponseCoreShape,
-      route: AssistantRouteSchema,
+      debug: AssistantChatDebugSchema.optional(),
     }).openapi({
       description: "Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn.",
     }),
@@ -350,6 +357,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ChatSuggestionSchema,
     AssistantRouteSchema,
     AssistantRouteDiagnosticsSchema,
+    AssistantChatDebugSchema,
     ChatResponseSchema,
     ChatBootstrapResponseSchema,
     AssistantChatResponseSchema,

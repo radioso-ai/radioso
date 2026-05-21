@@ -113,16 +113,17 @@ const resolveDevBuildContext = () => {
 };
 
 const devBuildContext = resolveDevBuildContext();
+const edition = process.env.NEXT_PUBLIC_RADIOSO_EDITION ?? process.env.RADIOSO_EDITION ?? "oss";
+const agentCreationContributionsModule = edition === "enterprise"
+  ? path.resolve(frontendRoot, "../ee/packages/agent-wizard-frontend/src/wizard-dialog.tsx")
+  : path.join(frontendRoot, "lib/agent-creation-contributions-oss.ts");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   outputFileTracingRoot: frontendRoot,
   transpilePackages: ['@radioso/ui'],
   env: {
-    NEXT_PUBLIC_RADIOSO_EDITION:
-      process.env.NEXT_PUBLIC_RADIOSO_EDITION ??
-      process.env.RADIOSO_EDITION ??
-      "oss",
+    NEXT_PUBLIC_RADIOSO_EDITION: edition,
     NEXT_PUBLIC_DOCS_URL:
       process.env.NEXT_PUBLIC_DOCS_URL ??
       process.env.DOCS_SITE_URL ??
@@ -167,6 +168,7 @@ const nextConfig = {
       '@': frontendRoot,
       '@/components': path.join(frontendRoot, 'components'),
       '@/lib': path.join(frontendRoot, 'lib'),
+      '@radioso/agent-creation-contributions': agentCreationContributionsModule,
     }
     config.module.rules.push({
       test: /\.md$/i,

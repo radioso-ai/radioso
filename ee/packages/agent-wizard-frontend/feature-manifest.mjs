@@ -10,17 +10,5 @@ export const featureManifest = {
       kind: "wizard-dialog",
     },
   ],
-  frontendComponents: [
-    {
-      relativePath: "lib/agent-creation-contributions.tsx",
-      packageName: "@radioso/enterprise-agent-wizard-frontend",
-      exportPath: "wizard-dialog",
-      exports: [
-        "WizardDialog",
-        "clearAgentCreationHandoff",
-        "readAgentCreationHandoff",
-      ],
-    },
-  ],
   docs: ["ee/readme.md"],
 };

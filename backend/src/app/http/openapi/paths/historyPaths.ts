@@ -222,6 +222,9 @@ export const registerHistoryPaths = (
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: {
       params: schemas.documentSearchHistoryParamsSchema,
+      query: z.object({
+        includeDebug: z.boolean().optional(),
+      }),
     },
     responses: {
       200: {

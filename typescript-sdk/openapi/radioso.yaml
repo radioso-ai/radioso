@@ -2700,6 +2700,9 @@ components:
               - type: boolean
               - type: "null"
               - type: "null"
+        includeDebug:
+          type: boolean
+          default: false
       required:
         - query
     WebsiteCrawlRequest:
@@ -3396,8 +3399,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DocumentSearchResult"
-        activityTrace:
-          $ref: "#/components/schemas/ActivityTrace"
+        debug:
+          type: object
+          properties:
+            activityTrace:
+              $ref: "#/components/schemas/ActivityTrace"
+          required:
+            - activityTrace
       required:
         - searchId
         - mode
@@ -3417,6 +3425,9 @@ components:
           type: integer
           minimum: 1
           maximum: 100
+        includeDebug:
+          type: boolean
+          default: false
       required:
         - query
     RetrievalAnswerRequest:
@@ -3446,6 +3457,9 @@ components:
         metadataFilter:
           type: object
           additionalProperties: {}
+        includeDebug:
+          type: boolean
+          default: false
       required:
         - query
     RetrievalSearchEvidence:
@@ -3492,16 +3506,20 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RetrievalSearchEvidence"
-        activitySummary:
-          $ref: "#/components/schemas/ActivitySummary"
-        activityTrace:
-          $ref: "#/components/schemas/ActivityTrace"
+        debug:
+          type: object
+          properties:
+            activitySummary:
+              $ref: "#/components/schemas/ActivitySummary"
+            activityTrace:
+              $ref: "#/components/schemas/ActivityTrace"
+          required:
+            - activitySummary
+            - activityTrace
       required:
         - outcome
         - rewrittenQuery
         - results
-        - activitySummary
-        - activityTrace
     RetrievalAnswerEvidence:
       type: object
       properties:
@@ -3536,10 +3554,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Citation"
-        evidence:
-          type: array
-          items:
-            $ref: "#/components/schemas/RetrievalAnswerEvidence"
         validation:
           type: object
           properties:
@@ -3551,17 +3565,25 @@ components:
                 - not_checked
           required:
             - status
-        activitySummary:
-          $ref: "#/components/schemas/ActivitySummary"
-        activityTrace:
-          $ref: "#/components/schemas/ActivityTrace"
+        debug:
+          type: object
+          properties:
+            evidence:
+              type: array
+              items:
+                $ref: "#/components/schemas/RetrievalAnswerEvidence"
+            activitySummary:
+              $ref: "#/components/schemas/ActivitySummary"
+            activityTrace:
+              $ref: "#/components/schemas/ActivityTrace"
+          required:
+            - evidence
+            - activitySummary
+            - activityTrace
       required:
         - outcome
         - answer
-        - evidence
         - validation
-        - activitySummary
-        - activityTrace
     RetrievalAnswerUnsupported:
       type: object
       properties:
@@ -4109,6 +4131,19 @@ components:
         - routeType
         - routeReason
         - retrievalInvoked
+    AssistantChatDebug:
+      type: object
+      properties:
+        route:
+          $ref: "#/components/schemas/AssistantRoute"
+        activitySummary:
+          $ref: "#/components/schemas/ActivitySummary"
+        activityTrace:
+          $ref: "#/components/schemas/ActivityTrace"
+      required:
+        - route
+        - activitySummary
+        - activityTrace
     ChatResponse:
       type: object
       properties:
@@ -4137,19 +4172,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatSuggestion"
-        activitySummary:
-          $ref: "#/components/schemas/ActivitySummary"
-        activityTrace:
-          $ref: "#/components/schemas/ActivityTrace"
-        route:
-          $ref: "#/components/schemas/AssistantRoute"
+        debug:
+          $ref: "#/components/schemas/AssistantChatDebug"
       required:
         - conversationId
         - assistantMessageId
         - answer
-        - activitySummary
-        - activityTrace
-        - route
     ChatBootstrapResponse:
       type: object
       properties:
@@ -4175,17 +4203,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatSuggestion"
-        activitySummary:
-          $ref: "#/components/schemas/ActivitySummary"
-        activityTrace:
-          $ref: "#/components/schemas/ActivityTrace"
-        route:
-          $ref: "#/components/schemas/AssistantRoute"
+        debug:
+          $ref: "#/components/schemas/AssistantChatDebug"
       required:
         - answer
-        - activitySummary
-        - activityTrace
-        - route
       description: Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn.
     AssistantChatResponse:
       anyOf:
@@ -4207,6 +4228,9 @@ components:
           type: boolean
           default: false
         stream:
+          type: boolean
+          default: false
+        includeDebug:
           type: boolean
           default: false
         userExpectedLocale:
@@ -6676,6 +6700,11 @@ paths:
           required: true
           name: searchId
           in: path
+        - schema:
+            type: boolean
+          required: false
+          name: includeDebug
+          in: query
       responses:
         "200":
           description: Document search replay returned
@@ -7754,6 +7783,11 @@ paths:
           required: true
           name: searchId
           in: path
+        - schema:
+            type: boolean
+          required: false
+          name: includeDebug
+          in: query
       responses:
         "200":
           description: Document search replay returned

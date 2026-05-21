@@ -448,7 +448,9 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       query: z.string(),
       resultCount: z.number().int().min(0),
       results: z.array(DocumentSearchResultSchema),
-      activityTrace: ActivityTraceSchema.optional(),
+      debug: z.object({
+        activityTrace: ActivityTraceSchema,
+      }).optional(),
     }),
   );
 
@@ -476,8 +478,10 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
         lexical: z.string(),
       }),
       results: z.array(RetrievalSearchEvidenceSchema),
-      activitySummary: ActivitySummarySchema,
-      activityTrace: ActivityTraceSchema,
+      debug: z.object({
+        activitySummary: ActivitySummarySchema,
+        activityTrace: ActivityTraceSchema,
+      }).optional(),
     }),
   );
 
@@ -498,12 +502,14 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       outcome: z.literal("answer"),
       answer: z.string(),
       citations: z.array(CitationSchema).optional(),
-      evidence: z.array(RetrievalAnswerEvidenceSchema),
       validation: z.object({
         status: z.enum(["supported", "unsupported", "not_checked"]),
       }),
-      activitySummary: ActivitySummarySchema,
-      activityTrace: ActivityTraceSchema,
+      debug: z.object({
+        evidence: z.array(RetrievalAnswerEvidenceSchema),
+        activitySummary: ActivitySummarySchema,
+        activityTrace: ActivityTraceSchema,
+      }).optional(),
     }),
   );
 

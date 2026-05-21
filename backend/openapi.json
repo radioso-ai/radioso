@@ -4083,6 +4083,10 @@
                 }
               ]
             }
+          },
+          "includeDebug": {
+            "type": "boolean",
+            "default": false
           }
         },
         "required": [
@@ -5056,8 +5060,16 @@
               "$ref": "#/components/schemas/DocumentSearchResult"
             }
           },
-          "activityTrace": {
-            "$ref": "#/components/schemas/ActivityTrace"
+          "debug": {
+            "type": "object",
+            "properties": {
+              "activityTrace": {
+                "$ref": "#/components/schemas/ActivityTrace"
+              }
+            },
+            "required": [
+              "activityTrace"
+            ]
           }
         },
         "required": [
@@ -5083,6 +5095,10 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 100
+          },
+          "includeDebug": {
+            "type": "boolean",
+            "default": false
           }
         },
         "required": [
@@ -5124,6 +5140,10 @@
           "metadataFilter": {
             "type": "object",
             "additionalProperties": {}
+          },
+          "includeDebug": {
+            "type": "boolean",
+            "default": false
           }
         },
         "required": [
@@ -5192,19 +5212,26 @@
               "$ref": "#/components/schemas/RetrievalSearchEvidence"
             }
           },
-          "activitySummary": {
-            "$ref": "#/components/schemas/ActivitySummary"
-          },
-          "activityTrace": {
-            "$ref": "#/components/schemas/ActivityTrace"
+          "debug": {
+            "type": "object",
+            "properties": {
+              "activitySummary": {
+                "$ref": "#/components/schemas/ActivitySummary"
+              },
+              "activityTrace": {
+                "$ref": "#/components/schemas/ActivityTrace"
+              }
+            },
+            "required": [
+              "activitySummary",
+              "activityTrace"
+            ]
           }
         },
         "required": [
           "outcome",
           "rewrittenQuery",
-          "results",
-          "activitySummary",
-          "activityTrace"
+          "results"
         ]
       },
       "RetrievalAnswerEvidence": {
@@ -5254,12 +5281,6 @@
               "$ref": "#/components/schemas/Citation"
             }
           },
-          "evidence": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RetrievalAnswerEvidence"
-            }
-          },
           "validation": {
             "type": "object",
             "properties": {
@@ -5276,20 +5297,33 @@
               "status"
             ]
           },
-          "activitySummary": {
-            "$ref": "#/components/schemas/ActivitySummary"
-          },
-          "activityTrace": {
-            "$ref": "#/components/schemas/ActivityTrace"
+          "debug": {
+            "type": "object",
+            "properties": {
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RetrievalAnswerEvidence"
+                }
+              },
+              "activitySummary": {
+                "$ref": "#/components/schemas/ActivitySummary"
+              },
+              "activityTrace": {
+                "$ref": "#/components/schemas/ActivityTrace"
+              }
+            },
+            "required": [
+              "evidence",
+              "activitySummary",
+              "activityTrace"
+            ]
           }
         },
         "required": [
           "outcome",
           "answer",
-          "evidence",
-          "validation",
-          "activitySummary",
-          "activityTrace"
+          "validation"
         ]
       },
       "RetrievalAnswerUnsupported": {
@@ -6136,6 +6170,25 @@
           "retrievalInvoked"
         ]
       },
+      "AssistantChatDebug": {
+        "type": "object",
+        "properties": {
+          "route": {
+            "$ref": "#/components/schemas/AssistantRoute"
+          },
+          "activitySummary": {
+            "$ref": "#/components/schemas/ActivitySummary"
+          },
+          "activityTrace": {
+            "$ref": "#/components/schemas/ActivityTrace"
+          }
+        },
+        "required": [
+          "route",
+          "activitySummary",
+          "activityTrace"
+        ]
+      },
       "ChatResponse": {
         "type": "object",
         "properties": {
@@ -6175,23 +6228,14 @@
               "$ref": "#/components/schemas/ChatSuggestion"
             }
           },
-          "activitySummary": {
-            "$ref": "#/components/schemas/ActivitySummary"
-          },
-          "activityTrace": {
-            "$ref": "#/components/schemas/ActivityTrace"
-          },
-          "route": {
-            "$ref": "#/components/schemas/AssistantRoute"
+          "debug": {
+            "$ref": "#/components/schemas/AssistantChatDebug"
           }
         },
         "required": [
           "conversationId",
           "assistantMessageId",
-          "answer",
-          "activitySummary",
-          "activityTrace",
-          "route"
+          "answer"
         ]
       },
       "ChatBootstrapResponse": {
@@ -6229,21 +6273,12 @@
               "$ref": "#/components/schemas/ChatSuggestion"
             }
           },
-          "activitySummary": {
-            "$ref": "#/components/schemas/ActivitySummary"
-          },
-          "activityTrace": {
-            "$ref": "#/components/schemas/ActivityTrace"
-          },
-          "route": {
-            "$ref": "#/components/schemas/AssistantRoute"
+          "debug": {
+            "$ref": "#/components/schemas/AssistantChatDebug"
           }
         },
         "required": [
-          "answer",
-          "activitySummary",
-          "activityTrace",
-          "route"
+          "answer"
         ],
         "description": "Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn."
       },
@@ -6277,6 +6312,10 @@
             "default": false
           },
           "stream": {
+            "type": "boolean",
+            "default": false
+          },
+          "includeDebug": {
             "type": "boolean",
             "default": false
           },
@@ -10232,6 +10271,14 @@
             "required": true,
             "name": "searchId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "boolean"
+            },
+            "required": false,
+            "name": "includeDebug",
+            "in": "query"
           }
         ],
         "responses": {
@@ -12009,6 +12056,14 @@
             "required": true,
             "name": "searchId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "boolean"
+            },
+            "required": false,
+            "name": "includeDebug",
+            "in": "query"
           }
         ],
         "responses": {

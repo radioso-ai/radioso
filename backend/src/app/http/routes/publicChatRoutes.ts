@@ -3,7 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { sendChatSse } from "../presenters/chatPresenter.js";
+import { presentChatPayload, sendChatSse } from "../presenters/chatPresenter.js";
 import type { ChatConversationDetail } from "../../../modules/chat/services/chatHistoryService.js";
 import type { AnswerSegment, ChatStreamEvent, ChatSuggestion } from "../../../modules/chat/contracts/index.js";
 import { AppError, badRequest, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
@@ -130,7 +130,11 @@ const stripPublicChatCitationArtifacts = <T extends {
   citations?: unknown;
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
-}>(payload: T): Omit<T, "citations" | "answerSegments" | "suggestions"> & {
+  route?: unknown;
+  activitySummary?: unknown;
+  activityTrace?: unknown;
+  debug?: unknown;
+}>(payload: T): Omit<T, "citations" | "answerSegments" | "suggestions" | "route" | "activitySummary" | "activityTrace" | "debug"> & {
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
 } => {
@@ -138,6 +142,10 @@ const stripPublicChatCitationArtifacts = <T extends {
     citations: _citations,
     answerSegments,
     suggestions,
+    route: _route,
+    activitySummary: _activitySummary,
+    activityTrace: _activityTrace,
+    debug: _debug,
     ...publicPayload
   } = payload;
 
@@ -157,6 +165,7 @@ const stripPublicConversationCitationArtifacts = (
       citations: _citations,
       answerSegments,
       suggestions,
+      debug: _debug,
       ...publicMessage
     } = message;
 
@@ -173,7 +182,7 @@ async function* stripPublicStreamCitationArtifacts(
 ): AsyncIterable<ChatStreamEvent> {
   for await (const event of events) {
     if (event.type === "done") {
-      yield stripPublicChatCitationArtifacts(event) as ChatStreamEvent;
+      yield stripPublicChatCitationArtifacts(presentChatPayload(event)) as ChatStreamEvent;
       continue;
     }
 

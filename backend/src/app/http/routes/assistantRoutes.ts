@@ -38,6 +38,7 @@ export const createAssistantRoutes = (dependencies: AssistantRouteDependencies):
             sourceChannel: req.body.sourceContext?.surface ?? null,
             sourceOrigin: req.body.sourceContext?.sourceOrigin ?? null,
           }),
+          { includeDebug: req.body.includeDebug },
         );
         return;
       }
@@ -61,7 +62,7 @@ export const createAssistantRoutes = (dependencies: AssistantRouteDependencies):
         res.status(204).end();
         return;
       }
-      sendChatJson(res, response);
+      sendChatJson(res, response, { includeDebug: req.body.includeDebug });
     } catch (error) {
       next(error);
     }

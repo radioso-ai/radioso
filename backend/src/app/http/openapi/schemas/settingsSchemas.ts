@@ -5,6 +5,14 @@ import {
   updatePlatformSettingsSchema,
   updateSettingsSchema,
 } from "../../routes/settingsRoutes.js";
+import {
+  providerNames,
+  setProviderCredentialSchema,
+} from "../../routes/settingsCredentialsRoutes.js";
+import {
+  updateWorkspaceLlmModelsSchema,
+  workspaceLlmProviderNames,
+} from "../../routes/settingsLlmModelsRoutes.js";
 import { websiteEmbedLauncherPositions } from "../../../../modules/settings/contracts/websiteEmbed.js";
 import { embeddingModelIds } from "../../../../modules/settings/contracts/ingestion.js";
 import { chunkingStrategyIds } from "../../../../modules/retrieval/public.js";
@@ -303,6 +311,61 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     updatePlatformSettingsSchema,
   );
 
+  const WorkspaceProviderCredentialSummarySchema = registry.register(
+    "WorkspaceProviderCredentialSummary",
+    z.object({
+      provider: z.enum(providerNames),
+      updatedAt: z.string().datetime(),
+    }),
+  );
+
+  const WorkspaceProviderCredentialsResponseSchema = registry.register(
+    "WorkspaceProviderCredentialsResponse",
+    z.object({
+      encryptionConfigured: z.boolean(),
+      credentials: z.array(WorkspaceProviderCredentialSummarySchema),
+      envProviderAvailability: z.object({
+        openai: z.boolean(),
+        "openai-compatible": z.boolean(),
+        gemini: z.boolean(),
+        claude: z.boolean(),
+      }),
+    }),
+  );
+
+  const SetWorkspaceProviderCredentialRequestSchema = registry.register(
+    "SetWorkspaceProviderCredentialRequest",
+    setProviderCredentialSchema,
+  );
+
+  const WorkspaceLlmCapabilityPreferenceSchema = registry.register(
+    "WorkspaceLlmCapabilityPreference",
+    z.object({
+      provider: z.enum(workspaceLlmProviderNames),
+      model: z.string(),
+    }).nullable(),
+  );
+
+  const WorkspaceLlmModelsResponseSchema = registry.register(
+    "WorkspaceLlmModelsResponse",
+    z.object({
+      chat: WorkspaceLlmCapabilityPreferenceSchema,
+      rewrite: WorkspaceLlmCapabilityPreferenceSchema,
+      rerank: WorkspaceLlmCapabilityPreferenceSchema,
+      knownModelsByProvider: z.object({
+        openai: z.array(z.string()),
+        "openai-compatible": z.array(z.string()),
+        gemini: z.array(z.string()),
+        claude: z.array(z.string()),
+      }),
+    }),
+  );
+
+  const UpdateWorkspaceLlmModelsRequestSchema = registry.register(
+    "UpdateWorkspaceLlmModelsRequest",
+    updateWorkspaceLlmModelsSchema,
+  );
+
   Object.assign(schemas, {
     RetrievalSettingsSchema,
     UpdateRetrievalSettingsRequestSchema,
@@ -321,5 +384,11 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     AgentLogoSchema,
     PlatformSettingsResponseSchema,
     UpdatePlatformSettingsRequestSchema,
+    WorkspaceProviderCredentialSummarySchema,
+    WorkspaceProviderCredentialsResponseSchema,
+    SetWorkspaceProviderCredentialRequestSchema,
+    WorkspaceLlmCapabilityPreferenceSchema,
+    WorkspaceLlmModelsResponseSchema,
+    UpdateWorkspaceLlmModelsRequestSchema,
   });
 };

@@ -54,6 +54,16 @@ const brandingSchema = z.object({
   privacyPolicyUrl: z.string().max(2048).nullable().optional(),
 }).optional();
 
+const llmProviderNames = ["openai", "openai-compatible", "gemini", "claude"] as const;
+
+const chatModelOverrideSchema = z.union([
+  z.null(),
+  z.object({
+    provider: z.enum(llmProviderNames),
+    model: z.string().min(1).max(200),
+  }),
+]);
+
 const agentBodySchema = z.object({
   name: z.string().max(200).optional(),
   customInstruction: z.string().max(2000).optional(),
@@ -65,8 +75,11 @@ const agentBodySchema = z.object({
   greetingInstruction: z.string().max(200).optional(),
   assistantDefaultLocale: z.string().max(35).nullable().optional(),
   proactiveGreetingEnabled: z.boolean().optional(),
+  chatModelOverride: chatModelOverrideSchema.optional(),
   surfaceSettings: surfaceSettingsSchema,
 });
+
+export { llmProviderNames as agentLlmProviderNames, chatModelOverrideSchema as agentChatModelOverrideSchema };
 
 type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "agentService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
 

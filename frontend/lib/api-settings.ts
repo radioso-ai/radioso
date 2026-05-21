@@ -277,6 +277,8 @@ export const agentsApi = {
       theme: data.theme,
       branding: data.branding,
       sourceScope: data.sourceScope,
+      // null = clear back to workspace fallback; undefined = leave unchanged.
+      chatModelOverride: data.chatModelOverride === undefined ? undefined : data.chatModelOverride,
     }))
   },
 

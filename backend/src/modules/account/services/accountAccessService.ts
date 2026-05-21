@@ -31,6 +31,8 @@ export type AccountPermission =
   | "workspace.agents.manage"
   | "workspace.settings.manage"
   | "workspace.settings.read"
+  | "workspace.credentials.manage"
+  | "workspace.llm-models.manage"
   | "workspace.documents.manage"
   | "workspace.documents.read"
   | "workspace.agents.delete"

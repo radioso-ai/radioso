@@ -2682,6 +2682,266 @@
           }
         }
       },
+      "WorkspaceProviderCredentialSummary": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "openai-compatible",
+              "gemini",
+              "claude"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "provider",
+          "updatedAt"
+        ]
+      },
+      "WorkspaceProviderCredentialsResponse": {
+        "type": "object",
+        "properties": {
+          "encryptionConfigured": {
+            "type": "boolean"
+          },
+          "credentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceProviderCredentialSummary"
+            }
+          },
+          "envProviderAvailability": {
+            "type": "object",
+            "properties": {
+              "openai": {
+                "type": "boolean"
+              },
+              "openai-compatible": {
+                "type": "boolean"
+              },
+              "gemini": {
+                "type": "boolean"
+              },
+              "claude": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "openai",
+              "openai-compatible",
+              "gemini",
+              "claude"
+            ]
+          }
+        },
+        "required": [
+          "encryptionConfigured",
+          "credentials",
+          "envProviderAvailability"
+        ]
+      },
+      "SetWorkspaceProviderCredentialRequest": {
+        "type": "object",
+        "properties": {
+          "apiKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "apiKey"
+        ]
+      },
+      "WorkspaceLlmCapabilityPreference": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "openai-compatible",
+              "gemini",
+              "claude"
+            ]
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model"
+        ]
+      },
+      "WorkspaceLlmModelsResponse": {
+        "type": "object",
+        "properties": {
+          "chat": {
+            "$ref": "#/components/schemas/WorkspaceLlmCapabilityPreference"
+          },
+          "rewrite": {
+            "$ref": "#/components/schemas/WorkspaceLlmCapabilityPreference"
+          },
+          "rerank": {
+            "$ref": "#/components/schemas/WorkspaceLlmCapabilityPreference"
+          },
+          "knownModelsByProvider": {
+            "type": "object",
+            "properties": {
+              "openai": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "openai-compatible": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "gemini": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "claude": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "openai",
+              "openai-compatible",
+              "gemini",
+              "claude"
+            ]
+          }
+        },
+        "required": [
+          "chat",
+          "rewrite",
+          "rerank",
+          "knownModelsByProvider"
+        ]
+      },
+      "UpdateWorkspaceLlmModelsRequest": {
+        "type": "object",
+        "properties": {
+          "chat": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "openai",
+                      "openai-compatible",
+                      "gemini",
+                      "claude"
+                    ]
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ]
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rewrite": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "openai",
+                      "openai-compatible",
+                      "gemini",
+                      "claude"
+                    ]
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ]
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rerank": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "openai",
+                      "openai-compatible",
+                      "gemini",
+                      "claude"
+                    ]
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ]
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "Agent": {
         "type": "object",
         "properties": {
@@ -2986,6 +3246,30 @@
               "assistantBootstrapActive": {
                 "type": "boolean"
               },
+              "chatModelOverride": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "openai",
+                      "openai-compatible",
+                      "gemini",
+                      "claude"
+                    ]
+                  },
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ]
+              },
               "surfaceSettings": {
                 "$ref": "#/components/schemas/ConversationAgentSurfaceSettings"
               }
@@ -3003,6 +3287,7 @@
               "assistantDefaultLocale",
               "proactiveGreetingEnabled",
               "assistantBootstrapActive",
+              "chatModelOverride",
               "surfaceSettings"
             ]
           }
@@ -3125,6 +3410,39 @@
           },
           "proactiveGreetingEnabled": {
             "type": "boolean"
+          },
+          "chatModelOverride": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "openai",
+                      "openai-compatible",
+                      "gemini",
+                      "claude"
+                    ]
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "surfaceSettings": {
             "type": "object",
@@ -9370,6 +9688,260 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GeneralSettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/credentials": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "List configured workspace provider API keys",
+        "operationId": "listWorkspaceProviderCredentials",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Configured providers and encryption status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceProviderCredentialsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/credentials/{provider}": {
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Set or replace a workspace provider API key",
+        "operationId": "setWorkspaceProviderCredential",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "openai",
+                "openai-compatible",
+                "gemini",
+                "claude"
+              ]
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetWorkspaceProviderCredentialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Credential stored"
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Server-side secret encryption is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Remove a stored workspace provider API key",
+        "operationId": "removeWorkspaceProviderCredential",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "openai",
+                "openai-compatible",
+                "gemini",
+                "claude"
+              ]
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Credential removed"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No credential found for the requested provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/llm-models": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get workspace chat/rewrite/rerank model preferences",
+        "operationId": "getWorkspaceLlmModels",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace LLM model preferences (null = inherit env default)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceLlmModelsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Update workspace chat/rewrite/rerank model preferences",
+        "operationId": "updateWorkspaceLlmModels",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWorkspaceLlmModelsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated workspace LLM model preferences",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceLlmModelsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

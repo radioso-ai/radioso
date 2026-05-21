@@ -30,7 +30,10 @@ const resolveGeneratedValues = (existingValues) => ({
     existingValues.PUBLIC_CHAT_SESSION_SECRET ||
     existingValues.WEBSITE_EMBED_SECRET ||
     crypto.randomBytes(24).toString("base64"),
-  CONNECTOR_ENCRYPTION_KEY: existingValues.CONNECTOR_ENCRYPTION_KEY || crypto.randomBytes(32).toString("base64"),
+  CONNECTOR_ENCRYPTION_KEY:
+    existingValues.CONNECTOR_ENCRYPTION_KEY ||
+    existingValues.SECRETS_ENCRYPTION_KEY ||
+    crypto.randomBytes(32).toString("base64"),
 });
 
 const installStdoutGuard = () => {

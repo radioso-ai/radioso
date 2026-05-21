@@ -1,5 +1,5 @@
-import { createWebsiteEmbedSurfaceExtension } from "../../../modules/agents/services/websiteEmbedSurfaceExtension.js";
-import { DefaultWebsiteEmbedIntegrationProvider } from "../../../modules/settings/domain/websiteEmbedIntegration.js";
+import { createWebsiteEmbedSurfaceExtension } from "../../../modules/agents/public.js";
+import { DefaultWebsiteEmbedIntegrationProvider } from "../../../modules/settings/composition.js";
 import type { ApplicationModule } from "../applicationModule.js";
 
 export interface WebsiteEmbedApplicationModuleOptions {

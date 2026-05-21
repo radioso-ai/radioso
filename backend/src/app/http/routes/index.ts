@@ -10,6 +10,8 @@ import { createDocumentRoutes } from "./documentRoutes.js";
 import { createHistoryRoutes } from "./historyRoutes.js";
 import { createMetricsRoutes } from "./metricsRoutes.js";
 import { createSettingsRoutes } from "./settingsRoutes.js";
+import { createSettingsCredentialsRoutes } from "./settingsCredentialsRoutes.js";
+import { createSettingsLlmModelsRoutes } from "./settingsLlmModelsRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
 import { createMcpContextRoutes } from "./mcpContextRoutes.js";
 import { createRetrievalRoutes } from "./retrievalRoutes.js";
@@ -48,6 +50,8 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/retrieval", createRetrievalRoutes(dependencies));
   router.use("/api/v1/skills", createSkillRoutes(dependencies));
   router.use("/api/v1/settings", createSettingsRoutes(dependencies));
+  router.use("/api/v1/settings/credentials", createSettingsCredentialsRoutes(dependencies));
+  router.use("/api/v1/settings/llm-models", createSettingsLlmModelsRoutes(dependencies));
   router.use("/api/v1/connectors", createConnectorRoutes(dependencies));
   router.use("/api/v1/document", createDocumentRoutes(dependencies));
   router.use("/api/v1/public/chat", createPublicChatRoutes(dependencies));

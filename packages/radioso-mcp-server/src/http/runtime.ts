@@ -66,8 +66,6 @@ export const createRemoteHttpRuntime = async ({
   const resolvedRuntimeStores = runtimeStores ?? await createRuntimeStoreHandle(config);
   const authService = createAuthService({
     accessTokenTtlSeconds: config.accessTokenTtlSeconds,
-    approvalStore: resolvedRuntimeStores.approvalStore,
-    approvalTtlSeconds: config.approvalTtlSeconds,
     auditLogger: resolvedAuditLogger,
     policy,
     resolvePolicy: (workspaceId) => workspacePolicyResolver.resolve(workspaceId),

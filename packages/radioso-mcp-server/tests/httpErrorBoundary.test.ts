@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createAuditLogger } from "../src/audit/auditLogger.js";
 import { createAuthService } from "../src/auth/authService.js";
-import { createInMemoryApprovalStore } from "../src/auth/approvalStore.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
 
@@ -37,7 +36,6 @@ describe("remote MCP HTTP error boundary", () => {
 
     const { createHttpServer } = await import("../src/http/createHttpServer.js");
     const authService = createAuthService({
-      approvalStore: createInMemoryApprovalStore(),
       auditLogger: createAuditLogger([]),
       policy: createCapabilityPolicyRegistry({
         allowedReadTools: ["describe_capabilities"],
@@ -55,7 +53,6 @@ describe("remote MCP HTTP error boundary", () => {
         allowedReadTools: ["describe_capabilities"],
         allowedWriteTools: ["create_document"],
         approvalRequiredWriteTools: ["create_document"],
-        approvalTtlSeconds: 300,
         baseUrl: "http://radioso.test",
         bindHost: "127.0.0.1",
         bindPort: 0,

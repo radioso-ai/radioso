@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createAuditLogger } from "../src/audit/auditLogger.js";
 import { createAuthService } from "../src/auth/authService.js";
-import { createInMemoryApprovalStore } from "../src/auth/approvalStore.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { createHttpServer } from "../src/http/createHttpServer.js";
 import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
@@ -17,7 +16,6 @@ const workspaceValidation = {
 };
 
 const createRuntime = async (stores: {
-  approvalStore: ReturnType<typeof createInMemoryApprovalStore>;
   sessionStore: ReturnType<typeof createInMemorySessionStore>;
 }) => {
   const policy = createCapabilityPolicyRegistry({
@@ -26,7 +24,6 @@ const createRuntime = async (stores: {
     approvalRequiredWriteTools: ["create_document"],
   });
   const authService = createAuthService({
-    approvalStore: stores.approvalStore,
     auditLogger: createAuditLogger([]),
     policy,
     sessionStore: stores.sessionStore,
@@ -40,7 +37,6 @@ const createRuntime = async (stores: {
       allowedReadTools: ["describe_capabilities"],
       allowedWriteTools: ["create_document"],
       approvalRequiredWriteTools: ["create_document"],
-      approvalTtlSeconds: 300,
       baseUrl: "http://radioso.test",
       bindHost: "127.0.0.1",
       bindPort: 0,
@@ -84,7 +80,7 @@ describe("remote MCP shared-store flow", () => {
     }
   });
 
-  it("exchanges on one instance and completes an approved write on another instance", async () => {
+  it("exchanges on one instance and completes a write on another instance", async () => {
     const actualFetch = globalThis.fetch;
     const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -101,7 +97,6 @@ describe("remote MCP shared-store flow", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const sharedStores = {
-      approvalStore: createInMemoryApprovalStore(),
       sessionStore: createInMemorySessionStore(),
     };
     const runtimeA = await createRuntime(sharedStores);
@@ -136,26 +131,12 @@ describe("remote MCP shared-store flow", () => {
       params: {},
     });
 
-    const approvalResponse = await actualFetch(`${runtimeB.baseUrl}/v1/approvals`, {
-      body: JSON.stringify({
-        reason: "Create remote doc",
-        tools: ["create_document"],
-      }),
-      headers: {
-        authorization: `Bearer ${exchange.accessToken}`,
-        "content-type": "application/json",
-      },
-      method: "POST",
-    });
-    const approval = await approvalResponse.json() as { approvalToken: string };
-
     const successResponse = await mcpRequest(runtimeB.baseUrl, exchange.accessToken, {
       id: "2",
       jsonrpc: "2.0",
       method: "tools/call",
       params: {
         arguments: {
-          approvalToken: approval.approvalToken,
           content: "Created remotely",
           title: "Remote doc",
         },

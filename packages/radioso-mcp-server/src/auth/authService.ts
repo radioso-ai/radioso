@@ -6,8 +6,7 @@ import type { CapabilityPolicyRegistry } from "../policy/capabilityPolicy.js";
 import { CapabilityPolicyError } from "../policy/capabilityPolicy.js";
 import { RadiosoApiError } from "../radiosoApiAdapter.js";
 import { toMcpRequestAuthInfo, type McpRequestAuthInfo } from "./authInfo.js";
-import { hashToken, issueOpaqueToken } from "./token.js";
-import type { ApprovalGrantRecord, ApprovalStore } from "./approvalStore.js";
+import { issueOpaqueToken } from "./token.js";
 import type { AccessSessionRecord, SessionStore } from "./sessionStore.js";
 
 export class AuthServiceError extends Error {
@@ -22,7 +21,6 @@ export class AuthServiceError extends Error {
 }
 
 export interface AuthServiceDependencies {
-  approvalStore: ApprovalStore;
   auditLogger?: AuditLogger;
   now?: () => Date;
   policy: CapabilityPolicyRegistry;
@@ -42,7 +40,6 @@ export interface AuthServiceDependencies {
     workspaceName?: string;
   }>;
   accessTokenTtlSeconds?: number;
-  approvalTtlSeconds?: number;
 }
 
 export interface ExchangeWorkspaceTokenInput {
@@ -66,27 +63,10 @@ export interface ExchangeWorkspaceTokenResult {
   workspaceName?: string;
 }
 
-export interface IssueApprovalInput {
-  accessToken: string;
-  reason: string;
-  resourceHints?: string[];
-  tools: string[];
-}
-
-export interface IssueApprovalResult {
-  approvedTools: string[];
-  approvalToken: string;
-  expiresAt: string;
-  approvalId: string;
-}
-
 export interface AuthService {
   exchangeWorkspaceToken(input: ExchangeWorkspaceTokenInput): Promise<ExchangeWorkspaceTokenResult>;
-  getApproval(approvalToken: string): Promise<ApprovalGrantRecord | null>;
-  getRequestAuthInfo(accessToken: string, options?: { approvalGrantIds?: string[] }): Promise<McpRequestAuthInfo | null>;
+  getRequestAuthInfo(accessToken: string): Promise<McpRequestAuthInfo | null>;
   getSession(accessToken: string): Promise<AccessSessionRecord | null>;
-  issueApproval(input: IssueApprovalInput): Promise<IssueApprovalResult>;
-  verifyApproval(accessToken: string, approvalToken: string, toolName: string): Promise<ApprovalGrantRecord>;
 }
 
 const defaultNow = () => new Date();
@@ -142,21 +122,12 @@ const toAuditFailure = (
   };
 };
 
-const ensureSession = (session: AccessSessionRecord | null): AccessSessionRecord => {
-  if (!session) {
-    throw new AuthServiceError("MCP access token is invalid or expired.", "invalid_access_token");
-  }
-
-  return session;
-};
-
 const unique = (values: string[]): string[] => [...new Set(values)];
 
 export const createAuthService = (dependencies: AuthServiceDependencies): AuthService => {
   const now = dependencies.now ?? defaultNow;
   const auditLogger = dependencies.auditLogger ?? createAuditLogger([]);
   const accessTokenTtlSeconds = dependencies.accessTokenTtlSeconds ?? 900;
-  const approvalTtlSeconds = dependencies.approvalTtlSeconds ?? 300;
 
   const emit = async (event: Parameters<AuditLogger["emit"]>[0]) => {
     await auditLogger.emit(event);
@@ -263,136 +234,13 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
       }
     },
 
-    async issueApproval(input: IssueApprovalInput): Promise<IssueApprovalResult> {
-      let sessionId: string | undefined;
-
-      try {
-        const session = ensureSession(await dependencies.sessionStore.getByAccessToken(input.accessToken, now()));
-        sessionId = session.sessionId;
-        const policy = dependencies.resolvePolicy?.(session.workspaceId).policy ?? dependencies.policy;
-        const resolution = policy.resolveApprovalTools(input.tools, session.grantedTools);
-
-        if (resolution.deniedTools.length > 0) {
-          throw new CapabilityPolicyError(
-            `Approval requested for unsupported tools: ${resolution.deniedTools.join(", ")}`,
-            "approval_forbidden",
-            { deniedTools: resolution.deniedTools },
-          );
-        }
-
-        if (resolution.approvalRequiredTools.length !== resolution.grantedTools.length) {
-          throw new CapabilityPolicyError(
-            "Approval may only be issued for governed write tools.",
-            "approval_forbidden",
-            { tools: input.tools },
-          );
-        }
-
-        const issuedAt = now();
-        const approvalToken = issueOpaqueToken("mcp_appr", dependencies.signingSecret, issuedAt);
-        const approvalId = `appr_${randomUUID()}`;
-        const expiresAt = new Date(
-          Math.min(
-            session.expiresAt.getTime(),
-            issuedAt.getTime() + approvalTtlSeconds * 1000,
-          ),
-        );
-
-        await dependencies.approvalStore.save({
-          allowedTools: resolution.grantedTools,
-          approvalId,
-          approvalToken,
-          expiresAt,
-          issuedAt,
-          reason: input.reason,
-          remainingUses: resolution.grantedTools.length || 1,
-          resourceHints: input.resourceHints,
-          sessionId: session.sessionId,
-          upstreamApiTokenHash: hashToken(session.upstreamApiToken),
-        });
-
-        await emit({
-          approvalId,
-          eventType: "approval.issued",
-          metadata: {
-            approvedTools: resolution.grantedTools,
-            reason: input.reason,
-            resourceHints: input.resourceHints,
-          },
-          outcome: "success",
-          sessionId: session.sessionId,
-        });
-
-        return {
-          approvedTools: resolution.grantedTools,
-          approvalId,
-          approvalToken,
-          expiresAt: expiresAt.toISOString(),
-        };
-      } catch (error) {
-        const failure = toAuditFailure(error);
-        await emit({
-          eventType: "approval.denied",
-          metadata: {
-            code: failure.code,
-            ...(failure.details !== undefined ? { details: failure.details } : {}),
-            message: failure.message,
-            reason: input.reason,
-            resourceHints: input.resourceHints,
-            tools: input.tools,
-          },
-          outcome: failure.outcome,
-          sessionId,
-        });
-        throw error;
-      }
-    },
-
     async getSession(accessToken: string): Promise<AccessSessionRecord | null> {
       return dependencies.sessionStore.getByAccessToken(accessToken, now());
     },
 
-    async getApproval(approvalToken: string): Promise<ApprovalGrantRecord | null> {
-      return dependencies.approvalStore.getByToken(approvalToken, now());
-    },
-
-    async getRequestAuthInfo(
-      accessToken: string,
-      options: { approvalGrantIds?: string[] } = {},
-    ): Promise<McpRequestAuthInfo | null> {
+    async getRequestAuthInfo(accessToken: string): Promise<McpRequestAuthInfo | null> {
       const session = await dependencies.sessionStore.getByAccessToken(accessToken, now());
-      return session ? toMcpRequestAuthInfo(session, options) : null;
-    },
-
-    async verifyApproval(accessToken: string, approvalToken: string, toolName: string): Promise<ApprovalGrantRecord> {
-      const session = ensureSession(await dependencies.sessionStore.getByAccessToken(accessToken, now()));
-      const approvalResult = await dependencies.approvalStore.consumeForSessionTool(
-        approvalToken,
-        {
-          sessionId: session.sessionId,
-          toolName,
-          upstreamApiTokenHash: hashToken(session.upstreamApiToken),
-        },
-        now(),
-      );
-
-      if (approvalResult.status === "missing") {
-        throw new AuthServiceError("A valid approval grant is required.", "approval_required", { toolName });
-      }
-
-      if (approvalResult.status === "session_mismatch") {
-        throw new AuthServiceError("Approval grant does not match the active session.", "approval_forbidden", {
-          toolName,
-        });
-      }
-
-      if (approvalResult.status === "tool_forbidden") {
-        throw new AuthServiceError("Approval grant does not cover the requested tool.", "approval_forbidden", {
-          toolName,
-        });
-      }
-
-      return approvalResult.grant;
+      return session ? toMcpRequestAuthInfo(session) : null;
     },
   };
 };

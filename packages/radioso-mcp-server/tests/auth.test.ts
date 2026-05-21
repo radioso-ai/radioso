@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createAuditLogger, createInMemoryAuditSink } from "../src/audit/auditLogger.js";
-import { createInMemoryApprovalStore } from "../src/auth/approvalStore.js";
 import { createAuthService } from "../src/auth/authService.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
@@ -43,127 +42,6 @@ describe("auth foundations", () => {
     await expect(store.getByAccessToken("wrong-token", now)).resolves.toBeNull();
   });
 
-  it("issues and consumes approval grants with expiry and remaining-use checks", async () => {
-    const store = createInMemoryApprovalStore();
-    const now = new Date("2026-04-21T12:00:00.000Z");
-
-    await store.save({
-      approvalToken: "mcp_appr_test",
-      expiresAt: new Date("2026-04-21T12:10:00.000Z"),
-      issuedAt: new Date("2026-04-21T12:00:00.000Z"),
-      reason: "create onboarding doc",
-      remainingUses: 1,
-      allowedTools: ["create_document"],
-      approvalId: "appr_01",
-      sessionId: "sess_01",
-    });
-
-    await expect(store.consumeByToken("mcp_appr_test", now)).resolves.toMatchObject({
-      approvalId: "appr_01",
-      remainingUses: 0,
-    });
-    await expect(store.consumeByToken("mcp_appr_test", now)).resolves.toBeNull();
-  });
-
-  it("does not burn an approval grant on wrong-session or wrong-tool checks", async () => {
-    const policy = createCapabilityPolicyRegistry({
-      allowedReadTools: ["describe_capabilities"],
-      allowedWriteTools: ["create_document", "update_document"],
-      approvalRequiredWriteTools: ["create_document", "update_document"],
-    });
-    const sessionStore = createInMemorySessionStore();
-    const approvalStore = createInMemoryApprovalStore();
-    const auth = createAuthService({
-      approvalStore,
-      policy,
-      sessionStore,
-      signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: vi.fn().mockResolvedValue(defaultWorkspaceValidation),
-      now: () => new Date("2026-04-21T12:00:00.000Z"),
-    });
-
-    const sessionA = await auth.exchangeWorkspaceToken({
-      radiosoApiToken: "radioso_a",
-      requestedTools: ["create_document"],
-    });
-    const sessionB = await auth.exchangeWorkspaceToken({
-      radiosoApiToken: "radioso_b",
-      requestedTools: ["create_document"],
-    });
-    const approval = await auth.issueApproval({
-      accessToken: sessionA.accessToken,
-      reason: "Create a document",
-      tools: ["create_document"],
-    });
-
-    await expect(
-      auth.verifyApproval(sessionB.accessToken, approval.approvalToken, "create_document"),
-    ).rejects.toMatchObject({
-      code: "approval_forbidden",
-    });
-    await expect(
-      auth.verifyApproval(sessionA.accessToken, approval.approvalToken, "update_document"),
-    ).rejects.toMatchObject({
-      code: "approval_forbidden",
-    });
-    await expect(
-      auth.verifyApproval(sessionA.accessToken, approval.approvalToken, "create_document"),
-    ).resolves.toMatchObject({
-      approvalId: approval.approvalId,
-    });
-  });
-
-  it("consumes multi-tool approvals one tool at a time", async () => {
-    const policy = createCapabilityPolicyRegistry({
-      allowedReadTools: ["describe_capabilities"],
-      allowedWriteTools: ["create_document", "update_document"],
-      approvalRequiredWriteTools: ["create_document", "update_document"],
-    });
-    const sessionStore = createInMemorySessionStore();
-    const approvalStore = createInMemoryApprovalStore();
-    const auth = createAuthService({
-      approvalStore,
-      policy,
-      sessionStore,
-      signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: vi.fn().mockResolvedValue(defaultWorkspaceValidation),
-      now: () => new Date("2026-04-21T12:00:00.000Z"),
-    });
-
-    const session = await auth.exchangeWorkspaceToken({
-      radiosoApiToken: "radioso_multi",
-      requestedTools: ["create_document", "update_document"],
-    });
-    const approval = await auth.issueApproval({
-      accessToken: session.accessToken,
-      reason: "Create and update a document",
-      tools: ["create_document", "update_document"],
-    });
-
-    await expect(
-      auth.verifyApproval(session.accessToken, approval.approvalToken, "create_document"),
-    ).resolves.toMatchObject({
-      allowedTools: ["update_document"],
-      remainingUses: 1,
-    });
-    await expect(
-      auth.verifyApproval(session.accessToken, approval.approvalToken, "create_document"),
-    ).rejects.toMatchObject({
-      code: "approval_forbidden",
-    });
-    await expect(
-      auth.verifyApproval(session.accessToken, approval.approvalToken, "update_document"),
-    ).resolves.toMatchObject({
-      allowedTools: [],
-      remainingUses: 0,
-    });
-    await expect(
-      auth.verifyApproval(session.accessToken, approval.approvalToken, "update_document"),
-    ).rejects.toMatchObject({
-      code: "approval_required",
-    });
-  });
-
   it("exchanges a workspace token for a session and rejects disallowed requested tools", async () => {
     const policy = createCapabilityPolicyRegistry({
       allowedReadTools: ["describe_capabilities", "search_documents"],
@@ -171,14 +49,12 @@ describe("auth foundations", () => {
       approvalRequiredWriteTools: ["create_document"],
     });
     const sessionStore = createInMemorySessionStore();
-    const approvalStore = createInMemoryApprovalStore();
     const validateWorkspaceToken = vi.fn().mockResolvedValue({
       ...defaultWorkspaceValidation,
       workspaceHint: "workspace-123",
     });
 
     const auth = createAuthService({
-      approvalStore,
       policy,
       sessionStore,
       signingSecret: "dev-signing-secret",
@@ -215,10 +91,9 @@ describe("auth foundations", () => {
     });
   });
 
-  it("keeps repeated exchanges isolated while approvals can span the same workspace token", async () => {
+  it("keeps repeated exchanges isolated", async () => {
     const sessionStore = createInMemorySessionStore();
     const auth = createAuthService({
-      approvalStore: createInMemoryApprovalStore(),
       policy: createCapabilityPolicyRegistry({
         allowedReadTools: ["search_documents"],
         allowedWriteTools: ["create_document"],
@@ -240,11 +115,6 @@ describe("auth foundations", () => {
     });
 
     expect(first.accessToken).not.toBe(second.accessToken);
-    const approval = await auth.issueApproval({
-      accessToken: first.accessToken,
-      reason: "cross-entry approval",
-      tools: ["create_document"],
-    });
 
     await expect(
       sessionStore.getByAccessToken(first.accessToken, new Date("2026-04-21T12:05:00.000Z")),
@@ -256,15 +126,11 @@ describe("auth foundations", () => {
     ).resolves.toMatchObject({
       grantedTools: ["search_documents", "create_document"],
     });
-    await expect(auth.verifyApproval(second.accessToken, approval.approvalToken, "create_document")).resolves.toMatchObject({
-      approvalId: approval.approvalId,
-    });
   });
 
-  it("emits audit events for denied exchange and approval requests", async () => {
+  it("emits audit events for denied exchange requests", async () => {
     const { events, sink } = createInMemoryAuditSink();
     const auth = createAuthService({
-      approvalStore: createInMemoryApprovalStore(),
       auditLogger: createAuditLogger([sink]),
       policy: createCapabilityPolicyRegistry({
         allowedReadTools: ["describe_capabilities"],
@@ -286,16 +152,6 @@ describe("auth foundations", () => {
       code: "capability_forbidden",
     });
 
-    await expect(
-      auth.issueApproval({
-        accessToken: "missing-token",
-        reason: "Create a document",
-        tools: ["create_document"],
-      }),
-    ).rejects.toMatchObject({
-      code: "invalid_access_token",
-    });
-
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -306,21 +162,12 @@ describe("auth foundations", () => {
           }),
           outcome: "denied",
         }),
-        expect.objectContaining({
-          eventType: "approval.denied",
-          metadata: expect.objectContaining({
-            code: "invalid_access_token",
-            tools: ["create_document"],
-          }),
-          outcome: "denied",
-        }),
       ]),
     );
   });
 
   it("intersects workspace policy and upstream capability support before granting tools", async () => {
     const auth = createAuthService({
-      approvalStore: createInMemoryApprovalStore(),
       policy: createCapabilityPolicyRegistry({
         allowedReadTools: ["describe_capabilities", "search_documents", "list_documents"],
         allowedWriteTools: ["create_document", "update_document"],
@@ -358,31 +205,6 @@ describe("auth foundations", () => {
       unsupportedTools: ["search_documents"],
       workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
       workspaceName: "Default",
-    });
-  });
-
-  it("allows approval-free write tools when policy removes them from the approval set", async () => {
-    const auth = createAuthService({
-      approvalStore: createInMemoryApprovalStore(),
-      policy: createCapabilityPolicyRegistry({
-        allowedReadTools: ["describe_capabilities"],
-        allowedWriteTools: ["create_document"],
-        approvalRequiredWriteTools: [],
-      }),
-      sessionStore: createInMemorySessionStore(),
-      signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: vi.fn().mockResolvedValue(defaultWorkspaceValidation),
-      now: () => new Date("2026-04-21T12:00:00.000Z"),
-    });
-
-    const exchange = await auth.exchangeWorkspaceToken({
-      radiosoApiToken: "radioso_test",
-      requestedTools: ["create_document"],
-    });
-
-    expect(exchange).toMatchObject({
-      approvalRequiredTools: [],
-      grantedTools: ["create_document"],
     });
   });
 });

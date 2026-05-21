@@ -70,7 +70,6 @@ export interface CapabilityPolicyRegistry {
   isToolAllowed(toolName: string): boolean;
   listCapabilities(): CapabilityDefinition[];
   requiresApproval(toolName: string): boolean;
-  resolveApprovalTools(requestedTools: string[], grantedSessionTools?: string[]): RequestedToolResolution;
   resolveRequestedTools(requestedTools: string[]): RequestedToolResolution;
   toolDefinition(toolName: string): CapabilityDefinition | null;
 }
@@ -113,17 +112,6 @@ export const createCapabilityPolicyRegistry = (config: CapabilityPolicyConfig): 
         .filter((definition): definition is CapabilityDefinition => definition !== null && definition.enabled);
     },
     requiresApproval,
-    resolveApprovalTools(requestedTools, grantedSessionTools = requestedTools) {
-      const grantedTools = unique(requestedTools).filter((toolName) => grantedSessionTools.includes(toolName));
-      const deniedTools = unique(requestedTools).filter((toolName) => !grantedSessionTools.includes(toolName));
-      const approvalRequiredTools = grantedTools.filter((toolName) => requiresApproval(toolName));
-
-      return {
-        approvalRequiredTools,
-        deniedTools,
-        grantedTools,
-      };
-    },
     resolveRequestedTools(requestedTools) {
       const uniqueRequestedTools = unique(requestedTools);
       const grantedTools = uniqueRequestedTools.filter((toolName) => isToolAllowed(toolName));

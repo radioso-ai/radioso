@@ -3,6 +3,8 @@
 **Feature Branch**: `mcp-deployment-modes`
 **Created**: 2026-05-15
 **Status**: Approved
+
+> **Amendment 2026-05-19**: Server-side approval-token verification was removed from the MCP package (see specs/043 amendment). Acceptance scenarios, FRs, and SCs in this document that reference "approval gating," "approval flow," or "approval lifecycle" no longer apply — there is no such gate. What remains shared between merged and standalone modes is capability policy, audit logging, and (when Redis is configured) session storage. Host-side prompting via `requiresApproval: true` on the tool advertisement is now the only human-in-the-loop layer; both modes surface it identically.
 **Input**: User description: "Allow the MCP server to be mounted onto the main Radioso backend so a single host can serve `radioso.example.com/mcp`, while keeping the standalone deployment available for SaaS / hardened public-host setups."
 
 ## Background

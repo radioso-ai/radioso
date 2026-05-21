@@ -7,11 +7,10 @@ import { CapabilityPolicyError } from "../src/policy/capabilityPolicy.js";
 describe("toStructuredToolError", () => {
   it("maps auth service failures to structured codes", () => {
     expect(
-      toStructuredToolError(new AuthServiceError("Approval required.", "approval_required", { toolName: "create_document" })),
+      toStructuredToolError(new AuthServiceError("MCP access token is invalid or expired.", "invalid_access_token")),
     ).toMatchObject({
-      code: "approval_required",
-      details: { toolName: "create_document" },
-      message: "Approval required.",
+      code: "invalid_access_token",
+      message: "MCP access token is invalid or expired.",
     });
   });
 

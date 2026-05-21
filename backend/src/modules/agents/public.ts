@@ -11,6 +11,7 @@ export {
   validateAgentInput,
   type AgentBehaviorSettings,
   type AgentBrandingSettings,
+  type AgentChatModelOverride,
   type AgentSourceScope,
   type Agent,
   type AgentInput,
@@ -37,4 +38,5 @@ export {
   AgentSurfaceExtensionRegistry,
   type AgentSurfaceExtension,
 } from "./surfaceExtensions.js";
+export { createWebsiteEmbedSurfaceExtension } from "./services/websiteEmbedSurfaceExtension.js";
 export type { ValidateAgentInputOptions } from "./domain.js";

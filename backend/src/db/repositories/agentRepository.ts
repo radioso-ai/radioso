@@ -5,6 +5,7 @@ import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
   type AgentBrandingSettings,
+  type AgentChatModelOverride,
   type AgentInput,
   type AgentRecord,
   type AgentEmbedCopyPacks,
@@ -16,6 +17,7 @@ import {
   type NormalizedAgentInput,
 } from "../../modules/agents/public.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
+import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 
 interface AgentRow {
   id: string;
@@ -27,6 +29,8 @@ interface AgentRow {
   behavior_settings: unknown;
   greeting_settings: unknown;
   output_modes: unknown;
+  chat_provider: LlmProviderName | null;
+  chat_model: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -51,6 +55,8 @@ const agentColumns = `
   behavior_settings,
   greeting_settings,
   output_modes,
+  chat_provider,
+  chat_model,
   created_at,
   updated_at
 `;
@@ -148,6 +154,10 @@ const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegist
     ? extensionWebsiteEmbed
     : websiteEmbed;
 
+  const chatOverride: AgentChatModelOverride | null = row.chat_provider && row.chat_model
+    ? { provider: row.chat_provider, model: row.chat_model }
+    : null;
+
   const normalized = validateAgentInput({
     name: row.name,
     customInstruction: readString(behavior, "customInstruction"),
@@ -162,6 +172,7 @@ const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegist
     greetingInstruction: readString(greeting, "greetingInstruction"),
     assistantDefaultLocale: readString(greeting, "assistantDefaultLocale") ?? null,
     proactiveGreetingEnabled: readBoolean(greeting, "proactiveGreetingEnabled"),
+    chatModelOverride: chatOverride,
     surfaceSettings: {
       authenticatedChat: {
         enabled: readBoolean(authenticatedChat, "enabled"),
@@ -226,9 +237,11 @@ export class AgentRepository implements AgentRepositoryPort {
            source_scope_mode,
            behavior_settings,
            greeting_settings,
-           output_modes
+           output_modes,
+           chat_provider,
+           chat_model
          )
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10)
          RETURNING ${agentColumns}`,
         [
           agentId,
@@ -239,6 +252,8 @@ export class AgentRepository implements AgentRepositoryPort {
           JSON.stringify(toBehaviorSettings(normalized)),
           JSON.stringify(toGreetingSettings(normalized)),
           JSON.stringify(toOutputModes(normalized)),
+          normalized.chatModelOverride?.provider ?? null,
+          normalized.chatModelOverride?.model ?? null,
         ],
       );
       await this.replaceSourceScope(client, agentId, normalized.sourceScope);
@@ -333,9 +348,11 @@ export class AgentRepository implements AgentRepositoryPort {
              behavior_settings = $4::jsonb,
              greeting_settings = $5::jsonb,
              output_modes = $6::jsonb,
+             chat_provider = $7,
+             chat_model = $8,
              updated_at = NOW()
-         WHERE id = $7
-           AND workspace_id = $8
+         WHERE id = $9
+           AND workspace_id = $10
          RETURNING ${agentColumns}`,
         [
           normalized.name,
@@ -344,6 +361,8 @@ export class AgentRepository implements AgentRepositoryPort {
           JSON.stringify(toBehaviorSettings(normalized)),
           JSON.stringify(toGreetingSettings(normalized)),
           JSON.stringify(toOutputModes(normalized)),
+          normalized.chatModelOverride?.provider ?? null,
+          normalized.chatModelOverride?.model ?? null,
           agentId,
           workspaceId,
         ],

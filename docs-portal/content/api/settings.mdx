@@ -19,6 +19,11 @@ GET /api/v1/settings/general
 PUT /api/v1/settings/general
 GET /api/v1/settings
 PUT /api/v1/settings
+GET /api/v1/settings/credentials
+PUT /api/v1/settings/credentials/:provider
+DELETE /api/v1/settings/credentials/:provider
+GET /api/v1/settings/llm-models
+PUT /api/v1/settings/llm-models
 ```
 
 ## How it works
@@ -117,6 +122,62 @@ Public link and embed token rotation use explicit endpoints:
 POST /api/v1/settings/general/anonymous-chat-token/rotate
 POST /api/v1/settings/general/website-embed-token/rotate
 ```
+
+## Provider credentials
+
+Workspaces can supply their own provider API keys instead of relying on the deployment's environment variables. Stored keys are encrypted at rest using `CONNECTOR_ENCRYPTION_KEY` (the same key that protects connector secrets) and are never returned to clients.
+
+`GET /api/v1/settings/credentials` returns the list of configured providers, whether encryption is configured on the backend, and which providers have a deployment-level environment key available:
+
+```json
+{
+  "encryptionConfigured": true,
+  "credentials": [
+    { "provider": "claude", "updatedAt": "2026-05-18T18:14:22.123Z" }
+  ],
+  "envProviderAvailability": {
+    "openai": true,
+    "openai-compatible": false,
+    "gemini": false,
+    "claude": false
+  }
+}
+```
+
+`envProviderAvailability` reports whether each provider has a deployment-level API key (`OPENAI_API_KEY`, `OPENAI_COMPATIBLE_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`) set. A provider is usable for model selection when it has either a workspace credential or a deployment-level key; the dashboard hides unavailable providers in model pickers.
+
+`PUT /api/v1/settings/credentials/:provider` stores or replaces a key. The body is `{ "apiKey": "..." }`. Valid `provider` values are `openai`, `openai-compatible`, `gemini`, and `claude`. The response is `204 No Content`.
+
+`DELETE /api/v1/settings/credentials/:provider` removes a stored key. The response is `204 No Content`, or `404` if no credential was stored for that provider.
+
+If `CONNECTOR_ENCRYPTION_KEY` is not configured on the backend, writes return `503 encryption_not_configured` and `GET` reports `"encryptionConfigured": false`. The bootstrap command generates a key automatically; operators can also produce one with `openssl rand -base64 32`.
+
+## LLM model selection
+
+Workspaces choose which provider and model are used for each capability (chat, query rewrite, rerank). Resolution at request time walks: agent override (chat only) → workspace preference → env default. API keys come from the workspace credential first, then the matching environment variable.
+
+`GET /api/v1/settings/llm-models` returns the current preferences. `null` for a capability means "inherit env default":
+
+```json
+{
+  "chat": { "provider": "claude", "model": "claude-sonnet-4-5" },
+  "rewrite": null,
+  "rerank": null
+}
+```
+
+`PUT /api/v1/settings/llm-models` is a merge-update. Send only the capabilities you want to change. Pass `null` to clear a capability and fall back to the env default. The response echoes the full resolved preferences.
+
+```json
+{
+  "chat": { "provider": "claude", "model": "claude-sonnet-4-5" },
+  "rerank": null
+}
+```
+
+The `openai-compatible` provider also requires `OPENAI_COMPATIBLE_BASE_URL` to be configured on the backend. Selecting it for a workspace without a base URL fails at resolve time with a clear error instead of silently calling the default OpenAI endpoint.
+
+For per-agent chat model overrides, set `chatModelOverride` on the agent through `PUT /api/v1/agents/<agentId>`. `null` clears the override; `{ "provider": "...", "model": "..." }` sets it.
 
 ## Common failure modes
 

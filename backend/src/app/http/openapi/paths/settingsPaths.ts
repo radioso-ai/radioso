@@ -1,6 +1,12 @@
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
+import { z } from "zod";
 
+import { providerNames } from "../../routes/settingsCredentialsRoutes.js";
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
+
+const credentialPathParamsSchema = z.object({
+  provider: z.enum(providerNames),
+});
 
 export const registerSettingsPaths = (
   registry: OpenAPIRegistry,
@@ -476,6 +482,175 @@ export const registerSettingsPaths = (
             schema: schemas.ErrorResponseSchema,
           },
         },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/settings/credentials",
+    tags: ["Settings"],
+    summary: "List configured workspace provider API keys",
+    operationId: "listWorkspaceProviderCredentials",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    responses: {
+      200: {
+        description: "Configured providers and encryption status",
+        content: {
+          "application/json": {
+            schema: schemas.WorkspaceProviderCredentialsResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/settings/credentials/{provider}",
+    tags: ["Settings"],
+    summary: "Set or replace a workspace provider API key",
+    operationId: "setWorkspaceProviderCredential",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: credentialPathParamsSchema,
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.SetWorkspaceProviderCredentialRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      204: {
+        description: "Credential stored",
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      503: {
+        description: "Server-side secret encryption is not configured",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/settings/credentials/{provider}",
+    tags: ["Settings"],
+    summary: "Remove a stored workspace provider API key",
+    operationId: "removeWorkspaceProviderCredential",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: credentialPathParamsSchema,
+    },
+    responses: {
+      204: {
+        description: "Credential removed",
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "No credential found for the requested provider",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/settings/llm-models",
+    tags: ["Settings"],
+    summary: "Get workspace chat/rewrite/rerank model preferences",
+    operationId: "getWorkspaceLlmModels",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    responses: {
+      200: {
+        description: "Workspace LLM model preferences (null = inherit env default)",
+        content: {
+          "application/json": {
+            schema: schemas.WorkspaceLlmModelsResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/settings/llm-models",
+    tags: ["Settings"],
+    summary: "Update workspace chat/rewrite/rerank model preferences",
+    operationId: "updateWorkspaceLlmModels",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.UpdateWorkspaceLlmModelsRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Updated workspace LLM model preferences",
+        content: {
+          "application/json": {
+            schema: schemas.WorkspaceLlmModelsResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
+      401: {
+        description: "Authentication required",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
       },
     },
   });

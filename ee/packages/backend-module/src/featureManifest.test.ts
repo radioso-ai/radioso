@@ -21,8 +21,8 @@ describe("feature manifests", () => {
     const result = validateFeatureManifests([
       baseManifest(),
       baseManifest({
-        id: "enterprise-agent-wizard",
-        name: "Enterprise Agent Wizard",
+        id: "enterprise-agent-wizard-frontend",
+        name: "Enterprise Agent Wizard Frontend",
         backendModuleId: undefined,
         apiNamespaces: undefined,
         frontendRoutes: [

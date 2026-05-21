@@ -37,6 +37,7 @@ describe("settings services", () => {
     customInstruction: "",
     retrievalEnabled: true,
     sourceScope: { mode: "all" },
+    chatModelOverride: null,
     logo: null,
     theme: {
       brand: "#0f172a",

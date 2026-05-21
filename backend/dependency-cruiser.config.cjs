@@ -204,6 +204,54 @@ module.exports = {
       },
     },
     {
+      name: "no-llm-vendor-providers-outside-llm-infra",
+      severity: "error",
+      comment:
+        "Vendor-specific LLM client modules (OpenAI / Gemini / Claude) are implementation details of the LLM provider registry and must not be imported by application or module code. Depend on the registry or contextual gateways instead.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/shared/infra/llm/",
+        ],
+      },
+      to: {
+        path: "^src/shared/infra/llm/(openaiProvider|geminiProvider|claudeProvider)\\.ts$",
+      },
+    },
+    {
+      name: "no-capability-resolver-outside-model-layer",
+      severity: "error",
+      comment:
+        "The LLM capability resolver interface is for the LLM-infra layer and composition wiring only. Chat / retrieval call sites depend on workspaceContext.ts for the per-call context shape; they must not reach into the resolver.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/shared/infra/llm/",
+          "^src/app/composition/",
+          "^src/app/server/",
+        ],
+      },
+      to: {
+        path: "^src/shared/infra/llm/capabilityResolver\\.ts$",
+      },
+    },
+    {
+      name: "no-workspace-capability-resolver-impl-outside-composition",
+      severity: "error",
+      comment:
+        "The workspace LLM capability resolver implementation is composition-only; depend on the resolver port (capabilityResolver.ts) or the registry instead.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/app/composition/",
+          "^src/app/server/",
+        ],
+      },
+      to: {
+        path: "^src/app/composition/workspaceLlmCapabilityResolver\\.ts$",
+      },
+    },
+    {
       name: "no-chat-llm-adapters-outside-provider-registry",
       severity: "error",
       comment:
@@ -213,6 +261,7 @@ module.exports = {
         pathNot: [
           "^src/modules/chat/",
           "^src/shared/infra/llm/providerRegistry\\.ts$",
+          "^src/shared/infra/llm/contextualGateways\\.ts$",
         ],
       },
       to: {
@@ -277,6 +326,7 @@ module.exports = {
         path: "^src/",
         pathNot: [
           "^src/modules/settings/",
+          "^src/app/composition/",
           "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
         ],
       },

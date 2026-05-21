@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Bot, Database, Search } from 'lucide-react'
 
 import { AssistantLocaleCombobox } from '@/components/dashboard/settings/assistant-locale-combobox'
+import { ModelPicker } from '@/components/dashboard/settings/model-picker'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,10 +17,32 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import type { AssistantBehaviorSettings, DocumentSourceListItem, GeneralSettings } from '@/lib/api'
+import type {
+  AgentChatModelOverride,
+  AssistantBehaviorSettings,
+  DocumentSourceListItem,
+  GeneralSettings,
+} from '@/lib/api'
+import {
+  emptyEnvProviderAvailability,
+  emptyKnownModelsByProvider,
+  llmProviderNames,
+  llmProvidersApi,
+  providerDisplayName,
+  type EnvProviderAvailability,
+  type KnownModelsByProvider,
+  type LlmProviderName,
+} from '@/lib/api-llm-providers'
 
 const INSTRUCTION_MAX_LENGTH = 2000
 
@@ -45,6 +68,120 @@ function SubsectionHeading({ title, description }: { title: string; description?
     <div className="space-y-0.5">
       <h4 className="text-sm font-semibold text-foreground">{title}</h4>
       {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+    </div>
+  )
+}
+
+function AgentChatModelOverrideSubsection({
+  value,
+  onChange,
+}: {
+  value: AgentChatModelOverride | null
+  onChange: (next: AgentChatModelOverride | null) => void
+}) {
+  const provider: LlmProviderName | '' = value?.provider ?? ''
+  const model = value?.model ?? ''
+  const enabled = value !== null
+  const [knownModelsByProvider, setKnownModelsByProvider] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
+  const [credentialProviders, setCredentialProviders] = useState<Set<LlmProviderName>>(() => new Set())
+  const [envProviderAvailability, setEnvProviderAvailability] = useState<EnvProviderAvailability>(
+    emptyEnvProviderAvailability,
+  )
+
+  useEffect(() => {
+    let active = true
+    void Promise.all([llmProvidersApi.getModels(), llmProvidersApi.listCredentials()])
+      .then(([modelsResponse, credentialsResponse]) => {
+        if (!active) return
+        setKnownModelsByProvider(modelsResponse.knownModelsByProvider)
+        setCredentialProviders(new Set(credentialsResponse.credentials.map((c) => c.provider)))
+        setEnvProviderAvailability(credentialsResponse.envProviderAvailability)
+      })
+      .catch(() => {
+        // Falling back to the empty catalog disables the model Select; the agent
+        // editor still loads.
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const availableProviders = useMemo(
+    () =>
+      new Set(
+        llmProviderNames.filter(
+          (option) => credentialProviders.has(option) || envProviderAvailability[option],
+        ),
+      ),
+    [credentialProviders, envProviderAvailability],
+  )
+  const savedProviderUnavailable = value !== null && !availableProviders.has(value.provider)
+
+  const setProvider = (next: LlmProviderName) => {
+    // When the provider changes, drop a stale model from a different vendor so
+    // the Select doesn't show a placeholder over an invalid identifier.
+    const carriedModel = value?.provider === next ? value.model : ''
+    onChange({ provider: next, model: carriedModel })
+  }
+
+  const setModel = (next: string) => {
+    onChange({ provider: value?.provider ?? 'openai', model: next })
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <SubsectionHeading
+          title="Chat model override"
+          description="Pick the provider and model for this agent's chat calls. Leave empty to inherit the workspace default."
+        />
+        {enabled ? (
+          <Button type="button" size="sm" variant="ghost" onClick={() => onChange(null)}>
+            Use workspace default
+          </Button>
+        ) : null}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label htmlFor="agentChatProvider" className="text-xs uppercase tracking-wide text-muted-foreground">
+            Provider
+          </Label>
+          <Select value={provider} onValueChange={(next) => setProvider(next as LlmProviderName)}>
+            <SelectTrigger id="agentChatProvider">
+              <SelectValue placeholder="Use workspace default" />
+            </SelectTrigger>
+            <SelectContent>
+              {llmProviderNames.map((option) => {
+                const isAvailable = availableProviders.has(option)
+                return (
+                  <SelectItem key={option} value={option} disabled={!isAvailable}>
+                    {providerDisplayName[option]}
+                    {isAvailable ? '' : ' (no key configured)'}
+                  </SelectItem>
+                )
+              })}
+            </SelectContent>
+          </Select>
+          {savedProviderUnavailable ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              The saved provider has no API key configured. Add one in Providers settings, or clear the override.
+            </p>
+          ) : null}
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="agentChatModel" className="text-xs uppercase tracking-wide text-muted-foreground">
+            Model
+          </Label>
+          <ModelPicker
+            inputId="agentChatModel"
+            provider={provider}
+            knownModelsByProvider={knownModelsByProvider}
+            value={model}
+            onChange={(next) => setModel(next.slice(0, 200))}
+            disabled={!enabled && model.length === 0}
+          />
+        </div>
+      </div>
     </div>
   )
 }
@@ -164,6 +301,15 @@ export function AssistantBehaviorSection({
             <span>{assistantBehaviorSettings.customInstruction.length} / {INSTRUCTION_MAX_LENGTH}</span>
           </div>
         </div>
+
+        {assistantBehaviorSettings.chatModelOverride !== undefined ? (
+          <AgentChatModelOverrideSubsection
+            value={assistantBehaviorSettings.chatModelOverride}
+            onChange={(next) =>
+              onAssistantBehaviorDraft((current) => ({ ...current, chatModelOverride: next }))
+            }
+          />
+        ) : null}
 
         <div className="space-y-3 rounded-lg border border-border p-3">
           <div className="flex flex-wrap items-start justify-between gap-3">

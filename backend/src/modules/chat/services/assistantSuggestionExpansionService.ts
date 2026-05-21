@@ -1,5 +1,6 @@
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ChatSuggestion, ChatSuggestionKind } from "../types/chatResponses.js";
 import type { ConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import { formatConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
@@ -11,7 +12,12 @@ interface ExpansionContext {
   content: string;
 }
 
-type SuggestionTextGenerator = (input: { query: string; history: MessageRecord[]; prompt: string }) => Promise<string>;
+type SuggestionTextGenerator = (input: {
+  query: string;
+  history: MessageRecord[];
+  prompt: string;
+  workspaceContext?: LlmCapabilityResolveInput;
+}) => Promise<string>;
 
 export interface AssistantSuggestionExpansionInput {
   query: string;
@@ -23,6 +29,7 @@ export interface AssistantSuggestionExpansionInput {
   citations?: Array<{ documentId: string }>;
   history: MessageRecord[];
   conversationIntentSnapshot: ConversationIntentSnapshot;
+  workspaceContext?: LlmCapabilityResolveInput;
 }
 
 export interface AssistantSuggestionExpansionResult {
@@ -219,6 +226,7 @@ export class AssistantSuggestionExpansionService {
           active_goal: input.conversationIntentSnapshot.activeGoal ?? "None",
           contexts_json: formatContextsJson(promptContexts),
         }),
+        workspaceContext: input.workspaceContext,
       });
 
       const suggestions = this.planSuggestions(

@@ -91,12 +91,13 @@ export type {
   TriggerAnalysisGateway,
   TriggerAnalysisGatewayInput,
 } from "./services/queryRewriteService.js";
+export type { QueryRewriteGatewayInput } from "./services/queryRewriteGateways.js";
 export {
   ModelQueryRewriteGateway,
   ModelTriggerAnalysisGateway,
   OpenAIQueryRewriteGateway,
 } from "./services/queryRewriteService.js";
-export type { RerankGateway } from "./services/rerankService.js";
+export type { RerankGateway, RerankGatewayInput } from "./services/rerankService.js";
 export {
   ModelRerankGateway,
   OpenAISemanticRerankGateway,

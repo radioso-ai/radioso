@@ -188,6 +188,44 @@ Assistant, retrieval, and search responses are lean by default. Add `includeDebu
 
 This is a breaking response-shape change for SDK and direct REST consumers that previously read diagnostics from top-level fields. Update TypeScript SDK clients to `@radioso/typescript-sdk` 0.2.0 or later and read diagnostic data from `response.debug`.
 
+### LLM provider credentials and model selection
+
+Workspaces can supply their own provider API keys and pick a model per capability without restarting the backend. Keys are encrypted with `CONNECTOR_ENCRYPTION_KEY` (the same key that protects connector secrets; the bootstrap command generates one when missing) and never round-tripped to clients.
+
+List configured providers, store a key, or remove one:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer <workspace-token>" \
+  http://localhost:8080/api/v1/settings/credentials
+
+curl -sS -X PUT \
+  -H "Authorization: Bearer <workspace-token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"apiKey":"sk-..."}' \
+  http://localhost:8080/api/v1/settings/credentials/claude
+
+curl -sS -X DELETE \
+  -H "Authorization: Bearer <workspace-token>" \
+  http://localhost:8080/api/v1/settings/credentials/claude
+```
+
+Read or update the per-workspace chat / rewrite / rerank model preference. A `null` value clears that capability and falls back to the env default:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer <workspace-token>" \
+  http://localhost:8080/api/v1/settings/llm-models
+
+curl -sS -X PUT \
+  -H "Authorization: Bearer <workspace-token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"chat":{"provider":"claude","model":"claude-sonnet-4-5"},"rerank":null}' \
+  http://localhost:8080/api/v1/settings/llm-models
+```
+
+Agents can override the chat model for a specific persona via `chatModelOverride` on `PUT /api/v1/agents/<agentId>`. Resolution order at chat time is agent override → workspace preference → env default. API keys come from the workspace credential first, then fall back to the matching environment variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). The `openai-compatible` provider also requires `OPENAI_COMPATIBLE_BASE_URL` — a workspace selecting it without a base URL fails with a clear error instead of silently calling the default OpenAI endpoint.
+
 Radioso also exposes a read-only skills catalog:
 
 ```bash

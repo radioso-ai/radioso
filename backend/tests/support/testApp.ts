@@ -61,6 +61,8 @@ import { WorkspaceSessionService } from "../../src/modules/auth/services/workspa
 import { ConnectorRegistry } from "../../src/modules/connectors/services/connectorRegistry.js";
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
 import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
+import { WorkspaceProviderCredentialsService } from "../../src/modules/security/credentials/services/workspaceProviderCredentialsService.js";
+import { WorkspaceLlmCapabilitySettingsService } from "../../src/modules/settings/services/workspaceLlmCapabilitySettingsService.js";
 import { buildAnalyticsSinks } from "../../src/shared/analytics/buildAnalyticsSinks.js";
 import { ProductAnalyticsService } from "../../src/shared/analytics/productAnalyticsService.js";
 import { buildIncidentSinks } from "../../src/shared/incidents/buildIncidentSinks.js";
@@ -112,6 +114,7 @@ import {
   InMemoryAgentRepository,
   InMemoryConnectorDatabase,
   InMemoryAbuseControlRepository,
+  InMemoryWorkspaceProviderCredentialsRepository,
 } from "./fakes.js";
 
 export const createTestEnv = (): Env => ({
@@ -601,6 +604,16 @@ export const createTestDependencies = (overrides: {
   const abuseControlService = new AbuseControlService(
     overrides.abuseControlRepository ?? new InMemoryAbuseControlRepository(),
   );
+  const workspaceProviderCredentialsService = new WorkspaceProviderCredentialsService(
+    new InMemoryWorkspaceProviderCredentialsRepository(),
+    auditService,
+    { key: env.CONNECTOR_ENCRYPTION_KEY },
+  );
+  const workspaceLlmCapabilitySettingsService = new WorkspaceLlmCapabilitySettingsService(
+    retrievalSettingsRepository,
+    retrievalSettingsService,
+    auditService,
+  );
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
@@ -699,6 +712,8 @@ export const createTestDependencies = (overrides: {
     accountInvitationService,
     workspaceSessionService,
     abuseControlService,
+    workspaceProviderCredentialsService,
+    workspaceLlmCapabilitySettingsService,
     authService: new AuthService({
       env,
       auditService,

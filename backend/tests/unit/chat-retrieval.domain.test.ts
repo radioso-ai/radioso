@@ -1731,6 +1731,7 @@ describe("chat retrieval domain", () => {
     }));
 
     const result = await stage.execute({
+      request: { workspaceId: "ws-test" },
       settings: {
         rerankEnabled: true,
         rerankTopK: 15,
@@ -1774,6 +1775,7 @@ describe("chat retrieval domain", () => {
     }));
 
     const result = await stage.execute({
+      request: { workspaceId: "ws-test" },
       settings: {
         rerankEnabled: true,
         rerankTopK: 5,
@@ -1849,6 +1851,7 @@ describe("chat retrieval domain", () => {
     };
 
     const result = await stage.execute({
+      request: { workspaceId: "ws-test" },
       settings: {
         rerankEnabled: true,
         rerankTopK: 5,
@@ -1919,6 +1922,7 @@ describe("chat retrieval domain", () => {
     }));
 
     const result = await stage.execute({
+      request: { workspaceId: "ws-test" },
       settings: {
         rerankEnabled: true,
         rerankTopK: 3,

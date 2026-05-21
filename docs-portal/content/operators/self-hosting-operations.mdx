@@ -103,7 +103,7 @@ Rotate these values deliberately and keep historical impact in mind:
 - `SESSION_COOKIE_SECRET` affects browser sessions.
 - `WORKSPACE_TOKEN_SECRET` affects workspace API tokens.
 - `PUBLIC_CHAT_SESSION_SECRET` affects anonymous public-chat sessions and website embeds.
-- `CONNECTOR_ENCRYPTION_KEY` protects connector secrets.
+- `CONNECTOR_ENCRYPTION_KEY` protects both connector secrets and per-workspace LLM provider API keys at rest. The value must be 32 random bytes, base64-encoded — generate one with `openssl rand -base64 32`. The bootstrap command generates a key automatically when `.env` does not already have one. Workspaces that have stored an API key in the UI cannot read it back after the key is changed; operators must coordinate a rotation by clearing or re-entering each affected provider credential.
 - provider API keys affect chat, rewrite, rerank, and embedding calls.
 
 Changing encryption or token secrets without a migration or rotation plan can invalidate existing sessions, tokens, or saved connector credentials.

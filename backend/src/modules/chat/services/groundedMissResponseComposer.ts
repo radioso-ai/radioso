@@ -1,23 +1,23 @@
+import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import { resolveChatLocale } from "./chatLocale.js";
 
+export interface GroundedMissNoContextInput {
+  query: string;
+  userExpectedLocale?: string | null;
+  answerInstructionBlock?: string;
+  workspaceContext?: LlmCapabilityResolveInput;
+}
+
 export interface GroundedMissResponseComposer {
-  composeNoContext(input: {
-    query: string;
-    userExpectedLocale?: string | null;
-    answerInstructionBlock?: string;
-  }): Promise<string>;
+  composeNoContext(input: GroundedMissNoContextInput): Promise<string>;
 }
 
 export class MissingGroundedMissResponseComposer implements GroundedMissResponseComposer {
-  async composeNoContext(_input: {
-    query: string;
-    userExpectedLocale?: string | null;
-    answerInstructionBlock?: string;
-  }): Promise<string> {
+  async composeNoContext(_input: GroundedMissNoContextInput): Promise<string> {
     return buildNoContextFallback();
   }
 }
@@ -111,11 +111,7 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     }
   }
 
-  async composeNoContext(input: {
-    query: string;
-    userExpectedLocale?: string | null;
-    answerInstructionBlock?: string;
-  }): Promise<string> {
+  async composeNoContext(input: GroundedMissNoContextInput): Promise<string> {
     try {
       const raw = await this.completeWithRetry({
         prompt: renderGroundedMissSection("prompt", {

@@ -6,6 +6,15 @@ import {
   ModelTriggerAnalysisGateway,
   OpenAISemanticRerankGateway,
 } from "../../../modules/retrieval/public.js";
+import type { LlmCapabilityResolver } from "./capabilityResolver.js";
+import {
+  ContextualChatGateway,
+  ContextualGroundedMissResponseComposer,
+  ContextualQueryRewriteGateway,
+  ContextualRerankGateway,
+  ContextualTriggerAnalysisGateway,
+} from "./contextualGateways.js";
+import { TextGenerationClientCache } from "./textClientFactory.js";
 import { ClaudeTextGenerationClient } from "./claudeProvider.js";
 import { GeminiEmbeddingClient, GeminiTextGenerationClient } from "./geminiProvider.js";
 import { createOpenAIClient, OpenAIEmbeddingClient, OpenAITextGenerationClient } from "./openaiProvider.js";
@@ -91,14 +100,33 @@ class RoutedEmbeddingClient implements EmbeddingClient {
   }
 }
 
+export interface LlmProviderRegistryOptions {
+  /** When provided, gateways become workspace-aware and resolve per-call configs. */
+  resolver?: LlmCapabilityResolver;
+}
+
 export class LlmProviderRegistry {
+  private resolver: LlmCapabilityResolver | undefined;
+  private readonly clientCache = new TextGenerationClientCache();
+
   constructor(
     private readonly config: ResolvedLlmConfig,
     private readonly logger?: AppLogger,
+    options: LlmProviderRegistryOptions = {},
   ) {
     if (!supportsEmbeddings(config.embeddings)) {
       throw new ProviderConfigurationError(`Provider ${config.embeddings.provider} does not support embeddings`);
     }
+    this.resolver = options.resolver;
+  }
+
+  /**
+   * Attach a per-workspace capability resolver. Must be called before any
+   * `createXGateway()` method that should return a workspace-aware gateway.
+   * The embedding gateway is unaffected — embedding stays env-default.
+   */
+  setResolver(resolver: LlmCapabilityResolver): void {
+    this.resolver = resolver;
   }
 
   describe(): Record<LlmCapabilityName, LlmProviderMetadata> {
@@ -111,7 +139,11 @@ export class LlmProviderRegistry {
   }
 
   createChatGateway() {
-    return new ModelChatGateway(this.createTextClient(this.config.chat));
+    const fallback = new ModelChatGateway(this.createTextClient(this.config.chat));
+    if (!this.resolver) {
+      return fallback;
+    }
+    return new ContextualChatGateway({ resolver: this.resolver, clientCache: this.clientCache }, fallback);
   }
 
   createChatTextClient(): TextGenerationClient {
@@ -119,27 +151,55 @@ export class LlmProviderRegistry {
   }
 
   createGroundedMissResponseComposer() {
-    return new ModelGroundedMissResponseComposer(this.createTextClient(this.config.chat));
+    const fallback = new ModelGroundedMissResponseComposer(this.createTextClient(this.config.chat));
+    if (!this.resolver) {
+      return fallback;
+    }
+    return new ContextualGroundedMissResponseComposer(
+      { resolver: this.resolver, clientCache: this.clientCache },
+      fallback,
+    );
   }
 
   createRewriteGateway() {
-    return new ModelQueryRewriteGateway(this.createTextClient(this.config.rewrite));
+    const fallback = new ModelQueryRewriteGateway(this.createTextClient(this.config.rewrite));
+    if (!this.resolver) {
+      return fallback;
+    }
+    return new ContextualQueryRewriteGateway(
+      { resolver: this.resolver, clientCache: this.clientCache },
+      fallback,
+    );
   }
 
   createTriggerAnalysisGateway() {
-    return new ModelTriggerAnalysisGateway(this.createTextClient(this.config.rewrite));
+    const fallback = new ModelTriggerAnalysisGateway(this.createTextClient(this.config.rewrite));
+    if (!this.resolver) {
+      return fallback;
+    }
+    return new ContextualTriggerAnalysisGateway(
+      { resolver: this.resolver, clientCache: this.clientCache },
+      fallback,
+    );
   }
 
   createRerankGateway() {
-    if (this.config.rerank.provider === "openai") {
-      return new OpenAISemanticRerankGateway(
-        createOpenAIClient(this.config.rerank),
-        this.config.rerank.model,
-        this.logger,
-      );
-    }
+    const defaultFallback = this.config.rerank.provider === "openai"
+      ? new OpenAISemanticRerankGateway(
+          createOpenAIClient(this.config.rerank),
+          this.config.rerank.model,
+          this.logger,
+        )
+      : new ModelRerankGateway(this.createTextClient(this.config.rerank), this.logger);
 
-    return new ModelRerankGateway(this.createTextClient(this.config.rerank), this.logger);
+    if (!this.resolver) {
+      return defaultFallback;
+    }
+    return new ContextualRerankGateway(
+      { resolver: this.resolver, clientCache: this.clientCache },
+      defaultFallback,
+      this.logger,
+    );
   }
 
   createEmbeddingGateway() {

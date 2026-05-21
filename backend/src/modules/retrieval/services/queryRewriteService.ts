@@ -1,4 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import {
   normalizeLlmClassifierLabel,
@@ -59,6 +60,7 @@ export class QueryRewriteService {
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
     answerScopeReference?: string;
+    workspaceContext?: LlmCapabilityResolveInput;
   }): Promise<RewrittenRetrievalQuery> {
     const shouldInterpret = input.enabled || input.intentRoutingEnabled !== false;
 
@@ -78,6 +80,7 @@ export class QueryRewriteService {
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
         answerScopeReference: input.answerScopeReference,
+        workspaceContext: input.workspaceContext,
       });
       const result = this.normalizeStructuredResult(input.query, rawResult);
       const rawResponseIntent = this.normalizeResponseIntent(result.responseIntent);
@@ -193,6 +196,7 @@ export class QueryRewriteService {
     activeQuery?: string;
     contextMessages?: MessageRecord[];
     metadataRules: RetrievalMetadataRule[];
+    workspaceContext?: LlmCapabilityResolveInput;
   }): Promise<TriggerAnalysisResult> {
     const triggerableRules = input.metadataRules.filter(
       (rule) => rule.enabled && rule.triggerMode === "match_turn" && typeof rule.triggerInstruction === "string",
@@ -233,6 +237,7 @@ export class QueryRewriteService {
         activeQuery: input.activeQuery ?? input.query,
         contextMessages: input.contextMessages ?? [],
         rules: triggerableRules,
+        workspaceContext: input.workspaceContext,
       });
       const normalizedConsideredRules = result.consideredRules.map((rule) => {
         const thresholdMet = rule.matchStrength >= TRIGGER_MATCH_ENACTMENT_THRESHOLD;

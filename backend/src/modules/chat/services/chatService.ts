@@ -7,7 +7,8 @@ import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspace
 import type { AgentService } from "../../agents/public.js";
 import type { RetrievalPipelineService } from "../../retrieval/public.js";
 import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
-import type { ChatGateway } from "../contracts/chatGateway.js";
+import type { ChatGateway, ChatGatewayInput } from "../contracts/chatGateway.js";
+import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ChatStreamEvent, SkillStreamPayload, SkillStreamPhase } from "../contracts/streamEvents.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import {
@@ -47,7 +48,7 @@ const isBlankChatAnswerError = (error: unknown): error is BlankChatAnswerError =
 export class ModelChatGateway implements ChatGateway {
   constructor(private readonly client: TextGenerationClient) {}
 
-  async answer(input: { query: string; history: MessageRecord[]; prompt: string; systemPrompt?: string }): Promise<string> {
+  async answer(input: ChatGatewayInput): Promise<string> {
     const response = await this.client.complete({
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
@@ -60,7 +61,7 @@ export class ModelChatGateway implements ChatGateway {
     return response;
   }
 
-  async *streamAnswer(input: { query: string; history: MessageRecord[]; prompt: string; systemPrompt?: string }): AsyncIterable<string> {
+  async *streamAnswer(input: ChatGatewayInput): AsyncIterable<string> {
     for await (const chunk of this.client.stream({
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
@@ -226,14 +227,22 @@ export class ChatService {
       agentService,
     );
     this.chatAnswerPresenter = new ChatAnswerPresenter(
-      new AssistantSuggestionExpansionService(async ({ query, history, prompt }) =>
+      new AssistantSuggestionExpansionService(async ({ query, history, prompt, workspaceContext }) =>
         this.chatGateway.answer({
           query,
           history,
           prompt,
+          workspaceContext,
         })),
       chatActionSuggestionService,
     );
+  }
+
+  private buildChatWorkspaceContext(session: PreparedSession): LlmCapabilityResolveInput {
+    return {
+      workspaceId: session.agent.workspaceId,
+      capabilityOverride: session.agent.chatModelOverride ?? undefined,
+    };
   }
 
   private buildAnswerInstructionBlock(session: PreparedSession): string {
@@ -292,6 +301,7 @@ export class ChatService {
       history: session.history,
       systemPrompt: session.retrieval.systemPrompt,
       prompt,
+      workspaceContext: this.buildChatWorkspaceContext(session),
     })).trim();
   }
 
@@ -319,6 +329,7 @@ export class ChatService {
           answerInstructionBlock: this.buildAnswerInstructionBlock(session),
           pageContextBlock: this.buildPageContextBlock(session.pageContext),
         }),
+        workspaceContext: this.buildChatWorkspaceContext(session),
       })).trim();
     } catch (error) {
       if (isBlankChatAnswerError(error)) {
@@ -501,6 +512,7 @@ export class ChatService {
             query: input.query,
             userExpectedLocale: input.userExpectedLocale,
             answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+            workspaceContext: this.buildChatWorkspaceContext(session),
           });
         yield {
           type: "chunk",
@@ -512,6 +524,7 @@ export class ChatService {
             query: input.query,
             userExpectedLocale: input.userExpectedLocale,
             answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+            workspaceContext: this.buildChatWorkspaceContext(session),
           });
         yield {
           type: "chunk",
@@ -524,6 +537,7 @@ export class ChatService {
           history: session.history,
           systemPrompt: session.retrieval.systemPrompt,
           prompt: this.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext),
+          workspaceContext: this.buildChatWorkspaceContext(session),
         })) {
           if (!text) {
             continue;
@@ -666,12 +680,14 @@ export class ChatService {
             query,
             userExpectedLocale,
             answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+            workspaceContext: this.buildChatWorkspaceContext(session),
           })
       : await this.chatGateway.answer({
           query,
           history: session.history,
           systemPrompt: session.retrieval.systemPrompt,
           prompt: this.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext),
+          workspaceContext: this.buildChatWorkspaceContext(session),
         });
 
     return this.chatAnswerPresenter.presentWithSuggestions(session, answer, query, userExpectedLocale);

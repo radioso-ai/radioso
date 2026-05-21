@@ -46,6 +46,18 @@ import type {
 } from "../../src/db/repositories/bootstrapGreetingCacheRepository.js";
 import type { AbuseControlEntry, AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import type {
+  WorkspaceProviderCredentialRecord,
+  WorkspaceProviderCredentialSummary,
+  WorkspaceProviderCredentialsRepositoryPort,
+} from "../../src/db/repositories/workspaceProviderCredentialsRepository.js";
+import type {
+  WorkspaceLlmCapability,
+  WorkspaceLlmCapabilityPreference,
+  WorkspaceLlmCapabilityPreferenceInput,
+} from "../../src/modules/settings/contracts/llmCapability.js";
+import type { WorkspaceLlmCapabilityPreferencesRepositoryPort } from "../../src/modules/settings/contracts/services.js";
+import type { LlmProviderName } from "../../src/shared/infra/llm/providerTypes.js";
+import type {
   EmailVerificationTokenRecord,
   EmailVerificationTokenRepositoryPort,
 } from "../../src/db/repositories/emailVerificationTokenRepository.js";
@@ -986,8 +998,85 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
   }
 }
 
-export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRepositoryPort {
+export class InMemoryWorkspaceProviderCredentialsRepository
+  implements WorkspaceProviderCredentialsRepositoryPort
+{
+  readonly items = new Map<string, WorkspaceProviderCredentialRecord>();
+
+  async findByWorkspaceAndProvider(
+    workspaceId: string,
+    provider: LlmProviderName,
+  ): Promise<WorkspaceProviderCredentialRecord | null> {
+    return this.items.get(`${workspaceId}:${provider}`) ?? null;
+  }
+
+  async listByWorkspace(workspaceId: string): Promise<WorkspaceProviderCredentialSummary[]> {
+    return [...this.items.values()]
+      .filter((record) => record.workspaceId === workspaceId)
+      .map((record) => ({
+        workspaceId: record.workspaceId,
+        provider: record.provider,
+        updatedAt: record.updatedAt,
+      }))
+      .sort((a, b) => a.provider.localeCompare(b.provider));
+  }
+
+  async upsert(input: {
+    workspaceId: string;
+    provider: LlmProviderName;
+    ciphertext: string;
+  }): Promise<WorkspaceProviderCredentialRecord> {
+    const key = `${input.workspaceId}:${input.provider}`;
+    const existing = this.items.get(key);
+    const record: WorkspaceProviderCredentialRecord = {
+      workspaceId: input.workspaceId,
+      provider: input.provider,
+      ciphertext: input.ciphertext,
+      createdAt: existing?.createdAt ?? new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(key, record);
+    return record;
+  }
+
+  async remove(workspaceId: string, provider: LlmProviderName): Promise<boolean> {
+    return this.items.delete(`${workspaceId}:${provider}`);
+  }
+}
+
+export class InMemoryRetrievalSettingsRepository
+  implements RetrievalSettingsRepositoryPort, WorkspaceLlmCapabilityPreferencesRepositoryPort
+{
   private readonly items = new Map<string, RetrievalSettingsRecord>();
+  readonly capabilityRows = new Map<string, Map<WorkspaceLlmCapability, WorkspaceLlmCapabilityPreference>>();
+
+  async findByWorkspace(workspaceId: string): Promise<WorkspaceLlmCapabilityPreference[]> {
+    const row = this.capabilityRows.get(workspaceId);
+    return row ? [...row.values()] : [];
+  }
+
+  async setPreference(
+    workspaceId: string,
+    capability: WorkspaceLlmCapability,
+    value: WorkspaceLlmCapabilityPreferenceInput | null,
+  ): Promise<void> {
+    if (!this.items.has(workspaceId)) {
+      throw new Error(`retrieval_settings row missing for workspace ${workspaceId}`);
+    }
+    const row = this.capabilityRows.get(workspaceId) ?? new Map();
+    if (value === null) {
+      row.delete(capability);
+    } else {
+      row.set(capability, {
+        workspaceId,
+        capability,
+        provider: value.provider,
+        model: value.model,
+        updatedAt: new Date(),
+      });
+    }
+    this.capabilityRows.set(workspaceId, row);
+  }
 
   async findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null> {
     return this.items.get(workspaceId) ?? null;

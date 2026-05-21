@@ -557,6 +557,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List configured workspace provider API keys */
+        get: operations["listWorkspaceProviderCredentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/credentials/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set or replace a workspace provider API key */
+        put: operations["setWorkspaceProviderCredential"];
+        post?: never;
+        /** Remove a stored workspace provider API key */
+        delete: operations["removeWorkspaceProviderCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/llm-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace chat/rewrite/rerank model preferences */
+        get: operations["getWorkspaceLlmModels"];
+        /** Update workspace chat/rewrite/rerank model preferences */
+        put: operations["updateWorkspaceLlmModels"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents": {
         parameters: {
             query?: never;
@@ -1895,6 +1948,58 @@ export interface components {
                 };
             };
         };
+        WorkspaceProviderCredentialSummary: {
+            /** @enum {string} */
+            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        WorkspaceProviderCredentialsResponse: {
+            encryptionConfigured: boolean;
+            credentials: components["schemas"]["WorkspaceProviderCredentialSummary"][];
+            envProviderAvailability: {
+                openai: boolean;
+                "openai-compatible": boolean;
+                gemini: boolean;
+                claude: boolean;
+            };
+        };
+        SetWorkspaceProviderCredentialRequest: {
+            apiKey: string;
+        };
+        WorkspaceLlmCapabilityPreference: {
+            /** @enum {string} */
+            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            model: string;
+        } | null;
+        WorkspaceLlmModelsResponse: {
+            chat: components["schemas"]["WorkspaceLlmCapabilityPreference"];
+            rewrite: components["schemas"]["WorkspaceLlmCapabilityPreference"];
+            rerank: components["schemas"]["WorkspaceLlmCapabilityPreference"];
+            knownModelsByProvider: {
+                openai: string[];
+                "openai-compatible": string[];
+                gemini: string[];
+                claude: string[];
+            };
+        };
+        UpdateWorkspaceLlmModelsRequest: {
+            chat?: {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            } | null;
+            rewrite?: {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            } | null;
+            rerank?: {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            } | null;
+        };
         Agent: {
             /** Format: uuid */
             id: string;
@@ -1973,6 +2078,11 @@ export interface components {
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
             assistantBootstrapActive: boolean;
+            chatModelOverride: {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            } | null;
             surfaceSettings: components["schemas"]["ConversationAgentSurfaceSettings"];
         };
         AgentListResponse: {
@@ -2004,6 +2114,11 @@ export interface components {
             greetingInstruction?: string;
             assistantDefaultLocale?: string | null;
             proactiveGreetingEnabled?: boolean;
+            chatModelOverride?: null | {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            };
             surfaceSettings?: {
                 authenticatedChat?: {
                     enabled?: boolean;
@@ -4699,6 +4814,195 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GeneralSettingsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaceProviderCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configured providers and encryption status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceProviderCredentialsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setWorkspaceProviderCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetWorkspaceProviderCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description Credential stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Server-side secret encryption is not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    removeWorkspaceProviderCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Credential removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No credential found for the requested provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceLlmModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace LLM model preferences (null = inherit env default) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceLlmModelsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateWorkspaceLlmModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWorkspaceLlmModelsRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated workspace LLM model preferences */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceLlmModelsResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */

@@ -118,6 +118,22 @@ describe("runtime configuration", () => {
     expect(env.INCIDENT_SINKS).toBe("audit");
   });
 
+  it("rejects a CONNECTOR_ENCRYPTION_KEY that does not decode to 32 bytes", () => {
+    expect(() => getEnv({
+      ...baseEnv,
+      CONNECTOR_ENCRYPTION_KEY: "definitely-not-base64-32-bytes",
+    })).toThrow(/CONNECTOR_ENCRYPTION_KEY/);
+  });
+
+  it("accepts a valid 32-byte base64 CONNECTOR_ENCRYPTION_KEY", () => {
+    const key = Buffer.alloc(32, 0x42).toString("base64");
+    const env = getEnv({
+      ...baseEnv,
+      CONNECTOR_ENCRYPTION_KEY: key,
+    });
+    expect(env.CONNECTOR_ENCRYPTION_KEY).toBe(key);
+  });
+
   it("requires a metrics auth token when metrics exposure is enabled", () => {
     expect(() => getEnv({
       ...baseEnv,

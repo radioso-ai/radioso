@@ -1,4 +1,9 @@
 import type { IngestionSettingsInput, IngestionSettingsRecord, ValidatedIngestionSettingsInput } from "./ingestion.js";
+import type {
+  WorkspaceLlmCapability,
+  WorkspaceLlmCapabilityPreference,
+  WorkspaceLlmCapabilityPreferenceInput,
+} from "./llmCapability.js";
 import type { MetadataFieldSuggestion, RetrievalSettingsInput, RetrievalSettingsRecord } from "./retrieval.js";
 
 export interface IngestionSettingsRepositoryPort {
@@ -15,6 +20,21 @@ export interface WorkspaceReprocessPort {
 export interface RetrievalSettingsRepositoryPort {
   findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null>;
   upsert(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord>;
+}
+
+/**
+ * Narrow port for reading/writing the per-workspace LLM capability preferences
+ * (chat / rewrite / rerank provider+model). Backed by the same row as retrieval
+ * settings, but consumed by a different service so model-selection concerns do
+ * not leak into retrieval-pipeline configuration.
+ */
+export interface WorkspaceLlmCapabilityPreferencesRepositoryPort {
+  findByWorkspace(workspaceId: string): Promise<WorkspaceLlmCapabilityPreference[]>;
+  setPreference(
+    workspaceId: string,
+    capability: WorkspaceLlmCapability,
+    value: WorkspaceLlmCapabilityPreferenceInput | null,
+  ): Promise<void>;
 }
 
 export interface RetrievalMetadataFieldSourcePort {

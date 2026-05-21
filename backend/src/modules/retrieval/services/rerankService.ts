@@ -1,14 +1,18 @@
+import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { RetrievedCandidate, RerankedCandidate, RerankStatus } from "../domain/retrievalPipelineTypes.js";
 
+export interface RerankGatewayInput {
+  query: string;
+  contexts: RetrievedCandidate[];
+  workspaceContext?: LlmCapabilityResolveInput;
+}
+
 export interface RerankGateway {
-  rerank(input: {
-    query: string;
-    contexts: RetrievedCandidate[];
-  }): Promise<Array<{ chunkId: string; relevanceScore: number }>>;
+  rerank(input: RerankGatewayInput): Promise<Array<{ chunkId: string; relevanceScore: number }>>;
 }
 
 const buildRerankPrompt = (input: { query: string; candidates: string }): string =>
@@ -20,10 +24,7 @@ export class ModelRerankGateway implements RerankGateway {
     private readonly logger?: AppLogger,
   ) {}
 
-  async rerank(input: {
-    query: string;
-    contexts: RetrievedCandidate[];
-  }): Promise<Array<{ chunkId: string; relevanceScore: number }>> {
+  async rerank(input: RerankGatewayInput): Promise<Array<{ chunkId: string; relevanceScore: number }>> {
     const candidates = buildRerankCandidateList(input.contexts);
 
     const content = await this.client.complete({
@@ -101,10 +102,7 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
     private readonly logger?: AppLogger,
   ) {}
 
-  async rerank(input: {
-    query: string;
-    contexts: RetrievedCandidate[];
-  }): Promise<Array<{ chunkId: string; relevanceScore: number }>> {
+  async rerank(input: RerankGatewayInput): Promise<Array<{ chunkId: string; relevanceScore: number }>> {
     const candidates = buildRerankCandidateList(input.contexts);
     const maxOutputTokens = Math.min(
       RETRIEVAL_BEHAVIOR.rerank.openAiMaxOutputTokens,
@@ -153,6 +151,7 @@ export class RerankService {
     contexts: RetrievedCandidate[];
     enabled: boolean;
     topK: number;
+    workspaceContext?: LlmCapabilityResolveInput;
   }): Promise<{ contexts: RerankedCandidate[]; status: RerankStatus }> {
     if (!input.enabled) {
       return {
@@ -168,6 +167,7 @@ export class RerankService {
           this.gateway?.rerank({
             query: input.query,
             contexts,
+            workspaceContext: input.workspaceContext,
           }),
         ),
       );

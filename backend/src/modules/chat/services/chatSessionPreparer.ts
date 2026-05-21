@@ -266,6 +266,7 @@ export class ChatSessionPreparer {
         greetingInstruction: "",
         assistantDefaultLocale: null,
         proactiveGreetingEnabled: false,
+        chatModelOverride: null,
         surfaceSettings: {
           authenticatedChat: {
             enabled: true,
@@ -311,6 +312,7 @@ export class ChatSessionPreparer {
       greetingInstruction: workspace.greetingInstruction,
       assistantDefaultLocale: workspace.assistantDefaultLocale,
       proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
+      chatModelOverride: null,
       surfaceSettings: {
         authenticatedChat: {
           enabled: true,

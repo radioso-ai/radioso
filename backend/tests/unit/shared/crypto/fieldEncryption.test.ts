@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  encryptField,
   decryptField,
-  isEncryptedConnectorSecret,
+  encryptField,
+  isEncryptedField,
   maskSecret,
-} from "../../../src/modules/connectors/services/configEncryption.js";
+} from "../../../../src/shared/infra/crypto/fieldEncryption.js";
 
 const TEST_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"); // 32 bytes
 
-describe("config encryption", () => {
+describe("field encryption", () => {
   describe("encryptField / decryptField", () => {
     it("round-trips a plaintext value", () => {
       const plaintext = "my-api-token-12345";
@@ -23,7 +23,6 @@ describe("config encryption", () => {
       const a = encryptField(plaintext, TEST_KEY);
       const b = encryptField(plaintext, TEST_KEY);
       expect(a).not.toBe(b);
-      // Both decrypt to the same value
       expect(decryptField(a, TEST_KEY)).toBe(plaintext);
       expect(decryptField(b, TEST_KEY)).toBe(plaintext);
     });
@@ -51,10 +50,17 @@ describe("config encryption", () => {
       expect(() => decryptField(tampered, TEST_KEY)).toThrow();
     });
 
-    it("detects valid encrypted connector secrets", () => {
+    it("detects valid encrypted fields", () => {
       const encrypted = encryptField("secret", TEST_KEY);
-      expect(isEncryptedConnectorSecret(encrypted, TEST_KEY)).toBe(true);
-      expect(isEncryptedConnectorSecret("plain-text-secret", TEST_KEY)).toBe(false);
+      expect(isEncryptedField(encrypted, TEST_KEY)).toBe(true);
+      expect(isEncryptedField("plain-text-secret", TEST_KEY)).toBe(false);
+    });
+
+    it("reports the caller-supplied key name when the key is malformed", () => {
+      const badKey = Buffer.from("too-short").toString("base64");
+      expect(() => encryptField("x", badKey, { keyName: "CONNECTOR_ENCRYPTION_KEY" })).toThrow(
+        /CONNECTOR_ENCRYPTION_KEY must decode to 32 bytes/,
+      );
     });
   });
 

@@ -6,21 +6,26 @@ const AUTH_TAG_LENGTH = 16;
 const KEY_LENGTH = 32;
 const MIN_ENCRYPTED_PAYLOAD_BYTES = IV_LENGTH + AUTH_TAG_LENGTH;
 
-const decodeKey = (keyBase64: string): Buffer => {
+export interface FieldEncryptionOptions {
+  /** Operator-facing name of the configuration source, used only in error messages. */
+  keyName?: string;
+}
+
+const decodeKey = (keyBase64: string, keyName: string): Buffer => {
   const key = Buffer.from(keyBase64, "base64");
   if (key.length !== KEY_LENGTH) {
-    throw new Error("CONNECTOR_ENCRYPTION_KEY must decode to 32 bytes");
+    throw new Error(`${keyName} must decode to 32 bytes`);
   }
 
   return key;
 };
 
-/**
- * Encrypt a plaintext config field value using AES-256-GCM.
- * Returns a base64 string containing IV + ciphertext + auth tag.
- */
-export const encryptField = (plaintext: string, keyBase64: string): string => {
-  const key = decodeKey(keyBase64);
+export const encryptField = (
+  plaintext: string,
+  keyBase64: string,
+  options: FieldEncryptionOptions = {},
+): string => {
+  const key = decodeKey(keyBase64, options.keyName ?? "encryption key");
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
 
@@ -30,14 +35,15 @@ export const encryptField = (plaintext: string, keyBase64: string): string => {
   return Buffer.concat([iv, encrypted, authTag]).toString("base64");
 };
 
-/**
- * Decrypt a field value previously encrypted with encryptField().
- */
-export const decryptField = (ciphertext: string, keyBase64: string): string => {
-  const key = decodeKey(keyBase64);
+export const decryptField = (
+  ciphertext: string,
+  keyBase64: string,
+  options: FieldEncryptionOptions = {},
+): string => {
+  const key = decodeKey(keyBase64, options.keyName ?? "encryption key");
   const data = Buffer.from(ciphertext, "base64");
   if (data.length < MIN_ENCRYPTED_PAYLOAD_BYTES) {
-    throw new Error("Ciphertext is not a valid encrypted connector secret");
+    throw new Error("Ciphertext is not a valid encrypted field");
   }
 
   const iv = data.subarray(0, IV_LENGTH);
@@ -48,6 +54,19 @@ export const decryptField = (ciphertext: string, keyBase64: string): string => {
   decipher.setAuthTag(authTag);
 
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+};
+
+export const isEncryptedField = (
+  value: string,
+  keyBase64: string,
+  options: FieldEncryptionOptions = {},
+): boolean => {
+  try {
+    void decryptField(value, keyBase64, options);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 /**
@@ -67,13 +86,4 @@ export const maskSecret = (value: string): string => {
   }
 
   return "*".repeat(value.length - 4) + value.slice(-4);
-};
-
-export const isEncryptedConnectorSecret = (value: string, keyBase64: string): boolean => {
-  try {
-    void decryptField(value, keyBase64);
-    return true;
-  } catch {
-    return false;
-  }
 };

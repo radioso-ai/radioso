@@ -76,6 +76,58 @@ describe("organization roles", () => {
     ).resolves.toMatchObject({ status: 403 });
   }, 20_000);
 
+  it("restricts provider credential and llm-model writes to admin+, but lets members read", async () => {
+    const { app } = createTestApp();
+    const owner = await issueTestSession(app, `owner-${Date.now()}@example.com`);
+    const member = await acceptInvite(app, owner.cookie, `member-${Date.now()}@example.com`, "member");
+
+    const memberHeaders = { Cookie: member.cookie, "X-Workspace-Id": member.workspaceId };
+    const ownerHeaders = { Cookie: owner.cookie, "X-Workspace-Id": owner.workspaceId };
+
+    // Members can read credentials (the list is masked).
+    const memberCredList = await request(app)
+      .get("/api/v1/settings/credentials")
+      .set(memberHeaders);
+    expect(memberCredList.status).toBe(200);
+
+    // Members cannot store an API key — billing-relevant secret writes are admin+.
+    const memberCredWrite = await request(app)
+      .put("/api/v1/settings/credentials/openai")
+      .set(memberHeaders)
+      .send({ apiKey: "sk-from-member" });
+    expect(memberCredWrite.status).toBe(403);
+
+    const memberCredDelete = await request(app)
+      .delete("/api/v1/settings/credentials/openai")
+      .set(memberHeaders);
+    expect(memberCredDelete.status).toBe(403);
+
+    // Members can read llm-model preferences but cannot change workspace defaults.
+    const memberModelRead = await request(app)
+      .get("/api/v1/settings/llm-models")
+      .set(memberHeaders);
+    expect(memberModelRead.status).toBe(200);
+
+    const memberModelWrite = await request(app)
+      .put("/api/v1/settings/llm-models")
+      .set(memberHeaders)
+      .send({ chat: { provider: "claude", model: "claude-sonnet-4-5" } });
+    expect(memberModelWrite.status).toBe(403);
+
+    // Owners (and by extension admins via the role hierarchy) can write both.
+    const ownerCredWrite = await request(app)
+      .put("/api/v1/settings/credentials/openai")
+      .set(ownerHeaders)
+      .send({ apiKey: "sk-from-owner" });
+    expect(ownerCredWrite.status).toBe(204);
+
+    const ownerModelWrite = await request(app)
+      .put("/api/v1/settings/llm-models")
+      .set(ownerHeaders)
+      .send({ chat: { provider: "claude", model: "claude-sonnet-4-5" } });
+    expect(ownerModelWrite.status).toBe(200);
+  }, 20_000);
+
   it("allows admins to manage workspaces and tokens but not remove owners", async () => {
     const { app } = createTestApp();
     const owner = await issueTestSession(app, `owner-${Date.now()}@example.com`);

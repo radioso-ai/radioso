@@ -35,6 +35,8 @@ export type RetrievalSettings = PlatformRetrievalSettings &
     'suggestedQuestionsEnabled' | 'customInstruction'
   >
 
+export type AgentChatModelOverride = NonNullable<ApiSchemas['ConversationAgent']['chatModelOverride']>
+
 export type AssistantBehaviorSettings = Pick<
   RetrievalSettings,
   'suggestedQuestionsEnabled' | 'customInstruction'
@@ -42,6 +44,7 @@ export type AssistantBehaviorSettings = Pick<
   theme: WebsiteEmbedThemeSettings
   branding?: AgentBrandingSettings
   sourceScope?: AgentSourceScope
+  chatModelOverride?: AgentChatModelOverride | null
 }
 
 export type PlatformSettings = Omit<ApiSchemas['PlatformSettingsResponse'], 'retrieval'> & {
@@ -484,6 +487,7 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
   theme: agent.theme,
   branding: agent.branding,
   sourceScope: agent.sourceScope,
+  chatModelOverride: agent.chatModelOverride,
 })
 
 export const retrievalSettingsToAssistantBehaviorSettings = (settings: RetrievalSettings): AssistantBehaviorSettings => ({

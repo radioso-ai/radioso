@@ -144,6 +144,10 @@ export class ChatAnswerPresenter {
       })),
       history: session.history,
       conversationIntentSnapshot,
+      workspaceContext: {
+        workspaceId: session.agent.workspaceId,
+        capabilityOverride: session.agent.chatModelOverride ?? undefined,
+      },
     });
 
     return {

@@ -3,8 +3,8 @@ import {
   type LlmCapabilityConfig,
   type TextGenerationClient,
 } from "./providerTypes.js";
+import { readProviderErrorBody } from "./providerErrors.js";
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
-import { ProviderHttpError } from "./providerErrors.js";
 import { parseSseEvents } from "./sse.js";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -69,7 +69,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
     );
 
     if (!response.ok) {
-      throw new ProviderHttpError({ provider: "Gemini", operation: "generate", status: response.status });
+      throw await readProviderErrorBody("Gemini", "generate", response);
     }
 
     const payload = await response.json();
@@ -93,8 +93,11 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
       },
     );
 
-    if (!response.ok || !response.body) {
-      throw new ProviderHttpError({ provider: "Gemini", operation: "stream", status: response.status });
+    if (!response.ok) {
+      throw await readProviderErrorBody("Gemini", "stream", response);
+    }
+    if (!response.body) {
+      throw new Error(`Gemini stream failed: ${response.status} (no response body)`);
     }
 
     for await (const data of parseSseEvents(response.body)) {
@@ -151,7 +154,7 @@ export class GeminiEmbeddingClient implements EmbeddingClient {
       );
 
       if (!response.ok) {
-        throw new ProviderHttpError({ provider: "Gemini", operation: "embedContent", status: response.status });
+        throw await readProviderErrorBody("Gemini", "embedContent", response);
       }
 
       const payload = (await response.json()) as {

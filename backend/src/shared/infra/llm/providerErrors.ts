@@ -8,26 +8,125 @@ type ProviderErrorShape = {
     message?: string;
     code?: string;
     type?: string;
+    status?: string;
   };
   message?: string;
 };
 
-// Thrown by provider clients that drive `fetch` directly (Gemini, Claude) so
-// downstream classifiers can read the HTTP status without parsing the message.
-// OpenAI's SDK already throws structurally compatible errors.
-export class ProviderHttpError extends Error {
+interface ProviderHttpErrorInput {
+  provider: string;
+  operation: string;
+  status: number;
+  bodyText?: string;
+  bodyJson?: Record<string, unknown>;
+}
+
+/**
+ * Structured error thrown by raw HTTP provider adapters (Gemini / Claude / generic
+ * fetch-based clients). Mirrors the OpenAI SDK's error shape so
+ * `isProviderCredentialError` can detect auth failures uniformly.
+ */
+export class ProviderHttpError extends Error implements ProviderErrorShape {
   readonly status: number;
   readonly provider: string;
   readonly operation: string;
+  readonly code?: string;
+  readonly error?: ProviderErrorShape["error"];
+  readonly bodyText: string;
 
-  constructor(input: { provider: string; operation: string; status: number }) {
-    super(`${input.provider} ${input.operation} failed with status ${input.status}`);
+  constructor(input: ProviderHttpErrorInput) {
+    const innerError = extractInnerProviderError(input.bodyJson);
+    const looksLikeAuth = isAuthFailureResponse(input.status, innerError);
+    const message = innerError?.message
+      ? `${input.provider} ${input.operation} failed: ${input.status} ${innerError.message}`
+      : `${input.provider} ${input.operation} failed with status ${input.status}`;
+    super(message);
     this.name = "ProviderHttpError";
-    this.status = input.status;
     this.provider = input.provider;
     this.operation = input.operation;
+    // Surface 401 for auth failures so existing detection (status === 401)
+    // works for vendors that report invalid API keys with a different HTTP code.
+    this.status = looksLikeAuth ? 401 : input.status;
+    if (looksLikeAuth) {
+      this.code = "invalid_api_key";
+    }
+    if (innerError) {
+      this.error = {
+        message: innerError.message,
+        code: innerError.code,
+        type: innerError.type,
+        status: innerError.status,
+      };
+    }
+    this.bodyText = input.bodyText ?? "";
   }
 }
+
+const extractInnerProviderError = (
+  bodyJson: Record<string, unknown> | undefined,
+): { message?: string; code?: string; type?: string; status?: string } | undefined => {
+  if (!bodyJson) {
+    return undefined;
+  }
+  const candidate = (bodyJson.error ?? bodyJson) as Record<string, unknown> | undefined;
+  if (!candidate || typeof candidate !== "object") {
+    return undefined;
+  }
+  return {
+    message: typeof candidate.message === "string" ? candidate.message : undefined,
+    code: typeof candidate.code === "string" ? candidate.code : undefined,
+    type: typeof candidate.type === "string" ? candidate.type : undefined,
+    status: typeof candidate.status === "string" ? candidate.status : undefined,
+  };
+};
+
+const isAuthFailureResponse = (
+  status: number,
+  innerError: { code?: string; type?: string; status?: string } | undefined,
+): boolean => {
+  if (status === 401 || status === 403) {
+    return true;
+  }
+  // Gemini reports an invalid API key with HTTP 400 + structural status
+  // `INVALID_ARGUMENT` / `UNAUTHENTICATED`. Anthropic uses `authentication_error`
+  // as the type field. Both are structural — not English copy.
+  if (status === 400 && innerError?.status === "INVALID_ARGUMENT") {
+    return true;
+  }
+  if (innerError?.status === "UNAUTHENTICATED" || innerError?.status === "PERMISSION_DENIED") {
+    return true;
+  }
+  if (innerError?.type === "authentication_error") {
+    return true;
+  }
+  if (innerError?.code === "invalid_api_key") {
+    return true;
+  }
+  return false;
+};
+
+export const readProviderErrorBody = async (
+  providerName: string,
+  operation: string,
+  response: Response,
+): Promise<ProviderHttpError> => {
+  const bodyText = await response.text().catch(() => "");
+  let bodyJson: Record<string, unknown> | undefined;
+  if (bodyText) {
+    try {
+      bodyJson = JSON.parse(bodyText) as Record<string, unknown>;
+    } catch {
+      bodyJson = undefined;
+    }
+  }
+  return new ProviderHttpError({
+    provider: providerName,
+    operation,
+    status: response.status,
+    bodyText,
+    bodyJson,
+  });
+};
 
 const getStatus = (error: ProviderErrorShape) => error.status;
 
@@ -48,7 +147,7 @@ export const isProviderCredentialError = (error: unknown): error is ProviderErro
 };
 
 export const getProviderCredentialErrorMessage = () =>
-  "The configured AI provider rejected the credentials. Update .env and restart Radioso.";
+  "The AI provider rejected the credentials. Replace the workspace API key at Settings → Credentials, or update the matching environment variable (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENAI_COMPATIBLE_API_KEY) and restart Radioso.";
 
 export const normalizeProviderCredentialError = (error: unknown) => {
   if (!isProviderCredentialError(error)) {

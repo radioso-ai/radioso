@@ -70,7 +70,24 @@ const envSchema = z.object({
   PUBLIC_CHAT_SESSION_SECRET: emptyStringToUndefined(z.string().min(16)),
   RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(16)),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
-  CONNECTOR_ENCRYPTION_KEY: emptyStringToUndefined(z.string().min(1)),
+  CONNECTOR_ENCRYPTION_KEY: emptyStringToUndefined(
+    z
+      .string()
+      .min(1)
+      .refine(
+        (value) => {
+          try {
+            return Buffer.from(value, "base64").length === 32;
+          } catch {
+            return false;
+          }
+        },
+        {
+          message:
+            "CONNECTOR_ENCRYPTION_KEY must be base64 of 32 bytes (use `openssl rand -base64 32`). The same key encrypts connector secrets and workspace provider API keys at rest.",
+        },
+      ),
+  ),
   CONNECTOR_PUBLIC_BASE_URL: emptyStringToUndefined(z.string().url()),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),

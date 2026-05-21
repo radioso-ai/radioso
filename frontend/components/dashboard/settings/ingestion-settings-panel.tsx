@@ -1,23 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Database, RefreshCw, Search, Settings2, SlidersHorizontal } from 'lucide-react'
+import { RefreshCw, Search, Settings2, SlidersHorizontal } from 'lucide-react'
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingFieldHeader, SettingTooltip } from '@/components/dashboard/settings/settings-flow'
-import { chunkingStrategyOptions, embeddingModelOptions } from '@/components/dashboard/settings/settings-options'
+import { chunkingStrategyOptions } from '@/components/dashboard/settings/settings-options'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
 import { ingestionSettingDocs } from '@/components/dashboard/settings/settings-docs'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
@@ -44,16 +34,10 @@ export function IngestionSettingsPanel({
   const [saveState, setSaveState] = useState<'idle' | 'saved' | 'saving' | 'error'>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isReprocessing, setIsReprocessing] = useState(false)
-  const [isCancelingEmbeddingModelChange, setIsCancelingEmbeddingModelChange] = useState(false)
   const [reprocessMessage, setReprocessMessage] = useState<string | null>(null)
-  const [embeddingModelChange, setEmbeddingModelChange] = useState<IngestionSettings['embeddingModel'] | null>(null)
-  const [isConfirmingEmbeddingModelChange, setIsConfirmingEmbeddingModelChange] = useState(false)
-  const [embeddingModelChangeError, setEmbeddingModelChangeError] = useState<string | null>(null)
-  const [autosaveResumeToken, setAutosaveResumeToken] = useState(0)
   const hasLoadedRef = useRef(false)
   const saveSequenceRef = useRef(0)
   const draftVersionRef = useRef(0)
-  const suspendAutosaveRef = useRef(false)
 
   useEffect(() => {
     onSaveStateChange?.({ state: saveState, message: saveError })
@@ -121,9 +105,6 @@ export function IngestionSettingsPanel({
     const saveId = saveSequenceRef.current + 1
     saveSequenceRef.current = saveId
     const timeout = window.setTimeout(async () => {
-      if (suspendAutosaveRef.current) {
-        return
-      }
       setSaveState('saving')
       setSaveError(null)
       const draftVersionAtRequestStart = draftVersionRef.current
@@ -147,7 +128,7 @@ export function IngestionSettingsPanel({
     }, 700)
 
     return () => window.clearTimeout(timeout)
-  }, [autosaveResumeToken, lastSavedSettings, lastSavedSignature, settings, settingsSignature])
+  }, [lastSavedSettings, lastSavedSignature, settings, settingsSignature])
 
   const handleReprocess = async () => {
     if (!settings) return
@@ -187,79 +168,6 @@ export function IngestionSettingsPanel({
     }
   }
 
-  const handleCancelEmbeddingModelChange = async () => {
-    if (!settings?.pendingEmbeddingModel) return
-    setIsCancelingEmbeddingModelChange(true)
-    setReprocessMessage(null)
-    try {
-      const updated = await settingsApi.cancelPendingEmbeddingModel()
-      setSettings(updated)
-      setLastSavedSettings(updated)
-      setSaveState('saved')
-      setReprocessMessage('Pending embedding model change cancelled. Reprocess existing documents to restore any chunks already written with the cancelled model.')
-    } catch (error) {
-      console.error('Failed to cancel pending embedding model change:', error)
-      setSaveState('error')
-      setSaveError('Failed to cancel pending embedding model change.')
-      setReprocessMessage('Failed to cancel pending embedding model change.')
-    } finally {
-      setIsCancelingEmbeddingModelChange(false)
-    }
-  }
-
-  const handleEmbeddingModelChangeRequest = (value: IngestionSettings['embeddingModel']) => {
-    if (!settings || value === selectedEmbeddingModel || settings.pendingEmbeddingModel || isReprocessing) return
-    if (!settings.supportedEmbeddingModels.includes(value)) return
-    suspendAutosaveRef.current = true
-    saveSequenceRef.current += 1
-    setEmbeddingModelChange(value)
-    setEmbeddingModelChangeError(null)
-  }
-
-  const handleEmbeddingModelDialogChange = (open: boolean) => {
-    if (open || isConfirmingEmbeddingModelChange) return
-    suspendAutosaveRef.current = false
-    setEmbeddingModelChange(null)
-    setEmbeddingModelChangeError(null)
-    setAutosaveResumeToken((token) => token + 1)
-  }
-
-  const handleConfirmEmbeddingModelChange = async () => {
-    if (!settings || !embeddingModelChange) return
-    setIsConfirmingEmbeddingModelChange(true)
-    setEmbeddingModelChangeError(null)
-    setReprocessMessage(null)
-    setSaveState('saving')
-    setSaveError(null)
-
-    try {
-      const draft = {
-        ...settings,
-        embeddingModel: embeddingModelChange,
-      }
-      const draftVersionAtRequestStart = draftVersionRef.current
-      const updated = await persistSettings(draft)
-      if (draftVersionRef.current === draftVersionAtRequestStart) {
-        setSettings(updated)
-        setSaveState('saved')
-      }
-      setReprocessMessage(
-        updated.pendingEmbeddingModel
-          ? 'Embedding model updated. Existing documents were queued for re-indexing.'
-          : 'Embedding model updated.',
-      )
-      setEmbeddingModelChange(null)
-    } catch (error) {
-      console.error('Failed to change embedding model and re-index documents:', error)
-      setSaveState('error')
-      setSaveError('Failed to update the embedding model.')
-      setEmbeddingModelChangeError('Failed to complete the embedding model change and start re-indexing. Check the current setting before trying again.')
-    } finally {
-      setIsConfirmingEmbeddingModelChange(false)
-      suspendAutosaveRef.current = false
-    }
-  }
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -276,16 +184,6 @@ export function IngestionSettingsPanel({
     )
   }
 
-  const selectedEmbeddingModel = settings.pendingEmbeddingModel ?? settings.embeddingModel
-  const isEmbeddingModelPending = Boolean(settings.pendingEmbeddingModel)
-  const supportedEmbeddingModels = new Set(settings.supportedEmbeddingModels)
-  const isEmbeddingModelSelectDisabled =
-    isConfirmingEmbeddingModelChange || isReprocessing || isCancelingEmbeddingModelChange || isEmbeddingModelPending
-  const selectedEmbeddingModelLabel =
-    embeddingModelOptions.find((option) => option.value === selectedEmbeddingModel)?.label ?? selectedEmbeddingModel
-  const requestedEmbeddingModelLabel = embeddingModelChange
-    ? embeddingModelOptions.find((option) => option.value === embeddingModelChange)?.label ?? embeddingModelChange
-    : null
   const isFixedWindowChunking = settings.chunkingStrategy === 'fixed_window'
   const isRecursiveTextChunking = settings.chunkingStrategy === 'recursive_text'
   const chunkingTuningLabel = isFixedWindowChunking
@@ -336,64 +234,6 @@ export function IngestionSettingsPanel({
                     <p className="text-sm text-muted-foreground">{option.description}</p>
                   </div>
                 ))}
-            </div>
-            <div className="space-y-4 border-t border-border/70 pt-4">
-              <div className="flex items-center gap-2">
-                <Database className="h-4 w-4 text-primary" />
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Embedding model
-                </p>
-              </div>
-              <SettingFieldHeader
-                htmlFor="embeddingModel"
-                label={ingestionSettingDocs.embeddingModel.label}
-                description="Vector model used for future uploads and document updates."
-                tooltip={ingestionSettingDocs.embeddingModel.details}
-              />
-              <Select
-                value={selectedEmbeddingModel}
-                onValueChange={(value) => handleEmbeddingModelChangeRequest(value as IngestionSettings['embeddingModel'])}
-                disabled={isEmbeddingModelSelectDisabled}
-              >
-                <SelectTrigger id="embeddingModel" className="w-full">
-                  <SelectValue placeholder="Select an embedding model" />
-                </SelectTrigger>
-                <SelectContent>
-                  {embeddingModelOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value} disabled={!supportedEmbeddingModels.has(option.value)}>
-                      {option.label}
-                      {!supportedEmbeddingModels.has(option.value) ? ' (not configured)' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="space-y-2">
-                {embeddingModelOptions
-                  .filter((option) => option.value === selectedEmbeddingModel)
-                  .map((option) => (
-                    <div key={option.value}>
-                      <p className="text-sm font-medium text-foreground">{option.label}</p>
-                      <p className="text-sm text-muted-foreground">{option.description}</p>
-                    </div>
-                  ))}
-                {isEmbeddingModelPending ? (
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-muted-foreground">
-                      Active model: {settings.embeddingModel}. Finish the current re-index before changing models again.
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleCancelEmbeddingModelChange}
-                      disabled={isCancelingEmbeddingModelChange}
-                    >
-                      {isCancelingEmbeddingModelChange ? <Spinner className="mr-2" /> : null}
-                      Cancel change
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
             </div>
             <div className="space-y-4 border-t border-border/70 pt-4">
               <div className="flex items-center gap-2">
@@ -558,33 +398,6 @@ export function IngestionSettingsPanel({
               </div>
             </div>
         </SettingsCard>
-        <AlertDialog open={embeddingModelChange !== null} onOpenChange={handleEmbeddingModelDialogChange}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Change embedding model?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Changing from {selectedEmbeddingModelLabel} to {requestedEmbeddingModelLabel} requires all existing
-                documents to be re-indexed. Semantic search keeps using the active model until re-indexing completes.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            {embeddingModelChangeError ? (
-              <p className="text-sm text-destructive">{embeddingModelChangeError}</p>
-            ) : null}
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={isConfirmingEmbeddingModelChange}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={isConfirmingEmbeddingModelChange}
-                onClick={(event) => {
-                  event.preventDefault()
-                  void handleConfirmEmbeddingModelChange()
-                }}
-              >
-                {isConfirmingEmbeddingModelChange ? <Spinner className="mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                Change model and re-index
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </div>
     </SettingsTabShell>
   )

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  baseIngestionSettings,
   basePlatformSettings,
   installDashboardApiMocks,
   seedDashboardStorage,
@@ -43,13 +44,11 @@ test("workspace operator stores a Claude key and picks Claude as the chat model"
   await expect(claudeRow.getByRole("button", { name: "Replace" })).toBeVisible();
 
   // Pick Claude as the chat model preference. Both provider and model are
-  // closed-set Selects sourced from the backend catalog.
-  const chatRow = page.getByTestId('llm-model-row-chat');
+  // closed-set Selects sourced from the backend catalog; selection autosaves.
   await page.locator('#provider-chat').click();
   await page.getByRole("option", { name: /Anthropic Claude/ }).click();
   await page.locator('#model-chat').click();
   await page.getByRole("option", { name: "claude-sonnet-4-6" }).click();
-  await chatRow.getByRole("button", { name: "Save" }).click();
 
   await expect.poll(() => llmModelUpdates.length).toBeGreaterThanOrEqual(1);
   expect(llmModelUpdates.at(-1)).toMatchObject({
@@ -65,4 +64,33 @@ test("workspace operator stores a Claude key and picks Claude as the chat model"
   await expect(page.getByRole("heading", { name: "Models" })).toBeVisible();
   // The Select shows the saved model id in its trigger after the catalog loads.
   await expect(page.locator('#model-chat')).toContainText("claude-sonnet-4-6");
+});
+
+test("workspace operator changes the embedding model from Providers", async ({ page }) => {
+  const ingestionSettingsUpdates: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    ingestionSettings: baseIngestionSettings(),
+    ingestionSettingsUpdates,
+  });
+
+  await page.goto(`/w/${workspaceKey}/settings?tab=providers`);
+
+  const embeddingsRow = page.getByTestId("llm-model-row-embeddings");
+  await expect(embeddingsRow).toBeVisible();
+  await expect(embeddingsRow.getByText("Workspace embedding model")).toBeVisible();
+
+  await page.locator("#model-embeddings").click();
+  await page.getByRole("option", { name: "OpenAI text-embedding-3-large" }).click();
+
+  await expect(page.getByRole("alertdialog", { name: "Change embedding model?" })).toBeVisible();
+  await page.getByRole("button", { name: "Change model and re-index" }).click();
+
+  await expect.poll(() => ingestionSettingsUpdates.length).toBeGreaterThanOrEqual(1);
+  expect(ingestionSettingsUpdates.at(-1)).toMatchObject({
+    embeddingModel: "text-embedding-3-large",
+  });
+  await expect(embeddingsRow.getByText("Pending re-index")).toBeVisible();
 });

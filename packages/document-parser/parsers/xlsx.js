@@ -14,6 +14,14 @@ const escapeMarkdownLinkText = (value) => value.replace(/[\\[\]]/g, "\\$&");
 
 const escapeMarkdownLinkTarget = (value) => value.replace(/[\\()]/g, "\\$&");
 
+const escapeMarkdownTableCell = (value) =>
+  value
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\|/g, "\\|")
+    .replace(/\n/g, "<br>")
+    .trim();
+
 const formatLinkedText = (text, hyperlink) => {
   const trimmedText = text.trim();
   const trimmedHyperlink = hyperlink.trim();
@@ -98,10 +106,8 @@ const renderSheet = (worksheet, counters) => {
     counters.cells += values.length;
     assertWithinLimit(counters.cells <= MAX_XLSX_CELLS, `XLSX exceeds the ${MAX_XLSX_CELLS} cell parsing limit.`);
 
-    const rendered = values
-      .map((cell) => renderCellValue(cell))
-      .filter(Boolean)
-      .join(" | ");
+    const renderedCells = values.map((cell) => renderCellValue(cell));
+    const rendered = renderedCells.filter(Boolean).join(" | ");
 
     if (rendered) {
       counters.outputChars += rendered.length + 1;
@@ -109,7 +115,7 @@ const renderSheet = (worksheet, counters) => {
         counters.outputChars <= MAX_XLSX_OUTPUT_CHARS,
         `XLSX extracted text exceeds the ${MAX_XLSX_OUTPUT_CHARS} character limit.`,
       );
-      renderedRows.push(rendered);
+      renderedRows.push(renderedCells);
     }
   });
 
@@ -117,8 +123,32 @@ const renderSheet = (worksheet, counters) => {
     return "";
   }
 
-  return [`## ${worksheet.name}`, ...renderedRows].join("\n");
+  return [`## ${worksheet.name}`, ...renderRows(renderedRows)].join("\n");
 };
+
+const renderRows = (rows) => {
+  const columnCount = rows.reduce((max, row) => Math.max(max, row.length), 0);
+
+  if (columnCount <= 1) {
+    return rows
+      .map((row) => row.map((cell) => cell.trim()).filter(Boolean).join(" "))
+      .filter(Boolean);
+  }
+
+  const normalizeRow = (row) =>
+    Array.from({ length: columnCount }, (_, index) => escapeMarkdownTableCell(row[index] ?? ""));
+
+  const [headerRow = [], ...bodyRows] = rows.map(normalizeRow);
+  const delimiterRow = Array.from({ length: columnCount }, () => "---");
+
+  return [
+    renderMarkdownTableRow(headerRow),
+    renderMarkdownTableRow(delimiterRow),
+    ...bodyRows.map(renderMarkdownTableRow),
+  ];
+};
+
+const renderMarkdownTableRow = (cells) => `| ${cells.join(" | ")} |`;
 
 export const parseXlsx = async ({ buffer }) => {
   enforceOfficeZipLimits(buffer);

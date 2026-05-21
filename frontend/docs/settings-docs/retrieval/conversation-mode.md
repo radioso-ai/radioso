@@ -37,4 +37,4 @@ If the available material only supports one of those lanes, the assistant shows 
 
 ### Suggestion Count
 
-When suggested questions are enabled, the assistant asks the suggestion generator for the configured number of follow-up questions. Final display can still show fewer if returned suggestions fail validation or cannot be tied back to a retrieved context.
+When suggested questions are enabled, the assistant asks the suggestion generator for the configured number of follow-up questions. Final display can still show fewer if returned suggestions cannot be tied back to a retrieved context.

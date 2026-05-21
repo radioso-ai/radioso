@@ -45,7 +45,7 @@ describe("implicit citation support", () => {
     ]);
   });
 
-  it("leaves mixed unsupported clean prose uncited when validation is disabled", () => {
+  it("leaves mixed clean prose uncited when overlap is too weak", () => {
     const result = attachImplicitCitationArtifacts(
       [
         {

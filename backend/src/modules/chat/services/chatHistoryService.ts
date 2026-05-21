@@ -454,7 +454,7 @@ const reconstructActivityTrace = (input: {
       stageId: "answer",
       kind: "answer_outcome",
       label: "Answer outcome",
-      status: input.answerOutcome?.includes("unsupported") ? "fallback" : "applied",
+      status: "applied",
       startedAt: input.startedAt,
       outputs: {
         outcome: input.answerOutcome,

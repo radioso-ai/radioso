@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import {
   AnswerPresentationService,
-  resolveSkippedValidationArtifacts,
+  resolveCitationArtifacts,
   type ChatGateway,
 } from "../../chat/retrievalSupport.js";
 import type { RetrievalPipelineService } from "./retrievalPipelineService.js";
@@ -152,7 +152,7 @@ export class RetrievalAnswerService {
 
     return {
       ...presented,
-      ...resolveSkippedValidationArtifacts(presented, normalized, evidence),
+      ...resolveCitationArtifacts(presented, normalized, evidence),
     };
   }
 

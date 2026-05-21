@@ -75,6 +75,10 @@ export const resolveImplicitCitationIndices = (
   text: string,
   citationEvidence: CitationEvidence[],
 ): number[] | undefined => {
+  // These thresholds are user-visible citation policy now, not a defensive cleanup path:
+  // require enough distinct long terms to avoid short-answer noise, require at least
+  // two shared terms and 50% overlap for basic support, and demand either stronger
+  // overlap or a clear win when multiple citations compete.
   const segmentTerms = extractSignificantTerms(text);
   if (segmentTerms.length < 3) {
     return undefined;
@@ -205,7 +209,7 @@ export const attachImplicitCitationArtifacts = (
   };
 };
 
-export const resolveSkippedValidationArtifacts = (
+export const resolveCitationArtifacts = (
   presented: PresentedAnswer,
   normalized: NormalizedPresentedAnswer,
   citationEvidence: CitationEvidence[],

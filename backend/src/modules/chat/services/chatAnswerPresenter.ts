@@ -11,7 +11,7 @@ import type { AssistantSuggestionExpansionService } from "./assistantSuggestionE
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
-import { resolveSkippedValidationArtifacts } from "./implicitCitationSupport.js";
+import { resolveCitationArtifacts } from "./implicitCitationSupport.js";
 
 export interface ChatPresentedAnswer {
   answer: string;
@@ -25,8 +25,9 @@ export interface ChatPresentedAnswer {
 const hasGroundedSuggestionSupport = (input: {
   answerOutcome: AssistantTurnOutcome;
   hasRetrievedContext: boolean;
+  hasCitedAnswer: boolean;
 }): boolean => {
-  if (!input.hasRetrievedContext) {
+  if (!input.hasRetrievedContext || !input.hasCitedAnswer) {
     return false;
   }
 
@@ -101,7 +102,7 @@ export class ChatAnswerPresenter {
       answer,
       citations: citationEvidence,
     });
-    const citationArtifacts = resolveSkippedValidationArtifacts(presented, normalized, citationEvidence);
+    const citationArtifacts = resolveCitationArtifacts(presented, normalized, citationEvidence);
 
     return {
       ...presented,
@@ -128,6 +129,10 @@ export class ChatAnswerPresenter {
       groundedAnswerSupported: hasGroundedSuggestionSupport({
         answerOutcome: presentation.answerOutcome,
         hasRetrievedContext: session.retrieval.contexts.length > 0,
+        hasCitedAnswer: Boolean(
+          (presentation.citations?.length ?? 0) > 0
+          && presentation.answerSegments?.some((segment) => (segment.citationIndices?.length ?? 0) > 0),
+        ),
       }),
       answer: presentation.answer,
       citations: presentation.citations,

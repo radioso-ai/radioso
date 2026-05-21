@@ -1,5 +1,7 @@
 # Quickstart: Remote MCP Context Server
 
+> **Amendment 2026-05-19**: `POST /v1/approvals` no longer exists. Skip any step in older docs that calls it and proceed directly to the write `tools/call`. Write tools that advertise `requiresApproval: true` should be prompted at the host (Cursor / Claude Desktop / ChatGPT); the server does not gate them.
+
 ## Prerequisites
 
 - A running Radioso backend reachable at `RADIOSO_BASE_URL`

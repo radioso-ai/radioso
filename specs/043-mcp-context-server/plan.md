@@ -3,6 +3,8 @@
 **Branch**: `borohhov/mcp-control-plane` | **Date**: 2026-04-22 | **Spec**: [spec.md](/Users/dm/conductor/workspaces/radioso/milan/specs/043-mcp-context-server/spec.md)
 **Input**: Feature specification from `/specs/043-mcp-context-server/spec.md`
 
+> **Amendment 2026-05-19**: The "approvals" control-plane foundation described in this plan has been removed. The shared store now only holds session state; the workspace policy still exposes `approvalRequiredWriteTools`, but that field drives the `requiresApproval: true` tool-list annotation rather than a server-side approval-token gate. The MCP host prompts the user.
+
 ## Summary
 
 Evolve the existing standalone MCP package into a more hostable remote product surface. The package will keep owning the Streamable HTTP server, token exchange, approvals, and audit logging, but this iteration adds three control-plane foundations: a shared-store mode for sessions and approvals, workspace-aware policy overrides, and an explicit backend capability/context contract so tool exposure is negotiated instead of guessed. The package remains inside the monorepo for now, but its server-owned concerns will stay behind package-local interfaces and directories so extraction to a separate repository is mechanical rather than architectural.

@@ -5,12 +5,15 @@ import {
   type VerifiedMcpBearerToken,
 } from "@radioso/mcp-server";
 
-import { supportedMcpTools } from "../http/routes/mcpContextRoutes.js";
+import {
+  MCP_CONTEXT_VERSION,
+  resolveSupportedMcpToolsForPrincipal,
+} from "../http/mcpContextSupport.js";
 import type { AppDependencies } from "./types.js";
 
 type McpMountDependencies = Pick<
   AppDependencies,
-  "authService" | "env" | "logger" | "workspaceRepository"
+  "accountAccessService" | "authService" | "env" | "logger" | "workspaceRepository"
 >;
 
 const splitToolList = (value: string | undefined): string[] | undefined =>
@@ -44,7 +47,6 @@ const buildMergedMcpConfig = (env: AppDependencies["env"]): PublicMcpRuntimeConf
     allowedReadTools: splitToolList(env.RADIOSO_MCP_ALLOWED_READ_TOOLS),
     allowedWriteTools: splitToolList(env.RADIOSO_MCP_ALLOWED_WRITE_TOOLS),
     approvalRequiredWriteTools: splitToolList(env.RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS),
-    approvalTtlSeconds: env.RADIOSO_MCP_APPROVAL_TTL_SECONDS,
     auditLogPath: env.RADIOSO_MCP_AUDIT_LOG_PATH,
     baseUrl: baseUrl.replace(/\/+$/, ""),
     bindHost: env.RADIOSO_MCP_BIND_HOST,
@@ -107,17 +109,26 @@ export const mountMergedMcp = (app: Express, dependencies: McpMountDependencies)
           return null;
         }
 
+        const scopedTools = await resolveSupportedMcpToolsForPrincipal(dependencies.accountAccessService, {
+          accountId: auth.accountId,
+          principal: auth.principal,
+          workspaceId: auth.workspaceId,
+        });
+
         return {
           apiVersion: "0.1.0",
           clientName: "merged-backend",
           upstreamApiToken: token,
-          mcpContextVersion: "2026-05-06",
-          supportedTools: [...supportedMcpTools],
+          mcpContextVersion: MCP_CONTEXT_VERSION,
+          supportedTools: scopedTools,
           workspaceId: workspace.id,
           workspaceName: workspace.name,
         };
       } catch (error) {
-        dependencies.logger.warn({ error }, "Merged MCP workspace token verification failed");
+        dependencies.logger.warn({
+          error,
+          errorName: error instanceof Error ? error.name : "unknown",
+        }, "Merged MCP workspace token verification failed");
         return null;
       }
     };
@@ -136,15 +147,5 @@ export const mountMergedMcp = (app: Express, dependencies: McpMountDependencies)
     }
 
     void runtime.then((mcpRuntime) => mcpRuntime.middleware(req, res, next)).catch(next);
-  });
-  app.options("/v1/approvals", (req, res) => {
-    applyMergedMcpCors(req, res, dependencies.env.RADIOSO_MCP_MERGED_CORS_ORIGINS);
-  });
-  app.post("/v1/approvals", (req, res, next: NextFunction) => {
-    if (applyMergedMcpCors(req, res, dependencies.env.RADIOSO_MCP_MERGED_CORS_ORIGINS)) {
-      return;
-    }
-
-    void runtime.then((mcpRuntime) => mcpRuntime.approvalMiddleware(req, res, next)).catch(next);
   });
 };

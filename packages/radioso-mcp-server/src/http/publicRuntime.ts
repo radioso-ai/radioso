@@ -20,7 +20,6 @@ import { createWorkspacePolicyResolver, loadWorkspacePolicyOverrides } from "../
 import { createRuntimeStoreHandle, type RuntimeStoreHandle } from "../state/runtimeStores.js";
 
 import { createExpressMcpMiddleware, type ExpressLikeMcpMiddleware } from "./expressAdapter.js";
-import { createApprovalHandler, readBearerToken } from "./authRoutes.js";
 import { createMcpRequestHandler, type McpRequestHandler } from "./requestHandler.js";
 import { createSessionMcpServerManager } from "./sessionServerManager.js";
 
@@ -60,14 +59,12 @@ export interface CreateMcpHttpRuntimeOptions {
 }
 
 export interface McpHttpRuntime {
-  approvalHandler: ExpressLikeMcpMiddleware;
   close(): Promise<void>;
   handler: McpRequestHandler;
   mode: RuntimeStoreHandle["mode"];
 }
 
 export interface McpExpressRuntime extends McpHttpRuntime {
-  approvalMiddleware: ExpressLikeMcpMiddleware;
   middleware: ExpressLikeMcpMiddleware;
 }
 
@@ -109,8 +106,6 @@ export const createMcpHttpRuntime = async ({
   const stores = runtimeStores ?? await createRuntimeStoreHandle(normalizedConfig);
   const authService = createAuthService({
     accessTokenTtlSeconds: normalizedConfig.accessTokenTtlSeconds,
-    approvalStore: stores.approvalStore,
-    approvalTtlSeconds: normalizedConfig.approvalTtlSeconds,
     auditLogger: resolvedAuditLogger,
     policy,
     resolvePolicy: (workspaceId) => workspacePolicyResolver.resolve(workspaceId),
@@ -119,7 +114,6 @@ export const createMcpHttpRuntime = async ({
     validateWorkspaceToken: async () => ({}),
   });
   const serverManager = createSessionMcpServerManager({
-    authService,
     auditLogger: resolvedAuditLogger,
     config: normalizedConfig,
     entryPoint,
@@ -160,35 +154,8 @@ export const createMcpHttpRuntime = async ({
     serverManager,
     verifyBearerToken: toSession,
   });
-  const approvalRouteHandler = createApprovalHandler({
-    auditLogger: resolvedAuditLogger,
-    authService,
-  });
 
   return {
-    async approvalHandler(req, res, next) {
-      try {
-        const accessToken = readBearerToken(req);
-        if (accessToken) {
-          const session = await toSession(accessToken);
-          if (!session) {
-            const staleSession = await stores.sessionStore.getByAccessToken(accessToken);
-            if (staleSession) {
-              await stores.sessionStore.delete(staleSession.sessionId);
-            }
-          }
-        }
-
-        await approvalRouteHandler(req, res);
-      } catch (error) {
-        if (next) {
-          next(error);
-          return;
-        }
-
-        throw error;
-      }
-    },
     async close() {
       if (!runtimeStores) {
         await stores.close();
@@ -207,7 +174,6 @@ export const createMcpExpressRuntime = async (
 
   return {
     ...runtime,
-    approvalMiddleware: runtime.approvalHandler,
     middleware: createExpressMcpMiddleware(runtime.handler, {
       fallbackHost: `${config.bindHost}:${config.bindPort}`,
     }),

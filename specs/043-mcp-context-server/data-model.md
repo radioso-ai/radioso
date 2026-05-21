@@ -1,5 +1,7 @@
 # Data Model: Remote MCP Context Server
 
+> **Amendment 2026-05-19**: The `ApprovalGrant` record and `approvalTtlSeconds` config field have been removed along with the server-side approval flow. The remaining persisted state is sessions; `approvalRequiredWriteTools` survives only as policy metadata that drives the `requiresApproval: true` tool-list annotation.
+
 ## MCP Server Config
 
 - **baseUrl**: Radioso server origin used for all upstream HTTP calls.

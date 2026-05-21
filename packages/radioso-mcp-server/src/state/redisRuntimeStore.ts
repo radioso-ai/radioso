@@ -3,7 +3,6 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { createClient } from "redis";
 
 import { isExpired } from "../auth/token.js";
-import type { ApprovalConsumeResult, ApprovalGrantRecord, ApprovalStore } from "../auth/approvalStore.js";
 import type { AccessSessionRecord, SessionStore } from "../auth/sessionStore.js";
 import { hashToken } from "../auth/token.js";
 
@@ -18,8 +17,6 @@ const ttlSecondsFromDate = (expiresAt: Date, now = new Date()): number =>
 
 const sessionIdKey = (prefix: string, sessionId: string) => `${prefix}:session:id:${sessionId}`;
 const sessionTokenKey = (prefix: string, tokenHash: string) => `${prefix}:session:token:${tokenHash}`;
-const approvalIdKey = (prefix: string, approvalId: string) => `${prefix}:approval:id:${approvalId}`;
-const approvalTokenKey = (prefix: string, tokenHash: string) => `${prefix}:approval:token:${tokenHash}`;
 
 const cloneSession = (session: AccessSessionRecord): AccessSessionRecord => ({
   ...session,
@@ -29,14 +26,6 @@ const cloneSession = (session: AccessSessionRecord): AccessSessionRecord => ({
   grantedTools: [...session.grantedTools],
   issuedAt: new Date(session.issuedAt),
   upstreamSupportedTools: session.upstreamSupportedTools ? [...session.upstreamSupportedTools] : undefined,
-});
-
-const cloneApproval = (grant: ApprovalGrantRecord): ApprovalGrantRecord => ({
-  ...grant,
-  allowedTools: [...grant.allowedTools],
-  expiresAt: new Date(grant.expiresAt),
-  issuedAt: new Date(grant.issuedAt),
-  resourceHints: grant.resourceHints ? [...grant.resourceHints] : undefined,
 });
 
 const deriveSessionEncryptionKey = (signingSecret: string): Buffer =>
@@ -111,26 +100,6 @@ const deserializeSession = (value: string, signingSecret: string): AccessSession
   };
 };
 
-const serializeApproval = (grant: ApprovalGrantRecord): string =>
-  JSON.stringify({
-    ...grant,
-    expiresAt: grant.expiresAt.toISOString(),
-    issuedAt: grant.issuedAt.toISOString(),
-  });
-
-const deserializeApproval = (value: string): ApprovalGrantRecord => {
-  const parsed = JSON.parse(value) as Omit<ApprovalGrantRecord, "expiresAt" | "issuedAt"> & {
-    expiresAt: string;
-    issuedAt: string;
-  };
-
-  return {
-    ...parsed,
-    expiresAt: new Date(parsed.expiresAt),
-    issuedAt: new Date(parsed.issuedAt),
-  };
-};
-
 const ensureConnected = async (client: { connect(): Promise<unknown>; isOpen: boolean }): Promise<void> => {
   if (!client.isOpen) {
     await client.connect();
@@ -142,7 +111,6 @@ export const createRedisClientHandle = async ({
   redisUrl,
   signingSecret,
 }: RuntimeRedisStoreOptions): Promise<{
-  approvalStore: ApprovalStore;
   close(): Promise<void>;
   sessionStore: SessionStore;
 }> => {
@@ -231,250 +199,7 @@ export const createRedisClientHandle = async ({
     },
   };
 
-  const approvalStore: ApprovalStore = {
-    async consumeByToken(approvalToken, now = new Date()) {
-      const tokenHash = hashToken(approvalToken);
-      const tokenKey = approvalTokenKey(keyPrefix, tokenHash);
-      const isolatedClient = client.duplicate();
-      await ensureConnected(isolatedClient);
-
-      try {
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          await isolatedClient.watch(tokenKey);
-          const approvalId = await isolatedClient.get(tokenKey);
-          if (!approvalId) {
-            await isolatedClient.unwatch();
-            return null;
-          }
-
-          const idKey = approvalIdKey(keyPrefix, approvalId);
-          await isolatedClient.watch(idKey);
-          const stored = await isolatedClient.get(idKey);
-          if (!stored) {
-            await isolatedClient.unwatch();
-            return null;
-          }
-
-          const grant = deserializeApproval(stored);
-          if (isExpired(grant.expiresAt, now) || grant.remainingUses === 0) {
-            const expiredResult = await isolatedClient.multi().del([tokenKey, idKey]).exec();
-            if (expiredResult !== null) {
-              return null;
-            }
-            continue;
-          }
-
-          const remainingAllowedTools = grant.allowedTools.slice(1);
-          const remainingUses =
-            typeof grant.remainingUses === "number"
-              ? Math.max(0, grant.remainingUses - 1)
-              : remainingAllowedTools.length;
-
-          if (remainingUses === 0 || remainingAllowedTools.length === 0) {
-            const result = await isolatedClient.multi().del([tokenKey, idKey]).exec();
-            if (result === null) {
-              continue;
-            }
-
-            return {
-              ...cloneApproval(grant),
-              allowedTools: remainingAllowedTools,
-              remainingUses: 0,
-            };
-          }
-
-          const updatedGrant: ApprovalGrantRecord = {
-            ...grant,
-            allowedTools: remainingAllowedTools,
-            remainingUses,
-          };
-          const ttlSeconds = ttlSecondsFromDate(updatedGrant.expiresAt, now);
-          const result = await isolatedClient.multi()
-            .set(idKey, serializeApproval(updatedGrant), { EX: ttlSeconds })
-            .exec();
-
-          if (result === null) {
-            continue;
-          }
-
-          return cloneApproval(updatedGrant);
-        }
-
-        return null;
-      } finally {
-        if (isolatedClient.isOpen) {
-          await isolatedClient.quit();
-        }
-      }
-    },
-    async consumeForSessionTool(approvalToken, input, now = new Date()): Promise<ApprovalConsumeResult> {
-      const tokenHash = hashToken(approvalToken);
-      const tokenKey = approvalTokenKey(keyPrefix, tokenHash);
-      const isolatedClient = client.duplicate();
-      await ensureConnected(isolatedClient);
-
-      try {
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          await isolatedClient.watch(tokenKey);
-          const approvalId = await isolatedClient.get(tokenKey);
-          if (!approvalId) {
-            await isolatedClient.unwatch();
-            return { status: "missing" };
-          }
-
-          const idKey = approvalIdKey(keyPrefix, approvalId);
-          await isolatedClient.watch(idKey);
-          const stored = await isolatedClient.get(idKey);
-          if (!stored) {
-            await isolatedClient.unwatch();
-            return { status: "missing" };
-          }
-
-          const grant = deserializeApproval(stored);
-          if (isExpired(grant.expiresAt, now) || grant.remainingUses === 0) {
-            const expiredResult = await isolatedClient.multi().del([tokenKey, idKey]).exec();
-            if (expiredResult !== null) {
-              return { status: "missing" };
-            }
-            continue;
-          }
-
-          if (
-            grant.sessionId !== input.sessionId &&
-            (!grant.upstreamApiTokenHash || grant.upstreamApiTokenHash !== input.upstreamApiTokenHash)
-          ) {
-            await isolatedClient.unwatch();
-            return {
-              grant: cloneApproval(grant),
-              status: "session_mismatch",
-            };
-          }
-
-          if (!grant.allowedTools.includes(input.toolName)) {
-            await isolatedClient.unwatch();
-            return {
-              grant: cloneApproval(grant),
-              status: "tool_forbidden",
-            };
-          }
-
-          const remainingAllowedTools = grant.allowedTools.filter((toolName) => toolName !== input.toolName);
-          const remainingUses =
-            typeof grant.remainingUses === "number"
-              ? Math.max(0, grant.remainingUses - 1)
-              : remainingAllowedTools.length;
-          const consumedGrant: ApprovalGrantRecord = {
-            ...grant,
-            allowedTools: remainingAllowedTools,
-            remainingUses,
-          };
-
-          if (remainingUses === 0 || remainingAllowedTools.length === 0) {
-            const result = await isolatedClient.multi().del([tokenKey, idKey]).exec();
-            if (result === null) {
-              continue;
-            }
-
-            return {
-              grant: cloneApproval(consumedGrant),
-              status: "consumed",
-            };
-          }
-
-          const ttlSeconds = ttlSecondsFromDate(consumedGrant.expiresAt, now);
-          const result = await isolatedClient.multi()
-            .set(idKey, serializeApproval(consumedGrant), { EX: ttlSeconds })
-            .exec();
-
-          if (result === null) {
-            continue;
-          }
-
-          return {
-            grant: cloneApproval(consumedGrant),
-            status: "consumed",
-          };
-        }
-
-        return { status: "missing" };
-      } finally {
-        if (isolatedClient.isOpen) {
-          await isolatedClient.quit();
-        }
-      }
-    },
-    async getByToken(approvalToken, now = new Date()) {
-      const tokenHash = hashToken(approvalToken);
-      const approvalId = await client.get(approvalTokenKey(keyPrefix, tokenHash));
-      if (!approvalId) {
-        return null;
-      }
-
-      const stored = await client.get(approvalIdKey(keyPrefix, approvalId));
-      if (!stored) {
-        return null;
-      }
-
-      const grant = deserializeApproval(stored);
-      if (isExpired(grant.expiresAt, now) || grant.remainingUses === 0) {
-        await client.del([
-          approvalTokenKey(keyPrefix, tokenHash),
-          approvalIdKey(keyPrefix, approvalId),
-        ]);
-        return null;
-      }
-
-      return cloneApproval(grant);
-    },
-    async listBySessionId(sessionId, now = new Date()) {
-      const grants: ApprovalGrantRecord[] = [];
-
-      for await (const key of client.scanIterator({ MATCH: approvalIdKey(keyPrefix, "*"), COUNT: 100 })) {
-        if (typeof key !== "string") {
-          continue;
-        }
-
-        const stored = await client.get(key);
-        if (!stored) {
-          continue;
-        }
-
-        const grant = deserializeApproval(stored);
-        if (grant.sessionId !== sessionId || isExpired(grant.expiresAt, now) || grant.remainingUses === 0) {
-          continue;
-        }
-
-        grants.push(cloneApproval(grant));
-      }
-
-      return grants;
-    },
-    async save(input) {
-      const grant: ApprovalGrantRecord = {
-        allowedTools: [...input.allowedTools],
-        approvalId: input.approvalId,
-        approvalTokenHash: hashToken(input.approvalToken),
-        expiresAt: new Date(input.expiresAt),
-        issuedAt: new Date(input.issuedAt),
-        reason: input.reason,
-        remainingUses: input.remainingUses,
-        resourceHints: input.resourceHints ? [...input.resourceHints] : undefined,
-        sessionId: input.sessionId,
-        upstreamApiTokenHash: input.upstreamApiTokenHash,
-      };
-
-      const ttlSeconds = ttlSecondsFromDate(grant.expiresAt);
-      await client.multi()
-        .set(approvalIdKey(keyPrefix, grant.approvalId), serializeApproval(grant), { EX: ttlSeconds })
-        .set(approvalTokenKey(keyPrefix, grant.approvalTokenHash), grant.approvalId, { EX: ttlSeconds })
-        .exec();
-
-      return cloneApproval(grant);
-    },
-  };
-
   return {
-    approvalStore,
     async close() {
       if (client.isOpen) {
         await client.quit();

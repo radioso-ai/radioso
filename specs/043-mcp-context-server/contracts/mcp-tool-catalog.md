@@ -2,11 +2,13 @@
 
 This feature adds a standalone remote MCP server package. The package consumes existing Radioso HTTP endpoints through a focused package-local client adapter and does not introduce a new backend MCP transport inside the Radioso app.
 
+> **Amendment 2026-05-19**: Server-side approval-token verification has been removed. Authorization is the workspace API token plus the granted MCP session capabilities; the underlying workspace permission is enforced at the upstream Radioso REST API. Tools marked "approval required" now mean `requiresApproval: true` is advertised so the MCP host (Cursor, Claude Desktop, ChatGPT) prompts the user; the server does not block execution waiting for a separate token.
+
 ## Capability Discovery Rules
 
 - Tool discovery is session-aware: callers only see tools granted by exchange-time capability policy.
 - Read and write tools are both described through MCP `tools/list`.
-- Governed write tools declare that an approval grant is required in their package-local metadata and operator docs.
+- Write tools advertise `requiresApproval: true` so MCP hosts can prompt the user before execution.
 
 ## Read tools
 
@@ -32,23 +34,23 @@ This feature adds a standalone remote MCP server package. The package consumes e
 
 - `create_document`
   - Creates a workspace document from title, content, metadata, and optional external document ID.
-  - Approval required in the remote hosted flow.
+  - Advertised with `requiresApproval: true` for host-side prompting.
 
 - `update_document`
   - Updates an existing workspace document.
-  - Approval required in the remote hosted flow.
+  - Advertised with `requiresApproval: true` for host-side prompting.
 
 - `delete_document`
   - Deletes an existing workspace document.
-  - Approval required in the remote hosted flow.
+  - Advertised with `requiresApproval: true` for host-side prompting.
 
 - `reprocess_document`
   - Queues a workspace document for reprocessing.
-  - Approval required in the remote hosted flow.
+  - Advertised with `requiresApproval: true` for host-side prompting.
 
 - `update_retrieval_settings`
   - Applies a validated partial patch by reading current retrieval settings, merging allowed fields, and submitting the merged update through the existing settings API.
-  - Approval required in the remote hosted flow.
+  - Advertised with `requiresApproval: true` for host-side prompting.
 
 ## Notes
 
@@ -56,4 +58,4 @@ This feature adds a standalone remote MCP server package. The package consumes e
 - MCP clients never receive the raw upstream Radioso token.
 - The MCP package must not access the database directly.
 - If a required backend capability is missing, the tool must fail with a structured unsupported-capability error.
-- Tool execution must be checked against both capability policy and approval state before calling upstream Radioso APIs.
+- Tool execution is checked against capability policy and the workspace permission required by the upstream Radioso route. The package no longer enforces a secondary approval token.

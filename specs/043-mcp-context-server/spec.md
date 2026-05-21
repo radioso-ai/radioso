@@ -6,6 +6,8 @@
 **Status**: Approved
 **Input**: User description: "Let's do the next 2 weeks. This needs to be a fully functional remote MCP server with code that can be extracted to a separate repo soon, not Radioso addendum. For now, let it be a monorepo with all its benefits."
 
+> **Amendment 2026-05-19**: Server-side approval-token issuance and verification have been removed. The `POST /v1/approvals` endpoint, the approval store, and the per-call `approvalToken` argument no longer exist. Authorization for a tool call is the workspace API token plus the tools the MCP session was granted at exchange time, with the underlying workspace permission enforced at the upstream Radioso REST API. Write tools still advertise `requiresApproval: true` so the MCP host (Cursor, Claude Desktop, ChatGPT) prompts the user before execution — that is the only human-in-the-loop layer this product provides for writes. Acceptance scenarios in User Story 2 that reference server-side approval gating are superseded by this amendment: callers are not denied for missing an approval token, and approval issuance does not occur. See `contracts/remote-http.md` and `contracts/mcp-tool-catalog.md` for the current contract.
+
 ## Scope Review
 
 **plan-ceo-review mode**: Selective expansion approved.

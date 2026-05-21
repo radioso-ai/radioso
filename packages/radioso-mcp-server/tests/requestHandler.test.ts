@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createAuditLogger } from "../src/audit/auditLogger.js";
 import { createAuthService } from "../src/auth/authService.js";
-import { createInMemoryApprovalStore } from "../src/auth/approvalStore.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { hashToken } from "../src/auth/token.js";
 import { createMcpRequestHandler } from "../src/http/requestHandler.js";
@@ -14,7 +13,6 @@ const config = {
   allowedReadTools: ["describe_capabilities", "list_documents"],
   allowedWriteTools: ["create_document"],
   approvalRequiredWriteTools: ["create_document"],
-  approvalTtlSeconds: 300,
   baseUrl: "http://radioso.test",
   bindHost: "127.0.0.1",
   bindPort: 0,
@@ -31,7 +29,6 @@ const createHandler = async () => {
     approvalRequiredWriteTools: config.approvalRequiredWriteTools,
   });
   const authService = createAuthService({
-    approvalStore: createInMemoryApprovalStore(),
     auditLogger,
     policy,
     sessionStore: createInMemorySessionStore(),
@@ -49,7 +46,6 @@ const createHandler = async () => {
     requestedTools: ["describe_capabilities", "list_documents"],
   });
   const serverManager = createSessionMcpServerManager({
-    authService,
     auditLogger,
     config,
   });
@@ -112,22 +108,9 @@ describe("MCP request handler", () => {
   it("supports direct workspace-token verifier sessions without a saved exchange session", async () => {
     const now = new Date("2026-05-15T12:00:00.000Z");
     const directToken = "radioso_direct";
-    const directAuthService = createAuthService({
-      approvalStore: createInMemoryApprovalStore(),
-      auditLogger: createAuditLogger([]),
-      policy: createCapabilityPolicyRegistry({
-        allowedReadTools: config.allowedReadTools,
-        allowedWriteTools: config.allowedWriteTools,
-        approvalRequiredWriteTools: config.approvalRequiredWriteTools,
-      }),
-      sessionStore: createInMemorySessionStore(),
-      signingSecret: config.signingSecret,
-      validateWorkspaceToken: async () => ({}),
-    });
     const directHandler = createMcpRequestHandler({
       config,
       serverManager: createSessionMcpServerManager({
-        authService: directAuthService,
         config,
       }),
       verifyBearerToken: vi.fn(async (token) => token === directToken

@@ -32,7 +32,6 @@ export interface RemoteHarness {
 export interface SmokeSummary {
   accessToken: string;
   answer: string;
-  approvalToken: string;
   documentId: string;
   workspaceId: string;
 }
@@ -141,7 +140,6 @@ export const startRemoteHarness = async (options: {
       ],
     allowedWriteTools: options.allowedWriteTools ?? ["create_document"],
     approvalRequiredWriteTools: options.approvalRequiredWriteTools ?? ["create_document"],
-    approvalTtlSeconds: 300,
     baseUrl: options.backendBaseUrl,
     bindHost: "127.0.0.1",
     bindPort: 0,
@@ -224,21 +222,6 @@ export const listTools = async (baseUrl: string, accessToken: string) => {
   return payload as { result: { tools: Array<{ name: string }> } };
 };
 
-export const requestApproval = async (baseUrl: string, accessToken: string, tools: string[], reason: string) => {
-  const response = await fetch(`${baseUrl}/v1/approvals`, {
-    body: JSON.stringify({ reason, tools }),
-    headers: {
-      authorization: `Bearer ${accessToken}`,
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-  const payload = await readJson(response);
-  assert.equal(response.status, 200, `Expected approval issuance to succeed, got ${response.status}: ${JSON.stringify(payload)}`);
-  assert.equal(typeof payload.approvalToken, "string");
-  return payload as { approvalToken: string };
-};
-
 export const callTool = async (
   baseUrl: string,
   accessToken: string,
@@ -310,22 +293,8 @@ export const runSingleNodeSmoke = async (logger: SmokeLogger): Promise<SmokeSumm
     assert.equal(capabilities.structuredContent.workspace.name, "Default");
     assert.deepEqual(capabilities.structuredContent.approvalRequiredTools, ["create_document"]);
 
-    logger.step("verifying approval-gated write denial");
-    const deniedCreate = await callTool(remote.baseUrl, exchange.accessToken, "create_document", {
-      content: "The MCP smoke harness proves remote context writes and reads work end to end.",
-      title: "MCP Smoke Harness",
-    });
-    assert.equal(deniedCreate.structuredContent.code, "approval_required");
-
-    logger.step("issuing approval and creating a document");
-    const approval = await requestApproval(
-      remote.baseUrl,
-      exchange.accessToken,
-      ["create_document"],
-      "Create smoke document",
-    );
+    logger.step("creating a document with the access token alone");
     const created = await callTool(remote.baseUrl, exchange.accessToken, "create_document", {
-      approvalToken: approval.approvalToken,
       content: "The MCP smoke harness proves remote context writes and reads work end to end.",
       title: "MCP Smoke Harness",
     });
@@ -370,7 +339,6 @@ export const runSingleNodeSmoke = async (logger: SmokeLogger): Promise<SmokeSumm
     return {
       accessToken: exchange.accessToken,
       answer: String(answer.structuredContent.answer),
-      approvalToken: approval.approvalToken,
       documentId: created.structuredContent.documentId,
       workspaceId: issued.workspaceId,
     };
@@ -412,30 +380,13 @@ export const runSharedStoreSmoke = async (
     logger.step("initializing on node B with shared session state");
     await initializeSession(runtimeB.baseUrl, exchange.accessToken);
 
-    logger.step("issuing approval on node A");
-    const approval = await requestApproval(
-      runtimeA.baseUrl,
-      exchange.accessToken,
-      ["create_document"],
-      "Create shared-store smoke document",
-    );
-
-    logger.step("executing a governed write on node B");
+    logger.step("creating a document on node B using the access token alone");
     const created = await callTool(runtimeB.baseUrl, exchange.accessToken, "create_document", {
-      approvalToken: approval.approvalToken,
       content: "Redis-backed MCP sessions work across multiple HTTP instances.",
       title: "Shared Store Smoke",
     });
     assert.equal(created.response.status, 200);
     assert.equal(typeof created.structuredContent.documentId, "string");
-
-    logger.step("verifying approval tokens are single-use across nodes");
-    const reusedApproval = await callTool(runtimeA.baseUrl, exchange.accessToken, "create_document", {
-      approvalToken: approval.approvalToken,
-      content: "This should fail because the approval token is single-use.",
-      title: "Should Not Exist",
-    });
-    assert.equal(reusedApproval.structuredContent.code, "approval_required");
 
     logger.step("reading and answering from the other node");
     const fetched = await callTool(runtimeA.baseUrl, exchange.accessToken, "get_document", {
@@ -453,7 +404,6 @@ export const runSharedStoreSmoke = async (
     return {
       accessToken: exchange.accessToken,
       answer: String(answer.structuredContent.answer),
-      approvalToken: approval.approvalToken,
       documentId: created.structuredContent.documentId,
       workspaceId: issued.workspaceId,
     };

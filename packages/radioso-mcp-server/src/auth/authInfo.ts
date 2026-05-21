@@ -1,7 +1,6 @@
 import type { AccessSessionRecord } from "./sessionStore.js";
 
 export interface McpRequestAuthInfo {
-  approvalGrantIds?: string[];
   approvalRequiredTools?: string[];
   clientName?: string;
   grantedTools: string[];
@@ -15,11 +14,7 @@ export interface McpRequestAuthInfo {
   workspaceName?: string;
 }
 
-export const toMcpRequestAuthInfo = (
-  session: AccessSessionRecord,
-  options: { approvalGrantIds?: string[] } = {},
-): McpRequestAuthInfo => ({
-  approvalGrantIds: options.approvalGrantIds,
+export const toMcpRequestAuthInfo = (session: AccessSessionRecord): McpRequestAuthInfo => ({
   approvalRequiredTools: session.approvalRequiredTools ? [...session.approvalRequiredTools] : undefined,
   clientName: session.clientName,
   grantedTools: [...session.grantedTools],

@@ -1,11 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import type { AuthService } from "../auth/authService.js";
 import type { SessionServerManagerDependencies } from "./sessionServerManager.js";
 import type { SessionMcpServerManager } from "./types.js";
 import { createExpressMcpMiddleware } from "./expressAdapter.js";
 import { createMcpRequestHandler } from "./requestHandler.js";
 
 export interface McpRouteDependencies extends SessionServerManagerDependencies {
+  authService: AuthService;
   serverManager: SessionMcpServerManager;
 }
 

@@ -198,8 +198,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
                 suggestions: completion.suggestions,
-                activitySummary: completion.activitySummary,
-                activityTrace: completion.activityTrace,
+                activitySummary: completion.debug?.activitySummary,
+                activityTrace: completion.debug?.activityTrace,
                 skill: completion.skill ?? message.skill,
                 status: 'complete',
               }
@@ -330,13 +330,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             conversationId: completion.conversationId,
             agentId: completion.agentId,
             agentName: completion.agentName,
-            route: completion.route,
             answer: completion.answer,
             citations: completion.citations,
             answerSegments: completion.answerSegments,
             suggestions: completion.suggestions,
-            activitySummary: completion.activitySummary,
-            activityTrace: completion.activityTrace,
+            debug: completion.debug,
           })
         }
 

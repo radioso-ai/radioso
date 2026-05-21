@@ -17,6 +17,11 @@ import type {
   WebsiteCrawlJobStatus,
 } from './api-types'
 
+const normalizeDocumentSearchResponse = (payload: DocumentSearchResponse): DocumentSearchResponse => ({
+  ...payload,
+  activityTrace: payload.activityTrace ?? payload.debug?.activityTrace,
+})
+
 export const documentsApi = {
   async createDocument(data: DocumentCreateRequest): Promise<DocumentCreateResponse> {
     return request<DocumentCreateResponse>("/document/", {
@@ -175,10 +180,11 @@ export const documentsApi = {
     query: string
     metadataFilter?: Record<string, string | number | boolean | null>
   }): Promise<DocumentSearchResponse> {
-    return requestLongRunning<DocumentSearchResponse>('/api/document/search', {
+    const payload = await requestLongRunning<DocumentSearchResponse>('/api/document/search', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, includeDebug: true }),
     }, { withApiToken: true })
+    return normalizeDocumentSearchResponse(payload)
   },
 
   async listSearchHistory(input?: { limit?: number; offset?: number; cursor?: string }): Promise<DocumentSearchHistoryListResponse> {
@@ -192,8 +198,9 @@ export const documentsApi = {
   },
 
   async getSearchHistory(searchId: string): Promise<DocumentSearchResponse> {
-    return request<DocumentSearchResponse>(`/document/search/history/${searchId}`, {
+    const payload = await request<DocumentSearchResponse>(`/document/search/history/${searchId}?includeDebug=true`, {
       method: 'GET',
     }, { withApiToken: true })
+    return normalizeDocumentSearchResponse(payload)
   }
 }

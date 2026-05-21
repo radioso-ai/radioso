@@ -2,6 +2,10 @@
 
 This guide covers the main things you are likely to do first with the SDK.
 
+## Migration Note: Debug Responses
+
+Version 0.2.0 changes assistant, retrieval search, retrieval answer, and document search diagnostics to be opt-in. Calls that previously read `route`, `activitySummary`, `activityTrace`, or retrieval answer `evidence` from top-level response fields should pass `includeDebug: true` where the endpoint supports it and read those values from `response.debug`. Normal user-facing fields such as `answer`, `citations`, and search results stay at the top level.
+
 ## Setup
 
 ```ts
@@ -163,7 +167,7 @@ const retrievalAnswer = await client.skills.get("retrieval.answer");
 console.log(retrievalAnswer.contractReferences);
 ```
 
-When you call retrieval answer through the REST contract, the response `activityTrace` includes shape diagnostics. The trace graph is the debug surface. Check `activitySummary.shapeName`, `activitySummary.queryShape`, `activitySummary.resolvedSteps`, and the `shape_selection` stage to see how the answer was retrieved.
+Retrieval answer responses are lean by default. When you need diagnostics, pass `includeDebug: true` through the REST contract. The response then includes `debug.evidence`, `debug.activityTrace`, and `debug.activitySummary`. Check `debug.activitySummary.shapeName`, `debug.activitySummary.queryShape`, `debug.activitySummary.resolvedSteps`, and the `shape_selection` stage to see how the answer was retrieved.
 
 ## Agents
 
@@ -286,7 +290,7 @@ try {
 - Public chat and website embed launch credentials are intentionally public and are not accepted as SDK API tokens.
 - Streaming chat is layered on top of the assistant chat contract, `POST /api/v1/assistant/chat`, with `stream: true`.
 - Skill discovery is exposed through `client.skills.list()` and `client.skills.get(name)`. The catalog describes current assistant, retrieval, document, and MCP contracts; it does not execute skills directly.
-- Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history. `retrieval.answer` responses expose shape and resolved-step diagnostics through `activityTrace`; callers do not select shapes directly.
+- Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history. Pass `includeDebug: true` when callers need shape, resolved-step diagnostics, or retrieval answer evidence. Callers do not select shapes directly.
 - Shared workspace settings are exposed by the REST platform settings resource, `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
 - Workspace creation, rename, and deletion are not exposed because those routes are currently session-authenticated rather than token-authenticated.
 - Run `pnpm run sync` in [`typescript-sdk/`](../typescript-sdk/) after backend API changes so the generated types stay up to date.

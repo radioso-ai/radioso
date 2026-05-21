@@ -35,13 +35,43 @@ describe("assistant contract", () => {
     expect(response.body).toMatchObject({
       conversationId: expect.any(String),
       assistantMessageId: expect.stringMatching(uuidPattern),
+      answer: expect.any(String),
+      citations: expect.any(Array),
+      answerSegments: expect.any(Array),
+    });
+    expect(response.body).not.toHaveProperty("route");
+    expect(response.body).not.toHaveProperty("activitySummary");
+    expect(response.body).not.toHaveProperty("activityTrace");
+    expect(response.body).not.toHaveProperty("debug");
+  });
+
+  it("returns assistant diagnostics only when requested", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "assistant-debug@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Assistant Debug", content: "Debug responses preserve diagnostic traces." });
+
+    const response = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set(adminSessionHeaders(session))
+      .send({
+        message: "What do debug responses preserve?",
+        stream: false,
+        includeDebug: true,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).not.toHaveProperty("route");
+    expect(response.body).not.toHaveProperty("activitySummary");
+    expect(response.body).not.toHaveProperty("activityTrace");
+    expect(response.body.debug).toMatchObject({
       route: {
         type: "retrieval",
         reason: "evidence_required",
       },
-      answer: expect.any(String),
-      citations: expect.any(Array),
-      answerSegments: expect.any(Array),
       activitySummary: expect.objectContaining({
         candidateCounts: expect.any(Object),
       }),
@@ -81,17 +111,13 @@ describe("assistant contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).not.toHaveProperty("conversationId");
     expect(response.body).toMatchObject({
-      route: {
-        type: "direct",
-        reason: "conversation_start",
-      },
       answer: expect.any(String),
       citations: [],
       answerSegments: expect.any(Array),
-      activitySummary: expect.objectContaining({
-        retrievalSkipped: true,
-      }),
     });
+    expect(response.body).not.toHaveProperty("route");
+    expect(response.body).not.toHaveProperty("activitySummary");
+    expect(response.body).not.toHaveProperty("activityTrace");
   });
 
   it("documents assistant chat in the generated schema", () => {

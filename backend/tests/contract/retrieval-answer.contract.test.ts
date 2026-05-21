@@ -36,6 +36,26 @@ describe("retrieval answer contract", () => {
           title: "Course Calendar",
         }),
       ],
+      validation: expect.objectContaining({
+        status: expect.any(String),
+      }),
+    });
+    expect(response.body).not.toHaveProperty("evidence");
+    expect(response.body).not.toHaveProperty("activitySummary");
+    expect(response.body).not.toHaveProperty("activityTrace");
+    expect(response.body).not.toHaveProperty("debug");
+    expect(response.body).not.toHaveProperty("conversationId");
+
+    const debugResponse = await request(app)
+      .post("/api/v1/retrieval/answer")
+      .set(adminSessionHeaders(session))
+      .send({
+        query: "When does the advanced workshop run?",
+        includeDebug: true,
+      });
+
+    expect(debugResponse.status).toBe(200);
+    expect(debugResponse.body.debug).toMatchObject({
       evidence: [
         expect.objectContaining({
           documentId: expect.any(String),
@@ -43,9 +63,6 @@ describe("retrieval answer contract", () => {
           content: expect.stringContaining("advanced workshop"),
         }),
       ],
-      validation: expect.objectContaining({
-        status: expect.any(String),
-      }),
       activitySummary: expect.objectContaining({
         candidateCounts: expect.any(Object),
         execution: {
@@ -77,7 +94,7 @@ describe("retrieval answer contract", () => {
         }),
       }),
     });
-    expect(response.body.activityTrace.stages).toEqual(
+    expect(debugResponse.body.debug.activityTrace.stages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           stageId: "shape_selection",
@@ -91,26 +108,84 @@ describe("retrieval answer contract", () => {
         }),
       ]),
     );
-    expect(response.body).not.toHaveProperty("conversationId");
+    expect(debugResponse.body).not.toHaveProperty("conversationId");
 
     const auditEvents = repositories.auditEventRepository.items.filter(
       (event) => event.eventType === "retrieval.answer",
     );
-    expect(auditEvents).toHaveLength(1);
-    expect(auditEvents[0]).toMatchObject({
-      eventStatus: "success",
-      workspaceId: session.workspaceId,
-      metadata: expect.objectContaining({
-        outcome: "answer",
-        execution: expect.objectContaining({ surface: "retrieval", path: "retrieval_answer" }),
-        query: "When does the advanced workshop run?",
+    expect(auditEvents).toHaveLength(2);
+    expect(auditEvents).toEqual([
+      expect.objectContaining({
+        eventStatus: "success",
+        workspaceId: session.workspaceId,
+        metadata: expect.objectContaining({
+          outcome: "answer",
+          execution: expect.objectContaining({ surface: "retrieval", path: "retrieval_answer" }),
+          query: "When does the advanced workshop run?",
+        }),
       }),
-    });
+      expect.objectContaining({
+        eventStatus: "success",
+        workspaceId: session.workspaceId,
+        metadata: expect.objectContaining({
+          outcome: "answer",
+          execution: expect.objectContaining({ surface: "retrieval", path: "retrieval_answer" }),
+          query: "When does the advanced workshop run?",
+        }),
+      }),
+    ]);
   });
 
   it("marks MCP capability-originated grounded answers separately from direct retrieval clients", async () => {
-    const { app, repositories } = createTestApp();
+    const { app } = createTestApp();
     const session = await issueTestSession(app, "retrieval-answer-mcp@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Course Calendar",
+        content: "The advanced workshop runs next month for returning students.",
+      });
+
+    const response = await request(app)
+      .post("/api/v1/retrieval/answer")
+      .set(adminSessionHeaders(session))
+      .set("x-radioso-capability-client", "mcp")
+      .send({
+        query: "When does the advanced workshop run?",
+        includeDebug: true,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      outcome: "answer",
+      debug: {
+        activitySummary: {
+          execution: {
+            surface: "mcp_capability",
+            path: "mcp_grounded_answer",
+            retrievalInvoked: true,
+          },
+        },
+        activityTrace: {
+          summary: {
+            execution: {
+              surface: "mcp_capability",
+              path: "mcp_grounded_answer",
+              retrievalInvoked: true,
+            },
+          },
+        },
+      },
+    });
+    expect(response.body).not.toHaveProperty("activitySummary");
+    expect(response.body).not.toHaveProperty("activityTrace");
+  });
+
+  it("omits MCP diagnostics from REST responses unless requested", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "retrieval-answer-mcp-default@example.com");
 
     await request(app)
       .post("/api/v1/document/")
@@ -131,19 +206,51 @@ describe("retrieval answer contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       outcome: "answer",
-      activitySummary: {
-        execution: {
-          surface: "mcp_capability",
-          path: "mcp_grounded_answer",
-          retrievalInvoked: true,
-        },
-      },
-      activityTrace: {
-        summary: {
+    });
+    expect(response.body).not.toHaveProperty("debug");
+    expect(response.body).not.toHaveProperty("activitySummary");
+    expect(response.body).not.toHaveProperty("activityTrace");
+  });
+
+  it("returns MCP capability diagnostics when requested", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "retrieval-answer-mcp-debug@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Course Calendar",
+        content: "The advanced workshop runs next month for returning students.",
+      });
+
+    const response = await request(app)
+      .post("/api/v1/retrieval/answer")
+      .set(adminSessionHeaders(session))
+      .set("x-radioso-capability-client", "mcp")
+      .send({
+        query: "When does the advanced workshop run?",
+        includeDebug: true,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      outcome: "answer",
+      debug: {
+        activitySummary: {
           execution: {
             surface: "mcp_capability",
             path: "mcp_grounded_answer",
             retrievalInvoked: true,
+          },
+        },
+        activityTrace: {
+          summary: {
+            execution: {
+              surface: "mcp_capability",
+              path: "mcp_grounded_answer",
+              retrievalInvoked: true,
+            },
           },
         },
       },

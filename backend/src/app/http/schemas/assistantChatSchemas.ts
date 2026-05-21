@@ -37,6 +37,7 @@ export const assistantChatSchema = z.object({
   message: z.string().min(1).optional(),
   startConversation: z.boolean().optional().default(false),
   stream: z.boolean().default(false),
+  includeDebug: z.boolean().optional().default(false),
   userExpectedLocale: localeHintSchema.optional(),
   inputMetadata: userInputMetadataSchema.optional(),
   sourceContext: sourceContextSchema,

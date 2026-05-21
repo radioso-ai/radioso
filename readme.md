@@ -184,7 +184,9 @@ curl -sS \
 
 Assistant conversations are listed from `GET /api/v1/history/chat` and fetched from `GET /api/v1/history/chat/<conversation-id>`. `GET /api/v1/history` returns merged chat and document-search history. Shared workspace settings are read and merge-updated through `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
 
-Assistant and retrieval responses include diagnostic metadata that identifies whether the work ran as assistant direct, assistant retrieval-backed, retrieval-only, or MCP capability traffic.
+Assistant, retrieval, and search responses are lean by default. Add `includeDebug: true` to supported request bodies when an authenticated operator or integration needs diagnostic metadata. Debug responses place routing, retrieval summaries, activity traces, and full evidence under a `debug` field instead of mixing them into the normal user-facing payload.
+
+This is a breaking response-shape change for SDK and direct REST consumers that previously read diagnostics from top-level fields. Update TypeScript SDK clients to `@radioso/typescript-sdk` 0.2.0 or later and read diagnostic data from `response.debug`.
 
 Radioso also exposes a read-only skills catalog:
 
@@ -213,6 +215,8 @@ Set `WEBSITE_CRAWLER_ENABLED=false` to disable the crawler entirely. The API hid
 ### TypeScript SDK
 
 The SDK chat facade is for agent-backed assistant chat. Use the REST retrieval endpoints above for retrieval-only search or grounded answers when you do not want assistant behavior.
+
+SDK 0.2.0 follows the lean response contract. Existing callers that read `route`, `activitySummary`, `activityTrace`, or retrieval `evidence` from top-level API responses should request debug output and read those values from `response.debug`.
 
 ```ts
 import { createRadiosoClient } from "@radioso/typescript-sdk";

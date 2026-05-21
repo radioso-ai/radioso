@@ -48,6 +48,10 @@
         "metadataFilter": {
           "type": "object",
           "additionalProperties": {}
+        },
+        "includeDebug": {
+          "type": "boolean",
+          "default": false
         }
       },
       "required": [
@@ -69,6 +73,10 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 100
+        },
+        "includeDebug": {
+          "type": "boolean",
+          "default": false
         }
       },
       "required": [

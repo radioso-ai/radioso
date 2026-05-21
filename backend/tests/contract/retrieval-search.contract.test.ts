@@ -42,6 +42,38 @@ describe("retrieval search contract", () => {
           content: expect.stringContaining("advanced workshop"),
         }),
       ],
+    });
+    expect(response.body).not.toHaveProperty("activitySummary");
+    expect(response.body).not.toHaveProperty("activityTrace");
+    expect(response.body).not.toHaveProperty("debug");
+    expect(response.body).not.toHaveProperty("conversationId");
+    expect(response.body).not.toHaveProperty("route");
+  });
+
+  it("returns retrieval search diagnostics only when requested", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "retrieval-search-debug@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Course Calendar",
+        content: "The advanced workshop runs next month for returning students.",
+        metadata: { department: "training" },
+      });
+
+    const response = await request(app)
+      .post("/api/v1/retrieval/search")
+      .set(adminSessionHeaders(session))
+      .send({
+        query: "advanced workshop next month",
+        metadataFilter: { department: "training" },
+        includeDebug: true,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.debug).toMatchObject({
       activitySummary: expect.objectContaining({
         candidateCounts: expect.any(Object),
         execution: {
@@ -61,8 +93,8 @@ describe("retrieval search contract", () => {
         }),
       }),
     });
-    expect(response.body.activityTrace.summary).not.toHaveProperty("skillDiagnostic");
-    expect(response.body.activityTrace.stages).not.toEqual(
+    expect(response.body.debug.activityTrace.summary).not.toHaveProperty("skillDiagnostic");
+    expect(response.body.debug.activityTrace.stages).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           stageId: "shape_selection",

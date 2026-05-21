@@ -112,13 +112,11 @@ export const publicChatApi = {
         assistantMessageId: payload.assistantMessageId,
         agentId: payload.agentId,
         agentName: payload.agentName,
-        route: payload.route,
         answer: payload.answer,
         citations: payload.citations,
         answerSegments: payload.answerSegments,
         suggestions: payload.suggestions,
-        activitySummary: payload.activitySummary,
-        activityTrace: payload.activityTrace,
+        debug: payload.debug,
       })
       return payload
     }

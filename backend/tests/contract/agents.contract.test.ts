@@ -345,10 +345,10 @@ describe("agents contract", () => {
     const scopedChat = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ agentId: scopedAgent.body.id, message: "Alpha meditation", stream: false })
+      .send({ agentId: scopedAgent.body.id, message: "Alpha meditation", stream: false, includeDebug: true })
       .expect(200);
 
-    expect(scopedChat.body.activitySummary.candidateCounts.final).toBe(0);
+    expect(scopedChat.body.debug.activitySummary.candidateCounts.final).toBe(0);
     expect(scopedChat.body.citations ?? []).toEqual([]);
 
     await request(app)
@@ -365,10 +365,10 @@ describe("agents contract", () => {
     const allowedChat = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ agentId: scopedAgent.body.id, message: "Alpha meditation", stream: false })
+      .send({ agentId: scopedAgent.body.id, message: "Alpha meditation", stream: false, includeDebug: true })
       .expect(200);
 
-    expect(allowedChat.body.activitySummary.candidateCounts.final).toBeGreaterThan(0);
+    expect(allowedChat.body.debug.activitySummary.candidateCounts.final).toBeGreaterThan(0);
     expect(allowedChat.body.answer).toContain("Alpha meditation retreat details.");
   });
 
@@ -407,18 +407,20 @@ describe("agents contract", () => {
     const chat = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", firstAuthorization)
-      .send({ agentId: agent.body.id, message: "hello direct", stream: false })
+      .send({ agentId: agent.body.id, message: "hello direct", stream: false, includeDebug: true })
       .expect(200);
 
     expect(chat.body).toMatchObject({
       agentId: agent.body.id,
       agentName: "Direct agent",
-      activitySummary: expect.objectContaining({
-        retrievalSkipped: true,
-      }),
+      debug: {
+        activitySummary: expect.objectContaining({
+          retrievalSkipped: true,
+        }),
+      },
     });
     expect(chat.body.citations ?? []).toEqual([]);
-    expect(chat.body.activitySummary.candidateCounts).toMatchObject({
+    expect(chat.body.debug.activitySummary.candidateCounts).toMatchObject({
       semantic: 0,
       lexical: 0,
       final: 0,
@@ -505,7 +507,7 @@ describe("agents contract", () => {
         });
         res.on("end", () => callback(null, body));
       })
-      .send({ agentId: agent.body.id, message: "who are you?", stream: true });
+      .send({ agentId: agent.body.id, message: "who are you?", stream: true, includeDebug: true });
 
     expect(response.status).toBe(200);
     expect(response.headers["content-type"]).toContain("text/event-stream");
@@ -518,9 +520,11 @@ describe("agents contract", () => {
       agentId: agent.body.id,
       agentName: "Balaram",
       answer: "I am Balaram.",
-      route: {
-        type: "direct",
-        reason: "assistant_identity",
+      debug: {
+        route: {
+          type: "direct",
+          reason: "assistant_identity",
+        },
       },
     });
   });

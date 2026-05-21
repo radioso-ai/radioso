@@ -106,21 +106,20 @@ export const streamChatEvents = async (
       citations = completionPayload.citations
       answerSegments = completionPayload.answerSegments
       suggestions = completionPayload.suggestions
-      activitySummary = completionPayload.activitySummary
-      activityTrace = completionPayload.activityTrace
-      route = completionPayload.route
+      activitySummary = completionPayload.debug?.activitySummary
+      activityTrace = completionPayload.debug?.activityTrace
+      route = completionPayload.debug?.route
       handlers.onDone?.({
         conversationId,
         assistantMessageId,
         agentId,
         agentName,
-        route,
         answer,
         citations,
         answerSegments,
         suggestions,
-        activitySummary,
-        activityTrace,
+        debug: completionPayload.debug,
+        skill: completionPayload.skill,
       })
       return
     }
@@ -180,7 +179,7 @@ export const streamChatEvents = async (
     citations,
     answerSegments,
     suggestions,
-    activitySummary: activitySummary!,
-    activityTrace: activityTrace!,
+    ...(activitySummary ? { activitySummary } : {}),
+    ...(activityTrace ? { activityTrace } : {}),
   }
 }

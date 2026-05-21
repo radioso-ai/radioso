@@ -4,6 +4,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
+import { includeDebugQuerySchema, presentDocumentSearchResponse } from "../presenters/documentSearchPresenter.js";
 import {
   collectionPageQuerySchema,
   conversationParamsSchema,
@@ -115,8 +116,13 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         next(badRequest("Invalid request params", parsedParams.error.flatten()));
         return;
       }
+      const parsedQuery = includeDebugQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
       const search = await dependencies.documentSearchHistoryService.getHistory(workspaceId, parsedParams.data.searchId);
-      res.status(200).json(search);
+      res.status(200).json(presentDocumentSearchResponse(search, parsedQuery.data.includeDebug));
     } catch (error) {
       next(error);
     }

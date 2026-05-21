@@ -11,6 +11,7 @@ import { badRequest, notFound, payloadTooLarge } from "../../../shared/domain/er
 import { createWebsiteCrawlerRoutes } from "../../../modules/websiteCrawler/routes.js";
 import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/domain/sourceConstants.js";
+import { includeDebugQuerySchema, presentDocumentSearchResponse } from "../presenters/documentSearchPresenter.js";
 
 const MAX_DOCUMENT_LIST_LIMIT = 100;
 
@@ -96,6 +97,7 @@ export const documentParamsSchema = z.object({
 export const documentSearchSchema = z.object({
   query: z.string().trim().min(1),
   metadataFilter: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+  includeDebug: z.boolean().optional().default(false),
 });
 
 export const documentSearchHistoryParamsSchema = z.object({
@@ -436,7 +438,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         metadataFilter: req.body.metadataFilter,
         executionSurface,
       });
-      res.status(200).json(result);
+      res.status(200).json(presentDocumentSearchResponse(result, req.body.includeDebug));
     } catch (error) {
       next(error);
     }
@@ -461,8 +463,13 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { searchId } = documentSearchHistoryParamsSchema.parse(req.params);
+      const parsedQuery = includeDebugQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
       const search = await dependencies.documentSearchHistoryService.getHistory(workspaceId, searchId);
-      res.status(200).json(search);
+      res.status(200).json(presentDocumentSearchResponse(search, parsedQuery.data.includeDebug));
     } catch (error) {
       next(error);
     }

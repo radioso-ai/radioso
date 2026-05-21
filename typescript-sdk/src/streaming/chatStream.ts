@@ -79,20 +79,16 @@ const parseFrame = (frame: string): RadiosoChatStreamEvent | null => {
   if (
     eventName === "done" &&
     typeof payload.conversationId === "string" &&
-    typeof payload.answer === "string" &&
-    typeof payload.route === "object" &&
-    payload.route !== null
+    typeof payload.answer === "string"
   ) {
     return {
       type: "done",
       conversationId: payload.conversationId,
-      route: payload.route,
       answer: payload.answer,
+      ...(typeof payload.debug === "object" && payload.debug !== null ? { debug: payload.debug } : {}),
       ...(Array.isArray(payload.citations) ? { citations: payload.citations } : {}),
       ...(Array.isArray(payload.answerSegments) ? { answerSegments: payload.answerSegments } : {}),
       ...(Array.isArray(payload.suggestions) ? { suggestions: payload.suggestions } : {}),
-      activitySummary: payload.activitySummary,
-      activityTrace: payload.activityTrace,
     } as RadiosoChatStreamEvent;
   }
 

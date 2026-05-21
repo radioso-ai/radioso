@@ -7,6 +7,8 @@ type RelaxedAssistantChatResponse<T> = T extends unknown
       assistantMessageId?: string
       route?: ApiSchemas['AssistantRoute']
       suggestions?: ChatSuggestion[]
+      activitySummary?: ActivitySummary
+      activityTrace?: ActivityTrace
     }
   : never
 type PlatformRetrievalSettings = Omit<ApiSchemas['PlatformRetrievalSettingsSection'], 'metadataRules'> & {
@@ -105,7 +107,9 @@ export interface DocumentChunkDetail {
 
 export type DocumentSearchAction = ApiSchemas['DocumentSearchAction']
 export type DocumentSearchResult = ApiSchemas['DocumentSearchResult']
-export type DocumentSearchResponse = ApiSchemas['DocumentSearchResponse']
+export type DocumentSearchResponse = ApiSchemas['DocumentSearchResponse'] & {
+  activityTrace?: ActivityTrace
+}
 export type DocumentSearchHistoryEntry = ApiSchemas['DocumentSearchHistoryEntry']
 export type DocumentSearchHistoryListResponse = ApiSchemas['DocumentSearchHistoryListResponse']
 export type WebsiteCrawlJobStatus = ApiSchemas['WebsiteCrawlJobStatus']
@@ -121,6 +125,7 @@ export interface ChatRequest {
   bootstrapGreeting?: boolean
   userExpectedLocale?: string
   inputMetadata?: ChatUserInputMetadata
+  includeDebug?: boolean
 }
 
 export type WebsiteEmbedPageContext = NonNullable<ApiSchemas['PublicChatSessionRequest']['pageContext']>
@@ -138,6 +143,7 @@ export const toAssistantChatPayload = (data: ChatRequest) => ({
   message: data.query,
   startConversation: data.bootstrapGreeting,
   stream: data.stream,
+  includeDebug: data.includeDebug,
   userExpectedLocale: data.userExpectedLocale,
   inputMetadata: data.inputMetadata,
   sourceContext: {
@@ -273,13 +279,11 @@ export interface ChatStreamCompletion {
   agentName?: string
   conversationId?: string
   assistantMessageId?: string
-  route?: ChatResponse['route']
   answer?: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
-  activitySummary?: ActivitySummary
-  activityTrace?: ActivityTrace
+  debug?: ChatResponse['debug']
   skill?: SkillStreamPayload
 }
 

@@ -2245,6 +2245,8 @@ export interface components {
             metadataFilter?: {
                 [key: string]: string | number | boolean | null;
             };
+            /** @default false */
+            includeDebug: boolean;
         };
         WebsiteCrawlRequest: {
             /** Format: uri */
@@ -2512,7 +2514,9 @@ export interface components {
             query: string;
             resultCount: number;
             results: components["schemas"]["DocumentSearchResult"][];
-            activityTrace?: components["schemas"]["ActivityTrace"];
+            debug?: {
+                activityTrace: components["schemas"]["ActivityTrace"];
+            };
         };
         RetrievalSearchRequest: {
             query: string;
@@ -2520,6 +2524,8 @@ export interface components {
                 [key: string]: unknown;
             };
             topK?: number;
+            /** @default false */
+            includeDebug: boolean;
         };
         RetrievalAnswerRequest: {
             query: string;
@@ -2531,6 +2537,8 @@ export interface components {
             metadataFilter?: {
                 [key: string]: unknown;
             };
+            /** @default false */
+            includeDebug: boolean;
         };
         RetrievalSearchEvidence: {
             /** Format: uuid */
@@ -2552,8 +2560,10 @@ export interface components {
                 lexical: string;
             };
             results: components["schemas"]["RetrievalSearchEvidence"][];
-            activitySummary: components["schemas"]["ActivitySummary"];
-            activityTrace: components["schemas"]["ActivityTrace"];
+            debug?: {
+                activitySummary: components["schemas"]["ActivitySummary"];
+                activityTrace: components["schemas"]["ActivityTrace"];
+            };
         };
         RetrievalAnswerEvidence: {
             /** Format: uuid */
@@ -2571,13 +2581,15 @@ export interface components {
             outcome: "answer";
             answer: string;
             citations?: components["schemas"]["Citation"][];
-            evidence: components["schemas"]["RetrievalAnswerEvidence"][];
             validation: {
                 /** @enum {string} */
                 status: "supported" | "unsupported" | "not_checked";
             };
-            activitySummary: components["schemas"]["ActivitySummary"];
-            activityTrace: components["schemas"]["ActivityTrace"];
+            debug?: {
+                evidence: components["schemas"]["RetrievalAnswerEvidence"][];
+                activitySummary: components["schemas"]["ActivitySummary"];
+                activityTrace: components["schemas"]["ActivityTrace"];
+            };
         };
         RetrievalAnswerUnsupported: {
             /** @enum {string} */
@@ -2798,6 +2810,11 @@ export interface components {
             routeReason: "assistant_identity" | "conversation_start" | "evidence_required" | "social_only";
             retrievalInvoked: boolean;
         };
+        AssistantChatDebug: {
+            route: components["schemas"]["AssistantRoute"];
+            activitySummary: components["schemas"]["ActivitySummary"];
+            activityTrace: components["schemas"]["ActivityTrace"];
+        };
         ChatResponse: {
             /** Format: uuid */
             conversationId: string;
@@ -2810,9 +2827,7 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
-            activitySummary: components["schemas"]["ActivitySummary"];
-            activityTrace: components["schemas"]["ActivityTrace"];
-            route: components["schemas"]["AssistantRoute"];
+            debug?: components["schemas"]["AssistantChatDebug"];
         };
         /** @description Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn. */
         ChatBootstrapResponse: {
@@ -2825,9 +2840,7 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
-            activitySummary: components["schemas"]["ActivitySummary"];
-            activityTrace: components["schemas"]["ActivityTrace"];
-            route: components["schemas"]["AssistantRoute"];
+            debug?: components["schemas"]["AssistantChatDebug"];
         };
         AssistantChatResponse: components["schemas"]["ChatResponse"] | components["schemas"]["ChatBootstrapResponse"];
         /** @description `message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`. */
@@ -2841,6 +2854,8 @@ export interface components {
             startConversation: boolean;
             /** @default false */
             stream: boolean;
+            /** @default false */
+            includeDebug: boolean;
             userExpectedLocale?: string;
             inputMetadata?: {
                 /** @enum {string} */
@@ -5251,7 +5266,9 @@ export interface operations {
     };
     getDocumentSearchHistory: {
         parameters: {
-            query?: never;
+            query?: {
+                includeDebug?: boolean;
+            };
             header?: never;
             path: {
                 searchId: string;
@@ -6397,7 +6414,9 @@ export interface operations {
     };
     getHistorySearch: {
         parameters: {
-            query?: never;
+            query?: {
+                includeDebug?: boolean;
+            };
             header?: never;
             path: {
                 searchId: string;

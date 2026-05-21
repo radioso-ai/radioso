@@ -482,8 +482,8 @@ export function AnonymousChatProvider({
                 content: completion.answer ?? message.content,
                 answerSegments: stripPublicAnswerSegmentCitations(completion.answerSegments),
                 suggestions: stripPublicSuggestionCitations(completion.suggestions),
-                activitySummary: completion.activitySummary,
-                activityTrace: completion.activityTrace,
+                activitySummary: completion.debug?.activitySummary,
+                activityTrace: completion.debug?.activityTrace,
                 skill: completion.skill ?? message.skill,
                 status: 'complete' as const,
               }
@@ -655,7 +655,7 @@ export function AnonymousChatProvider({
             citations: completion.citations,
             answerSegments: completion.answerSegments,
             suggestions: completion.suggestions,
-            activitySummary: completion.activitySummary,
+            debug: completion.debug,
           })
         }
       } catch (error) {

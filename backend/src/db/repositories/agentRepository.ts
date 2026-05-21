@@ -206,7 +206,6 @@ const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegist
 
 export interface AgentRepositoryPort {
   create(workspaceId: string, input: AgentInput): Promise<AgentRecord>;
-  findById(agentId: string): Promise<AgentRecord | null>;
   findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<AgentRecord | null>;
   findDefaultByWorkspaceId(workspaceId: string): Promise<AgentRecord | null>;
   findByAnonymousChatToken(token: string): Promise<AgentRecord | null>;
@@ -266,14 +265,6 @@ export class AgentRepository implements AgentRepositoryPort {
         source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
       }, this.surfaceExtensions);
     });
-  }
-
-  async findById(agentId: string): Promise<AgentRecord | null> {
-    const row = await this.database.queryOptional<AgentRow>(
-      `SELECT ${agentColumns} FROM agents WHERE id = $1`,
-      [agentId],
-    );
-    return row ? mapAgent(row, this.surfaceExtensions) : null;
   }
 
   async findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<AgentRecord | null> {

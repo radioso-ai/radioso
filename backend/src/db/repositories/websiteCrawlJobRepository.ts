@@ -124,6 +124,7 @@ export interface WebsiteCrawlJobRepositoryPort {
     checkpoint?: WebsiteCrawlCheckpoint;
   }): Promise<WebsiteCrawlJobRecord>;
   findById(jobId: string): Promise<WebsiteCrawlJobRecord | null>;
+  findByIdAndWorkspaceId(jobId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord | null>;
   listForWorkspace(workspaceId: string, options?: WebsiteCrawlJobListOptions): Promise<WebsiteCrawlJobRecord[]>;
   deleteById(jobId: string, workspaceId: string): Promise<boolean>;
   cancelBySourceId(sourceId: string, workspaceId: string): Promise<number>;
@@ -186,6 +187,18 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
        FROM website_crawl_jobs
        WHERE id = $1`,
       [jobId],
+    );
+
+    return row ? mapWebsiteCrawlJob(row) : null;
+  }
+
+  async findByIdAndWorkspaceId(jobId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord | null> {
+    const [row] = await this.database.query<WebsiteCrawlJobRow>(
+      `SELECT ${selectWebsiteCrawlJob}
+       FROM website_crawl_jobs
+       WHERE id = $1
+         AND workspace_id = $2`,
+      [jobId, workspaceId],
     );
 
     return row ? mapWebsiteCrawlJob(row) : null;

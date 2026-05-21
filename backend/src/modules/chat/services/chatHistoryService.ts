@@ -16,7 +16,7 @@ import {
   type ActivitySummary,
   type ActivityTrace,
 } from "../../retrieval/public.js";
-import type { AssistantTurnOutcome, HiddenSupportEvidence, ValidationDisposition } from "./answerSupportValidationTypes.js";
+import type { AssistantTurnOutcome } from "./assistantTurnOutcomeTypes.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
 import {
@@ -53,24 +53,6 @@ export interface ChatConversationTurnDebug {
   stream: boolean;
   citationCount: number;
   answerOutcome?: AssistantTurnOutcome;
-  validation?: {
-    ran: boolean;
-    answerModified: boolean;
-    unsupportedSegmentCount: number;
-    substantiveUnsupportedSegmentCount: number;
-    supportedSegmentCount: number;
-    nonSubstantiveSegmentCount: number;
-    hiddenSupportUsed?: boolean;
-    hiddenSupportKindsUsed?: HiddenSupportEvidence["kind"][];
-    segmentResults: Array<{
-      originalText: string;
-      text: string;
-      disposition: ValidationDisposition;
-      replacementApplied: boolean;
-      reason: string;
-      citationIndices?: number[];
-    }>;
-  };
   activitySummary?: ActivitySummary;
   activityTrace?: ActivityTrace;
   errorMessage?: string | null;
@@ -179,24 +161,6 @@ interface ChatAuditMetadata {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: unknown[];
-  validation?: {
-    ran?: boolean;
-    answerModified?: boolean;
-    unsupportedSegmentCount?: number;
-    substantiveUnsupportedSegmentCount?: number;
-    supportedSegmentCount?: number;
-    nonSubstantiveSegmentCount?: number;
-    hiddenSupportUsed?: boolean;
-    hiddenSupportKindsUsed?: unknown[];
-    segmentResults?: Array<{
-      originalText?: string;
-      text?: string;
-      disposition?: ValidationDisposition;
-      replacementApplied?: boolean;
-      reason?: string;
-      citationIndices?: number[];
-    }>;
-  };
   retrieval?: unknown;
   activityTrace?: ActivityTrace;
   errorMessage?: string;
@@ -760,39 +724,6 @@ export class ChatHistoryService {
         stream: Boolean(metadata.stream),
         citationCount: typeof metadata.citationCount === "number" ? metadata.citationCount : 0,
         answerOutcome: metadata.answerOutcome,
-        validation: metadata.validation
-          ? {
-              ran: Boolean(metadata.validation.ran),
-              answerModified: Boolean(metadata.validation.answerModified),
-              unsupportedSegmentCount:
-                typeof metadata.validation.unsupportedSegmentCount === "number" ? metadata.validation.unsupportedSegmentCount : 0,
-              substantiveUnsupportedSegmentCount:
-                typeof metadata.validation.substantiveUnsupportedSegmentCount === "number"
-                  ? metadata.validation.substantiveUnsupportedSegmentCount
-                  : 0,
-              supportedSegmentCount:
-                typeof metadata.validation.supportedSegmentCount === "number" ? metadata.validation.supportedSegmentCount : 0,
-              nonSubstantiveSegmentCount:
-                typeof metadata.validation.nonSubstantiveSegmentCount === "number" ? metadata.validation.nonSubstantiveSegmentCount : 0,
-              hiddenSupportUsed: metadata.validation.hiddenSupportUsed === true ? true : undefined,
-              hiddenSupportKindsUsed: Array.isArray(metadata.validation.hiddenSupportKindsUsed)
-                ? metadata.validation.hiddenSupportKindsUsed.filter(
-                    (kind): kind is HiddenSupportEvidence["kind"] =>
-                      kind === "assistant_name",
-                  )
-                : undefined,
-              segmentResults: (metadata.validation.segmentResults ?? []).map((segment) => ({
-                originalText: typeof segment.originalText === "string" ? segment.originalText : "",
-                text: typeof segment.text === "string" ? segment.text : "",
-                disposition: (segment.disposition ?? "non_substantive") as ValidationDisposition,
-                replacementApplied: Boolean(segment.replacementApplied),
-                reason: typeof segment.reason === "string" ? segment.reason : "unknown",
-                citationIndices: Array.isArray(segment.citationIndices)
-                  ? segment.citationIndices.filter((value): value is number => typeof value === "number")
-                  : undefined,
-              })),
-            }
-          : undefined,
         activitySummary,
         activityTrace,
         errorMessage: metadata.errorMessage ?? null,

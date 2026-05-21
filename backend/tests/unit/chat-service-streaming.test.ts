@@ -16,12 +16,6 @@ import {
 } from "../support/fakes.js";
 
 const groundedMissResponseComposer: GroundedMissResponseComposer = {
-  async composeUnsupportedWithContext(input) {
-    const title = input.contexts[0]?.title;
-    return title
-      ? `I couldn't verify that from your workspace documents, but I did find related material in "${title}" if you'd like to explore that instead.`
-      : "I couldn't verify that from your workspace documents, but I did find related material if you'd like to explore that instead.";
-  },
   async composeNoContext() {
     return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
   },
@@ -826,7 +820,7 @@ describe("chat service streaming", () => {
     }));
   });
 
-  it("streams clean prose and attaches final citations when support validation is disabled", async () => {
+  it("streams clean prose and attaches final citations", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -862,7 +856,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportValidationEnabled: false,
           },
         };
       },
@@ -915,16 +908,6 @@ describe("chat service streaming", () => {
           citationIndices: [0],
         },
       ],
-      activityTrace: expect.objectContaining({
-        stages: expect.arrayContaining([
-          expect.objectContaining({
-            stageId: "answer",
-            outputs: expect.objectContaining({
-              validationRan: false,
-            }),
-          }),
-        ]),
-      }),
     }));
   });
 
@@ -1354,9 +1337,6 @@ describe("chat service streaming", () => {
       },
     };
     const fallbackComposer: GroundedMissResponseComposer = {
-      async composeUnsupportedWithContext() {
-        return "unused";
-      },
       async composeNoContext(input) {
         observedNoContextInstruction = input.answerInstructionBlock ?? "";
         return "I can't tell from that. I can help you choose and book Ananda courses.";
@@ -1744,10 +1724,10 @@ describe("chat service streaming", () => {
         type: "retrieval",
         reason: "evidence_required",
       },
-      answer: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
-      citations: [],
+      answer: "full answer",
+      citations: undefined,
       answerSegments: [
-        { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
+        { text: "full answer" },
       ],
       suggestions: undefined,
       activitySummary: expect.objectContaining({
@@ -1773,7 +1753,7 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
+      content: "full answer",
     });
   });
 
@@ -1960,7 +1940,7 @@ describe("chat service streaming", () => {
     expect(persisted.at(-1)?.content).toBe(response.answer);
   });
 
-  it("keeps unsupported substantive content when answer support validation is disabled", async () => {
+  it("keeps generated substantive content outside cited segments", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -1996,7 +1976,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportValidationEnabled: false,
           },
         };
       },
@@ -2036,17 +2015,11 @@ describe("chat service streaming", () => {
       },
     ]);
     expect(response.activityTrace.stages).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        stageId: "answer",
-        outputs: expect.objectContaining({
-          validationRan: false,
-          answerModified: false,
-        }),
-      }),
+      expect.objectContaining({ stageId: "answer" }),
     ]));
   });
 
-  it("still plans grounded suggestions when answer support validation is disabled", async () => {
+  it("plans grounded suggestions for cited answers", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2082,7 +2055,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportValidationEnabled: false,
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 2,
           },
@@ -2132,12 +2104,7 @@ describe("chat service streaming", () => {
       }),
     ]);
     expect(response.activityTrace.stages).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        stageId: "answer",
-        outputs: expect.objectContaining({
-          validationRan: false,
-        }),
-      }),
+      expect.objectContaining({ stageId: "answer" }),
     ]));
   });
 
@@ -2401,7 +2368,7 @@ describe("chat service streaming", () => {
               stageId: "answer",
               kind: "answer_outcome",
               outputs: expect.objectContaining({
-                outcome: "grounded_degraded_unsupported_segments",
+                outcome: "grounded_success",
               }),
             }),
           ]),
@@ -3534,7 +3501,7 @@ describe("chat service streaming", () => {
     ]);
   });
 
-  it("preserves grounded markdown links while dropping uncited wrappers during strict validation", async () => {
+  it("preserves grounded markdown links while attaching implicit citations", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -3579,7 +3546,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "Read more here: [Guide](https://example.com/guide)";
+        return "Read more here: [Guide](https://example.com/guide). It explains testing and parsing content for users.";
       },
       async *streamAnswer() {
         yield "";
@@ -3608,170 +3575,12 @@ describe("chat service streaming", () => {
     expect(response.answerSegments).toEqual([
       {
         text: expect.any(String),
+      },
+      {
+        text: "It explains testing and parsing content for users.",
         citationIndices: [0],
       },
     ]);
-  });
-
-  it("preserves model-authored unsupported notices marked for strict validation", async () => {
-    const conversationRepository = new InMemoryConversationRepository();
-    const messageRepository = new InMemoryMessageRepository();
-    const auditService = createAuditService();
-    const retrievalPipeline = {
-      async run() {
-        return {
-          rewrittenQuery: "precio del curso",
-          contexts: [
-            {
-              chunkId: "chunk-1",
-              documentId: "doc-1",
-              title: "Programa",
-              content: "El programa describe el curso, pero no incluye precios.",
-            },
-          ],
-          prompt: "prompt text",
-          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Programa" }],
-          diagnostics: {
-            rewriteStatus: "skipped",
-            rerankStatus: "skipped",
-            originalCandidateCount: 1,
-            rewrittenCandidateCount: 0,
-            lexicalCandidateCount: 1,
-            normalizedCandidateCount: 1,
-            finalContextCount: 1,
-            candidateFallbackApplied: false,
-            fallbackApplied: false,
-            parsedQuery: {
-              semanticQuery: "precio curso",
-              lexicalQuery: "precio curso",
-              constraints: [],
-            },
-          },
-          responseSettings: {
-            citationDisplayEnabled: true,
-          },
-        };
-      },
-    } as const;
-    const chatGateway: ChatGateway = {
-      async answer() {
-        return "No puedo verificar ese precio con lo que tengo aquí.<<UNSUPPORTED>>";
-      },
-      async *streamAnswer() {
-        yield "";
-      },
-    };
-    const fallbackComposer: GroundedMissResponseComposer = {
-      async composeUnsupportedWithContext() {
-        return 'I could not verify that from your workspace documents.';
-      },
-      async composeNoContext() {
-        return 'I could not find supporting material.';
-      },
-    };
-    const service = new ChatService(
-      conversationRepository,
-      messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
-      chatGateway,
-      auditService,
-      fallbackComposer,
-    );
-
-    const response = await service.answer({
-      workspaceId: "workspace-1",
-      query: "Cual es el precio del curso?",
-      stream: false,
-      userExpectedLocale: "es-ES",
-    });
-
-    expect(response.answer).toEqual(expect.any(String));
-    expect(response.answer.length).toBeGreaterThan(0);
-    expect(response.citations).toEqual([]);
-    expect(response.answerSegments).toEqual([
-      {
-        text: expect.any(String),
-      },
-    ]);
-  });
-
-  it("strips unsupported notice markers from streamed chunks and final answers", async () => {
-    const conversationRepository = new InMemoryConversationRepository();
-    const messageRepository = new InMemoryMessageRepository();
-    const auditService = createAuditService();
-    const retrievalPipeline = {
-      async run() {
-        return {
-          rewrittenQuery: "precio del curso",
-          contexts: [
-            {
-              chunkId: "chunk-1",
-              documentId: "doc-1",
-              title: "Programa",
-              content: "El programa describe el curso, pero no incluye precios.",
-            },
-          ],
-          prompt: "prompt text",
-          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Programa" }],
-          diagnostics: {
-            rewriteStatus: "skipped",
-            rerankStatus: "skipped",
-            originalCandidateCount: 1,
-            rewrittenCandidateCount: 0,
-            lexicalCandidateCount: 1,
-            normalizedCandidateCount: 1,
-            finalContextCount: 1,
-            candidateFallbackApplied: false,
-            fallbackApplied: false,
-            parsedQuery: {
-              semanticQuery: "precio curso",
-              lexicalQuery: "precio curso",
-              constraints: [],
-            },
-          },
-          responseSettings: {
-            citationDisplayEnabled: true,
-          },
-        };
-      },
-    } as const;
-    const chatGateway: ChatGateway = {
-      async answer() {
-        return "unused";
-      },
-      async *streamAnswer() {
-        yield "No puedo verificar ese precio";
-        yield " con lo que tengo aquí.<<UNSUP";
-        yield "PORTED>>";
-      },
-    };
-    const service = new ChatService(
-      conversationRepository,
-      messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
-      chatGateway,
-      auditService,
-      groundedMissResponseComposer,
-    );
-
-    const events: ChatStreamEvent[] = [];
-    for await (const event of service.streamAnswer({
-      workspaceId: "workspace-1",
-      query: "Cual es el precio del curso?",
-      stream: true,
-      userExpectedLocale: "es-ES",
-    })) {
-      events.push(event);
-    }
-
-    expect(events.filter((event) => event.type === "chunk")).toEqual([
-      { type: "chunk", text: expect.any(String) },
-      { type: "chunk", text: expect.any(String) },
-    ]);
-    expect(events.at(-1)).toEqual(expect.objectContaining({
-      type: "done",
-      answer: expect.any(String),
-    }));
   });
 
   it("routes social-only turns through the non-retrieval path and keeps answer instructions available", async () => {
@@ -3914,9 +3723,6 @@ describe("chat service streaming", () => {
       },
     };
     const fallbackComposer: GroundedMissResponseComposer = {
-      async composeUnsupportedWithContext() {
-        return "unused";
-      },
       async composeNoContext() {
         groundedMissCalls += 1;
         return "I couldn't find supporting material.";

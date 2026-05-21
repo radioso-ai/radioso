@@ -2117,7 +2117,7 @@ describe("chat retrieval domain", () => {
     ]);
   });
 
-  it("attaches implicit citations for retrieval answers when support validation is disabled", async () => {
+  it("attaches implicit citations for clean retrieval answers", async () => {
     const service = new RetrievalAnswerService({
       retrievalPipeline: {
         async interpret() {
@@ -2166,7 +2166,6 @@ describe("chat retrieval domain", () => {
             },
             responseSettings: {
               citationDisplayEnabled: true,
-              answerSupportValidationEnabled: false,
             },
           };
         },

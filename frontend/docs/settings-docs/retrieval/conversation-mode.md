@@ -8,7 +8,7 @@ Choose how broadly the assistant responds in customer-facing chat.
 
 Conversation mode is an assistant behavior setting. It controls how much the assistant expands after answering the current question.
 
-It does not relax grounding. When the assistant uses retrieval, support validation still decides what happens when the model writes something the retrieved material does not support.
+It does not relax grounding. When the assistant uses retrieval, answers are still generated from retrieved evidence and shown with citation metadata when available.
 
 ### Factual
 

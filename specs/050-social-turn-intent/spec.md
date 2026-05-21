@@ -167,7 +167,7 @@ audit metadata.
 - **Boundary Rule**: Query interpretation owns model-level turn intent
   classification and the decision about whether retrieval is required. Chat
   orchestration coordinates the chosen path but does not own intent rules.
-  Answer-support validation remains the post-generation trust boundary for
+  Citation attachment remains the post-generation presentation boundary for
   retrieval-backed answers only. Persistence remains responsible for storing the
   resulting diagnostics. Answer-shaping instructions that normally inform final
   answer prompts remain accessible to both retrieval-backed and non-retrieval
@@ -223,9 +223,8 @@ audit metadata.
   primary.
 - **FR-011**: Malformed, missing, or otherwise unusable intent output MUST fail
   safely without introducing hard-coded keyword or regex fallback routing.
-- **FR-012**: Strict answer-support validation MUST NOT replace social-only or
-  assistant-identity-only replies with the unsupported-answer grounded-miss
-  fallback.
+- **FR-012**: Social-only or assistant-identity-only replies MUST NOT be
+  replaced with a grounded-miss fallback.
 - **FR-013**: User-facing acknowledgement, invitation, and assistant-identity
   reply text MUST remain model-generated rather than hard-coded application
   strings.

@@ -7,6 +7,14 @@ import type { ChatIntakeProviderPort } from "../../src/modules/chat/services/cha
 import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
 describe("public chat session contract", () => {
+  const decodePublicSessionPayload = (token: string): Record<string, unknown> => {
+    const [encodedPayload] = token.split(".");
+    if (!encodedPayload) {
+      throw new Error("Missing public session payload");
+    }
+    return JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as Record<string, unknown>;
+  };
+
   const enableWebsiteEmbed = async (app: any, session: { cookie: string; workspaceId: string }) => {
     const response = await request(app)
       .put("/api/v1/settings/general")
@@ -190,6 +198,29 @@ describe("public chat session contract", () => {
       publicSessionId: expect.any(String),
       publicSessionToken: expect.any(String),
     });
+  });
+
+  it("does not embed the raw launch token in the signed public session payload", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-session-token-binding@example.com");
+
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+      });
+
+    const anonymousChatToken = new URL(settings.body.anonymousChatUrl).pathname.split("/").at(-1) as string;
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${anonymousChatToken}/sessions`)
+      .send({ channel: "anonymous_link" });
+
+    expect(response.status).toBe(200);
+    const decodedPayload = decodePublicSessionPayload(response.body.publicSessionToken);
+    expect(decodedPayload.publicChatToken).toBeUndefined();
+    expect(decodedPayload.launchTokenBinding).toEqual(expect.any(String));
+    expect(JSON.stringify(decodedPayload)).not.toContain(anonymousChatToken);
   });
 
   it("rate limits repeated public session exchanges before session issuance", async () => {

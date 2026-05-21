@@ -170,6 +170,23 @@ describe("resolveAnonymousSession", () => {
     expect(res.locals.anonymousSessionId).toBe("4fb60e22-8373-44a0-8059-2b587a82a205");
   });
 
+  it("rejects a signed public session when the route token does not match its launch-token binding", async () => {
+    const workspace = await workspaceRepository.create("account-1", "Test");
+    await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "current-token-1234567890", 10);
+
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
+    const { req, res, next, getError } = createMockReqRes(
+      { token: "current-token-1234567890" },
+      {},
+      issueSessionHeader(workspace.id, "67acb0c8-caad-4a1b-9fef-70cbca3f7d12"),
+    );
+
+    await middleware(req, res, next);
+
+    expect(getError()).toBeDefined();
+    expect((getError() as any).statusCode).toBe(404);
+  });
+
   it("generates a new session id and sets cookie when none exists", async () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);

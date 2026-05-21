@@ -11,7 +11,10 @@ import {
   resolveAssistantDisplayName,
 } from "../../../modules/settings/contracts/assistantBootstrap.js";
 import { defaultWebsiteEmbedSettings } from "../../../modules/settings/contracts/websiteEmbed.js";
-import { verifyPublicChatSession } from "../../../modules/settings/contracts/publicChatSession.js";
+import {
+  publicChatSessionMatchesLaunchToken,
+  verifyPublicChatSession,
+} from "../../../modules/settings/contracts/publicChatSession.js";
 
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 export const ANONYMOUS_SESSION_HEADER = "x-radioso-anonymous-session";
@@ -198,7 +201,7 @@ export const resolveAnonymousSession = (
         agent &&
         publicSession.workspaceId === workspace.id &&
         agent.workspaceId === workspace.id &&
-        publicSession.publicChatToken === token &&
+        publicChatSessionMatchesLaunchToken(publicSession, publicChatSessionSecret, token) &&
         publicSessionMatchesAgentSurface(agent, token, publicSession.sourceChannel),
       );
 

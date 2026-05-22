@@ -46,11 +46,15 @@ interface ConnectorConflictFailure {
 
 interface ConnectorSyncSuccess {
   kind: "success";
-  ingested: number;
+  accepted: true;
 }
 
 interface ConnectorUnsupportedFailure {
   kind: "unsupported";
+}
+
+interface ConnectorAlreadyRunningFailure {
+  kind: "already_running";
 }
 
 export type ConnectorMutationResult =
@@ -61,7 +65,8 @@ export type ConnectorMutationResult =
 export type ConnectorSyncResult =
   | ConnectorSyncSuccess
   | ConnectorValidationFailure
-  | ConnectorUnsupportedFailure;
+  | ConnectorUnsupportedFailure
+  | ConnectorAlreadyRunningFailure;
 
 const SECRET_ENCRYPTION_REQUIRED_STATUS = "secret_encryption_required";
 const SECRET_ROTATION_REQUIRED_STATUS = "secret_rotation_required";
@@ -198,7 +203,7 @@ export class ConnectorRegistry {
       maskedConfig = this.maskSecrets(row.config_data, schema);
       errorStatus = errorStatus ?? secretStatus;
     }
-    const syncState = await this.getSyncState(db, workspaceId, connectorId, errorStatus);
+    const syncState = await this.getSyncState(db, workspaceId, connectorId);
 
     return {
       id: plugin.id,
@@ -218,15 +223,18 @@ export class ConnectorRegistry {
     db: ConnectorDatabasePort,
     workspaceId: string,
     connectorId: string,
-    errorStatus: string | null,
   ): Promise<ConnectorDetail["syncState"]> {
     const [row] = await db.query<{
       backfill_completed_at: string | null;
+      sync_requested_at: string | null;
+      sync_started_at: string | null;
       last_run_at: string | null;
       last_modified_at: string | null;
       last_ingested_count: number | null;
     }>(
       `SELECT backfill_completed_at::text AS backfill_completed_at,
+              sync_requested_at::text AS sync_requested_at,
+              sync_started_at::text AS sync_started_at,
               last_run_at::text AS last_run_at,
               last_modified_at::text AS last_modified_at,
               last_ingested_count
@@ -237,10 +245,11 @@ export class ConnectorRegistry {
 
     return {
       backfillCompletedAt: row?.backfill_completed_at ?? null,
+      syncRequestedAt: row?.sync_requested_at ?? null,
+      syncStartedAt: row?.sync_started_at ?? null,
       lastRunAt: row?.last_run_at ?? null,
       lastModifiedAt: row?.last_modified_at ?? null,
       lastIngestedCount: row?.last_ingested_count ?? null,
-      lastErrorStatus: errorStatus,
     };
   }
 
@@ -480,7 +489,10 @@ export class ConnectorRegistry {
     }
 
     const result = await plugin.syncNow({ workspaceId });
-    return { kind: "success", ingested: result.ingested };
+    if (result.alreadyRunning) {
+      return { kind: "already_running" };
+    }
+    return { kind: "success", accepted: true };
   }
 
   async getDecryptedConfig(

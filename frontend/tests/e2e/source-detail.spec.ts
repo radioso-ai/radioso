@@ -155,10 +155,11 @@ test("connector sources reopen setup with sync status and manual sync", async ({
     webhookUrl: "https://radioso.test/api/connectors/wordpress/workspace-1/webhook",
     syncState: {
       backfillCompletedAt: nowIso,
+      syncRequestedAt: null,
+      syncStartedAt: null,
       lastRunAt: nowIso,
       lastModifiedAt: nowIso,
       lastIngestedCount: 4,
-      lastErrorStatus: null,
     },
   };
 
@@ -203,9 +204,9 @@ test("connector sources reopen setup with sync status and manual sync", async ({
 
   await page.route("**/backend/api/v1/connectors/wordpress/sync", async (route) => {
     await route.fulfill({
-      status: 200,
+      status: 202,
       contentType: "application/json",
-      body: JSON.stringify({ ingested: 4 }),
+      body: JSON.stringify({ accepted: true }),
     });
   });
 
@@ -220,5 +221,5 @@ test("connector sources reopen setup with sync status and manual sync", async ({
   await expect(dialog.getByText("4 documents")).toBeVisible();
 
   await page.getByRole("button", { name: "Sync now" }).click();
-  await expect(page.getByText("Sync completed. 4 documents were ingested.")).toBeVisible();
+  await expect(page.getByText("Sync started.")).toBeVisible();
 });

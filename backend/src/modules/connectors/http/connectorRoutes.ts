@@ -181,11 +181,15 @@ export const createConnectorRoutes = (dependencies: ConnectorRouteDependencies):
         res.status(409).json({ error: "Manual sync unsupported" });
         return;
       }
+      if (result.kind === "already_running") {
+        res.status(409).json({ error: "Connector sync already running" });
+        return;
+      }
       if (result.kind === "validation_error") {
         res.status(400).json(validationError(result.issues));
         return;
       }
-      res.status(200).json({ ingested: result.ingested });
+      res.status(202).json({ accepted: result.accepted });
     } catch (error) {
       next(error);
     }

@@ -78,6 +78,8 @@ const formatDate = (value: string | null) => {
 
 const connectorIdFromExternalId = (externalId: string | null): string | null => {
   if (!externalId) return null
+  // Connector source external ids use "<connectorId>:<resourceId>" so resource
+  // ids can contain their own colon characters, as WordPress site URLs do.
   const separatorIndex = externalId.indexOf(':')
   if (separatorIndex <= 0) return null
   return externalId.slice(0, separatorIndex)

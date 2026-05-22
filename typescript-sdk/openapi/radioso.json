@@ -7516,6 +7516,18 @@
                       "null"
                     ]
                   },
+                  "syncRequestedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "syncStartedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
                   "lastRunAt": {
                     "type": [
                       "string",
@@ -7533,20 +7545,15 @@
                       "integer",
                       "null"
                     ]
-                  },
-                  "lastErrorStatus": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
                   }
                 },
                 "required": [
                   "backfillCompletedAt",
+                  "syncRequestedAt",
+                  "syncStartedAt",
                   "lastRunAt",
                   "lastModifiedAt",
-                  "lastIngestedCount",
-                  "lastErrorStatus"
+                  "lastIngestedCount"
                 ]
               }
             },
@@ -7562,13 +7569,12 @@
       "ConnectorSyncResponse": {
         "type": "object",
         "properties": {
-          "ingested": {
-            "type": "integer",
-            "minimum": 0
+          "accepted": {
+            "type": "boolean"
           }
         },
         "required": [
-          "ingested"
+          "accepted"
         ]
       },
       "ConnectorConfigUpdateRequest": {
@@ -12993,8 +12999,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Connector sync completed",
+          "202": {
+            "description": "Connector sync accepted",
             "content": {
               "application/json": {
                 "schema": {
@@ -13045,16 +13051,26 @@
             }
           },
           "409": {
-            "description": "Manual sync unsupported",
+            "description": "Manual sync unsupported or already running",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "error": {
-                      "type": "string",
-                      "enum": [
-                        "Manual sync unsupported"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "Manual sync unsupported"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "Connector sync already running"
+                          ]
+                        }
                       ]
                     }
                   },

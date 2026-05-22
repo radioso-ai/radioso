@@ -113,6 +113,7 @@ describe("WordpressConnector.onEnable", () => {
     config?: Record<string, string>;
     ensureSource?: ConnectorIngestionPort["ensureSource"];
     setErrorStatus?: ConnectorStatePort["setErrorStatus"];
+    db?: ConnectorContext["db"];
   }) => {
     const connector = new WordpressConnector();
     const ensureSource = overrides?.ensureSource ?? vi.fn(async () => ({ id: "src-1" }));
@@ -127,7 +128,7 @@ describe("WordpressConnector.onEnable", () => {
       ensureSource,
     } as unknown as ConnectorIngestionPort;
     const context: ConnectorContext = {
-      db: { query: async () => [] },
+      db: overrides?.db ?? { query: async () => [] },
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       chat: { answer: async () => ({ conversationId: "c-1", answer: "" }) },
       state,
@@ -168,16 +169,99 @@ describe("WordpressConnector.onEnable", () => {
     expect(ensureSource).toHaveBeenCalled();
   });
 
-  it("persists a sync failure status when manual sync cannot read WordPress", async () => {
+  it("persists a sync failure status when backfill cannot read WordPress", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => {
       throw new Error("offline");
     }));
     const setErrorStatus = vi.fn(async () => {});
-    const { connector, context } = buildEnabledConnector({ setErrorStatus });
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("RETURNING sync_lock_token")) {
+        return [{ sync_lock_token: "lock-1" }];
+      }
+      return [];
+    });
+    const db: ConnectorContext["db"] = {
+      query: query as ConnectorContext["db"]["query"],
+    };
+    const { connector, context } = buildEnabledConnector({ setErrorStatus, db });
     await connector.initialize(context);
 
-    await expect(connector.syncNow!({ workspaceId: "ws-1" })).rejects.toThrow("offline");
+    await expect(connector.backfillNow("ws-1")).rejects.toThrow("offline");
 
     expect(setErrorStatus).toHaveBeenCalledWith("ws-1", "sync_failed");
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("WHERE connector_id = $1 AND workspace_id = $2 AND sync_lock_token = $3"),
+      ["wordpress", "ws-1", "lock-1"],
+    );
+  });
+
+  it("clears only sync-owned failure status after a successful backfill", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: new Headers({ "x-wp-totalpages": "1" }),
+      json: async () => [],
+    })));
+    const setErrorStatus = vi.fn(async () => {});
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("RETURNING sync_lock_token")) {
+        return [{ sync_lock_token: "lock-1" }];
+      }
+      return [];
+    });
+    const db: ConnectorContext["db"] = {
+      query: query as ConnectorContext["db"]["query"],
+    };
+    const { connector, context } = buildEnabledConnector({ setErrorStatus, db });
+    await connector.initialize(context);
+
+    await expect(connector.backfillNow("ws-1")).resolves.toEqual({ ingested: 0 });
+
+    expect(setErrorStatus).not.toHaveBeenCalledWith("ws-1", null);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("WHERE workspace_id = $1 AND connector_id = $2 AND error_status = $3"),
+      ["ws-1", "wordpress", "sync_failed"],
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("WHERE connector_sync_state.sync_lock_token = $5"),
+      ["wordpress", "ws-1", null, 0, "lock-1"],
+    );
+  });
+
+  it("accepts manual sync by recording a durable backfill request", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("RETURNING workspace_id")) {
+        return [{ workspace_id: "ws-1" }];
+      }
+      return [];
+    });
+    const db: ConnectorContext["db"] = {
+      query: query as ConnectorContext["db"]["query"],
+    };
+    const { connector, context } = buildEnabledConnector({ db });
+    await connector.initialize(context);
+
+    await expect(connector.syncNow!({ workspaceId: "ws-1" })).resolves.toEqual({
+      accepted: true,
+    });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("sync_requested_at"),
+      ["wordpress", "ws-1", expect.any(String)],
+    );
+  });
+
+  it("reports an already-running manual sync without starting another backfill", async () => {
+    const query = vi.fn(async () => []);
+    const db: ConnectorContext["db"] = {
+      query: query as ConnectorContext["db"]["query"],
+    };
+    const { connector, context } = buildEnabledConnector({ db });
+    await connector.initialize(context);
+
+    await expect(connector.syncNow!({ workspaceId: "ws-1" })).resolves.toEqual({
+      accepted: false,
+      alreadyRunning: true,
+    });
   });
 });

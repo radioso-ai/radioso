@@ -238,8 +238,8 @@ export const registerConnectorsPaths = (
       params: schemas.connectorIdPathParamsSchema,
     },
     responses: {
-      200: {
-        description: "Connector sync completed",
+      202: {
+        description: "Connector sync accepted",
         content: {
           "application/json": {
             schema: schemas.ConnectorSyncResponseSchema,
@@ -271,10 +271,15 @@ export const registerConnectorsPaths = (
         },
       },
       409: {
-        description: "Manual sync unsupported",
+        description: "Manual sync unsupported or already running",
         content: {
           "application/json": {
-            schema: z.object({ error: z.literal("Manual sync unsupported") }),
+            schema: z.object({
+              error: z.union([
+                z.literal("Manual sync unsupported"),
+                z.literal("Connector sync already running"),
+              ]),
+            }),
           },
         },
       },

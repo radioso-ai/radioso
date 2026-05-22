@@ -3207,14 +3207,15 @@ export interface components {
             webhookUrl: string;
             syncState: {
                 backfillCompletedAt: string | null;
+                syncRequestedAt: string | null;
+                syncStartedAt: string | null;
                 lastRunAt: string | null;
                 lastModifiedAt: string | null;
                 lastIngestedCount: number | null;
-                lastErrorStatus: string | null;
             };
         };
         ConnectorSyncResponse: {
-            ingested: number;
+            accepted: boolean;
         };
         ConnectorConfigUpdateRequest: {
             config: {
@@ -7017,8 +7018,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Connector sync completed */
-            200: {
+            /** @description Connector sync accepted */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7056,15 +7057,14 @@ export interface operations {
                     };
                 };
             };
-            /** @description Manual sync unsupported */
+            /** @description Manual sync unsupported or already running */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        /** @enum {string} */
-                        error: "Manual sync unsupported";
+                        error: "Manual sync unsupported" | "Connector sync already running";
                     };
                 };
             };

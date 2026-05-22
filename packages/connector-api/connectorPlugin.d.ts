@@ -164,9 +164,10 @@ export interface ConnectorPlugin {
   /**
    * Optional manual sync entry point for admin UI actions. Connector plugins
    * decide what "sync now" means for their upstream, but it should be safe to
-   * call repeatedly and return the count of documents ingested or updated.
+   * call repeatedly. Implementations should accept work quickly and report an
+   * already-running sync instead of starting overlapping work.
    */
-  syncNow?(input: { workspaceId: string }): Promise<{ ingested: number }>;
+  syncNow?(input: { workspaceId: string }): Promise<{ accepted: boolean; alreadyRunning?: boolean }>;
 }
 
 export interface ConnectorValidationIssue {
@@ -189,10 +190,11 @@ export interface ConnectorSummary {
 
 export interface ConnectorSyncState {
   backfillCompletedAt: string | null;
+  syncRequestedAt: string | null;
+  syncStartedAt: string | null;
   lastRunAt: string | null;
   lastModifiedAt: string | null;
   lastIngestedCount: number | null;
-  lastErrorStatus: string | null;
 }
 
 /**

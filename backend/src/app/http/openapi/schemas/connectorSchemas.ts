@@ -42,10 +42,11 @@ export const registerConnectorSchemas = (registry: OpenAPIRegistry, schemas: Ope
       webhookUrl: z.string().url(),
       syncState: z.object({
         backfillCompletedAt: z.string().nullable(),
+        syncRequestedAt: z.string().nullable(),
+        syncStartedAt: z.string().nullable(),
         lastRunAt: z.string().nullable(),
         lastModifiedAt: z.string().nullable(),
         lastIngestedCount: z.number().int().nullable(),
-        lastErrorStatus: z.string().nullable(),
       }),
     }),
   );
@@ -53,7 +54,7 @@ export const registerConnectorSchemas = (registry: OpenAPIRegistry, schemas: Ope
   const ConnectorSyncResponseSchema = registry.register(
     "ConnectorSyncResponse",
     z.object({
-      ingested: z.number().int().nonnegative(),
+      accepted: z.boolean(),
     }),
   );
 

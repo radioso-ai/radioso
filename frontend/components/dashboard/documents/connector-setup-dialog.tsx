@@ -158,8 +158,14 @@ function WordpressSetupGuide() {
 function ConnectorSyncStatus({ detail }: { detail: ConnectorDetail }) {
   const state = detail.syncState
   const status = (() => {
-    if (state.lastErrorStatus) return { label: state.lastErrorStatus, className: 'text-destructive' }
+    if (detail.errorStatus) return { label: detail.errorStatus, className: 'text-destructive' }
     if (!detail.enabled) return { label: 'Disabled', className: 'text-muted-foreground' }
+    if (state.syncRequestedAt) {
+      return { label: 'Sync queued', className: 'text-muted-foreground' }
+    }
+    if (state.syncStartedAt) {
+      return { label: 'Sync running', className: 'text-muted-foreground' }
+    }
     if (!state.backfillCompletedAt && state.lastRunAt) {
       return { label: 'Backfill started', className: 'text-muted-foreground' }
     }
@@ -218,10 +224,13 @@ export function ConnectorSetupDialog({
   const [pollingOpen, setPollingOpen] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
-  const applyDetail = useCallback((next: ConnectorDetail, options?: { resetForm?: boolean }) => {
+  const applyDetail = useCallback((next: ConnectorDetail, options?: { resetForm?: boolean; autoExpand?: boolean }) => {
     setDetail(next)
     if (options?.resetForm ?? true) {
       setValues(initialFormValues(next))
+    }
+    if (options?.autoExpand === false) {
+      return
     }
     // Auto-expand the polling section if it's already configured so the user
     // can see why those fields are populated.
@@ -238,7 +247,7 @@ export function ConnectorSetupDialog({
     }
   }, [])
 
-  const loadDetail = useCallback(async (options?: { resetForm?: boolean }) => {
+  const loadDetail = useCallback(async (options?: { resetForm?: boolean; autoExpand?: boolean }) => {
     const next = await connectorsApi.get(connectorId)
     applyDetail(next, options)
   }, [applyDetail, connectorId])
@@ -266,8 +275,9 @@ export function ConnectorSetupDialog({
   useEffect(() => {
     if (!open) return
     const interval = window.setInterval(() => {
-      void loadDetail({ resetForm: false }).catch(() => {})
-    }, 5000)
+      if (document.hidden) return
+      void loadDetail({ resetForm: false, autoExpand: false }).catch(() => {})
+    }, 15000)
     return () => window.clearInterval(interval)
   }, [loadDetail, open])
 
@@ -363,13 +373,11 @@ export function ConnectorSetupDialog({
     setSuccessMessage(null)
 
     try {
-      const result = await connectorsApi.sync(detail.id)
-      await loadDetail({ resetForm: false })
-      setSuccessMessage(
-        `Sync completed. ${result.ingested} ${result.ingested === 1 ? 'document was' : 'documents were'} ingested.`,
-      )
+      await connectorsApi.sync(detail.id)
+      await loadDetail({ resetForm: false, autoExpand: false })
+      setSuccessMessage('Sync started.')
     } catch (error) {
-      await loadDetail({ resetForm: false }).catch(() => {})
+      await loadDetail({ resetForm: false, autoExpand: false }).catch(() => {})
       setFormError(getApiErrorMessage(error, 'Failed to run sync.'))
     } finally {
       setIsSyncing(false)
@@ -636,7 +644,14 @@ export function ConnectorSetupDialog({
                     type="button"
                     variant="outline"
                     onClick={() => void handleSyncNow()}
-                    disabled={!detail.enabled || isSaving || isTogglingEnabled || isSyncing}
+                    disabled={
+                      !detail.enabled ||
+                      Boolean(detail.syncState.syncRequestedAt) ||
+                      Boolean(detail.syncState.syncStartedAt) ||
+                      isSaving ||
+                      isTogglingEnabled ||
+                      isSyncing
+                    }
                   >
                     {isSyncing ? (
                       <Spinner className="mr-2" />

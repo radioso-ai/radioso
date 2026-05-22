@@ -56,7 +56,7 @@ describe("connector management contract", () => {
       getWebhookPath: () => "/api/connectors/manual/:workspaceId/webhook",
       uniqueChannelField: () => null,
       validateConfig: () => [],
-      syncNow: async () => ({ ingested: 2 }),
+      syncNow: async () => ({ accepted: true }),
     });
 
     const connectorDb = dependencies.connectorDb as unknown as {
@@ -77,6 +77,9 @@ describe("connector management contract", () => {
       workspaceId,
       connectorId: "manual",
       backfillCompletedAt: new Date("2026-05-20T12:00:00.000Z"),
+      syncRequestedAt: null,
+      syncStartedAt: null,
+      syncLockToken: null,
       lastRunAt: new Date("2026-05-21T12:00:00.000Z"),
       lastModifiedAt: new Date("2026-05-19T12:00:00.000Z"),
       lastIngestedCount: 4,
@@ -91,10 +94,10 @@ describe("connector management contract", () => {
 
     expect(detail.status).toBe(200);
     expect(detail.body.syncState).toEqual(expect.objectContaining({
-      lastErrorStatus: "last_error",
       lastIngestedCount: 4,
     }));
-    expect(sync.status).toBe(200);
-    expect(sync.body).toEqual({ ingested: 2 });
+    expect(detail.body.errorStatus).toBe("last_error");
+    expect(sync.status).toBe(202);
+    expect(sync.body).toEqual({ accepted: true });
   });
 });

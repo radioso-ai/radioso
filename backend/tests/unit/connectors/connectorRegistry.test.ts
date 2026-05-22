@@ -150,6 +150,8 @@ describe("ConnectorRegistry", () => {
         if (sql.includes("FROM connector_sync_state")) {
           return [{
             backfill_completed_at: "2026-05-20T12:00:00.000Z",
+            sync_requested_at: "2026-05-21T11:58:00.000Z",
+            sync_started_at: "2026-05-21T11:59:00.000Z",
             last_run_at: "2026-05-21T12:00:00.000Z",
             last_modified_at: "2026-05-19T12:00:00.000Z",
             last_ingested_count: 7,
@@ -163,15 +165,16 @@ describe("ConnectorRegistry", () => {
 
     expect(detail?.syncState).toEqual({
       backfillCompletedAt: "2026-05-20T12:00:00.000Z",
+      syncRequestedAt: "2026-05-21T11:58:00.000Z",
+      syncStartedAt: "2026-05-21T11:59:00.000Z",
       lastRunAt: "2026-05-21T12:00:00.000Z",
       lastModifiedAt: "2026-05-19T12:00:00.000Z",
       lastIngestedCount: 7,
-      lastErrorStatus: "last_failed",
     });
   });
 
   it("runs a plugin sync action through the connector contract", async () => {
-    const syncNow = vi.fn(async () => ({ ingested: 3 }));
+    const syncNow = vi.fn(async () => ({ accepted: true }));
     const registry = new ConnectorRegistry();
     registry.register(createFakePlugin({ syncNow }));
 
@@ -181,8 +184,22 @@ describe("ConnectorRegistry", () => {
 
     const result = await registry.syncConnector(db as any, "workspace-1", "fake");
 
-    expect(result).toEqual({ kind: "success", ingested: 3 });
+    expect(result).toEqual({ kind: "success", accepted: true });
     expect(syncNow).toHaveBeenCalledWith({ workspaceId: "workspace-1" });
+  });
+
+  it("reports an already-running sync without starting more work", async () => {
+    const syncNow = vi.fn(async () => ({ accepted: false, alreadyRunning: true }));
+    const registry = new ConnectorRegistry();
+    registry.register(createFakePlugin({ syncNow }));
+
+    const db = {
+      query: vi.fn(async <T>() => [{ enabled: true, config_data: { channel_id: "alpha" } } as T]),
+    };
+
+    await expect(registry.syncConnector(db as any, "workspace-1", "fake")).resolves.toEqual({
+      kind: "already_running",
+    });
   });
 
   it("reports unsupported sync actions without calling connector-specific code", async () => {

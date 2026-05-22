@@ -5048,6 +5048,14 @@ components:
                   type:
                     - string
                     - "null"
+                syncRequestedAt:
+                  type:
+                    - string
+                    - "null"
+                syncStartedAt:
+                  type:
+                    - string
+                    - "null"
                 lastRunAt:
                   type:
                     - string
@@ -5060,16 +5068,13 @@ components:
                   type:
                     - integer
                     - "null"
-                lastErrorStatus:
-                  type:
-                    - string
-                    - "null"
               required:
                 - backfillCompletedAt
+                - syncRequestedAt
+                - syncStartedAt
                 - lastRunAt
                 - lastModifiedAt
                 - lastIngestedCount
-                - lastErrorStatus
           required:
             - schema
             - config
@@ -5078,11 +5083,10 @@ components:
     ConnectorSyncResponse:
       type: object
       properties:
-        ingested:
-          type: integer
-          minimum: 0
+        accepted:
+          type: boolean
       required:
-        - ingested
+        - accepted
     ConnectorConfigUpdateRequest:
       type: object
       properties:
@@ -8336,8 +8340,8 @@ paths:
           name: connectorId
           in: path
       responses:
-        "200":
-          description: Connector sync completed
+        "202":
+          description: Connector sync accepted
           content:
             application/json:
               schema:
@@ -8368,16 +8372,20 @@ paths:
                 required:
                   - error
         "409":
-          description: Manual sync unsupported
+          description: Manual sync unsupported or already running
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   error:
-                    type: string
-                    enum:
-                      - Manual sync unsupported
+                    anyOf:
+                      - type: string
+                        enum:
+                          - Manual sync unsupported
+                      - type: string
+                        enum:
+                          - Connector sync already running
                 required:
                   - error
   /api/v1/public/chat/{token}:

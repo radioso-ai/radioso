@@ -24,10 +24,11 @@ export interface ConnectorSummary {
 
 export interface ConnectorSyncState {
   backfillCompletedAt: string | null
+  syncRequestedAt: string | null
+  syncStartedAt: string | null
   lastRunAt: string | null
   lastModifiedAt: string | null
   lastIngestedCount: number | null
-  lastErrorStatus: string | null
 }
 
 export interface ConnectorDetail extends ConnectorSummary {
@@ -153,7 +154,7 @@ export const connectorsApi = {
     })
   },
 
-  async sync(connectorId: string): Promise<{ ingested: number }> {
+  async sync(connectorId: string): Promise<{ accepted: boolean }> {
     const token = await requireWorkspaceApiToken()
     const response = await fetch(`${API_BASE}/connectors/${encodeURIComponent(connectorId)}/sync`, {
       method: 'POST',
@@ -166,6 +167,6 @@ export const connectorsApi = {
     if (!response.ok) {
       throw await buildConnectorError(response)
     }
-    return (await response.json()) as { ingested: number }
+    return (await response.json()) as { accepted: boolean }
   },
 }

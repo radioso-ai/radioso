@@ -1,2 +1,7 @@
-export { ModelChatGateway } from "./services/chatService.js";
-export { ModelGroundedMissResponseComposer } from "./services/groundedMissResponseComposer.js";
+export { ModelChatGateway, type ChatGateway } from "./services/chatService.js";
+export type { ChatGatewayInput } from "./contracts/chatGateway.js";
+export {
+  ModelGroundedMissResponseComposer,
+  type GroundedMissResponseComposer,
+  type GroundedMissNoContextInput,
+} from "./services/groundedMissResponseComposer.js";

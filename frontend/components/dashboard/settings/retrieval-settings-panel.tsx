@@ -736,61 +736,6 @@ export function RetrievalSettingsPanel({
         </SettingsCard>
 
         <SettingsCard
-          id="answer-behavior"
-          icon={<Search className="h-5 w-5 text-primary" />}
-          eyebrow="Shape The Answer"
-          title="Grounded answer presentation"
-          description="Control retrieval-owned answer evidence presentation. Assistant follow-up behavior lives under Assistant settings."
-        >
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <Label htmlFor="citationDisplay" className="text-foreground">
-                    {retrievalSettingDocs.citationDisplayEnabled.label}
-                  </Label>
-                  <SettingTooltip
-                    label={retrievalSettingDocs.citationDisplayEnabled.label}
-                    content={retrievalSettingDocs.citationDisplayEnabled.details}
-                  />
-                </div>
-                <div className="mt-0.5 text-sm text-muted-foreground">
-                  <AssistantMarkdownContent content={retrievalSettingDocs.citationDisplayEnabled.summary} inline />
-                </div>
-              </div>
-              <Switch
-                id="citationDisplay"
-                checked={settings.citationDisplayEnabled}
-                onCheckedChange={(checked) => updateSetting('citationDisplayEnabled', checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <Label htmlFor="answerSupportValidation" className="text-foreground">
-                    {retrievalSettingDocs.answerSupportValidationEnabled.label}
-                  </Label>
-                  <SettingTooltip
-                    label={retrievalSettingDocs.answerSupportValidationEnabled.label}
-                    content={retrievalSettingDocs.answerSupportValidationEnabled.details}
-                  />
-                </div>
-                <div className="mt-0.5 text-sm text-muted-foreground">
-                  <AssistantMarkdownContent content={retrievalSettingDocs.answerSupportValidationEnabled.summary} inline />
-                </div>
-              </div>
-              <Switch
-                id="answerSupportValidation"
-                checked={settings.answerSupportValidationEnabled}
-                onCheckedChange={(checked) => updateSetting('answerSupportValidationEnabled', checked)}
-              />
-            </div>
-
-          </div>
-        </SettingsCard>
-
-        <SettingsCard
           id="search-tuning"
           eyebrow="Advanced"
           icon={<Search className="h-5 w-5 text-primary" />}

@@ -181,8 +181,8 @@ export class WebsiteCrawlJobService {
   }
 
   async deleteJob(input: { workspaceId: string; jobId: string }): Promise<void> {
-    const job = await this.dependencies.repository.findById(input.jobId);
-    if (!job || job.workspaceId !== input.workspaceId) {
+    const job = await this.dependencies.repository.findByIdAndWorkspaceId(input.jobId, input.workspaceId);
+    if (!job) {
       throw notFound("Crawl job not found");
     }
     if (job.status !== "completed" && job.status !== "failed") {
@@ -205,12 +205,13 @@ export class WebsiteCrawlJobService {
 
   async resumeJobsForSource(input: { workspaceId: string; sourceId: string }): Promise<{
     resumedJobCount: number;
+    pendingResumeJobCount: number;
     resumeDispatchFailureCount: number;
   }> {
-    const jobs = await this.dependencies.repository.resumePausedBySourceId(input.sourceId, input.workspaceId);
+    const result = await this.dependencies.repository.resumePausedBySourceId(input.sourceId, input.workspaceId);
     let resumedJobCount = 0;
     let resumeDispatchFailureCount = 0;
-    for (const job of jobs) {
+    for (const job of result.resumedJobs) {
       try {
         await this.dependencies.dispatcher.dispatch({
           jobId: job.id,
@@ -230,7 +231,11 @@ export class WebsiteCrawlJobService {
         );
       }
     }
-    return { resumedJobCount, resumeDispatchFailureCount };
+    return {
+      resumedJobCount,
+      pendingResumeJobCount: result.pendingResumeJobCount,
+      resumeDispatchFailureCount,
+    };
   }
 
   async listForWorkspace(

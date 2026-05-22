@@ -96,6 +96,9 @@ export const registerDocumentsPaths = (
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: {
       params: schemas.documentSearchHistoryParamsSchema,
+      query: z.object({
+        includeDebug: z.boolean().optional(),
+      }),
     },
     responses: {
       200: {
@@ -203,6 +206,59 @@ export const registerDocumentsPaths = (
         content: {
           "application/json": {
             schema: schemas.DocumentListResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Source not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "patch",
+    path: "/api/v1/document/sources/{sourceId}",
+    tags: ["Documents"],
+    summary: "Update a website source's crawl settings",
+    operationId: "updateDocumentSource",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.sourceParamsSchema,
+      body: {
+        content: {
+          "application/json": {
+            schema: schemas.DocumentSourceUpdateRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Source updated",
+        content: {
+          "application/json": {
+            schema: schemas.DocumentSourceListItemSchema,
+          },
+        },
+      },
+      400: {
+        description: "Source is not a website or the manually-added bucket",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
           },
         },
       },
@@ -336,6 +392,7 @@ export const registerDocumentsPaths = (
           "application/json": {
             schema: z.object({
               resumedJobCount: z.number().int().min(0),
+              pendingResumeJobCount: z.number().int().min(0),
               resumeDispatchFailureCount: z.number().int().min(0),
             }),
           },

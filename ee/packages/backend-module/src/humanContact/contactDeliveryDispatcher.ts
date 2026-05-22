@@ -1,55 +1,116 @@
 import { createHmac } from "node:crypto";
 
-import type { EmailService, HumanContactRequestRow, Logger } from "./humanContactTypes.js";
+import type {
+  Logger,
+  MailService,
+  MessageRepository,
+  WorkspaceContactInfo,
+  WorkspaceContactInfoRepository,
+} from "./humanContactTypes.js";
 import {
+  HUMAN_CONTACT_SKILL_NAME,
   MAX_ATTEMPTS,
-  queryRows,
   serializeDate,
 } from "./humanContactTypes.js";
 import { buildContactStage, replaceContactTraceStage } from "./contactActivityTrace.js";
+import { renderHumanContactRequestEmail } from "./contactRequestEmailTemplate.js";
 import type { HumanContactSettingsService } from "./contactSettingsService.js";
-import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import type {
+  SkillSubmissionRepository,
+  SkillSubmissionRow,
+} from "../skillSubmissions/skillSubmissionRepository.js";
+
+const CONVERSATION_TURNS_LIMIT = 6;
 
 export class HumanContactDeliveryDispatcher {
   constructor(private readonly input: {
-    database: UsageLimitDatabasePort;
+    submissions: SkillSubmissionRepository;
     logger: Logger;
     settingsService: HumanContactSettingsService;
-    emailService: EmailService;
+    mailService: MailService;
+    messageRepository?: MessageRepository;
+    workspaceContactInfoRepository?: WorkspaceContactInfoRepository;
+    dashboardBaseUrl?: string | null;
     webhookFetch?: typeof fetch;
   }) {}
 
   async processDueDeliveries(limit = 25): Promise<number> {
-    const rows = await queryRows<HumanContactRequestRow>(
-      this.input.database,
-      `UPDATE ee_contact_requests
-       SET status = 'delivering',
-           updated_at = NOW()
-       WHERE id IN (
-         SELECT id
-         FROM ee_contact_requests
-         WHERE status = 'pending'
-           AND next_retry_at <= NOW()
-           AND attempts < $1
-         ORDER BY next_retry_at ASC, created_at ASC
-         LIMIT $2
-         FOR UPDATE SKIP LOCKED
-       )
-       RETURNING id, account_id, workspace_id, conversation_id, assistant_message_id,
-         source_channel, source_origin, user_email, message,
-         trigger_source, trigger_reason, attempts, activity_trace, created_at`,
-      [MAX_ATTEMPTS, limit],
-    );
-
+    const rows = await this.input.submissions.claimDueDeliveries({
+      maxAttempts: MAX_ATTEMPTS,
+      limit,
+      skillName: HUMAN_CONTACT_SKILL_NAME,
+    });
     for (const row of rows) {
       await this.deliver(row);
     }
-
     return rows.length;
   }
 
-  private async deliver(row: HumanContactRequestRow): Promise<void> {
+  private contactEmail(row: SkillSubmissionRow): string {
+    if (typeof row.fields.email === "string" && row.fields.email.trim()) {
+      return row.fields.email;
+    }
+    // Last-resort delivery label for malformed legacy rows; validated submissions should carry email fields.
+    return row.subject_identity ?? "visitor";
+  }
+
+  private contactMessage(row: SkillSubmissionRow): string {
+    return typeof row.fields.message === "string" ? row.fields.message : "";
+  }
+
+  private async loadRecentTurns(workspaceId: string, conversationId: string): Promise<Array<{
+    role: "user" | "assistant" | "system";
+    content: string;
+    createdAt: Date;
+  }>> {
+    const repository = this.input.messageRepository;
+    if (!repository) {
+      return [];
+    }
+    try {
+      return await repository.listRecentByConversationId(workspaceId, conversationId, CONVERSATION_TURNS_LIMIT);
+    } catch (error) {
+      this.input.logger.warn?.(
+        { workspaceId, conversationId, err: error instanceof Error ? error.message : String(error) },
+        "Failed to load recent conversation for contact email",
+      );
+      return [];
+    }
+  }
+
+  private async loadWorkspaceContactInfo(workspaceId: string): Promise<WorkspaceContactInfo | null> {
+    const repository = this.input.workspaceContactInfoRepository;
+    if (!repository) {
+      return null;
+    }
+    try {
+      return await repository.findById(workspaceId);
+    } catch (error) {
+      this.input.logger.warn?.(
+        { workspaceId, err: error instanceof Error ? error.message : String(error) },
+        "Failed to load workspace info for contact email",
+      );
+      return null;
+    }
+  }
+
+  private buildDashboardUrl(workspace: WorkspaceContactInfo | null, requestId: string): string | null {
+    const base = this.input.dashboardBaseUrl?.replace(/\/+$/, "");
+    if (!base || !workspace) {
+      return null;
+    }
+    const params = new URLSearchParams({
+      filter: "contact",
+      itemKind: "contact",
+      itemId: requestId,
+    });
+    return `${base}/w/${encodeURIComponent(workspace.publicRouteKey)}/activity?${params.toString()}`;
+  }
+
+  private async deliver(row: SkillSubmissionRow): Promise<void> {
     const settings = await this.input.settingsService.requireConfigured(row.workspace_id);
+    const email = this.contactEmail(row);
+    const message = this.contactMessage(row);
     const payload = {
       requestId: row.id,
       accountId: row.account_id,
@@ -58,8 +119,8 @@ export class HumanContactDeliveryDispatcher {
       assistantMessageId: row.assistant_message_id,
       sourceChannel: row.source_channel,
       sourceOrigin: row.source_origin,
-      email: row.user_email,
-      message: row.message,
+      email,
+      message,
       triggerSource: row.trigger_source,
       triggerReason: row.trigger_reason,
       createdAt: serializeDate(row.created_at),
@@ -67,27 +128,26 @@ export class HumanContactDeliveryDispatcher {
     const errors: string[] = [];
 
     if (settings.email_enabled && settings.default_email) {
+      const [workspace, recentTurns] = await Promise.all([
+        this.loadWorkspaceContactInfo(row.workspace_id),
+        this.loadRecentTurns(row.workspace_id, row.conversation_id),
+      ]);
+      const dashboardUrl = this.buildDashboardUrl(workspace, row.id);
       try {
-        await this.input.emailService.send({
+        await this.input.mailService.send(renderHumanContactRequestEmail({
           to: settings.default_email,
-          subject: `Radioso contact request from ${row.user_email}`,
-          text: [
-            "A visitor submitted a contact request.",
-            "",
-            `From: ${row.user_email}`,
-            `Workspace: ${row.workspace_id}`,
-            `Conversation: ${row.conversation_id}`,
-            `Request: ${row.id}`,
-            "",
-            "Message:",
-            row.message,
-          ].join("\n"),
-          metadata: {
-            kind: "human_contact_request",
-            requestId: row.id,
-            workspaceId: row.workspace_id,
-          },
-        });
+          visitorEmail: email,
+          message,
+          workspace: workspace
+            ? { name: workspace.name, publicRouteKey: workspace.publicRouteKey }
+            : null,
+          sourceChannel: row.source_channel,
+          createdAt: row.created_at,
+          requestId: row.id,
+          workspaceId: row.workspace_id,
+          dashboardUrl,
+          recentTurns,
+        }));
       } catch (error) {
         errors.push(`Email: ${error instanceof Error ? error.message : "delivery failed"}`);
       }
@@ -130,24 +190,14 @@ export class HumanContactDeliveryDispatcher {
         "delivered",
         "success",
       );
-      await queryRows(
-        this.input.database,
-        `UPDATE ee_contact_requests
-         SET status = 'delivered',
-             attempts = attempts + 1,
-             final_delivery_error = NULL,
-             activity_trace = COALESCE($2::jsonb, activity_trace),
-             updated_at = NOW()
-         WHERE id = $1`,
-        [row.id, activityTrace],
-      );
+      await this.input.submissions.markDelivered(row.id, activityTrace ?? null);
       return;
     }
 
     await this.recordDeliveryFailure(row, errors.join("; "));
   }
 
-  private async recordDeliveryFailure(row: HumanContactRequestRow, reason: string): Promise<void> {
+  private async recordDeliveryFailure(row: SkillSubmissionRow, reason: string): Promise<void> {
     const nextAttempt = row.attempts + 1;
     const terminal = nextAttempt >= MAX_ATTEMPTS;
     const delaySeconds = Math.min(60 * 60, 2 ** Math.max(nextAttempt - 1, 0) * 30);
@@ -167,18 +217,13 @@ export class HumanContactDeliveryDispatcher {
       terminal ? "delivery_failed" : "delivery_retry_scheduled",
       terminal ? "failed" : "fallback",
     );
-    await queryRows(
-      this.input.database,
-      `UPDATE ee_contact_requests
-       SET status = $2,
-           attempts = attempts + 1,
-           next_retry_at = CASE WHEN $2 = 'pending' THEN NOW() + ($3::text || ' seconds')::interval ELSE next_retry_at END,
-           final_delivery_error = $4,
-           activity_trace = COALESCE($5::jsonb, activity_trace),
-           updated_at = NOW()
-       WHERE id = $1`,
-      [row.id, terminal ? "failed" : "pending", delaySeconds, reason.slice(0, 1000), activityTrace],
-    );
+    await this.input.submissions.recordFailure({
+      id: row.id,
+      nextStatus: terminal ? "failed" : "pending",
+      nextRetryDelaySeconds: delaySeconds,
+      reason: reason.slice(0, 1000),
+      activityTrace: activityTrace ?? null,
+    });
     this.input.logger.warn?.(
       {
         requestId: row.id,

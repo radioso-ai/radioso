@@ -206,6 +206,7 @@ export function ChatMessageThread({
   onClearAnswerFeedback,
   hideFeedbackEntries = false,
   copy = DEFAULT_WEBSITE_EMBED_COPY,
+  showCitations = true,
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
@@ -221,6 +222,7 @@ export function ChatMessageThread({
   themedSuggestionButtons?: boolean
   hideFeedbackEntries?: boolean
   copy?: WebsiteEmbedCopy
+  showCitations?: boolean
 }) {
   const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
   const [localFeedback, setLocalFeedback] = useState<Record<string, AnswerFeedbackState | null | undefined>>({})
@@ -468,6 +470,7 @@ export function ChatMessageThread({
                               onOpenDocument={onOpenDocument}
                               theme={theme}
                               isStreaming={message.status === 'streaming'}
+                              showCitations={showCitations}
                             />
                           </div>
                         )}
@@ -482,6 +485,10 @@ export function ChatMessageThread({
                             {visibleSuggestions
                               .filter((suggestion) => suggestion.text.trim())
                               .map((suggestion, suggestionIndex) => {
+                              const actionSkillName = suggestion.action?.kind === 'start_intent'
+                                ? suggestion.action.intent.skillName
+                                : null
+                              const ActionIcon = actionSkillName ? getSkillDisplay(actionSkillName).icon : null
                               return onSuggestionSelect ? (
                                 <Button
                                   key={`${message.id}-suggestion-${suggestionIndex}`}
@@ -499,12 +506,13 @@ export function ChatMessageThread({
                                     onSuggestionSelect(suggestion, message.id)
                                   }}
                                 >
+                                  {ActionIcon ? <ActionIcon className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
                                   {suggestion.text}
                                 </Button>
                               ) : (
                                 <div
                                   key={`${message.id}-suggestion-${suggestionIndex}`}
-                                  className="rounded-full border border-border bg-muted/40 px-3 py-1 text-sm leading-snug text-foreground"
+                                  className="flex items-center rounded-full border border-border bg-muted/40 px-3 py-1 text-sm leading-snug text-foreground"
                                   style={
                                     theme
                                       ? {
@@ -515,6 +523,7 @@ export function ChatMessageThread({
                                       : undefined
                                   }
                                 >
+                                  {ActionIcon ? <ActionIcon className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
                                   {suggestion.text}
                                 </div>
                               )

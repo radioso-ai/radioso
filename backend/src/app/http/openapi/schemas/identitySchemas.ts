@@ -1,8 +1,12 @@
 import { z } from "zod";
 import {
+  emailVerificationResendSchema,
+  emailVerificationVerifySchema,
   invitationAcceptSchema,
   invitationTokenParamsSchema,
   loginSchema,
+  passwordResetConfirmSchema,
+  passwordResetRequestSchema,
   registerSchema,
 } from "../../routes/authRoutes.js";
 import {
@@ -19,7 +23,7 @@ import {
   workspaceKeyParamsSchema,
   workspaceParamsSchema,
 } from "../../routes/workspaceRoutes.js";
-import { workspaceMcpContextSchema } from "../../routes/mcpContextRoutes.js";
+import { workspaceMcpContextSchema } from "../../mcpContextSupport.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 
@@ -33,6 +37,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
       workspaceId: z.string().uuid(),
       workspaceName: z.string(),
       workspacePublicRouteKey: z.string(),
+      requiresEmailVerification: z.literal(true),
     }),
   );
 
@@ -45,6 +50,27 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
       workspaceId: z.string().uuid(),
       workspaceName: z.string(),
       workspacePublicRouteKey: z.string(),
+    }),
+  );
+
+  const AcceptedResponseSchema = registry.register(
+    "AcceptedResponse",
+    z.object({
+      accepted: z.literal(true),
+    }),
+  );
+
+  const PasswordResetConfirmResponseSchema = registry.register(
+    "PasswordResetConfirmResponse",
+    LoginResponseSchema.extend({
+      email: z.string().email(),
+    }),
+  );
+
+  const EmailVerificationVerifyResponseSchema = registry.register(
+    "EmailVerificationVerifyResponse",
+    z.object({
+      verified: z.literal(true),
     }),
   );
 
@@ -110,6 +136,10 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
 
   const RegisterRequestSchema = registry.register("RegisterRequest", registerSchema);
   const LoginRequestSchema = registry.register("LoginRequest", loginSchema);
+  const PasswordResetRequestSchema = registry.register("PasswordResetRequest", passwordResetRequestSchema);
+  const PasswordResetConfirmRequestSchema = registry.register("PasswordResetConfirmRequest", passwordResetConfirmSchema);
+  const EmailVerificationVerifyRequestSchema = registry.register("EmailVerificationVerifyRequest", emailVerificationVerifySchema);
+  const EmailVerificationResendRequestSchema = registry.register("EmailVerificationResendRequest", emailVerificationResendSchema);
   const InvitationAcceptRequestSchema = registry.register("InvitationAcceptRequest", invitationAcceptSchema);
   const AccountInvitationCreateRequestSchema = registry.register("AccountInvitationCreateRequest", createAccountInvitationSchema);
   const AccountMembershipRoleUpdateRequestSchema = registry.register("AccountMembershipRoleUpdateRequest", updateMembershipRoleSchema);
@@ -206,6 +236,9 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     accountSwitchSchema,
     RegisterResponseSchema,
     LoginResponseSchema,
+    AcceptedResponseSchema,
+    PasswordResetConfirmResponseSchema,
+    EmailVerificationVerifyResponseSchema,
     WorkspaceSchema,
     WorkspaceRouteResolutionResponseSchema,
     WorkspaceListResponseSchema,
@@ -214,6 +247,10 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     WorkspaceMcpContextResponseSchema,
     RegisterRequestSchema,
     LoginRequestSchema,
+    PasswordResetRequestSchema,
+    PasswordResetConfirmRequestSchema,
+    EmailVerificationVerifyRequestSchema,
+    EmailVerificationResendRequestSchema,
     InvitationAcceptRequestSchema,
     AccountInvitationCreateRequestSchema,
     AccountMembershipRoleUpdateRequestSchema,

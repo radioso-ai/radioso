@@ -10,7 +10,6 @@ import type {
   ApplicationModuleRegistrationContext,
   ApplicationRouteMount,
   ApplicationUsageLimitPolicyRegistration,
-  WebsiteEmbedIntegrationProvider,
 } from "./radiosoModuleTypes.js";
 
 const createCaptureContext = () => {
@@ -21,7 +20,6 @@ const createCaptureContext = () => {
   let chatIntakeProvider: ApplicationChatIntakeProviderRegistration | undefined;
   let contactHistoryProvider: ApplicationContactHistoryProviderRegistration | undefined;
   let answerFeedbackHistoryProvider: ApplicationAnswerFeedbackHistoryProviderRegistration | undefined;
-  let websiteEmbedIntegration: WebsiteEmbedIntegrationProvider | undefined;
 
   const context: ApplicationModuleRegistrationContext = {
     registerDatabaseMigrator(migrator) {
@@ -45,9 +43,6 @@ const createCaptureContext = () => {
     registerAnswerFeedbackHistoryProvider(provider) {
       answerFeedbackHistoryProvider = provider;
     },
-    registerWebsiteEmbedIntegration(provider) {
-      websiteEmbedIntegration = provider;
-    },
   };
 
   return {
@@ -66,9 +61,6 @@ const createCaptureContext = () => {
     get usageLimitPolicy() {
       return usageLimitPolicy;
     },
-    get websiteEmbedIntegration() {
-      return websiteEmbedIntegration;
-    },
     routeMounts,
   };
 };
@@ -84,13 +76,12 @@ describe("Enterprise backend module aggregation", () => {
     expect(capture.databaseMigrators.map((migrator) => migrator.id).sort()).toEqual([
       "ee-assistant-answer-feedback",
       "ee-human-contact",
-      "ee-mail-tokens",
+      "ee-skill-submissions",
       "ee-usage-limits",
     ]);
     expect(capture.routeMounts.map((mount) => mount.path).sort()).toEqual([
       "/api/v1/ee/agent-wizard",
       "/api/v1/ee/answer-feedback",
-      "/api/v1/ee/auth",
       "/api/v1/ee/contact",
       "/api/v1/ee/usage-limits",
     ]);
@@ -99,7 +90,6 @@ describe("Enterprise backend module aggregation", () => {
     expect(capture.chatIntakeProvider).toBeTypeOf("function");
     expect(capture.contactHistoryProvider).toBeTypeOf("function");
     expect(capture.answerFeedbackHistoryProvider).toBeTypeOf("function");
-    expect(capture.websiteEmbedIntegration).toBeDefined();
   });
 
   it("registers chat intake through the public provider contract", async () => {

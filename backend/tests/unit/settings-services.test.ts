@@ -37,12 +37,17 @@ describe("settings services", () => {
     customInstruction: "",
     retrievalEnabled: true,
     sourceScope: { mode: "all" },
+    chatModelOverride: null,
     logo: null,
     theme: {
       brand: "#0f172a",
       brandText: "#f8fafc",
       surface: "#ffffff",
       text: "#0f172a",
+    },
+    branding: {
+      hidePoweredBy: false,
+      privacyPolicyUrl: null,
     },
     surfaceSettings: {
       authenticatedChat: {
@@ -413,7 +418,7 @@ describe("settings services", () => {
     const auditService = {
       record: vi.fn().mockRejectedValue(new Error("audit down")),
     };
-    const service = new IngestionSettingsService(repository, auditService as never);
+    const service = new IngestionSettingsService(repository as never, auditService as never);
 
     await expect(service.updateForWorkspace("workspace-1", settings)).resolves.toEqual(settings);
     expect(auditService.record).toHaveBeenCalledWith({
@@ -421,6 +426,323 @@ describe("settings services", () => {
       eventType: "ingestion_settings.update",
       eventStatus: "success",
     });
+  });
+
+  it("preserves the saved embedding model when older ingestion clients omit it", async () => {
+    const existing = {
+      ...defaultIngestionSettings("workspace-1"),
+      embeddingModel: "text-embedding-3-large" as const,
+    };
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => ({
+        ...existing,
+        ...input,
+      })),
+    };
+    const auditService = {
+      record: vi.fn(),
+    };
+    const service = new IngestionSettingsService(repository, auditService as never);
+
+    const settings = await service.updateForWorkspace("workspace-1", {
+      chunkingStrategy: "structured_semantic",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+    });
+
+    expect(settings.embeddingModel).toBe("text-embedding-3-large");
+    expect(repository.upsert).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.objectContaining({
+        embeddingModel: "text-embedding-3-large",
+        pendingEmbeddingModel: null,
+      }),
+    );
+  });
+
+  it("keeps the active embedding model and records a pending model when documents already exist", async () => {
+    const existing = defaultIngestionSettings("workspace-1");
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => ({
+        ...existing,
+        ...input,
+      })),
+    };
+    const auditService = {
+      record: vi.fn(),
+    };
+    const documentRepository = {
+      summarizeWorkspace: vi.fn().mockResolvedValue({
+        documentCount: 2,
+      }),
+    };
+    const service = new IngestionSettingsService(repository as never, auditService as never, documentRepository as never);
+
+    const settings = await service.updateForWorkspace("workspace-1", {
+      chunkingStrategy: "fixed_window",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+      embeddingModel: "text-embedding-3-large",
+    });
+
+    expect(settings.embeddingModel).toBe("text-embedding-3-small");
+    expect(settings.pendingEmbeddingModel).toBe("text-embedding-3-large");
+  });
+
+  it("queues workspace reprocessing when a model change becomes pending", async () => {
+    const existing = defaultIngestionSettings("workspace-1");
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => ({
+        ...existing,
+        ...input,
+      })),
+    };
+    const auditService = {
+      record: vi.fn(),
+    };
+    const documentRepository = {
+      summarizeWorkspace: vi.fn().mockResolvedValue({
+        documentCount: 2,
+      }),
+    };
+    const reprocessService = {
+      reprocessWorkspace: vi.fn().mockResolvedValue({ status: "queued" }),
+    };
+    const service = new IngestionSettingsService(
+      repository as never,
+      auditService as never,
+      documentRepository as never,
+      undefined,
+      reprocessService,
+    );
+
+    await service.updateForWorkspace("workspace-1", {
+      chunkingStrategy: "fixed_window",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+      embeddingModel: "text-embedding-3-large",
+    });
+
+    expect(reprocessService.reprocessWorkspace).toHaveBeenCalledWith("workspace-1");
+  });
+
+  it("rolls back a newly pending model when automatic workspace reprocessing fails", async () => {
+    const existing = defaultIngestionSettings("workspace-1");
+    const writtenInputs: unknown[] = [];
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => {
+        writtenInputs.push(input);
+        return {
+          ...existing,
+          ...input,
+        };
+      }),
+    };
+    const auditService = {
+      record: vi.fn(),
+    };
+    const documentRepository = {
+      summarizeWorkspace: vi.fn().mockResolvedValue({
+        documentCount: 2,
+      }),
+    };
+    const reprocessError = new Error("queue down");
+    const reprocessService = {
+      reprocessWorkspace: vi.fn().mockRejectedValue(reprocessError),
+    };
+    const service = new IngestionSettingsService(
+      repository as never,
+      auditService as never,
+      documentRepository as never,
+      undefined,
+      reprocessService,
+    );
+
+    await expect(service.updateForWorkspace("workspace-1", {
+      chunkingStrategy: "fixed_window",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+      embeddingModel: "text-embedding-3-large",
+    })).rejects.toBe(reprocessError);
+    expect(writtenInputs).toEqual([
+      expect.objectContaining({
+        embeddingModel: "text-embedding-3-small",
+        pendingEmbeddingModel: "text-embedding-3-large",
+      }),
+      expect.objectContaining({
+        embeddingModel: "text-embedding-3-small",
+        pendingEmbeddingModel: null,
+      }),
+    ]);
+  });
+
+  it("rejects replacing an embedding model change while one is pending", async () => {
+    const existing = {
+      ...defaultIngestionSettings("workspace-1"),
+      pendingEmbeddingModel: "text-embedding-3-large" as const,
+    };
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      upsert: vi.fn(),
+    };
+    const auditService = {
+      record: vi.fn(),
+    };
+    const service = new IngestionSettingsService(repository as never, auditService as never);
+
+    await expect(service.updateForWorkspace("workspace-1", {
+      chunkingStrategy: "fixed_window",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+      embeddingModel: "gemini-embedding-001",
+    })).rejects.toThrow("embeddingModel change already pending for text-embedding-3-large");
+    expect(repository.upsert).not.toHaveBeenCalled();
+  });
+
+  it("checks pending embedding model promotion when settings are read", async () => {
+    const pending = {
+      ...defaultIngestionSettings("workspace-1"),
+      pendingEmbeddingModel: "text-embedding-3-large" as const,
+    };
+    const promoted = {
+      ...defaultIngestionSettings("workspace-1"),
+      embeddingModel: "text-embedding-3-large" as const,
+    };
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(pending),
+      promotePendingEmbeddingModelIfReady: vi.fn().mockResolvedValue(promoted),
+      upsert: vi.fn(),
+    };
+    const auditService = {
+      record: vi.fn(),
+    };
+    const service = new IngestionSettingsService(repository as never, auditService as never);
+
+    await expect(service.getForWorkspace("workspace-1")).resolves.toMatchObject({
+      embeddingModel: "text-embedding-3-large",
+      pendingEmbeddingModel: null,
+    });
+    expect(repository.promotePendingEmbeddingModelIfReady).toHaveBeenCalledWith("workspace-1");
+  });
+
+  it("does not attempt pending model promotion on settings reads without a pending model", async () => {
+    const existing = defaultIngestionSettings("workspace-1");
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      promotePendingEmbeddingModelIfReady: vi.fn(),
+      upsert: vi.fn(),
+    };
+    const auditService = {
+      record: vi.fn(),
+    };
+    const service = new IngestionSettingsService(repository as never, auditService as never);
+
+    await expect(service.getForWorkspace("workspace-1")).resolves.toMatchObject({
+      embeddingModel: "text-embedding-3-small",
+      pendingEmbeddingModel: null,
+    });
+    expect(repository.promotePendingEmbeddingModelIfReady).not.toHaveBeenCalled();
+  });
+
+  it("cancels a pending embedding model change without requiring the reprocess queue", async () => {
+    const existing = {
+      ...defaultIngestionSettings("workspace-1"),
+      pendingEmbeddingModel: "text-embedding-3-large" as const,
+    };
+    const cleared = {
+      ...existing,
+      pendingEmbeddingModel: null,
+    };
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      clearPendingEmbeddingModel: vi.fn().mockResolvedValue(cleared),
+      upsert: vi.fn(),
+    };
+    const auditService = {
+      record: vi.fn(),
+    };
+    const service = new IngestionSettingsService(
+      repository as never,
+      auditService as never,
+    );
+
+    await expect(service.cancelPendingEmbeddingModel("workspace-1")).resolves.toMatchObject({
+      pendingEmbeddingModel: null,
+    });
+    expect(repository.clearPendingEmbeddingModel).toHaveBeenCalledWith("workspace-1");
+  });
+
+  it("rejects switching to an embedding model without a configured provider", async () => {
+    const existing = defaultIngestionSettings("workspace-1");
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      upsert: vi.fn(),
+    };
+    const auditService = {
+      record: vi.fn(),
+    };
+    const service = new IngestionSettingsService(
+      repository as never,
+      auditService as never,
+      undefined,
+      ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"],
+    );
+
+    await expect(service.updateForWorkspace("workspace-1", {
+      chunkingStrategy: "fixed_window",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+      embeddingModel: "gemini-embedding-001",
+    })).rejects.toThrow("embeddingModel gemini-embedding-001 requires a configured embedding provider");
+    expect(repository.upsert).not.toHaveBeenCalled();
+  });
+
+  it("switches the active embedding model immediately for empty workspaces", async () => {
+    const existing = defaultIngestionSettings("workspace-1");
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => ({
+        ...existing,
+        ...input,
+      })),
+    };
+    const auditService = {
+      record: vi.fn(),
+    };
+    const documentRepository = {
+      summarizeWorkspace: vi.fn().mockResolvedValue({
+        documentCount: 0,
+      }),
+    };
+    const service = new IngestionSettingsService(repository as never, auditService as never, documentRepository as never);
+
+    const settings = await service.updateForWorkspace("workspace-1", {
+      chunkingStrategy: "fixed_window",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+      embeddingModel: "text-embedding-3-large",
+    });
+
+    expect(settings.embeddingModel).toBe("text-embedding-3-large");
+    expect(settings.pendingEmbeddingModel).toBeNull();
   });
 
   it("rethrows the original ingestion save error when failure audit logging also fails", async () => {

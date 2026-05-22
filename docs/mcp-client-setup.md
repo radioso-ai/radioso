@@ -30,7 +30,7 @@ No `/v1/auth/exchange` call is needed in merged mode.
 ### Standalone HTTP Mode
 
 1. Start the Radioso backend and the remote MCP server.
-2. Exchange a Radioso workspace token for an MCP access token:
+2. Exchange a Radioso workspace API token for an MCP access token:
 
 ```bash
 source <(
@@ -52,6 +52,8 @@ Standalone mode keeps a separate public surface. It is the better fit when cloud
 
 The merged route has separate CORS configuration through `RADIOSO_MCP_MERGED_CORS_ORIGINS`. The default is `*` without credentials, because MCP clients use bearer tokens rather than dashboard cookies.
 
+Workspace API tokens are secret bearer credentials bound to one workspace. Public chat and website embed launch credentials are not API tokens and are never accepted by MCP or other workspace API bearer-authenticated routes.
+
 ## Endpoint Model
 
 MCP is retrieval-first by default. Tools such as `search_documents` and `answer_grounded` call Radioso retrieval and document endpoints directly. They do not create assistant conversations and they do not inherit assistant persona, greeting, or social-reply behavior.
@@ -64,9 +66,11 @@ In practice:
 
 The retrieval answer endpoint accepts optional `conversationContext` hints for rewrite continuity. The caller owns those hints. Radioso retrieval uses them to improve the search query, but retrieval does not become the owner of assistant chat history.
 
-For debugging, MCP grounded-answer calls are marked in retrieval diagnostics as `mcp_capability` executions. This keeps them separate from direct retrieval API calls and assistant-backed chat turns.
+Migration note: direct REST and SDK clients no longer receive retrieval diagnostics at the response top level by default. Use `includeDebug: true` and read `debug.activitySummary`, `debug.activityTrace`, and, for grounded answers, `debug.evidence`. The MCP server intentionally opts into debug responses for retrieval tools so operators can inspect grounded-answer traces from MCP clients.
 
-Grounded-answer diagnostics also include retrieval shape metadata in the `activityTrace` graph and `activitySummary`. Look for the `shape_selection` stage and summary fields such as `shapeName`, `queryShape`, `resolvedSteps`, and `skillDiagnostic`. These fields explain which resolved retrieval shape and step overrides were applied.
+For debugging, MCP grounded-answer calls request diagnostic metadata from the retrieval API and are marked as `mcp_capability` executions. This keeps them separate from direct retrieval API calls and assistant-backed chat turns.
+
+Grounded-answer diagnostics also include retrieval shape metadata in `debug.activityTrace` and `debug.activitySummary`. Look for the `shape_selection` stage and summary fields such as `shapeName`, `queryShape`, `resolvedSteps`, and `skillDiagnostic`. These fields explain which resolved retrieval shape and step overrides were applied.
 
 ## Skills Catalog
 
@@ -99,7 +103,7 @@ If Cursor is already open, fully quit it first so the relaunched app picks up th
 If you prefer Cursor to spawn the MCP server directly:
 
 - Set `RADIOSO_BASE_URL` (for example `http://localhost:8080`)
-- Set `RADIOSO_API_TOKEN` (your workspace token, `radioso_...`)
+- Set `RADIOSO_API_TOKEN` (your workspace API token, `radioso_...`)
 - Ensure `pnpm install --filter @radioso/mcp-server...` has been run so the `cursor:mcp-stdio` entrypoint can run.
 
 ## Claude And Claude Desktop Remote Connectors
@@ -157,7 +161,7 @@ ChatGPT custom apps and OpenAI API integrations also require a public remote MCP
 2. Add app-compatible authentication. In practice that means OAuth or OpenID Connect with refresh-token support. The current package's `/v1/auth/exchange` flow is not enough for native ChatGPT app onboarding by itself.
 3. In ChatGPT workspace settings, enable developer mode and create a custom app from that MCP server URL.
 4. If your deployment uses OAuth or OpenID Connect, configure refresh-token-capable auth before publishing.
-5. Connect the app in ChatGPT and test both read paths and approval-gated writes.
+5. Connect the app in ChatGPT and test read and write paths. ChatGPT will prompt the user before any tool advertised with `requiresApproval: true`; that is the host-side approval gate for writes.
 
 ### OpenAI Responses API
 
@@ -179,4 +183,4 @@ The Responses API can call a remote MCP server directly. A typical tool stanza l
 }
 ```
 
-`require_approval: "never"` is suitable for read-only OpenAI API use. The current Radioso server uses explicit approval gating for write tools, so deep-research-style API clients should stay read-only unless you intentionally deploy a separate policy profile for that integration. If your hosted Radioso MCP endpoint is not public and unauthenticated, you will also need an OpenAI-compatible auth layer before this can be used from ChatGPT apps or OpenAI-hosted flows.
+`require_approval: "never"` skips the host-side prompt. The Radioso MCP server has no server-side approval gate — authorization is the workspace API token and the tools the MCP session was granted at exchange time, with the underlying workspace permission enforced at the upstream Radioso REST API. If you want a human-in-the-loop step for writes, run the integration through a host that honors the per-tool `requiresApproval: true` advertisement (such as Cursor, Claude Desktop, or the ChatGPT app UI) instead of through the headless Responses API. If your hosted Radioso MCP endpoint is not public and unauthenticated, you will also need an OpenAI-compatible auth layer before this can be used from ChatGPT apps or OpenAI-hosted flows.

@@ -1,6 +1,7 @@
 import { getEnv, type Env } from "../config/env.js";
 import {
   createDefaultApplicationComposition,
+  createDefaultDocumentJobDispatcher,
   type ApplicationModule,
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
@@ -12,14 +13,22 @@ import {
   buildChatServices,
   buildConnectorRegistry,
   buildDocumentServices,
+  buildEmailVerificationService,
   buildInfrastructure,
   buildLlmRegistry,
   buildLogger,
+  buildPasswordResetService,
   buildRepositories,
   buildRetrievalServices,
+  buildLlmCapabilityResolver,
   buildSettingsServices,
+  buildWorkspaceIngestionReprocessService,
+  buildWorkspaceLlmCapabilitySettingsService,
+  buildWorkspaceProviderCredentialsService,
   buildWorkspaceServices,
+  listSupportedEmbeddingModels,
 } from "./dependencyBuilders.js";
+import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { EmbeddingService } from "../../modules/retrieval/composition.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
@@ -35,6 +44,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const composition = createDefaultApplicationComposition({
     logger,
     modules: options.modules,
+    widgetOrigin: env.RADIOSO_WIDGET_ORIGIN ?? env.APP_BASE_URL,
   });
   const infrastructure = buildInfrastructure({ env, logger, composition });
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
@@ -46,19 +56,54 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     repositories,
   });
+  const workspaceProviderCredentialsService = buildWorkspaceProviderCredentialsService({
+    auditService: infrastructure.auditService,
+    env,
+    logger,
+    repositories,
+  });
+  // Build the registry first (no resolver yet) so we can compute supported embedding
+  // models; embedding stays env-default and doesn't need the workspace-aware resolver.
   const llmRegistry = buildLlmRegistry(env, logger);
   const embeddingService = new EmbeddingService(llmRegistry.createEmbeddingGateway());
+  const documentJobDispatcher = composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
+  const workspaceIngestionReprocessService = buildWorkspaceIngestionReprocessService({
+    auditService: infrastructure.auditService,
+    documentJobDispatcher,
+    repositories,
+  });
+  const supportedEmbeddingModels = listSupportedEmbeddingModels(llmRegistry);
   const settings = buildSettingsServices({
     auditService: infrastructure.auditService,
     documentRepository: repositories.documentRepository,
     ingestionSettingsRepository: repositories.ingestionSettingsRepository,
     productAnalyticsService: infrastructure.productAnalyticsService,
     retrievalSettingsRepository: repositories.retrievalSettingsRepository,
+    supportedEmbeddingModels,
+    workspaceIngestionReprocessService,
   });
+  // Now that settings are available, build the capability service (backed by the
+  // retrieval_settings row through the repository) and the resolver, then attach
+  // the resolver to the registry before any chat/rewrite/rerank gateways are
+  // constructed downstream.
+  const workspaceLlmCapabilitySettingsService = buildWorkspaceLlmCapabilitySettingsService({
+    auditService: infrastructure.auditService,
+    capabilityRepository: repositories.retrievalSettingsRepository,
+    retrievalSettingsService: settings.retrievalSettingsService,
+    logger,
+  });
+  const llmCapabilityResolver = buildLlmCapabilityResolver({
+    env,
+    defaults: resolveLlmConfig(env),
+    settings: workspaceLlmCapabilitySettingsService,
+    credentials: workspaceProviderCredentialsService,
+  });
+  llmRegistry.setResolver(llmCapabilityResolver);
   const documents = buildDocumentServices({
     auditEventRepository: infrastructure.auditEventRepository,
     auditService: infrastructure.auditService,
     composition,
+    documentJobDispatcher,
     documentSourceRepository: repositories.documentSourceRepository,
     embeddingService,
     env,
@@ -68,12 +113,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     settings,
     telemetryService: infrastructure.telemetryService,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
+    usageEventRecorder: infrastructure.usageEventRecorder,
+    llmRegistry,
+    workspaceIngestionReprocessService,
   });
   const retrieval = buildRetrievalServices({
     auditService: infrastructure.auditService,
     database: infrastructure.database,
     documentRepository: repositories.documentRepository,
     embeddingService,
+    ingestionSettingsService: settings.ingestionSettingsService,
     llmRegistry,
     logger,
     retrievalSettingsService: settings.retrievalSettingsService,
@@ -105,6 +154,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     historyItemsRepository: repositories.historyItemsRepository,
     llmRegistry,
     logger,
+    mailService: infrastructure.mailService,
     messageRepository: repositories.messageRepository,
     productAnalyticsService: infrastructure.productAnalyticsService,
     retrievalPipeline: retrieval.retrievalPipeline,
@@ -137,6 +187,20 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     onAccountCreated,
     repositories,
     workspaceService: workspace.workspaceService,
+  });
+  const passwordResetService = buildPasswordResetService({
+    access,
+    auditService: infrastructure.auditService,
+    env,
+    infrastructure,
+    repositories,
+    workspaceService: workspace.workspaceService,
+  });
+  const emailVerificationService = buildEmailVerificationService({
+    auditService: infrastructure.auditService,
+    env,
+    infrastructure,
+    repositories,
   });
   const connectorRegistry = buildConnectorRegistry({ composition, env, logger });
   const connectorIngestionPort = createConnectorIngestionPort({
@@ -187,15 +251,21 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
     authService,
+    passwordResetService,
+    emailVerificationService,
     accountAccessService: access.accountAccessService,
     accountInvitationService: access.accountInvitationService,
     workspaceSessionService: workspace.workspaceSessionService,
     abuseControlService: chat.abuseControlService,
+    workspaceProviderCredentialsService,
+    workspaceLlmCapabilitySettingsService,
     auditService: infrastructure.auditService,
+    mailService: infrastructure.mailService,
     workspaceService: workspace.workspaceService,
     workspaceSummaryService: workspace.workspaceSummaryService,
     ingestionSettingsService: settings.ingestionSettingsService,
     retrievalSettingsService: settings.retrievalSettingsService,
+    chunkRepository: repositories.chunkRepository,
     documentIngestionService: documents.documentIngestionService,
     documentSourceRepository: repositories.documentSourceRepository,
     documentImportService: documents.documentImportService,

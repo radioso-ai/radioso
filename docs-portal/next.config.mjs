@@ -16,6 +16,7 @@ const withNextra = nextra({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   outputFileTracingRoot: docsPortalRoot,
+  transpilePackages: ['@radioso/ui'],
   turbopack: {
     resolveAlias: {
       'next-mdx-import-source-file': './mdx-components.tsx',

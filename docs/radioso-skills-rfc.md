@@ -98,7 +98,7 @@ Example shapes for `retrieval.answer`:
 |---|---|---|
 | `definition_lookup` | entity, term, acronym, or concept identification | lexical-heavy search, semantic assist, minimal or no reranking unless ambiguous |
 | `event_date_lookup` | event, schedule, deadline, or date/time answers | keyword and entity boosting, date signal extraction, reranking, stricter evidence checks |
-| `policy_answer` | procedural, compliance, or support answers | hybrid search, support validation, citations, conservative answer synthesis |
+| `policy_answer` | procedural, compliance, or support answers | hybrid search, citations, conservative answer synthesis |
 | `exploratory_summary` | broad synthesis, overview, or comparison answers | broader candidate pool, diversity, synthesis across sources |
 | `follow_up_grounding` | conversational follow-ups | context-aware rewrite before search, then shape resolution |
 
@@ -190,8 +190,21 @@ For `human_contact.request`, the EE contact service still owns settings, intake 
 
 The direct contact draft and submit routes are intentionally retired. Human
 contact now enters through normal chat messages and the `human_contact.request`
-intake provider. Chat suggestions remain text-only prompts; they do not carry
-action payloads or bypass the intake provider.
+intake provider.
+
+A chat suggestion may now carry an optional `action`. When `action.kind` is
+`"start_intent"`, the suggestion is an entry chip for a registered skill intake
+rather than a free-text follow-up question. Clients activate the chip by sending
+the chip text with `inputMetadata.method = "intent_click"` and the `intent`
+object verbatim; the corresponding skill intake provider receives the structured
+trigger and runs its own intake state machine.
+
+Action chips do not own execution. The chip is a hint surface that opens a
+skill intake; all validation, permissions, state, side effects, and audit
+remain with the intake provider. Modules contribute chips by registering a
+`ChatActionSuggestionProvider`, which is evaluated against the validated answer
+outcome (for example, `no_context_refusal`) and returns at most one chip per
+turn.
 
 ## Skill Intake And Execution
 

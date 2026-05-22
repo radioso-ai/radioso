@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { LogoSpinner } from '@/components/ui/spinner'
@@ -54,6 +56,18 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
     startNewChat,
   } = useChatSession(chatSessionKey, agentId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [showCitations, setShowCitations] = useState<boolean>(() => {
+    if (typeof window === 'undefined') {
+      return true
+    }
+    return window.localStorage.getItem('chat:showCitations') !== 'false'
+  })
+  const updateShowCitations = (next: boolean) => {
+    setShowCitations(next)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('chat:showCitations', String(next))
+    }
+  }
   const isInitializingView = (onboarding.isLoading || isBootstrapping || !isInitialized) && messages.length === 0
   const visibleMessages = messages
   const { isAtBottom, scrollToLatestTurn } = useChatScroll({
@@ -116,6 +130,15 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
 
   const handleSuggestionSelect = (suggestion: ChatSuggestion, messageId: string) => {
     if (isLoading || isBootstrapping) {
+      return
+    }
+
+    if (suggestion.action?.kind === 'start_intent') {
+      void sendMessage(suggestion.text, {
+        method: 'intent_click',
+        intent: suggestion.action.intent,
+        suggestionSourceMessageId: messageId,
+      })
       return
     }
 
@@ -199,6 +222,13 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuCheckboxItem
+              checked={showCitations}
+              onCheckedChange={(checked) => updateShowCitations(checked === true)}
+            >
+              Show citations
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               disabled={isLoading || isBootstrapping || isInitializingView}
               onSelect={() => {
@@ -264,6 +294,7 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
               onSuggestionSelect={handleSuggestionSelect}
               onAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleAnswerFeedback : undefined}
               onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
+              showCitations={showCitations}
             />
             <div ref={messagesEndRef} />
           </div>

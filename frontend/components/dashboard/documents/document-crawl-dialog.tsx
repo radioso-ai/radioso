@@ -9,8 +9,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
-import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
+import { CrawlPolicyFields } from '@/components/dashboard/documents/crawl-policy-fields'
 
 export function DocumentCrawlDialog({
   open,
@@ -83,52 +82,20 @@ export function DocumentCrawlDialog({
                 Advanced
               </Button>
             </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-4 pt-2">
-              <div className="space-y-2">
-                <Label htmlFor="crawlLimit">Page limit</Label>
-                <Input
-                  id="crawlLimit"
-                  type="number"
-                  min={1}
-                  max={maxLimit}
-                  inputMode="numeric"
-                  placeholder={String(maxLimit)}
-                  value={limit}
-                  onChange={(event) => onLimitChange(event.target.value)}
-                  disabled={isCrawling}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="crawlIncludePatterns">URL allow list</Label>
-                <Textarea
-                  id="crawlIncludePatterns"
-                  rows={3}
-                  placeholder={'/blog/\n/docs/'}
-                  value={includeUrlPatterns}
-                  onChange={(event) => onIncludeUrlPatternsChange(event.target.value)}
-                  disabled={isCrawling}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="crawlExcludePatterns">URL deny list</Label>
-                <Textarea
-                  id="crawlExcludePatterns"
-                  rows={3}
-                  placeholder={'/tag/\n/search'}
-                  value={excludeUrlPatterns}
-                  onChange={(event) => onExcludeUrlPatternsChange(event.target.value)}
-                  disabled={isCrawling}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
-                <Label htmlFor="crawlPreserveLinks" className="text-sm">Preserve source links</Label>
-                <Switch
-                  id="crawlPreserveLinks"
-                  checked={preserveContentLinks}
-                  onCheckedChange={onPreserveContentLinksChange}
-                  disabled={isCrawling}
-                />
-              </div>
+            <CollapsibleContent className="pt-2">
+              <CrawlPolicyFields
+                idPrefix="crawl"
+                limit={limit}
+                maxLimit={maxLimit}
+                includeUrlPatterns={includeUrlPatterns}
+                excludeUrlPatterns={excludeUrlPatterns}
+                preserveContentLinks={preserveContentLinks}
+                disabled={isCrawling}
+                onLimitChange={onLimitChange}
+                onIncludeUrlPatternsChange={onIncludeUrlPatternsChange}
+                onExcludeUrlPatternsChange={onExcludeUrlPatternsChange}
+                onPreserveContentLinksChange={onPreserveContentLinksChange}
+              />
             </CollapsibleContent>
           </Collapsible>
           {crawlError ? (

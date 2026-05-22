@@ -236,42 +236,20 @@ variable "connector_encryption_key" {
 }
 
 variable "resend_mail_api_key" {
-  description = "Resend API key used by Enterprise Edition transactional auth mail."
+  description = "Resend API key used by transactional auth mail."
   type        = string
   sensitive   = true
   default     = null
-
-  validation {
-    condition = (
-      var.radioso_edition != "enterprise" ||
-      (
-        var.resend_mail_api_key != null &&
-        length(trimspace(nonsensitive(var.resend_mail_api_key))) > 0
-      )
-    )
-    error_message = "resend_mail_api_key must be set when radioso_edition is enterprise."
-  }
 }
 
-variable "ee_mail_from_email" {
-  description = "Verified sender email address for Enterprise Edition transactional auth mail."
+variable "mail_from_email" {
+  description = "Verified sender email address for transactional auth mail."
   type        = string
   default     = null
-
-  validation {
-    condition = (
-      var.radioso_edition != "enterprise" ||
-      (
-        var.ee_mail_from_email != null &&
-        length(trimspace(var.ee_mail_from_email)) > 0
-      )
-    )
-    error_message = "ee_mail_from_email must be set to a verified sender address when radioso_edition is enterprise."
-  }
 }
 
-variable "ee_mail_from_name" {
-  description = "Sender display name for Enterprise Edition transactional auth mail."
+variable "mail_from_name" {
+  description = "Sender display name for transactional auth mail."
   type        = string
   default     = "Radioso"
 }

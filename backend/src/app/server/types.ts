@@ -21,12 +21,15 @@ import type { PlatformSettingsService } from "../../modules/settings/composition
 import type { RetrievalSettingsService } from "../../modules/settings/composition.js";
 import type { RetrievalAnswerService, RetrievalSearchService } from "../../modules/retrieval/composition.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
+import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
+import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import type { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
 import type { AuditService } from "../../modules/audit/composition.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import type { WorkspaceSummaryService } from "../../modules/workspace/services/workspaceSummaryService.js";
 import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
+import type { ChunkRepositoryPort } from "../../modules/documents/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
@@ -38,6 +41,8 @@ import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
+import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
+import type { WorkspaceLlmCapabilitySettingsService } from "../../modules/settings/composition.js";
 import type { ProductAnalyticsPort } from "../../shared/analytics/productAnalyticsService.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import type { IncidentReportingService } from "../../shared/incidents/incidentReportingService.js";
@@ -55,6 +60,7 @@ import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provid
 import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import type { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 import type { TextGenerationClient } from "../../shared/infra/llm/providerTypes.js";
+import type { EmailService } from "../../modules/mail/public.js";
 
 export interface AppDependencies {
   env: Env;
@@ -70,15 +76,21 @@ export interface AppDependencies {
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;
   authService: AuthService;
+  passwordResetService: PasswordResetService;
+  emailVerificationService: EmailVerificationService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
   workspaceSessionService: WorkspaceSessionService;
   abuseControlService: AbuseControlService;
+  workspaceProviderCredentialsService: WorkspaceProviderCredentialsService;
+  workspaceLlmCapabilitySettingsService: WorkspaceLlmCapabilitySettingsService;
   auditService: AuditService;
+  mailService: EmailService;
   workspaceService: WorkspaceService;
   workspaceSummaryService: WorkspaceSummaryService;
   ingestionSettingsService: IngestionSettingsService;
   retrievalSettingsService: RetrievalSettingsService;
+  chunkRepository: ChunkRepositoryPort;
   documentIngestionService: DocumentIngestionService;
   documentSourceRepository: DocumentSourceRepositoryPort;
   documentImportService: DocumentImportService;

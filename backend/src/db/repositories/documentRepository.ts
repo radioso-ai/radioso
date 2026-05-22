@@ -113,9 +113,11 @@ export class DocumentRepository implements DocumentRepositoryPort {
              source_storage_bucket,
              source_storage_object,
              source_storage_generation,
-             source_size_bytes
+             source_size_bytes,
+             content_size_bytes,
+             content_hash
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', 1, $8::jsonb, $9, $10, $11, $12, $13, $14, $15)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', 1, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16, $17)
            ON CONFLICT ${conflictTarget}
            DO UPDATE
              SET title = EXCLUDED.title,
@@ -134,7 +136,9 @@ export class DocumentRepository implements DocumentRepositoryPort {
                  source_storage_bucket = EXCLUDED.source_storage_bucket,
                  source_storage_object = EXCLUDED.source_storage_object,
                  source_storage_generation = EXCLUDED.source_storage_generation,
-                 source_size_bytes = EXCLUDED.source_size_bytes
+                 source_size_bytes = EXCLUDED.source_size_bytes,
+                 content_size_bytes = EXCLUDED.content_size_bytes,
+                 content_hash = EXCLUDED.content_hash
            WHERE documents.source_kind = EXCLUDED.source_kind
            RETURNING ${documentSelect}`,
           [
@@ -153,6 +157,8 @@ export class DocumentRepository implements DocumentRepositoryPort {
             input.sourceStorageObject ?? null,
             input.sourceStorageGeneration ?? null,
             input.sourceSizeBytes ?? null,
+            input.contentSizeBytes ?? null,
+            input.contentHash ?? null,
           ],
         )
       ).rows;
@@ -190,9 +196,11 @@ export class DocumentRepository implements DocumentRepositoryPort {
          source_storage_bucket,
          source_storage_object,
          source_storage_generation,
-         source_size_bytes
+         source_size_bytes,
+         content_size_bytes,
+         content_hash
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9::jsonb, $10, $11, $12, $13, $14, $15, $16)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9::jsonb, $10, $11, $12, $13, $14, $15, $16, $17, $18)
        RETURNING ${documentSelect}`,
       [
         randomUUID(),
@@ -211,6 +219,8 @@ export class DocumentRepository implements DocumentRepositoryPort {
         input.sourceStorageObject ?? null,
         input.sourceStorageGeneration ?? null,
         input.sourceSizeBytes ?? null,
+        input.contentSizeBytes ?? null,
+        input.contentHash ?? null,
       ],
     );
 
@@ -238,7 +248,9 @@ export class DocumentRepository implements DocumentRepositoryPort {
              source_storage_bucket = COALESCE($12, source_storage_bucket),
              source_storage_object = COALESCE($13, source_storage_object),
              source_storage_generation = COALESCE($14, source_storage_generation),
-             source_size_bytes = COALESCE($15, source_size_bytes)
+             source_size_bytes = COALESCE($15, source_size_bytes),
+             content_size_bytes = COALESCE($16, content_size_bytes),
+             content_hash = COALESCE($17, content_hash)
          WHERE id = $1 AND workspace_id = $2
          RETURNING ${documentSelect}`,
         [
@@ -257,6 +269,8 @@ export class DocumentRepository implements DocumentRepositoryPort {
           input.sourceStorageObject ?? null,
           input.sourceStorageGeneration ?? null,
           input.sourceSizeBytes ?? null,
+          input.contentSizeBytes ?? null,
+          input.contentHash ?? null,
         ],
       ).catch((error: unknown) => {
         throw this.mapDocumentConflict(error);
@@ -413,7 +427,9 @@ export class DocumentRepository implements DocumentRepositoryPort {
            source_storage_bucket = COALESCE($13, source_storage_bucket),
            source_storage_object = COALESCE($14, source_storage_object),
            source_storage_generation = COALESCE($15, source_storage_generation),
-           source_size_bytes = COALESCE($16, source_size_bytes)
+           source_size_bytes = COALESCE($16, source_size_bytes),
+           content_size_bytes = COALESCE($17, content_size_bytes),
+           content_hash = COALESCE($18, content_hash)
        WHERE id = $1 AND workspace_id = $2
        RETURNING ${documentSelect}`,
       [
@@ -433,6 +449,8 @@ export class DocumentRepository implements DocumentRepositoryPort {
         input.sourceStorageObject ?? null,
         input.sourceStorageGeneration ?? null,
         input.sourceSizeBytes ?? null,
+        input.contentSizeBytes ?? null,
+        input.contentHash ?? null,
       ],
     ).catch((error: unknown) => {
       throw this.mapDocumentConflict(error);
@@ -708,6 +726,95 @@ export class DocumentRepository implements DocumentRepositoryPort {
       }
     }
     return { count: rows.length, storageRefs };
+  }
+
+  async findActivePageState(input: {
+    workspaceId: string;
+    sourceId?: string | null;
+    externalDocumentId: string;
+  }): Promise<{
+    documentId: string;
+    revision: number;
+    contentSizeBytes: number | null;
+    contentHash: string | null;
+  } | null> {
+    const sourceId = input.sourceId ?? null;
+    const sourceFilter = sourceId === null
+      ? "source_id IS NULL"
+      : "source_id = $3";
+    const params: unknown[] = [input.workspaceId, input.externalDocumentId];
+    if (sourceId !== null) {
+      params.push(sourceId);
+    }
+
+    const [row] = await this.database.query<{
+      id: string;
+      revision: number;
+      content_size_bytes: number | string | null;
+      content_hash: string | null;
+    }>(
+      `SELECT id, revision, content_size_bytes, content_hash
+       FROM documents
+       WHERE workspace_id = $1
+         AND external_document_id = $2
+         AND ${sourceFilter}
+         AND status <> 'failed'
+       LIMIT 1`,
+      params,
+    );
+
+    if (!row) {
+      return null;
+    }
+
+    const rawBytes = row.content_size_bytes;
+    const bytes = typeof rawBytes === "string"
+      ? Number(rawBytes)
+      : (rawBytes ?? null);
+
+    return {
+      documentId: row.id,
+      revision: row.revision,
+      contentSizeBytes: typeof bytes === "number" && Number.isFinite(bytes) ? bytes : null,
+      contentHash: row.content_hash ?? null,
+    };
+  }
+
+  async deleteMissingPagesBySourceAndExternalIds(input: {
+    workspaceId: string;
+    sourceId: string;
+    keepExternalDocumentIds: string[];
+  }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    const keep = Array.from(new Set(input.keepExternalDocumentIds.filter((value) => value && value.length > 0)));
+    const params: unknown[] = [input.sourceId, input.workspaceId];
+    let keepClause = "";
+    if (keep.length > 0) {
+      params.push(keep);
+      keepClause = `AND external_document_id <> ALL($3::text[])`;
+    }
+
+    const rows = await this.database.query<{
+      id: string;
+      content_size_bytes: number | string | null;
+    }>(
+      `DELETE FROM documents
+       WHERE source_id = $1
+         AND workspace_id = $2
+         AND external_document_id IS NOT NULL
+         ${keepClause}
+       RETURNING id, content_size_bytes`,
+      params,
+    );
+
+    let deletedContentBytes = 0;
+    for (const row of rows) {
+      const raw = row.content_size_bytes;
+      const bytes = typeof raw === "string" ? Number(raw) : raw;
+      if (typeof bytes === "number" && Number.isFinite(bytes)) {
+        deletedContentBytes += bytes;
+      }
+    }
+    return { deletedCount: rows.length, deletedContentBytes };
   }
 
   private mapDocumentConflict(error: unknown): unknown {

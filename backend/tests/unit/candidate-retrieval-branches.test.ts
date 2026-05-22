@@ -123,6 +123,7 @@ describe("candidate retrieval branches", () => {
         matcherVersion: "test",
       },
       promptHistory: [],
+      promptHistoryReset: false,
       continuityDecision: "updated",
     });
 
@@ -132,6 +133,129 @@ describe("candidate retrieval branches", () => {
     expect(result.retrievalBranches.map((branch) => branch.label)).toEqual(["Narayani", "Arudra"]);
     expect(result.rewrittenContexts).toHaveLength(2);
     expect(result.lexicalContexts).toHaveLength(2);
+  });
+
+  it("uses the active workspace embedding model for semantic query embeddings", async () => {
+    const seenModels: Array<string | undefined> = [];
+    const seenVectorModels: Array<string | undefined> = [];
+    const stage = new CandidateRetrievalStageService(
+      new EmbeddingService({
+        async embedTexts(texts, options?: { model?: string }) {
+          seenModels.push(options?.model);
+          return texts.map(() => [1]);
+        },
+      }),
+      {
+        async search(input) {
+          seenVectorModels.push(input.embeddingModel);
+          return [];
+        },
+      },
+      {
+        async search() {
+          return [];
+        },
+      },
+      {
+        async getForWorkspace(workspaceId: string) {
+          return {
+            workspaceId,
+            chunkingStrategy: "fixed_window" as const,
+            fixedWindowChunkSize: 800,
+            fixedWindowChunkOverlap: 120,
+            structuredMinChunkSize: 24,
+            structuredMaxChunkSize: 220,
+            embeddingModel: "text-embedding-3-small" as const,
+            pendingEmbeddingModel: "text-embedding-3-large" as const,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        },
+      },
+    );
+
+    await stage.execute({
+      request: {
+        workspaceId: "w1",
+        query: "account recovery",
+        history: [],
+      },
+      settings: {
+        workspaceId: "w1",
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        metadataRules: [],
+        customInstruction: "",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+      originalParsedQuery: {
+        originalQuery: "account recovery",
+        semanticQuery: "account recovery",
+        lexicalQuery: "account recovery",
+        constraints: [],
+      },
+      originalPreparedQuery: {
+        originalQuery: "account recovery",
+        semanticQuery: "account recovery",
+        lexicalQuery: "account recovery",
+        constraints: [],
+      },
+      rewrittenQuery: {
+        originalQuery: "account recovery",
+        rewrittenQuery: "account recovery",
+        effectiveQuery: "account recovery",
+        semanticQuery: "account recovery",
+        lexicalQuery: "account recovery",
+        responseIntent: "retrieval",
+        retrievalSubqueries: [
+          { id: "subquery_1", label: "account recovery", semanticQuery: "account recovery", lexicalQuery: "account recovery" },
+        ],
+        rewriteApplied: true,
+        retrievalEligible: true,
+        status: "applied",
+        confidence: 0.9,
+      },
+      responseIntent: "retrieval",
+      activeQuery: "account recovery",
+      activeParsedQuery: {
+        originalQuery: "account recovery",
+        semanticQuery: "account recovery",
+        lexicalQuery: "account recovery",
+        constraints: [],
+      },
+      activeSemanticQuery: "account recovery",
+      activeRetrievalSubqueries: [
+        { id: "subquery_1", label: "account recovery", semanticQuery: "account recovery", lexicalQuery: "account recovery" },
+      ],
+      triggerAnalysis: {
+        status: "skipped_not_configured",
+        consideredRules: [],
+        matchedRuleIds: [],
+        unmatchedRuleIds: [],
+        matchCount: 0,
+        matcherVersion: "test",
+      },
+      promptHistory: [],
+      promptHistoryReset: false,
+      continuityDecision: "updated",
+    });
+
+    expect(seenModels).toEqual(["text-embedding-3-small"]);
+    expect(seenVectorModels).toEqual(["text-embedding-3-small"]);
   });
 
   it("reuses identical semantic retrieval while still running distinct lexical branches", async () => {
@@ -272,6 +396,7 @@ describe("candidate retrieval branches", () => {
         matcherVersion: "test",
       },
       promptHistory: [],
+      promptHistoryReset: false,
       continuityDecision: "updated" as const,
     };
 

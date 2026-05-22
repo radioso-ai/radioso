@@ -6,16 +6,12 @@
   "engines": {
     "node": ">=24"
   },
-  "main": "./dist/src/reset-password-page.js",
-  "types": "./dist/src/reset-password-page.d.ts",
+  "main": "./dist/src/featureManifest.js",
+  "types": "./dist/src/featureManifest.d.ts",
   "exports": {
-    "./reset-password-page": {
-      "types": "./dist/src/reset-password-page.d.ts",
-      "default": "./dist/src/reset-password-page.js"
-    },
-    "./verify-email-page": {
-      "types": "./dist/src/verify-email-page.d.ts",
-      "default": "./dist/src/verify-email-page.js"
+    "./feature-manifest": {
+      "types": "./dist/src/featureManifest.d.ts",
+      "default": "./dist/src/featureManifest.js"
     }
   },
   "scripts": {
@@ -26,7 +22,7 @@
     "@types/node": "^24.3.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "next": "16.2.4",
+    "next": "16.2.6",
     "react": "19.2.5",
     "react-dom": "19.2.5",
     "typescript": "^5.9.2",

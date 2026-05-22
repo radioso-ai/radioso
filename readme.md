@@ -84,7 +84,7 @@ One script tag. Paste it on any page of an approved origin. The launcher opens a
 5. Wait for document processing to finish.
 6. Ask one of the suggested questions in chat.
 
-Open-source Radioso does not include transactional email. Registration creates a session immediately, and password reset is not exposed in the OSS auth API. Mail-backed account recovery belongs to Enterprise Edition modules.
+Registration creates the account and default workspace, then sends a verification email. It does not create a session until the email is verified. Password reset and email verification are part of the open-source auth API, and sign-in requires a verified email address. Set `MAIL_DRIVER`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`, and `RESEND_MAIL_API_KEY` when you want hosted transactional email delivery; local development defaults to log output when no Resend key is configured.
 
 Authenticated dashboard URLs are workspace-first. After sign-in, the app navigates under `/w/<workspace-public-route-key>/...`. Older `/account/<account-id>/...` dashboard links still work, but they redirect to the canonical workspace URL after the app restores the correct organization and workspace context.
 
@@ -184,7 +184,47 @@ curl -sS \
 
 Assistant conversations are listed from `GET /api/v1/history/chat` and fetched from `GET /api/v1/history/chat/<conversation-id>`. `GET /api/v1/history` returns merged chat and document-search history. Shared workspace settings are read and merge-updated through `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
 
-Assistant and retrieval responses include diagnostic metadata that identifies whether the work ran as assistant direct, assistant retrieval-backed, retrieval-only, or MCP capability traffic.
+Assistant, retrieval, and search responses are lean by default. Add `includeDebug: true` to supported request bodies when an authenticated operator or integration needs diagnostic metadata. Debug responses place routing, retrieval summaries, activity traces, and full evidence under a `debug` field instead of mixing them into the normal user-facing payload.
+
+This is a breaking response-shape change for SDK and direct REST consumers that previously read diagnostics from top-level fields. Update TypeScript SDK clients to `@radioso/typescript-sdk` 0.2.0 or later and read diagnostic data from `response.debug`.
+
+### LLM provider credentials and model selection
+
+Workspaces can supply their own provider API keys and pick a model per capability without restarting the backend. Keys are encrypted with `CONNECTOR_ENCRYPTION_KEY` (the same key that protects connector secrets; the bootstrap command generates one when missing) and never round-tripped to clients.
+
+List configured providers, store a key, or remove one:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer <workspace-token>" \
+  http://localhost:8080/api/v1/settings/credentials
+
+curl -sS -X PUT \
+  -H "Authorization: Bearer <workspace-token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"apiKey":"sk-..."}' \
+  http://localhost:8080/api/v1/settings/credentials/claude
+
+curl -sS -X DELETE \
+  -H "Authorization: Bearer <workspace-token>" \
+  http://localhost:8080/api/v1/settings/credentials/claude
+```
+
+Read or update the per-workspace chat / rewrite / rerank model preference. A `null` value clears that capability and falls back to the env default:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer <workspace-token>" \
+  http://localhost:8080/api/v1/settings/llm-models
+
+curl -sS -X PUT \
+  -H "Authorization: Bearer <workspace-token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"chat":{"provider":"claude","model":"claude-sonnet-4-5"},"rerank":null}' \
+  http://localhost:8080/api/v1/settings/llm-models
+```
+
+Agents can override the chat model for a specific persona via `chatModelOverride` on `PUT /api/v1/agents/<agentId>`. Resolution order at chat time is agent override → workspace preference → env default. API keys come from the workspace credential first, then fall back to the matching environment variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). The `openai-compatible` provider also requires `OPENAI_COMPATIBLE_BASE_URL` — a workspace selecting it without a base URL fails with a clear error instead of silently calling the default OpenAI endpoint.
 
 Radioso also exposes a read-only skills catalog:
 
@@ -213,6 +253,8 @@ Set `WEBSITE_CRAWLER_ENABLED=false` to disable the crawler entirely. The API hid
 ### TypeScript SDK
 
 The SDK chat facade is for agent-backed assistant chat. Use the REST retrieval endpoints above for retrieval-only search or grounded answers when you do not want assistant behavior.
+
+SDK 0.2.0 follows the lean response contract. Existing callers that read `route`, `activitySummary`, `activityTrace`, or retrieval `evidence` from top-level API responses should request debug output and read those values from `response.debug`.
 
 ```ts
 import { createRadiosoClient } from "@radioso/typescript-sdk";

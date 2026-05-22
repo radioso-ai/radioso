@@ -54,6 +54,7 @@ export const humanContactRequestSkillDefinition: SkillDefinition = {
         extractionHint: "A concise summary of what the user wants help with.",
       },
     ],
+    subjectIdentityField: "email",
     confirmation: "none",
     interruptionPolicy: "pause_and_resume",
   },

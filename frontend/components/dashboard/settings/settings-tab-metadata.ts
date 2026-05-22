@@ -26,6 +26,23 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
       },
     ],
   },
+  providers: {
+    id: 'providers',
+    title: 'Providers',
+    summary: 'Connect AI provider API keys and pick which model handles chat, query rewrite, rerank, and embeddings.',
+    sections: [
+      {
+        id: 'provider-credentials',
+        label: 'Provider API keys',
+        summary: 'Workspace API keys for OpenAI, Anthropic, Gemini, and OpenAI-compatible endpoints.',
+      },
+      {
+        id: 'provider-models',
+        label: 'Models',
+        summary: 'Per-capability provider and model selection, including the workspace embedding model.',
+      },
+    ],
+  },
   users: {
     id: 'users',
     title: 'Users',

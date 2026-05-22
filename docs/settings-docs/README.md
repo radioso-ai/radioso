@@ -28,10 +28,12 @@ The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts
 
 The Knowledge Base dashboard surface presents ingestion and retrieval controls in pipeline order:
 
-1. Ingestion: choose chunking strategy -> tune chunk sizing -> reprocess existing documents
+1. Ingestion: choose chunking settings -> tune chunk sizing -> reprocess existing documents
 2. Retrieval: rewrite query -> retrieve/filter candidates -> rerank -> present grounded evidence
 
-Assistant identity, conversation mode, custom answer instruction, proactive greeting, and suggested follow-up behavior belong to the Agent behavior surface. Retrieval controls should stay focused on evidence gathering, ranking, filters, validation outcomes, and citation presentation.
+Embedding model selection belongs on the Settings -> Providers surface because it is a provider-backed model choice. It still uses ingestion settings behind the scenes because changing the embedding model affects existing chunks and may trigger re-indexing.
+
+Assistant identity, conversation mode, custom answer instruction, proactive greeting, and suggested follow-up behavior belong to the Agent behavior surface. Retrieval controls should stay focused on evidence gathering, ranking, filters, and citation presentation.
 
 The connector-style stage separators are rendered in [`frontend/components/dashboard/settings/settings-flow.tsx`](../../frontend/components/dashboard/settings/settings-flow.tsx) and reused by the activity trace graph for visual consistency.
 

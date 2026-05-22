@@ -30,11 +30,13 @@ The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts
 The dashboard presents settings in product order:
 
 1. Workspace, Assistant, and Channels: workspace access, assistant behavior, anonymous chat, and danger zone
-2. Ingestion: Choose a chunking strategy -> Tune active chunking -> Apply changes to existing documents
+2. Ingestion: Choose chunking settings -> Tune active chunking -> Apply changes to existing documents
 3. Retrieval: Rewrite the incoming question -> Tune search and reranking -> Prioritize by metadata -> Present grounded evidence
 4. Connectors: connector list and configuration, without a per-page side menu
 
-Assistant behavior fields such as conversation mode, custom answer instruction, suggested follow-ups, identity, and first greeting belong to the assistant settings surface. Retrieval settings should stay focused on rewrite, ranking, metadata filters, validation outcomes, and citation presentation.
+Embedding model selection belongs on the Settings -> Providers surface because it is a provider-backed model choice. It still uses ingestion settings behind the scenes because changing the embedding model affects existing chunks and may trigger re-indexing.
+
+Assistant behavior fields such as conversation mode, custom answer instruction, suggested follow-ups, identity, and first greeting belong to the assistant settings surface. Retrieval settings should stay focused on rewrite, ranking, metadata filters, and citation presentation.
 
 The settings navigation shell and per-tab section metadata now live in [`frontend/components/dashboard/settings/settings-tab-shell.tsx`](../../frontend/components/dashboard/settings/settings-tab-shell.tsx) and [`frontend/components/dashboard/settings/settings-tab-metadata.ts`](../../frontend/components/dashboard/settings/settings-tab-metadata.ts).
 

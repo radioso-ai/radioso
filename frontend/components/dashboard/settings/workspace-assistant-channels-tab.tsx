@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, CheckCircle2, CircleAlert, ExternalLink, FolderOpen, KeyRound, Link as LinkIcon, Mail, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook } from 'lucide-react'
+import { Building2, CheckCircle2, CircleAlert, ExternalLink, FolderOpen, KeyRound, Link as LinkIcon, Mail, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook, Wrench } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
+import { AssistantIdentityAppearanceSection } from '@/components/dashboard/settings/assistant-identity-appearance-section'
+import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import {
   getAssistantLocaleLabel,
@@ -607,7 +609,9 @@ export function WorkspaceAssistantChannelsTab({
           getAssistantBehaviorSourceScopeKey(assistantBehaviorSettings) !==
             getAssistantBehaviorSourceScopeKey(savedAssistantBehaviorSettings) ||
           JSON.stringify(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) !==
-            JSON.stringify(savedAssistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME)
+            JSON.stringify(savedAssistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) ||
+          JSON.stringify(assistantBehaviorSettings.branding ?? null) !==
+            JSON.stringify(savedAssistantBehaviorSettings.branding ?? null)
         )
       : false
 
@@ -1045,24 +1049,40 @@ export function WorkspaceAssistantChannelsTab({
                 <LogoSpinner imageClassName="h-6 w-6" />
               </div>
             ) : anonSettings && assistantBehaviorSettings ? (
-              <AssistantBehaviorSection
-                anonSettings={anonSettings}
-                assistantBehaviorSettings={assistantBehaviorSettings}
-                assistantLocaleInput={assistantLocaleInput}
-                onAssistantSettingChange={handleAssistantSettingChange}
-                onAssistantLocaleInputChange={handleAssistantLocaleInputChange}
-                onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
-                onAssistantLogoUpload={(file) => void handleAssistantLogoUpload(file)}
-                onAssistantLogoDelete={() => void handleAssistantLogoDelete()}
-                isAnonSaving={isAnonSaving}
-                isAssistantLogoSaving={isAssistantLogoSaving}
-                assistantSettingsError={assistantSettingsError}
-                sourceList={sourceList}
-                isSourceListLoading={isSourceListLoading}
-                sourceListError={sourceListError}
-                channelsTabHref={channelsTabHref}
-                websiteEmbedAvailable={editionController.canUseWebsiteEmbed()}
-              />
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+                <div className="space-y-6">
+                  {assistantSettingsError ? (
+                    <p className="text-sm text-destructive" role="alert">{assistantSettingsError}</p>
+                  ) : null}
+                  <AssistantIdentityAppearanceSection
+                    anonSettings={anonSettings}
+                    assistantBehaviorSettings={assistantBehaviorSettings}
+                    onAssistantSettingChange={handleAssistantSettingChange}
+                    onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
+                    onAssistantLogoUpload={(file) => void handleAssistantLogoUpload(file)}
+                    onAssistantLogoDelete={() => void handleAssistantLogoDelete()}
+                    isAnonSaving={isAnonSaving}
+                    isAssistantLogoSaving={isAssistantLogoSaving}
+                  />
+                  <AssistantBehaviorSection
+                    anonSettings={anonSettings}
+                    assistantBehaviorSettings={assistantBehaviorSettings}
+                    assistantLocaleInput={assistantLocaleInput}
+                    onAssistantSettingChange={handleAssistantSettingChange}
+                    onAssistantLocaleInputChange={handleAssistantLocaleInputChange}
+                    onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
+                    isAnonSaving={isAnonSaving}
+                    sourceList={sourceList}
+                    isSourceListLoading={isSourceListLoading}
+                    sourceListError={sourceListError}
+                  />
+                </div>
+                <AssistantPreviewRail
+                  anonSettings={anonSettings}
+                  assistantBehaviorSettings={assistantBehaviorSettings}
+                  channelsTabHref={channelsTabHref}
+                />
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load assistant settings.</p>
             )}
@@ -1070,8 +1090,13 @@ export function WorkspaceAssistantChannelsTab({
           ) : null}
 
           {editionController.canUseHumanContact() && mode === 'assistant' ? (
-          <section id="human-contact" className="space-y-6 scroll-mt-24">
-            <section className="scroll-mt-24 rounded-2xl border border-border bg-card/95 p-5 shadow-sm">
+          <section id="assistant-skills" className="space-y-6 scroll-mt-24">
+            <SettingsCard
+              icon={<Wrench className="h-5 w-5 text-primary" />}
+              title="Skills"
+              description="Capabilities the assistant can use during a chat."
+            >
+            <div id="human-contact" className="scroll-mt-24 space-y-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex min-w-0 gap-3">
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
@@ -1245,7 +1270,8 @@ export function WorkspaceAssistantChannelsTab({
                   ) : null}
                 </div>
               )}
-            </section>
+            </div>
+            </SettingsCard>
           </section>
           ) : null}
 

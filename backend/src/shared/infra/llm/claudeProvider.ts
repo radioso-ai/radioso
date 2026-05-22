@@ -2,6 +2,7 @@ import {
   type LlmCapabilityConfig,
   type TextGenerationClient,
 } from "./providerTypes.js";
+import { readProviderErrorBody } from "./providerErrors.js";
 import { LLM_DEFAULTS } from "../../domain/behaviorConfig.js";
 import { parseSseEvents } from "./sse.js";
 
@@ -64,7 +65,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Claude request failed: ${response.status}`);
+      throw await readProviderErrorBody("Claude", "messages", response);
     }
 
     const payload = await response.json();
@@ -87,8 +88,11 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
       body: JSON.stringify(buildClaudeBody(this.config, { ...input, stream: true })),
     });
 
-    if (!response.ok || !response.body) {
-      throw new Error(`Claude stream failed: ${response.status}`);
+    if (!response.ok) {
+      throw await readProviderErrorBody("Claude", "messages.stream", response);
+    }
+    if (!response.body) {
+      throw new Error(`Claude messages.stream failed: ${response.status} (no response body)`);
     }
 
     for await (const data of parseSseEvents(response.body)) {

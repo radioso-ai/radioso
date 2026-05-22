@@ -78,6 +78,31 @@ describe("AMQP document job queue", () => {
     });
   });
 
+  it("asserts the dead-letter queue and wires it onto the main queue when configured", async () => {
+    const { channel, connect } = createAmqpHarness();
+    const dispatcher = new AmqpDocumentJobDispatcher({
+      amqpUrl: "amqp://localhost:5672",
+      queueName: "radioso-document-jobs",
+      deadLetterQueueName: "radioso-document-jobs.dlq",
+      connect,
+      logger: createLogger() as any,
+    });
+
+    await dispatcher.dispatch({
+      jobId: "33cc6be4-1a3a-4b43-9714-e87e9f9a60ab",
+      documentId: "77d89bb2-b69a-43b0-b226-62f40d160321",
+      workspaceId: "e93ea86d-28ec-4d2f-aa9a-5e633a22c6df",
+      revision: 2,
+    });
+
+    expect(channel.assertQueue).toHaveBeenCalledWith("radioso-document-jobs.dlq", { durable: true });
+    expect(channel.assertQueue).toHaveBeenCalledWith("radioso-document-jobs", {
+      durable: true,
+      deadLetterExchange: "",
+      deadLetterRoutingKey: "radioso-document-jobs.dlq",
+    });
+  });
+
   it("publishes dispatch batches sequentially", async () => {
     const { channel, connect } = createAmqpHarness();
     const dispatcher = new AmqpDocumentJobDispatcher({
@@ -189,7 +214,7 @@ describe("AMQP document job queue", () => {
     expect(channel.ack).toHaveBeenCalledWith(message);
   });
 
-  it("acknowledges malformed messages so poison payloads do not block the queue", async () => {
+  it("rejects malformed messages without requeue so poison payloads route to DLQ or are dropped", async () => {
     const { channel, connect } = createAmqpHarness();
     const worker = {
       runJobById: vi.fn(),
@@ -198,6 +223,7 @@ describe("AMQP document job queue", () => {
     const consumer = new AmqpDocumentJobConsumer({
       amqpUrl: "amqp://localhost:5672",
       queueName: "radioso-document-jobs",
+      deadLetterQueueName: "radioso-document-jobs.dlq",
       connect,
       logger: logger as any,
       busyRequeueDelayMs: 0,
@@ -212,12 +238,15 @@ describe("AMQP document job queue", () => {
     await onMessage(message);
 
     expect(worker.runJobById).not.toHaveBeenCalled();
-    expect(channel.ack).toHaveBeenCalledWith(message);
+    expect(channel.ack).not.toHaveBeenCalled();
+    expect(channel.nack).toHaveBeenCalledWith(message, false, false);
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         role: "amqp-document-job-consumer",
+        deadLetterQueueName: "radioso-document-jobs.dlq",
+        rawPayloadBase64: expect.any(String),
       }),
-      "Discarded invalid document job queue message",
+      "Rejected invalid document job queue message",
     );
   });
 

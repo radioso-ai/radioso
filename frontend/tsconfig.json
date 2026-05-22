@@ -25,6 +25,12 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@radioso/agent-creation-contributions": [
+        "./lib/agent-creation-contributions-oss.ts"
+      ],
+      "@radioso/ui/*": [
+        "../packages/ui/src/*"
       ]
     }
   },

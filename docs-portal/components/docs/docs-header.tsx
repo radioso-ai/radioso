@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useTheme } from 'next-themes'
 
-import { Button } from '@/components/ui/button'
+import { Button } from '@radioso/ui/button'
 import { site } from '@/lib/site'
 
 export function DocsHeader() {
@@ -13,22 +13,17 @@ export function DocsHeader() {
   const pathname = usePathname()
 
   const navItems = [
-    { href: '/', label: 'Home' },
-    { href: '/quickstarts/run-locally', label: 'Guides' },
-    { href: '/api', label: 'API' },
-    { href: '/architecture', label: 'Architecture' },
+    { href: '/why-radioso', label: 'Why Radioso', match: (p: string) => p === '/why-radioso' || p.startsWith('/why-radioso/') },
+    { href: '/quickstarts/run-locally', label: 'Guides', match: (p: string) => p.startsWith('/quickstarts/') || p.startsWith('/guides/') || p.startsWith('/sdk/') || p.startsWith('/operators/') },
+    { href: '/api', label: 'API', match: (p: string) => p === '/api' || p.startsWith('/api/') || p === '/api-reference' },
+    { href: '/architecture', label: 'Architecture', match: (p: string) => p === '/architecture' || p.startsWith('/architecture/') },
   ]
 
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-border/80 bg-background/90 px-8 backdrop-blur">
       <nav className="flex items-center gap-2">
         {navItems.map((item) => {
-          const active =
-            item.href === '/'
-              ? pathname === '/'
-              : item.href === '/api'
-                ? pathname === '/api' || pathname.startsWith('/api/') || pathname === '/api-reference'
-              : pathname === item.href || pathname.startsWith(`${item.href}/`)
+          const active = item.match(pathname)
 
           return (
             <Link
@@ -60,7 +55,7 @@ export function DocsHeader() {
           <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
           <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
         </Button>
-        <Button asChild size="sm" className="gap-2 rounded-xl">
+        <Button asChild size="sm" className="gap-2 rounded-md">
           <a href={site.appUrl}>Open app</a>
         </Button>
       </div>

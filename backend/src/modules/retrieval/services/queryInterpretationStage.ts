@@ -31,6 +31,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       originalParsedQuery.semanticQuery,
       originalParsedQuery.lexicalQuery,
     );
+    const workspaceContext = { workspaceId: input.request.workspaceId };
     const rewrittenQuery = await this.queryRewriteService.rewrite({
       query: input.request.query,
       contextWindow: input.contextWindow,
@@ -38,6 +39,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       semanticRewriteInstructions: input.settings.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.settings.lexicalRewriteInstructions,
       answerScopeReference: this.buildAnswerScopeReference(input),
+      workspaceContext,
     });
     const responseIntent = rewrittenQuery.responseIntent;
     const parsedQueryBase = originalParsedQuery;
@@ -63,13 +65,8 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
           : rewrittenQuery.rejectionReason
             ? ("rejected" as const)
             : ("unchanged" as const);
-    const shouldResetPromptHistory =
-      rewrittenQuery.retrievalEligible &&
-      (rewrittenQuery.structuredResult?.turnKind === "fresh_subject" ||
-        rewrittenQuery.structuredResult?.turnKind === "explicit_recenter");
-    const promptHistory = shouldResetPromptHistory
-      ? []
-      : input.contextWindow.selectedMessages.slice(-RETRIEVAL_BEHAVIOR.promptHistoryMaxMessages);
+    const shouldResetPromptHistory = false;
+    const promptHistory = input.contextWindow.selectedMessages.slice(-RETRIEVAL_BEHAVIOR.promptHistoryMaxMessages);
     const activeRetrievalSubqueries =
       rewrittenQuery.retrievalEligible && rewrittenQuery.retrievalSubqueries && rewrittenQuery.retrievalSubqueries.length > 1
         ? rewrittenQuery.retrievalSubqueries.map((subquery) => ({
@@ -91,8 +88,9 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       ? await this.queryRewriteService.analyzeTriggers({
           query: input.request.query,
           activeQuery,
-          contextMessages: promptHistory,
+          contextMessages: [],
           metadataRules: input.settings.metadataRules ?? [],
+          workspaceContext,
         })
       : {
           status: "skipped_non_retrieval" as const,
@@ -115,6 +113,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       activeRetrievalSubqueries,
       triggerAnalysis,
       promptHistory,
+      promptHistoryReset: shouldResetPromptHistory,
       continuityDecision,
     };
   }

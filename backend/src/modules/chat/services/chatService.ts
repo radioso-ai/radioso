@@ -5,23 +5,11 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AgentService } from "../../agents/public.js";
-import {
-  ActivitySummaryPresenter,
-  ActivityTracePresenter,
-  type RetrievalPipelineService,
-  type ActivityTrace,
-  type RewriteContinuityState,
-} from "../../retrieval/public.js";
+import type { RetrievalPipelineService } from "../../retrieval/public.js";
 import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
-import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
-import type { ChatGateway } from "../contracts/chatGateway.js";
+import type { ChatGateway, ChatGatewayInput } from "../contracts/chatGateway.js";
+import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ChatStreamEvent, SkillStreamPayload, SkillStreamPhase } from "../contracts/streamEvents.js";
-import {
-  ASSISTANT_TURN_OUTCOME,
-  type AnswerSegmentValidationResult,
-  type AnswerValidationSummary,
-  type AssistantTurnOutcome,
-} from "./answerSupportValidationTypes.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import {
   MissingGroundedMissResponseComposer,
@@ -29,7 +17,7 @@ import {
 } from "./groundedMissResponseComposer.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { AssistantSuggestionExpansionService } from "./assistantSuggestionExpansionService.js";
-import type { ChatResponse, ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
+import type { ChatResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
@@ -41,8 +29,9 @@ import {
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
-import { buildRewriteContinuityState } from "./rewriteContinuityState.js";
 import { ChatAnswerPresenter, type ChatPresentedAnswer } from "./chatAnswerPresenter.js";
+import { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
+import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -59,7 +48,7 @@ const isBlankChatAnswerError = (error: unknown): error is BlankChatAnswerError =
 export class ModelChatGateway implements ChatGateway {
   constructor(private readonly client: TextGenerationClient) {}
 
-  async answer(input: { query: string; history: MessageRecord[]; prompt: string; systemPrompt?: string }): Promise<string> {
+  async answer(input: ChatGatewayInput): Promise<string> {
     const response = await this.client.complete({
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
@@ -72,7 +61,7 @@ export class ModelChatGateway implements ChatGateway {
     return response;
   }
 
-  async *streamAnswer(input: { query: string; history: MessageRecord[]; prompt: string; systemPrompt?: string }): AsyncIterable<string> {
+  async *streamAnswer(input: ChatGatewayInput): AsyncIterable<string> {
     for await (const chunk of this.client.stream({
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
@@ -205,24 +194,30 @@ const buildSkillStreamPayload = (
 });
 
 export class ChatService {
-  private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
-  private readonly activityTracePresenter = new ActivityTracePresenter();
   private readonly assistantInstructionBuilder = new AssistantInstructionBuilder();
   private readonly chatAnswerPresenter: ChatAnswerPresenter;
   private readonly chatSessionPreparer: ChatSessionPreparer;
+  private readonly chatTurnLifecycle: ChatTurnLifecycle;
   constructor(
-    private readonly conversationRepository: ConversationRepositoryPort,
-    private readonly messageRepository: MessageRepositoryPort,
+    conversationRepository: ConversationRepositoryPort,
+    messageRepository: MessageRepositoryPort,
     retrievalPipeline: RetrievalPipelineService,
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
-    private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
+    productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
     workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
     agentService?: Pick<AgentService, "resolve">,
     private readonly chatIntakeProvider: ChatIntakeProviderPort = new NoopChatIntakeProvider(),
+    private readonly chatActionSuggestionService?: ChatActionSuggestionService,
   ) {
+    this.chatTurnLifecycle = new ChatTurnLifecycle(
+      conversationRepository,
+      messageRepository,
+      auditService,
+      productAnalyticsService,
+    );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
       messageRepository,
@@ -232,29 +227,21 @@ export class ChatService {
       agentService,
     );
     this.chatAnswerPresenter = new ChatAnswerPresenter(
-      groundedMissResponseComposer,
-      new AssistantSuggestionExpansionService(async ({ query, history, prompt }) =>
+      new AssistantSuggestionExpansionService(async ({ query, history, prompt, workspaceContext }) =>
         this.chatGateway.answer({
           query,
           history,
           prompt,
+          workspaceContext,
         })),
+      chatActionSuggestionService,
     );
   }
 
-  private getRoute(session: PreparedSession): ChatRoute {
-    if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
-      return {
-        type: "direct",
-        reason: session.retrieval.diagnostics.responseIntent === "assistant_identity"
-          ? "assistant_identity"
-          : "social_only",
-      };
-    }
-
+  private buildChatWorkspaceContext(session: PreparedSession): LlmCapabilityResolveInput {
     return {
-      type: "retrieval",
-      reason: "evidence_required",
+      workspaceId: session.agent.workspaceId,
+      capabilityOverride: session.agent.chatModelOverride ?? undefined,
     };
   }
 
@@ -314,6 +301,7 @@ export class ChatService {
       history: session.history,
       systemPrompt: session.retrieval.systemPrompt,
       prompt,
+      workspaceContext: this.buildChatWorkspaceContext(session),
     })).trim();
   }
 
@@ -341,6 +329,7 @@ export class ChatService {
           answerInstructionBlock: this.buildAnswerInstructionBlock(session),
           pageContextBlock: this.buildPageContextBlock(session.pageContext),
         }),
+        workspaceContext: this.buildChatWorkspaceContext(session),
       })).trim();
     } catch (error) {
       if (isBlankChatAnswerError(error)) {
@@ -401,73 +390,22 @@ export class ChatService {
       session = await this.chatSessionPreparer.prepareRetrieval(input, session);
       const answerStartedAt = Date.now();
       const presentation = await this.generateAnswerPresentation(session, input.query, input.userExpectedLocale);
-      const route = this.getRoute(session);
-      const activitySummary = this.activitySummaryPresenter.present(session.retrieval.diagnostics, {
-        execution: {
-          surface: "assistant",
-          path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
-          retrievalInvoked: route.type === "retrieval",
-        },
-      });
-      const activityTrace = this.activityTracePresenter.appendAnswerOutcome({
-        trace: session.retrieval.trace,
-        summary: activitySummary,
-        outcome: {
-          answer: presentation.answer,
-          stream: input.stream,
-          hadContexts: session.retrieval.contexts.length > 0,
-          retrievalSkipped: session.retrieval.diagnostics.retrievalSkipped,
-          durationMs: Date.now() - answerStartedAt,
-          answerOutcome: presentation.answerOutcome,
-          validation: presentation.validation,
-        },
-      });
-      const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
-
-      const assistantMessage = await this.messageRepository.create({
-        conversationId: session.conversation.id,
-        workspaceId: input.workspaceId,
-        role: "assistant",
-        content: presentation.answer,
-      });
-      assistantMessageId = assistantMessage.id;
-      await this.finalizeAssistantTurn({
+      const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
-        conversationId: session.conversation.id,
-        userMessageId: session.userMessage.id,
-        assistantMessageId,
-        answerOutcome: presentation.answerOutcome,
-        validation: presentation.validation,
-        segmentResults: presentation.segmentResults,
-        citations: presentation.citations ?? [],
-        answerSegments: presentation.answerSegments,
-        suggestions: presentation.suggestions,
-        priorRewriteContinuityState: session.priorRewriteContinuityState,
-        diagnostics: session.retrieval.diagnostics,
-        activityTrace,
-        route,
+        session,
+        presentation,
+        answerStartedAt,
         stream: input.stream,
       });
+      assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();
 
-      return {
-        conversationId: session.conversation.id,
-        agentId: session.agent.id,
-        agentName: session.agent.name,
-        assistantMessageId,
-        route,
-        answer: presentation.answer,
-        citations: presentation.citations,
-        answerSegments: presentation.answerSegments,
-        suggestions: presentation.suggestions,
-        activitySummary: resolvedActivitySummary,
-        activityTrace,
-      };
+      return completedTurn.response;
     } catch (error) {
       await usageReservation.release();
       const normalizedError = normalizeProviderCredentialError(error);
-      await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
+      await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     }
   }
@@ -574,6 +512,7 @@ export class ChatService {
             query: input.query,
             userExpectedLocale: input.userExpectedLocale,
             answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+            workspaceContext: this.buildChatWorkspaceContext(session),
           });
         yield {
           type: "chunk",
@@ -585,6 +524,7 @@ export class ChatService {
             query: input.query,
             userExpectedLocale: input.userExpectedLocale,
             answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+            workspaceContext: this.buildChatWorkspaceContext(session),
           });
         yield {
           type: "chunk",
@@ -597,6 +537,7 @@ export class ChatService {
           history: session.history,
           systemPrompt: session.retrieval.systemPrompt,
           prompt: this.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext),
+          workspaceContext: this.buildChatWorkspaceContext(session),
         })) {
           if (!text) {
             continue;
@@ -634,86 +575,38 @@ export class ChatService {
         input.query,
         input.userExpectedLocale,
       );
-      lazySuggestionsPromise = noContextPresentation
-        ? Promise.resolve({
-            suggestions: noContextPresentation.suggestions,
-          })
-        : this.chatAnswerPresenter.applyAssistantSuggestions(session, presentationWithoutSuggestions);
+      lazySuggestionsPromise = this.composeLazySuggestions({
+        session,
+        presentationWithoutSuggestions,
+        noContextPresentation,
+        userExpectedLocale: input.userExpectedLocale,
+      });
       const presentation: ChatPresentedAnswer = {
         ...presentationWithoutSuggestions,
         suggestions: undefined,
       };
 
-      const route = this.getRoute(session);
-      const activitySummary = this.activitySummaryPresenter.present(session.retrieval.diagnostics, {
-        execution: {
-          surface: "assistant",
-          path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
-          retrievalInvoked: route.type === "retrieval",
-        },
-      });
-      const activityTrace = this.activityTracePresenter.appendAnswerOutcome({
-        trace: session.retrieval.trace,
-        summary: activitySummary,
-        outcome: {
-          answer: presentation.answer,
-          stream: input.stream,
-          hadContexts: session.retrieval.contexts.length > 0,
-          retrievalSkipped: session.retrieval.diagnostics.retrievalSkipped,
-          durationMs: Date.now() - answerStartedAt,
-          answerOutcome: presentation.answerOutcome,
-          validation: presentation.validation,
-        },
-      });
-      const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
-
-      const assistantMessage = await this.messageRepository.create({
-        conversationId: session.conversation.id,
-        workspaceId: input.workspaceId,
-        role: "assistant",
-        content: presentation.answer,
-      });
-      assistantMessageId = assistantMessage.id;
-      await this.finalizeAssistantTurn({
+      const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
-        conversationId: session.conversation.id,
-        userMessageId: session.userMessage.id,
-        assistantMessageId,
-        answerOutcome: presentation.answerOutcome,
-        validation: presentation.validation,
-        segmentResults: presentation.segmentResults,
-        citations: presentation.citations ?? [],
-        answerSegments: presentation.answerSegments,
-        suggestions: presentation.suggestions,
-        priorRewriteContinuityState: session.priorRewriteContinuityState,
-        diagnostics: session.retrieval.diagnostics,
-        activityTrace,
-        route,
+        session,
+        presentation,
+        answerStartedAt,
         stream: input.stream,
       });
+      assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();
       usageReservationCommitted = true;
 
       yield {
         type: "done",
-        conversationId: session.conversation.id,
-        agentId: session.agent.id,
-        agentName: session.agent.name,
-        assistantMessageId,
-        route,
-        answer: presentation.answer,
-        citations: presentation.citations,
-        answerSegments: presentation.answerSegments,
-        suggestions: presentation.suggestions,
-        activitySummary: resolvedActivitySummary,
-        activityTrace,
+        ...completedTurn.response,
       };
 
     } catch (error) {
       await releaseUsageReservation();
       const normalizedError = normalizeProviderCredentialError(error);
-      await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
+      await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     } finally {
       await releaseUsageReservation();
@@ -724,7 +617,7 @@ export class ChatService {
       if (lazySuggestions.suggestions && lazySuggestions.suggestions.length > 0) {
         const suggestions = lazySuggestions.suggestions ?? [];
         if (assistantMessageId) {
-          await this.auditService.updateChatAnswerSuggestions({
+          await this.chatTurnLifecycle.updateSuggestions({
             workspaceId: input.workspaceId,
             conversationId: session.conversation.id,
             assistantMessageId,
@@ -741,6 +634,32 @@ export class ChatService {
     } catch {
       // Lazy follow-up suggestions are best effort after the answer is already complete.
     }
+  }
+
+  private async composeLazySuggestions(input: {
+    session: PreparedSession;
+    presentationWithoutSuggestions: ChatPresentedAnswer;
+    noContextPresentation: ChatPresentedAnswer | null;
+    userExpectedLocale?: string | null;
+  }): Promise<Pick<ChatPresentedAnswer, "suggestions">> {
+    const { session, presentationWithoutSuggestions, noContextPresentation, userExpectedLocale } = input;
+    const questionSuggestionsPromise = noContextPresentation
+      ? Promise.resolve(noContextPresentation.suggestions ?? [])
+      : this.chatAnswerPresenter
+          .applyAssistantSuggestions(session, presentationWithoutSuggestions)
+          .then((result) => result.suggestions ?? []);
+    const actionSuggestionsPromise = this.chatAnswerPresenter
+      .applyActionSuggestions(session, presentationWithoutSuggestions, userExpectedLocale)
+      .then((result) => result.suggestions ?? []);
+
+    const [questionSuggestions, actionMergedSuggestions] = await Promise.all([
+      questionSuggestionsPromise,
+      actionSuggestionsPromise,
+    ]);
+    // applyActionSuggestions returns the merge of presentation.suggestions (none here) + action chips,
+    // so its result is the canonical action-chip list to prepend.
+    const merged = [...actionMergedSuggestions, ...questionSuggestions];
+    return { suggestions: merged };
   }
 
   private async generateAnswerPresentation(
@@ -761,12 +680,14 @@ export class ChatService {
             query,
             userExpectedLocale,
             answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+            workspaceContext: this.buildChatWorkspaceContext(session),
           })
       : await this.chatGateway.answer({
           query,
           history: session.history,
           systemPrompt: session.retrieval.systemPrompt,
           prompt: this.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext),
+          workspaceContext: this.buildChatWorkspaceContext(session),
         });
 
     return this.chatAnswerPresenter.presentWithSuggestions(session, answer, query, userExpectedLocale);
@@ -831,231 +752,13 @@ export class ChatService {
     intakeResult: ChatIntakeResult;
     stream: boolean;
   }): Promise<ChatResponse> {
-    const route: ChatRoute = {
-      type: "direct",
-      reason: "social_only",
-    };
-    const assistantMessage = await this.messageRepository.create({
-      conversationId: input.session.conversation.id,
-      workspaceId: input.input.workspaceId,
-      role: "assistant",
-      content: input.intakeResult.answer,
-      metadata: {
-        skillIntake: {
-          skillName: input.intakeResult.skillName,
-          status: input.intakeResult.status,
-          stateId: input.intakeResult.stateId,
-        },
-        activityTrace: input.intakeResult.activityTrace,
-      },
-    });
-    await this.finalizeAssistantTurn({
+    return this.chatTurnLifecycle.completeSkillIntakeTurn({
       workspaceId: input.input.workspaceId,
       accountId: input.input.accountId,
-      conversationId: input.session.conversation.id,
-      userMessageId: input.session.userMessage.id,
-      assistantMessageId: assistantMessage.id,
-      answerOutcome: ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE,
-      validation: {
-        ran: false,
-        answerModified: false,
-        unsupportedSegmentCount: 0,
-        substantiveUnsupportedSegmentCount: 0,
-        supportedSegmentCount: 0,
-        nonSubstantiveSegmentCount: 0,
-      },
-      segmentResults: [],
-      citations: [],
-      answerSegments: undefined,
-      suggestions: undefined,
-      priorRewriteContinuityState: input.session.priorRewriteContinuityState,
-      diagnostics: input.session.retrieval.diagnostics,
-      activityTrace: input.intakeResult.activityTrace,
-      route,
+      session: input.session,
+      intakeResult: input.intakeResult,
       stream: input.stream,
-      skillIntake: {
-        skillName: input.intakeResult.skillName,
-        status: input.intakeResult.status,
-        stateId: input.intakeResult.stateId,
-      },
     });
-
-    return {
-      conversationId: input.session.conversation.id,
-      agentId: input.session.agent.id,
-      agentName: input.session.agent.name,
-      assistantMessageId: assistantMessage.id,
-      route,
-      answer: input.intakeResult.answer,
-      citations: [],
-      answerSegments: undefined,
-      suggestions: undefined,
-      activitySummary: input.intakeResult.activitySummary,
-      activityTrace: input.intakeResult.activityTrace,
-    };
-  }
-
-  private async finalizeAssistantTurn(input: {
-    workspaceId: string;
-    accountId?: string;
-    conversationId: string;
-    userMessageId: string;
-    assistantMessageId: string;
-    answerOutcome: AssistantTurnOutcome;
-    validation: AnswerValidationSummary;
-    segmentResults: AnswerSegmentValidationResult[];
-    citations: ChatCitation[];
-    answerSegments?: AnswerSegment[];
-    suggestions?: ChatSuggestion[];
-    priorRewriteContinuityState?: RewriteContinuityState;
-    diagnostics: PreparedSession["retrieval"]["diagnostics"];
-    activityTrace: ActivityTrace;
-    route: ChatRoute;
-    stream: boolean;
-    skillIntake?: {
-      skillName: string;
-      status: ChatIntakeResult["status"];
-      stateId?: string;
-    };
-  }): Promise<void> {
-    const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
-    await this.conversationRepository.touch(input.conversationId, input.workspaceId);
-    await this.auditService.record({
-      accountId: input.accountId,
-      workspaceId: input.workspaceId,
-      eventType: "chat.answer",
-      eventStatus: "success",
-      metadata: {
-        workflow: workflowPolicy.workflow,
-        executionClass: workflowPolicy.executionClass,
-        conversationId: input.conversationId,
-        userMessageId: input.userMessageId,
-        assistantMessageId: input.assistantMessageId,
-        stream: input.stream,
-        answerOutcome: input.answerOutcome,
-        route: {
-          generator: "assistant",
-          routeType: input.route.type,
-          routeReason: input.route.reason,
-          retrievalInvoked: input.route.type === "retrieval",
-        },
-        validation: {
-          ...input.validation,
-          segmentResults: input.segmentResults.map((segment) => ({
-            originalText: segment.originalText,
-            text: segment.text,
-            disposition: segment.disposition,
-            replacementApplied: segment.replacementApplied,
-            reason: segment.reason,
-            citationIndices: segment.citationIndices,
-          })),
-        },
-        citationCount: input.citations.length,
-        citations: input.citations,
-        answerSegments: input.answerSegments,
-        suggestions: input.suggestions,
-        skillIntake: input.skillIntake,
-        rewriteContinuityState: buildRewriteContinuityState({
-          previousState: input.priorRewriteContinuityState,
-          diagnostics: input.diagnostics,
-          citations: input.citations,
-        }),
-        retrieval: input.diagnostics,
-        activityTrace: input.activityTrace,
-      },
-    });
-    try {
-      await this.productAnalyticsService.track({
-        eventName: "chat.completed",
-        workspaceId: input.workspaceId,
-        accountId: input.accountId,
-        subjectType: "conversation",
-        subjectId: input.conversationId,
-        properties: {
-          stream: input.stream,
-          answerOutcome: input.answerOutcome,
-          citationCount: input.citations.length,
-          suggestionCount: input.suggestions?.length ?? 0,
-        },
-        source: "backend",
-      });
-    } catch {
-      // Analytics fan-out must not change successful chat behavior.
-    }
-  }
-
-  private async recordFailure(
-    input: {
-      workspaceId: string;
-      accountId?: string;
-      conversationId?: string;
-      query: string;
-      stream: boolean;
-    },
-    session: PreparedSession | null,
-    existingAssistantMessageId: string | undefined,
-    error: unknown,
-    workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn"),
-  ) {
-    let assistantMessageId = existingAssistantMessageId;
-
-    if (session && assistantMessageId) {
-      await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
-    }
-
-    await this.auditService.record({
-      accountId: input.accountId,
-      workspaceId: input.workspaceId,
-      eventType: "chat.answer",
-      eventStatus: "failure",
-      metadata: {
-        stage: "chat.answer",
-        workflow: workflowPolicy.workflow,
-        executionClass: workflowPolicy.executionClass,
-        conversationId: session?.conversation.id ?? input.conversationId,
-        userMessageId: session?.userMessage.id,
-        assistantMessageId,
-        stream: input.stream,
-        citationCount: 0,
-        retrieval: session?.retrieval.diagnostics,
-        activityTrace: session?.retrieval.trace
-          ? this.activityTracePresenter.appendAnswerOutcome({
-              trace: session.retrieval.trace,
-              summary: this.activitySummaryPresenter.present(session.retrieval.diagnostics, {
-                execution: {
-                  surface: "assistant",
-                  path: this.getRoute(session).type === "direct" ? "assistant_direct" : "assistant_retrieval",
-                  retrievalInvoked: this.getRoute(session).type === "retrieval",
-                },
-              }),
-              outcome: {
-                answer: "",
-                stream: input.stream,
-                hadContexts: session.retrieval.contexts.length > 0,
-                retrievalSkipped: session.retrieval.diagnostics.retrievalSkipped,
-                durationMs: 0,
-              },
-            })
-          : undefined,
-        errorMessage: error instanceof Error ? error.message : "Unknown error",
-      },
-    });
-    try {
-      await this.productAnalyticsService.track({
-        eventName: "chat.failed",
-        workspaceId: input.workspaceId,
-        accountId: input.accountId,
-        subjectType: "conversation",
-        subjectId: session?.conversation.id ?? input.conversationId,
-        properties: {
-          stream: input.stream,
-          errorMessage: error instanceof Error ? error.message : "Unknown error",
-        },
-        source: "backend",
-      });
-    } catch {
-      // Analytics fan-out must not change failure behavior.
-    }
   }
 
 }

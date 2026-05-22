@@ -1,12 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ModelRerankGateway, OpenAISemanticRerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
-import { OpenAITextGenerationClient } from "../../src/shared/infra/llm/openaiProvider.js";
+import { OpenAIEmbeddingClient, OpenAITextGenerationClient } from "../../src/shared/infra/llm/openaiProvider.js";
 import {
   LlmProviderRegistry,
   ProviderConfigurationError,
 } from "../../src/shared/infra/llm/providerRegistry.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("llm provider config", () => {
   it("derives provider-neutral capability config from legacy OpenAI env vars", () => {
@@ -159,20 +163,46 @@ describe("LlmProviderRegistry", () => {
     );
   });
 
-  it("rejects gemini embeddings before use because the storage contract is fixed-width", () => {
+  it("routes Gemini embedding models to Gemini with the storage vector width", async () => {
     const config = resolveLlmConfig({
       OPENAI_API_KEY: "openai-key",
       OPENAI_CHAT_MODEL: "gpt-5.2",
       OPENAI_VECTOR_MODEL: "text-embedding-3-small",
-      LLM_EMBEDDING_PROVIDER: "gemini",
       GEMINI_API_KEY: "gemini-key",
-      LLM_EMBEDDING_MODEL: "gemini-embedding-001",
+    });
+    const requests: Array<{ url: string; body: Record<string, unknown>; signal?: AbortSignal | null }> = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      requests.push({
+        url,
+        body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+        signal: init?.signal,
+      });
+      return Response.json({ embedding: { values: new Array(1536).fill(0.25) } });
     });
 
-    expect(() => new LlmProviderRegistry(config)).toThrowError(ProviderConfigurationError);
-    expect(() => new LlmProviderRegistry(config)).toThrowError(
-      "Provider gemini does not support embeddings",
-    );
+    const registry = new LlmProviderRegistry(config);
+    expect(registry.canServeEmbeddingModel("gemini-embedding-001")).toBe(true);
+    expect(registry.identifyEmbeddingModel("gemini-embedding-001")).toEqual({
+      capability: "embeddings",
+      provider: "gemini",
+      model: "gemini-embedding-001",
+    });
+    const embeddings = await registry.createEmbeddingGateway().embedTexts(["hello"], {
+      model: "gemini-embedding-001",
+    });
+
+    expect(embeddings).toEqual([new Array(1536).fill(0.25)]);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.url).toContain("/gemini-embedding-001:embedContent");
+    expect(requests[0]?.url).toContain("key=gemini-key");
+    expect(requests[0]?.signal).toBeInstanceOf(AbortSignal);
+    expect(requests[0]?.body).toMatchObject({
+      model: "models/gemini-embedding-001",
+      output_dimensionality: 1536,
+      content: {
+        parts: [{ text: "hello" }],
+      },
+    });
   });
 
   it("describes the resolved provider and model for each capability", () => {
@@ -296,5 +326,70 @@ describe("OpenAITextGenerationClient", () => {
       max_completion_tokens: 123,
     });
     expect(request).not.toHaveProperty("max_tokens");
+  });
+});
+
+describe("OpenAIEmbeddingClient", () => {
+  it("does not force storage dimensions for native OpenAI text-embedding-3 models", async () => {
+    let request: Record<string, unknown> | undefined;
+    const client = new OpenAIEmbeddingClient({
+      capability: "embeddings",
+      provider: "openai",
+      model: "text-embedding-3-large",
+      apiKey: "openai-key",
+    });
+
+    (
+      client as unknown as {
+        client: {
+          embeddings: {
+            create(input: Record<string, unknown>): Promise<{ data: Array<{ embedding: number[] }> }>;
+          };
+        };
+      }
+    ).client.embeddings.create = async (input) => {
+      request = input;
+      return { data: [{ embedding: [0.1, 0.2] }] };
+    };
+
+    await client.embedTexts(["hello"]);
+
+    expect(request).toMatchObject({
+      model: "text-embedding-3-large",
+      input: ["hello"],
+    });
+    expect(request).not.toHaveProperty("dimensions");
+  });
+
+  it("does not send dimensions to OpenAI-compatible embedding endpoints", async () => {
+    let request: Record<string, unknown> | undefined;
+    const client = new OpenAIEmbeddingClient({
+      capability: "embeddings",
+      provider: "openai-compatible",
+      model: "text-embedding-3-large",
+      apiKey: "compat-key",
+      baseUrl: "https://llm.example/v1",
+    });
+
+    (
+      client as unknown as {
+        client: {
+          embeddings: {
+            create(input: Record<string, unknown>): Promise<{ data: Array<{ embedding: number[] }> }>;
+          };
+        };
+      }
+    ).client.embeddings.create = async (input) => {
+      request = input;
+      return { data: [{ embedding: [0.1, 0.2] }] };
+    };
+
+    await client.embedTexts(["hello"]);
+
+    expect(request).toMatchObject({
+      model: "text-embedding-3-large",
+      input: ["hello"],
+    });
+    expect(request).not.toHaveProperty("dimensions");
   });
 });

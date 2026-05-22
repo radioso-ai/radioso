@@ -50,6 +50,7 @@ export interface QueryInterpretationStageResult extends RetrievalContextStageRes
   activeRetrievalSubqueries: RetrievalSubquery[];
   triggerAnalysis: TriggerAnalysisResult;
   promptHistory: MessageRecord[];
+  promptHistoryReset: boolean;
   continuityDecision: "unchanged" | "updated" | "unresolved" | "rejected";
   shapeSelection?: RetrievalAnswerShapeSelection;
 }
@@ -97,7 +98,6 @@ export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
   citations: PromptBuildResult["citations"];
   responseSettings: {
     citationDisplayEnabled: boolean;
-    answerSupportValidationEnabled?: boolean;
     suggestedQuestionsEnabled: RetrievalSettingsRecord["suggestedQuestionsEnabled"];
     suggestedQuestionsCount: RetrievalSettingsRecord["suggestedQuestionsCount"];
     customInstruction?: RetrievalSettingsRecord["customInstruction"];

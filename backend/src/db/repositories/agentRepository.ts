@@ -4,6 +4,8 @@ import type { Database } from "../../shared/infra/database.js";
 import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
+  type AgentBrandingSettings,
+  type AgentChatModelOverride,
   type AgentInput,
   type AgentRecord,
   type AgentEmbedCopyPacks,
@@ -14,6 +16,8 @@ import {
   type AgentSurfacePosition,
   type NormalizedAgentInput,
 } from "../../modules/agents/public.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
+import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 
 interface AgentRow {
   id: string;
@@ -25,6 +29,8 @@ interface AgentRow {
   behavior_settings: unknown;
   greeting_settings: unknown;
   output_modes: unknown;
+  chat_provider: LlmProviderName | null;
+  chat_model: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -37,7 +43,10 @@ const agentColumns = `
   source_scope_mode,
   COALESCE(
     (
-      SELECT ARRAY_AGG(source_id::text ORDER BY source_id::text)
+      SELECT ARRAY_AGG(
+        COALESCE(source_id::text, '${MANUALLY_ADDED_DOCUMENTS_SOURCE_ID}')
+        ORDER BY source_id IS NOT NULL, source_id::text
+      )
       FROM agent_document_sources
       WHERE agent_id = agents.id
     ),
@@ -46,6 +55,8 @@ const agentColumns = `
   behavior_settings,
   greeting_settings,
   output_modes,
+  chat_provider,
+  chat_model,
   created_at,
   updated_at
 `;
@@ -95,6 +106,7 @@ const toBehaviorSettings = (agent: NormalizedAgentInput): Record<string, unknown
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
   logo: agent.logo,
   theme: agent.theme,
+  branding: agent.branding,
 });
 
 const toGreetingSettings = (agent: NormalizedAgentInput): Record<string, unknown> => ({
@@ -124,6 +136,11 @@ const toOutputModes = (agent: NormalizedAgentInput): Record<string, unknown> => 
   extensions: agent.surfaceSettings.extensions,
 });
 
+const persistableSourceIds = (sourceScope: NormalizedAgentInput["sourceScope"]): Array<string | null> =>
+  sourceScope.mode === "selected"
+    ? sourceScope.sourceIds.map((sourceId) => sourceId === MANUALLY_ADDED_DOCUMENTS_SOURCE_ID ? null : sourceId)
+    : [];
+
 const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegistry): AgentRecord => {
   const behavior = asRecord(row.behavior_settings);
   const greeting = asRecord(row.greeting_settings);
@@ -137,6 +154,10 @@ const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegist
     ? extensionWebsiteEmbed
     : websiteEmbed;
 
+  const chatOverride: AgentChatModelOverride | null = row.chat_provider && row.chat_model
+    ? { provider: row.chat_provider, model: row.chat_model }
+    : null;
+
   const normalized = validateAgentInput({
     name: row.name,
     customInstruction: readString(behavior, "customInstruction"),
@@ -147,9 +168,11 @@ const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegist
       : { mode: "all" },
     logo: (behavior.logo ?? websiteEmbedSource.logo) as AgentLogo | null | undefined,
     theme: (behavior.theme ?? websiteEmbedSource.theme) as AgentEmbedTheme | undefined,
+    branding: behavior.branding as AgentBrandingSettings | undefined,
     greetingInstruction: readString(greeting, "greetingInstruction"),
     assistantDefaultLocale: readString(greeting, "assistantDefaultLocale") ?? null,
     proactiveGreetingEnabled: readBoolean(greeting, "proactiveGreetingEnabled"),
+    chatModelOverride: chatOverride,
     surfaceSettings: {
       authenticatedChat: {
         enabled: readBoolean(authenticatedChat, "enabled"),
@@ -183,7 +206,6 @@ const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegist
 
 export interface AgentRepositoryPort {
   create(workspaceId: string, input: AgentInput): Promise<AgentRecord>;
-  findById(agentId: string): Promise<AgentRecord | null>;
   findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<AgentRecord | null>;
   findDefaultByWorkspaceId(workspaceId: string): Promise<AgentRecord | null>;
   findByAnonymousChatToken(token: string): Promise<AgentRecord | null>;
@@ -214,9 +236,11 @@ export class AgentRepository implements AgentRepositoryPort {
            source_scope_mode,
            behavior_settings,
            greeting_settings,
-           output_modes
+           output_modes,
+           chat_provider,
+           chat_model
          )
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10)
          RETURNING ${agentColumns}`,
         [
           agentId,
@@ -227,6 +251,8 @@ export class AgentRepository implements AgentRepositoryPort {
           JSON.stringify(toBehaviorSettings(normalized)),
           JSON.stringify(toGreetingSettings(normalized)),
           JSON.stringify(toOutputModes(normalized)),
+          normalized.chatModelOverride?.provider ?? null,
+          normalized.chatModelOverride?.model ?? null,
         ],
       );
       await this.replaceSourceScope(client, agentId, normalized.sourceScope);
@@ -239,14 +265,6 @@ export class AgentRepository implements AgentRepositoryPort {
         source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
       }, this.surfaceExtensions);
     });
-  }
-
-  async findById(agentId: string): Promise<AgentRecord | null> {
-    const row = await this.database.queryOptional<AgentRow>(
-      `SELECT ${agentColumns} FROM agents WHERE id = $1`,
-      [agentId],
-    );
-    return row ? mapAgent(row, this.surfaceExtensions) : null;
   }
 
   async findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<AgentRecord | null> {
@@ -321,9 +339,11 @@ export class AgentRepository implements AgentRepositoryPort {
              behavior_settings = $4::jsonb,
              greeting_settings = $5::jsonb,
              output_modes = $6::jsonb,
+             chat_provider = $7,
+             chat_model = $8,
              updated_at = NOW()
-         WHERE id = $7
-           AND workspace_id = $8
+         WHERE id = $9
+           AND workspace_id = $10
          RETURNING ${agentColumns}`,
         [
           normalized.name,
@@ -332,6 +352,8 @@ export class AgentRepository implements AgentRepositoryPort {
           JSON.stringify(toBehaviorSettings(normalized)),
           JSON.stringify(toGreetingSettings(normalized)),
           JSON.stringify(toOutputModes(normalized)),
+          normalized.chatModelOverride?.provider ?? null,
+          normalized.chatModelOverride?.model ?? null,
           agentId,
           workspaceId,
         ],
@@ -381,14 +403,15 @@ export class AgentRepository implements AgentRepositoryPort {
        WHERE agent_id = $1`,
       [agentId],
     );
-    if (sourceScope.mode !== "selected" || sourceScope.sourceIds.length === 0) {
+    const sourceIds = persistableSourceIds(sourceScope);
+    if (sourceScope.mode !== "selected" || sourceIds.length === 0) {
       return;
     }
     await client.query(
       `INSERT INTO agent_document_sources (agent_id, source_id)
        SELECT $1::uuid, UNNEST($2::uuid[])
        ON CONFLICT DO NOTHING`,
-      [agentId, sourceScope.sourceIds],
+      [agentId, sourceIds],
     );
   }
 }

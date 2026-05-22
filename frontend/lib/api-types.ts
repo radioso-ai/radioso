@@ -7,6 +7,8 @@ type RelaxedAssistantChatResponse<T> = T extends unknown
       assistantMessageId?: string
       route?: ApiSchemas['AssistantRoute']
       suggestions?: ChatSuggestion[]
+      activitySummary?: ActivitySummary
+      activityTrace?: ActivityTrace
     }
   : never
 type PlatformRetrievalSettings = Omit<ApiSchemas['PlatformRetrievalSettingsSection'], 'metadataRules'> & {
@@ -19,6 +21,13 @@ export type RegisterResponse = ApiSchemas['RegisterResponse'] & {
 }
 export type LoginRequest = ApiSchemas['LoginRequest']
 export type LoginResponse = ApiSchemas['LoginResponse']
+export type AcceptedResponse = ApiSchemas['AcceptedResponse']
+export type PasswordResetRequest = ApiSchemas['PasswordResetRequest']
+export type PasswordResetConfirmRequest = ApiSchemas['PasswordResetConfirmRequest']
+export type PasswordResetConfirmResponse = ApiSchemas['PasswordResetConfirmResponse']
+export type EmailVerificationVerifyRequest = ApiSchemas['EmailVerificationVerifyRequest']
+export type EmailVerificationVerifyResponse = ApiSchemas['EmailVerificationVerifyResponse']
+export type EmailVerificationResendRequest = ApiSchemas['EmailVerificationResendRequest']
 
 export type RetrievalSettings = PlatformRetrievalSettings &
   Pick<
@@ -26,12 +35,16 @@ export type RetrievalSettings = PlatformRetrievalSettings &
     'suggestedQuestionsEnabled' | 'customInstruction'
   >
 
+export type AgentChatModelOverride = NonNullable<ApiSchemas['ConversationAgent']['chatModelOverride']>
+
 export type AssistantBehaviorSettings = Pick<
   RetrievalSettings,
   'suggestedQuestionsEnabled' | 'customInstruction'
 > & {
   theme: WebsiteEmbedThemeSettings
+  branding?: AgentBrandingSettings
   sourceScope?: AgentSourceScope
+  chatModelOverride?: AgentChatModelOverride | null
 }
 
 export type PlatformSettings = Omit<ApiSchemas['PlatformSettingsResponse'], 'retrieval'> & {
@@ -40,6 +53,7 @@ export type PlatformSettings = Omit<ApiSchemas['PlatformSettingsResponse'], 'ret
 
 export type GeneralSettings = ApiSchemas['GeneralSettingsResponse']
 export type WebsiteEmbedThemeSettings = ApiSchemas['GeneralSettingsResponse']['websiteEmbedTheme']
+export type AgentBrandingSettings = ApiSchemas['ConversationAgent']['branding']
 export type WebsiteEmbedCopyPacks = ApiSchemas['GeneralSettingsResponse']['websiteEmbedCopy']
 export type WebsiteEmbedExpertOverrides = ApiSchemas['GeneralSettingsResponse']['websiteEmbedExpertOverrides']
 
@@ -61,13 +75,44 @@ export type DocumentSourceKind = DocumentSourceSummary['kind']
 export type AgentSourceScope = ApiSchemas['AgentSourceScope']
 export type DocumentSourceListItem = ApiSchemas['DocumentSourceListItem']
 export type DocumentSourceListResponse = ApiSchemas['DocumentSourceListResponse']
+export type DocumentSourceCrawlSettings = ApiSchemas['DocumentSourceCrawlSettings']
 export type DocumentSummary = ApiSchemas['DocumentSummary']
 export type DocumentDetails = ApiSchemas['DocumentDetails']
 export type DocumentListResponse = ApiSchemas['DocumentListResponse']
 
+export interface DocumentChunkSummary {
+  id: string
+  chunkIndex: number
+  contentPreview: string
+  contentLength: number
+  startOffset: number
+  endOffset: number
+}
+
+export interface DocumentChunkListResponse {
+  documentId: string
+  chunks: DocumentChunkSummary[]
+}
+
+export interface DocumentChunkDetail {
+  id: string
+  documentId: string
+  workspaceId: string
+  chunkIndex: number
+  content: string
+  searchText: string | null
+  startOffset: number
+  endOffset: number
+  metadata: Record<string, unknown>
+  createdAt: string
+  embeddingDimensions: number | null
+}
+
 export type DocumentSearchAction = ApiSchemas['DocumentSearchAction']
 export type DocumentSearchResult = ApiSchemas['DocumentSearchResult']
-export type DocumentSearchResponse = ApiSchemas['DocumentSearchResponse']
+export type DocumentSearchResponse = ApiSchemas['DocumentSearchResponse'] & {
+  activityTrace?: ActivityTrace
+}
 export type DocumentSearchHistoryEntry = ApiSchemas['DocumentSearchHistoryEntry']
 export type DocumentSearchHistoryListResponse = ApiSchemas['DocumentSearchHistoryListResponse']
 export type WebsiteCrawlJobStatus = ApiSchemas['WebsiteCrawlJobStatus']
@@ -83,6 +128,7 @@ export interface ChatRequest {
   bootstrapGreeting?: boolean
   userExpectedLocale?: string
   inputMetadata?: ChatUserInputMetadata
+  includeDebug?: boolean
 }
 
 export type WebsiteEmbedPageContext = NonNullable<ApiSchemas['PublicChatSessionRequest']['pageContext']>
@@ -100,6 +146,7 @@ export const toAssistantChatPayload = (data: ChatRequest) => ({
   message: data.query,
   startConversation: data.bootstrapGreeting,
   stream: data.stream,
+  includeDebug: data.includeDebug,
   userExpectedLocale: data.userExpectedLocale,
   inputMetadata: data.inputMetadata,
   sourceContext: {
@@ -235,13 +282,11 @@ export interface ChatStreamCompletion {
   agentName?: string
   conversationId?: string
   assistantMessageId?: string
-  route?: ChatResponse['route']
   answer?: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
-  activitySummary?: ActivitySummary
-  activityTrace?: ActivityTrace
+  debug?: ChatResponse['debug']
   skill?: SkillStreamPayload
 }
 
@@ -426,7 +471,7 @@ export const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings =>
   })(),
   websiteEmbedEnabled: agent.surfaceSettings.websiteEmbed.enabled,
   websiteEmbedToken: agent.surfaceSettings.websiteEmbed.token,
-  websiteEmbedScriptUrl: typeof window !== 'undefined' ? `${window.location.origin}/embed-widget.js` : null,
+  websiteEmbedScriptUrl: typeof window !== 'undefined' ? `${window.location.origin}/radioso-embed.js` : null,
   websiteEmbedSnippet: null,
   websiteEmbedAllowedOrigins: agent.surfaceSettings.websiteEmbed.allowedOrigins,
   websiteEmbedLauncherLabel: agent.surfaceSettings.websiteEmbed.launcherLabel,
@@ -440,7 +485,9 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
   customInstruction: agent.customInstruction,
   theme: agent.theme,
+  branding: agent.branding,
   sourceScope: agent.sourceScope,
+  chatModelOverride: agent.chatModelOverride,
 })
 
 export const retrievalSettingsToAssistantBehaviorSettings = (settings: RetrievalSettings): AssistantBehaviorSettings => ({
@@ -464,6 +511,8 @@ export interface UsageLimitProfile {
   displayName: string
   monthlyAnswerLimit: number | null
   storedDocumentLimit: number | null
+  storedIndexedByteLimit: number | null
+  monthlyIndexedByteLimit: number | null
   createdAt: string
   updatedAt: string
 }
@@ -478,6 +527,16 @@ export interface AccountUsageSummary {
     limit: number | null
   }
   storedDocuments: {
+    used: number
+    limit: number | null
+  }
+  storedIndexedBytes: {
+    used: number
+    limit: number | null
+  }
+  monthlyIndexedBytes: {
+    periodStart: string
+    resetAt: string
     used: number
     limit: number | null
   }

@@ -49,6 +49,12 @@ export interface WorkspaceTokenRecord {
   lastUsedAt: Date | null;
 }
 
+export type WorkspaceApiTokenPrincipal = {
+  type: "workspace_api_token";
+  role: "admin";
+  tokenId: string;
+};
+
 export interface AccountRepositoryPort {
   create(params: { name: string; email: string; passwordHash: string }): Promise<AccountRecord>;
   findByEmail(email: string): Promise<AccountRecord | null>;
@@ -155,7 +161,7 @@ export class AuthService {
         id: account.id,
         email,
         passwordHash,
-        emailVerifiedAt: new Date(),
+        emailVerifiedAt: null,
       });
       await this.dependencies.accountAccessService.ensureMembership({
         accountId: account.id,
@@ -164,7 +170,6 @@ export class AuthService {
       });
       const workspace = await this.dependencies.workspaceService.createDefault(account.id);
       await this.dependencies.onAccountCreated?.({ accountId: account.id });
-      const sessionCookie = await this.createSessionCookie(user.id, account.id);
 
       await this.dependencies.auditService.record({
         accountId: account.id,
@@ -180,7 +185,6 @@ export class AuthService {
         workspaceId: workspace.id,
         workspaceName: workspace.name,
         workspacePublicRouteKey: workspace.publicRouteKey,
-        sessionCookie,
       };
     } catch (error) {
       await this.rollbackCreatedAccount(account.id, account.id);
@@ -272,6 +276,15 @@ export class AuthService {
       throw unauthorized("Invalid email or password");
     }
 
+    if (!user.emailVerifiedAt) {
+      await this.dependencies.auditService.record({
+        eventType: "auth.login",
+        eventStatus: "failure",
+        metadata: { email, reason: "email_unverified" },
+      });
+      throw forbidden("Email verification required");
+    }
+
     const membership = await this.dependencies.accountAccessService.resolveLoginAccount(user.id, input.preferredAccountId);
     const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(
       membership.accountId,
@@ -351,7 +364,7 @@ export class AuthService {
       : await this.dependencies.userRepository.create({
           email,
           passwordHash: await hashPassword(input.password),
-          emailVerifiedAt: new Date(),
+          emailVerifiedAt: null,
         });
 
     const createdUserId: string | null = existingUser ? null : user.id;
@@ -362,6 +375,7 @@ export class AuthService {
         input.invitationToken,
         user.id,
       ));
+      await this.dependencies.userRepository.markEmailVerified(user.id, new Date());
     } catch (error) {
       if (createdUserId) {
         await this.dependencies.userRepository.deleteById(createdUserId);
@@ -556,7 +570,11 @@ export class AuthService {
     return token;
   }
 
-  async authenticateApiToken(token: string): Promise<{ workspaceId: string; accountId: string }> {
+  async authenticateApiToken(token: string): Promise<{
+    workspaceId: string;
+    accountId: string;
+    principal: WorkspaceApiTokenPrincipal;
+  }> {
     const tokenHash = sha256(token);
     const workspaceToken = await this.dependencies.workspaceTokenRepository.findByTokenHash(tokenHash);
 
@@ -565,7 +583,15 @@ export class AuthService {
     }
 
     await this.dependencies.workspaceTokenRepository.touch(workspaceToken.workspaceId, new Date());
-    return { workspaceId: workspaceToken.workspaceId, accountId: workspaceToken.accountId };
+    return {
+      workspaceId: workspaceToken.workspaceId,
+      accountId: workspaceToken.accountId,
+      principal: {
+        type: "workspace_api_token",
+        role: "admin",
+        tokenId: workspaceToken.id,
+      },
+    };
   }
 
   private async issueWorkspaceToken(workspaceId: string, accountId: string): Promise<{ token: string }> {

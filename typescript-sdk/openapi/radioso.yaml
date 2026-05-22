@@ -85,6 +85,10 @@ components:
           type: string
         workspacePublicRouteKey:
           type: string
+        requiresEmailVerification:
+          type: boolean
+          enum:
+            - true
       required:
         - userId
         - accountId
@@ -92,6 +96,7 @@ components:
         - workspaceId
         - workspaceName
         - workspacePublicRouteKey
+        - requiresEmailVerification
     LoginResponse:
       type: object
       properties:
@@ -117,6 +122,34 @@ components:
         - workspaceId
         - workspaceName
         - workspacePublicRouteKey
+    AcceptedResponse:
+      type: object
+      properties:
+        accepted:
+          type: boolean
+          enum:
+            - true
+      required:
+        - accepted
+    PasswordResetConfirmResponse:
+      allOf:
+        - $ref: "#/components/schemas/LoginResponse"
+        - type: object
+          properties:
+            email:
+              type: string
+              format: email
+          required:
+            - email
+    EmailVerificationVerifyResponse:
+      type: object
+      properties:
+        verified:
+          type: boolean
+          enum:
+            - true
+      required:
+        - verified
     Workspace:
       type: object
       properties:
@@ -300,6 +333,48 @@ components:
       required:
         - email
         - password
+    PasswordResetRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+      required:
+        - email
+    PasswordResetConfirmRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 8
+        preferredWorkspaceId:
+          type: string
+          format: uuid
+        preferredAccountId:
+          type: string
+          format: uuid
+      required:
+        - token
+        - password
+    EmailVerificationVerifyRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          minLength: 1
+      required:
+        - token
+    EmailVerificationResendRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+      required:
+        - email
     InvitationAcceptRequest:
       type: object
       properties:
@@ -594,8 +669,6 @@ components:
           minimum: 1
         citationDisplayEnabled:
           type: boolean
-        answerSupportValidationEnabled:
-          type: boolean
         metadataFieldSuggestions:
           type: array
           items:
@@ -713,7 +786,6 @@ components:
         - similarityThreshold
         - rerankTopK
         - citationDisplayEnabled
-        - answerSupportValidationEnabled
         - customInstruction
         - createdAt
         - updatedAt
@@ -741,8 +813,6 @@ components:
           type: integer
           maximum: 50
         citationDisplayEnabled:
-          type: boolean
-        answerSupportValidationEnabled:
           type: boolean
         metadataRules:
           type: array
@@ -843,8 +913,6 @@ components:
           maximum: 50
         citationDisplayEnabled:
           type: boolean
-        answerSupportValidationEnabled:
-          type: boolean
         metadataRules:
           type: array
           items:
@@ -918,9 +986,27 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a6
+          enum: &a7
             - fixed_window
             - structured_semantic
+            - recursive_text
+        embeddingModel:
+          type: string
+          enum: &a6
+            - text-embedding-3-small
+            - text-embedding-3-large
+            - text-embedding-ada-002
+            - gemini-embedding-001
+        pendingEmbeddingModel:
+          type:
+            - string
+            - "null"
+          enum: *a6
+        supportedEmbeddingModels:
+          type: array
+          items:
+            type: string
+            enum: *a6
         fixedWindowChunkSize:
           type: integer
         fixedWindowChunkOverlap:
@@ -938,6 +1024,9 @@ components:
       required:
         - workspaceId
         - chunkingStrategy
+        - embeddingModel
+        - pendingEmbeddingModel
+        - supportedEmbeddingModels
         - fixedWindowChunkSize
         - fixedWindowChunkOverlap
         - structuredMinChunkSize
@@ -949,7 +1038,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a6
+          enum: *a7
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -966,6 +1055,9 @@ components:
           type: integer
           minimum: 1
           maximum: 2000
+        embeddingModel:
+          type: string
+          enum: *a6
       required:
         - chunkingStrategy
         - fixedWindowChunkSize
@@ -1144,7 +1236,7 @@ components:
           maxLength: 80
         websiteEmbedLauncherPosition:
           type: string
-          enum: &a7
+          enum: &a8
             - bottom-right
             - bottom-left
         websiteEmbedTheme:
@@ -1221,7 +1313,7 @@ components:
           type: string
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a7
+          enum: *a8
         websiteEmbedTheme:
           type: object
           properties:
@@ -1335,8 +1427,6 @@ components:
           minimum: 1
         citationDisplayEnabled:
           type: boolean
-        answerSupportValidationEnabled:
-          type: boolean
         metadataRules:
           type: array
           items:
@@ -1427,7 +1517,6 @@ components:
         - similarityThreshold
         - rerankTopK
         - citationDisplayEnabled
-        - answerSupportValidationEnabled
     PlatformChannelsSettingsSection:
       type: object
       properties:
@@ -1451,7 +1540,7 @@ components:
           type: string
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a7
+          enum: *a8
         websiteEmbedScriptUrl:
           type:
             - string
@@ -1557,8 +1646,6 @@ components:
               type: integer
             citationDisplayEnabled:
               type: boolean
-            answerSupportValidationEnabled:
-              type: boolean
             metadataRules:
               type: array
               items:
@@ -1639,7 +1726,7 @@ components:
               maxLength: 80
             websiteEmbedLauncherPosition:
               type: string
-              enum: *a7
+              enum: *a8
             websiteEmbedTheme:
               type: object
               properties:
@@ -1667,6 +1754,166 @@ components:
               additionalProperties:
                 type: string
                 maxLength: 500
+    WorkspaceProviderCredentialSummary:
+      type: object
+      properties:
+        provider:
+          type: string
+          enum: &a16
+            - openai
+            - openai-compatible
+            - gemini
+            - claude
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - provider
+        - updatedAt
+    WorkspaceProviderCredentialsResponse:
+      type: object
+      properties:
+        encryptionConfigured:
+          type: boolean
+        credentials:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkspaceProviderCredentialSummary"
+        envProviderAvailability:
+          type: object
+          properties:
+            openai:
+              type: boolean
+            openai-compatible:
+              type: boolean
+            gemini:
+              type: boolean
+            claude:
+              type: boolean
+          required:
+            - openai
+            - openai-compatible
+            - gemini
+            - claude
+      required:
+        - encryptionConfigured
+        - credentials
+        - envProviderAvailability
+    SetWorkspaceProviderCredentialRequest:
+      type: object
+      properties:
+        apiKey:
+          type: string
+          minLength: 1
+          maxLength: 4096
+      required:
+        - apiKey
+    WorkspaceLlmCapabilityPreference:
+      type:
+        - object
+        - "null"
+      properties:
+        provider:
+          type: string
+          enum: &a9
+            - openai
+            - openai-compatible
+            - gemini
+            - claude
+        model:
+          type: string
+      required:
+        - provider
+        - model
+    WorkspaceLlmModelsResponse:
+      type: object
+      properties:
+        chat:
+          $ref: "#/components/schemas/WorkspaceLlmCapabilityPreference"
+        rewrite:
+          $ref: "#/components/schemas/WorkspaceLlmCapabilityPreference"
+        rerank:
+          $ref: "#/components/schemas/WorkspaceLlmCapabilityPreference"
+        knownModelsByProvider:
+          type: object
+          properties:
+            openai:
+              type: array
+              items:
+                type: string
+            openai-compatible:
+              type: array
+              items:
+                type: string
+            gemini:
+              type: array
+              items:
+                type: string
+            claude:
+              type: array
+              items:
+                type: string
+          required:
+            - openai
+            - openai-compatible
+            - gemini
+            - claude
+      required:
+        - chat
+        - rewrite
+        - rerank
+        - knownModelsByProvider
+    UpdateWorkspaceLlmModelsRequest:
+      type: object
+      properties:
+        chat:
+          anyOf:
+            - type: object
+              properties:
+                provider:
+                  type: string
+                  enum: *a9
+                model:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+              required:
+                - provider
+                - model
+            - type: "null"
+            - type: "null"
+        rewrite:
+          anyOf:
+            - type: object
+              properties:
+                provider:
+                  type: string
+                  enum: *a9
+                model:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+              required:
+                - provider
+                - model
+            - type: "null"
+            - type: "null"
+        rerank:
+          anyOf:
+            - type: object
+              properties:
+                provider:
+                  type: string
+                  enum: *a9
+                model:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+              required:
+                - provider
+                - model
+            - type: "null"
+            - type: "null"
     Agent:
       type: object
       properties:
@@ -1729,7 +1976,7 @@ components:
               type: string
             launcherPosition:
               type: string
-              enum: &a8
+              enum: &a10
                 - bottom-right
                 - bottom-left
             theme:
@@ -1823,6 +2070,18 @@ components:
                 - brandText
                 - surface
                 - text
+            branding:
+              type: object
+              properties:
+                hidePoweredBy:
+                  type: boolean
+                privacyPolicyUrl:
+                  type:
+                    - string
+                    - "null"
+              required:
+                - hidePoweredBy
+                - privacyPolicyUrl
             retrievalEnabled:
               type: boolean
             sourceScope:
@@ -1862,6 +2121,23 @@ components:
               type: boolean
             assistantBootstrapActive:
               type: boolean
+            chatModelOverride:
+              type:
+                - object
+                - "null"
+              properties:
+                provider:
+                  type: string
+                  enum:
+                    - openai
+                    - openai-compatible
+                    - gemini
+                    - claude
+                model:
+                  type: string
+              required:
+                - provider
+                - model
             surfaceSettings:
               $ref: "#/components/schemas/ConversationAgentSurfaceSettings"
           required:
@@ -1869,6 +2145,7 @@ components:
             - customInstruction
             - suggestedQuestionsEnabled
             - theme
+            - branding
             - retrievalEnabled
             - sourceScope
             - logo
@@ -1876,6 +2153,7 @@ components:
             - assistantDefaultLocale
             - proactiveGreetingEnabled
             - assistantBootstrapActive
+            - chatModelOverride
             - surfaceSettings
     AgentListResponse:
       type: object
@@ -1908,6 +2186,16 @@ components:
               type: string
             text:
               type: string
+        branding:
+          type: object
+          properties:
+            hidePoweredBy:
+              type: boolean
+            privacyPolicyUrl:
+              type:
+                - string
+                - "null"
+              maxLength: 2048
         retrievalEnabled:
           type: boolean
         sourceScope:
@@ -1945,6 +2233,26 @@ components:
           maxLength: 35
         proactiveGreetingEnabled:
           type: boolean
+        chatModelOverride:
+          anyOf:
+            - type: "null"
+            - type: object
+              properties:
+                provider:
+                  type: string
+                  enum:
+                    - openai
+                    - openai-compatible
+                    - gemini
+                    - claude
+                model:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+              required:
+                - provider
+                - model
+            - type: "null"
         surfaceSettings:
           type: object
           properties:
@@ -1974,7 +2282,7 @@ components:
                   maxLength: 80
                 launcherPosition:
                   type: string
-                  enum: *a8
+                  enum: *a10
                 theme:
                   type: object
                   properties:
@@ -2035,6 +2343,18 @@ components:
             - brandText
             - surface
             - text
+        branding:
+          type: object
+          properties:
+            hidePoweredBy:
+              type: boolean
+            privacyPolicyUrl:
+              type:
+                - string
+                - "null"
+          required:
+            - hidePoweredBy
+            - privacyPolicyUrl
         intakeActions:
           type: array
           items:
@@ -2194,6 +2514,32 @@ components:
         - kind
         - name
         - externalId
+    DocumentSourceCrawlSettings:
+      type: object
+      properties:
+        url:
+          type:
+            - string
+            - "null"
+        limit:
+          type: integer
+          minimum: 1
+        includeUrlPatterns:
+          type: array
+          items:
+            type: string
+        excludeUrlPatterns:
+          type: array
+          items:
+            type: string
+        preserveContentLinks:
+          type: boolean
+      required:
+        - url
+        - limit
+        - includeUrlPatterns
+        - excludeUrlPatterns
+        - preserveContentLinks
     DocumentSourceListItem:
       type: object
       properties:
@@ -2225,6 +2571,8 @@ components:
         documentCount:
           type: integer
           minimum: 0
+        crawlSettings:
+          $ref: "#/components/schemas/DocumentSourceCrawlSettings"
         createdAt:
           type: string
           format: date-time
@@ -2241,6 +2589,31 @@ components:
         - documentCount
         - createdAt
         - updatedAt
+    DocumentSourceUpdateRequest:
+      type: object
+      properties:
+        crawlSettings:
+          type: object
+          properties:
+            limit:
+              type: integer
+              minimum: 1
+            includeUrlPatterns:
+              type: array
+              items:
+                type: string
+                minLength: 1
+                maxLength: 200
+              maxItems: 50
+            excludeUrlPatterns:
+              type: array
+              items:
+                type: string
+                minLength: 1
+                maxLength: 200
+              maxItems: 50
+            preserveContentLinks:
+              type: boolean
     DocumentSourceListResponse:
       type: object
       properties:
@@ -2513,6 +2886,9 @@ components:
               - type: boolean
               - type: "null"
               - type: "null"
+        includeDebug:
+          type: boolean
+          default: false
       required:
         - query
     WebsiteCrawlRequest:
@@ -2994,7 +3370,7 @@ components:
               type: string
             selectionMode:
               type: string
-              enum: &a11
+              enum: &a13
                 - deterministic
                 - probabilistic
             selectionReason:
@@ -3005,7 +3381,7 @@ components:
               maximum: 1
             callerSurface:
               type: string
-              enum: &a12
+              enum: &a14
                 - assistant
                 - retrieval_api
                 - sdk
@@ -3042,7 +3418,7 @@ components:
                 - used
             outcome:
               type: string
-              enum: &a13
+              enum: &a15
                 - success
                 - unsupported
                 - forbidden
@@ -3079,14 +3455,14 @@ components:
                     additionalProperties: {}
                 evidenceStatus:
                   type: string
-                  enum: &a9
+                  enum: &a11
                     - found
                     - missing
                     - partial
                     - not_applicable
                 supportStatus:
                   type: string
-                  enum: &a10
+                  enum: &a12
                     - supported
                     - unsupported
                     - not_checked
@@ -3209,8 +3585,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DocumentSearchResult"
-        activityTrace:
-          $ref: "#/components/schemas/ActivityTrace"
+        debug:
+          type: object
+          properties:
+            activityTrace:
+              $ref: "#/components/schemas/ActivityTrace"
+          required:
+            - activityTrace
       required:
         - searchId
         - mode
@@ -3230,6 +3611,9 @@ components:
           type: integer
           minimum: 1
           maximum: 100
+        includeDebug:
+          type: boolean
+          default: false
       required:
         - query
     RetrievalAnswerRequest:
@@ -3259,6 +3643,9 @@ components:
         metadataFilter:
           type: object
           additionalProperties: {}
+        includeDebug:
+          type: boolean
+          default: false
       required:
         - query
     RetrievalSearchEvidence:
@@ -3305,16 +3692,20 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RetrievalSearchEvidence"
-        activitySummary:
-          $ref: "#/components/schemas/ActivitySummary"
-        activityTrace:
-          $ref: "#/components/schemas/ActivityTrace"
+        debug:
+          type: object
+          properties:
+            activitySummary:
+              $ref: "#/components/schemas/ActivitySummary"
+            activityTrace:
+              $ref: "#/components/schemas/ActivityTrace"
+          required:
+            - activitySummary
+            - activityTrace
       required:
         - outcome
         - rewrittenQuery
         - results
-        - activitySummary
-        - activityTrace
     RetrievalAnswerEvidence:
       type: object
       properties:
@@ -3349,10 +3740,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Citation"
-        evidence:
-          type: array
-          items:
-            $ref: "#/components/schemas/RetrievalAnswerEvidence"
         validation:
           type: object
           properties:
@@ -3364,17 +3751,25 @@ components:
                 - not_checked
           required:
             - status
-        activitySummary:
-          $ref: "#/components/schemas/ActivitySummary"
-        activityTrace:
-          $ref: "#/components/schemas/ActivityTrace"
+        debug:
+          type: object
+          properties:
+            evidence:
+              type: array
+              items:
+                $ref: "#/components/schemas/RetrievalAnswerEvidence"
+            activitySummary:
+              $ref: "#/components/schemas/ActivitySummary"
+            activityTrace:
+              $ref: "#/components/schemas/ActivityTrace"
+          required:
+            - evidence
+            - activitySummary
+            - activityTrace
       required:
         - outcome
         - answer
-        - evidence
         - validation
-        - activitySummary
-        - activityTrace
     RetrievalAnswerUnsupported:
       type: object
       properties:
@@ -3482,10 +3877,10 @@ components:
             additionalProperties: {}
         evidenceStatus:
           type: string
-          enum: *a9
+          enum: *a11
         supportStatus:
           type: string
-          enum: *a10
+          enum: *a12
         groundingOutcome:
           type: string
     SkillDiagnosticDefinition:
@@ -3499,7 +3894,7 @@ components:
           type: string
         selectionMode:
           type: string
-          enum: *a11
+          enum: *a13
         selectionReason:
           type: string
         selectionConfidence:
@@ -3508,7 +3903,7 @@ components:
           maximum: 1
         callerSurface:
           type: string
-          enum: *a12
+          enum: *a14
         capabilityChecks:
           type: array
           items:
@@ -3539,7 +3934,7 @@ components:
             - used
         outcome:
           type: string
-          enum: *a13
+          enum: *a15
         error:
           type: object
           properties:
@@ -3571,10 +3966,10 @@ components:
                 additionalProperties: {}
             evidenceStatus:
               type: string
-              enum: *a9
+              enum: *a11
             supportStatus:
               type: string
-              enum: *a10
+              enum: *a12
             groundingOutcome:
               type: string
       required:
@@ -3614,7 +4009,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a12
+            enum: *a14
         requiredCapabilities:
           type: array
           items:
@@ -3641,7 +4036,7 @@ components:
               type: array
               items:
                 type: string
-                enum: *a12
+                enum: *a14
             intent:
               type: object
               properties:
@@ -3695,6 +4090,8 @@ components:
                   - displayName
                   - type
                   - required
+            subjectIdentityField:
+              type: string
             confirmation:
               type: string
               enum:
@@ -3830,6 +4227,35 @@ components:
           minLength: 1
       required:
         - skillName
+    ChatSuggestionAction:
+      oneOf:
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum:
+                - ask_followup
+          required:
+            - kind
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum:
+                - start_intent
+            intent:
+              type: object
+              properties:
+                skillName:
+                  type: string
+                intentName:
+                  type: string
+              required:
+                - skillName
+          required:
+            - kind
+            - intent
+      description: "Behavior triggered when the user activates the suggestion chip. Absent means ask_followup (default: submit the chip text as a new user turn)."
     ChatSuggestion:
       type: object
       properties:
@@ -3839,6 +4265,8 @@ components:
           type: string
         citation:
           $ref: "#/components/schemas/Citation"
+        action:
+          $ref: "#/components/schemas/ChatSuggestionAction"
       required:
         - text
         - kind
@@ -3889,6 +4317,19 @@ components:
         - routeType
         - routeReason
         - retrievalInvoked
+    AssistantChatDebug:
+      type: object
+      properties:
+        route:
+          $ref: "#/components/schemas/AssistantRoute"
+        activitySummary:
+          $ref: "#/components/schemas/ActivitySummary"
+        activityTrace:
+          $ref: "#/components/schemas/ActivityTrace"
+      required:
+        - route
+        - activitySummary
+        - activityTrace
     ChatResponse:
       type: object
       properties:
@@ -3917,19 +4358,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatSuggestion"
-        activitySummary:
-          $ref: "#/components/schemas/ActivitySummary"
-        activityTrace:
-          $ref: "#/components/schemas/ActivityTrace"
-        route:
-          $ref: "#/components/schemas/AssistantRoute"
+        debug:
+          $ref: "#/components/schemas/AssistantChatDebug"
       required:
         - conversationId
         - assistantMessageId
         - answer
-        - activitySummary
-        - activityTrace
-        - route
     ChatBootstrapResponse:
       type: object
       properties:
@@ -3955,17 +4389,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatSuggestion"
-        activitySummary:
-          $ref: "#/components/schemas/ActivitySummary"
-        activityTrace:
-          $ref: "#/components/schemas/ActivityTrace"
-        route:
-          $ref: "#/components/schemas/AssistantRoute"
+        debug:
+          $ref: "#/components/schemas/AssistantChatDebug"
       required:
         - answer
-        - activitySummary
-        - activityTrace
-        - route
       description: Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn.
     AssistantChatResponse:
       anyOf:
@@ -3987,6 +4414,9 @@ components:
           type: boolean
           default: false
         stream:
+          type: boolean
+          default: false
+        includeDebug:
           type: boolean
           default: false
         userExpectedLocale:
@@ -4200,6 +4630,18 @@ components:
             - brandText
             - surface
             - text
+        branding:
+          type: object
+          properties:
+            hidePoweredBy:
+              type: boolean
+            privacyPolicyUrl:
+              type:
+                - string
+                - "null"
+          required:
+            - hidePoweredBy
+            - privacyPolicyUrl
         intakeActions:
           type: array
           items:
@@ -4285,75 +4727,6 @@ components:
         - total
         - nextCursor
         - hasMore
-    ValidationDisposition:
-      type: string
-      enum:
-        - supported
-        - unsupported
-        - non_substantive
-    ValidationSegmentResult:
-      type: object
-      properties:
-        originalText:
-          type: string
-        text:
-          type: string
-        disposition:
-          $ref: "#/components/schemas/ValidationDisposition"
-        replacementApplied:
-          type: boolean
-        reason:
-          type: string
-        citationIndices:
-          type: array
-          items:
-            type: integer
-            minimum: 0
-      required:
-        - originalText
-        - text
-        - disposition
-        - replacementApplied
-        - reason
-    ValidationDebug:
-      type: object
-      properties:
-        ran:
-          type: boolean
-        answerModified:
-          type: boolean
-        unsupportedSegmentCount:
-          type: integer
-          minimum: 0
-        substantiveUnsupportedSegmentCount:
-          type: integer
-          minimum: 0
-        supportedSegmentCount:
-          type: integer
-          minimum: 0
-        nonSubstantiveSegmentCount:
-          type: integer
-          minimum: 0
-        hiddenSupportUsed:
-          type: boolean
-        hiddenSupportKindsUsed:
-          type: array
-          items:
-            type: string
-            enum:
-              - assistant_name
-        segmentResults:
-          type: array
-          items:
-            $ref: "#/components/schemas/ValidationSegmentResult"
-      required:
-        - ran
-        - answerModified
-        - unsupportedSegmentCount
-        - substantiveUnsupportedSegmentCount
-        - supportedSegmentCount
-        - nonSubstantiveSegmentCount
-        - segmentResults
     ChatConversationMessageDebug:
       type: object
       properties:
@@ -4374,13 +4747,10 @@ components:
           type: string
           enum:
             - grounded_success
-            - grounded_degraded_unsupported_segments
             - no_context_refusal
             - non_retrieval_response
         route:
           $ref: "#/components/schemas/AssistantRouteDiagnostics"
-        validation:
-          $ref: "#/components/schemas/ValidationDebug"
         activitySummary:
           $ref: "#/components/schemas/ActivitySummary"
         activityTrace:
@@ -4791,6 +5161,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Public chat session exchange rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitExceededResponse"
   /api/v1/auth/register:
     post:
       tags:
@@ -4861,6 +5237,118 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Unexpected server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/password-reset/request:
+    post:
+      tags:
+        - Auth
+      summary: Request a password reset email
+      operationId: requestPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetRequest"
+      responses:
+        "202":
+          description: Password reset request accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptedResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/password-reset/confirm:
+    post:
+      tags:
+        - Auth
+      summary: Confirm password reset and establish a new session
+      operationId: confirmPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetConfirmRequest"
+      responses:
+        "200":
+          description: Password reset confirmed and session established
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordResetConfirmResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Reset token is invalid or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/email-verification/verify:
+    post:
+      tags:
+        - Auth
+      summary: Verify an email address
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailVerificationVerifyRequest"
+      responses:
+        "200":
+          description: Email address verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailVerificationVerifyResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Verification token is invalid or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/email-verification/resend:
+    post:
+      tags:
+        - Auth
+      summary: Request an email verification email
+      operationId: resendEmailVerification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailVerificationResendRequest"
+      responses:
+        "202":
+          description: Email verification request accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptedResponse"
+        "400":
+          description: Request validation failed
           content:
             application/json:
               schema:
@@ -5665,6 +6153,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/ingestion/embedding-model/cancel:
+    post:
+      tags:
+        - Settings
+      summary: Cancel a pending workspace embedding model change
+      operationId: cancelPendingEmbeddingModel
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Pending embedding model change cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionSettings"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/settings/ingestion/reprocess:
     post:
       tags:
@@ -5840,6 +6349,151 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GeneralSettingsResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/credentials:
+    get:
+      tags:
+        - Settings
+      summary: List configured workspace provider API keys
+      operationId: listWorkspaceProviderCredentials
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Configured providers and encryption status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceProviderCredentialsResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/credentials/{provider}:
+    put:
+      tags:
+        - Settings
+      summary: Set or replace a workspace provider API key
+      operationId: setWorkspaceProviderCredential
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            enum: *a16
+          required: true
+          name: provider
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetWorkspaceProviderCredentialRequest"
+      responses:
+        "204":
+          description: Credential stored
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Server-side secret encryption is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - Settings
+      summary: Remove a stored workspace provider API key
+      operationId: removeWorkspaceProviderCredential
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            enum: *a16
+          required: true
+          name: provider
+          in: path
+      responses:
+        "204":
+          description: Credential removed
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No credential found for the requested provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/llm-models:
+    get:
+      tags:
+        - Settings
+      summary: Get workspace chat/rewrite/rerank model preferences
+      operationId: getWorkspaceLlmModels
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Workspace LLM model preferences (null = inherit env default)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceLlmModelsResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      tags:
+        - Settings
+      summary: Update workspace chat/rewrite/rerank model preferences
+      operationId: updateWorkspaceLlmModels
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkspaceLlmModelsRequest"
+      responses:
+        "200":
+          description: Updated workspace LLM model preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceLlmModelsResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Authentication required
           content:
@@ -6132,7 +6786,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - &a14
+        - &a17
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -6156,7 +6810,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a14
+        - *a17
       parameters:
         - schema:
             type: string
@@ -6305,6 +6959,11 @@ paths:
           required: true
           name: searchId
           in: path
+        - schema:
+            type: boolean
+          required: false
+          name: includeDebug
+          in: query
       responses:
         "200":
           description: Document search replay returned
@@ -6471,6 +7130,86 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/document/sources/{sourceId}:
+    patch:
+      tags:
+        - Documents
+      summary: Update a website source's crawl settings
+      operationId: updateDocumentSource
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: sourceId
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentSourceUpdateRequest"
+      responses:
+        "200":
+          description: Source updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentSourceListItem"
+        "400":
+          description: Source is not a website or the manually-added bucket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Source not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - Documents
+      summary: Delete a source and all its documents
+      operationId: deleteDocumentSource
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: sourceId
+          in: path
+      responses:
+        "204":
+          description: Source and documents deleted
+        "400":
+          description: Source cannot be deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Source not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/document/sources/{sourceId}/recrawl:
     post:
       tags:
@@ -6583,50 +7322,18 @@ paths:
                   resumedJobCount:
                     type: integer
                     minimum: 0
+                  pendingResumeJobCount:
+                    type: integer
+                    minimum: 0
                   resumeDispatchFailureCount:
                     type: integer
                     minimum: 0
                 required:
                   - resumedJobCount
+                  - pendingResumeJobCount
                   - resumeDispatchFailureCount
         "400":
           description: Source is not a website source
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Source not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/document/sources/{sourceId}:
-    delete:
-      tags:
-        - Documents
-      summary: Delete a source and all its documents
-      operationId: deleteDocumentSource
-      security:
-        - bearerAuth: []
-      parameters:
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: sourceId
-          in: path
-      responses:
-        "204":
-          description: Source and documents deleted
-        "400":
-          description: Source cannot be deleted
           content:
             application/json:
               schema:
@@ -7335,6 +8042,11 @@ paths:
           required: true
           name: searchId
           in: path
+        - schema:
+            type: boolean
+          required: false
+          name: includeDebug
+          in: query
       responses:
         "200":
           description: Document search replay returned

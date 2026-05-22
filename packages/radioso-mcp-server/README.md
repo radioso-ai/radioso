@@ -11,7 +11,7 @@ The package connects to an existing Radioso deployment over its public HTTP API 
 - document create, update, delete, and reprocess
 - retrieval settings reads and partial updates
 
-The package owns MCP protocol handling, token verification seams, approval-gated write flow, policy enforcement, and audit logging. It does not import backend domain modules and does not access the database directly.
+The package owns MCP protocol handling, token verification seams, capability policy enforcement, and audit logging. Authorization comes from the workspace API token and the tools the MCP session was granted at exchange time; the package does not implement a separate server-side approval gate. Tools that should prompt the user before execution are advertised with `requiresApproval: true` so the MCP host (Cursor, Claude Desktop, ChatGPT) can show its own confirmation UI. The package does not import backend domain modules and does not access the database directly.
 
 ## Remote Runtime
 
@@ -36,21 +36,20 @@ The target Radioso backend must also have the same `RADIOSO_MCP_SIGNING_SECRET` 
 - `RADIOSO_MCP_SERVER_NAME` default `radioso-context`
 - `RADIOSO_MCP_REQUEST_TIMEOUT_MS` default `30000`
 - `RADIOSO_MCP_ACCESS_TOKEN_TTL_SECONDS` default `900`
-- `RADIOSO_MCP_APPROVAL_TTL_SECONDS` default `300`
 - `RADIOSO_MCP_ALLOWED_READ_TOOLS`
 - `RADIOSO_MCP_ALLOWED_WRITE_TOOLS`
-- `RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS`
+- `RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS` per-tool list that toggles the `requiresApproval` advertisement MCP hosts read when deciding whether to prompt
 - `RADIOSO_MCP_AUDIT_LOG_PATH`
-- `RADIOSO_MCP_REDIS_URL` enables a shared runtime store for sessions and approvals
+- `RADIOSO_MCP_REDIS_URL` enables a shared runtime store for sessions
 - `RADIOSO_MCP_REDIS_KEY_PREFIX` default `radioso-mcp`
 - `RADIOSO_MCP_WORKSPACE_POLICIES_PATH` path to a JSON file with workspace-specific policy overrides
 - `RADIOSO_MCP_ENABLED` and `RADIOSO_MCP_STANDALONE` are read by the backend, not the standalone package. Use `RADIOSO_MCP_ENABLED=true` with `RADIOSO_MCP_STANDALONE=false` to mount the backend route.
 - `RADIOSO_MCP_MOUNT_PATH` backend merged route path, default `/mcp`
 - `RADIOSO_MCP_MERGED_CORS_ORIGINS` backend merged CORS allowlist, default `*`
 
-If the tool allowlists are omitted, the package enables the full current read/write catalog and requires approval for all write tools.
+If the tool allowlists are omitted, the package enables the full current read/write catalog. All write tools default to `requiresApproval: true` so MCP hosts will prompt the user before execution. The package does not enforce approval server-side beyond the workspace API token's underlying permissions.
 
-When `RADIOSO_MCP_REDIS_URL` is omitted, the server stays in documented in-memory single-node mode. When it is set, exchange and approval state move into Redis so multiple MCP server instances can serve the same session.
+When `RADIOSO_MCP_REDIS_URL` is omitted, the server stays in documented in-memory single-node mode. When it is set, session state moves into Redis so multiple MCP server instances can serve the same session.
 
 Workspace policy files use this JSON shape:
 
@@ -185,38 +184,28 @@ curl -s http://127.0.0.1:8787/mcp \
   }'
 ```
 
-## Approval-Gated Write Flow
+## Write Flow
+
+Write tools execute as soon as the session-granted access token is valid and the workspace permission backing the tool is satisfied on the upstream Radioso backend. Tools listed in `approvalRequiredWriteTools` advertise `requiresApproval: true` so MCP hosts (Cursor, Claude Desktop, ChatGPT) can show their own confirmation UI before sending the call.
 
 ```bash
-APPROVAL_TOKEN=$(
-  curl -s http://127.0.0.1:8787/v1/approvals \
-    -H "authorization: Bearer $ACCESS_TOKEN" \
-    -H 'content-type: application/json' \
-    -d '{
-      "reason": "create onboarding doc",
-      "tools": ["create_document"]
-    }' \
-  | jq -r '.approvalToken'
-)
-
 curl -s http://127.0.0.1:8787/mcp \
   -H "authorization: Bearer $ACCESS_TOKEN" \
   -H 'content-type: application/json' \
   -H 'accept: application/json, text/event-stream' \
   -H 'mcp-protocol-version: 2025-11-25' \
-  -d "{
-    \"jsonrpc\": \"2.0\",
-    \"id\": \"write-1\",
-    \"method\": \"tools/call\",
-    \"params\": {
-      \"name\": \"create_document\",
-      \"arguments\": {
-        \"title\": \"Remote MCP doc\",
-        \"content\": \"Created by the remote MCP server.\",
-        \"approvalToken\": \"$APPROVAL_TOKEN\"
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "write-1",
+    "method": "tools/call",
+    "params": {
+      "name": "create_document",
+      "arguments": {
+        "title": "Remote MCP doc",
+        "content": "Created by the remote MCP server."
       }
     }
-  }"
+  }'
 ```
 
 ## Stdio Compatibility

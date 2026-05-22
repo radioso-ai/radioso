@@ -52,6 +52,10 @@ interface WebsiteCrawlJobRow {
   updated_at: Date;
 }
 
+interface WebsiteCrawlJobResumeRow extends WebsiteCrawlJobRow {
+  resume_pending: boolean;
+}
+
 const websiteCrawlJobColumns = [
   "id",
   "account_id",
@@ -104,6 +108,11 @@ export interface WebsiteCrawlJobListOptions {
   sourceId?: string;
 }
 
+export interface ResumePausedWebsiteCrawlJobsResult {
+  resumedJobs: WebsiteCrawlJobRecord[];
+  pendingResumeJobCount: number;
+}
+
 export interface WebsiteCrawlJobRepositoryPort {
   create(input: {
     accountId?: string | null;
@@ -115,11 +124,12 @@ export interface WebsiteCrawlJobRepositoryPort {
     checkpoint?: WebsiteCrawlCheckpoint;
   }): Promise<WebsiteCrawlJobRecord>;
   findById(jobId: string): Promise<WebsiteCrawlJobRecord | null>;
+  findByIdAndWorkspaceId(jobId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord | null>;
   listForWorkspace(workspaceId: string, options?: WebsiteCrawlJobListOptions): Promise<WebsiteCrawlJobRecord[]>;
   deleteById(jobId: string, workspaceId: string): Promise<boolean>;
   cancelBySourceId(sourceId: string, workspaceId: string): Promise<number>;
   pauseBySourceId(sourceId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord[]>;
-  resumePausedBySourceId(sourceId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord[]>;
+  resumePausedBySourceId(sourceId: string, workspaceId: string): Promise<ResumePausedWebsiteCrawlJobsResult>;
   updateCheckpoint(jobId: string, checkpoint: WebsiteCrawlCheckpoint): Promise<void>;
   claimNext(now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   claimById(jobId: string, now?: Date): Promise<WebsiteCrawlJobRecord | null>;
@@ -182,6 +192,18 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     return row ? mapWebsiteCrawlJob(row) : null;
   }
 
+  async findByIdAndWorkspaceId(jobId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord | null> {
+    const [row] = await this.database.query<WebsiteCrawlJobRow>(
+      `SELECT ${selectWebsiteCrawlJob}
+       FROM website_crawl_jobs
+       WHERE id = $1
+         AND workspace_id = $2`,
+      [jobId, workspaceId],
+    );
+
+    return row ? mapWebsiteCrawlJob(row) : null;
+  }
+
   async deleteById(jobId: string, workspaceId: string): Promise<boolean> {
     const rowCount = await this.database.execute(
       `DELETE FROM website_crawl_jobs
@@ -207,31 +229,41 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       `UPDATE website_crawl_jobs
        SET status = 'paused',
            claimed_at = CASE WHEN status = 'queued' THEN NULL ELSE claimed_at END,
+           resume_requested_at = NULL,
            updated_at = NOW()
        WHERE source_id = $1
          AND workspace_id = $2
-         AND status IN ('queued', 'processing')
+         AND (
+           status IN ('queued', 'processing')
+           OR (status = 'paused' AND resume_requested_at IS NOT NULL)
+         )
        RETURNING ${selectWebsiteCrawlJob}`,
       [sourceId, workspaceId],
     );
     return rows.map(mapWebsiteCrawlJob);
   }
 
-  async resumePausedBySourceId(sourceId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord[]> {
-    const rows = await this.database.query<WebsiteCrawlJobRow>(
-      `UPDATE website_crawl_jobs
-       SET status = 'queued',
-           available_at = NOW(),
-           claimed_at = NULL,
-           updated_at = NOW()
-       WHERE source_id = $1
-         AND workspace_id = $2
-         AND status = 'paused'
-         AND claimed_at IS NULL
-       RETURNING ${selectWebsiteCrawlJob}`,
+  async resumePausedBySourceId(sourceId: string, workspaceId: string): Promise<ResumePausedWebsiteCrawlJobsResult> {
+    const rows = await this.database.query<WebsiteCrawlJobResumeRow>(
+      `WITH updated AS (
+         UPDATE website_crawl_jobs
+         SET status = CASE WHEN claimed_at IS NULL THEN 'queued' ELSE status END,
+             available_at = CASE WHEN claimed_at IS NULL THEN NOW() ELSE available_at END,
+             resume_requested_at = CASE WHEN claimed_at IS NULL THEN NULL ELSE NOW() END,
+             updated_at = NOW()
+         WHERE source_id = $1
+           AND workspace_id = $2
+           AND status = 'paused'
+         RETURNING ${selectWebsiteCrawlJob}, status = 'paused' AS resume_pending
+       )
+       SELECT ${selectWebsiteCrawlJob}, resume_pending
+       FROM updated`,
       [sourceId, workspaceId],
     );
-    return rows.map(mapWebsiteCrawlJob);
+    return {
+      resumedJobs: rows.filter((row) => !row.resume_pending).map(mapWebsiteCrawlJob),
+      pendingResumeJobCount: rows.filter((row) => row.resume_pending).length,
+    };
   }
 
   async updateCheckpoint(jobId: string, checkpoint: WebsiteCrawlCheckpoint): Promise<void> {
@@ -331,12 +363,25 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
   async releaseAllTimedOutClaims(claimedAtOrBefore: Date, errorMessage: string): Promise<number> {
     return this.database.execute(
       `UPDATE website_crawl_jobs
-       SET status = CASE WHEN status = 'processing' THEN 'queued' ELSE status END,
+       SET status = CASE
+             WHEN status = 'processing' THEN 'queued'
+             WHEN status = 'paused' AND resume_requested_at IS NOT NULL THEN 'queued'
+             ELSE status
+           END,
+           available_at = CASE
+             WHEN status = 'processing' OR resume_requested_at IS NOT NULL THEN NOW()
+             ELSE available_at
+           END,
            claimed_at = NULL,
+           resume_requested_at = NULL,
            last_error = CASE WHEN status = 'processing' THEN $2 ELSE last_error END,
            updated_at = NOW()
        WHERE status IN ('processing', 'paused')
-         AND claimed_at <= $1`,
+         AND (
+           (status = 'processing' AND claimed_at <= $1)
+           OR (status = 'paused' AND resume_requested_at IS NULL AND claimed_at <= $1)
+           OR (status = 'paused' AND resume_requested_at IS NOT NULL AND resume_requested_at <= $1)
+         )`,
       [claimedAtOrBefore, errorMessage],
     );
   }
@@ -344,7 +389,10 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
   async releasePausedClaim(jobId: string): Promise<void> {
     await this.database.execute(
       `UPDATE website_crawl_jobs
-       SET claimed_at = NULL,
+       SET status = CASE WHEN resume_requested_at IS NULL THEN 'paused' ELSE 'queued' END,
+           available_at = CASE WHEN resume_requested_at IS NULL THEN available_at ELSE NOW() END,
+           claimed_at = NULL,
+           resume_requested_at = NULL,
            updated_at = NOW()
        WHERE id = $1
          AND status = 'paused'`,
@@ -358,6 +406,7 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
        SET status = 'completed',
            result_json = $2,
            last_error = NULL,
+           resume_requested_at = NULL,
            completed_at = NOW(),
            updated_at = NOW()
        WHERE id = $1
@@ -371,6 +420,7 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       `UPDATE website_crawl_jobs
        SET status = 'failed',
            last_error = $2,
+           resume_requested_at = NULL,
            completed_at = NOW(),
            updated_at = NOW()
        WHERE id = $1

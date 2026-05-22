@@ -136,6 +136,18 @@ Use `pnpm run ci:local -- --all` for broad changes, and include the result in th
 
 Use Conventional Commits for commit messages, such as `feat: add retrieval setting` or `fix: handle empty uploads`.
 
+## Design Discipline
+
+Before writing code for a non-trivial change, answer in writing:
+
+- **What does each module / class / file know? What shouldn't it know?** A generic transport must not know about a specific provider; a domain template must not live inside a generic service; concrete adapters belong outside the contract they implement.
+- **What ports does it expose, to whom?** Narrow ports per consumer beat one fat interface. Duplicated structural types across module boundaries are a missing shared port, not an acceptable workaround.
+- **What's the dependency direction?** Modules with broad knowledge depend on modules with narrower knowledge, never the reverse. Composition assembles; domains never reach into composition.
+
+Treat high file count as a smell. If a small feature wants to touch many files, the substrate is probably wrong — pause and look for the missing port, the duplicated type, or the leaking concern, and surface it before pushing through. Tests passing and types compiling are the *start* of review, not the finish line: a code change is not done until the *shape* can be defended on those three questions.
+
+Watch for tactical tells that signal dodged design work: "for now," "the cheap one," "land this and refactor later," "minimum viable." When they appear, ask whether the shortcut is real wisdom or avoidance.
+
 ## Code Style
 
 - Prefer small, named modules over large orchestration files. If a service mixes persistence, orchestration, audit, analytics, and formatting concerns, extract the most self-contained concern first.
@@ -175,7 +187,8 @@ radioso/
 |-- packages/
 |   |-- radioso-mcp-server/      # standalone MCP server package
 |   |-- document-parser/         # local parser package
-|   `-- connector-api/           # connector contract package
+|   |-- connector-api/           # connector contract package
+|   `-- ui/                      # shared shadcn primitives (frontend + docs-portal)
 |-- typescript-sdk/              # first-party TypeScript SDK
 |-- docs/                        # product, SDK, MCP, and settings docs
 |-- docs-portal/                 # public documentation site

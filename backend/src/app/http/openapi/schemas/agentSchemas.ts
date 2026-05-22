@@ -69,6 +69,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         surface: z.string(),
         text: z.string(),
       }),
+      branding: z.object({
+        hidePoweredBy: z.boolean(),
+        privacyPolicyUrl: z.string().nullable(),
+      }),
       retrievalEnabled: z.boolean(),
       sourceScope: AgentSourceScopeSchema,
       logo: schemas.AgentLogoSchema,
@@ -76,6 +80,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       assistantDefaultLocale: z.string().nullable(),
       proactiveGreetingEnabled: z.boolean(),
       assistantBootstrapActive: z.boolean(),
+      chatModelOverride: z.object({
+        provider: z.enum(["openai", "openai-compatible", "gemini", "claude"]),
+        model: z.string(),
+      }).nullable(),
       surfaceSettings: ConversationAgentSurfaceSettingsSchema,
     }),
   );
@@ -99,6 +107,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         surface: z.string().optional(),
         text: z.string().optional(),
       }).optional(),
+      branding: z.object({
+        hidePoweredBy: z.boolean().optional(),
+        privacyPolicyUrl: z.string().max(2048).nullable().optional(),
+      }).optional(),
       retrievalEnabled: z.boolean().optional(),
       sourceScope: z.discriminatedUnion("mode", [
         z.object({
@@ -112,6 +124,13 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       greetingInstruction: z.string().max(200).optional(),
       assistantDefaultLocale: z.string().max(35).nullable().optional(),
       proactiveGreetingEnabled: z.boolean().optional(),
+      chatModelOverride: z.union([
+        z.null(),
+        z.object({
+          provider: z.enum(["openai", "openai-compatible", "gemini", "claude"]),
+          model: z.string().min(1).max(200),
+        }),
+      ]).optional(),
       surfaceSettings: z.object({
         authenticatedChat: z.object({
           enabled: z.boolean().optional(),
@@ -157,6 +176,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         brandText: z.string(),
         surface: z.string(),
         text: z.string(),
+      }).optional(),
+      branding: z.object({
+        hidePoweredBy: z.boolean(),
+        privacyPolicyUrl: z.string().nullable(),
       }).optional(),
       intakeActions: z.array(z.object({
         skillName: z.string(),

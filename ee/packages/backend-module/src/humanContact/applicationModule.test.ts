@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createHumanContactApplicationModule } from "./applicationModule.js";
 import type {
+  ApplicationChatActionSuggestionProviderRegistration,
   ApplicationChatIntakeProviderRegistration,
+  ApplicationDatabaseMigrator,
   ApplicationModuleRegistrationContext,
   SkillDefinition,
 } from "../radiosoModuleTypes.js";
@@ -26,26 +28,39 @@ const createChatIntakeDependencies = () => ({
   messageRepository: {
     listRecentByConversationId: vi.fn(),
   },
+  workspaceContactInfoRepository: {
+    findById: vi.fn(),
+  },
+  mailService: {
+    send: vi.fn(),
+  },
+  dashboardBaseUrl: null,
 });
 
 describe("human contact application module", () => {
   it("registers the human contact request skill definition when installed", () => {
     const registeredSkills: SkillDefinition[] = [];
+    const registeredMigrators: ApplicationDatabaseMigrator[] = [];
     const module = createHumanContactApplicationModule();
 
     module.register?.({
-      registerDatabaseMigrator: vi.fn(),
+      registerDatabaseMigrator(migrator) {
+        registeredMigrators.push(migrator);
+      },
       registerSkillDefinition(definition) {
         registeredSkills.push(definition);
       },
       registerChatIntakeProvider: vi.fn(),
       registerContactHistoryProvider: vi.fn(),
       registerRouteMount: vi.fn(),
-      registerWebsiteEmbedIntegration: vi.fn(),
       registerUsageLimitPolicy: vi.fn(),
       registerAccountCreatedHandler: vi.fn(),
     } satisfies ApplicationModuleRegistrationContext);
 
+    expect(registeredMigrators.map((migrator) => migrator.id)).toEqual([
+      "ee-skill-submissions",
+      "ee-human-contact",
+    ]);
     expect(registeredSkills).toEqual([
       expect.objectContaining({
         name: "human_contact.request",
@@ -62,6 +77,7 @@ describe("human contact application module", () => {
         ]),
         intake: expect.objectContaining({
           enabled: true,
+          subjectIdentityField: "email",
           fields: expect.arrayContaining([
             expect.objectContaining({ name: "email", type: "email", required: true }),
             expect.objectContaining({ name: "message", type: "string", required: true }),
@@ -111,7 +127,6 @@ describe("human contact application module", () => {
       },
       registerContactHistoryProvider: vi.fn(),
       registerRouteMount: vi.fn(),
-      registerWebsiteEmbedIntegration: vi.fn(),
       registerUsageLimitPolicy: vi.fn(),
       registerAccountCreatedHandler: vi.fn(),
     } satisfies ApplicationModuleRegistrationContext);
@@ -129,5 +144,35 @@ describe("human contact application module", () => {
     expect(state.service).not.toBe(previousService);
 
     await module.shutdown?.();
+  });
+
+  it("registers an action suggestion provider that names contact_human", () => {
+    let actionFactory: ApplicationChatActionSuggestionProviderRegistration | undefined;
+    const module = createHumanContactApplicationModule();
+
+    module.register?.({
+      registerDatabaseMigrator: vi.fn(),
+      registerSkillDefinition: vi.fn(),
+      registerChatIntakeProvider: vi.fn(),
+      registerChatActionSuggestionProvider(registration) {
+        actionFactory = registration;
+      },
+      registerContactHistoryProvider: vi.fn(),
+      registerRouteMount: vi.fn(),
+      registerWebsiteEmbedIntegration: vi.fn(),
+      registerUsageLimitPolicy: vi.fn(),
+      registerAccountCreatedHandler: vi.fn(),
+    } satisfies ApplicationModuleRegistrationContext);
+
+    if (typeof actionFactory !== "function") {
+      throw new Error("chat action suggestion provider factory was not registered");
+    }
+    const provider = actionFactory({
+      database: { query: vi.fn().mockResolvedValue([]) },
+      chatGateway: { answer: vi.fn().mockResolvedValue("Contact us") },
+      logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      auditService: { record: vi.fn() },
+    });
+    expect(provider.name).toBe("contact_human");
   });
 });

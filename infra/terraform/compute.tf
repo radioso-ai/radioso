@@ -65,12 +65,9 @@ resource "google_cloud_run_v2_service" "backend" {
           value = env.value
         }
       }
-      dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [local.app_base_url] : []
-        content {
-          name  = "RADIOSO_ENTERPRISE_WIDGET_ORIGIN"
-          value = env.value
-        }
+      env {
+        name  = "RADIOSO_WIDGET_ORIGIN"
+        value = local.app_base_url
       }
       dynamic "env" {
         for_each = var.radioso_edition == "enterprise" ? [local.app_base_url] : []
@@ -205,7 +202,7 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
+        for_each = var.resend_mail_api_key != null ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
         content {
           name = "RESEND_MAIL_API_KEY"
           value_source {
@@ -217,16 +214,16 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [var.ee_mail_from_email] : []
+        for_each = var.mail_from_email != null ? [var.mail_from_email] : []
         content {
-          name  = "EE_MAIL_FROM_EMAIL"
+          name  = "MAIL_FROM_EMAIL"
           value = env.value
         }
       }
       dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [var.ee_mail_from_name] : []
+        for_each = var.mail_from_name != null ? [var.mail_from_name] : []
         content {
-          name  = "EE_MAIL_FROM_NAME"
+          name  = "MAIL_FROM_NAME"
           value = env.value
         }
       }
@@ -431,12 +428,9 @@ resource "google_cloud_run_v2_service" "document_worker" {
           value = env.value
         }
       }
-      dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [local.app_base_url] : []
-        content {
-          name  = "RADIOSO_ENTERPRISE_WIDGET_ORIGIN"
-          value = env.value
-        }
+      env {
+        name  = "RADIOSO_WIDGET_ORIGIN"
+        value = local.app_base_url
       }
       env {
         name  = "GOOGLE_CLOUD_PROJECT"
@@ -529,7 +523,7 @@ resource "google_cloud_run_v2_service" "document_worker" {
         }
       }
       dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
+        for_each = var.resend_mail_api_key != null ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
         content {
           name = "RESEND_MAIL_API_KEY"
           value_source {
@@ -541,16 +535,16 @@ resource "google_cloud_run_v2_service" "document_worker" {
         }
       }
       dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [var.ee_mail_from_email] : []
+        for_each = var.mail_from_email != null ? [var.mail_from_email] : []
         content {
-          name  = "EE_MAIL_FROM_EMAIL"
+          name  = "MAIL_FROM_EMAIL"
           value = env.value
         }
       }
       dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [var.ee_mail_from_name] : []
+        for_each = var.mail_from_name != null ? [var.mail_from_name] : []
         content {
-          name  = "EE_MAIL_FROM_NAME"
+          name  = "MAIL_FROM_NAME"
           value = env.value
         }
       }
@@ -673,12 +667,9 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
           value = env.value
         }
       }
-      dynamic "env" {
-        for_each = var.radioso_edition == "enterprise" ? [local.app_base_url] : []
-        content {
-          name  = "RADIOSO_ENTERPRISE_WIDGET_ORIGIN"
-          value = env.value
-        }
+      env {
+        name  = "RADIOSO_WIDGET_ORIGIN"
+        value = local.app_base_url
       }
       env {
         name  = "GOOGLE_CLOUD_PROJECT"

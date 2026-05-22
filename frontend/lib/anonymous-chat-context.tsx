@@ -24,6 +24,7 @@ import {
   readStoredAnonymousSessionId,
   readStoredEffectivePublicChatToken,
   readStoredPublicSessionToken,
+  type AgentBrandingSettings,
   type AnswerFeedbackEntry,
   type AnswerFeedbackState,
   type AnswerSegment,
@@ -107,6 +108,7 @@ interface AnonymousChatContextValue {
   workspaceName: string | null
   assistantAvatarUrl: string | null
   assistantTheme: WebsiteEmbedThemeOverrides | null
+  branding: AgentBrandingSettings | null
   intakeActions: PublicChatIntakeAction[]
   isLoading: boolean
   isHydrating: boolean
@@ -176,6 +178,17 @@ const resolveOwnFeedback = (
   return entry ? { value: entry.value, comment: entry.comment } : undefined
 }
 
+const stripPublicSuggestionCitation = (suggestion: ChatSuggestion): ChatSuggestion => {
+  const { citation: _citation, ...publicSuggestion } = suggestion
+  return publicSuggestion
+}
+
+const stripPublicSuggestionCitations = (suggestions?: ChatSuggestion[]) =>
+  suggestions?.map(stripPublicSuggestionCitation)
+
+const stripPublicAnswerSegmentCitations = (answerSegments?: AnswerSegment[]) =>
+  answerSegments?.map((segment) => ({ text: segment.text }))
+
 const toChatMessages = (
   detail: ChatConversationDetail,
   anonymousSessionId?: string | null,
@@ -188,9 +201,8 @@ const toChatMessages = (
       content: message.content,
       createdAt: message.createdAt,
       inputMetadata: message.inputMetadata,
-      citations: message.citations,
-      answerSegments: message.answerSegments,
-      suggestions: message.suggestions,
+      answerSegments: stripPublicAnswerSegmentCitations(message.answerSegments),
+      suggestions: stripPublicSuggestionCitations(message.suggestions),
       answerFeedback: message.role === 'assistant'
         ? resolveOwnFeedback(message.answerFeedbackEntries, anonymousSessionId)
         : undefined,
@@ -292,6 +304,7 @@ export function AnonymousChatProvider({
   const [workspaceName, setWorkspaceName] = useState<string | null>(null)
   const [assistantAvatarUrl, setAssistantAvatarUrl] = useState<string | null>(null)
   const [assistantTheme, setAssistantTheme] = useState<WebsiteEmbedThemeOverrides | null>(null)
+  const [branding, setBranding] = useState<AgentBrandingSettings | null>(null)
   const [intakeActions, setIntakeActions] = useState<PublicChatIntakeAction[]>([])
   const [conversationId, setConversationId] = useState<string | undefined>()
   const [isLoading, setIsLoading] = useState(false)
@@ -319,6 +332,7 @@ export function AnonymousChatProvider({
       setEffectivePublicChatToken(session.publicChatToken)
       setAssistantAvatarUrl(session.assistantAvatarUrl ?? null)
       setAssistantTheme(deriveThemeOverridesFromModel(session.theme))
+      setBranding(session.branding ?? null)
       setIntakeActions(session.intakeActions ?? [])
       return session
     },
@@ -361,6 +375,7 @@ export function AnonymousChatProvider({
     setWorkspaceName(null)
     setAssistantAvatarUrl(null)
     setAssistantTheme(null)
+    setBranding(null)
     setIntakeActions([])
     setConversationId(undefined)
     setHasOlderMessages(false)
@@ -373,6 +388,7 @@ export function AnonymousChatProvider({
       setWorkspaceName(response.workspaceName ?? null)
       setAssistantAvatarUrl(response.assistantAvatarUrl ?? null)
       setAssistantTheme(deriveThemeOverridesFromModel(response.theme))
+      setBranding(response.branding ?? null)
       setIntakeActions(response.intakeActions ?? [])
 
       if (response.conversations.length === 0) {
@@ -403,8 +419,8 @@ export function AnonymousChatProvider({
                 role: 'assistant',
                 content: bootstrap.answer,
                 createdAt: new Date().toISOString(),
-                citations: bootstrap.citations,
-                answerSegments: bootstrap.answerSegments,
+                answerSegments: stripPublicAnswerSegmentCitations(bootstrap.answerSegments),
+                suggestions: stripPublicSuggestionCitations(bootstrap.suggestions),
                 activitySummary: bootstrap.activitySummary,
                 activityTrace: bootstrap.activityTrace,
                 persistedAssistantMessageId: bootstrap.assistantMessageId,
@@ -464,11 +480,10 @@ export function AnonymousChatProvider({
                 ...message,
                 persistedAssistantMessageId: completion.assistantMessageId ?? message.persistedAssistantMessageId,
                 content: completion.answer ?? message.content,
-                citations: completion.citations,
-                answerSegments: completion.answerSegments,
-                suggestions: completion.suggestions,
-                activitySummary: completion.activitySummary,
-                activityTrace: completion.activityTrace,
+                answerSegments: stripPublicAnswerSegmentCitations(completion.answerSegments),
+                suggestions: stripPublicSuggestionCitations(completion.suggestions),
+                activitySummary: completion.debug?.activitySummary,
+                activityTrace: completion.debug?.activityTrace,
                 skill: completion.skill ?? message.skill,
                 status: 'complete' as const,
               }
@@ -502,9 +517,8 @@ export function AnonymousChatProvider({
             ? {
                 ...message,
                 content: assistantMessage.content,
-                citations: assistantMessage.citations,
-                answerSegments: assistantMessage.answerSegments,
-                suggestions: assistantMessage.suggestions,
+                answerSegments: stripPublicAnswerSegmentCitations(assistantMessage.answerSegments),
+                suggestions: stripPublicSuggestionCitations(assistantMessage.suggestions),
                 answerFeedback: assistantMessage.answerFeedback,
                 answerFeedbackEntries: assistantMessage.answerFeedbackEntries,
                 activitySummary: assistantMessage.activitySummary,
@@ -597,7 +611,7 @@ export function AnonymousChatProvider({
                     message.id === assistantMessageId
                       ? {
                           ...message,
-                          suggestions,
+                          suggestions: stripPublicSuggestionCitations(suggestions),
                         }
                       : message,
                   ),
@@ -641,7 +655,7 @@ export function AnonymousChatProvider({
             citations: completion.citations,
             answerSegments: completion.answerSegments,
             suggestions: completion.suggestions,
-            activitySummary: completion.activitySummary,
+            debug: completion.debug,
           })
         }
       } catch (error) {
@@ -675,7 +689,6 @@ export function AnonymousChatProvider({
                 ...message,
                 content: message.content || errorMessage,
                 status: 'error' as const,
-                citations: [] as Citation[],
                 answerSegments: undefined,
                 suggestions: undefined,
               }
@@ -732,6 +745,7 @@ export function AnonymousChatProvider({
       workspaceName,
       assistantAvatarUrl,
       assistantTheme,
+      branding,
       intakeActions,
       isLoading,
       isHydrating,
@@ -751,6 +765,7 @@ export function AnonymousChatProvider({
       workspaceName,
       assistantAvatarUrl,
       assistantTheme,
+      branding,
       intakeActions,
       isLoading,
       isHydrating,

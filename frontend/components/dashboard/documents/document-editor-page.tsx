@@ -1,21 +1,36 @@
 'use client'
 
 import type { FormEvent } from 'react'
-import { ArrowLeft, FileText, PanelRight, Pencil, Save, Trash2, X } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowLeft, Boxes, ExternalLink, FileText, PanelRight, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react'
 
 import { DocumentStatus } from '@/components/dashboard/document-status'
 import { MarkdownContent } from '@/components/markdown/markdown-content'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import type { DocumentSummary } from '@/lib/api'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import type { DocumentSourceListItem, DocumentSummary } from '@/lib/api'
 import { cn } from '@/lib/utils'
+
+// Synthetic source created automatically for inline documents that the user
+// writes directly in the editor. Documents in this bucket can be reassigned to
+// other sources; documents in crawl/upload/connector sources stay locked.
+export const MANUALLY_ADDED_SOURCE_ID = '00000000-0000-0000-0000-000000000001'
 
 export type DocumentEditorValues = {
   title: string
   content: string
   metadata: string
+  sourceId: string
 }
 
 export function DocumentEditorPage({
@@ -25,14 +40,21 @@ export function DocumentEditorPage({
   isLoading,
   isSaving,
   isDeleting,
+  isRetrying,
   isEditing,
   isMetadataOpen,
+  retryError,
+  availableSources,
+  sourceFilterHref,
   onBack,
   onChange,
   onMetadataChange,
+  onSourceChange,
   onEditingChange,
   onMetadataOpenChange,
   onDelete,
+  onRetry,
+  onInspectChunks,
   onSubmit,
 }: {
   document: DocumentSummary | null
@@ -41,14 +63,21 @@ export function DocumentEditorPage({
   isLoading: boolean
   isSaving: boolean
   isDeleting: boolean
+  isRetrying: boolean
   isEditing: boolean
   isMetadataOpen: boolean
+  retryError?: string
+  availableSources: DocumentSourceListItem[]
+  sourceFilterHref?: string
   onBack: () => void
   onChange: (field: keyof DocumentEditorValues, value: string) => void
   onMetadataChange: (value: string) => void
+  onSourceChange: (sourceId: string) => void
   onEditingChange: (editing: boolean) => void
   onMetadataOpenChange: (open: boolean) => void
   onDelete: () => void
+  onRetry: () => void
+  onInspectChunks: () => void
   onSubmit: (event: FormEvent) => void
 }) {
   if (isLoading) {
@@ -76,16 +105,95 @@ export function DocumentEditorPage({
     )
   }
 
-  const isEditable = document.sourceKind === 'inline_text'
+  const isInlineText = document.sourceKind === 'inline_text'
+  const isFailed = document.status.toLowerCase() === 'failed'
+  const sourceIsManual = (document.sourceId ?? null) === MANUALLY_ADDED_SOURCE_ID
+  const isEditable = isInlineText && sourceIsManual
+  const canEditSource = isEditing && isEditable
+  const currentSourceName =
+    availableSources.find((source) => source.id === values.sourceId)?.name ??
+    document.source?.name ??
+    '—'
+  const sourceName = document.source?.name ?? null
+  const sourceUrlRaw = document.metadata?.sourceUrl
+  const sourceUrl = typeof sourceUrlRaw === 'string' && sourceUrlRaw.trim().length > 0 ? sourceUrlRaw : null
+  const readOnlyExplanation = document.sourceKind === 'uploaded_file'
+    ? 'Imported documents stay read-only here. Re-import the source file to replace its contents.'
+    : isInlineText && !sourceIsManual
+      ? 'This document was added by a crawl or sync. Re-crawl the source to refresh it.'
+      : null
+
+  const headerActions = (
+    <div className="flex flex-wrap items-center gap-2">
+      {isFailed ? (
+        <Button type="button" variant="outline" onClick={onRetry} disabled={isSaving || isDeleting || isRetrying}>
+          {isRetrying ? <Spinner className="mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+          Retry processing
+        </Button>
+      ) : null}
+      <Button type="button" variant="outline" onClick={onInspectChunks}>
+        <Boxes className="mr-2 h-4 w-4" />
+        Chunks
+      </Button>
+      <Button type="button" variant="outline" onClick={() => onMetadataOpenChange(!isMetadataOpen)}>
+        <PanelRight className="mr-2 h-4 w-4" />
+        Properties
+      </Button>
+      {isEditing ? (
+        <>
+          <Button type="button" variant="outline" onClick={() => onEditingChange(false)} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isSaving || !values.title.trim() || !values.content.trim()}>
+            {isSaving ? <Spinner className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
+            Save document
+          </Button>
+        </>
+      ) : isEditable ? (
+        <Button type="button" onClick={() => onEditingChange(true)}>
+          <Pencil className="mr-2 h-4 w-4" />
+          Edit
+        </Button>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span tabIndex={0} aria-disabled="true">
+              <Button type="button" disabled className="pointer-events-none">
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            </span>
+          </TooltipTrigger>
+          {readOnlyExplanation ? (
+            <TooltipContent>{readOnlyExplanation}</TooltipContent>
+          ) : null}
+        </Tooltip>
+      )}
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
+        onClick={onDelete}
+        disabled={isSaving || isDeleting}
+      >
+        {isDeleting ? <Spinner className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
+        <span className="sr-only">Delete document</span>
+      </Button>
+    </div>
+  )
 
   return (
     <form onSubmit={onSubmit} className="flex h-full min-h-0 flex-col overflow-hidden">
-        <div className="sticky top-0 z-30 flex flex-wrap items-start justify-between gap-4 border-b border-border bg-background/95 px-6 py-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="min-w-0 space-y-3">
+        <div className="sticky top-0 z-30 space-y-3 border-b border-border bg-background/95 px-6 py-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Button type="button" variant="ghost" className="-ml-3 h-8 px-3 text-muted-foreground" onClick={onBack}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to documents
             </Button>
+            {headerActions}
+          </div>
+          <div className="min-w-0">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 {isEditing ? (
@@ -101,52 +209,45 @@ export function DocumentEditorPage({
                 )}
                 <DocumentStatus status={document.status} />
               </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+              {isFailed && document.failureReason ? (
+                <p className="text-sm text-destructive">{document.failureReason}</p>
+              ) : null}
+              {retryError ? (
+                <p className="text-sm text-destructive">{retryError}</p>
+              ) : null}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                 <span>
                   Updated {new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(document.updatedAt))}
                 </span>
                 {document.sourceFilename ? <span>{document.sourceFilename}</span> : null}
-                <span>{isEditable ? 'Inline document' : 'Imported document'}</span>
+                {sourceName ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span>Source</span>
+                    {sourceFilterHref ? (
+                      <Link
+                        href={sourceFilterHref}
+                        className="font-medium text-foreground underline-offset-2 hover:underline"
+                      >
+                        {sourceName}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-foreground">{sourceName}</span>
+                    )}
+                  </span>
+                ) : null}
+                {sourceUrl ? (
+                  <a
+                    href={sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                  >
+                    Open original
+                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                  </a>
+                ) : null}
               </div>
-              {!isEditable ? (
-                <p className="text-sm text-muted-foreground">
-                  Imported documents stay read-only here. Re-import the source file to replace its contents.
-                </p>
-              ) : null}
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" onClick={() => onMetadataOpenChange(!isMetadataOpen)}>
-              <PanelRight className="mr-2 h-4 w-4" />
-              Metadata
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={onDelete}
-              disabled={isSaving || isDeleting}
-            >
-              {isDeleting ? <Spinner className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
-              <span className="sr-only">Delete document</span>
-            </Button>
-            {isEditing ? (
-              <>
-                <Button type="button" variant="outline" onClick={() => onEditingChange(false)} disabled={isSaving}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSaving || !values.title.trim() || !values.content.trim()}>
-                  {isSaving ? <Spinner className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
-                  Save document
-                </Button>
-              </>
-            ) : isEditable ? (
-              <Button type="button" onClick={() => onEditingChange(true)}>
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit
-              </Button>
-            ) : null}
           </div>
         </div>
 
@@ -185,7 +286,7 @@ export function DocumentEditorPage({
               aria-hidden={!isMetadataOpen}
             >
               <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-4">
-                <h2 className="font-semibold text-foreground">Metadata</h2>
+                <h2 className="font-semibold text-foreground">Properties</h2>
                 <Button
                   type="button"
                   variant="ghost"
@@ -194,20 +295,60 @@ export function DocumentEditorPage({
                   onClick={() => onMetadataOpenChange(false)}
                 >
                   <X className="h-4 w-4" />
-                  <span className="sr-only">Close metadata</span>
+                  <span className="sr-only">Close properties</span>
                 </Button>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                <Textarea
-                  id="document-metadata"
-                  value={values.metadata}
-                  onChange={(event) => onMetadataChange(event.target.value)}
-                  placeholder='{"key": "value"}'
-                  readOnly={!isEditing}
-                  disabled={isSaving}
-                  className="min-h-[70vh] resize-none font-mono text-sm"
-                />
-                {metadataError ? <p className="mt-2 text-sm text-destructive">{metadataError}</p> : null}
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+                <div className="space-y-1">
+                  <label
+                    htmlFor="document-source"
+                    className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    Source
+                  </label>
+                  {canEditSource ? (
+                    <Select
+                      value={values.sourceId}
+                      onValueChange={onSourceChange}
+                      disabled={isSaving}
+                    >
+                      <SelectTrigger id="document-source" className="w-full">
+                        <SelectValue placeholder="Select a source" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableSources.map((source) => (
+                          <SelectItem key={source.id} value={source.id}>
+                            {source.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="text-sm text-foreground [overflow-wrap:anywhere]">
+                      {currentSourceName}
+                    </p>
+                  )}
+                  {isEditing && isEditable && !sourceIsManual ? (
+                    <p className="text-xs text-muted-foreground">
+                      Source is locked because this document came from a crawl or import.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor="document-metadata" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Metadata
+                  </label>
+                  <Textarea
+                    id="document-metadata"
+                    value={values.metadata}
+                    onChange={(event) => onMetadataChange(event.target.value)}
+                    placeholder='{"key": "value"}'
+                    readOnly={!isEditing}
+                    disabled={isSaving}
+                    className="min-h-[60vh] resize-none font-mono text-sm"
+                  />
+                  {metadataError ? <p className="mt-2 text-sm text-destructive">{metadataError}</p> : null}
+                </div>
               </div>
             </aside>
           </div>

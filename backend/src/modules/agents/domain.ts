@@ -4,7 +4,21 @@ import {
   defaultWebsiteEmbedTheme,
   type WebsiteEmbedThemeSettings,
 } from "../settings/contracts/websiteEmbed.js";
+import { isKnownModelForProvider } from "../../shared/infra/llm/knownModels.js";
+import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 import type { AgentSurfaceExtensionRegistry } from "./surfaceExtensions.js";
+
+const AGENT_PROVIDER_NAMES: readonly LlmProviderName[] = [
+  "openai",
+  "openai-compatible",
+  "gemini",
+  "claude",
+];
+
+export interface AgentChatModelOverride {
+  provider: LlmProviderName;
+  model: string;
+}
 
 export interface ValidateAgentInputOptions {
   /**
@@ -23,12 +37,18 @@ const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
 const DEFAULT_AGENT_SURFACE_POSITION: AgentSurfacePosition = "bottom-right";
 const MAX_EMBED_COPY_LOCALES = 10;
 
+export interface AgentBrandingSettings {
+  hidePoweredBy: boolean;
+  privacyPolicyUrl: string | null;
+}
+
 export interface AgentBehaviorSettings {
   customInstruction: string;
   suggestedQuestionsEnabled: boolean;
   retrievalEnabled: boolean;
   logo: AgentLogo | null;
   theme: AgentEmbedTheme;
+  branding: AgentBrandingSettings;
 }
 
 export type AgentSourceScope =
@@ -100,6 +120,7 @@ export interface Agent {
 export interface ConversationAgent extends Agent, AgentBehaviorSettings, AgentGreetingSettings {
   sourceScope: AgentSourceScope;
   surfaceSettings: ConversationAgentSurfaceSettings;
+  chatModelOverride: AgentChatModelOverride | null;
 }
 
 export type AgentRecord = ConversationAgent;
@@ -118,6 +139,7 @@ export type AgentInput = Partial<
     | keyof AgentBehaviorSettings
     | keyof AgentGreetingSettings
     | "sourceScope"
+    | "chatModelOverride"
   >
 > & {
   surfaceSettings?: AgentSurfaceSettingsInput;
@@ -203,6 +225,54 @@ const normalizeSurfacePosition = (value: unknown): AgentSurfacePosition => {
 };
 
 export const defaultAgentEmbedTheme = (): AgentEmbedTheme => defaultWebsiteEmbedTheme();
+
+export const defaultAgentBrandingSettings = (): AgentBrandingSettings => ({
+  hidePoweredBy: false,
+  privacyPolicyUrl: null,
+});
+
+const MAX_PRIVACY_POLICY_URL_LENGTH = 2048;
+
+const normalizePrivacyPolicyUrl = (value: unknown): string | null => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    throw badRequest("branding.privacyPolicyUrl must be a string");
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.length > MAX_PRIVACY_POLICY_URL_LENGTH) {
+    throw badRequest(`branding.privacyPolicyUrl must not exceed ${MAX_PRIVACY_POLICY_URL_LENGTH} characters`);
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw badRequest("branding.privacyPolicyUrl must be a valid URL");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw badRequest("branding.privacyPolicyUrl must use http or https");
+  }
+  return parsed.toString();
+};
+
+const normalizeBrandingSettings = (value: unknown): AgentBrandingSettings => {
+  const defaults = defaultAgentBrandingSettings();
+  if (value === undefined || value === null) {
+    return defaults;
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest("branding must be an object");
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    hidePoweredBy: typeof record.hidePoweredBy === "boolean" ? record.hidePoweredBy : defaults.hidePoweredBy,
+    privacyPolicyUrl: normalizePrivacyPolicyUrl(record.privacyPolicyUrl),
+  };
+};
 
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
@@ -389,26 +459,93 @@ const normalizeSourceScope = (value: unknown): AgentSourceScope => {
   };
 };
 
+const normalizeChatModelOverride = (value: unknown): AgentChatModelOverride | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest("chatModelOverride must be an object with provider and model");
+  }
+  const record = value as Record<string, unknown>;
+  const provider = record.provider;
+  const model = record.model;
+  if (provider === null || provider === undefined || model === null || model === undefined) {
+    if (provider === null && model === null) {
+      return null;
+    }
+    if (provider === undefined && model === undefined) {
+      return null;
+    }
+    throw badRequest("chatModelOverride.provider and chatModelOverride.model must be set together");
+  }
+  if (typeof provider !== "string" || !AGENT_PROVIDER_NAMES.includes(provider as LlmProviderName)) {
+    throw badRequest(`Unknown chat provider: ${String(provider)}`);
+  }
+  if (typeof model !== "string" || model.trim().length === 0) {
+    throw badRequest("chatModelOverride.model must not be empty");
+  }
+  const trimmedModel = model.trim();
+  if (!isKnownModelForProvider(provider as LlmProviderName, trimmedModel)) {
+    throw badRequest(
+      `Model "${trimmedModel}" is not supported for provider "${provider}". See the workspace LLM models settings for the current catalog.`,
+    );
+  }
+  return {
+    provider: provider as LlmProviderName,
+    model: trimmedModel,
+  };
+};
+
+export const defaultWebsiteEmbedSurfaceSettings = (): WebsiteEmbedSurfaceSettings => ({
+  enabled: false,
+  token: null,
+  allowedOrigins: [],
+  launcherLabel: "Chat with us",
+  launcherPosition: DEFAULT_AGENT_SURFACE_POSITION,
+  theme: defaultAgentEmbedTheme(),
+  copy: {},
+  expertOverrides: {},
+});
+
+export const normalizeWebsiteEmbedSurfaceSettings = (
+  input: unknown,
+  options: { themeFallback?: unknown } = {},
+): WebsiteEmbedSurfaceSettings => {
+  if (input === undefined || input === null) {
+    return {
+      ...defaultWebsiteEmbedSurfaceSettings(),
+      theme: normalizeEmbedTheme(options.themeFallback),
+    };
+  }
+  if (typeof input !== "object" || Array.isArray(input)) {
+    throw badRequest("websiteEmbed surface settings must be an object");
+  }
+  const record = input as Record<string, unknown>;
+  const enabled = Boolean(record.enabled);
+  const allowedOrigins = normalizeWebsiteEmbedAllowedOrigins(record.allowedOrigins);
+  if (enabled && allowedOrigins.length === 0) {
+    throw badRequest("At least one allowed origin is required when website embed is enabled");
+  }
+
+  return {
+    enabled,
+    token: typeof record.token === "string" ? record.token : null,
+    allowedOrigins,
+    launcherLabel: normalizeText((record.launcherLabel as string | undefined) ?? "Chat with us", "websiteEmbedLauncherLabel", 80),
+    launcherPosition: normalizeSurfacePosition(record.launcherPosition),
+    theme: normalizeEmbedTheme(record.theme ?? options.themeFallback),
+    copy: normalizeEmbedCopy(record.copy),
+    expertOverrides: normalizeEmbedExpertOverrides(record.expertOverrides),
+  };
+};
+
 export const validateAgentInput = (
   input: AgentInput = {},
   options: ValidateAgentInputOptions = {},
 ): NormalizedAgentInput => {
-  const websiteEmbedEnabled = Boolean(input.surfaceSettings?.websiteEmbed?.enabled);
-  const websiteEmbedAllowedOrigins = normalizeWebsiteEmbedAllowedOrigins(input.surfaceSettings?.websiteEmbed?.allowedOrigins);
-  if (websiteEmbedEnabled && websiteEmbedAllowedOrigins.length === 0) {
-    throw badRequest("At least one allowed origin is required when website embed is enabled");
-  }
-
-  const websiteEmbed: WebsiteEmbedSurfaceSettings = {
-    enabled: websiteEmbedEnabled,
-    token: input.surfaceSettings?.websiteEmbed?.token ?? null,
-    allowedOrigins: websiteEmbedAllowedOrigins,
-    launcherLabel: normalizeText(input.surfaceSettings?.websiteEmbed?.launcherLabel ?? "Chat with us", "websiteEmbedLauncherLabel", 80),
-    launcherPosition: normalizeSurfacePosition(input.surfaceSettings?.websiteEmbed?.launcherPosition),
-    theme: normalizeEmbedTheme(input.surfaceSettings?.websiteEmbed?.theme ?? input.theme),
-    copy: normalizeEmbedCopy(input.surfaceSettings?.websiteEmbed?.copy),
-    expertOverrides: normalizeEmbedExpertOverrides(input.surfaceSettings?.websiteEmbed?.expertOverrides),
-  };
+  const websiteEmbed = normalizeWebsiteEmbedSurfaceSettings(input.surfaceSettings?.websiteEmbed, {
+    themeFallback: input.theme,
+  });
 
   // Transitional auto-mirror: the new home for website-embed data is
   // `surfaceSettings.extensions.websiteEmbed`, but the hardcoded
@@ -428,9 +565,11 @@ export const validateAgentInput = (
     sourceScope: normalizeSourceScope(input.sourceScope),
     logo: normalizeAgentLogo(input.logo),
     theme: normalizeEmbedTheme(input.theme ?? input.surfaceSettings?.websiteEmbed?.theme),
+    branding: normalizeBrandingSettings(input.branding),
     greetingInstruction: normalizeText(input.greetingInstruction, "greetingInstruction", 200),
     assistantDefaultLocale: normalizeLocaleTag(input.assistantDefaultLocale),
     proactiveGreetingEnabled: Boolean(input.proactiveGreetingEnabled),
+    chatModelOverride: normalizeChatModelOverride(input.chatModelOverride),
     surfaceSettings: {
       authenticatedChat: {
         enabled: input.surfaceSettings?.authenticatedChat?.enabled ?? true,

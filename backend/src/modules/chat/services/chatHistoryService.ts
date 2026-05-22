@@ -16,7 +16,7 @@ import {
   type ActivitySummary,
   type ActivityTrace,
 } from "../../retrieval/public.js";
-import type { AssistantTurnOutcome, HiddenSupportEvidence, ValidationDisposition } from "./answerSupportValidationTypes.js";
+import type { AssistantTurnOutcome } from "./assistantTurnOutcomeTypes.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
 import {
@@ -53,24 +53,6 @@ export interface ChatConversationTurnDebug {
   stream: boolean;
   citationCount: number;
   answerOutcome?: AssistantTurnOutcome;
-  validation?: {
-    ran: boolean;
-    answerModified: boolean;
-    unsupportedSegmentCount: number;
-    substantiveUnsupportedSegmentCount: number;
-    supportedSegmentCount: number;
-    nonSubstantiveSegmentCount: number;
-    hiddenSupportUsed?: boolean;
-    hiddenSupportKindsUsed?: HiddenSupportEvidence["kind"][];
-    segmentResults: Array<{
-      originalText: string;
-      text: string;
-      disposition: ValidationDisposition;
-      replacementApplied: boolean;
-      reason: string;
-      citationIndices?: number[];
-    }>;
-  };
   activitySummary?: ActivitySummary;
   activityTrace?: ActivityTrace;
   errorMessage?: string | null;
@@ -179,24 +161,6 @@ interface ChatAuditMetadata {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: unknown[];
-  validation?: {
-    ran?: boolean;
-    answerModified?: boolean;
-    unsupportedSegmentCount?: number;
-    substantiveUnsupportedSegmentCount?: number;
-    supportedSegmentCount?: number;
-    nonSubstantiveSegmentCount?: number;
-    hiddenSupportUsed?: boolean;
-    hiddenSupportKindsUsed?: unknown[];
-    segmentResults?: Array<{
-      originalText?: string;
-      text?: string;
-      disposition?: ValidationDisposition;
-      replacementApplied?: boolean;
-      reason?: string;
-      citationIndices?: number[];
-    }>;
-  };
   retrieval?: unknown;
   activityTrace?: ActivityTrace;
   errorMessage?: string;
@@ -238,11 +202,44 @@ const normalizeSuggestionCitation = (value: unknown): ChatCitation | undefined =
 };
 
 const normalizeSuggestionKind = (value: unknown): ChatSuggestion["kind"] | null => {
-  if (value === undefined || value === "deeper") {
+  // Legacy rows persisted before `kind` was required defaulted to deeper suggestions.
+  if (value === undefined) {
     return "deeper";
   }
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
 
-  return value === "broader" ? "broader" : null;
+const normalizeSuggestionAction = (
+  value: unknown,
+): NonNullable<ChatSuggestion["action"]> | undefined => {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const candidate = value as { kind?: unknown; intent?: unknown };
+  if (candidate.kind === "ask_followup") {
+    return { kind: "ask_followup" };
+  }
+  if (candidate.kind !== "start_intent") {
+    return undefined;
+  }
+  if (!candidate.intent || typeof candidate.intent !== "object") {
+    return undefined;
+  }
+  const intentCandidate = candidate.intent as { skillName?: unknown; intentName?: unknown };
+  if (typeof intentCandidate.skillName !== "string" || intentCandidate.skillName.trim().length === 0) {
+    return undefined;
+  }
+  const intent: { skillName: string; intentName?: string } = {
+    skillName: intentCandidate.skillName.trim(),
+  };
+  if (typeof intentCandidate.intentName === "string" && intentCandidate.intentName.trim().length > 0) {
+    intent.intentName = intentCandidate.intentName.trim();
+  }
+  return { kind: "start_intent", intent };
 };
 
 const normalizeChatSuggestion = (value: unknown): ChatSuggestion | null => {
@@ -250,7 +247,12 @@ const normalizeChatSuggestion = (value: unknown): ChatSuggestion | null => {
     return null;
   }
 
-  const candidate = value as { text?: unknown; kind?: unknown; citation?: unknown };
+  const candidate = value as {
+    text?: unknown;
+    kind?: unknown;
+    citation?: unknown;
+    action?: unknown;
+  };
   if (typeof candidate.text !== "string") {
     return null;
   }
@@ -265,11 +267,17 @@ const normalizeChatSuggestion = (value: unknown): ChatSuggestion | null => {
     return null;
   }
 
-  return {
-    text,
-    kind,
-    citation: normalizeSuggestionCitation(candidate.citation),
-  };
+  const citation = normalizeSuggestionCitation(candidate.citation);
+  const action = normalizeSuggestionAction(candidate.action);
+
+  const result: ChatSuggestion = { text, kind };
+  if (citation) {
+    result.citation = citation;
+  }
+  if (action) {
+    result.action = action;
+  }
+  return result;
 };
 
 const toIsoString = (value: Date): string => value.toISOString();
@@ -323,6 +331,7 @@ const reconstructActivityTrace = (input: {
   summary: ActivitySummary | undefined;
   diagnostics: RetrievalExecutionDiagnostics;
   answerOutcome?: AssistantTurnOutcome;
+  citations?: ChatCitation[];
 }): ActivityTrace => {
   const execution = input.summary?.execution ?? toRetrievalExecutionPath(input.route);
   const stages: ActivityTrace["stages"] = [
@@ -416,6 +425,12 @@ const reconstructActivityTrace = (input: {
     });
   }
 
+  const citationChunkRefs = (input.citations ?? []).map((citation) => ({
+    chunkId: citation.chunkId,
+    documentId: citation.documentId,
+    title: citation.title,
+  }));
+
   stages.push(
     {
       stageId: "candidate_summary",
@@ -426,6 +441,7 @@ const reconstructActivityTrace = (input: {
       outputs: {
         fallbackApplied: input.diagnostics.fallbackApplied,
         continuityDecision: input.diagnostics.continuityDecision,
+        ...(citationChunkRefs.length > 0 ? { finalContexts: citationChunkRefs } : {}),
       },
       metrics: {
         semanticCandidateCount: input.diagnostics.originalCandidateCount + input.diagnostics.rewrittenCandidateCount,
@@ -438,7 +454,7 @@ const reconstructActivityTrace = (input: {
       stageId: "answer",
       kind: "answer_outcome",
       label: "Answer outcome",
-      status: input.answerOutcome?.includes("unsupported") ? "fallback" : "applied",
+      status: "applied",
       startedAt: input.startedAt,
       outputs: {
         outcome: input.answerOutcome,
@@ -698,6 +714,7 @@ export class ChatHistoryService {
                 summary: activitySummary,
                 diagnostics: metadata.retrieval as RetrievalExecutionDiagnostics,
                 answerOutcome: metadata.answerOutcome,
+                citations: metadata.citations,
               })
             : undefined
         );
@@ -707,39 +724,6 @@ export class ChatHistoryService {
         stream: Boolean(metadata.stream),
         citationCount: typeof metadata.citationCount === "number" ? metadata.citationCount : 0,
         answerOutcome: metadata.answerOutcome,
-        validation: metadata.validation
-          ? {
-              ran: Boolean(metadata.validation.ran),
-              answerModified: Boolean(metadata.validation.answerModified),
-              unsupportedSegmentCount:
-                typeof metadata.validation.unsupportedSegmentCount === "number" ? metadata.validation.unsupportedSegmentCount : 0,
-              substantiveUnsupportedSegmentCount:
-                typeof metadata.validation.substantiveUnsupportedSegmentCount === "number"
-                  ? metadata.validation.substantiveUnsupportedSegmentCount
-                  : 0,
-              supportedSegmentCount:
-                typeof metadata.validation.supportedSegmentCount === "number" ? metadata.validation.supportedSegmentCount : 0,
-              nonSubstantiveSegmentCount:
-                typeof metadata.validation.nonSubstantiveSegmentCount === "number" ? metadata.validation.nonSubstantiveSegmentCount : 0,
-              hiddenSupportUsed: metadata.validation.hiddenSupportUsed === true ? true : undefined,
-              hiddenSupportKindsUsed: Array.isArray(metadata.validation.hiddenSupportKindsUsed)
-                ? metadata.validation.hiddenSupportKindsUsed.filter(
-                    (kind): kind is HiddenSupportEvidence["kind"] =>
-                      kind === "assistant_name",
-                  )
-                : undefined,
-              segmentResults: (metadata.validation.segmentResults ?? []).map((segment) => ({
-                originalText: typeof segment.originalText === "string" ? segment.originalText : "",
-                text: typeof segment.text === "string" ? segment.text : "",
-                disposition: (segment.disposition ?? "non_substantive") as ValidationDisposition,
-                replacementApplied: Boolean(segment.replacementApplied),
-                reason: typeof segment.reason === "string" ? segment.reason : "unknown",
-                citationIndices: Array.isArray(segment.citationIndices)
-                  ? segment.citationIndices.filter((value): value is number => typeof value === "number")
-                  : undefined,
-              })),
-            }
-          : undefined,
         activitySummary,
         activityTrace,
         errorMessage: metadata.errorMessage ?? null,

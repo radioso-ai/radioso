@@ -12,7 +12,6 @@ const createAdapter = (): RadiosoApiAdapter => ({
   getRetrievalSettings: vi.fn().mockResolvedValue({
     citationDisplayEnabled: true,
     customInstruction: "",
-    answerSupportValidationEnabled: true,
     lexicalRewriteInstructions: "",
     metadataFieldSuggestions: [],
     metadataRules: [],
@@ -72,24 +71,4 @@ describe("createWriteToolDefinitions", () => {
     expect(result.summary).toMatch(/updated/i);
   });
 
-  it("accepts approvalToken without forwarding it to the upstream document create call", async () => {
-    const adapter = createAdapter();
-    const tools = createWriteToolDefinitions();
-    const createDocument = tools.find((tool) => tool.name === "create_document");
-
-    expect(createDocument).toBeDefined();
-    await createDocument!.execute(
-      {
-        approvalToken: "mcp_appr_test",
-        content: "Created remotely",
-        title: "Remote doc",
-      },
-      createToolContext(adapter),
-    );
-
-    expect(adapter.createDocument).toHaveBeenCalledWith({
-      content: "Created remotely",
-      title: "Remote doc",
-    });
-  });
 });

@@ -1,7 +1,7 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 
 import type { AuditLogger } from "../audit/auditLogger.js";
-import { AuthServiceError, type AuthService } from "../auth/authService.js";
+import { AuthServiceError } from "../auth/authService.js";
 import { toMcpRequestAuthInfo } from "../auth/authInfo.js";
 import type { AccessSessionRecord } from "../auth/sessionStore.js";
 import type { RadiosoMcpConfig } from "../config.js";
@@ -10,12 +10,6 @@ import { createRadiosoApiAdapter } from "../radiosoApiAdapter.js";
 import { createRadiosoMcpServer, getRemoteToolAuthInfo } from "../server.js";
 import type { ToolDefinition } from "../types.js";
 import type { InternalMcpRequestAuthInfo, SessionMcpServerHandle, SessionMcpServerManager } from "./types.js";
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object" && !Array.isArray(value);
-
-const getApprovalToken = (args: Record<string, unknown>): string | null =>
-  typeof args.approvalToken === "string" && args.approvalToken.length > 0 ? args.approvalToken : null;
 
 const toInternalAuthInfo = (session: AccessSessionRecord, accessToken: string): InternalMcpRequestAuthInfo => ({
   ...toMcpRequestAuthInfo(session),
@@ -27,14 +21,12 @@ const toInternalAuthInfo = (session: AccessSessionRecord, accessToken: string): 
 });
 
 export interface SessionServerManagerDependencies {
-  authService: AuthService;
   auditLogger?: AuditLogger;
   config: RadiosoMcpConfig;
   entryPoint?: "merged" | "standalone";
 }
 
 export const createSessionMcpServerManager = ({
-  authService,
   auditLogger,
   config,
   entryPoint = "standalone",
@@ -97,7 +89,7 @@ export const createSessionMcpServerManager = ({
           toolName: tool.name,
         });
       },
-      resolveExecutionContext: async (tool: ToolDefinition, rawArgs, ctx) => {
+      resolveExecutionContext: async (tool: ToolDefinition, _rawArgs, ctx) => {
         const authInfo = getRemoteToolAuthInfo(ctx) as InternalMcpRequestAuthInfo | null;
         if (!authInfo?.accessToken || !authInfo.upstreamApiToken) {
           throw new AuthServiceError("MCP request is missing authenticated session context.", "invalid_access_token");
@@ -107,18 +99,6 @@ export const createSessionMcpServerManager = ({
           throw new CapabilityPolicyError("Requested tool is not granted for this session.", "capability_forbidden", {
             toolName: tool.name,
           });
-        }
-
-        if (requiresApproval(tool.name, authInfo.approvalRequiredTools)) {
-          const args = isRecord(rawArgs) ? rawArgs : {};
-          const approvalToken = getApprovalToken(args);
-          if (!approvalToken) {
-            throw new AuthServiceError("A valid approval grant is required.", "approval_required", {
-              toolName: tool.name,
-            });
-          }
-
-          await authService.verifyApproval(authInfo.accessToken, approvalToken, tool.name);
         }
 
         return {

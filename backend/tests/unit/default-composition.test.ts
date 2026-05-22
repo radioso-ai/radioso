@@ -47,7 +47,9 @@ describe("default application composition", () => {
     });
     expect(composition.connectors).toEqual([]);
     expect(composition.websiteCrawlerProvider).toBeUndefined();
-    expect(composition.modules).toEqual([]);
+    expect(composition.modules.map((module) => module.id)).toEqual(["radioso-website-embed"]);
+    expect(composition.agentSurfaceExtensions.map((extension) => extension.key)).toEqual(["websiteEmbed"]);
+    expect(composition.websiteEmbedIntegration).toBeDefined();
   });
 
   it("applies optional connector contributions through module registration", async () => {
@@ -65,7 +67,10 @@ describe("default application composition", () => {
     });
 
     expect(composition.connectors).toEqual([connector]);
-    expect(composition.modules.map((module) => module.id)).toEqual(["connector-module"]);
+    expect(composition.modules.map((module) => module.id)).toEqual([
+      "radioso-website-embed",
+      "connector-module",
+    ]);
   });
 
   it("applies optional skill catalog entries through module registration", () => {
@@ -187,6 +192,10 @@ describe("default application composition", () => {
       name: "test-crawler",
       crawl: vi.fn(),
     };
+    const chunkingProvider = {
+      name: "test-chunker",
+      chunkText: vi.fn(),
+    };
 
     const composition = createDefaultApplicationComposition({
       logger: createLogger(),
@@ -200,6 +209,7 @@ describe("default application composition", () => {
             context.registerDocumentStorage(documentStorage);
             context.registerDocumentJobDispatcher(documentJobDispatcher);
             context.registerWebsiteCrawlerProvider(websiteCrawlerProvider);
+            context.registerChunkingProvider(chunkingProvider);
             context.registerWebsiteEmbedIntegration(websiteEmbedIntegration);
           },
         },
@@ -212,6 +222,7 @@ describe("default application composition", () => {
     expect(composition.documentStorage).toBe(documentStorage);
     expect(composition.documentJobDispatcher).toBe(documentJobDispatcher);
     expect(composition.websiteCrawlerProvider).toBe(websiteCrawlerProvider);
+    expect(composition.chunkingProvider).toBe(chunkingProvider);
     expect(composition.websiteEmbedIntegration).toBe(websiteEmbedIntegration);
   });
 

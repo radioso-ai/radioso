@@ -1,10 +1,14 @@
 import { request, requestLongRunning } from './api-client'
 import { withQuery } from './api-query'
 import type {
+  DocumentChunkDetail,
+  DocumentChunkListResponse,
   DocumentCreateRequest,
   DocumentCreateResponse,
   DocumentDetails,
   DocumentListResponse,
+  DocumentSourceCrawlSettings,
+  DocumentSourceListItem,
   DocumentSourceListResponse,
   DocumentSearchHistoryListResponse,
   DocumentSearchResponse,
@@ -12,6 +16,11 @@ import type {
   WebsiteCrawlJobListResponse,
   WebsiteCrawlJobStatus,
 } from './api-types'
+
+const normalizeDocumentSearchResponse = (payload: DocumentSearchResponse): DocumentSearchResponse => ({
+  ...payload,
+  activityTrace: payload.activityTrace ?? payload.debug?.activityTrace,
+})
 
 export const documentsApi = {
   async createDocument(data: DocumentCreateRequest): Promise<DocumentCreateResponse> {
@@ -23,6 +32,18 @@ export const documentsApi = {
 
   async getDocument(documentId: string): Promise<DocumentDetails> {
     return request<DocumentDetails>(`/document/${documentId}`, {
+      method: "GET",
+    }, { withApiToken: true })
+  },
+
+  async listDocumentChunks(documentId: string): Promise<DocumentChunkListResponse> {
+    return request<DocumentChunkListResponse>(`/document/${documentId}/chunks`, {
+      method: "GET",
+    }, { withApiToken: true })
+  },
+
+  async getDocumentChunk(documentId: string, chunkId: string): Promise<DocumentChunkDetail> {
+    return request<DocumentChunkDetail>(`/document/${documentId}/chunks/${chunkId}`, {
       method: "GET",
     }, { withApiToken: true })
   },
@@ -133,8 +154,8 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async resumeSourceCrawl(sourceId: string): Promise<{ resumedJobCount: number; resumeDispatchFailureCount?: number }> {
-    return request<{ resumedJobCount: number; resumeDispatchFailureCount?: number }>(`/document/sources/${encodeURIComponent(sourceId)}/resume-crawl`, {
+  async resumeSourceCrawl(sourceId: string): Promise<{ resumedJobCount: number; pendingResumeJobCount?: number; resumeDispatchFailureCount?: number }> {
+    return request<{ resumedJobCount: number; pendingResumeJobCount?: number; resumeDispatchFailureCount?: number }>(`/document/sources/${encodeURIComponent(sourceId)}/resume-crawl`, {
       method: "POST",
     }, { withApiToken: true })
   },
@@ -145,14 +166,25 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
+  async updateSourceCrawlSettings(
+    sourceId: string,
+    crawlSettings: Partial<Omit<DocumentSourceCrawlSettings, 'url'>>,
+  ): Promise<DocumentSourceListItem> {
+    return request<DocumentSourceListItem>(`/document/sources/${encodeURIComponent(sourceId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ crawlSettings }),
+    }, { withApiToken: true })
+  },
+
   async searchDocuments(data: {
     query: string
     metadataFilter?: Record<string, string | number | boolean | null>
   }): Promise<DocumentSearchResponse> {
-    return requestLongRunning<DocumentSearchResponse>('/api/document/search', {
+    const payload = await requestLongRunning<DocumentSearchResponse>('/api/document/search', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, includeDebug: true }),
     }, { withApiToken: true })
+    return normalizeDocumentSearchResponse(payload)
   },
 
   async listSearchHistory(input?: { limit?: number; offset?: number; cursor?: string }): Promise<DocumentSearchHistoryListResponse> {
@@ -166,8 +198,9 @@ export const documentsApi = {
   },
 
   async getSearchHistory(searchId: string): Promise<DocumentSearchResponse> {
-    return request<DocumentSearchResponse>(`/document/search/history/${searchId}`, {
+    const payload = await request<DocumentSearchResponse>(`/document/search/history/${searchId}?includeDebug=true`, {
       method: 'GET',
     }, { withApiToken: true })
+    return normalizeDocumentSearchResponse(payload)
   }
 }

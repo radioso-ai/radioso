@@ -47,6 +47,7 @@ export interface OpenApiSchemaCatalog {
   ChatConversationSummarySchema: z.ZodTypeAny;
   ChatHistoryListResponseSchema: z.ZodTypeAny;
   ChatResponseSchema: z.ZodTypeAny;
+  ChatSuggestionActionSchema: z.ZodTypeAny;
   ChatSuggestionSchema: z.ZodTypeAny;
   CitationSchema: z.ZodTypeAny;
   ConnectorConfigUpdateSchema: z.ZodTypeAny;
@@ -79,7 +80,9 @@ export interface OpenApiSchemaCatalog {
   DocumentSearchResultSchema: z.ZodTypeAny;
   DocumentSourceDocumentsQuerySchema: RouteParameterSchema;
   DocumentSourceSummarySchema: z.ZodTypeAny;
+  DocumentSourceCrawlSettingsSchema: z.ZodTypeAny;
   DocumentSourceListItemSchema: z.ZodTypeAny;
+  DocumentSourceUpdateRequestSchema: z.ZodTypeAny;
   DocumentSourceListResponseSchema: z.ZodTypeAny;
   DocumentStatusSchema: z.ZodTypeAny;
   sourceParamsSchema: RouteParameterSchema;
@@ -94,8 +97,15 @@ export interface OpenApiSchemaCatalog {
   InvitationAcceptRequestSchema: z.ZodTypeAny;
   InvitationDetailsResponseSchema: z.ZodTypeAny;
   invitationTokenParamsSchema: RouteParameterSchema;
+  AcceptedResponseSchema: z.ZodTypeAny;
+  EmailVerificationResendRequestSchema: z.ZodTypeAny;
+  EmailVerificationVerifyRequestSchema: z.ZodTypeAny;
+  EmailVerificationVerifyResponseSchema: z.ZodTypeAny;
   LoginRequestSchema: z.ZodTypeAny;
   LoginResponseSchema: z.ZodTypeAny;
+  PasswordResetConfirmRequestSchema: z.ZodTypeAny;
+  PasswordResetConfirmResponseSchema: z.ZodTypeAny;
+  PasswordResetRequestSchema: z.ZodTypeAny;
   ParsedQuerySchema: z.ZodTypeAny;
   PlatformChannelsSettingsSectionSchema: z.ZodTypeAny;
   PlatformRetrievalSettingsSectionSchema: z.ZodTypeAny;
@@ -143,9 +153,6 @@ export interface OpenApiSchemaCatalog {
   UpdateIngestionSettingsRequestSchema: z.ZodTypeAny;
   UpdatePlatformSettingsRequestSchema: z.ZodTypeAny;
   UpdateRetrievalSettingsRequestSchema: z.ZodTypeAny;
-  ValidationDebugSchema: z.ZodTypeAny;
-  ValidationDispositionSchema: z.ZodTypeAny;
-  ValidationSegmentResultSchema: z.ZodTypeAny;
   WebsiteCrawlJobListQuerySchema: RouteParameterSchema;
   WebsiteCrawlJobListResponseSchema: z.ZodTypeAny;
   WebsiteCrawlJobResponseSchema: z.ZodTypeAny;
@@ -162,6 +169,12 @@ export interface OpenApiSchemaCatalog {
   workspaceKeyParamsSchema: RouteParameterSchema;
   WorkspaceListResponseSchema: z.ZodTypeAny;
   WorkspaceMcpContextResponseSchema: z.ZodTypeAny;
+  WorkspaceProviderCredentialSummarySchema: z.ZodTypeAny;
+  WorkspaceProviderCredentialsResponseSchema: z.ZodTypeAny;
+  SetWorkspaceProviderCredentialRequestSchema: z.ZodTypeAny;
+  WorkspaceLlmCapabilityPreferenceSchema: z.ZodTypeAny;
+  WorkspaceLlmModelsResponseSchema: z.ZodTypeAny;
+  UpdateWorkspaceLlmModelsRequestSchema: z.ZodTypeAny;
   workspaceParamsSchema: RouteParameterSchema;
   WorkspaceRenameRequestSchema: z.ZodTypeAny;
   WorkspaceRouteResolutionResponseSchema: z.ZodTypeAny;

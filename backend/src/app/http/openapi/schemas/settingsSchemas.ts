@@ -5,7 +5,16 @@ import {
   updatePlatformSettingsSchema,
   updateSettingsSchema,
 } from "../../routes/settingsRoutes.js";
+import {
+  providerNames,
+  setProviderCredentialSchema,
+} from "../../routes/settingsCredentialsRoutes.js";
+import {
+  updateWorkspaceLlmModelsSchema,
+  workspaceLlmProviderNames,
+} from "../../routes/settingsLlmModelsRoutes.js";
 import { websiteEmbedLauncherPositions } from "../../../../modules/settings/contracts/websiteEmbed.js";
+import { embeddingModelIds } from "../../../../modules/settings/contracts/ingestion.js";
 import { chunkingStrategyIds } from "../../../../modules/retrieval/public.js";
 import {
   metadataRuleEffects,
@@ -30,7 +39,6 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
       similarityThreshold: z.number().min(0).max(1),
       rerankTopK: z.number().int().min(1),
       citationDisplayEnabled: z.boolean(),
-      answerSupportValidationEnabled: z.boolean(),
       metadataFieldSuggestions: z.array(
         z.object({
           field: z.string(),
@@ -80,6 +88,9 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     z.object({
       workspaceId: z.string().uuid(),
       chunkingStrategy: z.enum(chunkingStrategyIds),
+      embeddingModel: z.enum(embeddingModelIds),
+      pendingEmbeddingModel: z.enum(embeddingModelIds).nullable(),
+      supportedEmbeddingModels: z.array(z.enum(embeddingModelIds)),
       fixedWindowChunkSize: z.number().int(),
       fixedWindowChunkOverlap: z.number().int(),
       structuredMinChunkSize: z.number().int(),
@@ -222,7 +233,6 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
       similarityThreshold: z.number().min(0).max(1),
       rerankTopK: z.number().int().min(1),
       citationDisplayEnabled: z.boolean(),
-      answerSupportValidationEnabled: z.boolean(),
       metadataRules: z.array(
         z.object({
           id: z.string(),
@@ -301,6 +311,61 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     updatePlatformSettingsSchema,
   );
 
+  const WorkspaceProviderCredentialSummarySchema = registry.register(
+    "WorkspaceProviderCredentialSummary",
+    z.object({
+      provider: z.enum(providerNames),
+      updatedAt: z.string().datetime(),
+    }),
+  );
+
+  const WorkspaceProviderCredentialsResponseSchema = registry.register(
+    "WorkspaceProviderCredentialsResponse",
+    z.object({
+      encryptionConfigured: z.boolean(),
+      credentials: z.array(WorkspaceProviderCredentialSummarySchema),
+      envProviderAvailability: z.object({
+        openai: z.boolean(),
+        "openai-compatible": z.boolean(),
+        gemini: z.boolean(),
+        claude: z.boolean(),
+      }),
+    }),
+  );
+
+  const SetWorkspaceProviderCredentialRequestSchema = registry.register(
+    "SetWorkspaceProviderCredentialRequest",
+    setProviderCredentialSchema,
+  );
+
+  const WorkspaceLlmCapabilityPreferenceSchema = registry.register(
+    "WorkspaceLlmCapabilityPreference",
+    z.object({
+      provider: z.enum(workspaceLlmProviderNames),
+      model: z.string(),
+    }).nullable(),
+  );
+
+  const WorkspaceLlmModelsResponseSchema = registry.register(
+    "WorkspaceLlmModelsResponse",
+    z.object({
+      chat: WorkspaceLlmCapabilityPreferenceSchema,
+      rewrite: WorkspaceLlmCapabilityPreferenceSchema,
+      rerank: WorkspaceLlmCapabilityPreferenceSchema,
+      knownModelsByProvider: z.object({
+        openai: z.array(z.string()),
+        "openai-compatible": z.array(z.string()),
+        gemini: z.array(z.string()),
+        claude: z.array(z.string()),
+      }),
+    }),
+  );
+
+  const UpdateWorkspaceLlmModelsRequestSchema = registry.register(
+    "UpdateWorkspaceLlmModelsRequest",
+    updateWorkspaceLlmModelsSchema,
+  );
+
   Object.assign(schemas, {
     RetrievalSettingsSchema,
     UpdateRetrievalSettingsRequestSchema,
@@ -319,5 +384,11 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     AgentLogoSchema,
     PlatformSettingsResponseSchema,
     UpdatePlatformSettingsRequestSchema,
+    WorkspaceProviderCredentialSummarySchema,
+    WorkspaceProviderCredentialsResponseSchema,
+    SetWorkspaceProviderCredentialRequestSchema,
+    WorkspaceLlmCapabilityPreferenceSchema,
+    WorkspaceLlmModelsResponseSchema,
+    UpdateWorkspaceLlmModelsRequestSchema,
   });
 };

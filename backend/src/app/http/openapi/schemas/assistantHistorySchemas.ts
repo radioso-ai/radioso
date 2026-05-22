@@ -36,12 +36,30 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   void SkillDiagnosticEvidenceSchema;
   void SkillDiagnosticDefinitionSchema;
 
+  const ChatSuggestionActionSchema = registry.register(
+    "ChatSuggestionAction",
+    z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("ask_followup") }),
+      z.object({
+        kind: z.literal("start_intent"),
+        intent: z.object({
+          skillName: z.string(),
+          intentName: z.string().optional(),
+        }),
+      }),
+    ]).openapi({
+      description:
+        "Behavior triggered when the user activates the suggestion chip. Absent means ask_followup (default: submit the chip text as a new user turn).",
+    }),
+  );
+
   const ChatSuggestionSchema = registry.register(
     "ChatSuggestion",
     z.object({
       text: z.string(),
       kind: z.string(),
       citation: schemas.CitationSchema.optional(),
+      action: ChatSuggestionActionSchema.optional(),
     }),
   );
 
@@ -76,9 +94,16 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     citations: z.array(schemas.CitationSchema).optional(),
     answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),
     suggestions: z.array(ChatSuggestionSchema).optional(),
-    activitySummary: schemas.ActivitySummarySchema,
-    activityTrace: schemas.ActivityTraceSchema,
   };
+
+  const AssistantChatDebugSchema = registry.register(
+    "AssistantChatDebug",
+    z.object({
+      route: AssistantRouteSchema,
+      activitySummary: schemas.ActivitySummarySchema,
+      activityTrace: schemas.ActivityTraceSchema,
+    }),
+  );
 
   const ChatResponseSchema = registry.register(
     "ChatResponse",
@@ -86,7 +111,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       conversationId: z.string().uuid(),
       assistantMessageId: z.string().uuid(),
       ...chatResponseCoreShape,
-      route: AssistantRouteSchema,
+      debug: AssistantChatDebugSchema.optional(),
     }),
   );
 
@@ -95,7 +120,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     z.object({
       conversationId: z.string().uuid().optional(),
       ...chatResponseCoreShape,
-      route: AssistantRouteSchema,
+      debug: AssistantChatDebugSchema.optional(),
     }).openapi({
       description: "Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn.",
     }),
@@ -150,6 +175,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         surface: z.string(),
         text: z.string(),
       }).optional(),
+      branding: z.object({
+        hidePoweredBy: z.boolean(),
+        privacyPolicyUrl: z.string().nullable(),
+      }).optional(),
       intakeActions: z.array(z.object({
         skillName: z.string(),
         intentName: z.string(),
@@ -188,38 +217,6 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
-  const ValidationDispositionSchema = registry.register(
-    "ValidationDisposition",
-    z.enum(["supported", "unsupported", "non_substantive"]),
-  );
-
-  const ValidationSegmentResultSchema = registry.register(
-    "ValidationSegmentResult",
-    z.object({
-      originalText: z.string(),
-      text: z.string(),
-      disposition: ValidationDispositionSchema,
-      replacementApplied: z.boolean(),
-      reason: z.string(),
-      citationIndices: z.array(z.number().int().min(0)).optional(),
-    }),
-  );
-
-  const ValidationDebugSchema = registry.register(
-    "ValidationDebug",
-    z.object({
-      ran: z.boolean(),
-      answerModified: z.boolean(),
-      unsupportedSegmentCount: z.number().int().min(0),
-      substantiveUnsupportedSegmentCount: z.number().int().min(0),
-      supportedSegmentCount: z.number().int().min(0),
-      nonSubstantiveSegmentCount: z.number().int().min(0),
-      hiddenSupportUsed: z.boolean().optional(),
-      hiddenSupportKindsUsed: z.array(z.enum(["assistant_name"])).optional(),
-      segmentResults: z.array(ValidationSegmentResultSchema),
-    }),
-  );
-
   const ChatConversationMessageDebugSchema = registry.register(
     "ChatConversationMessageDebug",
     z.object({
@@ -227,9 +224,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       recordedAt: z.string().datetime(),
       stream: z.boolean(),
       citationCount: z.number().int().min(0),
-      answerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal", "non_retrieval_response"]).optional(),
+      answerOutcome: z.enum(["grounded_success", "no_context_refusal", "non_retrieval_response"]).optional(),
       route: AssistantRouteDiagnosticsSchema.optional(),
-      validation: ValidationDebugSchema.optional(),
       activitySummary: schemas.ActivitySummarySchema.optional(),
       activityTrace: schemas.ActivityTraceSchema.optional(),
       errorMessage: z.string().nullable().optional(),
@@ -324,9 +320,11 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     SkillCatalogEntrySchema,
     SkillCatalogResponseSchema,
     SkillParamsSchema,
+    ChatSuggestionActionSchema,
     ChatSuggestionSchema,
     AssistantRouteSchema,
     AssistantRouteDiagnosticsSchema,
+    AssistantChatDebugSchema,
     ChatResponseSchema,
     ChatBootstrapResponseSchema,
     AssistantChatResponseSchema,
@@ -336,9 +334,6 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ChatHistoryListResponseSchema,
     HistoryItemSchema,
     HistoryItemsResponseSchema,
-    ValidationDispositionSchema,
-    ValidationSegmentResultSchema,
-    ValidationDebugSchema,
     ChatConversationMessageDebugSchema,
     ChatConversationMessageSchema,
     ChatConversationDetailSchema,

@@ -16,6 +16,7 @@ import {
 } from '@/components/dashboard/shared/dashboard-table'
 import type { DocumentSummary } from '@/lib/api'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { formatBytes } from '@/lib/format-bytes'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
 
 function DocumentsPagination({
@@ -126,6 +127,9 @@ function DocumentRow({
           </div>
         ) : null}
       </DashboardTableCell>
+      <DashboardTableCell className="w-24 text-right text-sm tabular-nums text-muted-foreground">
+        {typeof document.contentSize === 'number' ? formatBytes(document.contentSize) : '—'}
+      </DashboardTableCell>
       <DashboardTableCell className="w-40 text-sm text-muted-foreground">
         {formatDate(document.updatedAt)}
       </DashboardTableCell>
@@ -138,6 +142,7 @@ function DocumentRow({
             <button
               type="button"
               aria-label={`Retry processing ${document.title}`}
+              title="Retry processing"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent/40 disabled:opacity-50"
               onClick={() => onRetry(document.id)}
               disabled={retryingDocumentId === document.id}
@@ -279,6 +284,7 @@ export function DocumentList({
           <DashboardTableHead>
             <DashboardTableHeader className="w-12" />
             <DashboardTableHeader>Name</DashboardTableHeader>
+            <DashboardTableHeader className="w-24 text-right">Size</DashboardTableHeader>
             <DashboardTableHeader className="w-40">Updated</DashboardTableHeader>
             <DashboardTableHeader className="w-32">Status</DashboardTableHeader>
             <DashboardTableHeader className="w-28 text-right" />

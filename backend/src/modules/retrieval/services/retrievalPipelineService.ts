@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
+import type { IngestionSettingsService, RetrievalSettingsService } from "../../settings/contracts/services.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { EmbeddingService } from "./embeddingService.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
@@ -48,7 +48,6 @@ export interface RetrievalPipelineResult {
   responseIdentity: ResponseIdentity | null;
   responseSettings: {
     citationDisplayEnabled: boolean;
-    answerSupportValidationEnabled?: boolean;
     suggestedQuestionsEnabled: boolean;
     suggestedQuestionsCount: number;
     customInstruction?: string;
@@ -95,6 +94,7 @@ export class RetrievalPipelineService {
     promptBuilder: PromptBuilder,
     retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
     _semanticQueryConstraintService?: unknown,
+    ingestionSettingsService?: IngestionSettingsService,
   ) {
     this.retrievalContextStage = new RetrievalContextStageService(
       retrievalSettingsService,
@@ -105,6 +105,7 @@ export class RetrievalPipelineService {
       embeddingService,
       vectorSearch,
       lexicalSearch,
+      ingestionSettingsService,
     );
     this.candidatePreparationStage = new CandidatePreparationStageService(
       candidatePreparationService,
@@ -139,8 +140,6 @@ export class RetrievalPipelineService {
       ? await this.measure(() => selectRetrievalAnswerShape({
           query: input.request.query,
           rewrittenQuery: input.interpretation.result.rewrittenQuery,
-          continuityDecision: input.interpretation.result.continuityDecision,
-          historyMessageCount: input.context.result.contextWindow.selectedMessages.length,
         }))
       : undefined;
     const interpretation = {
@@ -185,7 +184,6 @@ export class RetrievalPipelineService {
     const responseBehavior = input.request.responseBehavior;
     const responseSettings = {
       citationDisplayEnabled: input.context.result.settings.citationDisplayEnabled,
-      answerSupportValidationEnabled: input.context.result.settings.answerSupportValidationEnabled ?? true,
       suggestedQuestionsEnabled: responseBehavior?.suggestedQuestionsEnabled ?? input.context.result.settings.suggestedQuestionsEnabled,
       suggestedQuestionsCount: responseBehavior?.suggestedQuestionsCount ?? input.context.result.settings.suggestedQuestionsCount,
       customInstruction: responseBehavior?.customInstruction ?? input.context.result.settings.customInstruction,

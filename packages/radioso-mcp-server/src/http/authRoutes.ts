@@ -5,19 +5,13 @@ import { AuthServiceError, type AuthService } from "../auth/authService.js";
 import type { AuditLogger } from "../audit/auditLogger.js";
 import { CapabilityPolicyError } from "../policy/capabilityPolicy.js";
 import { RadiosoApiError } from "../radiosoApiAdapter.js";
-import { readJsonBody, writeJson } from "./nodeHttp.js";
+import { isRequestBodyTooLargeError, readJsonBody, writeJson } from "./nodeHttp.js";
 
 const exchangeSchema = z.object({
   clientName: z.string().trim().min(1).optional(),
   radiosoApiToken: z.string().trim().min(1),
   requestedProfiles: z.array(z.string().trim().min(1)).optional(),
   requestedTools: z.array(z.string().trim().min(1)).optional(),
-});
-
-const approvalSchema = z.object({
-  reason: z.string().trim().min(1),
-  resourceHints: z.array(z.string().trim().min(1)).optional(),
-  tools: z.array(z.string().trim().min(1)).min(1),
 });
 
 const BEARER_PREFIX = "Bearer ";
@@ -43,6 +37,11 @@ const writeError = (res: ServerResponse, statusCode: number, code: string, messa
 };
 
 const handleRouteError = (res: ServerResponse, error: unknown): void => {
+  if (isRequestBodyTooLargeError(error)) {
+    writeError(res, 413, error.code, "Request body is too large.", { maxBytes: error.maxBytes });
+    return;
+  }
+
   if (error instanceof ZodError) {
     writeError(res, 400, "invalid_arguments", "Request body failed validation.", error.flatten());
     return;
@@ -100,6 +99,15 @@ const toAuditableRouteFailure = (
       code: "invalid_arguments",
       details: error.flatten(),
       message: "Request body failed validation.",
+      outcome: "denied",
+    };
+  }
+
+  if (isRequestBodyTooLargeError(error)) {
+    return {
+      code: error.code,
+      details: { maxBytes: error.maxBytes },
+      message: "Request body is too large.",
       outcome: "denied",
     };
   }
@@ -195,47 +203,6 @@ export const createAuthExchangeHandler = ({ authService, auditLogger }: AuthRout
           requestedProfiles: requestBody?.requestedProfiles,
           requestedTools: requestBody?.requestedTools,
         });
-      }
-      handleRouteError(res, error);
-    }
-  };
-};
-
-export const createApprovalHandler = ({ authService, auditLogger }: AuthRouteDependencies) => {
-  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    let body: unknown;
-    let sessionId: string | undefined;
-
-    try {
-      const accessToken = readBearerToken(req);
-      if (!accessToken) {
-        await emitRouteFailure(
-          auditLogger,
-          "approval.denied",
-          new AuthServiceError("MCP access token is invalid or expired.", "invalid_access_token"),
-        );
-        writeError(res, 401, "invalid_access_token", "MCP access token is invalid or expired.");
-        return;
-      }
-
-      sessionId = (await authService.getSession(accessToken))?.sessionId;
-      body = await readJsonBody(req);
-      const parsed = approvalSchema.parse(body);
-      const result = await authService.issueApproval({
-        accessToken,
-        reason: parsed.reason,
-        resourceHints: parsed.resourceHints,
-        tools: parsed.tools,
-      });
-      writeJson(res, 200, result);
-    } catch (error) {
-      if (shouldAuditAtRoute(error)) {
-        const requestBody = toObject(body);
-        await emitRouteFailure(auditLogger, "approval.denied", error, {
-          reason: requestBody?.reason,
-          resourceHints: requestBody?.resourceHints,
-          tools: requestBody?.tools,
-        }, sessionId);
       }
       handleRouteError(res, error);
     }

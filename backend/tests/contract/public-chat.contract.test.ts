@@ -66,11 +66,40 @@ describe("public chat contract", () => {
     expect(response.status).toBe(200);
     expect(response.body.conversationId).toBeDefined();
     expect(response.body.answer).toBeDefined();
+    expect(response.body).not.toHaveProperty("route");
+    expect(response.body).not.toHaveProperty("activitySummary");
+    expect(response.body).not.toHaveProperty("activityTrace");
+    expect(response.body).not.toHaveProperty("debug");
     // Should set anon_session cookie
     const cookies = response.headers["set-cookie"];
     expect(cookies).toBeDefined();
     const anonCookie = findAnonymousCookie(cookies);
     expect(anonCookie).toBeDefined();
+  });
+
+  it("does not expose diagnostics when public callers request debug", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-debug-request@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Debug Doc", content: "The public debug answer is hidden." });
+
+    const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .send({ message: "What is hidden?", stream: false, includeDebug: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toBeDefined();
+    expect(response.body).not.toHaveProperty("route");
+    expect(response.body).not.toHaveProperty("activitySummary");
+    expect(response.body).not.toHaveProperty("activityTrace");
+    expect(response.body).not.toHaveProperty("debug");
   });
 
   it("accepts embedded page context as bounded supplemental prompt context", async () => {
@@ -253,6 +282,15 @@ describe("public chat contract", () => {
         },
       });
 
+    expect(chat.body).not.toHaveProperty("citations");
+    expect(chat.body.answerSegments).toEqual(
+      expect.arrayContaining([
+        expect.not.objectContaining({
+          citationIndices: expect.any(Array),
+        }),
+      ]),
+    );
+
     const cookies = chat.headers["set-cookie"];
     const anonCookie = findAnonymousCookie(cookies);
 
@@ -274,8 +312,6 @@ describe("public chat contract", () => {
         }),
         expect.objectContaining({
           role: "assistant",
-          citations: expect.any(Array),
-          answerSegments: expect.any(Array),
           answerFeedbackEntries: [
             expect.objectContaining({
               value: "down",
@@ -283,6 +319,16 @@ describe("public chat contract", () => {
               actorType: "anonymous_user",
             }),
           ],
+        }),
+      ]),
+    );
+    const assistantTurn = detail.body.messages.find((message: { role: string }) => message.role === "assistant");
+    expect(assistantTurn).not.toHaveProperty("citations");
+    expect(assistantTurn).not.toHaveProperty("debug");
+    expect(assistantTurn?.answerSegments).toEqual(
+      expect.arrayContaining([
+        expect.not.objectContaining({
+          citationIndices: expect.any(Array),
         }),
       ]),
     );

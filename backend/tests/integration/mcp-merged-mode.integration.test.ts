@@ -146,36 +146,4 @@ describe("merged MCP backend mount", () => {
       });
   });
 
-  it("issues approval tokens through the merged MCP approval route", async () => {
-    const { app } = createTestApp({
-      envOverrides: {
-        RADIOSO_BASE_URL: "http://127.0.0.1:8080",
-        RADIOSO_MCP_ENABLED: true,
-      },
-    });
-    const { token } = await issueTestToken(app);
-
-    await request(app)
-      .post("/mcp")
-      .set("Authorization", `Bearer ${token}`)
-      .set("Content-Type", "application/json")
-      .set("Mcp-Protocol-Version", "2025-11-25")
-      .set("Accept", "application/json, text/event-stream")
-      .send(mcpPayload)
-      .expect(200);
-
-    await request(app)
-      .post("/v1/approvals")
-      .set("Authorization", `Bearer ${token}`)
-      .set("Content-Type", "application/json")
-      .send({
-        reason: "integration test",
-        tools: ["create_document"],
-      })
-      .expect(200)
-      .expect(({ body }) => {
-        expect(body.approvalToken).toMatch(/^mcp_appr_/);
-      });
-  });
-
 });

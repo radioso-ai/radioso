@@ -140,7 +140,8 @@ export const createRadiosoApiAdapter = (
   return {
     answerGrounded: (body) =>
       request("/api/v1/retrieval/answer", {
-        body: JSON.stringify(body),
+        // MCP tool responses intentionally retain Radioso retrieval diagnostics for operator inspection.
+        body: JSON.stringify({ ...body, includeDebug: true }),
         headers: {
           "x-radioso-capability-client": "mcp",
         },
@@ -176,7 +177,8 @@ export const createRadiosoApiAdapter = (
       }),
     searchDocuments: (body) =>
       request("/api/v1/document/search", {
-        body: JSON.stringify(body),
+        // MCP tool responses intentionally retain Radioso retrieval diagnostics for operator inspection.
+        body: JSON.stringify({ ...body, includeDebug: true }),
         headers: {
           "x-radioso-capability-client": "mcp",
         },
@@ -203,7 +205,6 @@ export const createRadiosoApiAdapter = (
             similarityThreshold: body.similarityThreshold,
             rerankTopK: body.rerankTopK,
             citationDisplayEnabled: body.citationDisplayEnabled,
-            answerSupportValidationEnabled: body.answerSupportValidationEnabled,
             metadataRules: body.metadataRules,
           },
         }),

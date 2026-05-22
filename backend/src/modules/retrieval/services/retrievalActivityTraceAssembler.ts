@@ -176,6 +176,8 @@ export class ActivityTraceAssembler {
           })),
           continuityDecision: prompt.continuityDecision,
           promptHistoryCount: prompt.promptHistory.length,
+          promptHistoryReset: prompt.promptHistoryReset,
+          turnKind: prompt.rewrittenQuery.structuredResult?.turnKind ?? null,
           rewriteEligible: prompt.rewrittenQuery.retrievalEligible,
           rewriteRan: diagnostics.rewriteRan ?? false,
           parsedConstraints: prompt.activeParsedQuery.constraints.map((constraint) => constraint.summary),
@@ -308,7 +310,6 @@ export class ActivityTraceAssembler {
       buildStage("prompt", "prompt_assembly", "Prompt assembly", "applied", timings.promptAssembly, {
         settings: {
           citationDisplayEnabled: prompt.responseSettings.citationDisplayEnabled,
-          answerSupportValidationEnabled: prompt.responseSettings.answerSupportValidationEnabled,
           responseLanguagePolicy: prompt.responseSettings.responseLanguagePolicy,
         },
         outputs: {

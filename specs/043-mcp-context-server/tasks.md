@@ -3,6 +3,8 @@
 **Input**: Design documents from `/specs/043-mcp-context-server/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/mcp-tool-catalog.md, contracts/remote-http.md, quickstart.md
 
+> **Amendment 2026-05-19**: Tasks under Phase 4 (User Story 2) that build the `POST /v1/approvals` endpoint, the approval store, the `verifyApproval` flow, and the `approvalToken` argument on write tools have been superseded by the approval removal. The remaining authorization layers are: workspace API token, exchange-time `requestedTools` granting, capability-policy allowlist, and the upstream Radioso permission required by each REST route. Host-side prompting (Cursor / Claude Desktop / ChatGPT) is now the only human-in-the-loop gate for writes, driven by `requiresApproval: true` on the tool advertisement.
+
 **Tests**: Package-level TDD is REQUIRED. Write failing tests before implementation for each auth, policy, transport, and tool slice.
 
 **Organization**: Tasks are grouped by user story to preserve the extractable package boundary and enable independently testable increments.

@@ -2,6 +2,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
 import { RESPONSE_INTENT, REWRITE_TURN_KIND } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import { adminSessionHeaders, createTestApp, issueTestToken } from "../support/testApp.js";
 
@@ -136,6 +137,159 @@ describe("agents contract", () => {
       .expect(400);
   });
 
+  it("persists manually added documents in selected source scope", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-manual-source-scope@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Manual policy",
+        content: "Manual document body",
+      })
+      .expect(202);
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Website policy",
+        content: "Website document body",
+        source: {
+          kind: "website",
+          url: "https://manual-scope.example/docs",
+        },
+      })
+      .expect(202);
+
+    const sources = await request(app)
+      .get("/api/v1/document/sources")
+      .set("Authorization", authorization)
+      .expect(200);
+    const websiteSourceId = sources.body.sources.find(
+      (source: { externalId?: string }) => source.externalId === "https://manual-scope.example/docs",
+    )?.id;
+    expect(websiteSourceId).toEqual(expect.any(String));
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({
+        name: "Manual scoped",
+        sourceScope: {
+          mode: "selected",
+          sourceIds: [MANUALLY_ADDED_DOCUMENTS_SOURCE_ID],
+        },
+      })
+      .expect(201);
+
+    expect(agent.body.sourceScope).toEqual({
+      mode: "selected",
+      sourceIds: [MANUALLY_ADDED_DOCUMENTS_SOURCE_ID],
+    });
+
+    const manualOnly = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(manualOnly.body.sourceScope).toEqual({
+      mode: "selected",
+      sourceIds: [MANUALLY_ADDED_DOCUMENTS_SOURCE_ID],
+    });
+
+    const mixed = await request(app)
+      .put(`/api/v1/agents/${agent.body.id}`)
+      .set("Authorization", authorization)
+      .send({
+        sourceScope: {
+          mode: "selected",
+          sourceIds: [MANUALLY_ADDED_DOCUMENTS_SOURCE_ID, websiteSourceId],
+        },
+      })
+      .expect(200);
+
+    expect(mixed.body.sourceScope).toEqual({
+      mode: "selected",
+      sourceIds: [MANUALLY_ADDED_DOCUMENTS_SOURCE_ID, websiteSourceId],
+    });
+
+    const persistedMixed = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(persistedMixed.body.sourceScope).toEqual({
+      mode: "selected",
+      sourceIds: [MANUALLY_ADDED_DOCUMENTS_SOURCE_ID, websiteSourceId],
+    });
+  });
+
+  it("persists branding privacy policy URL through agent update, GET, and public chat session", async () => {
+    const privacyPolicyUrl = "https://example.com/privacy";
+    const { app } = createTestApp();
+    const session = await issueTestToken(app, "agents-branding-round-trip@example.com");
+    const authorization = `Bearer ${session.token}`;
+
+    const list = await request(app)
+      .get("/api/v1/agents")
+      .set("Authorization", authorization)
+      .expect(200);
+    const agentId = list.body.agents[0].id as string;
+
+    const updated = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({
+        branding: {
+          hidePoweredBy: false,
+          privacyPolicyUrl,
+        },
+      })
+      .expect(200);
+    expect(updated.body.branding).toEqual({
+      hidePoweredBy: false,
+      privacyPolicyUrl,
+    });
+
+    const reloaded = await request(app)
+      .get(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .expect(200);
+    expect(reloaded.body.branding).toEqual({
+      hidePoweredBy: false,
+      privacyPolicyUrl,
+    });
+
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({ anonymousChatEnabled: true })
+      .expect(200);
+    const anonymousChatToken = new URL(settings.body.anonymousChatUrl).pathname.split("/").at(-1);
+    expect(anonymousChatToken).toBeTruthy();
+
+    const publicSession = await request(app)
+      .post(`/api/v1/public/chat/${anonymousChatToken}/sessions`)
+      .send({ channel: "anonymous_link" })
+      .expect(200);
+    expect(publicSession.body.branding).toEqual({
+      hidePoweredBy: false,
+      privacyPolicyUrl,
+    });
+
+    const historyList = await request(app)
+      .get(`/api/v1/public/chat/${anonymousChatToken}?limit=1`)
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken)
+      .expect(200);
+    expect(historyList.body.branding).toEqual({
+      hidePoweredBy: false,
+      privacyPolicyUrl,
+    });
+  });
+
   it("limits assistant retrieval to the selected agent sources", async () => {
     const { app } = createTestApp();
     const { token } = await issueTestToken(app, "agents-source-retrieval@example.com");
@@ -191,10 +345,10 @@ describe("agents contract", () => {
     const scopedChat = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ agentId: scopedAgent.body.id, message: "Alpha meditation", stream: false })
+      .send({ agentId: scopedAgent.body.id, message: "Alpha meditation", stream: false, includeDebug: true })
       .expect(200);
 
-    expect(scopedChat.body.activitySummary.candidateCounts.final).toBe(0);
+    expect(scopedChat.body.debug.activitySummary.candidateCounts.final).toBe(0);
     expect(scopedChat.body.citations ?? []).toEqual([]);
 
     await request(app)
@@ -211,10 +365,10 @@ describe("agents contract", () => {
     const allowedChat = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ agentId: scopedAgent.body.id, message: "Alpha meditation", stream: false })
+      .send({ agentId: scopedAgent.body.id, message: "Alpha meditation", stream: false, includeDebug: true })
       .expect(200);
 
-    expect(allowedChat.body.activitySummary.candidateCounts.final).toBeGreaterThan(0);
+    expect(allowedChat.body.debug.activitySummary.candidateCounts.final).toBeGreaterThan(0);
     expect(allowedChat.body.answer).toContain("Alpha meditation retreat details.");
   });
 
@@ -253,18 +407,20 @@ describe("agents contract", () => {
     const chat = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", firstAuthorization)
-      .send({ agentId: agent.body.id, message: "hello direct", stream: false })
+      .send({ agentId: agent.body.id, message: "hello direct", stream: false, includeDebug: true })
       .expect(200);
 
     expect(chat.body).toMatchObject({
       agentId: agent.body.id,
       agentName: "Direct agent",
-      activitySummary: expect.objectContaining({
-        retrievalSkipped: true,
-      }),
+      debug: {
+        activitySummary: expect.objectContaining({
+          retrievalSkipped: true,
+        }),
+      },
     });
     expect(chat.body.citations ?? []).toEqual([]);
-    expect(chat.body.activitySummary.candidateCounts).toMatchObject({
+    expect(chat.body.debug.activitySummary.candidateCounts).toMatchObject({
       semantic: 0,
       lexical: 0,
       final: 0,
@@ -351,7 +507,7 @@ describe("agents contract", () => {
         });
         res.on("end", () => callback(null, body));
       })
-      .send({ agentId: agent.body.id, message: "who are you?", stream: true });
+      .send({ agentId: agent.body.id, message: "who are you?", stream: true, includeDebug: true });
 
     expect(response.status).toBe(200);
     expect(response.headers["content-type"]).toContain("text/event-stream");
@@ -364,9 +520,11 @@ describe("agents contract", () => {
       agentId: agent.body.id,
       agentName: "Balaram",
       answer: "I am Balaram.",
-      route: {
-        type: "direct",
-        reason: "assistant_identity",
+      debug: {
+        route: {
+          type: "direct",
+          reason: "assistant_identity",
+        },
       },
     });
   });
@@ -532,5 +690,49 @@ describe("agents contract", () => {
         },
       })
       .expect(400);
+  });
+
+  it("preserves an explicitly empty website embed launcher label in public config", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-empty-embed-label@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const list = await request(app)
+      .get("/api/v1/agents")
+      .set("Authorization", authorization)
+      .expect(200);
+    const agentId = list.body.agents[0].id as string;
+
+    const updated = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({
+        name: "Claudio",
+        surfaceSettings: {
+          websiteEmbed: {
+            enabled: true,
+            allowedOrigins: ["https://host.example.com"],
+            launcherLabel: "",
+          },
+        },
+      })
+      .expect(200);
+
+    expect(updated.body.name).toBe("Claudio");
+    expect(updated.body.surfaceSettings.websiteEmbed.launcherLabel).toBe("");
+
+    const tokenResponse = await request(app)
+      .post(`/api/v1/agents/${agentId}/website-embed-token/rotate`)
+      .set("Authorization", authorization)
+      .expect(200);
+    const embedToken = tokenResponse.body.surfaceSettings.websiteEmbed.token as string;
+
+    const config = await request(app)
+      .get(`/api/v1/public/chat/${embedToken}/embed-config`)
+      .set("Origin", "https://host.example.com")
+      .expect(200);
+
+    expect(config.body.launcherLabel).toBe("");
+    expect(config.body.launcherLabel).not.toBe("Claudio");
   });
 });

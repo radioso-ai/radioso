@@ -2,6 +2,7 @@
 
 import { loadRemoteConfig } from "../config.js";
 import { createRemoteHttpRuntime } from "../http/runtime.js";
+import { emitHttpStartupWarnings } from "./httpStartupWarnings.js";
 
 const main = async () => {
   const config = loadRemoteConfig(process.env);
@@ -11,6 +12,7 @@ const main = async () => {
   console.info(
     `Radioso MCP HTTP server listening on http://${config.bindHost}:${config.bindPort} (${runtime.mode} runtime store)`,
   );
+  emitHttpStartupWarnings(config);
 
   process.once("SIGINT", () => {
     void runtime.close().finally(() => process.exit(0));

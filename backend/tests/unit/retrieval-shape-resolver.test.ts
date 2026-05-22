@@ -33,7 +33,6 @@ const expectSelection = (
         confidence: 1,
       },
     },
-    continuityDecision: "unchanged",
   });
 
   expect(selection).toMatchObject({
@@ -67,8 +66,7 @@ describe("retrieval shape resolver", () => {
         status: "skipped",
         confidence: 1,
       },
-      continuityDecision: "unchanged",
-    });
+      });
 
     expect(selection).toMatchObject({
       shapeName: "default_hybrid",
@@ -105,79 +103,10 @@ describe("retrieval shape resolver", () => {
     });
   });
 
-  it("selects follow-up grounding when continuity metadata says the turn reused context", () => {
-    const selection = selectRetrievalAnswerShape({
-      query: "What about the next one?",
-      continuityDecision: "updated",
-      historyMessageCount: 2,
-      rewrittenQuery: {
-        originalQuery: "What about the next one?",
-        rewrittenQuery: "When is the next workshop?",
-        effectiveQuery: "When is the next workshop?",
-        semanticQuery: "When is the next workshop?",
-        lexicalQuery: "next workshop",
-        responseIntent: "retrieval",
-        rewriteApplied: true,
-        retrievalEligible: true,
-        status: "applied",
-        confidence: 0.87,
-        structuredResult: {
-          rewrittenQuery: "When is the next workshop?",
-          queryShape: "event_date_lookup",
-          turnKind: "referential_followup",
-          relatedEntities: [],
-          unresolved: false,
-          confidence: 0.87,
-        },
-      },
-    });
-
-    expect(selection).toMatchObject({
-      shapeName: "follow_up_grounding",
-      queryShape: "follow_up_grounding",
-      selectionMode: "deterministic",
-    });
-  });
-
-  it("does not select follow-up grounding when continuity was not updated", () => {
-    const selection = selectRetrievalAnswerShape({
-      query: "What about that?",
-      continuityDecision: "rejected",
-      historyMessageCount: 2,
-      rewrittenQuery: {
-        originalQuery: "What about that?",
-        rewrittenQuery: "What about that?",
-        effectiveQuery: "What about that?",
-        semanticQuery: "What about that?",
-        lexicalQuery: "What about that?",
-        responseIntent: "retrieval",
-        rewriteApplied: false,
-        retrievalEligible: true,
-        status: "rejected",
-        confidence: 0.4,
-        structuredResult: {
-          rewrittenQuery: "What about that?",
-          queryShape: "general_grounding",
-          turnKind: "referential_followup",
-          relatedEntities: [],
-          unresolved: true,
-          confidence: 0.4,
-        },
-      },
-    });
-
-    expect(selection).toMatchObject({
-      shapeName: "default_hybrid",
-      queryShape: "general_grounding",
-      selectionMode: "deterministic",
-    });
-  });
-
   it("falls back to the default hybrid shape for uncertain queries", () => {
     const selection = selectRetrievalAnswerShape({
       query: "Narayani Arudra",
-      continuityDecision: "unchanged",
-    });
+      });
 
     expect(selection).toMatchObject({
       shapeName: "default_hybrid",
@@ -189,8 +118,7 @@ describe("retrieval shape resolver", () => {
   it("resolves definition lookup into a context selection override", () => {
     const selection = selectRetrievalAnswerShape({
       query: "BM25",
-      continuityDecision: "unchanged",
-      rewrittenQuery: {
+        rewrittenQuery: {
         originalQuery: "BM25",
         rewrittenQuery: "BM25",
         effectiveQuery: "BM25",
@@ -233,8 +161,7 @@ describe("retrieval shape resolver", () => {
   it("builds a valid retrieval answer skill diagnostic", () => {
     const selection = selectRetrievalAnswerShape({
       query: "What is BM25?",
-      continuityDecision: "unchanged",
-      rewrittenQuery: {
+        rewrittenQuery: {
         originalQuery: "What is BM25?",
         rewrittenQuery: "BM25",
         effectiveQuery: "BM25",

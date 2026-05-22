@@ -19,6 +19,10 @@ import {
   type WebsiteEmbedTheme,
   type WebsiteEmbedThemeOverrides,
 } from '@/lib/embed-widget'
+import type { AgentBrandingSettings } from '@/lib/api'
+
+const POWERED_BY_URL = 'https://radioso.dev'
+const POWERED_BY_LABEL = 'Radioso'
 
 const DEFAULT_ASSISTANT_AVATAR_URL = '/radioso-icon.svg'
 
@@ -123,16 +127,72 @@ export function PublicChatBubbleDisclaimer({
   theme,
   copy,
   workspaceName,
+  branding,
 }: {
   theme: WebsiteEmbedTheme
   copy: WebsiteEmbedCopy
   workspaceName: string
+  branding?: AgentBrandingSettings | null
 }) {
+  const disclaimer = formatWebsiteEmbedDisclaimer(copy, workspaceName).trim()
+  const showPoweredBy = !branding?.hidePoweredBy
+  const privacyPolicyUrl = branding?.privacyPolicyUrl?.trim() || null
+  const linkStyle = { color: theme.mutedForeground }
+
+  const rightItems: ReactNode[] = []
+  if (privacyPolicyUrl) {
+    rightItems.push(
+      <a
+        key="privacy"
+        href={privacyPolicyUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline-offset-2 hover:underline"
+        style={linkStyle}
+      >
+        Privacy
+      </a>,
+    )
+  }
+  if (showPoweredBy) {
+    rightItems.push(
+      <a
+        key="powered-by"
+        href={POWERED_BY_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
+        style={linkStyle}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/radioso-icon.svg" alt="" aria-hidden="true" className="h-3 w-3 opacity-80" />
+        <span>
+          Answers by <span className="font-medium">{POWERED_BY_LABEL}</span>
+        </span>
+      </a>,
+    )
+  }
+
+  if (!disclaimer && rightItems.length === 0) {
+    return null
+  }
+
   return (
-    <div className="mx-auto mb-2 flex max-w-3xl justify-center">
-      <p className="w-full text-center text-xs" style={{ color: theme.mutedForeground }}>
-        {formatWebsiteEmbedDisclaimer(copy, workspaceName)}
-      </p>
+    <div
+      className="mx-auto mt-1.5 flex max-w-3xl flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-2 text-[11px] leading-tight"
+      style={{ color: theme.mutedForeground }}
+    >
+      <p className="min-w-0 flex-1 text-left">{disclaimer}</p>
+      {rightItems.length > 0 ? (
+        <p className="flex shrink-0 flex-wrap items-center justify-end gap-x-2 gap-y-0.5">
+          {rightItems.map((item, index) => (
+            <span key={index} className="inline-flex items-center gap-x-2">
+              {index > 0 ? <span aria-hidden="true" className="opacity-60">·</span> : null}
+              {item}
+            </span>
+          ))}
+        </p>
+      ) : null}
     </div>
   )
 }

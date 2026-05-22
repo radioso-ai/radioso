@@ -6,9 +6,11 @@ import type {
   ChatGateway,
   ContactHistoryDetail,
   ContactHistorySummary,
+  MailTransport,
   UsageLimitDatabaseClient,
   UsageLimitDatabasePort,
 } from "../radiosoModuleTypes.js";
+import type { SkillSubmissionRow } from "../skillSubmissions/skillSubmissionRepository.js";
 
 export type Logger = {
   info?(entry: unknown, message?: string): void;
@@ -16,15 +18,17 @@ export type Logger = {
   error(entry: unknown, message?: string): void;
 };
 
-export type EmailService = {
-  send(message: {
-    to: string;
-    subject: string;
-    text: string;
-    html?: string;
-    metadata?: Record<string, string>;
-  }): Promise<void>;
-};
+export type MailService = MailTransport;
+
+export interface WorkspaceContactInfo {
+  id: string;
+  name: string;
+  publicRouteKey: string;
+}
+
+export interface WorkspaceContactInfoRepository {
+  findById(workspaceId: string): Promise<WorkspaceContactInfo | null>;
+}
 
 export interface ConversationRepository {
   findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<{
@@ -83,44 +87,6 @@ export interface HumanContactSettingsRow {
   updated_at: Date;
 }
 
-export interface HumanContactRequestRow {
-  id: string;
-  account_id: string | null;
-  workspace_id: string;
-  conversation_id: string;
-  assistant_message_id: string | null;
-  source_channel: string | null;
-  source_origin: string | null;
-  user_email: string;
-  message: string;
-  trigger_source: string;
-  trigger_reason: string | null;
-  idempotency_key?: string | null;
-  attempts: number;
-  activity_trace: ActivityTrace | null;
-  created_at: Date;
-}
-
-export interface HumanContactHistoryRow {
-  id: string;
-  workspace_id: string;
-  conversation_id: string;
-  assistant_message_id: string | null;
-  source_channel: string | null;
-  source_origin: string | null;
-  user_email: string;
-  message: string;
-  trigger_source: string;
-  trigger_reason: string | null;
-  status: "pending" | "delivering" | "delivered" | "failed";
-  attempts: number;
-  final_delivery_error: string | null;
-  activity_trace: ActivityTrace | null;
-  created_at: Date;
-  updated_at: Date;
-  total_count?: string;
-}
-
 export interface SkillIntakeStateRow {
   id: string;
   workspace_id: string;
@@ -175,7 +141,13 @@ export const normalizePreview = (value: string): string => value.replace(/\s+/g,
 export const summarizeContactTrace = (trace: ActivityTrace | null | undefined): ActivitySummary | undefined =>
   trace?.summary ?? undefined;
 
-export const mapContactHistorySummary = (row: HumanContactHistoryRow): ContactHistorySummary => ({
+const contactEmailFromSubmission = (row: SkillSubmissionRow): string =>
+  typeof row.fields.email === "string" ? row.fields.email : (row.subject_identity ?? "");
+
+const contactMessageFromSubmission = (row: SkillSubmissionRow): string =>
+  typeof row.fields.message === "string" ? row.fields.message : "";
+
+export const mapContactHistorySummary = (row: SkillSubmissionRow): ContactHistorySummary => ({
   id: row.id,
   sortAt: serializeDate(row.created_at),
   workspaceId: row.workspace_id,
@@ -183,8 +155,8 @@ export const mapContactHistorySummary = (row: HumanContactHistoryRow): ContactHi
   assistantMessageId: row.assistant_message_id,
   sourceChannel: row.source_channel,
   sourceOrigin: row.source_origin,
-  userEmail: row.user_email,
-  messagePreview: normalizePreview(row.message),
+  userEmail: contactEmailFromSubmission(row),
+  messagePreview: normalizePreview(contactMessageFromSubmission(row)),
   triggerSource: row.trigger_source,
   triggerReason: row.trigger_reason,
   status: row.status,
@@ -194,9 +166,9 @@ export const mapContactHistorySummary = (row: HumanContactHistoryRow): ContactHi
   activitySummary: summarizeContactTrace(row.activity_trace),
 });
 
-export const mapContactHistoryDetail = (row: HumanContactHistoryRow): ContactHistoryDetail => ({
+export const mapContactHistoryDetail = (row: SkillSubmissionRow): ContactHistoryDetail => ({
   ...mapContactHistorySummary(row),
-  message: row.message,
+  message: contactMessageFromSubmission(row),
   finalDeliveryError: row.final_delivery_error,
   activityTrace: row.activity_trace ?? undefined,
 });
@@ -227,10 +199,12 @@ export type HumanContactDependencies = {
   logger: Logger;
   conversationRepository: ConversationRepository;
   messageRepository: MessageRepository;
+  workspaceContactInfoRepository?: WorkspaceContactInfoRepository;
   auditService: AuditService;
   abuseControlService: AbuseControlService;
-  emailService: EmailService;
+  mailService: MailService;
   chatGateway: ChatGateway;
+  dashboardBaseUrl?: string | null;
   pollIntervalMs?: number;
   webhookFetch?: typeof fetch;
   startPoller?: boolean;

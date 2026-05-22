@@ -142,7 +142,7 @@ describe("chat history service", () => {
           ],
           links: [],
         },
-        answerOutcome: "grounded_degraded_unsupported_segments",
+        answerOutcome: "grounded_success",
         suggestions: [
           {
             text: "What examples does it include?",
@@ -153,32 +153,6 @@ describe("chat history service", () => {
             },
           },
         ],
-        validation: {
-          ran: true,
-          answerModified: true,
-          unsupportedSegmentCount: 1,
-          substantiveUnsupportedSegmentCount: 1,
-          supportedSegmentCount: 1,
-          nonSubstantiveSegmentCount: 1,
-          hiddenSupportUsed: true,
-          hiddenSupportKindsUsed: ["assistant_name"],
-          segmentResults: [
-            {
-              originalText: "It answers questions.",
-              text: "It answers questions.",
-              disposition: "supported",
-              replacementApplied: false,
-              reason: "has_support_reference",
-            },
-            {
-              originalText: "I couldn't verify that part from the retrieved documents.",
-              text: "I couldn't verify that part from the retrieved documents.",
-              disposition: "unsupported",
-              replacementApplied: true,
-              reason: "missing_support_reference",
-            },
-          ],
-        },
       },
     });
 
@@ -212,7 +186,7 @@ describe("chat history service", () => {
         expect.objectContaining({ stageId: "answer" }),
       ],
     });
-    expect(debug?.answerOutcome).toBe("grounded_degraded_unsupported_segments");
+    expect(debug?.answerOutcome).toBe("grounded_success");
     expect(debug?.route).toEqual({
       generator: "assistant",
       routeType: "retrieval",
@@ -230,32 +204,7 @@ describe("chat history service", () => {
         },
       }),
     ]);
-    expect(debug?.validation).toEqual({
-      ran: true,
-      answerModified: true,
-      unsupportedSegmentCount: 1,
-      substantiveUnsupportedSegmentCount: 1,
-      supportedSegmentCount: 1,
-      nonSubstantiveSegmentCount: 1,
-      hiddenSupportUsed: true,
-      hiddenSupportKindsUsed: ["assistant_name"],
-      segmentResults: [
-        {
-          originalText: "It answers questions.",
-          text: "It answers questions.",
-          disposition: "supported",
-          replacementApplied: false,
-          reason: "has_support_reference",
-        },
-        {
-          originalText: "I couldn't verify that part from the retrieved documents.",
-          text: "I couldn't verify that part from the retrieved documents.",
-          disposition: "unsupported",
-          replacementApplied: true,
-          reason: "missing_support_reference",
-        },
-      ],
-    });
+    expect(debug).not.toHaveProperty("validation");
   });
 
   it("reconstructs an activity trace for historical assistant turns that only stored retrieval diagnostics", async () => {
@@ -282,7 +231,11 @@ describe("chat history service", () => {
       metadata: {
         conversationId: conversation.id,
         assistantMessageId: assistant.id,
-        citationCount: 0,
+        citationCount: 2,
+        citations: [
+          { documentId: "doc-1", chunkId: "chunk-1", title: "Kriya overview" },
+          { documentId: "doc-1", chunkId: "chunk-2", title: "Kriya history" },
+        ],
         route: {
           generator: "assistant",
           routeType: "retrieval",
@@ -353,6 +306,123 @@ describe("chat history service", () => {
       ],
     });
     expect(debug?.activityTrace?.links).toHaveLength(5);
+
+    const diagnosticsStage = debug?.activityTrace?.stages.find(
+      (stage) => stage.stageId === "candidate_summary",
+    );
+    expect(diagnosticsStage?.outputs).toMatchObject({
+      finalContexts: [
+        { documentId: "doc-1", chunkId: "chunk-1", title: "Kriya overview" },
+        { documentId: "doc-1", chunkId: "chunk-2", title: "Kriya history" },
+      ],
+    });
+  });
+
+  it("preserves provider-defined suggestion kinds and action payloads on reload", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+
+    const conversation = await conversationRepository.create("workspace-1");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Can you help with billing?",
+    });
+    const assistant = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "I don't have information about that.",
+    });
+
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        assistantMessageId: assistant.id,
+        citationCount: 0,
+        suggestions: [
+          {
+            text: "Contact us",
+            kind: "contact_human",
+            action: {
+              kind: "start_intent",
+              intent: { skillName: "human_contact.request", intentName: "no_context_refusal" },
+            },
+          },
+          {
+            text: "What's covered here?",
+            kind: "deeper",
+          },
+        ],
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+    const assistantMessage = detail.messages.find((message) => message.role === "assistant");
+
+    expect(assistantMessage?.suggestions).toEqual([
+      {
+        text: "Contact us",
+        kind: "contact_human",
+        action: {
+          kind: "start_intent",
+          intent: { skillName: "human_contact.request", intentName: "no_context_refusal" },
+        },
+      },
+      {
+        text: "What's covered here?",
+        kind: "deeper",
+      },
+    ]);
+  });
+
+  it("drops malformed action payloads while keeping the rest of the suggestion", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+
+    const conversation = await conversationRepository.create("workspace-1");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Anything?",
+    });
+    const assistant = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "Hmm.",
+    });
+
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        assistantMessageId: assistant.id,
+        citationCount: 0,
+        suggestions: [
+          {
+            text: "Broken action chip",
+            kind: "contact_human",
+            action: { kind: "start_intent" },
+          },
+        ],
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+    const assistantMessage = detail.messages.find((message) => message.role === "assistant");
+
+    expect(assistantMessage?.suggestions).toEqual([
+      {
+        text: "Broken action chip",
+        kind: "contact_human",
+      },
+    ]);
   });
 
   it("normalizes legacy stored suggestions without kind as deeper suggestions", async () => {

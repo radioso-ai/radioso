@@ -70,10 +70,29 @@ const envSchema = z.object({
   PUBLIC_CHAT_SESSION_SECRET: emptyStringToUndefined(z.string().min(16)),
   RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(16)),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
-  CONNECTOR_ENCRYPTION_KEY: emptyStringToUndefined(z.string().min(1)),
+  CONNECTOR_ENCRYPTION_KEY: emptyStringToUndefined(
+    z
+      .string()
+      .min(1)
+      .refine(
+        (value) => {
+          try {
+            return Buffer.from(value, "base64").length === 32;
+          } catch {
+            return false;
+          }
+        },
+        {
+          message:
+            "CONNECTOR_ENCRYPTION_KEY must be base64 of 32 bytes (use `openssl rand -base64 32`). The same key encrypts connector secrets and workspace provider API keys at rest.",
+        },
+      ),
+  ),
   CONNECTOR_PUBLIC_BASE_URL: emptyStringToUndefined(z.string().url()),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
+  PASSWORD_RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(30),
+  EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(30),
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(20),
   WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(30),
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
@@ -93,6 +112,8 @@ const envSchema = z.object({
   WORKER_AMQP_URL: emptyStringToUndefined(z.string().url()),
   WORKER_AMQP_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
   WORKER_AMQP_CRAWL_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
+  WORKER_AMQP_DLQ_NAME: emptyStringToUndefined(z.string().min(1)),
+  WORKER_AMQP_CRAWL_DLQ_NAME: emptyStringToUndefined(z.string().min(1)),
   WORKER_AMQP_PREFETCH: z.coerce.number().int().positive().default(1),
   DOCUMENT_PROCESSING_JOB_LEASE_MS: z.coerce.number().int().positive().default(300_000),
   WEBSITE_CRAWL_JOB_LEASE_MS: z.coerce.number().int().positive().default(900_000),
@@ -100,6 +121,7 @@ const envSchema = z.object({
   WEBSITE_CRAWLER_ENABLED: booleanish(true),
   APP_BASE_URL: emptyStringToUndefined(z.string().url()),
   PUBLIC_CHAT_BASE_URL: emptyStringToUndefined(z.string().min(1)),
+  RADIOSO_WIDGET_ORIGIN: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_BASE_URL: emptyStringToUndefined(z.string().url()),
   RADIOSO_MCP_ENABLED: booleanish(false),
   RADIOSO_MCP_STANDALONE: booleanish(false),
@@ -111,7 +133,6 @@ const envSchema = z.object({
   RADIOSO_MCP_ALLOWED_READ_TOOLS: mcpToolList,
   RADIOSO_MCP_ALLOWED_WRITE_TOOLS: mcpToolList,
   RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: mcpToolList,
-  RADIOSO_MCP_APPROVAL_TTL_SECONDS: z.coerce.number().int().positive().default(300),
   RADIOSO_MCP_AUDIT_LOG_PATH: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_MCP_BIND_HOST: z.string().min(1).default("127.0.0.1"),
   RADIOSO_MCP_BIND_PORT: z.coerce.number().int().min(1).max(65535).default(8787),

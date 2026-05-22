@@ -30,7 +30,6 @@ export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] =
     similarityThreshold: 0.2,
     rerankTopK: 5,
     citationDisplayEnabled: true,
-    answerSupportValidationEnabled: true,
     metadataFieldSuggestions: [],
     metadataRules: [],
   },
@@ -57,6 +56,27 @@ export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] =
 
 export type PlatformSettingsFixture = ReturnType<typeof basePlatformSettings>;
 
+export const baseIngestionSettings = (): ApiSchemas["IngestionSettings"] => ({
+  workspaceId,
+  chunkingStrategy: "fixed_window",
+  fixedWindowChunkSize: 1000,
+  fixedWindowChunkOverlap: 200,
+  structuredMinChunkSize: 200,
+  structuredMaxChunkSize: 1200,
+  embeddingModel: "text-embedding-3-small",
+  pendingEmbeddingModel: null,
+  supportedEmbeddingModels: [
+    "text-embedding-3-small",
+    "text-embedding-3-large",
+    "text-embedding-ada-002",
+    "gemini-embedding-001",
+  ],
+  createdAt: nowIso,
+  updatedAt: nowIso,
+});
+
+export type IngestionSettingsFixture = ReturnType<typeof baseIngestionSettings>;
+
 const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchemas["ConversationAgent"] => ({
   id: defaultAgentId,
   workspaceId,
@@ -65,6 +85,10 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   customInstruction: settings.assistant.customInstruction,
   suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
   theme: settings.channels.websiteEmbedTheme,
+  branding: {
+    hidePoweredBy: false,
+    privacyPolicyUrl: null,
+  },
   greetingInstruction: settings.assistant.greetingInstruction,
   assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
   proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
@@ -72,6 +96,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   logo: null,
   retrievalEnabled: true,
   sourceScope: { mode: "all" },
+  chatModelOverride: null,
   surfaceSettings: {
     authenticatedChat: {
       enabled: true,
@@ -198,12 +223,39 @@ export const installDashboardApiMocks = async (
     conversationDetail?: unknown;
     agentUpdates?: unknown[];
     requestLog?: string[];
+    providerEncryptionConfigured?: boolean;
+    providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
+    llmModelUpdates?: Array<unknown>;
+    ingestionSettings?: IngestionSettingsFixture;
+    ingestionSettingsUpdates?: unknown[];
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
+  let ingestionSettings = options.ingestionSettings ?? baseIngestionSettings();
   let agentSettings = buildDefaultAgentSettings(platformSettings);
+  const providerEncryptionConfigured = options.providerEncryptionConfigured ?? true;
+  const providerCredentials: Record<string, { updatedAt: string } | null> = {
+    openai: null,
+    "openai-compatible": null,
+    gemini: null,
+    claude: null,
+  };
+  const providerCredentialUpdates = options.providerCredentialUpdates;
+  const knownModelsByProvider = {
+    openai: ["gpt-5.2", "gpt-5-mini"],
+    "openai-compatible": [],
+    gemini: ["gemini-2.5-flash", "gemini-2.5-pro"],
+    claude: ["claude-opus-4-7", "claude-sonnet-4-6", "claude-sonnet-4-5"],
+  };
+  let llmModels: {
+    chat: { provider: string; model: string } | null;
+    rewrite: { provider: string; model: string } | null;
+    rerank: { provider: string; model: string } | null;
+  } = { chat: null, rewrite: null, rerank: null };
+  const llmModelUpdates = options.llmModelUpdates;
   const documents = options.documentList ?? documentListResponse;
   const settingsUpdates = options.settingsUpdates;
+  const ingestionSettingsUpdates = options.ingestionSettingsUpdates;
   const agentUpdates = options.agentUpdates;
   const historyList = options.historyList ?? {
     conversations: [],
@@ -372,6 +424,93 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "GET" && path === "/settings") {
       await json(route, platformSettings);
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/settings/credentials") {
+      await json(route, {
+        encryptionConfigured: providerEncryptionConfigured,
+        credentials: Object.entries(providerCredentials)
+          .filter(([, value]) => value !== null)
+          .map(([provider, value]) => ({ provider, updatedAt: value!.updatedAt })),
+        envProviderAvailability: {
+          openai: true,
+          "openai-compatible": true,
+          gemini: true,
+          claude: true,
+        },
+      });
+      return;
+    }
+
+    if (request.method() === "PUT" && path.startsWith("/settings/credentials/")) {
+      const provider = path.replace("/settings/credentials/", "");
+      providerCredentials[provider] = { updatedAt: new Date().toISOString() };
+      providerCredentialUpdates?.push({ method: "PUT", provider, body: request.postDataJSON() });
+      await route.fulfill({ status: 204, contentType: "application/json", body: "" });
+      return;
+    }
+
+    if (request.method() === "DELETE" && path.startsWith("/settings/credentials/")) {
+      const provider = path.replace("/settings/credentials/", "");
+      providerCredentials[provider] = null;
+      providerCredentialUpdates?.push({ method: "DELETE", provider });
+      await route.fulfill({ status: 204, contentType: "application/json", body: "" });
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/settings/llm-models") {
+      await json(route, { ...llmModels, knownModelsByProvider });
+      return;
+    }
+
+    if (request.method() === "PUT" && path === "/settings/llm-models") {
+      const body = request.postDataJSON() as Partial<typeof llmModels>;
+      llmModelUpdates?.push(body);
+      llmModels = {
+        chat: 'chat' in body ? body.chat ?? null : llmModels.chat,
+        rewrite: 'rewrite' in body ? body.rewrite ?? null : llmModels.rewrite,
+        rerank: 'rerank' in body ? body.rerank ?? null : llmModels.rerank,
+      };
+      await json(route, { ...llmModels, knownModelsByProvider });
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/settings/ingestion") {
+      await json(route, ingestionSettings);
+      return;
+    }
+
+    if (request.method() === "PUT" && path === "/settings/ingestion") {
+      const body = request.postDataJSON() as Partial<IngestionSettingsFixture>;
+      ingestionSettingsUpdates?.push(body);
+      const requestedEmbeddingModel = body.embeddingModel;
+      const embeddingFields =
+        requestedEmbeddingModel && requestedEmbeddingModel !== ingestionSettings.embeddingModel
+          ? {
+              embeddingModel: ingestionSettings.embeddingModel,
+              pendingEmbeddingModel: requestedEmbeddingModel,
+            }
+          : {
+              embeddingModel: requestedEmbeddingModel ?? ingestionSettings.embeddingModel,
+            };
+      ingestionSettings = {
+        ...ingestionSettings,
+        ...body,
+        ...embeddingFields,
+        updatedAt: nowIso,
+      };
+      await json(route, ingestionSettings);
+      return;
+    }
+
+    if (request.method() === "POST" && path === "/settings/ingestion/embedding-model/cancel") {
+      ingestionSettings = {
+        ...ingestionSettings,
+        pendingEmbeddingModel: null,
+        updatedAt: nowIso,
+      };
+      await json(route, ingestionSettings);
       return;
     }
 

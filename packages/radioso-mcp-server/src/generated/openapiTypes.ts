@@ -72,6 +72,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/password-reset/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request a password reset email */
+        post: operations["requestPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm password reset and establish a new session */
+        post: operations["confirmPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/email-verification/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify an email address */
+        post: operations["verifyEmail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/email-verification/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request an email verification email */
+        post: operations["resendEmailVerification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/invitations/{invitationToken}": {
         parameters: {
             query?: never;
@@ -385,6 +453,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/ingestion/embedding-model/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a pending workspace embedding model change */
+        post: operations["cancelPendingEmbeddingModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/ingestion/reprocess": {
         parameters: {
             query?: never;
@@ -467,6 +552,59 @@ export interface paths {
         post: operations["uploadAssistantLogo"];
         /** Remove the default assistant logo */
         delete: operations["deleteAssistantLogo"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List configured workspace provider API keys */
+        get: operations["listWorkspaceProviderCredentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/credentials/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set or replace a workspace provider API key */
+        put: operations["setWorkspaceProviderCredential"];
+        post?: never;
+        /** Remove a stored workspace provider API key */
+        delete: operations["removeWorkspaceProviderCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/llm-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace chat/rewrite/rerank model preferences */
+        get: operations["getWorkspaceLlmModels"];
+        /** Update workspace chat/rewrite/rerank model preferences */
+        put: operations["updateWorkspaceLlmModels"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -714,6 +852,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/document/sources/{sourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a source and all its documents */
+        delete: operations["deleteDocumentSource"];
+        options?: never;
+        head?: never;
+        /** Update a website source's crawl settings */
+        patch: operations["updateDocumentSource"];
+        trace?: never;
+    };
     "/api/v1/document/sources/{sourceId}/recrawl": {
         parameters: {
             query?: never;
@@ -760,23 +916,6 @@ export interface paths {
         /** Resume paused crawl jobs for a website source */
         post: operations["resumeDocumentSourceCrawl"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/document/sources/{sourceId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a source and all its documents */
-        delete: operations["deleteDocumentSource"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1157,6 +1296,8 @@ export interface components {
             workspaceId: string;
             workspaceName: string;
             workspacePublicRouteKey: string;
+            /** @enum {boolean} */
+            requiresEmailVerification: true;
         };
         LoginResponse: {
             /** Format: uuid */
@@ -1168,6 +1309,18 @@ export interface components {
             workspaceId: string;
             workspaceName: string;
             workspacePublicRouteKey: string;
+        };
+        AcceptedResponse: {
+            /** @enum {boolean} */
+            accepted: true;
+        };
+        PasswordResetConfirmResponse: components["schemas"]["LoginResponse"] & {
+            /** Format: email */
+            email: string;
+        };
+        EmailVerificationVerifyResponse: {
+            /** @enum {boolean} */
+            verified: true;
         };
         Workspace: {
             /** Format: uuid */
@@ -1234,6 +1387,25 @@ export interface components {
             preferredWorkspaceId?: string;
             /** Format: uuid */
             preferredAccountId?: string;
+        };
+        PasswordResetRequest: {
+            /** Format: email */
+            email: string;
+        };
+        PasswordResetConfirmRequest: {
+            token: string;
+            password: string;
+            /** Format: uuid */
+            preferredWorkspaceId?: string;
+            /** Format: uuid */
+            preferredAccountId?: string;
+        };
+        EmailVerificationVerifyRequest: {
+            token: string;
+        };
+        EmailVerificationResendRequest: {
+            /** Format: email */
+            email: string;
         };
         InvitationAcceptRequest: {
             /** Format: email */
@@ -1355,7 +1527,6 @@ export interface components {
             similarityThreshold: number;
             rerankTopK: number;
             citationDisplayEnabled: boolean;
-            answerSupportValidationEnabled: boolean;
             /** @default [] */
             metadataFieldSuggestions: {
                 field: string;
@@ -1409,7 +1580,6 @@ export interface components {
             similarityThreshold: number;
             rerankTopK: number;
             citationDisplayEnabled: boolean;
-            answerSupportValidationEnabled?: boolean;
             metadataRules?: {
                 id: string;
                 field?: string;
@@ -1448,7 +1618,6 @@ export interface components {
             similarityThreshold?: number;
             rerankTopK?: number;
             citationDisplayEnabled?: boolean;
-            answerSupportValidationEnabled?: boolean;
             metadataRules?: {
                 id: string;
                 field?: string;
@@ -1481,7 +1650,12 @@ export interface components {
             /** Format: uuid */
             workspaceId: string;
             /** @enum {string} */
-            chunkingStrategy: "fixed_window" | "structured_semantic";
+            chunkingStrategy: "fixed_window" | "structured_semantic" | "recursive_text";
+            /** @enum {string} */
+            embeddingModel: "text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001";
+            /** @enum {string|null} */
+            pendingEmbeddingModel: "text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001" | null;
+            supportedEmbeddingModels: ("text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001")[];
             fixedWindowChunkSize: number;
             fixedWindowChunkOverlap: number;
             structuredMinChunkSize: number;
@@ -1493,11 +1667,13 @@ export interface components {
         };
         UpdateIngestionSettingsRequest: {
             /** @enum {string} */
-            chunkingStrategy: "fixed_window" | "structured_semantic";
+            chunkingStrategy: "fixed_window" | "structured_semantic" | "recursive_text";
             fixedWindowChunkSize: number;
             fixedWindowChunkOverlap: number;
             structuredMinChunkSize: number;
             structuredMaxChunkSize: number;
+            /** @enum {string} */
+            embeddingModel?: "text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001";
         };
         RetrievalMetadataRule: {
             id: string;
@@ -1635,7 +1811,6 @@ export interface components {
             similarityThreshold: number;
             rerankTopK: number;
             citationDisplayEnabled: boolean;
-            answerSupportValidationEnabled: boolean;
             /** @default [] */
             metadataRules: {
                 id: string;
@@ -1723,7 +1898,6 @@ export interface components {
                 similarityThreshold?: number;
                 rerankTopK?: number;
                 citationDisplayEnabled?: boolean;
-                answerSupportValidationEnabled?: boolean;
                 metadataRules?: {
                     id: string;
                     field?: string;
@@ -1773,6 +1947,58 @@ export interface components {
                     [key: string]: string;
                 };
             };
+        };
+        WorkspaceProviderCredentialSummary: {
+            /** @enum {string} */
+            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        WorkspaceProviderCredentialsResponse: {
+            encryptionConfigured: boolean;
+            credentials: components["schemas"]["WorkspaceProviderCredentialSummary"][];
+            envProviderAvailability: {
+                openai: boolean;
+                "openai-compatible": boolean;
+                gemini: boolean;
+                claude: boolean;
+            };
+        };
+        SetWorkspaceProviderCredentialRequest: {
+            apiKey: string;
+        };
+        WorkspaceLlmCapabilityPreference: {
+            /** @enum {string} */
+            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            model: string;
+        } | null;
+        WorkspaceLlmModelsResponse: {
+            chat: components["schemas"]["WorkspaceLlmCapabilityPreference"];
+            rewrite: components["schemas"]["WorkspaceLlmCapabilityPreference"];
+            rerank: components["schemas"]["WorkspaceLlmCapabilityPreference"];
+            knownModelsByProvider: {
+                openai: string[];
+                "openai-compatible": string[];
+                gemini: string[];
+                claude: string[];
+            };
+        };
+        UpdateWorkspaceLlmModelsRequest: {
+            chat?: {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            } | null;
+            rewrite?: {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            } | null;
+            rerank?: {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            } | null;
         };
         Agent: {
             /** Format: uuid */
@@ -1834,6 +2060,10 @@ export interface components {
                 surface: string;
                 text: string;
             };
+            branding: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
+            };
             retrievalEnabled: boolean;
             sourceScope: components["schemas"]["AgentSourceScope"];
             logo: {
@@ -1848,6 +2078,11 @@ export interface components {
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
             assistantBootstrapActive: boolean;
+            chatModelOverride: {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            } | null;
             surfaceSettings: components["schemas"]["ConversationAgentSurfaceSettings"];
         };
         AgentListResponse: {
@@ -1863,6 +2098,10 @@ export interface components {
                 surface?: string;
                 text?: string;
             };
+            branding?: {
+                hidePoweredBy?: boolean;
+                privacyPolicyUrl?: string | null;
+            };
             retrievalEnabled?: boolean;
             sourceScope?: {
                 /** @enum {string} */
@@ -1875,6 +2114,11 @@ export interface components {
             greetingInstruction?: string;
             assistantDefaultLocale?: string | null;
             proactiveGreetingEnabled?: boolean;
+            chatModelOverride?: null | {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            };
             surfaceSettings?: {
                 authenticatedChat?: {
                     enabled?: boolean;
@@ -1921,6 +2165,10 @@ export interface components {
                 brandText: string;
                 surface: string;
                 text: string;
+            };
+            branding?: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
             };
             intakeActions?: {
                 skillName: string;
@@ -1977,6 +2225,13 @@ export interface components {
             name: string;
             externalId: string | null;
         };
+        DocumentSourceCrawlSettings: {
+            url: string | null;
+            limit: number;
+            includeUrlPatterns: string[];
+            excludeUrlPatterns: string[];
+            preserveContentLinks: boolean;
+        };
         DocumentSourceListItem: {
             /** Format: uuid */
             id: string;
@@ -1988,10 +2243,19 @@ export interface components {
             /** Format: date-time */
             lastSyncedAt: string | null;
             documentCount: number;
+            crawlSettings?: components["schemas"]["DocumentSourceCrawlSettings"];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        DocumentSourceUpdateRequest: {
+            crawlSettings?: {
+                limit?: number;
+                includeUrlPatterns?: string[];
+                excludeUrlPatterns?: string[];
+                preserveContentLinks?: boolean;
+            };
         };
         DocumentSourceListResponse: {
             sources: components["schemas"]["DocumentSourceListItem"][];
@@ -2091,6 +2355,8 @@ export interface components {
             metadataFilter?: {
                 [key: string]: string | number | boolean | null;
             };
+            /** @default false */
+            includeDebug: boolean;
         };
         WebsiteCrawlRequest: {
             /** Format: uri */
@@ -2358,7 +2624,9 @@ export interface components {
             query: string;
             resultCount: number;
             results: components["schemas"]["DocumentSearchResult"][];
-            activityTrace?: components["schemas"]["ActivityTrace"];
+            debug?: {
+                activityTrace: components["schemas"]["ActivityTrace"];
+            };
         };
         RetrievalSearchRequest: {
             query: string;
@@ -2366,6 +2634,8 @@ export interface components {
                 [key: string]: unknown;
             };
             topK?: number;
+            /** @default false */
+            includeDebug: boolean;
         };
         RetrievalAnswerRequest: {
             query: string;
@@ -2377,6 +2647,8 @@ export interface components {
             metadataFilter?: {
                 [key: string]: unknown;
             };
+            /** @default false */
+            includeDebug: boolean;
         };
         RetrievalSearchEvidence: {
             /** Format: uuid */
@@ -2398,8 +2670,10 @@ export interface components {
                 lexical: string;
             };
             results: components["schemas"]["RetrievalSearchEvidence"][];
-            activitySummary: components["schemas"]["ActivitySummary"];
-            activityTrace: components["schemas"]["ActivityTrace"];
+            debug?: {
+                activitySummary: components["schemas"]["ActivitySummary"];
+                activityTrace: components["schemas"]["ActivityTrace"];
+            };
         };
         RetrievalAnswerEvidence: {
             /** Format: uuid */
@@ -2417,13 +2691,15 @@ export interface components {
             outcome: "answer";
             answer: string;
             citations?: components["schemas"]["Citation"][];
-            evidence: components["schemas"]["RetrievalAnswerEvidence"][];
             validation: {
                 /** @enum {string} */
                 status: "supported" | "unsupported" | "not_checked";
             };
-            activitySummary: components["schemas"]["ActivitySummary"];
-            activityTrace: components["schemas"]["ActivityTrace"];
+            debug?: {
+                evidence: components["schemas"]["RetrievalAnswerEvidence"][];
+                activitySummary: components["schemas"]["ActivitySummary"];
+                activityTrace: components["schemas"]["ActivityTrace"];
+            };
         };
         RetrievalAnswerUnsupported: {
             /** @enum {string} */
@@ -2559,6 +2835,7 @@ export interface components {
                     maxLength?: number;
                     extractionHint?: string;
                 }[];
+                subjectIdentityField?: string;
                 /** @enum {string} */
                 confirmation: "none" | "before_execute" | "always";
                 /** @enum {string} */
@@ -2601,10 +2878,23 @@ export interface components {
         SkillParams: {
             skillName: string;
         };
+        /** @description Behavior triggered when the user activates the suggestion chip. Absent means ask_followup (default: submit the chip text as a new user turn). */
+        ChatSuggestionAction: {
+            /** @enum {string} */
+            kind: "ask_followup";
+        } | {
+            /** @enum {string} */
+            kind: "start_intent";
+            intent: {
+                skillName: string;
+                intentName?: string;
+            };
+        };
         ChatSuggestion: {
             text: string;
             kind: string;
             citation?: components["schemas"]["Citation"];
+            action?: components["schemas"]["ChatSuggestionAction"];
         };
         AssistantRoute: {
             /** @enum {string} */
@@ -2630,6 +2920,11 @@ export interface components {
             routeReason: "assistant_identity" | "conversation_start" | "evidence_required" | "social_only";
             retrievalInvoked: boolean;
         };
+        AssistantChatDebug: {
+            route: components["schemas"]["AssistantRoute"];
+            activitySummary: components["schemas"]["ActivitySummary"];
+            activityTrace: components["schemas"]["ActivityTrace"];
+        };
         ChatResponse: {
             /** Format: uuid */
             conversationId: string;
@@ -2642,9 +2937,7 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
-            activitySummary: components["schemas"]["ActivitySummary"];
-            activityTrace: components["schemas"]["ActivityTrace"];
-            route: components["schemas"]["AssistantRoute"];
+            debug?: components["schemas"]["AssistantChatDebug"];
         };
         /** @description Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn. */
         ChatBootstrapResponse: {
@@ -2657,9 +2950,7 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
-            activitySummary: components["schemas"]["ActivitySummary"];
-            activityTrace: components["schemas"]["ActivityTrace"];
-            route: components["schemas"]["AssistantRoute"];
+            debug?: components["schemas"]["AssistantChatDebug"];
         };
         AssistantChatResponse: components["schemas"]["ChatResponse"] | components["schemas"]["ChatBootstrapResponse"];
         /** @description `message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`. */
@@ -2673,6 +2964,8 @@ export interface components {
             startConversation: boolean;
             /** @default false */
             stream: boolean;
+            /** @default false */
+            includeDebug: boolean;
             userExpectedLocale?: string;
             inputMetadata?: {
                 /** @enum {string} */
@@ -2749,6 +3042,10 @@ export interface components {
                 surface: string;
                 text: string;
             };
+            branding?: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
+            };
             intakeActions?: {
                 skillName: string;
                 intentName: string;
@@ -2780,27 +3077,6 @@ export interface components {
             nextCursor: null;
             hasMore: boolean;
         };
-        /** @enum {string} */
-        ValidationDisposition: "supported" | "unsupported" | "non_substantive";
-        ValidationSegmentResult: {
-            originalText: string;
-            text: string;
-            disposition: components["schemas"]["ValidationDisposition"];
-            replacementApplied: boolean;
-            reason: string;
-            citationIndices?: number[];
-        };
-        ValidationDebug: {
-            ran: boolean;
-            answerModified: boolean;
-            unsupportedSegmentCount: number;
-            substantiveUnsupportedSegmentCount: number;
-            supportedSegmentCount: number;
-            nonSubstantiveSegmentCount: number;
-            hiddenSupportUsed?: boolean;
-            hiddenSupportKindsUsed?: "assistant_name"[];
-            segmentResults: components["schemas"]["ValidationSegmentResult"][];
-        };
         ChatConversationMessageDebug: {
             /** @enum {string} */
             eventStatus: "success" | "failure";
@@ -2809,9 +3085,8 @@ export interface components {
             stream: boolean;
             citationCount: number;
             /** @enum {string} */
-            answerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
+            answerOutcome?: "grounded_success" | "no_context_refusal" | "non_retrieval_response";
             route?: components["schemas"]["AssistantRouteDiagnostics"];
-            validation?: components["schemas"]["ValidationDebug"];
             activitySummary?: components["schemas"]["ActivitySummary"];
             activityTrace?: components["schemas"]["ActivityTrace"];
             errorMessage?: string | null;
@@ -3018,6 +3293,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Public chat session exchange rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                };
+            };
         };
     };
     registerAccount: {
@@ -3113,6 +3397,156 @@ export interface operations {
             };
             /** @description Unexpected server error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    requestPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Password reset request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptedResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    confirmPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Password reset confirmed and session established */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetConfirmResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Reset token is invalid or expired */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    verifyEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailVerificationVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Email address verified */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailVerificationVerifyResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Verification token is invalid or expired */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resendEmailVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailVerificationResendRequest"];
+            };
+        };
+        responses: {
+            /** @description Email verification request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptedResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4117,6 +4551,35 @@ export interface operations {
             };
         };
     };
+    cancelPendingEmbeddingModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending embedding model change cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestionSettings"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     reprocessWorkspaceIngestion: {
         parameters: {
             query?: never;
@@ -4351,6 +4814,195 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GeneralSettingsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaceProviderCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configured providers and encryption status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceProviderCredentialsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setWorkspaceProviderCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetWorkspaceProviderCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description Credential stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Server-side secret encryption is not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    removeWorkspaceProviderCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Credential removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No credential found for the requested provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceLlmModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace LLM model preferences (null = inherit env default) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceLlmModelsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateWorkspaceLlmModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWorkspaceLlmModelsRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated workspace LLM model preferences */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceLlmModelsResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */
@@ -4891,7 +5543,9 @@ export interface operations {
     };
     getDocumentSearchHistory: {
         parameters: {
-            query?: never;
+            query?: {
+                includeDebug?: boolean;
+            };
             header?: never;
             path: {
                 searchId: string;
@@ -5077,6 +5731,106 @@ export interface operations {
             };
         };
     };
+    deleteDocumentSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Source and documents deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Source cannot be deleted */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDocumentSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DocumentSourceUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Source updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceListItem"];
+                };
+            };
+            /** @description Source is not a website or the manually-added bucket */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     recrawlDocumentSource: {
         parameters: {
             query?: never;
@@ -5196,58 +5950,12 @@ export interface operations {
                 content: {
                     "application/json": {
                         resumedJobCount: number;
+                        pendingResumeJobCount: number;
                         resumeDispatchFailureCount: number;
                     };
                 };
             };
             /** @description Source is not a website source */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Source not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    deleteDocumentSource: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sourceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Source and documents deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Source cannot be deleted */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -5983,7 +6691,9 @@ export interface operations {
     };
     getHistorySearch: {
         parameters: {
-            query?: never;
+            query?: {
+                includeDebug?: boolean;
+            };
             header?: never;
             path: {
                 searchId: string;

@@ -1,16 +1,17 @@
 import type { Router } from "express";
 
 export interface ApplicationModuleRegistrationContext {
-  registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
   registerDatabaseMigrator(migrator: ApplicationDatabaseMigrator): void;
   registerRouteMount(mount: ApplicationRouteMount): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
+  registerUsageEventRecorder?(recorder: ApplicationUsageEventRecorderRegistration): void;
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHandler): void;
   registerChatIntakeProvider?(provider: ApplicationChatIntakeProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillDefinition?(definition: SkillDefinition): void;
   registerAgentSurfaceExtension?(extension: AgentSurfaceExtension): void;
+  registerChatActionSuggestionProvider?(provider: ApplicationChatActionSuggestionProviderRegistration): void;
 }
 
 /**
@@ -79,6 +80,7 @@ export interface SkillDefinition {
       maxLength?: number;
       extractionHint?: string;
     }>;
+    subjectIdentityField?: string;
     confirmation: "none" | "before_execute" | "always";
     interruptionPolicy: "pause_and_resume" | "cancel_on_topic_change";
   };
@@ -121,14 +123,25 @@ export interface SkillDefinition {
   }>;
 }
 
-export interface WebsiteEmbedIntegrationProvider {
-  buildScriptUrl(): string | null;
-  buildSnippet(workspace: WebsiteEmbedIntegrationWorkspace): string | null;
-}
-
 export interface UsageLimitReservation {
   commit(): Promise<void>;
   release(): Promise<void>;
+}
+
+export interface IndexedStorageReservationInput {
+  accountId?: string | null;
+  workspaceId: string;
+  contentSizeBytes: number;
+  sourceKind?: string;
+  externalDocumentId?: string | null;
+}
+
+export interface MonthlyIndexedContentReservationInput {
+  accountId?: string | null;
+  workspaceId: string;
+  contentSizeBytes: number;
+  sourceKind?: string;
+  externalDocumentId?: string | null;
 }
 
 export interface UsageLimitPolicy {
@@ -143,6 +156,8 @@ export interface UsageLimitPolicy {
     sourceKind: string;
     externalDocumentId?: string | null;
   }): Promise<UsageLimitReservation>;
+  reserveIndexedStorage(input: IndexedStorageReservationInput): Promise<UsageLimitReservation>;
+  reserveMonthlyIndexedContent(input: MonthlyIndexedContentReservationInput): Promise<UsageLimitReservation>;
 }
 
 export interface ApplicationDatabasePort {
@@ -226,6 +241,7 @@ export interface ApplicationRouteMount {
     crawlerProvider?: AgentWizardCrawlerPort;
     assertPublicWebsiteUrl?: AgentWizardUrlPolicy;
     websiteCrawlerLimits?: AgentWizardCrawlerLimits;
+    mailService: MailTransport;
   }): Router;
 }
 
@@ -342,6 +358,69 @@ export type ApplicationUsageLimitPolicyRegistration =
       };
     }) => UsageLimitPolicy);
 
+export interface RecordedEmbeddingEvent {
+  idempotencyKey: string;
+  accountId?: string | null;
+  workspaceId: string;
+  sourceId?: string | null;
+  documentId: string;
+  documentRevision: number;
+  jobId?: string | null;
+  provider: string;
+  model: string;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  inputBytes: number;
+  vectorCount: number;
+  status: "succeeded" | "failed";
+  usageQuality: "actual" | "estimated";
+  providerRequestId?: string | null;
+  errorCode?: string | null;
+  occurredAt?: Date;
+  chunks?: Array<{
+    chunkIndex: number;
+    chunkId?: string | null;
+    contentBytes: number;
+    estimatedTokens?: number | null;
+  }>;
+}
+
+export interface RecordedModelCallEvent {
+  idempotencyKey: string;
+  accountId?: string | null;
+  workspaceId: string;
+  conversationId?: string | null;
+  messageId?: string | null;
+  surface: string;
+  operation: string;
+  provider: string;
+  model: string;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  inputBytes?: number | null;
+  outputBytes?: number | null;
+  status: "succeeded" | "failed";
+  usageQuality: "actual" | "estimated";
+  providerRequestId?: string | null;
+  errorCode?: string | null;
+  occurredAt?: Date;
+}
+
+export interface UsageEventRecorderPort {
+  recordEmbedding(event: RecordedEmbeddingEvent): Promise<void>;
+  recordModelCall(event: RecordedModelCallEvent): Promise<void>;
+}
+
+export type ApplicationUsageEventRecorderRegistration =
+  | UsageEventRecorderPort
+  | ((context: {
+      database: UsageLimitDatabasePort;
+      logger: {
+        error(entry: unknown, message?: string): void;
+      };
+    }) => UsageEventRecorderPort);
+
 export type ActivityStageStatus = "applied" | "skipped" | "fallback" | "rejected" | "unavailable" | "failed";
 
 export interface ActivityStage {
@@ -454,6 +533,74 @@ export interface ChatGateway {
   answer(input: { query: string; history: Array<{ role: string; content: string }>; prompt: string; systemPrompt?: string }): Promise<string>;
 }
 
+export type AssistantTurnOutcomeName =
+  | "grounded_success"
+  | "no_context_refusal"
+  | "non_retrieval_response";
+
+export interface ChatActionSuggestion {
+  text: string;
+  kind: string;
+  citation?: {
+    documentId: string;
+    chunkId?: string;
+    title: string;
+  };
+  action?:
+    | { kind: "ask_followup" }
+    | {
+        kind: "start_intent";
+        intent: {
+          skillName: string;
+          intentName?: string;
+        };
+      };
+}
+
+export interface ChatActionSuggestionContext {
+  workspaceId: string;
+  conversationId: string;
+  agentId?: string;
+  query: string;
+  answer: string;
+  answerOutcome: AssistantTurnOutcomeName;
+  history: Array<{
+    id: string;
+    role: "user" | "assistant" | "system";
+    content: string;
+    createdAt: Date;
+  }>;
+  userExpectedLocale?: string;
+  sourceChannel?: string | null;
+  sourceOrigin?: string | null;
+}
+
+export interface ChatActionSuggestionProvider {
+  readonly name: string;
+  evaluate(context: ChatActionSuggestionContext): Promise<ChatActionSuggestion | null>;
+}
+
+export type ApplicationChatActionSuggestionProviderRegistration =
+  | ChatActionSuggestionProvider
+  | ((context: {
+      database: UsageLimitDatabasePort;
+      chatGateway: ChatGateway;
+      logger: {
+        info?(entry: unknown, message?: string): void;
+        warn?(entry: unknown, message?: string): void;
+        error(entry: unknown, message?: string): void;
+      };
+      auditService: {
+        record(input: {
+          accountId?: string | null;
+          workspaceId?: string | null;
+          eventType: string;
+          eventStatus: "success" | "failure";
+          metadata?: Record<string, unknown>;
+        }): Promise<void>;
+      };
+    }) => ChatActionSuggestionProvider);
+
 export type ApplicationChatIntakeProviderRegistration =
   | ChatIntakeProvider
   | ((context: {
@@ -488,6 +635,13 @@ export type ApplicationChatIntakeProviderRegistration =
           createdAt: Date;
         }>>;
       };
+      workspaceContactInfoRepository: {
+        findById(workspaceId: string): Promise<{
+          id: string;
+          name: string;
+          publicRouteKey: string;
+        } | null>;
+      };
       auditService: {
         record(input: {
           accountId?: string | null;
@@ -506,7 +660,20 @@ export type ApplicationChatIntakeProviderRegistration =
           blockMs?: number;
         }): Promise<void>;
       };
+      mailService: MailTransport;
+      dashboardBaseUrl: string | null;
     }) => ChatIntakeProvider);
+
+export interface MailTransport {
+  send(message: {
+    to: string;
+    replyTo?: string | null;
+    subject: string;
+    text: string;
+    html?: string;
+    metadata?: Record<string, string>;
+  }): Promise<void>;
+}
 
 export interface ContactHistorySummary {
   id: string;
@@ -583,13 +750,3 @@ export type ApplicationAnswerFeedbackHistoryProviderRegistration =
         error(entry: unknown, message?: string): void;
       };
     }) => AnswerFeedbackHistoryProvider);
-
-export interface WebsiteEmbedIntegrationWorkspace {
-  name: string;
-  assistantName: string;
-  websiteEmbedEnabled: boolean;
-  websiteEmbedToken: string | null;
-  websiteEmbedAllowedOrigins: string[];
-  websiteEmbedLauncherLabel: string;
-  websiteEmbedLauncherPosition: string;
-}

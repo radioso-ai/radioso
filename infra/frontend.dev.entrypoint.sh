@@ -3,10 +3,6 @@ set -eu
 
 cd /app
 
-if [ "${RADIOSO_EDITION:-oss}" != "enterprise" ]; then
-  rm -rf frontend/app/embed frontend/app/api/embed frontend/app/radioso-embed.js
-fi
-
 INSTALL_STATE_FILE="frontend/node_modules/.install-state"
 NEXT_CACHE_STATE_FILE="frontend/.next/.install-state"
 CURRENT_HASH="$(sha256sum pnpm-lock.yaml | awk '{print $1}')"

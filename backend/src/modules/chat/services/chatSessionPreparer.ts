@@ -7,7 +7,7 @@ import type { AuditService } from "../../audit/contracts/index.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { RetrievalPipelineService, RewriteContinuityState } from "../../retrieval/public.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
-import { isAgentRetrievalEnabled } from "../../agents/public.js";
+import { defaultAgentBrandingSettings, isAgentRetrievalEnabled } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
@@ -193,7 +193,6 @@ export class ChatSessionPreparer {
         responseIdentity: input.responseIdentity ?? null,
         responseSettings: {
           citationDisplayEnabled: false,
-          answerSupportValidationEnabled: false,
           suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
           suggestedQuestionsCount: 3,
           customInstruction: agent.customInstruction,
@@ -263,9 +262,11 @@ export class ChatSessionPreparer {
         logo: null,
         // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
         theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
+        branding: defaultAgentBrandingSettings(),
         greetingInstruction: "",
         assistantDefaultLocale: null,
         proactiveGreetingEnabled: false,
+        chatModelOverride: null,
         surfaceSettings: {
           authenticatedChat: {
             enabled: true,
@@ -307,9 +308,11 @@ export class ChatSessionPreparer {
       logo: null,
       // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
       theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
+      branding: defaultAgentBrandingSettings(),
       greetingInstruction: workspace.greetingInstruction,
       assistantDefaultLocale: workspace.assistantDefaultLocale,
       proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
+      chatModelOverride: null,
       surfaceSettings: {
         authenticatedChat: {
           enabled: true,

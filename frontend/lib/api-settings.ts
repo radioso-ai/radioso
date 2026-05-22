@@ -48,7 +48,6 @@ export const settingsApi = {
           similarityThreshold: payload.similarityThreshold,
           rerankTopK: payload.rerankTopK,
           citationDisplayEnabled: payload.citationDisplayEnabled,
-          answerSupportValidationEnabled: payload.answerSupportValidationEnabled,
           metadataRules: payload.metadataRules,
         },
       }),
@@ -67,6 +66,7 @@ export const settingsApi = {
       method: "PUT",
       body: JSON.stringify({
         chunkingStrategy: data.chunkingStrategy,
+        embeddingModel: data.embeddingModel,
         fixedWindowChunkSize: data.fixedWindowChunkSize,
         fixedWindowChunkOverlap: data.fixedWindowChunkOverlap,
         structuredMinChunkSize: data.structuredMinChunkSize,
@@ -77,6 +77,12 @@ export const settingsApi = {
 
   async reprocessWorkspaceIngestion(): Promise<WorkspaceIngestionReprocessResponse> {
     return request<WorkspaceIngestionReprocessResponse>("/settings/ingestion/reprocess", {
+      method: "POST",
+    }, { withApiToken: true })
+  },
+
+  async cancelPendingEmbeddingModel(): Promise<IngestionSettings> {
+    return request<IngestionSettings>("/settings/ingestion/embedding-model/cancel", {
       method: "POST",
     }, { withApiToken: true })
   }
@@ -269,7 +275,10 @@ export const agentsApi = {
       suggestedQuestionsEnabled: data.suggestedQuestionsEnabled,
       customInstruction: data.customInstruction,
       theme: data.theme,
+      branding: data.branding,
       sourceScope: data.sourceScope,
+      // null = clear back to workspace fallback; undefined = leave unchanged.
+      chatModelOverride: data.chatModelOverride === undefined ? undefined : data.chatModelOverride,
     }))
   },
 

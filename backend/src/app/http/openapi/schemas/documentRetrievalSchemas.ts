@@ -28,6 +28,17 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     }),
   );
 
+  const DocumentSourceCrawlSettingsSchema = registry.register(
+    "DocumentSourceCrawlSettings",
+    z.object({
+      url: z.string().nullable(),
+      limit: z.number().int().min(1),
+      includeUrlPatterns: z.array(z.string()),
+      excludeUrlPatterns: z.array(z.string()),
+      preserveContentLinks: z.boolean(),
+    }),
+  );
+
   const DocumentSourceListItemSchema = registry.register(
     "DocumentSourceListItem",
     z.object({
@@ -38,8 +49,23 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       lastSyncStatus: z.string().nullable(),
       lastSyncedAt: z.string().datetime().nullable(),
       documentCount: z.number().int().min(0),
+      crawlSettings: DocumentSourceCrawlSettingsSchema.optional(),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
+    }),
+  );
+
+  const DocumentSourceUpdateRequestSchema = registry.register(
+    "DocumentSourceUpdateRequest",
+    z.object({
+      crawlSettings: z
+        .object({
+          limit: z.number().int().min(1).optional(),
+          includeUrlPatterns: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+          excludeUrlPatterns: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+          preserveContentLinks: z.boolean().optional(),
+        })
+        .optional(),
     }),
   );
 
@@ -422,7 +448,9 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       query: z.string(),
       resultCount: z.number().int().min(0),
       results: z.array(DocumentSearchResultSchema),
-      activityTrace: ActivityTraceSchema.optional(),
+      debug: z.object({
+        activityTrace: ActivityTraceSchema,
+      }).optional(),
     }),
   );
 
@@ -450,8 +478,10 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
         lexical: z.string(),
       }),
       results: z.array(RetrievalSearchEvidenceSchema),
-      activitySummary: ActivitySummarySchema,
-      activityTrace: ActivityTraceSchema,
+      debug: z.object({
+        activitySummary: ActivitySummarySchema,
+        activityTrace: ActivityTraceSchema,
+      }).optional(),
     }),
   );
 
@@ -472,12 +502,14 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       outcome: z.literal("answer"),
       answer: z.string(),
       citations: z.array(CitationSchema).optional(),
-      evidence: z.array(RetrievalAnswerEvidenceSchema),
       validation: z.object({
         status: z.enum(["supported", "unsupported", "not_checked"]),
       }),
-      activitySummary: ActivitySummarySchema,
-      activityTrace: ActivityTraceSchema,
+      debug: z.object({
+        evidence: z.array(RetrievalAnswerEvidenceSchema),
+        activitySummary: ActivitySummarySchema,
+        activityTrace: ActivityTraceSchema,
+      }).optional(),
     }),
   );
 
@@ -516,7 +548,9 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     RagStatusSchema,
     DocumentCreateRequestSchema,
     DocumentSourceSummarySchema,
+    DocumentSourceCrawlSettingsSchema,
     DocumentSourceListItemSchema,
+    DocumentSourceUpdateRequestSchema,
     DocumentSourceListResponseSchema,
     DocumentImportRequestSchema,
     DocumentOperationResponseSchema,

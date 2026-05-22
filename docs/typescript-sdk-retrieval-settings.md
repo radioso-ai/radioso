@@ -38,8 +38,6 @@ await client.settings.updateRetrieval({
   vectorTopK: 20,
   similarityThreshold: 0.2,
   rerankTopK: 20,
-  citationDisplayEnabled: true,
-  answerSupportValidationEnabled: true,
   metadataRules: [],
   customInstruction: "",
 });
@@ -54,10 +52,8 @@ For most teams:
 - `vectorTopK: 20`
 - `similarityThreshold: 0.2`
 - `rerankTopK: 20`
-- `citationDisplayEnabled: true`
-- `answerSupportValidationEnabled: true`
 
-This is a safe default: look for a good set of matches, reorder them, show citations, and stay conservative when the system is not confident.
+This is a safe default: look for a good set of matches, then reorder them before answer generation.
 
 ## What The Main Settings Mean
 
@@ -114,21 +110,6 @@ Controls how many matches continue into the reorder step.
 Recommendation:
 - Start at `20`.
 - Increase only if you have enough useful candidates to justify it.
-
-### `citationDisplayEnabled`
-
-Controls whether citations are included in responses.
-
-Recommendation:
-- Keep this on for debugging, evaluation, and most document-backed answers.
-
-### `answerSupportValidationEnabled`
-
-Controls whether answer segments are checked against available support before the response is presented.
-
-Recommendation:
-- Keep this on for customer-facing agents and evaluation.
-- Turn it off only when you are intentionally debugging generation behavior without the validation pass.
 
 ### `metadataRules`
 

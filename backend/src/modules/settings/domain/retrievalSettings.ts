@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { badRequest } from "../../../shared/domain/errors.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isDynamicDateToken, normalizeDateRuleValue } from "./dynamicDateToken.js";
 
 export const metadataRuleOperators = [
@@ -66,7 +67,6 @@ interface RetrievalSettingsPayload {
   lexicalRewriteInstructions?: unknown;
   suggestedQuestionsEnabled?: unknown;
   suggestedQuestionsCount?: unknown;
-  answerSupportValidationEnabled?: unknown;
 }
 
 interface LegacyMetadataRule {
@@ -95,7 +95,6 @@ export interface RetrievalSettingsRecord {
   similarityThreshold: number;
   rerankTopK: number;
   citationDisplayEnabled: boolean;
-  answerSupportValidationEnabled?: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
   createdAt: Date;
@@ -113,17 +112,18 @@ export interface RetrievalSettingsInput {
   similarityThreshold: number;
   rerankTopK: number;
   citationDisplayEnabled: boolean;
-  answerSupportValidationEnabled?: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
 }
 
 // Kept for internal retrieval tests that still exercise query-derived attribute logic.
-export const DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS =
-  "Rewrite for semantic retrieval with the same meaning. Keep the query standalone, preserve proper nouns and technical terms, and avoid adding new topics.";
+export const DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS = loadPromptTemplate(
+  "retrieval/semantic-rewrite-instructions.md",
+);
 
-export const DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS =
-  "Rewrite for lexical retrieval using exact literals likely to appear in the corpus. Prefer aliases, abbreviations, citation forms, and corpus-native notation when grounded.";
+export const DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS = loadPromptTemplate(
+  "retrieval/lexical-rewrite-instructions.md",
+);
 
 export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettingsRecord => ({
   workspaceId,
@@ -137,7 +137,6 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   similarityThreshold: RETRIEVAL_BEHAVIOR.defaultSimilarityThreshold,
   rerankTopK: 5,
   citationDisplayEnabled: true,
-  answerSupportValidationEnabled: true,
   metadataRules: [],
   customInstruction: "",
   createdAt: new Date(),
@@ -353,13 +352,6 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   if (!Array.isArray(input.metadataRules)) {
     throw badRequest("metadataRules must be an array");
   }
-  if (
-    typeof input.answerSupportValidationEnabled !== "undefined" &&
-    typeof input.answerSupportValidationEnabled !== "boolean"
-  ) {
-    throw badRequest("answerSupportValidationEnabled must be a boolean");
-  }
-
   const seenRuleIds = new Set<string>();
   for (const rule of input.metadataRules) {
     const conditions = getNormalizedMetadataConditions(rule);
@@ -461,7 +453,6 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
       MIN_SUGGESTED_QUESTIONS_COUNT,
       Math.min(MAX_SUGGESTED_QUESTIONS_COUNT, input.suggestedQuestionsCount),
     ),
-    answerSupportValidationEnabled: input.answerSupportValidationEnabled ?? true,
     metadataRules: input.metadataRules.map((rule) => ({
       ...rule,
       field: getNormalizedMetadataConditions(rule)[0]?.field ?? "",

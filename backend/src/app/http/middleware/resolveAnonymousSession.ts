@@ -6,12 +6,15 @@ import { AppError, notFound } from "../../../shared/domain/errors.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import type { AgentRecord, AgentService } from "../../../modules/agents/public.js";
-import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../../modules/agents/public.js";
+import { defaultAgentBrandingSettings, getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../../modules/agents/public.js";
 import {
   resolveAssistantDisplayName,
 } from "../../../modules/settings/contracts/assistantBootstrap.js";
 import { defaultWebsiteEmbedSettings } from "../../../modules/settings/contracts/websiteEmbed.js";
-import { verifyPublicChatSession } from "../../../modules/settings/contracts/publicChatSession.js";
+import {
+  publicChatSessionMatchesLaunchToken,
+  verifyPublicChatSession,
+} from "../../../modules/settings/contracts/publicChatSession.js";
 
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 export const ANONYMOUS_SESSION_HEADER = "x-radioso-anonymous-session";
@@ -22,7 +25,7 @@ const anonymousTokenParamsSchema = z.object({
   token: z.string().min(1),
 });
 
-type PublicSessionAgent = Pick<AgentRecord, "id" | "workspaceId" | "name" | "logo" | "theme" | "proactiveGreetingEnabled" | "surfaceSettings">;
+type PublicSessionAgent = Pick<AgentRecord, "id" | "workspaceId" | "name" | "logo" | "theme" | "branding" | "proactiveGreetingEnabled" | "surfaceSettings">;
 
 const isLoopbackHost = (host: string | undefined) => {
   if (!host) {
@@ -50,8 +53,18 @@ export const shouldUseSecureAnonymousCookie = (req: Request) => {
   return !isLoopbackHost(req.get("host"));
 };
 
+// Derive a per-purpose HMAC key so the rate-limit cookie cannot be forged or
+// substituted using any other HMAC produced from the same root secret (the
+// secret is also used to issue public chat session tokens). The label is a
+// stable domain-separation tag; bumping the version invalidates outstanding
+// rate-limit cookies on rotation.
+const RATE_LIMIT_COOKIE_KEY_LABEL = "radioso/anonymous-rate-limit-cookie/v1";
+
+const deriveRateLimitCookieKey = (secret: string): Buffer =>
+  createHmac("sha256", secret).update(RATE_LIMIT_COOKIE_KEY_LABEL).digest();
+
 const signRateLimitId = (secret: string, id: string) =>
-  createHmac("sha256", secret).update(id).digest("base64url");
+  createHmac("sha256", deriveRateLimitCookieKey(secret)).update(id).digest("base64url");
 
 const issueAnonymousRateLimitCookie = (secret: string, id: string) => `${id}.${signRateLimitId(secret, id)}`;
 
@@ -106,6 +119,7 @@ const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionA
     logo: null,
     // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
     theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
+    branding: defaultAgentBrandingSettings(),
     proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
     surfaceSettings: {
       authenticatedChat: {
@@ -187,7 +201,7 @@ export const resolveAnonymousSession = (
         agent &&
         publicSession.workspaceId === workspace.id &&
         agent.workspaceId === workspace.id &&
-        publicSession.publicChatToken === token &&
+        publicChatSessionMatchesLaunchToken(publicSession, publicChatSessionSecret, token) &&
         publicSessionMatchesAgentSurface(agent, token, publicSession.sourceChannel),
       );
 
@@ -236,6 +250,7 @@ export const resolveAnonymousSession = (
       res.locals.assistantBootstrapActive = isAgentBootstrapActive(agent);
       res.locals.assistantLogoAvailable = Boolean(agent.logo);
       res.locals.assistantTheme = agent.theme;
+      res.locals.assistantBranding = agent.branding;
       next();
     } catch (error) {
       next(error);

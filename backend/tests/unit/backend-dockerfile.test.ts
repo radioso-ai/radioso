@@ -17,3 +17,32 @@ describe("backend Dockerfile", () => {
     );
   });
 });
+
+describe("frontend Dockerfiles", () => {
+  it("includes the enterprise workspace manifest for Cloud Run frontend builds", async () => {
+    const repoRoot = path.resolve(new URL("../../..", import.meta.url).pathname);
+    const dockerfile = await readFile(path.join(repoRoot, "infra/frontend.Dockerfile"), "utf8");
+
+    expect(dockerfile).toContain("COPY ee/package.json ./ee/package.json");
+    expect(dockerfile).toContain("RUN pnpm --dir frontend run build");
+  });
+
+  it("include shared UI workspace inputs for isolated frontend builds", async () => {
+    const repoRoot = path.resolve(new URL("../../..", import.meta.url).pathname);
+    const dockerfile = await readFile(path.join(repoRoot, "frontend/Dockerfile"), "utf8");
+
+    expect(dockerfile).toContain("COPY packages/ui/package.json ./packages/ui/package.json");
+    expect(dockerfile).toContain("COPY packages/ui ./packages/ui");
+    expect(dockerfile).toContain("COPY --from=builder /app/packages/ui ./packages/ui");
+  });
+
+  it("includes shared UI and OpenAPI inputs for isolated docs portal builds", async () => {
+    const repoRoot = path.resolve(new URL("../../..", import.meta.url).pathname);
+    const dockerfile = await readFile(path.join(repoRoot, "docs-portal/Dockerfile"), "utf8");
+
+    expect(dockerfile).toContain("COPY backend/openapi.json ./backend/openapi.json");
+    expect(dockerfile).toContain("COPY packages/ui/package.json ./packages/ui/package.json");
+    expect(dockerfile).toContain("COPY packages/ui ./packages/ui");
+    expect(dockerfile).toContain("COPY --from=builder /app/packages/ui ../packages/ui");
+  });
+});

@@ -719,7 +719,7 @@ describe("chat integration", () => {
     expect(response.body).toMatchObject({
       error: {
         code: "service_unavailable",
-        message: "The configured AI provider rejected the credentials. Update .env and restart Radioso.",
+        message: "The AI provider rejected the credentials. Replace the workspace API key at Settings → Credentials, or update the matching environment variable (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENAI_COMPATIBLE_API_KEY) and restart Radioso.",
       },
     });
   });
@@ -1092,7 +1092,7 @@ describe("chat integration", () => {
     });
   });
 
-  it("records validator-triggered degradation in assistant-turn audit metadata", async () => {
+  it("records grounded answers in assistant-turn audit metadata without validation diagnostics", async () => {
     const mixedGateway: ChatGateway = {
       async answer() {
         return "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support.";
@@ -1122,24 +1122,12 @@ describe("chat integration", () => {
 
     expect(response.status).toBe(200);
     expect(chatAudit?.metadata).toMatchObject({
-      answerOutcome: "grounded_degraded_unsupported_segments",
-      validation: {
-        ran: true,
-        answerModified: true,
-        unsupportedSegmentCount: 1,
-        substantiveUnsupportedSegmentCount: 1,
-        supportedSegmentCount: 1,
-        nonSubstantiveSegmentCount: expect.any(Number),
-      },
+      answerOutcome: "grounded_success",
     });
-    const validation = chatAudit?.metadata?.validation as
-      | { segmentResults?: Array<Record<string, unknown>> }
-      | undefined;
-    expect(validation?.segmentResults?.every((segment) => !("content" in segment))).toBe(true);
-    expect(validation?.segmentResults?.every((segment) => "originalText" in segment)).toBe(true);
+    expect(chatAudit?.metadata).not.toHaveProperty("validation");
   });
 
-  it("keeps no-context refusals distinct from validator-triggered degradation in audit metadata", async () => {
+  it("keeps no-context refusals distinct in audit metadata", async () => {
     const { app, dependencies } = createTestApp();
 
     const { token } = await issueTestToken(app, "no-context-outcome@example.com");
@@ -1156,15 +1144,8 @@ describe("chat integration", () => {
     expect(response.status).toBe(200);
     expect(chatAudit?.metadata).toMatchObject({
       answerOutcome: "no_context_refusal",
-      validation: {
-        ran: false,
-        answerModified: false,
-        unsupportedSegmentCount: 0,
-        substantiveUnsupportedSegmentCount: 0,
-        supportedSegmentCount: 0,
-        nonSubstantiveSegmentCount: 0,
-      },
     });
+    expect(chatAudit?.metadata).not.toHaveProperty("validation");
   });
 
   it("records a failure turn that can be inspected through history", async () => {
@@ -2106,7 +2087,7 @@ describe("chat integration", () => {
     expect(response.body.answer.length).toBeGreaterThan(0);
   });
 
-  it("omits citation metadata when citation display is disabled", async () => {
+  it("emits citation metadata regardless of the legacy citationDisplayEnabled setting", async () => {
     const { app } = createTestApp();
 
     const { token } = await issueTestToken(app, "no-citations@example.com");
@@ -2138,8 +2119,8 @@ describe("chat integration", () => {
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
     expect(response.body.answer.length).toBeGreaterThan(0);
-    expect(response.body).not.toHaveProperty("citations");
-    expect(response.body).not.toHaveProperty("answerSegments");
+    expect(Array.isArray(response.body.citations)).toBe(true);
+    expect(response.body.citations.length).toBeGreaterThan(0);
   });
 
   it("falls back safely when rerank fails", async () => {

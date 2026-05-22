@@ -60,12 +60,16 @@ export function DashboardTableBody({ children }: { children: ReactNode }) {
 export function DashboardTableRow({
   children,
   className,
+  ...rowProps
 }: {
   children: ReactNode
   className?: string
-}) {
+} & Omit<ComponentPropsWithoutRef<'tr'>, 'className'>) {
   return (
-    <tr className={cn('border-b border-border last:border-b-0 hover:bg-accent/20', className)}>
+    <tr
+      {...rowProps}
+      className={cn('border-b border-border last:border-b-0 hover:bg-accent/20', className)}
+    >
       {children}
     </tr>
   )

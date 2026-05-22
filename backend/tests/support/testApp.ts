@@ -3,11 +3,14 @@ import { setTimeout as delay } from "node:timers/promises";
 import request from "supertest";
 import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
+import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";
 
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
+import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
+import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
@@ -28,7 +31,9 @@ import { DocumentSourceContentService } from "../../src/modules/documents/servic
 import { WorkspaceIngestionReprocessService } from "../../src/modules/documents/services/workspaceIngestionReprocessService.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
-import { StructuredSemanticChunkingStrategy, type ChunkingSimilarityPort } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
+import { RecursiveTextChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/recursiveTextChunkingStrategy.js";
+import { StructuredSemanticChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
+import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
 import type { LexicalSearchPort } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import { AttributeMatchScoringService } from "../../src/modules/retrieval/services/attributeMatchScoringService.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
@@ -56,6 +61,8 @@ import { WorkspaceSessionService } from "../../src/modules/auth/services/workspa
 import { ConnectorRegistry } from "../../src/modules/connectors/services/connectorRegistry.js";
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
 import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
+import { WorkspaceProviderCredentialsService } from "../../src/modules/security/credentials/services/workspaceProviderCredentialsService.js";
+import { WorkspaceLlmCapabilitySettingsService } from "../../src/modules/settings/services/workspaceLlmCapabilitySettingsService.js";
 import { buildAnalyticsSinks } from "../../src/shared/analytics/buildAnalyticsSinks.js";
 import { ProductAnalyticsService } from "../../src/shared/analytics/productAnalyticsService.js";
 import { buildIncidentSinks } from "../../src/shared/incidents/buildIncidentSinks.js";
@@ -101,10 +108,13 @@ import {
   InMemoryMessageRepository,
   InMemoryRetrievalSettingsRepository,
   InMemorySessionRepository,
+  InMemoryEmailVerificationTokenRepository,
+  InMemoryPasswordResetTokenRepository,
   InMemoryWorkspaceRepository,
   InMemoryAgentRepository,
   InMemoryConnectorDatabase,
   InMemoryAbuseControlRepository,
+  InMemoryWorkspaceProviderCredentialsRepository,
 } from "./fakes.js";
 
 export const createTestEnv = (): Env => ({
@@ -143,6 +153,8 @@ export const createTestEnv = (): Env => ({
   SESSION_TTL_HOURS: 168,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
+  PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
+  EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: 30,
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
   WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 30,
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
@@ -179,7 +191,6 @@ export const createTestEnv = (): Env => ({
   RADIOSO_MCP_ALLOWED_READ_TOOLS: undefined,
   RADIOSO_MCP_ALLOWED_WRITE_TOOLS: undefined,
   RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: undefined,
-  RADIOSO_MCP_APPROVAL_TTL_SECONDS: 300,
   RADIOSO_MCP_AUDIT_LOG_PATH: undefined,
   RADIOSO_MCP_BIND_HOST: "127.0.0.1",
   RADIOSO_MCP_BIND_PORT: 8787,
@@ -193,6 +204,7 @@ export const createTestEnv = (): Env => ({
 
 interface TestRepositories {
   auditEventRepository: InMemoryAuditEventRepository;
+  userRepository: InMemoryUserRepository;
   ingestionSettingsRepository: InMemoryIngestionSettingsRepository;
   retrievalSettingsRepository: InMemoryRetrievalSettingsRepository;
   documentRepository: InMemoryDocumentRepository;
@@ -204,21 +216,9 @@ interface TestRepositories {
 }
 
 const appDependencyMap = new WeakMap<object, AppDependencies>();
+const appRepositoryMap = new WeakMap<object, TestRepositories>();
 
 class TestGroundedMissResponseComposer implements GroundedMissResponseComposer {
-  async composeUnsupportedWithContext(input: {
-    query: string;
-    unsupportedText: string;
-    contexts: Array<{ title: string; content: string }>;
-  }): Promise<string> {
-    const title = input.contexts.find((context) => context.title.trim().length > 0)?.title.trim();
-    if (title) {
-      return `I couldn't verify that from your workspace documents, but I did find related material in "${title}" if you'd like to explore that instead.`;
-    }
-
-    return "I couldn't find supporting material for that in your workspace documents, but I did find related material if you'd like to explore that instead.";
-  }
-
   async composeNoContext(): Promise<string> {
     return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
   }
@@ -226,7 +226,6 @@ class TestGroundedMissResponseComposer implements GroundedMissResponseComposer {
 
 export const createTestDependencies = (overrides: {
   chatGateway?: ChatGateway;
-  chunkingSimilarityPort?: ChunkingSimilarityPort;
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
   triggerAnalysisGateway?: TriggerAnalysisGateway;
@@ -395,16 +394,11 @@ export const createTestDependencies = (overrides: {
       return embeddingGateway.embedTexts(texts);
     },
   });
-  const chunkingSimilarityPort =
-    overrides.chunkingSimilarityPort ??
-    ({
-      async embedTexts(texts: string[]): Promise<number[][]> {
-        return texts.map((text) => keywordEmbedding(text));
-      },
-    } satisfies ChunkingSimilarityPort);
+  const chunkingProvider = new ChonkieChunkingProvider(embeddingService);
   const chunkingStrategyRegistry = new ChunkingStrategyRegistry([
-    new FixedWindowChunkingStrategy(),
-    new StructuredSemanticChunkingStrategy(chunkingSimilarityPort),
+    new FixedWindowChunkingStrategy(chunkingProvider),
+    new StructuredSemanticChunkingStrategy(chunkingProvider),
+    new RecursiveTextChunkingStrategy(chunkingProvider),
   ]);
   const defaultQueryRewriteGateway: QueryRewriteGateway = {
     async rewrite(input) {
@@ -466,7 +460,14 @@ export const createTestDependencies = (overrides: {
     },
   };
   const rerankGateway = overrides.rerankGateway ?? defaultRerankGateway;
-  const ingestionSettingsService = new IngestionSettingsService(ingestionSettingsRepository, auditService);
+  const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
+  const ingestionSettingsService = new IngestionSettingsService(
+    ingestionSettingsRepository,
+    auditService,
+    documentRepository,
+    undefined,
+    workspaceIngestionReprocessService,
+  );
   const retrievalSettingsService = new RetrievalSettingsService(
     retrievalSettingsRepository,
     auditService,
@@ -514,7 +515,6 @@ export const createTestDependencies = (overrides: {
     usageLimitPolicy,
     documentSourceRepository,
   );
-  const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
   const documentDeletionService = new DocumentDeletionService(
     documentRepository,
     documentStorage,
@@ -603,6 +603,16 @@ export const createTestDependencies = (overrides: {
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const abuseControlService = new AbuseControlService(
     overrides.abuseControlRepository ?? new InMemoryAbuseControlRepository(),
+  );
+  const workspaceProviderCredentialsService = new WorkspaceProviderCredentialsService(
+    new InMemoryWorkspaceProviderCredentialsRepository(),
+    auditService,
+    { key: env.CONNECTOR_ENCRYPTION_KEY },
+  );
+  const workspaceLlmCapabilitySettingsService = new WorkspaceLlmCapabilitySettingsService(
+    retrievalSettingsRepository,
+    retrievalSettingsService,
+    auditService,
   );
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
@@ -697,10 +707,13 @@ export const createTestDependencies = (overrides: {
       registry: createApplicationExtensionRegistry(),
     }),
     auditService,
+    mailService: createMailService({ MAIL_DRIVER: "noop" }),
     accountAccessService,
     accountInvitationService,
     workspaceSessionService,
     abuseControlService,
+    workspaceProviderCredentialsService,
+    workspaceLlmCapabilitySettingsService,
     authService: new AuthService({
       env,
       auditService,
@@ -712,10 +725,29 @@ export const createTestDependencies = (overrides: {
       accountAccessService,
       accountInvitationService,
     }),
+    passwordResetService: new PasswordResetService({
+      env,
+      auditService,
+      accountRepository,
+      userRepository,
+      sessionRepository,
+      accountAccessService,
+      workspaceService,
+      passwordResetTokenRepository: new InMemoryPasswordResetTokenRepository(),
+      mailService: createMailService({ MAIL_DRIVER: "noop" }),
+    }),
+    emailVerificationService: new EmailVerificationService({
+      env,
+      auditService,
+      userRepository,
+      emailVerificationTokenRepository: new InMemoryEmailVerificationTokenRepository(),
+      mailService: createMailService({ MAIL_DRIVER: "noop" }),
+    }),
     workspaceService,
     workspaceSummaryService,
     ingestionSettingsService,
     retrievalSettingsService,
+    chunkRepository,
     documentIngestionService,
     documentSourceRepository,
     documentImportService,
@@ -789,6 +821,7 @@ export const createTestDependencies = (overrides: {
     dependencies,
     repositories: {
       auditEventRepository,
+      userRepository,
       ingestionSettingsRepository,
       retrievalSettingsRepository,
       documentRepository,
@@ -803,7 +836,6 @@ export const createTestDependencies = (overrides: {
 
 export const createTestApp = (overrides: {
   chatGateway?: ChatGateway;
-  chunkingSimilarityPort?: ChunkingSimilarityPort;
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
   triggerAnalysisGateway?: TriggerAnalysisGateway;
@@ -819,6 +851,7 @@ export const createTestApp = (overrides: {
   const { dependencies, repositories } = createTestDependencies(overrides);
   const app = createApp(dependencies);
   appDependencyMap.set(app, dependencies);
+  appRepositoryMap.set(app, repositories);
   return {
     app,
     dependencies,
@@ -833,7 +866,7 @@ export const createTestApp = (overrides: {
 export const issueTestToken = async (
   app: ReturnType<typeof createTestApp>["app"],
   email = `test-${randomUUID()}@example.com`,
-): Promise<{ token: string; cookie: string; workspaceId: string }> => {
+): Promise<{ token: string; cookie: string; workspaceId: string; accountId: string }> => {
   const { cookie, workspaceId, accountId } = await issueTestSession(app, email);
 
   const workspaces = await request(app)
@@ -847,7 +880,7 @@ export const issueTestToken = async (
 
   const tokenResponse = await dependencies.authService.getTokenForWorkspace(resolvedWorkspaceId, accountId);
 
-  return { token: tokenResponse.token, cookie, workspaceId: resolvedWorkspaceId };
+  return { token: tokenResponse.token, cookie, workspaceId: resolvedWorkspaceId, accountId };
 };
 
 export const issueTestSession = async (
@@ -862,6 +895,11 @@ export const issueTestSession = async (
   if (register.status !== 201) {
     throw new Error(`Registration failed with status ${register.status}`);
   }
+  const repositories = appRepositoryMap.get(app);
+  if (!repositories) {
+    throw new Error("Test app repositories were not registered for session issuance");
+  }
+  await repositories.userRepository.markEmailVerified(register.body.userId as string, new Date());
 
   const login = await request(app).post("/api/v1/auth/login").send({
     email,

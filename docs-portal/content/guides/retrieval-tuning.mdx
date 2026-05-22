@@ -36,7 +36,7 @@ Use metadata rules or request-level metadata filters when the right answer exist
 
 ### Adjust response behavior last
 
-Use `customInstruction`, citation display, conversation mode, and support validation after the retrieval evidence looks healthy.
+Use `customInstruction`, citation display, and conversation mode after the retrieval evidence looks healthy.
 </Steps>
 
 ## Highest-leverage settings
@@ -54,7 +54,7 @@ Use `customInstruction`, citation display, conversation mode, and support valida
 - Right documents never appear: raise retrieval depth or revisit chunking.
 - Too many near-matches appear: raise threshold or add metadata constraints.
 - Right documents appear but wrong snippets win: enable or retune reranking.
-- Answers sound plausible but unsupported: inspect citations and validation outcomes before changing style instructions.
+- Answers sound plausible but unsupported: inspect citations and retrieved evidence before changing style instructions.
 
 <Callout type="warning" emoji="!">
   `customInstruction` can improve answer style, but it will not fix missing or weak evidence.

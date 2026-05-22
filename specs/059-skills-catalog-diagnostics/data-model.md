@@ -97,7 +97,6 @@ Fields:
 - `candidateSourceSummary`: Counts or summaries of vector, lexical, metadata, and reranked candidates.
 - `ranking`: Ranking or reranking choices that materially affected selected context.
 - `evidenceStatus`: Whether evidence was found, missing, partial, or not applicable.
-- `supportStatus`: Whether answer support was supported, unsupported, not checked, or not applicable.
 - `groundingOutcome`: Stable grounded-answer outcome.
 
 Validation rules:

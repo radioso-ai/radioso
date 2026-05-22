@@ -3,9 +3,12 @@ import {
   type LlmCapabilityConfig,
   type TextGenerationClient,
 } from "./providerTypes.js";
+import { readProviderErrorBody } from "./providerErrors.js";
+import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
 import { parseSseEvents } from "./sse.js";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
+const STORAGE_VECTOR_DIMENSIONS = 1536;
 
 const buildGenerateBody = (input: {
   prompt: string;
@@ -66,7 +69,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
     );
 
     if (!response.ok) {
-      throw new Error(`Gemini request failed: ${response.status}`);
+      throw await readProviderErrorBody("Gemini", "generate", response);
     }
 
     const payload = await response.json();
@@ -90,8 +93,11 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
       },
     );
 
-    if (!response.ok || !response.body) {
-      throw new Error(`Gemini stream failed: ${response.status}`);
+    if (!response.ok) {
+      throw await readProviderErrorBody("Gemini", "stream", response);
+    }
+    if (!response.body) {
+      throw new Error(`Gemini stream failed: ${response.status} (no response body)`);
     }
 
     for await (const data of parseSseEvents(response.body)) {
@@ -119,28 +125,36 @@ export class GeminiEmbeddingClient implements EmbeddingClient {
     };
   }
 
-  async embedTexts(texts: string[]): Promise<number[][]> {
+  async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
     const embeddings: number[][] = [];
+    const model = options?.model ?? this.config.model;
 
     for (const text of texts) {
-      const response = await fetch(
-        `${GEMINI_BASE_URL}/${this.config.model}:embedContent?key=${encodeURIComponent(this.config.apiKey)}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            content: {
-              role: "user",
-              parts: [{ text }],
+      const response = await runProviderRequestWithTimeout(
+        "Gemini embeddings request",
+        EMBEDDING_REQUEST_TIMEOUT_MS,
+        (signal) =>
+          fetch(
+            `${GEMINI_BASE_URL}/${model}:embedContent?key=${encodeURIComponent(this.config.apiKey)}`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              signal,
+              body: JSON.stringify({
+                model: `models/${model}`,
+                output_dimensionality: STORAGE_VECTOR_DIMENSIONS,
+                content: {
+                  parts: [{ text }],
+                },
+              }),
             },
-          }),
-        },
+          ),
       );
 
       if (!response.ok) {
-        throw new Error(`Gemini embedding request failed: ${response.status}`);
+        throw await readProviderErrorBody("Gemini", "embedContent", response);
       }
 
       const payload = (await response.json()) as {

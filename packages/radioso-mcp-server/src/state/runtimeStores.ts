@@ -1,5 +1,4 @@
 import type { RadiosoMcpConfig } from "../config.js";
-import { createInMemoryApprovalStore } from "../auth/approvalStore.js";
 import { createInMemorySessionStore } from "../auth/sessionStore.js";
 
 import { createRedisClientHandle } from "./redisRuntimeStore.js";
@@ -7,7 +6,6 @@ import { createRedisClientHandle } from "./redisRuntimeStore.js";
 export interface RuntimeStoreHandle {
   close(): Promise<void>;
   mode: "in-memory" | "redis";
-  approvalStore: ReturnType<typeof createInMemoryApprovalStore>;
   sessionStore: ReturnType<typeof createInMemorySessionStore>;
 }
 
@@ -20,7 +18,6 @@ export const createRuntimeStoreHandle = async (config: RadiosoMcpConfig): Promis
     });
 
     return {
-      approvalStore: redisHandle.approvalStore,
       async close() {
         await redisHandle.close();
       },
@@ -30,7 +27,6 @@ export const createRuntimeStoreHandle = async (config: RadiosoMcpConfig): Promis
   }
 
   return {
-    approvalStore: createInMemoryApprovalStore(),
     async close() {},
     mode: "in-memory",
     sessionStore: createInMemorySessionStore(),

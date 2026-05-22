@@ -117,7 +117,10 @@ describe("website crawl job service", () => {
       status: "queued",
     };
     const pauseBySourceId = vi.fn().mockResolvedValue([pausedJob]);
-    const resumePausedBySourceId = vi.fn().mockResolvedValue([resumedJob]);
+    const resumePausedBySourceId = vi.fn().mockResolvedValue({
+      resumedJobs: [resumedJob],
+      pendingResumeJobCount: 0,
+    });
     const dispatch = vi.fn().mockResolvedValue(undefined);
     const service = new WebsiteCrawlJobService({
       repository: { pauseBySourceId, resumePausedBySourceId } as never,
@@ -134,7 +137,11 @@ describe("website crawl job service", () => {
     await expect(service.resumeJobsForSource({
       workspaceId: "ws-1",
       sourceId: "source-1",
-    })).resolves.toEqual({ resumedJobCount: 1, resumeDispatchFailureCount: 0 });
+    })).resolves.toEqual({
+      resumedJobCount: 1,
+      pendingResumeJobCount: 0,
+      resumeDispatchFailureCount: 0,
+    });
     expect(resumePausedBySourceId).toHaveBeenCalledWith("source-1", "ws-1");
     expect(dispatch).toHaveBeenCalledWith({
       jobId: "job-resumed",
@@ -144,20 +151,23 @@ describe("website crawl job service", () => {
 
   it("only counts resumed source jobs whose dispatch notification succeeds", async () => {
     const warn = vi.fn();
-    const resumePausedBySourceId = vi.fn().mockResolvedValue([
-      {
-        id: "job-resumed",
-        workspaceId: "ws-1",
-        sourceId: "source-1",
-        status: "queued",
-      },
-      {
-        id: "job-not-dispatched",
-        workspaceId: "ws-1",
-        sourceId: "source-1",
-        status: "queued",
-      },
-    ]);
+    const resumePausedBySourceId = vi.fn().mockResolvedValue({
+      resumedJobs: [
+        {
+          id: "job-resumed",
+          workspaceId: "ws-1",
+          sourceId: "source-1",
+          status: "queued",
+        },
+        {
+          id: "job-not-dispatched",
+          workspaceId: "ws-1",
+          sourceId: "source-1",
+          status: "queued",
+        },
+      ],
+      pendingResumeJobCount: 1,
+    });
     const dispatch = vi
       .fn()
       .mockResolvedValueOnce(undefined)
@@ -172,7 +182,11 @@ describe("website crawl job service", () => {
     await expect(service.resumeJobsForSource({
       workspaceId: "ws-1",
       sourceId: "source-1",
-    })).resolves.toEqual({ resumedJobCount: 1, resumeDispatchFailureCount: 1 });
+    })).resolves.toEqual({
+      resumedJobCount: 1,
+      pendingResumeJobCount: 1,
+      resumeDispatchFailureCount: 1,
+    });
     expect(dispatch).toHaveBeenCalledTimes(2);
     expect(warn).toHaveBeenCalledOnce();
   });
@@ -191,7 +205,7 @@ describe("website crawl job service", () => {
   });
 
   it("deleteJob removes a terminal job after confirming workspace ownership", async () => {
-    const findById = vi.fn().mockResolvedValue({
+    const findByIdAndWorkspaceId = vi.fn().mockResolvedValue({
       id: "job-1",
       workspaceId: "ws-1",
       status: "completed",
@@ -199,21 +213,21 @@ describe("website crawl job service", () => {
     const deleteById = vi.fn().mockResolvedValue(true);
 
     const service = new WebsiteCrawlJobService({
-      repository: { findById, deleteById } as never,
+      repository: { findByIdAndWorkspaceId, deleteById } as never,
       dispatcher: { dispatch: vi.fn() },
       documentIngestionService: {} as never,
     });
 
     await service.deleteJob({ workspaceId: "ws-1", jobId: "job-1" });
 
-    expect(findById).toHaveBeenCalledWith("job-1");
+    expect(findByIdAndWorkspaceId).toHaveBeenCalledWith("job-1", "ws-1");
     expect(deleteById).toHaveBeenCalledWith("job-1", "ws-1");
   });
 
   it("deleteJob throws notFound when the job is missing", async () => {
-    const findById = vi.fn().mockResolvedValue(null);
+    const findByIdAndWorkspaceId = vi.fn().mockResolvedValue(null);
     const service = new WebsiteCrawlJobService({
-      repository: { findById, deleteById: vi.fn() } as never,
+      repository: { findByIdAndWorkspaceId, deleteById: vi.fn() } as never,
       dispatcher: { dispatch: vi.fn() },
       documentIngestionService: {} as never,
     });
@@ -224,14 +238,10 @@ describe("website crawl job service", () => {
   });
 
   it("deleteJob throws notFound when the job belongs to another workspace", async () => {
-    const findById = vi.fn().mockResolvedValue({
-      id: "job-1",
-      workspaceId: "ws-2",
-      status: "completed",
-    });
+    const findByIdAndWorkspaceId = vi.fn().mockResolvedValue(null);
     const deleteById = vi.fn();
     const service = new WebsiteCrawlJobService({
-      repository: { findById, deleteById } as never,
+      repository: { findByIdAndWorkspaceId, deleteById } as never,
       dispatcher: { dispatch: vi.fn() },
       documentIngestionService: {} as never,
     });
@@ -239,18 +249,19 @@ describe("website crawl job service", () => {
     await expect(service.deleteJob({ workspaceId: "ws-1", jobId: "job-1" })).rejects.toMatchObject({
       statusCode: 404,
     });
+    expect(findByIdAndWorkspaceId).toHaveBeenCalledWith("job-1", "ws-1");
     expect(deleteById).not.toHaveBeenCalled();
   });
 
   it("deleteJob throws conflict when the job is still in flight", async () => {
-    const findById = vi.fn().mockResolvedValue({
+    const findByIdAndWorkspaceId = vi.fn().mockResolvedValue({
       id: "job-1",
       workspaceId: "ws-1",
       status: "processing",
     });
     const deleteById = vi.fn();
     const service = new WebsiteCrawlJobService({
-      repository: { findById, deleteById } as never,
+      repository: { findByIdAndWorkspaceId, deleteById } as never,
       dispatcher: { dispatch: vi.fn() },
       documentIngestionService: {} as never,
     });

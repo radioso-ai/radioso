@@ -9,28 +9,56 @@ import type {
 } from "../../../modules/chat/contracts/index.js";
 import type { ActivitySummary, ActivityTrace } from "../../../modules/retrieval/public.js";
 
+interface ChatDiagnosticPayload {
+  route: ChatRoute;
+  activitySummary: ActivitySummary;
+  activityTrace: ActivityTrace;
+}
+
+type ChatPayload = {
+  conversationId?: string;
+  agentId?: string;
+  agentName?: string;
+  assistantMessageId?: string;
+  route: ChatRoute;
+  answer: string;
+  citations?: ChatCitation[];
+  answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
+  activitySummary: ActivitySummary;
+  activityTrace: ActivityTrace;
+};
+
+export type PresentedChatPayload = Omit<ChatPayload, "route" | "activitySummary" | "activityTrace"> & {
+  debug?: ChatDiagnosticPayload;
+};
+
+export const presentChatPayload = (payload: ChatPayload, options: { includeDebug?: boolean } = {}): PresentedChatPayload => {
+  const {
+    route,
+    activitySummary,
+    activityTrace,
+    ...publicPayload
+  } = payload;
+
+  return {
+    ...publicPayload,
+    ...(options.includeDebug ? { debug: { route, activitySummary, activityTrace } } : {}),
+  };
+};
+
 export const sendChatJson = (
   res: Response,
-  payload: {
-    conversationId?: string;
-    agentId?: string;
-    agentName?: string;
-    assistantMessageId?: string;
-    route: ChatRoute;
-    answer: string;
-    citations?: ChatCitation[];
-    answerSegments?: AnswerSegment[];
-    suggestions?: ChatSuggestion[];
-    activitySummary: ActivitySummary;
-    activityTrace: ActivityTrace;
-  },
+  payload: ChatPayload,
+  options: { includeDebug?: boolean } = {},
 ): void => {
-  res.status(200).json(payload);
+  res.status(200).json(presentChatPayload(payload, options));
 };
 
 export const sendChatSse = (
   res: Response,
   events: AsyncIterable<ChatStreamEvent>,
+  options: { includeDebug?: boolean } = {},
 ): Promise<void> => {
   let closed = false;
   res.on("close", () => {
@@ -84,8 +112,7 @@ export const sendChatSse = (
       return;
     }
 
-    res.write("event: done\n");
-    res.write(`data: ${JSON.stringify({
+    const donePayload = presentChatPayload({
       conversationId: event.conversationId,
       agentId: event.agentId,
       agentName: event.agentName,
@@ -97,7 +124,11 @@ export const sendChatSse = (
       suggestions: event.suggestions,
       activitySummary: event.activitySummary,
       activityTrace: event.activityTrace,
-      skill: event.skill,
+    }, options);
+    res.write("event: done\n");
+    res.write(`data: ${JSON.stringify({
+      ...donePayload,
+      ...(options.includeDebug && event.skill ? { skill: event.skill } : {}),
     })}\n\n`);
   };
 

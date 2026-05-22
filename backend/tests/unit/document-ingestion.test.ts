@@ -284,6 +284,101 @@ describe("document ingestion", () => {
     expect(chunkRepository.items.get(document.id)).toHaveLength(1);
   });
 
+  it("uses the workspace embedding model when processing document chunks", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const auditService = createAuditService();
+    const seenModels: Array<string | undefined> = [];
+    const ingestionService = new DocumentIngestionService(documentRepository, auditService);
+    const processingWorker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      new DocumentProcessingService(
+        documentRepository,
+        chunkRepository,
+        new EmbeddingService({
+          async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
+            seenModels.push(options?.model);
+            return texts.map(() => [1, 2, 3]);
+          },
+        }),
+        auditService,
+        {
+          async getForWorkspace(workspaceId: string) {
+            return {
+              ...defaultIngestionSettings(workspaceId),
+              embeddingModel: "text-embedding-3-large",
+            };
+          },
+        },
+        new ChunkingStrategyRegistry([fixedWindowStrategy]),
+      ),
+      auditService,
+      createLogger("silent"),
+    );
+
+    await ingestionService.ingest({
+      workspaceId: "workspace-1",
+      title: "Model-specific",
+      content: "Model-specific content",
+    });
+
+    expect(await processingWorker.runOnce()).toBe(true);
+    expect(seenModels).toEqual(["text-embedding-3-large"]);
+  });
+
+  it("uses a pending embedding model for reprocessed document chunks before promotion", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const auditService = createAuditService();
+    const seenModels: Array<string | undefined> = [];
+    const promotePendingEmbeddingModelIfReady = vi.fn().mockResolvedValue(null);
+    const ingestionService = new DocumentIngestionService(documentRepository, auditService);
+    const processingWorker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      new DocumentProcessingService(
+        documentRepository,
+        chunkRepository,
+        new EmbeddingService({
+          async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
+            seenModels.push(options?.model);
+            return texts.map(() => [1, 2, 3]);
+          },
+        }),
+        auditService,
+        {
+          async getForWorkspace(workspaceId: string) {
+            return {
+              ...defaultIngestionSettings(workspaceId),
+              embeddingModel: "text-embedding-3-small",
+              pendingEmbeddingModel: "text-embedding-3-large",
+            };
+          },
+          promotePendingEmbeddingModelIfReady,
+        },
+        new ChunkingStrategyRegistry([fixedWindowStrategy]),
+      ),
+      auditService,
+      createLogger("silent"),
+    );
+
+    await ingestionService.ingest({
+      workspaceId: "workspace-1",
+      title: "Pending model",
+      content: "Pending model content",
+    });
+
+    expect(await processingWorker.runOnce()).toBe(true);
+    expect(seenModels).toEqual(["text-embedding-3-large"]);
+    expect(chunkRepository.items.get((await documentRepository.listByWorkspaceId("workspace-1"))[0]!.id)?.[0]?.embeddingModel).toBe("text-embedding-3-large");
+    expect(promotePendingEmbeddingModelIfReady).toHaveBeenCalledWith("workspace-1");
+  });
+
   it("skips stale jobs when a newer revision is queued", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
@@ -457,6 +552,57 @@ describe("document ingestion", () => {
     expect(current?.status).toBe("ready");
     expect(current?.revision).toBe(2);
     expect(chunkRepository.items.get(first.documentId)?.[0]?.content).toContain("Second content");
+  });
+
+  it("rejects source changes when the document is not in the manually-added bucket", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const auditService = createAuditService();
+    const ingestionService = new DocumentIngestionService(documentRepository, auditService);
+
+    const crawledSourceId = "11111111-1111-1111-1111-111111111111";
+    const crawled = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Crawled page",
+      sourceContent: "Crawled body",
+      markdownContent: "Crawled body",
+      status: "ready",
+      sourceKind: "inline_text",
+      sourceId: crawledSourceId,
+      sourceFilename: null,
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      sourceSizeBytes: null,
+    });
+
+    await expect(
+      ingestionService.update({
+        workspaceId: "workspace-1",
+        documentId: crawled.id,
+        title: "Crawled page",
+        content: "Crawled body",
+        source: { id: "00000000-0000-0000-0000-000000000001" },
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: "Source can only be changed for manually-added documents",
+    });
+
+    const persisted = await documentRepository.findByIdAndWorkspaceId(crawled.id, "workspace-1");
+    expect(persisted?.sourceId).toBe(crawledSourceId);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.update",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          documentId: crawled.id,
+          reason: "Source can only be changed for manually-added documents",
+        }),
+      }),
+    );
   });
 
   it("rejects inline updates for imported documents", async () => {
@@ -720,6 +866,12 @@ describe("document ingestion", () => {
           async publishForDocumentRevision(): Promise<boolean> {
             throw new Error("chunk write failed");
           },
+          async listSummariesForDocument() {
+            return [];
+          },
+          async findByIdForDocument() {
+            return null;
+          },
         },
         new EmbeddingService({
           async embedTexts(texts: string[]): Promise<number[][]> {
@@ -753,7 +905,7 @@ describe("document ingestion", () => {
     expect([...jobRepository.items.values()].at(-1)?.status).toBe("failed");
   });
 
-  it("stores an actionable provider credential failure reason after exhausting retries", async () => {
+  it("stores an actionable provider credential failure reason without retrying", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
@@ -785,14 +937,16 @@ describe("document ingestion", () => {
     });
 
     expect(await processingWorker.runOnce()).toBe(true);
-    expect(await processingWorker.runOnce(new Date(Date.now() + 2_000))).toBe(true);
-    expect(await processingWorker.runOnce(new Date(Date.now() + 6_000))).toBe(true);
+    // Credential errors are permanent — the worker should not burn retry
+    // budget waiting for the operator to fix an .env value.
+    expect(await processingWorker.runOnce(new Date(Date.now() + 2_000))).toBe(false);
 
     const [document] = await documentRepository.listByWorkspaceId("workspace-1");
     expect(document.status).toBe("failed");
     expect(document.failureReason).toBe(
-      "The configured AI provider rejected the credentials. Update .env and restart Radioso.",
+      "The AI provider rejected the credentials. Replace the workspace API key at Settings → Credentials, or update the matching environment variable (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENAI_COMPATIBLE_API_KEY) and restart Radioso.",
     );
+    expect([...jobRepository.items.values()][0].attemptCount).toBe(1);
   });
 
   it("reprocesses imported documents from the stored original file", async () => {

@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { chunkMarkdown } from "../../src/modules/retrieval/domain/chunkingService.js";
+import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
+import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
 import {
   defaultIngestionSettings,
   validateIngestionSettings,
 } from "../../src/modules/settings/domain/ingestionSettings.js";
 import {
+  DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
+  DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS,
   type RetrievalSettingsInput,
   defaultRetrievalSettings,
   createDefaultMetadataRule,
   validateRetrievalSettings,
 } from "../../src/modules/settings/domain/retrievalSettings.js";
+import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 
 describe("settings and chunking", () => {
   it("rejects invalid retrieval settings", () => {
@@ -44,6 +48,20 @@ describe("settings and chunking", () => {
     ).toThrow("chunkingStrategy must be a supported strategy");
   });
 
+  it("accepts recursive text as an ingestion chunking strategy", () => {
+    expect(
+      validateIngestionSettings({
+        chunkingStrategy: "recursive_text",
+        fixedWindowChunkSize: 800,
+        fixedWindowChunkOverlap: 120,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
+      }),
+    ).toMatchObject({
+      chunkingStrategy: "recursive_text",
+    });
+  });
+
   it("rejects retrieval settings with missing signal policies", () => {
     const metadataRule = {
       ...createDefaultMetadataRule(),
@@ -68,9 +86,19 @@ describe("settings and chunking", () => {
     ).toThrow("metadataRules field must be a non-empty string");
   });
 
-  it("creates overlapping chunks for long content", () => {
+  it("creates overlapping fixed-window chunks through the provider", async () => {
     const longText = "word ".repeat(400);
-    const chunks = chunkMarkdown(longText);
+    const strategy = new FixedWindowChunkingStrategy(new ChonkieChunkingProvider());
+    const chunks = await strategy.chunk({
+      title: "Long content",
+      content: longText,
+      config: {
+        fixedWindowChunkSize: 800,
+        fixedWindowChunkOverlap: 120,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
+      },
+    });
 
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks[1].startOffset).toBeLessThan(chunks[0].endOffset);
@@ -82,13 +110,23 @@ describe("settings and chunking", () => {
     expect(defaults.vectorTopK).toBe(15);
     expect(defaults.similarityThreshold).toBe(0.2);
     expect(defaults.citationDisplayEnabled).toBe(true);
-    expect(defaults.answerSupportValidationEnabled).toBe(true);
     expect(defaults.metadataRules).toEqual([]);
     expect(defaults.customInstruction).toBe("");
     expect(defaults.semanticRewriteInstructions).not.toBe("");
     expect(defaults.lexicalRewriteInstructions).not.toBe("");
     expect(defaults.suggestedQuestionsEnabled).toBe(true);
     expect(defaults.suggestedQuestionsCount).toBe(3);
+  });
+
+  it("loads default rewrite instructions from prompt markdown files", () => {
+    const semanticPrompt = loadPromptTemplate("retrieval/semantic-rewrite-instructions.md");
+    const lexicalPrompt = loadPromptTemplate("retrieval/lexical-rewrite-instructions.md");
+    const defaults = defaultRetrievalSettings("workspace-1");
+
+    expect(DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS).toBe(semanticPrompt);
+    expect(DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS).toBe(lexicalPrompt);
+    expect(defaults.semanticRewriteInstructions).toBe(semanticPrompt);
+    expect(defaults.lexicalRewriteInstructions).toBe(lexicalPrompt);
   });
 
   it("rejects customInstruction exceeding 2000 characters", () => {
@@ -157,8 +195,12 @@ describe("settings and chunking", () => {
       customInstruction: "",
     });
 
-    expect(normalized.semanticRewriteInstructions).not.toBe("");
-    expect(normalized.lexicalRewriteInstructions).not.toBe("");
+    expect(normalized.semanticRewriteInstructions).toBe(
+      loadPromptTemplate("retrieval/semantic-rewrite-instructions.md"),
+    );
+    expect(normalized.lexicalRewriteInstructions).toBe(
+      loadPromptTemplate("retrieval/lexical-rewrite-instructions.md"),
+    );
   });
 
   it("rejects invalid boolean settings values", () => {
@@ -214,15 +256,22 @@ describe("settings and chunking", () => {
     ).toThrow("structuredMinChunkSize must be less than or equal to structuredMaxChunkSize");
   });
 
-  it("uses configurable fixed-window chunk sizes", () => {
+  it("uses configurable provider-backed fixed-window chunk sizes", async () => {
     const longText = "word ".repeat(300);
-    const chunks = chunkMarkdown(longText, {
-      chunkSize: 200,
-      chunkOverlap: 20,
+    const strategy = new FixedWindowChunkingStrategy(new ChonkieChunkingProvider());
+    const chunks = await strategy.chunk({
+      title: "Long content",
+      content: longText,
+      config: {
+        fixedWindowChunkSize: 200,
+        fixedWindowChunkOverlap: 20,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
+      },
     });
 
     expect(chunks.length).toBeGreaterThan(1);
-    expect(chunks[1].startOffset).toBe(chunks[0].endOffset - 20);
+    expect(chunks[1].startOffset).toBeLessThan(chunks[0].endOffset);
   });
 
   it("adds discovered metadata signals as disabled policies by default", () => {

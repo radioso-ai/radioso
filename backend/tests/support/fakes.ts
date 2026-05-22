@@ -46,6 +46,26 @@ import type {
 } from "../../src/db/repositories/bootstrapGreetingCacheRepository.js";
 import type { AbuseControlEntry, AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import type {
+  WorkspaceProviderCredentialRecord,
+  WorkspaceProviderCredentialSummary,
+  WorkspaceProviderCredentialsRepositoryPort,
+} from "../../src/db/repositories/workspaceProviderCredentialsRepository.js";
+import type {
+  WorkspaceLlmCapability,
+  WorkspaceLlmCapabilityPreference,
+  WorkspaceLlmCapabilityPreferenceInput,
+} from "../../src/modules/settings/contracts/llmCapability.js";
+import type { WorkspaceLlmCapabilityPreferencesRepositoryPort } from "../../src/modules/settings/contracts/services.js";
+import type { LlmProviderName } from "../../src/shared/infra/llm/providerTypes.js";
+import type {
+  EmailVerificationTokenRecord,
+  EmailVerificationTokenRepositoryPort,
+} from "../../src/db/repositories/emailVerificationTokenRepository.js";
+import type {
+  PasswordResetTokenRecord,
+  PasswordResetTokenRepositoryPort,
+} from "../../src/db/repositories/passwordResetTokenRepository.js";
+import type {
   ChunkRecord,
   ChunkRepositoryPort,
   DocumentCreateInput,
@@ -80,8 +100,8 @@ import type {
   MessageRepositoryPort,
 } from "../../src/db/repositories/messageRepository.js";
 import type {
-  IngestionSettingsInput,
   IngestionSettingsRecord,
+  ValidatedIngestionSettingsInput,
 } from "../../src/modules/settings/contracts/ingestion.js";
 import {
   inferMetadataValueType,
@@ -232,7 +252,7 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
       userId: params.userId,
       accountId: params.accountId,
       sessionTokenHash: params.sessionTokenHash,
-      createdAt: new Date(),
+      createdAt: new Date(Date.now() + this.items.size),
       expiresAt: params.expiresAt,
       lastSeenAt: new Date(),
       revokedAt: null,
@@ -266,6 +286,110 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
       }
     }
 
+    return count;
+  }
+}
+
+export class InMemoryPasswordResetTokenRepository implements PasswordResetTokenRepositoryPort {
+  readonly items = new Map<string, PasswordResetTokenRecord>();
+
+  async create(params: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    requestIp?: string | null;
+    requestUserAgent?: string | null;
+  }): Promise<PasswordResetTokenRecord> {
+    const record: PasswordResetTokenRecord = {
+      id: randomUUID(),
+      userId: params.userId,
+      tokenHash: params.tokenHash,
+      expiresAt: params.expiresAt,
+      usedAt: null,
+      createdAt: new Date(Date.now() + this.items.size),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<PasswordResetTokenRecord | null> {
+    return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
+  }
+
+  async findLatestActiveForUser(userId: string, now: Date): Promise<PasswordResetTokenRecord | null> {
+    return [...this.items.values()]
+      .filter((item) => item.userId === userId && !item.usedAt && item.expiresAt > now)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
+  }
+
+  async markUsed(id: string, usedAt: Date): Promise<number> {
+    const existing = this.items.get(id);
+    if (existing && !existing.usedAt) {
+      this.items.set(id, { ...existing, usedAt });
+      return 1;
+    }
+    return 0;
+  }
+
+  async markAllActiveUsedForUser(userId: string, usedAt: Date): Promise<number> {
+    let count = 0;
+    for (const item of this.items.values()) {
+      if (item.userId === userId && !item.usedAt && item.expiresAt > usedAt) {
+        this.items.set(item.id, { ...item, usedAt });
+        count += 1;
+      }
+    }
+    return count;
+  }
+}
+
+export class InMemoryEmailVerificationTokenRepository implements EmailVerificationTokenRepositoryPort {
+  readonly items = new Map<string, EmailVerificationTokenRecord>();
+
+  async create(params: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    requestIp?: string | null;
+    requestUserAgent?: string | null;
+  }): Promise<EmailVerificationTokenRecord> {
+    const record: EmailVerificationTokenRecord = {
+      id: randomUUID(),
+      userId: params.userId,
+      tokenHash: params.tokenHash,
+      expiresAt: params.expiresAt,
+      usedAt: null,
+      createdAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<EmailVerificationTokenRecord | null> {
+    return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
+  }
+
+  async findLatestActiveForUser(userId: string, now: Date): Promise<EmailVerificationTokenRecord | null> {
+    return [...this.items.values()]
+      .filter((item) => item.userId === userId && !item.usedAt && item.expiresAt > now)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
+  }
+
+  async markUsed(id: string, usedAt: Date): Promise<void> {
+    const existing = this.items.get(id);
+    if (existing && !existing.usedAt) {
+      this.items.set(id, { ...existing, usedAt });
+    }
+  }
+
+  async markAllActiveUsedForUser(userId: string, usedAt: Date): Promise<number> {
+    let count = 0;
+    for (const item of this.items.values()) {
+      if (item.userId === userId && !item.usedAt && item.expiresAt > usedAt) {
+        this.items.set(item.id, { ...item, usedAt });
+        count += 1;
+      }
+    }
     return count;
   }
 }
@@ -598,9 +722,9 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     return [...this.items.values()].filter((w) => w.accountId === accountId).length;
   }
 
-  async updateName(workspaceId: string, name: string): Promise<WorkspaceRecord> {
+  async updateName(workspaceId: string, accountId: string, name: string): Promise<WorkspaceRecord> {
     const item = this.items.get(workspaceId);
-    if (!item) {
+    if (!item || item.accountId !== accountId) {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
     const updated = { ...item, name, updatedAt: new Date() };
@@ -694,7 +818,11 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     return updated;
   }
 
-  async deleteById(workspaceId: string): Promise<boolean> {
+  async deleteByIdAndAccountId(workspaceId: string, accountId: string): Promise<boolean> {
+    const item = this.items.get(workspaceId);
+    if (!item || item.accountId !== accountId) {
+      return false;
+    }
     return this.items.delete(workspaceId);
   }
 }
@@ -717,10 +845,6 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       this.defaultAgentIds.set(workspaceId, record.id);
     }
     return record;
-  }
-
-  async findById(agentId: string): Promise<AgentRecord | null> {
-    return this.items.get(agentId) ?? null;
   }
 
   async findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<AgentRecord | null> {
@@ -874,8 +998,85 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
   }
 }
 
-export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRepositoryPort {
+export class InMemoryWorkspaceProviderCredentialsRepository
+  implements WorkspaceProviderCredentialsRepositoryPort
+{
+  readonly items = new Map<string, WorkspaceProviderCredentialRecord>();
+
+  async findByWorkspaceAndProvider(
+    workspaceId: string,
+    provider: LlmProviderName,
+  ): Promise<WorkspaceProviderCredentialRecord | null> {
+    return this.items.get(`${workspaceId}:${provider}`) ?? null;
+  }
+
+  async listByWorkspace(workspaceId: string): Promise<WorkspaceProviderCredentialSummary[]> {
+    return [...this.items.values()]
+      .filter((record) => record.workspaceId === workspaceId)
+      .map((record) => ({
+        workspaceId: record.workspaceId,
+        provider: record.provider,
+        updatedAt: record.updatedAt,
+      }))
+      .sort((a, b) => a.provider.localeCompare(b.provider));
+  }
+
+  async upsert(input: {
+    workspaceId: string;
+    provider: LlmProviderName;
+    ciphertext: string;
+  }): Promise<WorkspaceProviderCredentialRecord> {
+    const key = `${input.workspaceId}:${input.provider}`;
+    const existing = this.items.get(key);
+    const record: WorkspaceProviderCredentialRecord = {
+      workspaceId: input.workspaceId,
+      provider: input.provider,
+      ciphertext: input.ciphertext,
+      createdAt: existing?.createdAt ?? new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(key, record);
+    return record;
+  }
+
+  async remove(workspaceId: string, provider: LlmProviderName): Promise<boolean> {
+    return this.items.delete(`${workspaceId}:${provider}`);
+  }
+}
+
+export class InMemoryRetrievalSettingsRepository
+  implements RetrievalSettingsRepositoryPort, WorkspaceLlmCapabilityPreferencesRepositoryPort
+{
   private readonly items = new Map<string, RetrievalSettingsRecord>();
+  readonly capabilityRows = new Map<string, Map<WorkspaceLlmCapability, WorkspaceLlmCapabilityPreference>>();
+
+  async findByWorkspace(workspaceId: string): Promise<WorkspaceLlmCapabilityPreference[]> {
+    const row = this.capabilityRows.get(workspaceId);
+    return row ? [...row.values()] : [];
+  }
+
+  async setPreference(
+    workspaceId: string,
+    capability: WorkspaceLlmCapability,
+    value: WorkspaceLlmCapabilityPreferenceInput | null,
+  ): Promise<void> {
+    if (!this.items.has(workspaceId)) {
+      throw new Error(`retrieval_settings row missing for workspace ${workspaceId}`);
+    }
+    const row = this.capabilityRows.get(workspaceId) ?? new Map();
+    if (value === null) {
+      row.delete(capability);
+    } else {
+      row.set(capability, {
+        workspaceId,
+        capability,
+        provider: value.provider,
+        model: value.model,
+        updatedAt: new Date(),
+      });
+    }
+    this.capabilityRows.set(workspaceId, row);
+  }
 
   async findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null> {
     return this.items.get(workspaceId) ?? null;
@@ -895,7 +1096,6 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       similarityThreshold: input.similarityThreshold,
       rerankTopK: input.rerankTopK,
       citationDisplayEnabled: input.citationDisplayEnabled,
-      answerSupportValidationEnabled: input.answerSupportValidationEnabled ?? true,
       metadataRules: input.metadataRules,
       customInstruction: input.customInstruction,
       createdAt: existing?.createdAt ?? new Date(),
@@ -913,16 +1113,47 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
     return this.items.get(workspaceId) ?? null;
   }
 
-  async upsert(workspaceId: string, input: IngestionSettingsInput): Promise<IngestionSettingsRecord> {
+  async upsert(workspaceId: string, input: ValidatedIngestionSettingsInput): Promise<IngestionSettingsRecord> {
     const existing = this.items.get(workspaceId);
     const record: IngestionSettingsRecord = {
       workspaceId,
       chunkingStrategy: input.chunkingStrategy,
+      embeddingModel: input.embeddingModel,
+      pendingEmbeddingModel: input.pendingEmbeddingModel,
       fixedWindowChunkSize: input.fixedWindowChunkSize,
       fixedWindowChunkOverlap: input.fixedWindowChunkOverlap,
       structuredMinChunkSize: input.structuredMinChunkSize,
       structuredMaxChunkSize: input.structuredMaxChunkSize,
       createdAt: existing?.createdAt ?? new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(workspaceId, record);
+    return record;
+  }
+
+  async clearPendingEmbeddingModel(workspaceId: string): Promise<IngestionSettingsRecord | null> {
+    const existing = this.items.get(workspaceId);
+    if (!existing) {
+      return null;
+    }
+    const record = {
+      ...existing,
+      pendingEmbeddingModel: null,
+      updatedAt: new Date(),
+    };
+    this.items.set(workspaceId, record);
+    return record;
+  }
+
+  async promotePendingEmbeddingModelIfReady(workspaceId: string): Promise<IngestionSettingsRecord | null> {
+    const existing = this.items.get(workspaceId);
+    if (!existing?.pendingEmbeddingModel) {
+      return existing ?? null;
+    }
+    const record = {
+      ...existing,
+      embeddingModel: existing.pendingEmbeddingModel,
+      pendingEmbeddingModel: null,
       updatedAt: new Date(),
     };
     this.items.set(workspaceId, record);
@@ -1159,6 +1390,24 @@ export class InMemoryDocumentSourceRepository implements DocumentSourceRepositor
     });
   }
 
+  async updateConfigByIdAndWorkspaceId(input: {
+    sourceId: string;
+    workspaceId: string;
+    config: Record<string, unknown>;
+  }): Promise<DocumentSourceRecord> {
+    const source = await this.findByIdAndWorkspaceId(input.sourceId, input.workspaceId);
+    if (!source) {
+      throw new Error(`Document source ${input.sourceId} not found in workspace ${input.workspaceId}`);
+    }
+    const updated: DocumentSourceRecord = {
+      ...source,
+      config: input.config,
+      updatedAt: new Date(),
+    };
+    this.items.set(updated.id, updated);
+    return updated;
+  }
+
   async deleteByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<boolean> {
     const source = await this.findByIdAndWorkspaceId(sourceId, workspaceId);
     if (!source) {
@@ -1211,6 +1460,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceStorageObject: input.sourceStorageObject ?? null,
       sourceStorageGeneration: input.sourceStorageGeneration ?? null,
       sourceSizeBytes: input.sourceSizeBytes ?? null,
+      contentSizeBytes: input.contentSizeBytes ?? null,
+      contentHash: input.contentHash ?? null,
       status: "queued",
       revision: 1,
       failureReason: null,
@@ -1284,6 +1535,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceStorageObject: input.sourceStorageObject ?? null,
       sourceStorageGeneration: input.sourceStorageGeneration ?? null,
       sourceSizeBytes: input.sourceSizeBytes ?? null,
+      contentSizeBytes: input.contentSizeBytes ?? null,
+      contentHash: input.contentHash ?? null,
       status: input.status,
       revision: 1,
       failureReason: null,
@@ -1342,6 +1595,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         sourceStorageObject: item.sourceStorageObject,
         sourceStorageGeneration: item.sourceStorageGeneration,
         sourceSizeBytes: item.sourceSizeBytes,
+        contentSizeBytes: item.contentSizeBytes ?? null,
+        contentSize: item.contentSizeBytes ?? item.sourceSizeBytes ?? null,
       }));
   }
 
@@ -1463,6 +1718,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceStorageObject: input.sourceStorageObject ?? existing.sourceStorageObject ?? null,
       sourceStorageGeneration: input.sourceStorageGeneration ?? existing.sourceStorageGeneration ?? null,
       sourceSizeBytes: input.sourceSizeBytes ?? existing.sourceSizeBytes ?? null,
+      contentSizeBytes: input.contentSizeBytes ?? existing.contentSizeBytes ?? null,
+      contentHash: input.contentHash ?? existing.contentHash ?? null,
       status: input.status,
       revision: existing.revision + 1,
       failureReason: null,
@@ -1507,6 +1764,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceStorageObject: input.sourceStorageObject ?? existing.sourceStorageObject ?? null,
       sourceStorageGeneration: input.sourceStorageGeneration ?? existing.sourceStorageGeneration ?? null,
       sourceSizeBytes: input.sourceSizeBytes ?? existing.sourceSizeBytes ?? null,
+      contentSizeBytes: input.contentSizeBytes ?? existing.contentSizeBytes ?? null,
+      contentHash: input.contentHash ?? existing.contentHash ?? null,
       status: "queued",
       revision: existing.revision + 1,
       failureReason: null,
@@ -1670,6 +1929,57 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     }
     return { count, storageRefs };
   }
+
+  async findActivePageState(input: {
+    workspaceId: string;
+    sourceId?: string | null;
+    externalDocumentId: string;
+  }): Promise<{
+    documentId: string;
+    revision: number;
+    contentSizeBytes: number | null;
+    contentHash: string | null;
+  } | null> {
+    const sourceId = input.sourceId ?? null;
+    const match = [...this.items.values()].find((doc) =>
+      doc.workspaceId === input.workspaceId &&
+      doc.externalDocumentId === input.externalDocumentId &&
+      doc.status !== "failed" &&
+      (sourceId === null ? !doc.sourceId : doc.sourceId === sourceId),
+    );
+    if (!match) {
+      return null;
+    }
+    return {
+      documentId: match.id,
+      revision: match.revision,
+      contentSizeBytes: match.contentSizeBytes ?? null,
+      contentHash: match.contentHash ?? null,
+    };
+  }
+
+  async deleteMissingPagesBySourceAndExternalIds(input: {
+    workspaceId: string;
+    sourceId: string;
+    keepExternalDocumentIds: string[];
+  }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    const keep = new Set(input.keepExternalDocumentIds.filter((value) => Boolean(value)));
+    let deletedCount = 0;
+    let deletedContentBytes = 0;
+    for (const [id, doc] of this.items.entries()) {
+      if (
+        doc.workspaceId === input.workspaceId &&
+        doc.sourceId === input.sourceId &&
+        doc.externalDocumentId &&
+        !keep.has(doc.externalDocumentId)
+      ) {
+        deletedContentBytes += doc.contentSizeBytes ?? 0;
+        this.items.delete(id);
+        deletedCount += 1;
+      }
+    }
+    return { deletedCount, deletedContentBytes };
+  }
 }
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -1708,7 +2018,7 @@ export class InMemoryDocumentStorage implements DocumentStoragePort {
   deleteFailures = new Set<string>();
 
   async upload(input: DocumentStorageUploadInput) {
-    const objectPath = `workspaces/${input.workspaceId}/documents/${input.documentId}/${input.filename}`;
+    const objectPath = `workspaces/${input.workspaceId}/documents/${input.documentId}`;
     const generation = `${this.objects.size + 1}`;
     this.objects.set(objectPath, {
       buffer: Buffer.from(input.buffer),
@@ -1777,6 +2087,45 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
 
     this.items.set(input.documentId, input.chunks);
     return true;
+  }
+
+  async listSummariesForDocument(input: { documentId: string; workspaceId: string }) {
+    const chunks = this.items.get(input.documentId) ?? [];
+    return chunks
+      .filter((chunk) => chunk.workspaceId === input.workspaceId)
+      .slice()
+      .sort((a, b) => a.chunkIndex - b.chunkIndex)
+      .map((chunk) => ({
+        id: chunk.id,
+        chunkIndex: chunk.chunkIndex,
+        contentPreview: chunk.content.slice(0, 240),
+        contentLength: chunk.content.length,
+        startOffset: chunk.startOffset,
+        endOffset: chunk.endOffset,
+      }));
+  }
+
+  async findByIdForDocument(input: { chunkId: string; documentId: string; workspaceId: string }) {
+    const chunks = this.items.get(input.documentId) ?? [];
+    const chunk = chunks.find(
+      (entry) => entry.id === input.chunkId && entry.workspaceId === input.workspaceId,
+    );
+    if (!chunk) {
+      return null;
+    }
+    return {
+      id: chunk.id,
+      documentId: chunk.documentId,
+      workspaceId: chunk.workspaceId,
+      chunkIndex: chunk.chunkIndex,
+      content: chunk.content,
+      searchText: chunk.searchText ?? null,
+      startOffset: chunk.startOffset,
+      endOffset: chunk.endOffset,
+      metadata: chunk.metadata ?? {},
+      createdAt: chunk.createdAt,
+      embeddingDimensions: chunk.embedding.length,
+    };
   }
 }
 

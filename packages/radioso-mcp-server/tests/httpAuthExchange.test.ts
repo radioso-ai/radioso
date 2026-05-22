@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createAuditLogger } from "../src/audit/auditLogger.js";
 import { createAuthService } from "../src/auth/authService.js";
-import { createInMemoryApprovalStore } from "../src/auth/approvalStore.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { createHttpServer } from "../src/http/createHttpServer.js";
+import { DEFAULT_MAX_REQUEST_BODY_BYTES } from "../src/http/nodeHttp.js";
 import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
 
 const createTestServer = async () => {
@@ -14,7 +14,6 @@ const createTestServer = async () => {
     approvalRequiredWriteTools: ["create_document"],
   });
   const authService = createAuthService({
-    approvalStore: createInMemoryApprovalStore(),
     auditLogger: createAuditLogger([]),
     policy,
     sessionStore: createInMemorySessionStore(),
@@ -28,7 +27,6 @@ const createTestServer = async () => {
       allowedReadTools: policy.listCapabilities().filter((tool) => tool.accessMode === "read").map((tool) => tool.name),
       allowedWriteTools: policy.listCapabilities().filter((tool) => tool.accessMode === "write").map((tool) => tool.name),
       approvalRequiredWriteTools: ["create_document"],
-      approvalTtlSeconds: 300,
       baseUrl: "http://radioso.test",
       bindHost: "127.0.0.1",
       bindPort: 0,
@@ -83,6 +81,29 @@ describe("remote auth exchange", () => {
       grantedTools: ["describe_capabilities", "list_documents"],
       tokenType: "Bearer",
       workspaceHint: "workspace-123",
+    });
+  });
+
+  it("rejects oversized auth exchange bodies before validation", async () => {
+    const runtime = await createTestServer();
+    servers.push(runtime);
+
+    const response = await fetch(`${runtime.baseUrl}/v1/auth/exchange`, {
+      body: "x".repeat(DEFAULT_MAX_REQUEST_BODY_BYTES + 1),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: "payload_too_large",
+        details: {
+          maxBytes: DEFAULT_MAX_REQUEST_BODY_BYTES,
+        },
+      },
     });
   });
 });

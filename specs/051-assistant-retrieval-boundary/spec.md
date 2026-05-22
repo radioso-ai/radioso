@@ -30,7 +30,7 @@ A developer or advanced customer can use retrieval search and retrieval answer d
 
 **Why this priority**: The split fails if retrieval-only users are forced through assistant orchestration. Standalone grounded search and grounded QA must remain first-class.
 
-**Independent Test**: Can be fully tested by calling retrieval search and retrieval answer directly from a headless client or MCP-style capability client with and without optional conversation context, then verifying that grounded search, rewrite, evidence assembly, citations, and support validation still work without assistant-owned routing.
+**Independent Test**: Can be fully tested by calling retrieval search and retrieval answer directly from a headless client or MCP-style capability client with and without optional conversation context, then verifying that grounded search, rewrite, evidence assembly, and citations still work without assistant-owned routing.
 
 **Acceptance Scenarios**:
 
@@ -118,7 +118,7 @@ A developer integrating Radioso can target clear assistant and retrieval endpoin
 
 ## Architecture Constraints *(mandatory)*
 
-- **Boundary Rule**: Human-facing chat transport owns HTTP and surface adaptation only; the assistant module owns conversation context, route selection, assistant settings consumption, and final customer-facing response composition for assistant-backed chat; the retrieval module owns grounded search, rewrite, evidence assembly, retrieval-only answer generation, and support validation for evidence-backed answers; MCP and similar capability-oriented platform surfaces sit parallel to assistant and may call retrieval and other platform capabilities directly; persistence continues to own stored conversations, messages, workspace settings, and diagnostics.
+- **Boundary Rule**: Human-facing chat transport owns HTTP and surface adaptation only; the assistant module owns conversation context, route selection, assistant settings consumption, and final customer-facing response composition for assistant-backed chat; the retrieval module owns grounded search, rewrite, evidence assembly, and retrieval-only answer generation for evidence-backed answers; MCP and similar capability-oriented platform surfaces sit parallel to assistant and may call retrieval and other platform capabilities directly; persistence continues to own stored conversations, messages, workspace settings, and diagnostics.
 - **Encapsulation Rule**: `backend/src/app/http/routes/chatRoutes.ts` and `backend/src/app/http/routes/publicChatRoutes.ts` must remain transport-only adapters and must not continue to own assistant-routing policy. `backend/src/modules/chat/services/chatService.ts` must not remain the long-term home for both assistant policy and retrieval orchestration. `backend/src/modules/retrieval/services/*` must not remain the owner of assistant identity, social reply behavior, or other assistant-only prompt shaping. Supported human-facing chat surfaces such as web chat and embed must not call retrieval directly for chat behavior. MCP and other capability-oriented surfaces must not be forced through assistant chat by default.
 - **New Seams Required**: A focused assistant domain or module that owns assistant chat APIs, assistant settings, route selection, assistant-owned prompts, and conversation-context handling; a narrow assistant-to-retrieval port for evidence requests; separate assistant and retrieval settings contracts; retrieval-facing API seams for standalone search and grounded answer flows; and a clear platform boundary for MCP or similar capability surfaces that may use retrieval directly while optionally exposing assistant chat as a separate capability.
 - **Anti-Goals**: Do not reframe the assistant as a generic multi-tool agent platform in this feature. Do not implement the assistant as just another connector plugin with webhook-oriented lifecycle semantics. Do not include external messaging connector support in this feature. Do not force retrieval-only customers or MCP capability clients to adopt assistant APIs for grounded search or grounded QA. Do not let retrieval-only APIs inherit assistant persona, greeting, or social behavior. Do not allow assistant freeform direct-answer behavior to bypass grounding policy when the selected route requires evidence.
@@ -133,7 +133,7 @@ A developer integrating Radioso can target clear assistant and retrieval endpoin
 - **FR-004**: When the assistant decides a conversational input does not require evidence, the system MUST allow a direct assistant response without invoking retrieval.
 - **FR-005**: When the assistant decides evidence is required, the system MUST invoke retrieval as a downstream capability and return the result through the same assistant chat surface.
 - **FR-006**: The system MUST provide a standalone retrieval search surface that returns evidence-oriented results without requiring assistant-owned persona, social handling, or conversation-mode behavior.
-- **FR-007**: The system MUST provide a standalone retrieval answer surface that performs rewrite, grounded search, grounded answer generation, and support validation without requiring use of the assistant chat surface.
+- **FR-007**: The system MUST provide a standalone retrieval answer surface that performs rewrite, grounded search, and grounded answer generation without requiring use of the assistant chat surface.
 - **FR-008**: Retrieval search and retrieval answer MUST remain usable for customers building headless RAG experiences and for MCP-style capability clients that do not want assistant-owned identity, chat routing, or social behavior.
 - **FR-009**: Retrieval answer MUST accept optional caller-supplied conversation context hints that retrieval may use for rewrite continuity and evidence search, without making retrieval the canonical owner of conversation state.
 - **FR-010**: Assistant-owned conversational context MUST remain the canonical source of conversation meaning for assistant chat flows, even when a downstream retrieval request includes a derived subset of that context.
@@ -144,7 +144,7 @@ A developer integrating Radioso can target clear assistant and retrieval endpoin
 - **FR-015**: The shared settings contract MUST contain a distinct retrieval section so rewrite, ranking, grounding, and retrieval-only answer behavior can be managed without absorbing assistant-only behavior.
 - **FR-016**: The shared settings contract MUST allow assistant and retrieval sections to be read and updated independently within one platform settings payload.
 - **FR-017**: Updating one settings section through the shared settings surface MUST NOT implicitly clear, overwrite, or reset the other settings section unless the caller explicitly includes that change.
-- **FR-018**: Existing grounded trust behavior such as support validation MUST continue to apply on evidence-backed routes and MUST NOT be silently bypassed by the new architectural split.
+- **FR-018**: Existing grounded trust behavior such as citations and typed unsupported outcomes MUST continue to apply on evidence-backed routes and MUST NOT be silently bypassed by the new architectural split.
 - **FR-019**: Retrieval-only answer flows MUST return a typed retrieval-scoped unsupported result with a stable outcome code when a request falls outside retrieval scope, such as social-only or assistant-identity-only turns, rather than impersonating the assistant product surface.
 - **FR-020**: The system MUST preserve enough response and stored metadata to identify whether a result came from an assistant direct-answer route, an assistant retrieval-backed route, a retrieval-only route, or an MCP or similar capability route that did not invoke assistant chat.
 - **FR-021**: The system MUST expose a human-facing chat endpoint at `POST /api/v1/assistant/chat`.
@@ -175,7 +175,7 @@ A developer integrating Radioso can target clear assistant and retrieval endpoin
 - **Retrieval Search**: `POST /api/v1/retrieval/search`
   Purpose: Return evidence-oriented grounded search results without assistant persona or social behavior.
 - **Retrieval Answer**: `POST /api/v1/retrieval/answer`
-  Purpose: Return a grounded answer built from retrieval rewrite, evidence search, and support validation without assistant-owned direct-answer routing. Requests outside retrieval scope return a typed retrieval-scoped unsupported result.
+  Purpose: Return a grounded answer built from retrieval rewrite and evidence search without assistant-owned direct-answer routing. Requests outside retrieval scope return a typed retrieval-scoped unsupported result.
 - **MCP And Similar Capability Surfaces**
   Purpose: Operate parallel to assistant chat, using retrieval and other platform capabilities directly by default while exposing assistant chat only when explicitly desired.
 ### UI Tasks

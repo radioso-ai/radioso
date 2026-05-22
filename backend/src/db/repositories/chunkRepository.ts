@@ -1,7 +1,14 @@
 import type { PoolClient } from "pg";
 
-import type { ChunkRecord, ChunkRepositoryPort } from "../../modules/documents/contracts/index.js";
+import type {
+  ChunkDetail,
+  ChunkRecord,
+  ChunkRepositoryPort,
+  ChunkSummary,
+} from "../../modules/documents/contracts/index.js";
 import type { Database } from "../../shared/infra/database.js";
+
+const CHUNK_CONTENT_PREVIEW_MAX_CHARS = 240;
 
 export const insertChunks = async (client: PoolClient, chunks: ChunkRecord[]): Promise<void> => {
   if (chunks.length === 0) {
@@ -10,7 +17,10 @@ export const insertChunks = async (client: PoolClient, chunks: ChunkRecord[]): P
 
   const values: unknown[] = [];
   const placeholders = chunks.map((chunk, index) => {
-    const offset = index * 10;
+    const offset = index * 12;
+    const serializedEmbedding = `[${chunk.embedding.join(",")}]`;
+    const boundedEmbedding = chunk.embedding.length === 1536 ? serializedEmbedding : null;
+    const unboundedEmbedding = chunk.embedding.length === 1536 ? null : serializedEmbedding;
     values.push(
       chunk.id,
       chunk.documentId,
@@ -18,17 +28,19 @@ export const insertChunks = async (client: PoolClient, chunks: ChunkRecord[]): P
       chunk.chunkIndex,
       chunk.content,
       chunk.searchText ?? chunk.content,
-      `[${chunk.embedding.join(",")}]`,
+      boundedEmbedding,
+      unboundedEmbedding,
+      chunk.embeddingModel ?? "text-embedding-3-small",
       chunk.startOffset,
       chunk.endOffset,
       JSON.stringify(chunk.metadata ?? {}),
     );
 
-    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}::vector, $${offset + 8}, $${offset + 9}, $${offset + 10}::jsonb)`;
+    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}::vector, $${offset + 8}::vector, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}::jsonb)`;
   });
 
   await client.query(
-    `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, embedding, start_offset, end_offset, metadata)
+    `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, embedding, embedding_unbounded, embedding_model, start_offset, end_offset, metadata)
      VALUES ${placeholders.join(", ")}`,
     values,
   );
@@ -85,6 +97,91 @@ export class ChunkRepository implements ChunkRepositoryPort {
 
       return true;
     });
+  }
+
+  async listSummariesForDocument(input: { documentId: string; workspaceId: string }): Promise<ChunkSummary[]> {
+    const rows = await this.database.query<{
+      id: string;
+      chunk_index: number;
+      content: string;
+      start_offset: number;
+      end_offset: number;
+      content_length: number;
+    }>(
+      `SELECT id,
+              chunk_index,
+              LEFT(content, $3) AS content,
+              start_offset,
+              end_offset,
+              LENGTH(content) AS content_length
+       FROM chunks
+       WHERE document_id = $1 AND workspace_id = $2
+       ORDER BY chunk_index ASC`,
+      [input.documentId, input.workspaceId, CHUNK_CONTENT_PREVIEW_MAX_CHARS],
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      chunkIndex: Number(row.chunk_index),
+      contentPreview: row.content,
+      contentLength: Number(row.content_length),
+      startOffset: Number(row.start_offset),
+      endOffset: Number(row.end_offset),
+    }));
+  }
+
+  async findByIdForDocument(input: {
+    chunkId: string;
+    documentId: string;
+    workspaceId: string;
+  }): Promise<ChunkDetail | null> {
+    const rows = await this.database.query<{
+      id: string;
+      document_id: string;
+      workspace_id: string;
+      chunk_index: number;
+      content: string;
+      search_text: string | null;
+      start_offset: number;
+      end_offset: number;
+      metadata: Record<string, unknown> | null;
+      created_at: Date;
+      embedding_dimensions: number | null;
+    }>(
+      `SELECT id,
+              document_id,
+              workspace_id,
+              chunk_index,
+              content,
+              search_text,
+              start_offset,
+              end_offset,
+              metadata,
+              created_at,
+              COALESCE(vector_dims(embedding_unbounded), vector_dims(embedding)) AS embedding_dimensions
+       FROM chunks
+       WHERE id = $1 AND document_id = $2 AND workspace_id = $3`,
+      [input.chunkId, input.documentId, input.workspaceId],
+    );
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      documentId: row.document_id,
+      workspaceId: row.workspace_id,
+      chunkIndex: Number(row.chunk_index),
+      content: row.content,
+      searchText: row.search_text,
+      startOffset: Number(row.start_offset),
+      endOffset: Number(row.end_offset),
+      metadata: (row.metadata ?? {}) as Record<string, unknown>,
+      createdAt: row.created_at,
+      embeddingDimensions: row.embedding_dimensions === null ? null : Number(row.embedding_dimensions),
+    };
   }
 }
 

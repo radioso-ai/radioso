@@ -17,7 +17,13 @@ export {
   type ChunkingStrategyId,
   type ChunkOutput,
 } from "./domain/chunking/chunkingStrategy.js";
-export type { ChunkingSimilarityPort } from "./domain/chunking/structuredSemanticChunkingStrategy.js";
+export type {
+  TextChunkingEmbeddingPort,
+  TextChunkingMethod,
+  TextChunkingProviderChunk,
+  TextChunkingProviderPort,
+  TextChunkingProviderRequest,
+} from "./domain/chunking/chunkingProvider.js";
 export type {
   ConversationContextWindow,
   ContinuityDecision,
@@ -85,12 +91,13 @@ export type {
   TriggerAnalysisGateway,
   TriggerAnalysisGatewayInput,
 } from "./services/queryRewriteService.js";
+export type { QueryRewriteGatewayInput } from "./services/queryRewriteGateways.js";
 export {
   ModelQueryRewriteGateway,
   ModelTriggerAnalysisGateway,
   OpenAIQueryRewriteGateway,
 } from "./services/queryRewriteService.js";
-export type { RerankGateway } from "./services/rerankService.js";
+export type { RerankGateway, RerankGatewayInput } from "./services/rerankService.js";
 export {
   ModelRerankGateway,
   OpenAISemanticRerankGateway,
@@ -139,7 +146,6 @@ export interface RetrievalPipelineResult {
   responseIdentity: ResponseIdentity | null;
   responseSettings: {
     citationDisplayEnabled: boolean;
-    answerSupportValidationEnabled?: boolean;
     suggestedQuestionsEnabled: boolean;
     suggestedQuestionsCount: number;
     customInstruction?: string;

@@ -1,44 +1,54 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import {
-  ArrowUpRight,
-  ChevronDown,
-  Database,
-  Globe,
-  Link as LinkIcon,
-  Search,
-  Sparkles,
-  Trash2,
-  Upload,
-} from 'lucide-react'
-import NextLink from 'next/link'
+import { useEffect, useMemo, useState } from 'react'
+import { Bot, Database, Search } from 'lucide-react'
 
-import { ChatPreview, ThemeContrastWarning } from '@/components/dashboard/settings/assistant-chat-preview'
 import { AssistantLocaleCombobox } from '@/components/dashboard/settings/assistant-locale-combobox'
-import {
-  ADVANCED_THEME_FIELDS,
-  applyBrand,
-  applySurface,
-  applySurfaceMode,
-  DEFAULT_ASSISTANT_THEME,
-  getSurfaceMode,
-} from '@/components/dashboard/settings/assistant-theme-form-helpers'
+import { ModelPicker } from '@/components/dashboard/settings/model-picker'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Button } from '@/components/ui/button'
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import type { AssistantBehaviorSettings, DocumentSourceListItem, GeneralSettings } from '@/lib/api'
+import type {
+  AgentChatModelOverride,
+  AssistantBehaviorSettings,
+  DocumentSourceListItem,
+  GeneralSettings,
+} from '@/lib/api'
+import {
+  emptyEnvProviderAvailability,
+  emptyKnownModelsByProvider,
+  llmProviderNames,
+  llmProvidersApi,
+  providerDisplayName,
+  type EnvProviderAvailability,
+  type KnownModelsByProvider,
+  type LlmProviderName,
+} from '@/lib/api-llm-providers'
 
-const INSTRUCTION_PRESETS: { label: string; text: string }[] = [
+const INSTRUCTION_MAX_LENGTH = 2000
+
+type InstructionPreset = { label: string; text: string }
+
+const INSTRUCTION_PRESETS: InstructionPreset[] = [
   {
     label: 'Helpful & concise',
     text: 'Answer clearly and concisely. Prefer short paragraphs and concrete examples. If you are not sure, say so.',
@@ -62,6 +72,120 @@ function SubsectionHeading({ title, description }: { title: string; description?
   )
 }
 
+function AgentChatModelOverrideSubsection({
+  value,
+  onChange,
+}: {
+  value: AgentChatModelOverride | null
+  onChange: (next: AgentChatModelOverride | null) => void
+}) {
+  const provider: LlmProviderName | '' = value?.provider ?? ''
+  const model = value?.model ?? ''
+  const enabled = value !== null
+  const [knownModelsByProvider, setKnownModelsByProvider] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
+  const [credentialProviders, setCredentialProviders] = useState<Set<LlmProviderName>>(() => new Set())
+  const [envProviderAvailability, setEnvProviderAvailability] = useState<EnvProviderAvailability>(
+    emptyEnvProviderAvailability,
+  )
+
+  useEffect(() => {
+    let active = true
+    void Promise.all([llmProvidersApi.getModels(), llmProvidersApi.listCredentials()])
+      .then(([modelsResponse, credentialsResponse]) => {
+        if (!active) return
+        setKnownModelsByProvider(modelsResponse.knownModelsByProvider)
+        setCredentialProviders(new Set(credentialsResponse.credentials.map((c) => c.provider)))
+        setEnvProviderAvailability(credentialsResponse.envProviderAvailability)
+      })
+      .catch(() => {
+        // Falling back to the empty catalog disables the model Select; the agent
+        // editor still loads.
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const availableProviders = useMemo(
+    () =>
+      new Set(
+        llmProviderNames.filter(
+          (option) => credentialProviders.has(option) || envProviderAvailability[option],
+        ),
+      ),
+    [credentialProviders, envProviderAvailability],
+  )
+  const savedProviderUnavailable = value !== null && !availableProviders.has(value.provider)
+
+  const setProvider = (next: LlmProviderName) => {
+    // When the provider changes, drop a stale model from a different vendor so
+    // the Select doesn't show a placeholder over an invalid identifier.
+    const carriedModel = value?.provider === next ? value.model : ''
+    onChange({ provider: next, model: carriedModel })
+  }
+
+  const setModel = (next: string) => {
+    onChange({ provider: value?.provider ?? 'openai', model: next })
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <SubsectionHeading
+          title="Chat model override"
+          description="Pick the provider and model for this agent's chat calls. Leave empty to inherit the workspace default."
+        />
+        {enabled ? (
+          <Button type="button" size="sm" variant="ghost" onClick={() => onChange(null)}>
+            Use workspace default
+          </Button>
+        ) : null}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label htmlFor="agentChatProvider" className="text-xs uppercase tracking-wide text-muted-foreground">
+            Provider
+          </Label>
+          <Select value={provider} onValueChange={(next) => setProvider(next as LlmProviderName)}>
+            <SelectTrigger id="agentChatProvider">
+              <SelectValue placeholder="Use workspace default" />
+            </SelectTrigger>
+            <SelectContent>
+              {llmProviderNames.map((option) => {
+                const isAvailable = availableProviders.has(option)
+                return (
+                  <SelectItem key={option} value={option} disabled={!isAvailable}>
+                    {providerDisplayName[option]}
+                    {isAvailable ? '' : ' (no key configured)'}
+                  </SelectItem>
+                )
+              })}
+            </SelectContent>
+          </Select>
+          {savedProviderUnavailable ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              The saved provider has no API key configured. Add one in Providers settings, or clear the override.
+            </p>
+          ) : null}
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="agentChatModel" className="text-xs uppercase tracking-wide text-muted-foreground">
+            Model
+          </Label>
+          <ModelPicker
+            inputId="agentChatModel"
+            provider={provider}
+            knownModelsByProvider={knownModelsByProvider}
+            value={model}
+            onChange={(next) => setModel(next.slice(0, 200))}
+            disabled={!enabled && model.length === 0}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export interface AssistantBehaviorSectionProps {
   anonSettings: GeneralSettings
   assistantBehaviorSettings: AssistantBehaviorSettings
@@ -69,16 +193,10 @@ export interface AssistantBehaviorSectionProps {
   onAssistantSettingChange: <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => void
   onAssistantLocaleInputChange: (value: string) => void
   onAssistantBehaviorDraft: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void
-  onAssistantLogoUpload: (file: File | null) => void
-  onAssistantLogoDelete: () => void
   isAnonSaving: boolean
-  isAssistantLogoSaving: boolean
-  assistantSettingsError: string | null
   sourceList?: DocumentSourceListItem[]
   isSourceListLoading?: boolean
   sourceListError?: string | null
-  channelsTabHref?: string
-  websiteEmbedAvailable?: boolean
 }
 
 export function AssistantBehaviorSection({
@@ -88,24 +206,39 @@ export function AssistantBehaviorSection({
   onAssistantSettingChange,
   onAssistantLocaleInputChange,
   onAssistantBehaviorDraft,
-  onAssistantLogoUpload,
-  onAssistantLogoDelete,
   isAnonSaving,
-  isAssistantLogoSaving,
-  assistantSettingsError,
   sourceList = [],
   isSourceListLoading = false,
   sourceListError = null,
-  channelsTabHref,
-  websiteEmbedAvailable = false,
 }: AssistantBehaviorSectionProps) {
-  const theme = assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME
-  const surfaceMode = getSurfaceMode(theme)
-  const publicChatOn = Boolean(anonSettings.anonymousChatEnabled)
-  const websiteEmbedOn = Boolean(anonSettings.websiteEmbedEnabled)
   const sourceScope = assistantBehaviorSettings.sourceScope ?? { mode: 'all' as const }
   const selectedSourceIds = sourceScope.mode === 'selected' ? sourceScope.sourceIds : []
   const [sourceSearch, setSourceSearch] = useState('')
+  const [pendingPreset, setPendingPreset] = useState<InstructionPreset | null>(null)
+  const [presetDraft, setPresetDraft] = useState('')
+  const hasPersonaText = assistantBehaviorSettings.customInstruction.trim().length > 0
+
+  const openPreset = (preset: InstructionPreset) => {
+    setPendingPreset(preset)
+    setPresetDraft(preset.text)
+  }
+
+  const closePreset = () => {
+    setPendingPreset(null)
+  }
+
+  const applyPreset = (mode: 'replace' | 'append') => {
+    const draft = presetDraft.slice(0, INSTRUCTION_MAX_LENGTH)
+    onAssistantBehaviorDraft((current) => {
+      if (mode === 'replace' || current.customInstruction.trim().length === 0) {
+        return { ...current, customInstruction: draft }
+      }
+      const combined = `${current.customInstruction.trimEnd()}\n\n${draft}`.slice(0, INSTRUCTION_MAX_LENGTH)
+      return { ...current, customInstruction: combined }
+    })
+    closePreset()
+  }
+
   const filteredSources = useMemo(() => {
     const query = sourceSearch.trim().toLowerCase()
     if (!query) {
@@ -127,467 +260,250 @@ export function AssistantBehaviorSection({
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
-      <SettingsCard
-        icon={<Sparkles className="h-5 w-5 text-primary" />}
-        title="Assistant profile"
-        description="Name, look, and how the assistant answers."
-      >
-        {assistantSettingsError ? (
-          <p className="text-sm text-destructive" role="alert">{assistantSettingsError}</p>
+    <SettingsCard
+      id="assistant-behavior"
+      icon={<Bot className="h-5 w-5 text-primary" />}
+      title="Assistant behavior"
+      description="How the assistant answers and starts conversations."
+    >
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <Label htmlFor="assistantAnswerInstruction" className="text-foreground">
+            Instructions for the assistant
+          </Label>
+          <div className="flex flex-wrap gap-2">
+            {INSTRUCTION_PRESETS.map((preset) => (
+              <Button
+                key={preset.label}
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => openPreset(preset)}
+              >
+                {preset.label}
+              </Button>
+            ))}
+          </div>
+          <Textarea
+            id="assistantAnswerInstruction"
+            value={assistantBehaviorSettings.customInstruction}
+            onChange={(event) =>
+              onAssistantBehaviorDraft((current) => ({
+                ...current,
+                customInstruction: event.target.value.slice(0, INSTRUCTION_MAX_LENGTH),
+              }))
+            }
+            placeholder="e.g. Help visitors choose the right course. Be concise, practical, and concrete."
+            rows={4}
+          />
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Sets the purpose, scope, and tone applied to every answer. Pick a preset to start.</span>
+            <span>{assistantBehaviorSettings.customInstruction.length} / {INSTRUCTION_MAX_LENGTH}</span>
+          </div>
+        </div>
+
+        {assistantBehaviorSettings.chatModelOverride !== undefined ? (
+          <AgentChatModelOverrideSubsection
+            value={assistantBehaviorSettings.chatModelOverride}
+            onChange={(next) =>
+              onAssistantBehaviorDraft((current) => ({ ...current, chatModelOverride: next }))
+            }
+          />
         ) : null}
 
-        <div className="space-y-6">
-        <div className="space-y-4">
-          <SubsectionHeading
-            title="Identity"
-            description="What visitors see at the top of the chat."
-          />
-
-          <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-background">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={anonSettings.assistantLogoUrl ?? '/radioso-icon.svg'}
-                alt=""
-                className="h-12 w-12 object-contain"
-              />
-            </div>
-            <div className="min-w-0 flex-1 space-y-1">
-              <p className="text-sm font-medium text-foreground">Assistant logo</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button asChild size="sm" variant="outline" disabled={isAnonSaving || isAssistantLogoSaving}>
-                  <label>
-                    {isAssistantLogoSaving ? <Spinner className="mr-1 h-3 w-3" /> : <Upload className="mr-1 h-3 w-3" />}
-                    Upload
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp,image/gif"
-                      className="sr-only"
-                      onChange={(event) => {
-                        onAssistantLogoUpload(event.target.files?.[0] ?? null)
-                        event.currentTarget.value = ''
-                      }}
-                    />
-                  </label>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={onAssistantLogoDelete}
-                  disabled={isAnonSaving || isAssistantLogoSaving || !anonSettings.assistantLogoUrl}
-                >
-                  <Trash2 className="mr-1 h-3 w-3" />
-                  Remove
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="assistantName" className="text-foreground">Assistant name</Label>
-            <Input
-              id="assistantName"
-              value={anonSettings.assistantName}
-              maxLength={200}
-              onChange={(event) => onAssistantSettingChange('assistantName', event.target.value)}
-              placeholder="e.g. Marta"
+        <div className="space-y-3 rounded-lg border border-border p-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <SubsectionHeading
+              title="Knowledge scope"
+              description="Choose which workspace sources this agent can use for grounded answers."
             />
-            <p className="text-xs text-muted-foreground">
-              Shown as the chat title. Falls back to the workspace name when left blank.
-            </p>
-          </div>
-        </div>
-
-        <div className="h-px bg-border" />
-
-        <div className="space-y-4">
-          <SubsectionHeading
-            title="Appearance"
-            description="Colors used by the public chat and the hosted website widget."
-          />
-
-          <div className="space-y-1">
-            <Label htmlFor="assistantTheme-brand" className="text-foreground">Brand color</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="assistantTheme-brand"
-                type="color"
-                value={theme.brand}
-                onChange={(event) =>
+            <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5" role="group">
+              <button
+                type="button"
+                className={`rounded-sm px-3 py-1 text-xs font-medium transition-colors ${
+                  sourceScope.mode === 'all' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={() =>
                   onAssistantBehaviorDraft((current) => ({
                     ...current,
-                    theme: applyBrand(current.theme ?? DEFAULT_ASSISTANT_THEME, event.target.value),
+                    sourceScope: { mode: 'all' },
                   }))
                 }
-                className="h-9 w-14 cursor-pointer p-1"
-              />
-              <span className="text-xs font-mono text-muted-foreground">{theme.brand}</span>
+              >
+                All sources
+              </button>
+              <button
+                type="button"
+                className={`rounded-sm px-3 py-1 text-xs font-medium transition-colors ${
+                  sourceScope.mode === 'selected' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={() =>
+                  onAssistantBehaviorDraft((current) => ({
+                    ...current,
+                    sourceScope: {
+                      mode: 'selected',
+                      sourceIds: current.sourceScope?.mode === 'selected' ? current.sourceScope.sourceIds : [],
+                    },
+                  }))
+                }
+              >
+                Selected sources
+              </button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Drives the chat header, user message bubbles, and the send button.
-            </p>
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-foreground">Surface style</Label>
-            <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5" role="group">
-              {(['light', 'dark', 'custom'] as const).map((mode) => {
-                const isActive = surfaceMode === mode
-                return (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={`rounded-sm px-3 py-1 text-xs font-medium capitalize transition-colors ${
-                      isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                    onClick={() => {
-                      if (mode === 'custom') {
-                        if (surfaceMode !== 'custom') {
-                          onAssistantBehaviorDraft((current) => ({
-                            ...current,
-                            theme: applySurface(current.theme ?? DEFAULT_ASSISTANT_THEME, '#f6f7f9'),
-                          }))
-                        }
-                        return
-                      }
-                      onAssistantBehaviorDraft((current) => ({
-                        ...current,
-                        theme: applySurfaceMode(current.theme ?? DEFAULT_ASSISTANT_THEME, mode),
-                      }))
-                    }}
-                  >
-                    {mode}
-                  </button>
-                )
-              })}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Background of the message area. Pick Light or Dark for a sensible neutral, or Custom to choose any color.
-            </p>
-            {surfaceMode === 'custom' ? (
-              <div className="flex items-center gap-2 pt-1">
+          {sourceScope.mode === 'selected' ? (
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  id="assistantTheme-surface"
-                  type="color"
-                  value={theme.surface}
-                  onChange={(event) =>
-                    onAssistantBehaviorDraft((current) => ({
-                      ...current,
-                      theme: applySurface(current.theme ?? DEFAULT_ASSISTANT_THEME, event.target.value),
-                    }))
-                  }
-                  className="h-9 w-14 cursor-pointer p-1"
+                  value={sourceSearch}
+                  onChange={(event) => setSourceSearch(event.target.value)}
+                  placeholder="Search sources"
+                  className="pl-8"
                 />
-                <span className="text-xs font-mono text-muted-foreground">{theme.surface}</span>
               </div>
-            ) : null}
-          </div>
-
-          <Collapsible className="space-y-3">
-            <CollapsibleTrigger className="group inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
-              <ChevronDown className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180" />
-              Advanced colors
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {ADVANCED_THEME_FIELDS.map(({ key, label, hint }) => (
-                  <div key={key} className="space-y-1">
-                    <Label htmlFor={`assistantTheme-${key}`} className="text-foreground">{label}</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        id={`assistantTheme-${key}`}
-                        type="color"
-                        value={theme[key]}
-                        onChange={(event) =>
-                          onAssistantBehaviorDraft((current) => ({
-                            ...current,
-                            theme: {
-                              ...(current.theme ?? DEFAULT_ASSISTANT_THEME),
-                              [key]: event.target.value,
-                            },
-                          }))
-                        }
-                        className="h-9 w-14 cursor-pointer p-1"
-                      />
-                      <span className="text-xs font-mono text-muted-foreground">{theme[key]}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">{hint}</p>
-                  </div>
-                ))}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+              {sourceListError ? (
+                <p className="text-sm text-destructive">{sourceListError}</p>
+              ) : isSourceListLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Spinner className="h-4 w-4" />
+                  Loading sources...
+                </div>
+              ) : sourceList.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No persisted sources are available yet. Switch to all sources or add knowledge first.
+                </p>
+              ) : (
+                <div className="max-h-56 divide-y divide-border overflow-auto rounded-md border border-border">
+                  {filteredSources.length === 0 ? (
+                    <p className="p-3 text-sm text-muted-foreground">No sources match this search.</p>
+                  ) : filteredSources.map((source) => {
+                    const checked = selectedSourceIds.includes(source.id)
+                    return (
+                      <label key={source.id} className="flex cursor-pointer items-start gap-3 p-3 hover:bg-muted/40">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) => {
+                            updateSourceScope(event.target.checked
+                              ? [...selectedSourceIds, source.id]
+                              : selectedSourceIds.filter((sourceId) => sourceId !== source.id))
+                          }}
+                          className="mt-1 h-4 w-4 rounded border-border"
+                        />
+                        <Database className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-foreground">{source.name}</span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {source.kind} source - {source.documentCount} document{source.documentCount === 1 ? '' : 's'}
+                          </span>
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+              {selectedSourceIds.length === 0 ? (
+                <p className="text-xs text-amber-700">
+                  This agent will not retrieve grounded context until at least one source is selected.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
-        <div className="h-px bg-border" />
-
-        <div className="space-y-4">
-          <SubsectionHeading
-            title="Behavior"
-            description="How the assistant answers and starts conversations."
-          />
-
-          <div className="space-y-2">
-            <Label htmlFor="assistantAnswerInstruction" className="text-foreground">
-              Instructions for the assistant
-            </Label>
-            <div className="flex flex-wrap gap-2">
-              {INSTRUCTION_PRESETS.map((preset) => (
-                <Button
-                  key={preset.label}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    onAssistantBehaviorDraft((current) => ({
-                      ...current,
-                      customInstruction: preset.text.slice(0, 2000),
-                    }))
-                  }
-                >
-                  {preset.label}
-                </Button>
-              ))}
+        <div className="divide-y divide-border rounded-lg border border-border">
+          <div className="flex items-start justify-between gap-4 p-3">
+            <div className="min-w-0">
+              <Label htmlFor="assistantSuggestedQuestionsEnabled" className="text-foreground">
+                Suggested follow-up questions
+              </Label>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Show grounded follow-up chips after assistant answers when useful.
+              </p>
             </div>
-            <Textarea
-              id="assistantAnswerInstruction"
-              value={assistantBehaviorSettings.customInstruction}
-              onChange={(event) =>
+            <Switch
+              id="assistantSuggestedQuestionsEnabled"
+              checked={assistantBehaviorSettings.suggestedQuestionsEnabled}
+              onCheckedChange={(checked) =>
                 onAssistantBehaviorDraft((current) => ({
                   ...current,
-                  customInstruction: event.target.value.slice(0, 2000),
+                  suggestedQuestionsEnabled: checked,
                 }))
               }
-              placeholder="e.g. Help visitors choose the right course. Be concise, practical, and concrete."
-              rows={4}
             />
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Sets the purpose, scope, and tone applied to every answer. Pick a preset to start.</span>
-              <span>{assistantBehaviorSettings.customInstruction.length} / 2000</span>
-            </div>
           </div>
-
-          <div className="space-y-3 rounded-lg border border-border p-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <SubsectionHeading
-                title="Knowledge scope"
-                description="Choose which workspace sources this agent can use for grounded answers."
-              />
-              <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5" role="group">
-                <button
-                  type="button"
-                  className={`rounded-sm px-3 py-1 text-xs font-medium transition-colors ${
-                    sourceScope.mode === 'all' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  onClick={() =>
-                    onAssistantBehaviorDraft((current) => ({
-                      ...current,
-                      sourceScope: { mode: 'all' },
-                    }))
-                  }
-                >
-                  All sources
-                </button>
-                <button
-                  type="button"
-                  className={`rounded-sm px-3 py-1 text-xs font-medium transition-colors ${
-                    sourceScope.mode === 'selected' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  onClick={() =>
-                    onAssistantBehaviorDraft((current) => ({
-                      ...current,
-                      sourceScope: {
-                        mode: 'selected',
-                        sourceIds: current.sourceScope?.mode === 'selected' ? current.sourceScope.sourceIds : [],
-                      },
-                    }))
-                  }
-                >
-                  Selected sources
-                </button>
-              </div>
-            </div>
-
-            {sourceScope.mode === 'selected' ? (
-              <div className="space-y-3">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    value={sourceSearch}
-                    onChange={(event) => setSourceSearch(event.target.value)}
-                    placeholder="Search sources"
-                    className="pl-8"
-                  />
-                </div>
-                {sourceListError ? (
-                  <p className="text-sm text-destructive">{sourceListError}</p>
-                ) : isSourceListLoading ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Spinner className="h-4 w-4" />
-                    Loading sources...
-                  </div>
-                ) : sourceList.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No persisted sources are available yet. Switch to all sources or add knowledge first.
-                  </p>
-                ) : (
-                  <div className="max-h-56 divide-y divide-border overflow-auto rounded-md border border-border">
-                    {filteredSources.length === 0 ? (
-                      <p className="p-3 text-sm text-muted-foreground">No sources match this search.</p>
-                    ) : filteredSources.map((source) => {
-                      const checked = selectedSourceIds.includes(source.id)
-                      return (
-                        <label key={source.id} className="flex cursor-pointer items-start gap-3 p-3 hover:bg-muted/40">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(event) => {
-                              updateSourceScope(event.target.checked
-                                ? [...selectedSourceIds, source.id]
-                                : selectedSourceIds.filter((sourceId) => sourceId !== source.id))
-                            }}
-                            className="mt-1 h-4 w-4 rounded border-border"
-                          />
-                          <Database className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium text-foreground">{source.name}</span>
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {source.kind} source - {source.documentCount} document{source.documentCount === 1 ? '' : 's'}
-                            </span>
-                          </span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                )}
-                {selectedSourceIds.length === 0 ? (
-                  <p className="text-xs text-amber-700">
-                    This agent will not retrieve grounded context until at least one source is selected.
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="divide-y divide-border rounded-lg border border-border">
-            <div className="flex items-start justify-between gap-4 p-3">
+          <div className="space-y-3 p-3">
+            <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <Label htmlFor="assistantSuggestedQuestionsEnabled" className="text-foreground">
-                  Suggested follow-up questions
+                <Label htmlFor="proactiveGreetingEnabled" className="text-foreground">
+                  Proactive first greeting
                 </Label>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  Show grounded follow-up chips after assistant answers when useful.
+                  Whether a brand-new chat opens with an assistant-first greeting.
                 </p>
               </div>
               <Switch
-                id="assistantSuggestedQuestionsEnabled"
-                checked={assistantBehaviorSettings.suggestedQuestionsEnabled}
-                onCheckedChange={(checked) =>
-                  onAssistantBehaviorDraft((current) => ({
-                    ...current,
-                    suggestedQuestionsEnabled: checked,
-                  }))
-                }
+                id="proactiveGreetingEnabled"
+                checked={anonSettings.proactiveGreetingEnabled}
+                onCheckedChange={(checked) => onAssistantSettingChange('proactiveGreetingEnabled', checked)}
+                disabled={isAnonSaving}
               />
             </div>
-            <div className="space-y-3 p-3">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <Label htmlFor="proactiveGreetingEnabled" className="text-foreground">
-                    Proactive first greeting
-                  </Label>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    Whether a brand-new chat opens with an assistant-first greeting.
-                  </p>
-                </div>
-                <Switch
-                  id="proactiveGreetingEnabled"
-                  checked={anonSettings.proactiveGreetingEnabled}
-                  onCheckedChange={(checked) => onAssistantSettingChange('proactiveGreetingEnabled', checked)}
-                  disabled={isAnonSaving}
+            {anonSettings.proactiveGreetingEnabled ? (
+              <div className="space-y-2">
+                <Label htmlFor="assistantDefaultLocale" className="text-foreground">Fallback greeting language</Label>
+                <AssistantLocaleCombobox
+                  id="assistantDefaultLocale"
+                  value={assistantLocaleInput}
+                  onChange={onAssistantLocaleInputChange}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Used only when we can&apos;t detect the visitor&apos;s language. Replies still follow the visitor&apos;s message.
+                </p>
               </div>
-              {anonSettings.proactiveGreetingEnabled ? (
-                <div className="space-y-2">
-                  <Label htmlFor="assistantDefaultLocale" className="text-foreground">Greeting language</Label>
-                  <AssistantLocaleCombobox
-                    id="assistantDefaultLocale"
-                    value={assistantLocaleInput}
-                    onChange={onAssistantLocaleInputChange}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Pick from the list or type any BCP-47 tag (e.g. <code>en-GB</code>, <code>fr-CA</code>).
-                    Used for the automatic first greeting when we can&apos;t detect the visitor&apos;s language.
-                    Normal replies still follow the user&apos;s message language.
-                  </p>
-                </div>
-              ) : null}
-            </div>
+            ) : null}
           </div>
         </div>
-        </div>
-      </SettingsCard>
+      </div>
 
-      <aside className="lg:sticky lg:top-4 lg:self-start space-y-4" aria-label="Assistant preview">
-        <div className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            Live preview
-          </p>
-          <ChatPreview
-            themeSettings={theme}
-            assistantName={anonSettings.assistantName}
-            logoUrl={anonSettings.assistantLogoUrl ?? null}
-            showSuggestedQuestions={assistantBehaviorSettings.suggestedQuestionsEnabled}
-            showProactiveGreeting={anonSettings.proactiveGreetingEnabled}
+      <Dialog open={pendingPreset !== null} onOpenChange={(open) => { if (!open) closePreset() }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{pendingPreset?.label}</DialogTitle>
+            <DialogDescription>
+              Edit before adding to the assistant&apos;s instructions.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={presetDraft}
+            onChange={(event) => setPresetDraft(event.target.value.slice(0, INSTRUCTION_MAX_LENGTH))}
+            rows={6}
+            aria-label="Preset instructions preview"
           />
-          <div className="space-y-2">
-            <ThemeContrastWarning theme={theme} />
-            <p className="text-xs text-muted-foreground">
-              Updates as you edit. Mirrors the public chat and the website widget.
-            </p>
+          <div className="text-right text-xs text-muted-foreground">
+            {presetDraft.length} / {INSTRUCTION_MAX_LENGTH}
           </div>
-        </div>
-
-        <div className="rounded-xl border border-border bg-card/95 p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-              Where it runs
-            </p>
-            {channelsTabHref ? (
-              <NextLink
-                href={channelsTabHref}
-                className="inline-flex items-center gap-0.5 text-xs font-medium text-primary hover:underline"
-              >
-                Channels
-                <ArrowUpRight className="h-3 w-3" />
-              </NextLink>
-            ) : null}
-          </div>
-          <ul className="mt-3 space-y-2 text-sm">
-            <li className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-foreground">
-                <LinkIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                Public chat link
-              </span>
-              <span className={publicChatOn ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}>
-                {publicChatOn ? 'On' : 'Off'}
-              </span>
-            </li>
-            {websiteEmbedAvailable ? (
-              <li className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-2 text-foreground">
-                  <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-                  Website chat widget
-                </span>
-                <span className={websiteEmbedOn ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}>
-                  {websiteEmbedOn ? 'On' : 'Off'}
-                </span>
-              </li>
-            ) : null}
-          </ul>
-        </div>
-      </aside>
-    </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={closePreset}>Cancel</Button>
+            {hasPersonaText ? (
+              <>
+                <Button variant="outline" onClick={() => applyPreset('append')}>
+                  Append to instructions
+                </Button>
+                <Button onClick={() => applyPreset('replace')}>
+                  Replace instructions
+                </Button>
+              </>
+            ) : (
+              <Button onClick={() => applyPreset('replace')}>
+                Use this preset
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </SettingsCard>
   )
 }

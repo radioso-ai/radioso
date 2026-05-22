@@ -1,8 +1,10 @@
 import type { DocumentSourceResolverInput } from "../services/documentIngestionService.js";
 
 export type {
+  ChunkDetail,
   ChunkRecord,
   ChunkRepositoryPort,
+  ChunkSummary,
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
   DocumentDetails,

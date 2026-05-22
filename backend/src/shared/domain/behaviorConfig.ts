@@ -6,18 +6,9 @@ export const CHAT_BEHAVIOR = {
   intentRouting: {
     nonRetrievalConfidenceThreshold: 0.85,
   },
-  unsupportedNotice: {
-    temperature: 0,
-    maxOutputTokens: 80,
-    maxResponseLength: 240,
-  },
   groundedMiss: {
     temperature: 0,
-    unsupportedWithContextMaxOutputTokens: 120,
     noContextMaxOutputTokens: 80,
-    maxTitleLength: 120,
-    maxContextLength: 180,
-    maxContexts: 3,
     maxResponseLength: 320,
   },
   carryForward: {
@@ -67,8 +58,6 @@ export const RETRIEVAL_BEHAVIOR = {
     structuredMinChunkSizeMax: 1_000,
     structuredMaxChunkSizeMin: 1,
     structuredMaxChunkSizeMax: 2_000,
-    blockMergeSimilarityThreshold: 0.82,
-    maxFragmentChars: 900,
   },
 } as const;
 

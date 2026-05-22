@@ -3,9 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import {
   AnswerPresentationService,
-  AnswerSupportValidator,
-  MissingGroundedMissResponseComposer,
-  remapAnswerSegmentsToCitationEvidence,
+  resolveCitationArtifacts,
   type ChatGateway,
 } from "../../chat/retrievalSupport.js";
 import type { RetrievalPipelineService } from "./retrievalPipelineService.js";
@@ -17,6 +15,7 @@ import type {
   RetrievalAnswerRequest,
   RetrievalAnswerResult,
 } from "../domain/retrievalCapabilityTypes.js";
+import type { CitationEvidence } from "../../chat/contracts/answerTypes.js";
 import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
 import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
@@ -30,8 +29,6 @@ export interface RetrievalAnswerServiceDependencies {
 
 export class RetrievalAnswerService {
   private readonly answerPresentationService = new AnswerPresentationService();
-  private readonly answerSupportValidator = new AnswerSupportValidator();
-  private readonly groundedMissResponseComposer = new MissingGroundedMissResponseComposer();
   private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
   private readonly activityTracePresenter = new ActivityTracePresenter();
 
@@ -106,50 +103,16 @@ export class RetrievalAnswerService {
         answer: rawAnswer,
         citations: evidence,
       });
-      const validated = retrieval.responseSettings.answerSupportValidationEnabled === false
-        ? {
-            ...this.answerPresentationService.present({
-              answer: rawAnswer,
-              citations: evidence,
-              citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
-            }),
-            validation: {
-              ran: false,
-              answerModified: false,
-              unsupportedSegmentCount: 0,
-              substantiveUnsupportedSegmentCount: 0,
-              supportedSegmentCount: 0,
-              nonSubstantiveSegmentCount: 0,
-            },
-            segmentResults: [],
-          }
-        : await this.answerSupportValidator.validate({
-            query: input.query,
-            answer: normalized.answer,
-            answerSegments: remapAnswerSegmentsToCitationEvidence(
-              normalized.answerSegments,
-              normalized.citationEvidence,
-              evidence,
-            ),
-            citationEvidence: evidence,
-            retrievedContextSummaries: evidence.map((context) => ({
-              title: context.title,
-              content: context.content,
-            })),
-            citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
-            groundedMissResponseComposer: this.groundedMissResponseComposer,
-            unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
-          });
+      const presented = this.presentAnswer(rawAnswer, normalized, evidence);
       const activityTrace = this.activityTracePresenter.appendAnswerOutcome({
         trace: retrieval.trace,
         summary: activitySummary,
         outcome: {
-          answer: validated.answer,
+          answer: presented.answer,
           stream: false,
           hadContexts: retrieval.contexts.length > 0,
           retrievalSkipped: false,
           durationMs: Date.now() - answerStartedAt,
-          validation: validated.validation,
         },
       });
       const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
@@ -157,8 +120,8 @@ export class RetrievalAnswerService {
       await usageReservation.commit();
       const successResult = {
         outcome: "answer" as const,
-        answer: validated.answer,
-        citations: validated.citations,
+        answer: presented.answer,
+        citations: presented.citations,
         evidence: retrieval.contexts.map((context) => ({
           documentId: context.documentId,
           chunkId: context.chunkId,
@@ -166,13 +129,6 @@ export class RetrievalAnswerService {
           content: context.content,
           metadata: context.metadata,
         })),
-        validation: {
-          status: (validated.validation.ran
-            ? validated.validation.supportedSegmentCount > 0
-              ? "supported"
-              : "unsupported"
-            : "not_checked") as "supported" | "unsupported" | "not_checked",
-        },
         activitySummary: resolvedActivitySummary,
         activityTrace,
       };
@@ -184,13 +140,28 @@ export class RetrievalAnswerService {
     }
   }
 
+  private presentAnswer(
+    rawAnswer: string,
+    normalized: ReturnType<AnswerPresentationService["normalize"]>,
+    evidence: CitationEvidence[],
+  ) {
+    const presented = this.answerPresentationService.present({
+      answer: rawAnswer,
+      citations: evidence,
+    });
+
+    return {
+      ...presented,
+      ...resolveCitationArtifacts(presented, normalized, evidence),
+    };
+  }
+
   private async recordAuditAnswer(
     input: RetrievalAnswerRequest,
     execution: { surface: "retrieval" | "mcp_capability"; path: "retrieval_answer" | "mcp_grounded_answer"; retrievalInvoked: true },
     result: {
       answer: string;
       citations?: unknown[];
-      validation: { status: "supported" | "unsupported" | "not_checked" };
       activitySummary: unknown;
       activityTrace: unknown;
     },
@@ -208,7 +179,6 @@ export class RetrievalAnswerService {
         query: input.query,
         outcome: "answer",
         citationCount: result.citations?.length ?? 0,
-        validation: result.validation,
         activitySummary: result.activitySummary,
         activityTrace: result.activityTrace,
         retrieval: diagnostics,

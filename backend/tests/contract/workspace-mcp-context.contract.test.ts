@@ -1,7 +1,7 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { MCP_CONTEXT_VERSION } from "../../src/app/http/routes/mcpContextRoutes.js";
+import { MCP_CONTEXT_VERSION } from "../../src/app/http/mcpContextSupport.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 
 describe("workspace MCP context contract", () => {
@@ -34,6 +34,30 @@ describe("workspace MCP context contract", () => {
     });
   });
 
+  it("scopes supported MCP tools to the authenticated token permissions", async () => {
+    const { app, dependencies } = createTestApp();
+    const token = await issueTestToken(app, "workspace-mcp-context-scoped@example.com");
+    vi.spyOn(dependencies.accountAccessService, "hasPermission").mockImplementation(async (input) =>
+      input.permission === "workspace.documents.read" ||
+      input.permission === "workspace.retrieval.query",
+    );
+
+    const response = await request(app)
+      .get("/api/v1/workspace/mcp/context")
+      .set("authorization", `Bearer ${token.token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.supportedTools).toEqual([
+      "answer_grounded",
+      "describe_capabilities",
+      "get_document",
+      "list_documents",
+      "search_documents",
+    ]);
+    expect(response.body.supportedTools).not.toContain("create_document");
+    expect(response.body.supportedTools).not.toContain("update_retrieval_settings");
+  });
+
   it("rejects unauthenticated MCP context requests", async () => {
     const { app } = createTestApp();
 
@@ -51,7 +75,7 @@ describe("workspace MCP context contract", () => {
   it("fails closed when the workspace token no longer resolves to an active workspace", async () => {
     const { app, dependencies } = createTestApp();
     const token = await issueTestToken(app, "workspace-mcp-context-deleted@example.com");
-    await dependencies.workspaceRepository.deleteById(token.workspaceId);
+    await dependencies.workspaceRepository.deleteByIdAndAccountId(token.workspaceId, token.accountId);
 
     const response = await request(app)
       .get("/api/v1/workspace/mcp/context")

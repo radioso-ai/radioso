@@ -4,7 +4,7 @@ import {
   documentSchema,
   documentSearchHistoryParamsSchema,
   documentSearchSchema,
-} from "../../routes/documentRoutes.js";
+} from "../../routes/documentRouteSchemas.js";
 import { crawlBodySchema } from "../../../../modules/websiteCrawler/routes.js";
 import {
   retrievalAnswerSchema,

@@ -1,16 +1,27 @@
-export const websiteEmbedLauncherPositions = ["bottom-right", "bottom-left"] as const;
+export {
+  DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL,
+  DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION,
+  DEFAULT_WEBSITE_EMBED_SCRIPT_PATH,
+  defaultWebsiteEmbedTheme,
+  isAllowedWebsiteEmbedOrigin,
+  normalizeWebsiteEmbedOrigin,
+  websiteEmbedLauncherPositions,
+  type WebsiteEmbedCopyPacks,
+  type WebsiteEmbedExpertOverrides,
+  type WebsiteEmbedLauncherPosition,
+  type WebsiteEmbedThemeSettings,
+} from "../../../shared/domain/websiteEmbed.js";
 
-export type WebsiteEmbedLauncherPosition = (typeof websiteEmbedLauncherPositions)[number];
-
-export interface WebsiteEmbedThemeSettings {
-  brand: string;
-  brandText: string;
-  surface: string;
-  text: string;
-}
-
-export type WebsiteEmbedCopyPacks = Record<string, Record<string, string>>;
-export type WebsiteEmbedExpertOverrides = Record<string, string>;
+import {
+  DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL,
+  DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION,
+  defaultWebsiteEmbedTheme,
+  normalizeWebsiteEmbedOrigin,
+  type WebsiteEmbedCopyPacks,
+  type WebsiteEmbedExpertOverrides,
+  type WebsiteEmbedLauncherPosition,
+  type WebsiteEmbedThemeSettings,
+} from "../../../shared/domain/websiteEmbed.js";
 
 export interface WebsiteEmbedSettingsRecord {
   websiteEmbedEnabled: boolean;
@@ -34,16 +45,6 @@ export interface WebsiteEmbedSettingsInput {
   websiteEmbedExpertOverrides?: WebsiteEmbedExpertOverrides;
 }
 
-export const DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL = "Chat with us";
-export const DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION: WebsiteEmbedLauncherPosition = "bottom-right";
-export const DEFAULT_WEBSITE_EMBED_SCRIPT_PATH = "/radioso-embed.js";
-export const defaultWebsiteEmbedTheme = (): WebsiteEmbedThemeSettings => ({
-  brand: "#0f172a",
-  brandText: "#f8fafc",
-  surface: "#ffffff",
-  text: "#0f172a",
-});
-
 export const defaultWebsiteEmbedSettings = (): WebsiteEmbedSettingsRecord => ({
   websiteEmbedEnabled: false,
   websiteEmbedToken: null,
@@ -54,19 +55,6 @@ export const defaultWebsiteEmbedSettings = (): WebsiteEmbedSettingsRecord => ({
   websiteEmbedCopy: {},
   websiteEmbedExpertOverrides: {},
 });
-
-const normalizeOrigin = (origin: string): string | null => {
-  const trimmed = origin.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  try {
-    return new URL(trimmed).origin;
-  } catch {
-    return null;
-  }
-};
 
 const normalizeLauncherLabel = (value: string | undefined): string => {
   if (value === undefined) {
@@ -81,7 +69,7 @@ export const validateWebsiteEmbedSettings = (
 ): WebsiteEmbedSettingsRecord => {
   const defaults = defaultWebsiteEmbedSettings();
   const origins = (input.websiteEmbedAllowedOrigins ?? defaults.websiteEmbedAllowedOrigins)
-    .map(normalizeOrigin)
+    .map(normalizeWebsiteEmbedOrigin)
     .filter((origin): origin is string => Boolean(origin));
 
   const uniqueOrigins = [...new Set(origins)];
@@ -101,16 +89,4 @@ export const validateWebsiteEmbedSettings = (
     websiteEmbedCopy: input.websiteEmbedCopy ?? defaults.websiteEmbedCopy,
     websiteEmbedExpertOverrides: input.websiteEmbedExpertOverrides ?? defaults.websiteEmbedExpertOverrides,
   };
-};
-
-export const isAllowedWebsiteEmbedOrigin = (
-  allowedOrigins: string[],
-  origin: string,
-): boolean => {
-  const normalizedOrigin = normalizeOrigin(origin);
-  if (!normalizedOrigin) {
-    return false;
-  }
-
-  return allowedOrigins.includes(normalizedOrigin);
 };

@@ -1,8 +1,9 @@
 import { badRequest } from "../../../shared/domain/errors.js";
+import { normalizeLocaleTag } from "../../../shared/domain/locale.js";
+
+export { normalizeLocaleTag };
 
 const MAX_TEXT_LENGTH = 200;
-const MAX_LOCALE_LENGTH = 35;
-const LOCALE_PATTERN = /^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?$/;
 
 export interface AssistantBootstrapSettingsRecord {
   assistantName: string;
@@ -32,28 +33,6 @@ const normalizeText = (value: unknown, fieldName: string): string => {
   }
 
   return normalized;
-};
-
-export const normalizeLocaleTag = (value: unknown): string | null => {
-  if (value === undefined || value === null) {
-    return null;
-  }
-  if (typeof value !== "string") {
-    throw badRequest("assistantDefaultLocale must be a string");
-  }
-
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-  if (trimmed.length > MAX_LOCALE_LENGTH) {
-    throw badRequest(`assistantDefaultLocale must not exceed ${MAX_LOCALE_LENGTH} characters`);
-  }
-  if (!LOCALE_PATTERN.test(trimmed)) {
-    throw badRequest("assistantDefaultLocale must be a valid locale tag");
-  }
-
-  return trimmed;
 };
 
 export const defaultAssistantBootstrapSettings = (): AssistantBootstrapSettingsRecord => ({

@@ -1,6 +1,5 @@
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
-import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
@@ -9,106 +8,24 @@ import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest, notFound, payloadTooLarge } from "../../../shared/domain/errors.js";
 import { createWebsiteCrawlerRoutes } from "../../../modules/websiteCrawler/routes.js";
-import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/domain/sourceConstants.js";
 import { includeDebugQuerySchema, presentDocumentSearchResponse } from "../presenters/documentSearchPresenter.js";
-
-const MAX_DOCUMENT_LIST_LIMIT = 100;
-
-const sourceParamsSchema = z.object({
-  sourceId: z.string().uuid(),
-});
-
-const crawlPatternSchema = z.array(z.string().trim().min(1).max(200)).max(50);
-
-const sourceUpdateSchema = z.object({
-  crawlSettings: z
-    .object({
-      limit: z.number().int().min(1).optional(),
-      includeUrlPatterns: crawlPatternSchema.optional(),
-      excludeUrlPatterns: crawlPatternSchema.optional(),
-      preserveContentLinks: z.boolean().optional(),
-    })
-    .refine(
-      (value) =>
-        value.limit !== undefined ||
-        value.includeUrlPatterns !== undefined ||
-        value.excludeUrlPatterns !== undefined ||
-        value.preserveContentLinks !== undefined,
-      { message: "crawlSettings must include at least one field" },
-    )
-    .optional(),
-});
-
-const toCrawlSettings = (config: Record<string, unknown>) => {
-  const policy = config.policy && typeof config.policy === "object" && !Array.isArray(config.policy)
-    ? (config.policy as Record<string, unknown>)
-    : {};
-  const includeUrlPatterns = Array.isArray(policy.includeUrlPatterns)
-    ? policy.includeUrlPatterns.filter((value): value is string => typeof value === "string")
-    : [];
-  const excludeUrlPatterns = Array.isArray(policy.excludeUrlPatterns)
-    ? policy.excludeUrlPatterns.filter((value): value is string => typeof value === "string")
-    : [];
-  return {
-    url: typeof config.url === "string" ? config.url : null,
-    limit:
-      typeof config.limit === "number" && Number.isInteger(config.limit) && config.limit > 0
-        ? config.limit
-        : resolveWebsiteCrawlerConfig().defaultLimit,
-    includeUrlPatterns,
-    excludeUrlPatterns,
-    preserveContentLinks: typeof policy.preserveContentLinks === "boolean" ? policy.preserveContentLinks : true,
-  };
-};
-
-const documentSourceSchema = z.union([
-  z.object({
-    id: z.string().uuid(),
-  }).strict(),
-  z.object({
-    kind: z.literal("website"),
-    url: z.string().trim().url().refine((value) => {
-      try {
-        const parsed = new URL(value);
-        return parsed.protocol === "http:" || parsed.protocol === "https:";
-      } catch {
-        return false;
-      }
-    }, "source.url must use http or https"),
-  }).strict(),
-]);
-
-export const documentSchema = z.object({
-  title: z.string().min(1),
-  content: z.string().min(1),
-  metadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional().refine(
-    (val) => !val || Buffer.byteLength(JSON.stringify(val), "utf8") <= 16384,
-    { message: "Metadata must be 16 KB or less" },
-  ),
-  externalDocumentId: z.string().trim().min(1).optional(),
-  source: documentSourceSchema.optional(),
-});
-
-export const documentParamsSchema = z.object({
-  documentId: z.string().uuid(),
-});
-
-export const documentSearchSchema = z.object({
-  query: z.string().trim().min(1),
-  metadataFilter: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
-  includeDebug: z.boolean().optional().default(false),
-});
-
-export const documentSearchHistoryParamsSchema = z.object({
-  searchId: z.string().uuid(),
-});
-
-export const documentListQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(MAX_DOCUMENT_LIST_LIMIT).default(MAX_DOCUMENT_LIST_LIMIT),
-  offset: z.coerce.number().int().min(0).optional(),
-  cursor: z.string().min(1).optional(),
-});
+import {
+  applyWebsiteCrawlSettingsPatch,
+  buildWebsiteRecrawlRequest,
+  presentDocumentSource,
+  presentDocumentSourceList,
+} from "../presenters/documentSourcePresenter.js";
+import {
+  chunkParamsSchema,
+  documentListQuerySchema,
+  documentParamsSchema,
+  documentSchema,
+  documentSearchHistoryParamsSchema,
+  documentSearchSchema,
+  sourceParamsSchema,
+  sourceUpdateSchema,
+} from "./documentRouteSchemas.js";
 
 type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
@@ -127,11 +44,6 @@ type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "websiteCrawlerProvider"
   | "usageLimitPolicy"
 >;
-
-export const chunkParamsSchema = z.object({
-  documentId: z.string().uuid(),
-  chunkId: z.string().uuid(),
-});
 
 export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): Router => {
   const router = Router();
@@ -195,40 +107,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         dependencies.documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
         dependencies.documentSourceRepository.countDocumentsWithoutSource(workspaceId),
       ]);
-      const syntheticSourceRows: typeof sources = [];
-
-      if (documentsWithoutSourceCount > 0) {
-        syntheticSourceRows.push({
-          id: MANUALLY_ADDED_DOCUMENTS_SOURCE_ID,
-          workspaceId,
-          kind: "upload",
-          name: "Manually added documents",
-          externalId: null,
-          config: {},
-          metadata: {},
-          lastSyncStatus: null,
-          lastSyncedAt: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          documentCount: documentsWithoutSourceCount,
-        });
-      }
-
-      const allSources = [...sources, ...syntheticSourceRows];
-      res.status(200).json({
-        sources: allSources.map((source) => ({
-          id: source.id,
-          kind: source.kind,
-          name: source.name,
-          externalId: source.externalId,
-          lastSyncStatus: source.lastSyncStatus,
-          lastSyncedAt: source.lastSyncedAt?.toISOString() ?? null,
-          createdAt: source.createdAt.toISOString(),
-          updatedAt: source.updatedAt.toISOString(),
-          documentCount: source.documentCount,
-          ...(source.kind === "website" ? { crawlSettings: toCrawlSettings(source.config) } : {}),
-        })),
-      });
+      res.status(200).json(presentDocumentSourceList(workspaceId, sources, documentsWithoutSourceCount));
     } catch (error) {
       next(error);
     }
@@ -268,16 +147,10 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       if (source.kind !== "website") {
         throw badRequest("Only website sources can be recrawled");
       }
-      const url = typeof source.config.url === "string" ? source.config.url : null;
+      const { url, limit, policy } = buildWebsiteRecrawlRequest(source.config);
       if (!url) {
         throw badRequest("Source has no configured URL");
       }
-      const config = resolveWebsiteCrawlerConfig();
-      const previousLimit = typeof source.config.limit === "number" ? source.config.limit : config.defaultLimit;
-      const limit = Math.min(previousLimit, config.maxLimit);
-      const policy = source.config.policy && typeof source.config.policy === "object" && !Array.isArray(source.config.policy)
-        ? source.config.policy as Record<string, unknown>
-        : undefined;
       const result = await dependencies.websiteCrawlJobService.enqueue({
         accountId,
         workspaceId,
@@ -344,62 +217,17 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
 
       const crawlInput = (req.body as { crawlSettings?: Record<string, unknown> }).crawlSettings;
       if (!crawlInput) {
-        res.status(200).json({
-          id: source.id,
-          kind: source.kind,
-          name: source.name,
-          externalId: source.externalId,
-          lastSyncStatus: source.lastSyncStatus,
-          lastSyncedAt: source.lastSyncedAt?.toISOString() ?? null,
-          createdAt: source.createdAt.toISOString(),
-          updatedAt: source.updatedAt.toISOString(),
-          documentCount: 0,
-          crawlSettings: toCrawlSettings(source.config),
-        });
+        res.status(200).json(presentDocumentSource(source));
         return;
       }
-
-      const previous = toCrawlSettings(source.config);
-      const crawlerConfig = resolveWebsiteCrawlerConfig();
-      const nextLimit = crawlInput.limit !== undefined ? Math.min(crawlInput.limit as number, crawlerConfig.maxLimit) : previous.limit;
-      const nextIncludeUrlPatterns = crawlInput.includeUrlPatterns !== undefined
-        ? (crawlInput.includeUrlPatterns as string[])
-        : previous.includeUrlPatterns;
-      const nextExcludeUrlPatterns = crawlInput.excludeUrlPatterns !== undefined
-        ? (crawlInput.excludeUrlPatterns as string[])
-        : previous.excludeUrlPatterns;
-      const nextPreserveContentLinks = crawlInput.preserveContentLinks !== undefined
-        ? (crawlInput.preserveContentLinks as boolean)
-        : previous.preserveContentLinks;
-
-      const nextConfig: Record<string, unknown> = {
-        ...source.config,
-        limit: nextLimit,
-        policy: {
-          includeUrlPatterns: nextIncludeUrlPatterns,
-          excludeUrlPatterns: nextExcludeUrlPatterns,
-          preserveContentLinks: nextPreserveContentLinks,
-        },
-      };
 
       const updated = await dependencies.documentSourceRepository.updateConfigByIdAndWorkspaceId({
         sourceId,
         workspaceId,
-        config: nextConfig,
+        config: applyWebsiteCrawlSettingsPatch(source.config, crawlInput),
       });
 
-      res.status(200).json({
-        id: updated.id,
-        kind: updated.kind,
-        name: updated.name,
-        externalId: updated.externalId,
-        lastSyncStatus: updated.lastSyncStatus,
-        lastSyncedAt: updated.lastSyncedAt?.toISOString() ?? null,
-        createdAt: updated.createdAt.toISOString(),
-        updatedAt: updated.updatedAt.toISOString(),
-        documentCount: 0,
-        crawlSettings: toCrawlSettings(updated.config),
-      });
+      res.status(200).json(presentDocumentSource(updated));
     } catch (error) {
       next(error);
     }

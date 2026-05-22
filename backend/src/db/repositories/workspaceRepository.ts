@@ -116,7 +116,7 @@ export interface WorkspaceRepositoryPort {
   findByWebsiteEmbedToken(token: string): Promise<WorkspaceRecord | null>;
   listByAccountId(accountId: string): Promise<WorkspaceRecord[]>;
   countByAccountId(accountId: string): Promise<number>;
-  updateName(workspaceId: string, name: string): Promise<WorkspaceRecord>;
+  updateName(workspaceId: string, accountId: string, name: string): Promise<WorkspaceRecord>;
   updateAnonymousChatSettings(
     workspaceId: string,
     enabled: boolean,
@@ -143,7 +143,7 @@ export interface WorkspaceRepositoryPort {
     workspaceId: string,
     input: AssistantBootstrapSettingsInput,
   ): Promise<WorkspaceRecord>;
-  deleteById(workspaceId: string): Promise<boolean>;
+  deleteByIdAndAccountId(workspaceId: string, accountId: string): Promise<boolean>;
 }
 
 export class WorkspaceRepository implements WorkspaceRepositoryPort {
@@ -214,12 +214,13 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
     return parseInt(row.count, 10);
   }
 
-  async updateName(workspaceId: string, name: string): Promise<WorkspaceRecord> {
+  async updateName(workspaceId: string, accountId: string, name: string): Promise<WorkspaceRecord> {
     const row = await this.database.queryOptional<WorkspaceRow>(
       `UPDATE workspaces SET name = $1, updated_at = NOW()
        WHERE id = $2
+         AND account_id = $3
        RETURNING ${workspaceColumns}`,
-      [name, workspaceId],
+      [name, workspaceId, accountId],
     );
 
     if (!row) {
@@ -360,7 +361,12 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
     return mapWorkspace(row);
   }
 
-  async deleteById(workspaceId: string): Promise<boolean> {
-    return (await this.database.execute("DELETE FROM workspaces WHERE id = $1", [workspaceId])) > 0;
+  async deleteByIdAndAccountId(workspaceId: string, accountId: string): Promise<boolean> {
+    return (
+      (await this.database.execute(
+        "DELETE FROM workspaces WHERE id = $1 AND account_id = $2",
+        [workspaceId, accountId],
+      )) > 0
+    );
   }
 }

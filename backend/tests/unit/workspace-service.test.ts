@@ -66,4 +66,31 @@ describe("workspace service", () => {
       code: "not_found",
     });
   });
+
+  it("rename refuses to mutate a workspace belonging to a different account", async () => {
+    const repository = new InMemoryWorkspaceRepository();
+    const service = new WorkspaceService(repository, createAuditService());
+    const workspace = await service.create("account-1", "Owned");
+
+    await expect(service.rename(workspace.id, "account-2", "Hijacked")).rejects.toMatchObject({
+      code: "not_found",
+    });
+
+    const untouched = await repository.findByIdAndAccountId(workspace.id, "account-1");
+    expect(untouched?.name).toBe("Owned");
+  });
+
+  it("delete refuses to mutate a workspace belonging to a different account", async () => {
+    const repository = new InMemoryWorkspaceRepository();
+    const service = new WorkspaceService(repository, createAuditService());
+    await service.create("account-1", "Keep");
+    const target = await service.create("account-1", "Owned");
+
+    await expect(service.delete(target.id, "account-2")).rejects.toMatchObject({
+      code: "not_found",
+    });
+
+    const survivor = await repository.findByIdAndAccountId(target.id, "account-1");
+    expect(survivor).not.toBeNull();
+  });
 });

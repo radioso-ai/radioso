@@ -22,7 +22,8 @@ describe("WordpressClient", () => {
       modifiedAfter: "2026-05-15T00:00:00",
     });
 
-    expect(url).toMatch(/^https:\/\/example\.com\/wp-json\/wp\/v2\/page\?/);
+    // WordPress REST exposes the `page` post type at the plural `pages` base.
+    expect(url).toMatch(/^https:\/\/example\.com\/wp-json\/wp\/v2\/pages\?/);
     const params = new URL(url).searchParams;
     expect(params.get("page")).toBe("2");
     expect(params.get("per_page")).toBe("50");
@@ -30,6 +31,24 @@ describe("WordpressClient", () => {
     expect(params.get("order")).toBe("asc");
     expect(params.get("status")).toBe("publish");
     expect(params.get("modified_after")).toBe("2026-05-15T00:00:00");
+  });
+
+  it("maps built-in post types to their REST base (page→pages, post→posts) and passes custom types through", () => {
+    const client = new WordpressClient({ siteUrl: "https://example.com" });
+    expect(client.buildPostsUrl({ type: "page", page: 1, perPage: 1 })).toContain("/wp-json/wp/v2/pages?");
+    expect(client.buildPostsUrl({ type: "post", page: 1, perPage: 1 })).toContain("/wp-json/wp/v2/posts?");
+    expect(client.buildPostsUrl({ type: "tribe_events", page: 1, perPage: 1 })).toContain("/wp-json/wp/v2/tribe_events?");
+  });
+
+  it("returns an empty page on 404 so unknown custom post types don't break backfill", async () => {
+    const fetchImpl = vi.fn(async () => new Response("not found", { status: 404 }));
+    const client = new WordpressClient({
+      siteUrl: "https://example.com",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const result = await client.fetchPostsPage({ type: "event", page: 1, perPage: 10 });
+    expect(result).toEqual({ posts: [], totalPages: 0 });
   });
 
   it("sends Basic auth header when credentials are configured", async () => {

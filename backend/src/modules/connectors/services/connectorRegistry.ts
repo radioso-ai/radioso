@@ -44,10 +44,29 @@ interface ConnectorConflictFailure {
   detail: string;
 }
 
+interface ConnectorSyncSuccess {
+  kind: "success";
+  accepted: true;
+}
+
+interface ConnectorUnsupportedFailure {
+  kind: "unsupported";
+}
+
+interface ConnectorAlreadyRunningFailure {
+  kind: "already_running";
+}
+
 export type ConnectorMutationResult =
   | ConnectorSaveSuccess
   | ConnectorValidationFailure
   | ConnectorConflictFailure;
+
+export type ConnectorSyncResult =
+  | ConnectorSyncSuccess
+  | ConnectorValidationFailure
+  | ConnectorUnsupportedFailure
+  | ConnectorAlreadyRunningFailure;
 
 const SECRET_ENCRYPTION_REQUIRED_STATUS = "secret_encryption_required";
 const SECRET_ROTATION_REQUIRED_STATUS = "secret_rotation_required";
@@ -149,6 +168,7 @@ export class ConnectorRegistry {
         description: plugin.description,
         enabled: config?.enabled ?? false,
         errorStatus: config?.error_status ?? null,
+        supportsManualSync: Boolean(plugin.syncNow),
         webhookPath: plugin.getWebhookPath(),
       };
     });
@@ -183,6 +203,7 @@ export class ConnectorRegistry {
       maskedConfig = this.maskSecrets(row.config_data, schema);
       errorStatus = errorStatus ?? secretStatus;
     }
+    const syncState = await this.getSyncState(db, workspaceId, connectorId);
 
     return {
       id: plugin.id,
@@ -190,9 +211,45 @@ export class ConnectorRegistry {
       description: plugin.description,
       enabled: row?.enabled ?? false,
       errorStatus,
+      supportsManualSync: Boolean(plugin.syncNow),
       webhookPath: plugin.getWebhookPath(),
       configSchema: schema,
       config: maskedConfig,
+      syncState,
+    };
+  }
+
+  private async getSyncState(
+    db: ConnectorDatabasePort,
+    workspaceId: string,
+    connectorId: string,
+  ): Promise<ConnectorDetail["syncState"]> {
+    const [row] = await db.query<{
+      backfill_completed_at: string | null;
+      sync_requested_at: string | null;
+      sync_started_at: string | null;
+      last_run_at: string | null;
+      last_modified_at: string | null;
+      last_ingested_count: number | null;
+    }>(
+      `SELECT backfill_completed_at::text AS backfill_completed_at,
+              sync_requested_at::text AS sync_requested_at,
+              sync_started_at::text AS sync_started_at,
+              last_run_at::text AS last_run_at,
+              last_modified_at::text AS last_modified_at,
+              last_ingested_count
+         FROM connector_sync_state
+        WHERE workspace_id = $1 AND connector_id = $2`,
+      [workspaceId, connectorId],
+    );
+
+    return {
+      backfillCompletedAt: row?.backfill_completed_at ?? null,
+      syncRequestedAt: row?.sync_requested_at ?? null,
+      syncStartedAt: row?.sync_started_at ?? null,
+      lastRunAt: row?.last_run_at ?? null,
+      lastModifiedAt: row?.last_modified_at ?? null,
+      lastIngestedCount: row?.last_ingested_count ?? null,
     };
   }
 
@@ -411,6 +468,31 @@ export class ConnectorRegistry {
        WHERE workspace_id = $1 AND connector_id = $2`,
       [workspaceId, connectorId],
     );
+  }
+
+  async syncConnector(
+    db: ConnectorDatabasePort,
+    workspaceId: string,
+    connectorId: string,
+  ): Promise<ConnectorSyncResult> {
+    const plugin = this.plugins.get(connectorId);
+    if (!plugin?.syncNow) {
+      return { kind: "unsupported" };
+    }
+
+    const stored = await this.getDecryptedConfig(db, workspaceId, connectorId);
+    if (!stored?.enabled) {
+      return {
+        kind: "validation_error",
+        issues: [{ key: "connector", message: "Connector must be enabled before syncing" }],
+      };
+    }
+
+    const result = await plugin.syncNow({ workspaceId });
+    if (result.alreadyRunning) {
+      return { kind: "already_running" };
+    }
+    return { kind: "success", accepted: true };
   }
 
   async getDecryptedConfig(

@@ -137,6 +137,18 @@ interface InMemoryConnectorConfigRecord {
   updatedAt: Date;
 }
 
+interface InMemoryConnectorSyncStateRecord {
+  workspaceId: string;
+  connectorId: string;
+  backfillCompletedAt: Date | null;
+  syncRequestedAt: Date | null;
+  syncStartedAt: Date | null;
+  syncLockToken: string | null;
+  lastRunAt: Date | null;
+  lastModifiedAt: Date | null;
+  lastIngestedCount: number | null;
+}
+
 export class InMemoryAccountRepository implements AccountRepositoryPort {
   private readonly items = new Map<string, AccountRecord>();
 
@@ -1163,6 +1175,7 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
 
 export class InMemoryConnectorDatabase {
   readonly configs = new Map<string, InMemoryConnectorConfigRecord>();
+  readonly syncStates = new Map<string, InMemoryConnectorSyncStateRecord>();
 
   async query<T>(text: string, params: unknown[] = []): Promise<T[]> {
     const sql = text.replace(/\s+/g, " ").trim();
@@ -1211,6 +1224,26 @@ export class InMemoryConnectorDatabase {
       return config ? [{ config_data: config.configData } as T] : [];
     }
 
+    if (sql.startsWith("SELECT backfill_completed_at::text AS backfill_completed_at")) {
+      const connectorFirst = sql.includes("WHERE connector_id = $1 AND workspace_id = $2");
+      const [workspaceId, connectorId] = connectorFirst
+        ? [params[1] as string, params[0] as string]
+        : [params[0] as string, params[1] as string];
+      const state = this.syncStates.get(this.key(workspaceId, connectorId));
+      return state
+        ? [
+            {
+              backfill_completed_at: state.backfillCompletedAt?.toISOString() ?? null,
+              sync_requested_at: state.syncRequestedAt?.toISOString() ?? null,
+              sync_started_at: state.syncStartedAt?.toISOString() ?? null,
+              last_run_at: state.lastRunAt?.toISOString() ?? null,
+              last_modified_at: state.lastModifiedAt?.toISOString() ?? null,
+              last_ingested_count: state.lastIngestedCount,
+            } as T,
+          ]
+        : [];
+    }
+
     if (sql.startsWith("SELECT workspace_id FROM connector_configs")) {
       const [connectorId, workspaceId, fieldKey, fieldValue] = params as [string, string, string, string];
       return [...this.configs.values()]
@@ -1225,21 +1258,120 @@ export class InMemoryConnectorDatabase {
     }
 
     if (sql.startsWith("INSERT INTO connector_configs")) {
-      const [workspaceId, connectorId, rawConfig] = params as [string, string, string];
+      const [workspaceId, connectorId, rawConfig, errorStatus] = params as [string, string, string, string | null];
       const key = this.key(workspaceId, connectorId);
       const existing = this.configs.get(key);
+      const insertsEnabledColumn = /^INSERT INTO connector_configs \([^)]*\benabled\b/.test(sql);
       const configData =
         typeof rawConfig === "string" ? (JSON.parse(rawConfig) as Record<string, string>) : (rawConfig as Record<string, string>);
       this.configs.set(key, {
         id: existing?.id ?? randomUUID(),
         workspaceId,
         connectorId,
-        enabled: existing?.enabled ?? false,
+        enabled: insertsEnabledColumn ? true : existing?.enabled ?? false,
         configData,
-        errorStatus: null,
+        errorStatus: errorStatus ?? null,
         createdAt: existing?.createdAt ?? new Date(),
         updatedAt: new Date(),
       });
+      return [];
+    }
+
+    if (sql.startsWith("INSERT INTO connector_sync_state")) {
+      const connectorFirst = sql.includes("(connector_id, workspace_id");
+      const [workspaceId, connectorId] = connectorFirst
+        ? [params[1] as string, params[0] as string]
+        : [params[0] as string, params[1] as string];
+      const existing = this.syncStates.get(this.key(workspaceId, connectorId));
+      const setsLastIngestedCount = sql.includes("last_ingested_count");
+      const ingestedCount = setsLastIngestedCount
+        ? (params[3] as number | null)
+        : existing?.lastIngestedCount ?? null;
+      if (sql.includes("RETURNING workspace_id")) {
+        if (existing?.syncRequestedAt || existing?.syncStartedAt) {
+          return [];
+        }
+        this.syncStates.set(this.key(workspaceId, connectorId), {
+          workspaceId,
+          connectorId,
+          backfillCompletedAt: existing?.backfillCompletedAt ?? null,
+          syncRequestedAt: new Date(),
+          syncStartedAt: existing?.syncStartedAt ?? null,
+          syncLockToken: existing?.syncLockToken ?? null,
+          lastRunAt: existing?.lastRunAt ?? null,
+          lastModifiedAt: existing?.lastModifiedAt ?? null,
+          lastIngestedCount: existing?.lastIngestedCount ?? null,
+        });
+        return [{ workspace_id: workspaceId } as T];
+      }
+      if (sql.includes("RETURNING sync_lock_token")) {
+        if (existing?.syncStartedAt && !existing.syncRequestedAt) {
+          return [];
+        }
+        const lockToken = params[2] as string;
+        this.syncStates.set(this.key(workspaceId, connectorId), {
+          workspaceId,
+          connectorId,
+          backfillCompletedAt: existing?.backfillCompletedAt ?? null,
+          syncRequestedAt: null,
+          syncStartedAt: new Date(),
+          syncLockToken: lockToken,
+          lastRunAt: new Date(),
+          lastModifiedAt: existing?.lastModifiedAt ?? null,
+          lastIngestedCount: existing?.lastIngestedCount ?? null,
+        });
+        return [{ sync_lock_token: lockToken } as T];
+      }
+      const lockToken = params[4] as string | undefined;
+      if (sql.includes("WHERE connector_sync_state.sync_lock_token = $5") && existing?.syncLockToken !== lockToken) {
+        return [];
+      }
+      this.syncStates.set(this.key(workspaceId, connectorId), {
+        workspaceId,
+        connectorId,
+        backfillCompletedAt: sql.includes("backfill_completed_at")
+          ? new Date()
+          : existing?.backfillCompletedAt ?? null,
+        syncRequestedAt: sql.includes("sync_requested_at") && !sql.includes("sync_requested_at = NULL")
+          ? new Date()
+          : sql.includes("sync_requested_at = NULL")
+            ? null
+            : existing?.syncRequestedAt ?? null,
+        syncStartedAt: sql.includes("sync_started_at") && !sql.includes("sync_started_at = NULL")
+          ? new Date()
+          : sql.includes("sync_started_at = NULL")
+            ? null
+            : existing?.syncStartedAt ?? null,
+        syncLockToken: sql.includes("sync_lock_token") && !sql.includes("sync_lock_token = NULL")
+          ? lockToken ?? existing?.syncLockToken ?? null
+          : null,
+        lastRunAt: sql.includes("last_run_at")
+          ? new Date()
+          : existing?.lastRunAt ?? null,
+        lastModifiedAt: sql.includes("last_modified_at")
+          ? new Date()
+          : existing?.lastModifiedAt ?? null,
+        lastIngestedCount: ingestedCount,
+      });
+      return [];
+    }
+
+    if (/^UPDATE connector_sync_state\s+SET sync_started_at = NULL/.test(sql)) {
+      const [connectorId, workspaceId, lockToken] = params as [string, string, string];
+      const state = this.syncStates.get(this.key(workspaceId, connectorId));
+      if (state && state.syncLockToken === lockToken) {
+        state.syncStartedAt = null;
+        state.syncLockToken = null;
+      }
+      return [];
+    }
+
+    if (/^UPDATE connector_sync_state\s+SET sync_started_at = NOW\(\)/.test(sql)) {
+      const [connectorId, workspaceId, lockToken] = params as [string, string, string];
+      const state = this.syncStates.get(this.key(workspaceId, connectorId));
+      if (state && state.syncLockToken === lockToken) {
+        state.syncStartedAt = new Date();
+      }
       return [];
     }
 
@@ -1269,6 +1401,16 @@ export class InMemoryConnectorDatabase {
       const config = this.configs.get(this.key(workspaceId, connectorId));
       if (config) {
         config.errorStatus = errorStatus;
+        config.updatedAt = new Date();
+      }
+      return [];
+    }
+
+    if (/^UPDATE connector_configs\s+SET error_status = NULL/.test(sql)) {
+      const [workspaceId, connectorId, errorStatus] = params as [string, string, string];
+      const config = this.configs.get(this.key(workspaceId, connectorId));
+      if (config?.errorStatus === errorStatus) {
+        config.errorStatus = null;
         config.updatedAt = new Date();
       }
       return [];

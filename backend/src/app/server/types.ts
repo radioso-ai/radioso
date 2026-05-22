@@ -10,12 +10,12 @@ import type {
   DocumentDeletionService,
   DocumentImportService,
   DocumentIngestionService,
-  DocumentJobConsumerPort,
   DocumentProcessingWorker,
   DocumentSearchHistoryService,
   DocumentSearchService,
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
+import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { IngestionSettingsService } from "../../modules/settings/composition.js";
 import type { PlatformSettingsService } from "../../modules/settings/composition.js";
 import type { RetrievalSettingsService } from "../../modules/settings/composition.js";
@@ -98,11 +98,11 @@ export interface AppDependencies {
   documentSearchHistoryService: DocumentSearchHistoryService;
   workspaceIngestionReprocessService: WorkspaceIngestionReprocessService;
   documentProcessingWorker: DocumentProcessingWorker;
-  documentJobConsumer?: DocumentJobConsumerPort;
+  documentJobConsumer?: JobConsumerPort;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
   websiteCrawlJobService: WebsiteCrawlJobService;
   websiteCrawlWorker: WebsiteCrawlWorker;
-  websiteCrawlJobConsumer?: DocumentJobConsumerPort;
+  websiteCrawlJobConsumer?: JobConsumerPort;
   documentDeletionService: DocumentDeletionService;
   documentStorage: DocumentStoragePort;
   chatService: ChatService;

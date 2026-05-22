@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { MarkdownContent, isSafeHref } from '@/components/markdown/markdown-content'
+import {
+  MarkdownContent,
+  isSafeHref,
+  shouldHandleMarkdownLinkClick,
+  shouldOpenMarkdownLinkThroughEmbedLauncher,
+} from '@/components/markdown/markdown-content'
 
 describe('isSafeHref', () => {
   it('accepts relative, hash, http, https, and mailto links', () => {
@@ -18,6 +23,61 @@ describe('isSafeHref', () => {
     expect(isSafeHref('file:///etc/passwd')).toBe(false)
     expect(isSafeHref(undefined)).toBe(false)
     expect(isSafeHref('')).toBe(false)
+  })
+})
+
+describe('shouldHandleMarkdownLinkClick', () => {
+  const primaryClick = {
+    defaultPrevented: false,
+    button: 0,
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+  }
+
+  it('handles only unmodified primary-button clicks', () => {
+    expect(shouldHandleMarkdownLinkClick(primaryClick)).toBe(true)
+    expect(shouldHandleMarkdownLinkClick({ ...primaryClick, button: 1 })).toBe(false)
+    expect(shouldHandleMarkdownLinkClick({ ...primaryClick, metaKey: true })).toBe(false)
+    expect(shouldHandleMarkdownLinkClick({ ...primaryClick, ctrlKey: true })).toBe(false)
+    expect(shouldHandleMarkdownLinkClick({ ...primaryClick, shiftKey: true })).toBe(false)
+    expect(shouldHandleMarkdownLinkClick({ ...primaryClick, altKey: true })).toBe(false)
+    expect(shouldHandleMarkdownLinkClick({ ...primaryClick, defaultPrevented: true })).toBe(false)
+  })
+})
+
+describe('shouldOpenMarkdownLinkThroughEmbedLauncher', () => {
+  it('routes links through the launcher only from framed embedded chat pages', () => {
+    expect(shouldOpenMarkdownLinkThroughEmbedLauncher({
+      isFramed: true,
+      pathname: '/embed/embed-token',
+      href: 'https://example.com/docs',
+      baseUrl: 'https://app.example.com/embed/embed-token',
+    })).toBe(true)
+
+    expect(shouldOpenMarkdownLinkThroughEmbedLauncher({
+      isFramed: false,
+      pathname: '/embed/embed-token',
+      href: 'https://example.com/docs',
+      baseUrl: 'https://app.example.com/embed/embed-token',
+    })).toBe(false)
+
+    expect(shouldOpenMarkdownLinkThroughEmbedLauncher({
+      isFramed: true,
+      pathname: '/chat/public-token',
+      href: 'https://example.com/docs',
+      baseUrl: 'https://app.example.com/chat/public-token',
+    })).toBe(false)
+  })
+
+  it('lets mailto links use default browser handling in embedded chat pages', () => {
+    expect(shouldOpenMarkdownLinkThroughEmbedLauncher({
+      isFramed: true,
+      pathname: '/embed/embed-token',
+      href: 'mailto:hi@example.com',
+      baseUrl: 'https://app.example.com/embed/embed-token',
+    })).toBe(false)
   })
 })
 

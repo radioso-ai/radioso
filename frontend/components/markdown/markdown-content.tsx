@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, type ComponentPropsWithoutRef } from 'react'
+import { Fragment, type ComponentPropsWithoutRef, type MouseEvent } from 'react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -9,6 +9,10 @@ import { cn } from '@/lib/utils'
 import { CodeBlock } from './code-block'
 
 const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
+const EMBED_OPEN_LINK_MESSAGE = 'radioso:embed:open-link'
+// Keep in sync with the public embed route at app/embed/[token]/page.tsx.
+const EMBED_FRAME_PATH_PREFIX = '/embed/'
+const FALLTHROUGH_EMBED_LINK_PROTOCOLS = new Set(['mailto:'])
 
 type HastElement = NonNullable<ExtraProps['node']>
 type ElementContent = HastElement['children'][number]
@@ -25,6 +29,68 @@ export const isSafeHref = (href?: string) => {
   try {
     const url = new URL(href)
     return SAFE_LINK_PROTOCOLS.has(url.protocol)
+  } catch {
+    return false
+  }
+}
+
+export const shouldOpenMarkdownLinkThroughEmbedLauncher = ({
+  isFramed,
+  pathname,
+  href,
+  baseUrl,
+}: {
+  isFramed: boolean
+  pathname: string
+  href: string
+  baseUrl: string
+}) => {
+  if (!isFramed || !pathname.startsWith(EMBED_FRAME_PATH_PREFIX)) {
+    return false
+  }
+
+  try {
+    const url = new URL(href, baseUrl)
+    return !FALLTHROUGH_EMBED_LINK_PROTOCOLS.has(url.protocol)
+  } catch {
+    return false
+  }
+}
+
+export const shouldHandleMarkdownLinkClick = ({
+  defaultPrevented,
+  button,
+  metaKey,
+  ctrlKey,
+  shiftKey,
+  altKey,
+}: {
+  defaultPrevented: boolean
+  button: number
+  metaKey: boolean
+  ctrlKey: boolean
+  shiftKey: boolean
+  altKey: boolean
+}) => !defaultPrevented && button === 0 && !metaKey && !ctrlKey && !shiftKey && !altKey
+
+const openMarkdownLinkThroughEmbedLauncher = (href?: string) => {
+  if (!href || typeof window === 'undefined') {
+    return false
+  }
+
+  if (!shouldOpenMarkdownLinkThroughEmbedLauncher({
+    isFramed: window.parent !== window,
+    pathname: window.location.pathname,
+    href,
+    baseUrl: window.location.href,
+  })) {
+    return false
+  }
+
+  try {
+    const url = new URL(href, window.location.href)
+    window.parent.postMessage({ type: EMBED_OPEN_LINK_MESSAGE, href: url.toString() }, '*')
+    return true
   } catch {
     return false
   }
@@ -93,6 +159,15 @@ const MarkdownLink = ({
       href={href}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={(event: MouseEvent<HTMLAnchorElement>) => {
+        if (!shouldHandleMarkdownLinkClick(event)) {
+          return
+        }
+
+        if (openMarkdownLinkThroughEmbedLauncher(href)) {
+          event.preventDefault()
+        }
+      }}
       className={cn(
         'text-[var(--message-link-fg,var(--color-primary))] underline underline-offset-4 hover:text-[var(--message-link-hover-fg,var(--color-primary))]',
         className,

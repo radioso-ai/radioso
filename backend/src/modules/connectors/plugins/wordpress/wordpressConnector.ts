@@ -36,6 +36,8 @@ export const WP_CONFIG_KEYS = {
   pollIntervalSec: "poll_interval_sec",
 } as const;
 
+const WORDPRESS_SYNC_FAILED_STATUS = "sync_failed";
+
 export class WordpressConnector implements ConnectorPlugin {
   readonly id = "wordpress";
   readonly name = "WordPress";
@@ -195,10 +197,29 @@ export class WordpressConnector implements ConnectorPlugin {
 
   /** Exposed for an admin "Backfill now" action; safe to call repeatedly. */
   async backfillNow(workspaceId: string): Promise<{ ingested: number }> {
+    return this.runBackfillWithStatus(workspaceId, { force: true });
+  }
+
+  private async runBackfillWithStatus(
+    workspaceId: string,
+    options?: { force?: boolean },
+  ): Promise<{ ingested: number }> {
     if (!this.syncDeps) {
       throw new Error("WordPress connector is not initialized");
     }
-    return runBackfill(this.syncDeps, workspaceId, { force: true });
+    const deps = this.syncDeps;
+    try {
+      const result = await runBackfill(deps, workspaceId, options);
+      await deps.state.setErrorStatus(workspaceId, null);
+      return result;
+    } catch (error) {
+      await deps.state.setErrorStatus(workspaceId, WORDPRESS_SYNC_FAILED_STATUS);
+      throw error;
+    }
+  }
+
+  async syncNow({ workspaceId }: { workspaceId: string }): Promise<{ ingested: number }> {
+    return this.backfillNow(workspaceId);
   }
 
   /**
@@ -227,8 +248,9 @@ export class WordpressConnector implements ConnectorPlugin {
       );
     }
 
-    const deps = this.syncDeps;
-    void runBackfill(deps, workspaceId).catch((error) => {
+    void this.runBackfillWithStatus(workspaceId).catch((error) => {
+      const deps = this.syncDeps;
+      if (!deps) return;
       deps.logger.warn(
         {
           workspaceId,

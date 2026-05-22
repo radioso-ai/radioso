@@ -18,6 +18,7 @@ const presentSummary = (summary: ConnectorSummary) => ({
   description: summary.description,
   enabled: summary.enabled,
   errorStatus: summary.errorStatus,
+  supportsManualSync: summary.supportsManualSync,
 });
 
 const buildWebhookUrl = (
@@ -49,6 +50,7 @@ const presentDetail = (
   schema: detail.configSchema,
   config: detail.config ?? {},
   webhookUrl: buildWebhookUrl(req, detail.webhookPath, workspaceId, explicitBaseUrl),
+  syncState: detail.syncState,
 });
 
 const validationError = (issues: ConnectorValidationIssue[]) => ({
@@ -161,6 +163,29 @@ export const createConnectorRoutes = (dependencies: ConnectorRouteDependencies):
       await registry.disableConnector(db, workspaceId, req.params.connectorId);
       const detail = await registry.getConnectorDetail(db, workspaceId, req.params.connectorId);
       res.status(200).json(presentDetail(req, workspaceId, detail!, dependencies.env.CONNECTOR_PUBLIC_BASE_URL));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // POST /api/v1/connectors/:connectorId/sync
+  router.post("/:connectorId/sync", async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      if (!registry.getPlugin(req.params.connectorId)) {
+        res.status(404).json({ error: "Connector not found" });
+        return;
+      }
+      const result = await registry.syncConnector(db, workspaceId, req.params.connectorId);
+      if (result.kind === "unsupported") {
+        res.status(409).json({ error: "Manual sync unsupported" });
+        return;
+      }
+      if (result.kind === "validation_error") {
+        res.status(400).json(validationError(result.issues));
+        return;
+      }
+      res.status(200).json({ ingested: result.ingested });
     } catch (error) {
       next(error);
     }

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
   ConnectorContext,
@@ -7,6 +7,10 @@ import type {
 } from "@radioso/connector-api";
 
 import { WordpressConnector } from "../../../../src/modules/connectors/plugins/wordpress/wordpressConnector.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("WordpressConnector.validateConfig", () => {
   const connector = new WordpressConnector();
@@ -108,12 +112,14 @@ describe("WordpressConnector.onEnable", () => {
   const buildEnabledConnector = (overrides?: {
     config?: Record<string, string>;
     ensureSource?: ConnectorIngestionPort["ensureSource"];
+    setErrorStatus?: ConnectorStatePort["setErrorStatus"];
   }) => {
     const connector = new WordpressConnector();
     const ensureSource = overrides?.ensureSource ?? vi.fn(async () => ({ id: "src-1" }));
+    const setErrorStatus = overrides?.setErrorStatus ?? vi.fn(async () => {});
     const state: ConnectorStatePort = {
       getConfig: async () => ({ enabled: true, config: overrides?.config ?? { site_url: "https://example.com/" } }),
-      setErrorStatus: async () => {},
+      setErrorStatus,
     };
     const ingestion = {
       ingest: vi.fn(async () => ({ documentId: "doc-1", status: "queued" })),
@@ -128,7 +134,7 @@ describe("WordpressConnector.onEnable", () => {
       http: { mount: () => {} },
       ingestion,
     };
-    return { connector, context, ensureSource };
+    return { connector, context, ensureSource, setErrorStatus };
   };
 
   it("registers a connector-kind source on enable using the configured site URL", async () => {
@@ -160,5 +166,18 @@ describe("WordpressConnector.onEnable", () => {
 
     await expect(connector.onEnable!({ workspaceId: "ws-1" })).resolves.toBeUndefined();
     expect(ensureSource).toHaveBeenCalled();
+  });
+
+  it("persists a sync failure status when manual sync cannot read WordPress", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new Error("offline");
+    }));
+    const setErrorStatus = vi.fn(async () => {});
+    const { connector, context } = buildEnabledConnector({ setErrorStatus });
+    await connector.initialize(context);
+
+    await expect(connector.syncNow!({ workspaceId: "ws-1" })).rejects.toThrow("offline");
+
+    expect(setErrorStatus).toHaveBeenCalledWith("ws-1", "sync_failed");
   });
 });

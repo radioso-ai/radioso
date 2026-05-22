@@ -137,6 +137,15 @@ interface InMemoryConnectorConfigRecord {
   updatedAt: Date;
 }
 
+interface InMemoryConnectorSyncStateRecord {
+  workspaceId: string;
+  connectorId: string;
+  backfillCompletedAt: Date | null;
+  lastRunAt: Date | null;
+  lastModifiedAt: Date | null;
+  lastIngestedCount: number | null;
+}
+
 export class InMemoryAccountRepository implements AccountRepositoryPort {
   private readonly items = new Map<string, AccountRecord>();
 
@@ -1163,6 +1172,7 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
 
 export class InMemoryConnectorDatabase {
   readonly configs = new Map<string, InMemoryConnectorConfigRecord>();
+  readonly syncStates = new Map<string, InMemoryConnectorSyncStateRecord>();
 
   async query<T>(text: string, params: unknown[] = []): Promise<T[]> {
     const sql = text.replace(/\s+/g, " ").trim();
@@ -1211,6 +1221,21 @@ export class InMemoryConnectorDatabase {
       return config ? [{ config_data: config.configData } as T] : [];
     }
 
+    if (sql.startsWith("SELECT backfill_completed_at::text AS backfill_completed_at")) {
+      const [workspaceId, connectorId] = params as [string, string];
+      const state = this.syncStates.get(this.key(workspaceId, connectorId));
+      return state
+        ? [
+            {
+              backfill_completed_at: state.backfillCompletedAt?.toISOString() ?? null,
+              last_run_at: state.lastRunAt?.toISOString() ?? null,
+              last_modified_at: state.lastModifiedAt?.toISOString() ?? null,
+              last_ingested_count: state.lastIngestedCount,
+            } as T,
+          ]
+        : [];
+    }
+
     if (sql.startsWith("SELECT workspace_id FROM connector_configs")) {
       const [connectorId, workspaceId, fieldKey, fieldValue] = params as [string, string, string, string];
       return [...this.configs.values()]
@@ -1225,7 +1250,7 @@ export class InMemoryConnectorDatabase {
     }
 
     if (sql.startsWith("INSERT INTO connector_configs")) {
-      const [workspaceId, connectorId, rawConfig] = params as [string, string, string];
+      const [workspaceId, connectorId, rawConfig, errorStatus] = params as [string, string, string, string | null];
       const key = this.key(workspaceId, connectorId);
       const existing = this.configs.get(key);
       const configData =
@@ -1234,11 +1259,35 @@ export class InMemoryConnectorDatabase {
         id: existing?.id ?? randomUUID(),
         workspaceId,
         connectorId,
-        enabled: existing?.enabled ?? false,
+        enabled: sql.includes("enabled") ? true : existing?.enabled ?? false,
         configData,
-        errorStatus: null,
+        errorStatus: errorStatus ?? null,
         createdAt: existing?.createdAt ?? new Date(),
         updatedAt: new Date(),
+      });
+      return [];
+    }
+
+    if (sql.startsWith("INSERT INTO connector_sync_state")) {
+      const connectorFirst = sql.includes("(connector_id, workspace_id");
+      const [workspaceId, connectorId] = connectorFirst
+        ? [params[1] as string, params[0] as string]
+        : [params[0] as string, params[1] as string];
+      const existing = this.syncStates.get(this.key(workspaceId, connectorId));
+      const ingestedCount = [...params].reverse().find((value): value is number => typeof value === "number");
+      this.syncStates.set(this.key(workspaceId, connectorId), {
+        workspaceId,
+        connectorId,
+        backfillCompletedAt: sql.includes("backfill_completed_at")
+          ? new Date()
+          : existing?.backfillCompletedAt ?? null,
+        lastRunAt: sql.includes("last_run_at")
+          ? new Date()
+          : existing?.lastRunAt ?? null,
+        lastModifiedAt: sql.includes("last_modified_at")
+          ? new Date()
+          : existing?.lastModifiedAt ?? null,
+        lastIngestedCount: ingestedCount ?? existing?.lastIngestedCount ?? null,
       });
       return [];
     }

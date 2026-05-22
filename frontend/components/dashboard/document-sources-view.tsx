@@ -35,6 +35,7 @@ import {
 import { SourceCrawlLogSheet } from '@/components/dashboard/source-crawl-log-sheet'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
 import { CrawlPolicyFields } from '@/components/dashboard/documents/crawl-policy-fields'
 import {
   documentsApi,
@@ -73,6 +74,13 @@ const formatDate = (value: string | null) => {
   }
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? 'Never' : date.toLocaleDateString()
+}
+
+const connectorIdFromExternalId = (externalId: string | null): string | null => {
+  if (!externalId) return null
+  const separatorIndex = externalId.indexOf(':')
+  if (separatorIndex <= 0) return null
+  return externalId.slice(0, separatorIndex)
 }
 
 interface DocumentSourcesViewProps {
@@ -188,6 +196,7 @@ function SourceExpandedPanel({
   isResumePending,
   onViewDocuments,
   onOpenCrawlLog,
+  onOpenConnectorSettings,
   onSettingsSaved,
 }: {
   source: DocumentSourceListItem
@@ -195,6 +204,7 @@ function SourceExpandedPanel({
   isResumePending: boolean
   onViewDocuments: () => void
   onOpenCrawlLog: () => void
+  onOpenConnectorSettings: () => void
   onSettingsSaved: (settings: DocumentSourceCrawlSettings) => void
 }) {
   const [crawlJob, setCrawlJob] = useState<WebsiteCrawlJobSummary | null>(null)
@@ -287,6 +297,12 @@ function SourceExpandedPanel({
               </Button>
             </CollapsibleTrigger>
           ) : null}
+          {source.kind === 'connector' && connectorIdFromExternalId(source.externalId) ? (
+            <Button type="button" variant="outline" size="sm" onClick={onOpenConnectorSettings}>
+              <Settings2 className="mr-2 h-3.5 w-3.5" />
+              Settings
+            </Button>
+          ) : null}
         </div>
         {source.kind === 'website' && source.crawlSettings ? (
           <CollapsibleContent className="pt-3">
@@ -305,6 +321,7 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
   const [error, setError] = useState<string | null>(null)
   const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null)
   const [crawlLogSource, setCrawlLogSource] = useState<DocumentSourceListItem | null>(null)
+  const [connectorSetupSource, setConnectorSetupSource] = useState<DocumentSourceListItem | null>(null)
   const [deleteCandidate, setDeleteCandidate] = useState<DocumentSourceListItem | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -716,6 +733,7 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
                         isResumePending={pendingResumeSourceIds.has(source.id)}
                         onViewDocuments={() => onViewDocumentsForSource(source.id)}
                         onOpenCrawlLog={() => setCrawlLogSource(source)}
+                        onOpenConnectorSettings={() => setConnectorSetupSource(source)}
                         onSettingsSaved={(settings) => {
                           setSources((current) =>
                             current.map((entry) =>
@@ -739,6 +757,19 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
           if (!open) setCrawlLogSource(null)
         }}
       />
+
+      {connectorSetupSource ? (
+        <ConnectorSetupDialog
+          open
+          connectorId={connectorIdFromExternalId(connectorSetupSource.externalId) ?? connectorSetupSource.kind}
+          onOpenChange={(open) => {
+            if (!open) {
+              setConnectorSetupSource(null)
+              void loadSources()
+            }
+          }}
+        />
+      ) : null}
 
       <AlertDialog
         open={deleteCandidate !== null}

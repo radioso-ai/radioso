@@ -329,6 +329,7 @@ function CredentialRow({
 
   useEffect(() => {
     if (!editing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Closing the editor clears the transient credential draft.
       setDraft('')
     }
   }, [editing])

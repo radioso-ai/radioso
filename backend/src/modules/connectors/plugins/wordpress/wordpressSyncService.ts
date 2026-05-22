@@ -81,6 +81,14 @@ export const runBackfill = async (
   let ingested = 0;
   let highWaterMark: string | null = null;
 
+  await deps.db.query(
+    `INSERT INTO connector_sync_state (connector_id, workspace_id, last_run_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (connector_id, workspace_id) DO UPDATE
+       SET last_run_at = NOW()`,
+    [CONNECTOR_ID, workspaceId],
+  );
+
   for (const type of types) {
     let page = 1;
     let totalPages = 1;
@@ -114,13 +122,21 @@ export const runBackfill = async (
   }
 
   await deps.db.query(
-    `INSERT INTO connector_sync_state (connector_id, workspace_id, backfill_completed_at, last_run_at, last_modified_at)
-     VALUES ($1, $2, NOW(), NOW(), $3)
+    `INSERT INTO connector_sync_state (
+       connector_id,
+       workspace_id,
+       backfill_completed_at,
+       last_run_at,
+       last_modified_at,
+       last_ingested_count
+     )
+     VALUES ($1, $2, NOW(), NOW(), $3, $4)
      ON CONFLICT (connector_id, workspace_id) DO UPDATE
        SET backfill_completed_at = NOW(),
            last_run_at = NOW(),
-           last_modified_at = COALESCE(EXCLUDED.last_modified_at, connector_sync_state.last_modified_at)`,
-    [CONNECTOR_ID, workspaceId, highWaterMark],
+           last_modified_at = COALESCE(EXCLUDED.last_modified_at, connector_sync_state.last_modified_at),
+           last_ingested_count = EXCLUDED.last_ingested_count`,
+    [CONNECTOR_ID, workspaceId, highWaterMark, ingested],
   );
 
   deps.logger.info({ workspaceId, ingested }, "wordpress backfill completed");
@@ -190,12 +206,13 @@ export const runPoll = async (
   }
 
   await deps.db.query(
-    `INSERT INTO connector_sync_state (connector_id, workspace_id, last_run_at, last_modified_at)
-     VALUES ($1, $2, NOW(), $3)
+    `INSERT INTO connector_sync_state (connector_id, workspace_id, last_run_at, last_modified_at, last_ingested_count)
+     VALUES ($1, $2, NOW(), $3, $4)
      ON CONFLICT (connector_id, workspace_id) DO UPDATE
        SET last_run_at = NOW(),
-           last_modified_at = COALESCE(EXCLUDED.last_modified_at, connector_sync_state.last_modified_at)`,
-    [CONNECTOR_ID, workspaceId, newCursor],
+           last_modified_at = COALESCE(EXCLUDED.last_modified_at, connector_sync_state.last_modified_at),
+           last_ingested_count = EXCLUDED.last_ingested_count`,
+    [CONNECTOR_ID, workspaceId, newCursor, ingested],
   );
 
   if (ingested > 0) {

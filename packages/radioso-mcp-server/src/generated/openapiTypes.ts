@@ -1217,6 +1217,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/connectors/{connectorId}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a manual connector sync */
+        post: operations["syncConnector"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/chat/{token}": {
         parameters: {
             query?: never;
@@ -3176,6 +3193,7 @@ export interface components {
             description: string;
             enabled: boolean;
             errorStatus: string | null;
+            supportsManualSync: boolean;
         };
         ConnectorListResponse: {
             connectors: components["schemas"]["ConnectorSummary"][];
@@ -3187,6 +3205,16 @@ export interface components {
             };
             /** Format: uri */
             webhookUrl: string;
+            syncState: {
+                backfillCompletedAt: string | null;
+                lastRunAt: string | null;
+                lastModifiedAt: string | null;
+                lastIngestedCount: number | null;
+                lastErrorStatus: string | null;
+            };
+        };
+        ConnectorSyncResponse: {
+            ingested: number;
         };
         ConnectorConfigUpdateRequest: {
             config: {
@@ -6973,6 +7001,70 @@ export interface operations {
                     "application/json": {
                         /** @enum {string} */
                         error: "Connector not found";
+                    };
+                };
+            };
+        };
+    };
+    syncConnector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connector sync completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorSyncResponse"];
+                };
+            };
+            /** @description Connector cannot sync in its current state */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorValidationErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connector not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        error: "Connector not found";
+                    };
+                };
+            };
+            /** @description Manual sync unsupported */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        error: "Manual sync unsupported";
                     };
                 };
             };

@@ -19,12 +19,23 @@ export interface ConnectorSummary {
   description: string
   enabled: boolean
   errorStatus: string | null
+  supportsManualSync: boolean
+}
+
+export interface ConnectorSyncState {
+  backfillCompletedAt: string | null
+  syncRequestedAt: string | null
+  syncStartedAt: string | null
+  lastRunAt: string | null
+  lastModifiedAt: string | null
+  lastIngestedCount: number | null
 }
 
 export interface ConnectorDetail extends ConnectorSummary {
   schema: ConnectorConfigFieldDefinition[]
   config: Record<string, string>
   webhookUrl: string
+  syncState: ConnectorSyncState
 }
 
 export interface ConnectorValidationIssue {
@@ -46,6 +57,44 @@ export class ConnectorConflictError extends Error {
     super(message)
     this.name = 'ConnectorConflictError'
   }
+}
+
+const buildConnectorError = async (response: Response): Promise<Error> => {
+  let payload: unknown = null
+  try {
+    payload = await response.json()
+  } catch {
+    // ignore
+  }
+
+  if (
+    response.status === 400 &&
+    payload &&
+    typeof payload === 'object' &&
+    'fields' in payload &&
+    Array.isArray((payload as { fields: unknown }).fields)
+  ) {
+    const body = payload as { error?: string; fields: ConnectorValidationIssue[] }
+    return new ConnectorValidationError(body.error ?? 'Validation failed', body.fields)
+  }
+
+  if (
+    response.status === 409 &&
+    payload &&
+    typeof payload === 'object'
+  ) {
+    const body = payload as { error?: string; detail?: string }
+    return new ConnectorConflictError(body.detail ?? body.error ?? 'Conflict')
+  }
+
+  const message =
+    payload &&
+    typeof payload === 'object' &&
+    'error' in payload &&
+    typeof (payload as { error: unknown }).error === 'string'
+      ? ((payload as { error: string }).error)
+      : `Request failed with status ${response.status}`
+  return new Error(message)
 }
 
 const connectorMutation = async (path: string, init: RequestInit): Promise<ConnectorDetail> => {
@@ -70,41 +119,7 @@ const connectorMutation = async (path: string, init: RequestInit): Promise<Conne
     return (await response.json()) as ConnectorDetail
   }
 
-  let payload: unknown = null
-  try {
-    payload = await response.json()
-  } catch {
-    // ignore
-  }
-
-  if (
-    response.status === 400 &&
-    payload &&
-    typeof payload === 'object' &&
-    'fields' in payload &&
-    Array.isArray((payload as { fields: unknown }).fields)
-  ) {
-    const body = payload as { error?: string; fields: ConnectorValidationIssue[] }
-    throw new ConnectorValidationError(body.error ?? 'Validation failed', body.fields)
-  }
-
-  if (
-    response.status === 409 &&
-    payload &&
-    typeof payload === 'object'
-  ) {
-    const body = payload as { error?: string; detail?: string }
-    throw new ConnectorConflictError(body.detail ?? body.error ?? 'Conflict')
-  }
-
-  const message =
-    payload &&
-    typeof payload === 'object' &&
-    'error' in payload &&
-    typeof (payload as { error: unknown }).error === 'string'
-      ? ((payload as { error: string }).error)
-      : `Request failed with status ${response.status}`
-  throw new Error(message)
+  throw await buildConnectorError(response)
 }
 
 export const connectorsApi = {
@@ -137,5 +152,21 @@ export const connectorsApi = {
     return connectorMutation(`/connectors/${encodeURIComponent(connectorId)}/disable`, {
       method: 'POST',
     })
+  },
+
+  async sync(connectorId: string): Promise<{ accepted: boolean }> {
+    const token = await requireWorkspaceApiToken()
+    const response = await fetch(`${API_BASE}/connectors/${encodeURIComponent(connectorId)}/sync`, {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'omit',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    if (!response.ok) {
+      throw await buildConnectorError(response)
+    }
+    return (await response.json()) as { accepted: boolean }
   },
 }

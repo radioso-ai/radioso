@@ -56,6 +56,7 @@ export interface OpenApiSchemaCatalog {
   ConnectorFieldSchema: z.ZodTypeAny;
   connectorIdPathParamsSchema: RouteParameterSchema;
   ConnectorListResponseSchema: z.ZodTypeAny;
+  ConnectorSyncResponseSchema: z.ZodTypeAny;
   ConnectorSummarySchema: z.ZodTypeAny;
   ConnectorValidationErrorSchema: z.ZodTypeAny;
   ConnectorValidationIssueSchema: z.ZodTypeAny;

@@ -173,6 +173,14 @@ export interface ConnectorPlugin {
    * Throwing here does not roll back the enable; the registry logs and moves on.
    */
   onEnable?(input: { workspaceId: string }): Promise<void>;
+
+  /**
+   * Optional manual sync entry point for admin UI actions. Connector plugins
+   * decide what "sync now" means for their upstream, but it should be safe to
+   * call repeatedly. Implementations should accept work quickly and report an
+   * already-running sync instead of starting overlapping work.
+   */
+  syncNow?(input: { workspaceId: string }): Promise<{ accepted: boolean; alreadyRunning?: boolean }>;
 }
 
 export interface ConnectorValidationIssue {
@@ -189,7 +197,17 @@ export interface ConnectorSummary {
   description: string;
   enabled: boolean;
   errorStatus: string | null;
+  supportsManualSync: boolean;
   webhookPath: string;
+}
+
+export interface ConnectorSyncState {
+  backfillCompletedAt: string | null;
+  syncRequestedAt: string | null;
+  syncStartedAt: string | null;
+  lastRunAt: string | null;
+  lastModifiedAt: string | null;
+  lastIngestedCount: number | null;
 }
 
 /**
@@ -198,4 +216,5 @@ export interface ConnectorSummary {
 export interface ConnectorDetail extends ConnectorSummary {
   configSchema: ConfigFieldDefinition[];
   config: Record<string, string> | null;
+  syncState: ConnectorSyncState;
 }

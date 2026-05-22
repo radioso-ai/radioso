@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Download } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Download, RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -86,6 +86,17 @@ const buildSubmitPayload = (
 const WORDPRESS_POLLING_KEYS = new Set(['wp_username', 'wp_application_password'])
 const WORDPRESS_ADVANCED_KEYS = new Set(['post_types', 'poll_interval_sec'])
 
+const formatDateTime = (value: string | null): string => {
+  if (!value) return 'Never'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? 'Never' : date.toLocaleString()
+}
+
+const formatIngestedCount = (value: number | null): string => {
+  if (value === null) return 'Unknown'
+  return `${value} ${value === 1 ? 'document' : 'documents'}`
+}
+
 interface FieldGroup {
   primary: ConnectorConfigFieldDefinition[]
   polling: ConnectorConfigFieldDefinition[]
@@ -144,6 +155,54 @@ function WordpressSetupGuide() {
   )
 }
 
+function ConnectorSyncStatus({ detail }: { detail: ConnectorDetail }) {
+  const state = detail.syncState
+  const status = (() => {
+    if (detail.errorStatus) return { label: detail.errorStatus, className: 'text-destructive' }
+    if (!detail.enabled) return { label: 'Disabled', className: 'text-muted-foreground' }
+    if (state.syncRequestedAt) {
+      return { label: 'Sync queued', className: 'text-muted-foreground' }
+    }
+    if (state.syncStartedAt) {
+      return { label: 'Sync running', className: 'text-muted-foreground' }
+    }
+    if (!state.backfillCompletedAt && state.lastRunAt) {
+      return { label: 'Backfill started', className: 'text-muted-foreground' }
+    }
+    if (!state.backfillCompletedAt) {
+      return { label: 'Waiting for first backfill', className: 'text-muted-foreground' }
+    }
+    return { label: 'Synced', className: 'text-emerald-600 dark:text-emerald-400' }
+  })()
+
+  return (
+    <div className="rounded-md border border-border bg-background/40 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-sm font-medium text-foreground">Sync status</p>
+        <span className={`text-xs font-medium ${status.className}`}>{status.label}</span>
+      </div>
+      <dl className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+        <div>
+          <dt className="font-medium text-foreground">Last backfill</dt>
+          <dd>{formatDateTime(state.backfillCompletedAt)}</dd>
+        </div>
+        <div>
+          <dt className="font-medium text-foreground">Last sync attempt</dt>
+          <dd>{formatDateTime(state.lastRunAt)}</dd>
+        </div>
+        <div>
+          <dt className="font-medium text-foreground">Latest upstream update</dt>
+          <dd>{formatDateTime(state.lastModifiedAt)}</dd>
+        </div>
+        <div>
+          <dt className="font-medium text-foreground">Last sync ingested</dt>
+          <dd>{formatIngestedCount(state.lastIngestedCount)}</dd>
+        </div>
+      </dl>
+    </div>
+  )
+}
+
 export function ConnectorSetupDialog({
   open,
   connectorId,
@@ -161,33 +220,43 @@ export function ConnectorSetupDialog({
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isTogglingEnabled, setIsTogglingEnabled] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
   const [pollingOpen, setPollingOpen] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+
+  const applyDetail = useCallback((next: ConnectorDetail, options?: { resetForm?: boolean; autoExpand?: boolean }) => {
+    setDetail(next)
+    if (options?.resetForm ?? true) {
+      setValues(initialFormValues(next))
+    }
+    if (options?.autoExpand === false) {
+      return
+    }
+    // Auto-expand the polling section if it's already configured so the user
+    // can see why those fields are populated.
+    const config = next.config ?? {}
+    if (config['wp_username'] || config['wp_application_password']) {
+      setPollingOpen(true)
+    }
+    const pollInterval = Number(config['poll_interval_sec'] ?? '0')
+    if (
+      (Number.isFinite(pollInterval) && pollInterval > 0) ||
+      (config['post_types'] && config['post_types'] !== 'page,post')
+    ) {
+      setAdvancedOpen(true)
+    }
+  }, [])
+
+  const loadDetail = useCallback(async (options?: { resetForm?: boolean; autoExpand?: boolean }) => {
+    const next = await connectorsApi.get(connectorId)
+    applyDetail(next, options)
+  }, [applyDetail, connectorId])
 
   useEffect(() => {
     let cancelled = false
 
-    void connectorsApi
-      .get(connectorId)
-      .then((next) => {
-        if (cancelled) return
-        setDetail(next)
-        setValues(initialFormValues(next))
-        // Auto-expand the polling section if it's already configured so the user
-        // can see why those fields are populated.
-        const config = next.config ?? {}
-        if (config['wp_username'] || config['wp_application_password']) {
-          setPollingOpen(true)
-        }
-        const pollInterval = Number(config['poll_interval_sec'] ?? '0')
-        if (
-          Number.isFinite(pollInterval) &&
-          pollInterval > 0 ||
-          (config['post_types'] && config['post_types'] !== 'page,post')
-        ) {
-          setAdvancedOpen(true)
-        }
-      })
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Load request updates dialog state asynchronously from the connector API.
+    void loadDetail()
       .catch((error: unknown) => {
         if (cancelled) return
         setFormError(getApiErrorMessage(error, 'Failed to load connector.'))
@@ -201,7 +270,16 @@ export function ConnectorSetupDialog({
     return () => {
       cancelled = true
     }
-  }, [connectorId])
+  }, [loadDetail])
+
+  useEffect(() => {
+    if (!open) return
+    const interval = window.setInterval(() => {
+      if (document.hidden) return
+      void loadDetail({ resetForm: false, autoExpand: false }).catch(() => {})
+    }, 15000)
+    return () => window.clearInterval(interval)
+  }, [loadDetail, open])
 
   const setFieldValue = useCallback((key: string, value: string) => {
     setValues((current) => ({ ...current, [key]: value }))
@@ -245,8 +323,7 @@ export function ConnectorSetupDialog({
 
     try {
       const next = await connectorsApi.save(detail.id, payload)
-      setDetail(next)
-      setValues(initialFormValues(next))
+      applyDetail(next)
       setSuccessMessage('Configuration saved.')
     } catch (error) {
       if (error instanceof ConnectorValidationError) {
@@ -273,8 +350,7 @@ export function ConnectorSetupDialog({
       const next = detail.enabled
         ? await connectorsApi.disable(detail.id)
         : await connectorsApi.enable(detail.id)
-      setDetail(next)
-      setValues(initialFormValues(next))
+      applyDetail(next)
       setSuccessMessage(next.enabled ? 'Connector enabled.' : 'Connector disabled.')
     } catch (error) {
       if (error instanceof ConnectorValidationError) {
@@ -289,8 +365,27 @@ export function ConnectorSetupDialog({
     }
   }
 
+  const handleSyncNow = async () => {
+    if (!detail || !detail.enabled || !detail.supportsManualSync) return
+
+    setIsSyncing(true)
+    setFormError(null)
+    setSuccessMessage(null)
+
+    try {
+      await connectorsApi.sync(detail.id)
+      await loadDetail({ resetForm: false, autoExpand: false })
+      setSuccessMessage('Sync started.')
+    } catch (error) {
+      await loadDetail({ resetForm: false, autoExpand: false }).catch(() => {})
+      setFormError(getApiErrorMessage(error, 'Failed to run sync.'))
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
   const handleDialogChange = (next: boolean) => {
-    if (!next && (isSaving || isTogglingEnabled)) return
+    if (!next && (isSaving || isTogglingEnabled || isSyncing)) return
     onOpenChange(next)
   }
 
@@ -462,6 +557,7 @@ export function ConnectorSetupDialog({
           <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
             <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
               {isWordpress ? <WordpressSetupGuide /> : null}
+              <ConnectorSyncStatus detail={detail} />
               <CopyValueField
                 label="Webhook URL"
                 value={detail.webhookUrl}
@@ -537,21 +633,43 @@ export function ConnectorSetupDialog({
                 type="button"
                 variant={detail.enabled ? 'outline' : 'secondary'}
                 onClick={() => void handleToggleEnabled()}
-                disabled={isSaving || isTogglingEnabled}
+                disabled={isSaving || isTogglingEnabled || isSyncing}
               >
                 {isTogglingEnabled ? <Spinner className="mr-2" /> : null}
                 {detail.enabled ? 'Disable' : 'Enable'}
               </Button>
               <div className="flex justify-end gap-2">
+                {detail.supportsManualSync ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void handleSyncNow()}
+                    disabled={
+                      !detail.enabled ||
+                      Boolean(detail.syncState.syncRequestedAt) ||
+                      Boolean(detail.syncState.syncStartedAt) ||
+                      isSaving ||
+                      isTogglingEnabled ||
+                      isSyncing
+                    }
+                  >
+                    {isSyncing ? (
+                      <Spinner className="mr-2" />
+                    ) : (
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                    )}
+                    Sync now
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => handleDialogChange(false)}
-                  disabled={isSaving || isTogglingEnabled}
+                  disabled={isSaving || isTogglingEnabled || isSyncing}
                 >
                   Close
                 </Button>
-                <Button type="submit" disabled={isSaving || isTogglingEnabled}>
+                <Button type="submit" disabled={isSaving || isTogglingEnabled || isSyncing}>
                   {isSaving ? <Spinner className="mr-2" /> : null}
                   Save
                 </Button>

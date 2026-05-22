@@ -16,6 +16,7 @@ import type {
   ConnectorLogger,
   ConnectorStatePort,
 } from "@radioso/connector-api";
+import { randomUUID } from "node:crypto";
 
 import { WordpressClient } from "./wordpressClient.js";
 import { mapRestPostToIngestInput } from "./wordpressIngest.js";
@@ -24,6 +25,8 @@ import { wordpressSourceFor } from "./wordpressSource.js";
 const PER_PAGE = 100;
 const TICK_INTERVAL_MS = 30_000;
 const CONNECTOR_ID = "wordpress";
+const STALE_SYNC_LOCK_INTERVAL = "30 minutes";
+const WORDPRESS_SYNC_FAILED_STATUS = "sync_failed";
 
 export interface WordpressSyncDeps {
   logger: ConnectorLogger;
@@ -58,73 +61,224 @@ const postTypesFromConfig = (config: Record<string, string>): string[] =>
 export const runBackfill = async (
   deps: WordpressSyncDeps,
   workspaceId: string,
-  options?: { force?: boolean },
-): Promise<{ ingested: number; skipped?: boolean }> => {
-  const config = await deps.state.getConfig(workspaceId);
-  if (!config?.enabled) return { ingested: 0 };
+  options?: { force?: boolean; lockToken?: string },
+): Promise<{ ingested: number; skipped?: boolean; alreadyRunning?: boolean }> => {
+  let lockToken = options?.lockToken ?? null;
+  let completed = false;
 
-  if (!options?.force) {
-    const [stateRow] = await deps.db.query<{ backfill_completed_at: string | null }>(
-      `SELECT backfill_completed_at::text AS backfill_completed_at
-         FROM connector_sync_state
-        WHERE connector_id = $1 AND workspace_id = $2`,
-      [CONNECTOR_ID, workspaceId],
-    );
-    if (stateRow?.backfill_completed_at) {
-      return { ingested: 0, skipped: true };
-    }
-  }
+  try {
+    const config = await deps.state.getConfig(workspaceId);
+    if (!config?.enabled) return { ingested: 0 };
 
-  const client = (deps.buildClient ?? defaultBuildClient)(config.config);
-  const types = postTypesFromConfig(config.config);
-  const source = wordpressSourceFor(config.config);
-  let ingested = 0;
-  let highWaterMark: string | null = null;
-
-  for (const type of types) {
-    let page = 1;
-    let totalPages = 1;
-    while (page <= totalPages) {
-      const result = await client.fetchPostsPage({ type, page, perPage: PER_PAGE });
-      totalPages = result.totalPages;
-      for (const post of result.posts) {
-        try {
-          await deps.ingestion.ingest({
-            ...mapRestPostToIngestInput(workspaceId, post),
-            ...(source ? { source } : {}),
-          });
-          ingested += 1;
-          if (!highWaterMark || post.modified_gmt > highWaterMark) {
-            highWaterMark = post.modified_gmt;
-          }
-        } catch (error) {
-          deps.logger.error(
-            {
-              workspaceId,
-              type,
-              postId: post.id,
-              err: error instanceof Error ? error.message : String(error),
-            },
-            "wordpress backfill ingest failed",
-          );
-        }
+    if (!options?.force) {
+      const [stateRow] = await deps.db.query<{ backfill_completed_at: string | null }>(
+        `SELECT backfill_completed_at::text AS backfill_completed_at
+           FROM connector_sync_state
+          WHERE connector_id = $1 AND workspace_id = $2`,
+        [CONNECTOR_ID, workspaceId],
+      );
+      if (stateRow?.backfill_completed_at) {
+        return { ingested: 0, skipped: true };
       }
-      page += 1;
+    }
+
+    lockToken = lockToken ?? await claimBackfill(deps, workspaceId);
+    if (!lockToken) {
+      return { ingested: 0, alreadyRunning: true };
+    }
+
+    const client = (deps.buildClient ?? defaultBuildClient)(config.config);
+    const types = postTypesFromConfig(config.config);
+    const source = wordpressSourceFor(config.config);
+    let ingested = 0;
+    let highWaterMark: string | null = null;
+
+    for (const type of types) {
+      let page = 1;
+      let totalPages = 1;
+      while (page <= totalPages) {
+        await touchBackfillLock(deps, workspaceId, lockToken);
+        const result = await client.fetchPostsPage({ type, page, perPage: PER_PAGE });
+        totalPages = result.totalPages;
+        for (const post of result.posts) {
+          try {
+            await deps.ingestion.ingest({
+              ...mapRestPostToIngestInput(workspaceId, post),
+              ...(source ? { source } : {}),
+            });
+            ingested += 1;
+            if (!highWaterMark || post.modified_gmt > highWaterMark) {
+              highWaterMark = post.modified_gmt;
+            }
+          } catch (error) {
+            deps.logger.error(
+              {
+                workspaceId,
+                type,
+                postId: post.id,
+                err: error instanceof Error ? error.message : String(error),
+              },
+              "wordpress backfill ingest failed",
+            );
+          }
+        }
+        page += 1;
+      }
+    }
+
+    await completeBackfill(deps, workspaceId, lockToken, highWaterMark, ingested);
+    completed = true;
+
+    deps.logger.info({ workspaceId, ingested }, "wordpress backfill completed");
+    return { ingested };
+  } finally {
+    if (lockToken && !completed) {
+      await clearBackfillStarted(deps, workspaceId, lockToken);
     }
   }
+};
 
+export const runBackfillWithErrorStatus = async (
+  deps: WordpressSyncDeps,
+  workspaceId: string,
+  options?: { force?: boolean; lockToken?: string },
+): Promise<{ ingested: number; skipped?: boolean; alreadyRunning?: boolean }> => {
+  try {
+    const result = await runBackfill(deps, workspaceId, options);
+    if (!result.alreadyRunning) {
+      await clearSyncFailedStatus(deps, workspaceId);
+    }
+    return result;
+  } catch (error) {
+    await deps.state.setErrorStatus(workspaceId, WORDPRESS_SYNC_FAILED_STATUS);
+    throw error;
+  }
+};
+
+const clearSyncFailedStatus = async (
+  deps: WordpressSyncDeps,
+  workspaceId: string,
+): Promise<void> => {
   await deps.db.query(
-    `INSERT INTO connector_sync_state (connector_id, workspace_id, backfill_completed_at, last_run_at, last_modified_at)
-     VALUES ($1, $2, NOW(), NOW(), $3)
-     ON CONFLICT (connector_id, workspace_id) DO UPDATE
-       SET backfill_completed_at = NOW(),
-           last_run_at = NOW(),
-           last_modified_at = COALESCE(EXCLUDED.last_modified_at, connector_sync_state.last_modified_at)`,
-    [CONNECTOR_ID, workspaceId, highWaterMark],
+    `UPDATE connector_configs
+        SET error_status = NULL, updated_at = NOW()
+      WHERE workspace_id = $1 AND connector_id = $2 AND error_status = $3`,
+    [workspaceId, CONNECTOR_ID, WORDPRESS_SYNC_FAILED_STATUS],
   );
+};
 
-  deps.logger.info({ workspaceId, ingested }, "wordpress backfill completed");
-  return { ingested };
+export const requestBackfill = async (
+  deps: WordpressSyncDeps,
+  workspaceId: string,
+): Promise<{ accepted: boolean; alreadyRunning?: boolean }> => {
+  const rows = await deps.db.query<{ workspace_id: string }>(
+    `INSERT INTO connector_sync_state (connector_id, workspace_id, sync_requested_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (connector_id, workspace_id) DO UPDATE
+       SET sync_requested_at = NOW()
+       WHERE connector_sync_state.sync_requested_at IS NULL
+         AND (
+           connector_sync_state.sync_started_at IS NULL
+           OR connector_sync_state.sync_started_at < NOW() - $3::interval
+         )
+     RETURNING workspace_id`,
+    [CONNECTOR_ID, workspaceId, STALE_SYNC_LOCK_INTERVAL],
+  );
+  return rows.length > 0 ? { accepted: true } : { accepted: false, alreadyRunning: true };
+};
+
+export const claimBackfill = async (
+  deps: WordpressSyncDeps,
+  workspaceId: string,
+): Promise<string | null> => {
+  const lockToken = randomUUID();
+  const rows = await deps.db.query<{ sync_lock_token: string }>(
+    `INSERT INTO connector_sync_state (
+       connector_id,
+       workspace_id,
+       sync_started_at,
+       sync_lock_token,
+       last_run_at
+     )
+     VALUES ($1, $2, NOW(), $3, NOW())
+     ON CONFLICT (connector_id, workspace_id) DO UPDATE
+       SET sync_requested_at = NULL,
+           sync_started_at = NOW(),
+           sync_lock_token = $3,
+           last_run_at = NOW()
+       WHERE (
+           connector_sync_state.sync_requested_at IS NOT NULL
+           OR connector_sync_state.sync_started_at IS NULL
+           OR connector_sync_state.sync_started_at < NOW() - $4::interval
+         )
+         AND (
+           connector_sync_state.sync_started_at IS NULL
+           OR connector_sync_state.sync_started_at < NOW() - $4::interval
+         )
+     RETURNING sync_lock_token`,
+    [CONNECTOR_ID, workspaceId, lockToken, STALE_SYNC_LOCK_INTERVAL],
+  );
+  return rows[0]?.sync_lock_token ?? null;
+};
+
+const touchBackfillLock = async (
+  deps: WordpressSyncDeps,
+  workspaceId: string,
+  lockToken: string,
+): Promise<void> => {
+  await deps.db.query(
+    `UPDATE connector_sync_state
+        SET sync_started_at = NOW()
+      WHERE connector_id = $1 AND workspace_id = $2 AND sync_lock_token = $3`,
+    [CONNECTOR_ID, workspaceId, lockToken],
+  );
+};
+
+const completeBackfill = async (
+  deps: WordpressSyncDeps,
+  workspaceId: string,
+  lockToken: string,
+  highWaterMark: string | null,
+  ingested: number,
+): Promise<void> => {
+  await deps.db.query(
+      `INSERT INTO connector_sync_state (
+         connector_id,
+         workspace_id,
+         backfill_completed_at,
+         sync_requested_at,
+         sync_started_at,
+         sync_lock_token,
+         last_run_at,
+         last_modified_at,
+         last_ingested_count
+       )
+       VALUES ($1, $2, NOW(), NULL, NULL, NULL, NOW(), $3, $4)
+       ON CONFLICT (connector_id, workspace_id) DO UPDATE
+         SET backfill_completed_at = NOW(),
+             sync_requested_at = NULL,
+             sync_started_at = NULL,
+             sync_lock_token = NULL,
+             last_run_at = NOW(),
+             last_modified_at = COALESCE(EXCLUDED.last_modified_at, connector_sync_state.last_modified_at),
+             last_ingested_count = EXCLUDED.last_ingested_count
+       WHERE connector_sync_state.sync_lock_token = $5`,
+      [CONNECTOR_ID, workspaceId, highWaterMark, ingested, lockToken],
+    );
+};
+
+const clearBackfillStarted = async (
+  deps: WordpressSyncDeps,
+  workspaceId: string,
+  lockToken: string,
+): Promise<void> => {
+  await deps.db.query(
+    `UPDATE connector_sync_state
+        SET sync_started_at = NULL,
+            sync_lock_token = NULL
+      WHERE connector_id = $1 AND workspace_id = $2 AND sync_lock_token = $3`,
+    [CONNECTOR_ID, workspaceId, lockToken],
+  );
 };
 
 /**
@@ -190,12 +344,13 @@ export const runPoll = async (
   }
 
   await deps.db.query(
-    `INSERT INTO connector_sync_state (connector_id, workspace_id, last_run_at, last_modified_at)
-     VALUES ($1, $2, NOW(), $3)
+    `INSERT INTO connector_sync_state (connector_id, workspace_id, last_run_at, last_modified_at, last_ingested_count)
+     VALUES ($1, $2, NOW(), $3, $4)
      ON CONFLICT (connector_id, workspace_id) DO UPDATE
        SET last_run_at = NOW(),
-           last_modified_at = COALESCE(EXCLUDED.last_modified_at, connector_sync_state.last_modified_at)`,
-    [CONNECTOR_ID, workspaceId, newCursor],
+           last_modified_at = COALESCE(EXCLUDED.last_modified_at, connector_sync_state.last_modified_at),
+           last_ingested_count = EXCLUDED.last_ingested_count`,
+    [CONNECTOR_ID, workspaceId, newCursor, ingested],
   );
 
   if (ingested > 0) {
@@ -230,6 +385,37 @@ export const stopPollingLoop = (): void => {
 };
 
 const tick = async (deps: WordpressSyncDeps): Promise<void> => {
+  const requested = await deps.db.query<{ workspace_id: string }>(
+    `SELECT cc.workspace_id
+       FROM connector_configs cc
+       JOIN connector_sync_state s
+         ON s.workspace_id = cc.workspace_id AND s.connector_id = cc.connector_id
+      WHERE cc.connector_id = $1
+        AND cc.enabled = true
+        AND (
+          s.sync_requested_at IS NOT NULL
+          OR s.sync_started_at < NOW() - $2::interval
+        )`,
+    [CONNECTOR_ID, STALE_SYNC_LOCK_INTERVAL],
+  );
+
+  for (const row of requested) {
+    try {
+      const lockToken = await claimBackfill(deps, row.workspace_id);
+      if (lockToken) {
+        await runBackfillWithErrorStatus(deps, row.workspace_id, { force: true, lockToken });
+      }
+    } catch (error) {
+      deps.logger.error(
+        {
+          workspaceId: row.workspace_id,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "wordpress requested backfill failed",
+      );
+    }
+  }
+
   const due = await deps.db.query<{ workspace_id: string }>(
     `SELECT cc.workspace_id
        FROM connector_configs cc

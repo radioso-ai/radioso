@@ -75,7 +75,7 @@ describe("workspace MCP context contract", () => {
   it("fails closed when the workspace token no longer resolves to an active workspace", async () => {
     const { app, dependencies } = createTestApp();
     const token = await issueTestToken(app, "workspace-mcp-context-deleted@example.com");
-    await dependencies.workspaceRepository.deleteById(token.workspaceId);
+    await dependencies.workspaceRepository.deleteByIdAndAccountId(token.workspaceId, token.accountId);
 
     const response = await request(app)
       .get("/api/v1/workspace/mcp/context")

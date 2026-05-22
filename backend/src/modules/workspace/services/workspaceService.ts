@@ -100,7 +100,7 @@ export class WorkspaceService {
       throw badRequest("Workspace name must be between 1 and 100 characters");
     }
 
-    const updated = await this.workspaceRepository.updateName(workspaceId, trimmedName);
+    const updated = await this.workspaceRepository.updateName(workspaceId, accountId, trimmedName);
 
     await this.auditService.record({
       accountId,
@@ -129,6 +129,6 @@ export class WorkspaceService {
       metadata: { deletedWorkspaceId: workspaceId, deletedWorkspaceName: workspace.name },
     });
 
-    await this.workspaceRepository.deleteById(workspaceId);
+    await this.workspaceRepository.deleteByIdAndAccountId(workspaceId, accountId);
   }
 }

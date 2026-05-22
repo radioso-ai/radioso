@@ -181,8 +181,8 @@ export class WebsiteCrawlJobService {
   }
 
   async deleteJob(input: { workspaceId: string; jobId: string }): Promise<void> {
-    const job = await this.dependencies.repository.findById(input.jobId);
-    if (!job || job.workspaceId !== input.workspaceId) {
+    const job = await this.dependencies.repository.findByIdAndWorkspaceId(input.jobId, input.workspaceId);
+    if (!job) {
       throw notFound("Crawl job not found");
     }
     if (job.status !== "completed" && job.status !== "failed") {

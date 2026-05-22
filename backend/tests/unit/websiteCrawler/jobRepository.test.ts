@@ -104,6 +104,39 @@ describe("WebsiteCrawlJobRepository.create", () => {
   });
 });
 
+describe("WebsiteCrawlJobRepository.findByIdAndWorkspaceId", () => {
+  it("scopes the lookup to the supplied workspace_id", async () => {
+    const query = vi.fn().mockResolvedValue([sampleRow()]);
+    const repository = new WebsiteCrawlJobRepository({ query } as never);
+
+    const result = await repository.findByIdAndWorkspaceId(
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+    );
+
+    expect(query).toHaveBeenCalledTimes(1);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql.replace(/\s+/g, " ")).toMatch(/WHERE id = \$1\s+AND workspace_id = \$2/);
+    expect(params).toEqual([
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+    ]);
+    expect(result).toMatchObject({ id: "11111111-1111-4111-8111-111111111111" });
+  });
+
+  it("returns null when the workspace_id does not match", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    const repository = new WebsiteCrawlJobRepository({ query } as never);
+
+    const result = await repository.findByIdAndWorkspaceId(
+      "11111111-1111-4111-8111-111111111111",
+      "other-workspace",
+    );
+
+    expect(result).toBeNull();
+  });
+});
+
 describe("WebsiteCrawlJobRepository.listForWorkspace", () => {
   it("filters recent jobs by updated_at so resumed old jobs stay visible", async () => {
     const query = vi.fn().mockResolvedValue([sampleRow()]);

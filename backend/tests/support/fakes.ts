@@ -722,9 +722,9 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     return [...this.items.values()].filter((w) => w.accountId === accountId).length;
   }
 
-  async updateName(workspaceId: string, name: string): Promise<WorkspaceRecord> {
+  async updateName(workspaceId: string, accountId: string, name: string): Promise<WorkspaceRecord> {
     const item = this.items.get(workspaceId);
-    if (!item) {
+    if (!item || item.accountId !== accountId) {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
     const updated = { ...item, name, updatedAt: new Date() };
@@ -818,7 +818,11 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     return updated;
   }
 
-  async deleteById(workspaceId: string): Promise<boolean> {
+  async deleteByIdAndAccountId(workspaceId: string, accountId: string): Promise<boolean> {
+    const item = this.items.get(workspaceId);
+    if (!item || item.accountId !== accountId) {
+      return false;
+    }
     return this.items.delete(workspaceId);
   }
 }
@@ -841,10 +845,6 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       this.defaultAgentIds.set(workspaceId, record.id);
     }
     return record;
-  }
-
-  async findById(agentId: string): Promise<AgentRecord | null> {
-    return this.items.get(agentId) ?? null;
   }
 
   async findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<AgentRecord | null> {

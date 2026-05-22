@@ -383,6 +383,21 @@ module.exports = {
         path: "^src/modules/audit/composition\\.ts$",
       },
     },
+    {
+      name: "no-connector-plugin-internals-outside-catalog",
+      severity: "error",
+      comment:
+        "Connector plugin internals (WordPress and any future plugins) must only be imported by the built-in plugin catalog. Everything else operates through @radioso/connector-api contracts and the ConnectorRegistry.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/modules/connectors/plugins/",
+        ],
+      },
+      to: {
+        path: "^src/modules/connectors/plugins/[^/]+/",
+      },
+    },
   ],
   options: {
     doNotFollow: {

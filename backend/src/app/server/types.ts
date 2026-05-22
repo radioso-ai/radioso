@@ -35,6 +35,7 @@ import type { AccountRepositoryPort } from "../../modules/auth/services/authServ
 import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
+import type { ConnectorIngestionPort } from "@radioso/connector-api";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
@@ -123,6 +124,7 @@ export interface AppDependencies {
   conversationRepository: ConversationRepositoryPort;
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;
+  connectorIngestionPort: ConnectorIngestionPort;
   connectorDb: Database;
   chatTextGenerationClient: TextGenerationClient;
   crawlerProvider: {

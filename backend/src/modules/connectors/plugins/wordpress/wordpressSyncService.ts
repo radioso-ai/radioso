@@ -49,14 +49,31 @@ const postTypesFromConfig = (config: Record<string, string>): string[] =>
 
 /**
  * One-shot backfill of every published page/post for a workspace.
- * Idempotent: re-running on an already-backfilled workspace just upserts again.
+ *
+ * Idempotent on re-run (same external ids upsert), but by default we skip when
+ * `connector_sync_state.backfill_completed_at` is already set so a disable +
+ * re-enable doesn't re-walk the whole site. Pass `{ force: true }` for an
+ * explicit "Backfill now" admin action.
  */
 export const runBackfill = async (
   deps: WordpressSyncDeps,
   workspaceId: string,
-): Promise<{ ingested: number }> => {
+  options?: { force?: boolean },
+): Promise<{ ingested: number; skipped?: boolean }> => {
   const config = await deps.state.getConfig(workspaceId);
   if (!config?.enabled) return { ingested: 0 };
+
+  if (!options?.force) {
+    const [stateRow] = await deps.db.query<{ backfill_completed_at: string | null }>(
+      `SELECT backfill_completed_at::text AS backfill_completed_at
+         FROM connector_sync_state
+        WHERE connector_id = $1 AND workspace_id = $2`,
+      [CONNECTOR_ID, workspaceId],
+    );
+    if (stateRow?.backfill_completed_at) {
+      return { ingested: 0, skipped: true };
+    }
+  }
 
   const client = (deps.buildClient ?? defaultBuildClient)(config.config);
   const types = postTypesFromConfig(config.config);

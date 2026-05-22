@@ -1,0 +1,118 @@
+import type {
+  DocumentSourceListRecord,
+  DocumentSourceRecord,
+} from "../../../db/repositories/documentSourceRepository.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/domain/sourceConstants.js";
+import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
+
+export interface WebsiteSourceCrawlSettings {
+  url: string | null;
+  limit: number;
+  includeUrlPatterns: string[];
+  excludeUrlPatterns: string[];
+  preserveContentLinks: boolean;
+}
+
+export const toCrawlSettings = (config: Record<string, unknown>): WebsiteSourceCrawlSettings => {
+  const policy = config.policy && typeof config.policy === "object" && !Array.isArray(config.policy)
+    ? (config.policy as Record<string, unknown>)
+    : {};
+  const includeUrlPatterns = Array.isArray(policy.includeUrlPatterns)
+    ? policy.includeUrlPatterns.filter((value): value is string => typeof value === "string")
+    : [];
+  const excludeUrlPatterns = Array.isArray(policy.excludeUrlPatterns)
+    ? policy.excludeUrlPatterns.filter((value): value is string => typeof value === "string")
+    : [];
+
+  return {
+    url: typeof config.url === "string" ? config.url : null,
+    limit:
+      typeof config.limit === "number" && Number.isInteger(config.limit) && config.limit > 0
+        ? config.limit
+        : resolveWebsiteCrawlerConfig().defaultLimit,
+    includeUrlPatterns,
+    excludeUrlPatterns,
+    preserveContentLinks: typeof policy.preserveContentLinks === "boolean" ? policy.preserveContentLinks : true,
+  };
+};
+
+export const buildSyntheticManualDocumentSource = (
+  workspaceId: string,
+  documentCount: number,
+): DocumentSourceListRecord => ({
+  id: MANUALLY_ADDED_DOCUMENTS_SOURCE_ID,
+  workspaceId,
+  kind: "upload",
+  name: "Manually added documents",
+  externalId: null,
+  config: {},
+  metadata: {},
+  lastSyncStatus: null,
+  lastSyncedAt: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  documentCount,
+});
+
+export const presentDocumentSource = (
+  source: DocumentSourceRecord,
+  documentCount = 0,
+) => ({
+  id: source.id,
+  kind: source.kind,
+  name: source.name,
+  externalId: source.externalId,
+  lastSyncStatus: source.lastSyncStatus,
+  lastSyncedAt: source.lastSyncedAt?.toISOString() ?? null,
+  createdAt: source.createdAt.toISOString(),
+  updatedAt: source.updatedAt.toISOString(),
+  documentCount,
+  ...(source.kind === "website" ? { crawlSettings: toCrawlSettings(source.config) } : {}),
+});
+
+export const presentDocumentSourceList = (
+  workspaceId: string,
+  sources: DocumentSourceListRecord[],
+  documentsWithoutSourceCount: number,
+) => {
+  const allSources = documentsWithoutSourceCount > 0
+    ? [...sources, buildSyntheticManualDocumentSource(workspaceId, documentsWithoutSourceCount)]
+    : sources;
+
+  return {
+    sources: allSources.map((source) => presentDocumentSource(source, source.documentCount)),
+  };
+};
+
+export const buildWebsiteRecrawlRequest = (config: Record<string, unknown>) => {
+  const url = typeof config.url === "string" ? config.url : null;
+  const crawlerConfig = resolveWebsiteCrawlerConfig();
+  const previousLimit = typeof config.limit === "number" ? config.limit : crawlerConfig.defaultLimit;
+  const policy = config.policy && typeof config.policy === "object" && !Array.isArray(config.policy)
+    ? config.policy as Record<string, unknown>
+    : undefined;
+
+  return {
+    url,
+    limit: Math.min(previousLimit, crawlerConfig.maxLimit),
+    policy,
+  };
+};
+
+export const applyWebsiteCrawlSettingsPatch = (
+  currentConfig: Record<string, unknown>,
+  input: Partial<WebsiteSourceCrawlSettings>,
+): Record<string, unknown> => {
+  const previous = toCrawlSettings(currentConfig);
+  const crawlerConfig = resolveWebsiteCrawlerConfig();
+
+  return {
+    ...currentConfig,
+    limit: input.limit !== undefined ? Math.min(input.limit, crawlerConfig.maxLimit) : previous.limit,
+    policy: {
+      includeUrlPatterns: input.includeUrlPatterns ?? previous.includeUrlPatterns,
+      excludeUrlPatterns: input.excludeUrlPatterns ?? previous.excludeUrlPatterns,
+      preserveContentLinks: input.preserveContentLinks ?? previous.preserveContentLinks,
+    },
+  };
+};

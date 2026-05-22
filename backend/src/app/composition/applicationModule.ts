@@ -7,11 +7,11 @@ import type { IncidentSink } from "../../shared/incidents/incidentSink.js";
 import type { TelemetrySink } from "../../shared/observability/telemetry/telemetrySink.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type {
-  DocumentJobConsumerPort,
   DocumentJobDispatcherPort,
   DocumentStoragePort,
 } from "../../modules/documents/contracts/index.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/contracts/websiteEmbedIntegration.js";
@@ -136,7 +136,7 @@ export interface ApplicationExtensionRegistry {
   usageEventRecorderRegistration?: ApplicationUsageEventRecorderRegistration;
   documentStorage?: DocumentStoragePort;
   documentJobDispatcher?: DocumentJobDispatcherPort;
-  documentJobConsumer?: DocumentJobConsumerPort;
+  documentJobConsumer?: JobConsumerPort;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
   chunkingProvider?: TextChunkingProviderPort;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
@@ -162,7 +162,7 @@ export interface ApplicationModuleRegistrationContext {
   registerUsageEventRecorder(recorder: ApplicationUsageEventRecorderRegistration): void;
   registerDocumentStorage(storage: DocumentStoragePort): void;
   registerDocumentJobDispatcher(dispatcher: DocumentJobDispatcherPort): void;
-  registerDocumentJobConsumer(consumer: DocumentJobConsumerPort): void;
+  registerDocumentJobConsumer(consumer: JobConsumerPort): void;
   registerWebsiteCrawlerProvider(provider: WebsiteCrawlerProvider): void;
   registerChunkingProvider(provider: TextChunkingProviderPort): void;
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;

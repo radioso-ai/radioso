@@ -14,7 +14,7 @@ import {
 import {
   anonymousChatSchema,
   publicConversationParamsSchema,
-} from "../../routes/publicChatRoutes.js";
+} from "../../routes/publicChatRouteSchemas.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 

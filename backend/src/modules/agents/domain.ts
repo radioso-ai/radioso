@@ -1,9 +1,9 @@
 import { badRequest } from "../../shared/domain/errors.js";
-import { normalizeLocaleTag } from "../settings/contracts/assistantBootstrap.js";
+import { normalizeLocaleTag } from "../../shared/domain/locale.js";
 import {
   defaultWebsiteEmbedTheme,
   type WebsiteEmbedThemeSettings,
-} from "../settings/contracts/websiteEmbed.js";
+} from "../../shared/domain/websiteEmbed.js";
 import { isKnownModelForProvider } from "../../shared/infra/llm/knownModels.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 import type { AgentSurfaceExtensionRegistry } from "./surfaceExtensions.js";

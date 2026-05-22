@@ -1,4 +1,1 @@
-export interface DocumentJobConsumerPort {
-  start(): Promise<void>;
-  stop(): Promise<void>;
-}
+export type { JobConsumerPort as DocumentJobConsumerPort } from "../../../shared/domain/jobConsumer.js";

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicChatSessionSchema } from "../../routes/publicChatRoutes.js";
+import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
 import { agentSurfacePositions } from "../../../../modules/agents/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";

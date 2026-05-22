@@ -8,7 +8,6 @@ import {
   GcsDocumentStorage,
   LocalDocumentStorage,
   NoopDocumentJobDispatcher,
-  type DocumentJobConsumerPort,
   type DocumentJobDispatcherPort,
   type DocumentProcessingWorker,
   type DocumentStoragePort,
@@ -31,6 +30,7 @@ import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { buildTelemetrySinks, type TelemetrySinkBundle } from "../../shared/observability/telemetry/buildTelemetrySinks.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import { DefaultAllowCapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import {
@@ -200,7 +200,7 @@ export const createDefaultDocumentJobConsumer = (
   >,
   logger: AppLogger,
   worker: Pick<DocumentProcessingWorker, "runJobById">,
-): DocumentJobConsumerPort | undefined =>
+): JobConsumerPort | undefined =>
   env.WORKER_DISPATCH_DRIVER === "amqp"
     ? new AmqpDocumentJobConsumer({
         amqpUrl: env.WORKER_AMQP_URL!,
@@ -259,7 +259,7 @@ export const createDefaultWebsiteCrawlJobConsumer = (
   >,
   logger: AppLogger,
   worker: { runJobById(jobId: string): Promise<"processed" | "noop" | "busy"> },
-): DocumentJobConsumerPort | undefined =>
+): JobConsumerPort | undefined =>
   env.WORKER_DISPATCH_DRIVER === "amqp"
     ? new AmqpWebsiteCrawlJobConsumer({
         amqpUrl: env.WORKER_AMQP_URL!,

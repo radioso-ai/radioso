@@ -4,7 +4,7 @@ import {
   updateIngestionSettingsSchema,
   updatePlatformSettingsSchema,
   updateSettingsSchema,
-} from "../../routes/settingsRoutes.js";
+} from "../../routes/settingsRouteSchemas.js";
 import {
   providerNames,
   setProviderCredentialSchema,

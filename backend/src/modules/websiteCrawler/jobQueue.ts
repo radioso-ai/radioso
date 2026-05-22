@@ -3,11 +3,11 @@ import { CloudTasksClient } from "@google-cloud/tasks";
 import { z } from "zod";
 
 import type { AppLogger } from "../../shared/observability/logger.js";
+import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type {
   WebsiteCrawlJobDispatchRequest,
   WebsiteCrawlJobDispatcherPort,
 } from "./jobDispatcher.js";
-import type { DocumentJobConsumerPort } from "../documents/contracts/index.js";
 
 const WORKER_TASK_PATH = "/internal/tasks/website-crawl";
 
@@ -147,7 +147,7 @@ export class AmqpWebsiteCrawlJobDispatcher implements WebsiteCrawlJobDispatcherP
   }
 }
 
-export class AmqpWebsiteCrawlJobConsumer implements DocumentJobConsumerPort {
+export class AmqpWebsiteCrawlJobConsumer implements JobConsumerPort {
   private readonly connect: (url: string) => Promise<amqp.ChannelModel>;
   private channel: amqp.Channel | null = null;
   private connection: amqp.ChannelModel | null = null;

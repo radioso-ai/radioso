@@ -1,88 +1,31 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { presentChatPayload, sendChatSse } from "../presenters/chatPresenter.js";
-import type { ChatConversationDetail } from "../../../modules/chat/services/chatHistoryService.js";
-import type { AnswerSegment, ChatStreamEvent, ChatSuggestion } from "../../../modules/chat/contracts/index.js";
+import { sendChatSse } from "../presenters/chatPresenter.js";
 import { AppError, badRequest, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
 import { anonymousRateLimiters, publicChatSessionExchangeRateLimiter, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
-import { isAllowedWebsiteEmbedOrigin } from "../../../modules/settings/contracts/websiteEmbed.js";
-import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive, resolveAgentDisplayName } from "../../../modules/agents/public.js";
+import { isAllowedWebsiteEmbedOrigin } from "../../../shared/domain/websiteEmbed.js";
+import { getWebsiteEmbedSurfaceSettings } from "../../../modules/agents/public.js";
 import { issuePublicChatSession } from "../../../modules/settings/contracts/publicChatSession.js";
 import { buildPublicAssistantLogoUrl } from "../shared/assistantLogoUrl.js";
-
-const localeHintSchema = z.string().trim().max(35);
-const pageContextSchema = z.object({
-  pageUrl: z.string().trim().max(2048).nullable().optional(),
-  pageTitle: z.string().trim().max(180).nullable().optional(),
-  pageLocale: z.string().trim().max(35).nullable().optional(),
-  browserLocale: z.string().trim().max(35).nullable().optional(),
-  content: z.string().trim().max(6000).nullable().optional(),
-}).optional();
-
-export const anonymousChatSchema = z.object({
-  message: z.string().min(1).optional(),
-  stream: z.boolean().default(false),
-  conversationId: z.string().uuid().optional(),
-  startConversation: z.boolean().optional(),
-  userExpectedLocale: localeHintSchema.optional(),
-  pageContext: pageContextSchema,
-  inputMetadata: z.object({
-    method: z.enum(["typed", "suggestion_click", "intent_click"]),
-    suggestionSourceMessageId: z.string().uuid().optional(),
-    intent: z.object({
-      skillName: z.string().trim().min(1).max(120),
-      intentName: z.string().trim().min(1).max(120).optional(),
-    }).optional(),
-  }).superRefine((value, ctx) => {
-    if (value.method === "suggestion_click" && !value.suggestionSourceMessageId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "suggestionSourceMessageId is required for suggestion_click",
-        path: ["suggestionSourceMessageId"],
-      });
-    }
-    if (value.method === "intent_click" && !value.intent) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "intent is required for intent_click",
-        path: ["intent"],
-      });
-    }
-  }).optional(),
-}).superRefine((value, ctx) => {
-  if (!value.message && !value.startConversation) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "message is required unless startConversation is true",
-      path: ["message"],
-    });
-  }
-  if (value.startConversation && value.conversationId) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "startConversation may only be used for brand-new conversations",
-      path: ["conversationId"],
-    });
-  }
-});
-
-export const publicConversationParamsSchema = z.object({
-  conversationId: z.string().uuid(),
-});
-
-export const publicChatSessionSchema = z.object({
-  channel: z.enum(["anonymous_link", "website_embed"]),
-  agentId: z.string().uuid().optional(),
-  anonymousSessionId: z.string().uuid().optional(),
-  pageContext: pageContextSchema,
-});
+import {
+  anonymousChatSchema,
+  publicChatSessionSchema,
+  publicConversationParamsSchema,
+} from "./publicChatRouteSchemas.js";
+import {
+  presentPublicChatSession,
+  stripPublicChatCitationArtifacts,
+  stripPublicConversationCitationArtifacts,
+  stripPublicStreamCitationArtifacts,
+  websiteEmbedLaunchAllowedAuditEvent,
+  websiteEmbedLaunchDeniedAuditEvent,
+} from "../presenters/publicChatPresenter.js";
 
 const resolvePublicChatSessionSecret = (env: {
   NODE_ENV: string;
@@ -117,86 +60,6 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "logger"
   | "workspaceRepository"
 >;
-
-const stripPublicSuggestionCitation = (suggestion: ChatSuggestion): ChatSuggestion => {
-  const { citation: _citation, ...publicSuggestion } = suggestion;
-  return publicSuggestion;
-};
-
-const stripPublicAnswerSegmentCitations = (answerSegments?: AnswerSegment[]): AnswerSegment[] | undefined =>
-  answerSegments?.map((segment) => ({ text: segment.text }));
-
-const stripPublicChatCitationArtifacts = <T extends {
-  citations?: unknown;
-  answerSegments?: AnswerSegment[];
-  suggestions?: ChatSuggestion[];
-  route?: unknown;
-  activitySummary?: unknown;
-  activityTrace?: unknown;
-  debug?: unknown;
-}>(payload: T): Omit<T, "citations" | "answerSegments" | "suggestions" | "route" | "activitySummary" | "activityTrace" | "debug"> & {
-  answerSegments?: AnswerSegment[];
-  suggestions?: ChatSuggestion[];
-} => {
-  const {
-    citations: _citations,
-    answerSegments,
-    suggestions,
-    route: _route,
-    activitySummary: _activitySummary,
-    activityTrace: _activityTrace,
-    debug: _debug,
-    ...publicPayload
-  } = payload;
-
-  return {
-    ...publicPayload,
-    ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments) } : {}),
-    ...(suggestions ? { suggestions: suggestions.map(stripPublicSuggestionCitation) } : {}),
-  };
-};
-
-const stripPublicConversationCitationArtifacts = (
-  detail: ChatConversationDetail,
-): ChatConversationDetail => ({
-  ...detail,
-  messages: detail.messages.map((message) => {
-    const {
-      citations: _citations,
-      answerSegments,
-      suggestions,
-      debug: _debug,
-      ...publicMessage
-    } = message;
-
-    return {
-      ...publicMessage,
-      ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments) } : {}),
-      ...(suggestions ? { suggestions: suggestions.map(stripPublicSuggestionCitation) } : {}),
-    };
-  }),
-});
-
-async function* stripPublicStreamCitationArtifacts(
-  events: AsyncIterable<ChatStreamEvent>,
-): AsyncIterable<ChatStreamEvent> {
-  for await (const event of events) {
-    if (event.type === "done") {
-      yield stripPublicChatCitationArtifacts(presentChatPayload(event)) as ChatStreamEvent;
-      continue;
-    }
-
-    if (event.type === "suggestions") {
-      yield {
-        ...event,
-        suggestions: event.suggestions.map(stripPublicSuggestionCitation),
-      };
-      continue;
-    }
-
-    yield event;
-  }
-}
 
 export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies): Router => {
   const router = Router();
@@ -346,7 +209,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           return;
         }
         const publicChatToken = agent.surfaceSettings.anonymousChat.token;
-        if (!publicChatToken) {
+        if (typeof publicChatToken !== "string") {
           res.status(404).json({
             error: {
               code: "not_found",
@@ -365,27 +228,18 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           sourceOrigin: null,
         });
 
-        res.status(200).json({
-          workspaceName: resolveAgentDisplayName({
-            agentName: agent.name,
-            workspaceName: workspace.name,
-          }),
-          agentId: agent.id,
-          agentName: agent.name,
+        res.status(200).json(presentPublicChatSession({
+          agent,
+          workspaceName: workspace.name,
           publicChatToken,
-          publicSessionId: session.publicSessionId,
-          publicSessionToken: session.token,
-          assistantBootstrapActive: isAgentBootstrapActive(agent),
+          session,
           assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
-          theme: agent.theme,
-          branding: agent.branding,
           intakeActions: await resolvePublicIntakeActions({
             workspaceId: workspace.id,
             agentId: agent.id,
             sourceChannel: "anonymous",
           }),
-          expiresAt: session.expiresAt,
-        });
+        }));
         return;
       }
 
@@ -443,13 +297,11 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
 
       const websiteEmbed = getWebsiteEmbedSurfaceSettings(agent);
       if (!isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, origin)) {
-        await dependencies.auditService.record({
+        await dependencies.auditService.record(websiteEmbedLaunchDeniedAuditEvent({
           accountId: workspace.accountId,
           workspaceId: workspace.id,
-          eventType: "website_embed.launch_denied",
-          eventStatus: "failure",
-          metadata: { origin },
-        });
+          origin,
+        }));
 
         res.status(403).json({
           error: {
@@ -461,16 +313,12 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       }
 
       if (!websiteEmbed.enabled) {
-        await dependencies.auditService.record({
+        await dependencies.auditService.record(websiteEmbedLaunchDeniedAuditEvent({
           accountId: workspace.accountId,
           workspaceId: workspace.id,
-          eventType: "website_embed.launch_denied",
-          eventStatus: "failure",
-          metadata: {
-            origin,
-            reason: "embed_disabled",
-          },
-        });
+          origin,
+          reason: "embed_disabled",
+        }));
 
         res.status(404).json({
           error: {
@@ -481,16 +329,14 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         return;
       }
 
-      await dependencies.auditService.record({
+      await dependencies.auditService.record(websiteEmbedLaunchAllowedAuditEvent({
         accountId: workspace.accountId,
         workspaceId: workspace.id,
-        eventType: "website_embed.launch_allowed",
-        eventStatus: "success",
-        metadata: { origin },
-      });
+        origin,
+      }));
 
       const publicChatToken = websiteEmbed.token;
-      if (!publicChatToken) {
+      if (typeof publicChatToken !== "string") {
         res.status(404).json({
           error: {
             code: "not_found",
@@ -509,27 +355,18 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         sourceOrigin: origin,
       });
 
-      res.status(200).json({
-        workspaceName: resolveAgentDisplayName({
-          agentName: agent.name,
-          workspaceName: workspace.name,
-        }),
-        agentId: agent.id,
-        agentName: agent.name,
+      res.status(200).json(presentPublicChatSession({
+        agent,
+        workspaceName: workspace.name,
         publicChatToken,
-        publicSessionId: session.publicSessionId,
-        publicSessionToken: session.token,
-        assistantBootstrapActive: isAgentBootstrapActive(agent),
+        session,
         assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
-        theme: agent.theme,
-        branding: agent.branding,
         intakeActions: await resolvePublicIntakeActions({
           workspaceId: workspace.id,
           agentId: agent.id,
           sourceChannel: "website_embed",
         }),
-        expiresAt: session.expiresAt,
-      });
+      }));
     } catch (error) {
       next(error);
     }

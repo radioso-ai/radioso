@@ -25,6 +25,7 @@ import {
   mapWebhookPostToIngestInput,
   type WebhookPostPayload,
 } from "./wordpressIngest.js";
+import { wordpressSourceFor } from "./wordpressSource.js";
 
 const WordpressEventSchema = z.object({
   event: z.enum(["published", "updated", "deleted"]),
@@ -121,9 +122,11 @@ export const createWordpressWebhookRouter = (deps: WebhookDeps): Router => {
           "wordpress webhook delete handled",
         );
       } else {
-        await deps.ingestion.ingest(
-          mapWebhookPostToIngestInput(workspaceId, post as WebhookPostPayload),
-        );
+        const source = wordpressSourceFor(config.config);
+        await deps.ingestion.ingest({
+          ...mapWebhookPostToIngestInput(workspaceId, post as WebhookPostPayload),
+          ...(source ? { source } : {}),
+        });
         deps.logger.info(
           { workspaceId, externalDocumentId, event },
           "wordpress webhook ingest handled",

@@ -25,10 +25,10 @@ import {
   stopPollingLoop,
   type WordpressSyncDeps,
 } from "./wordpressSyncService.js";
+import { wordpressSourceFor } from "./wordpressSource.js";
 
 export const WP_CONFIG_KEYS = {
   siteUrl: "site_url",
-  authMode: "auth_mode",
   username: "wp_username",
   applicationPassword: "wp_application_password",
   webhookSecret: "webhook_shared_secret",
@@ -49,43 +49,32 @@ export class WordpressConnector implements ConnectorPlugin {
       {
         key: WP_CONFIG_KEYS.siteUrl,
         label: "WordPress site URL",
-        helpText: "Root URL of the site, e.g. https://example.com",
+        helpText: "The site you want Radioso to sync, e.g. https://example.com.",
         placeholder: "https://example.com",
         type: "text",
         required: true,
       },
       {
-        key: WP_CONFIG_KEYS.authMode,
-        label: "Authentication",
-        type: "select",
+        key: WP_CONFIG_KEYS.webhookSecret,
+        label: "Webhook shared secret",
+        helpText:
+          "Radioso generated this. Paste it into the Radioso Sync settings inside WordPress so the plugin can prove updates come from your site.",
+        type: "generated_secret",
         required: true,
-        defaultValue: "application_password",
-        options: [
-          { value: "application_password", label: "Application Password (recommended)" },
-          { value: "shared_secret", label: "Companion plugin only (no REST auth)" },
-        ],
       },
       {
         key: WP_CONFIG_KEYS.username,
         label: "WordPress username",
-        helpText: "Required for Application Password auth.",
+        helpText: "Only required if you can't install the companion plugin and want Radioso to poll the REST API instead.",
         type: "text",
         required: false,
       },
       {
         key: WP_CONFIG_KEYS.applicationPassword,
         label: "Application password",
-        helpText: "Generate at Users → Profile → Application Passwords on the WordPress site.",
+        helpText: "Generate one at Users → Profile → Application Passwords inside WordPress. Leave blank if you use the companion plugin.",
         type: "secret",
         required: false,
-      },
-      {
-        key: WP_CONFIG_KEYS.webhookSecret,
-        label: "Webhook shared secret",
-        helpText:
-          "Paste this into the Radioso Sync settings of the companion WordPress plugin. Used to sign webhook payloads (HMAC-SHA256).",
-        type: "secret",
-        required: true,
       },
       {
         key: WP_CONFIG_KEYS.postTypes,
@@ -97,9 +86,9 @@ export class WordpressConnector implements ConnectorPlugin {
       },
       {
         key: WP_CONFIG_KEYS.pollIntervalSec,
-        label: "Polling fallback (seconds)",
+        label: "Polling interval (seconds)",
         helpText:
-          "0 disables polling (use only the companion plugin). Otherwise the connector polls the REST API for changes every N seconds.",
+          "0 means no polling — Radioso relies on the companion plugin to push changes. Set a value (e.g. 300) if you supplied an application password and want Radioso to poll WordPress instead.",
         type: "text",
         required: false,
         defaultValue: "0",
@@ -155,29 +144,48 @@ export class WordpressConnector implements ConnectorPlugin {
       });
     }
 
-    const authMode = config[WP_CONFIG_KEYS.authMode];
-    if (authMode === "application_password") {
-      if (!config[WP_CONFIG_KEYS.username]) {
-        issues.push({
-          key: WP_CONFIG_KEYS.username,
-          message: "WordPress username is required for Application Password auth",
-        });
-      }
-      if (!config[WP_CONFIG_KEYS.applicationPassword]) {
-        issues.push({
-          key: WP_CONFIG_KEYS.applicationPassword,
-          message: "Application password is required for Application Password auth",
-        });
-      }
+    const username = config[WP_CONFIG_KEYS.username];
+    const appPassword = config[WP_CONFIG_KEYS.applicationPassword];
+    // REST credentials must travel together: a username with no password (or
+    // vice-versa) is never a valid call.
+    if (username && !appPassword) {
+      issues.push({
+        key: WP_CONFIG_KEYS.applicationPassword,
+        message: "Application password is required when a WordPress username is set",
+      });
+    }
+    if (appPassword && !username) {
+      issues.push({
+        key: WP_CONFIG_KEYS.username,
+        message: "WordPress username is required when an application password is set",
+      });
     }
 
     const pollRaw = config[WP_CONFIG_KEYS.pollIntervalSec];
+    let pollSeconds = 0;
     if (pollRaw !== undefined && pollRaw !== "") {
       const poll = Number(pollRaw);
       if (!Number.isFinite(poll) || poll < 0 || !Number.isInteger(poll)) {
         issues.push({
           key: WP_CONFIG_KEYS.pollIntervalSec,
           message: "Must be a non-negative integer (seconds)",
+        });
+      } else {
+        pollSeconds = poll;
+      }
+    }
+
+    if (pollSeconds > 0) {
+      if (!username) {
+        issues.push({
+          key: WP_CONFIG_KEYS.username,
+          message: "WordPress username is required when polling is enabled",
+        });
+      }
+      if (!appPassword) {
+        issues.push({
+          key: WP_CONFIG_KEYS.applicationPassword,
+          message: "Application password is required when polling is enabled",
         });
       }
     }
@@ -191,5 +199,29 @@ export class WordpressConnector implements ConnectorPlugin {
       throw new Error("WordPress connector is not initialized");
     }
     return runBackfill(this.syncDeps, workspaceId);
+  }
+
+  /**
+   * Registers the workspace's WordPress channel in the Sources view as soon as
+   * the connector is enabled, so the user gets a "your site is connected"
+   * signal even before the first post arrives.
+   */
+  async onEnable({ workspaceId }: { workspaceId: string }): Promise<void> {
+    if (!this.syncDeps) return;
+    const stored = await this.syncDeps.state.getConfig(workspaceId);
+    if (!stored) return;
+    const source = wordpressSourceFor(stored.config);
+    if (!source) return;
+    try {
+      await this.syncDeps.ingestion.ensureSource({ workspaceId, source });
+    } catch (error) {
+      this.syncDeps.logger.error(
+        {
+          workspaceId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "wordpress connector failed to register source on enable",
+      );
+    }
   }
 }

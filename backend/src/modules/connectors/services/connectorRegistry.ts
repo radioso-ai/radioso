@@ -14,6 +14,8 @@ import type {
   ConnectorValidationIssue,
   ConfigFieldDefinition,
 } from "@radioso/connector-api";
+import { randomBytes } from "node:crypto";
+
 import {
   decryptField,
   encryptField,
@@ -22,6 +24,11 @@ import {
 } from "../../../shared/infra/crypto/fieldEncryption.js";
 
 const CONNECTOR_KEY_OPTIONS = { keyName: "CONNECTOR_ENCRYPTION_KEY" } as const;
+
+const SECRET_FIELD_TYPES = new Set<ConfigFieldDefinition["type"]>(["secret", "generated_secret"]);
+const isSecretField = (field: ConfigFieldDefinition): boolean => SECRET_FIELD_TYPES.has(field.type);
+const isGeneratedSecretField = (field: ConfigFieldDefinition): boolean => field.type === "generated_secret";
+const generateConnectorSecret = (): string => randomBytes(32).toString("hex");
 
 interface ConnectorSaveSuccess {
   kind: "success";
@@ -155,6 +162,9 @@ export class ConnectorRegistry {
     const plugin = this.plugins.get(connectorId);
     if (!plugin) return null;
 
+    const schema = plugin.configSchema();
+    await this.ensureGeneratedSecrets(db, workspaceId, connectorId, schema);
+
     const rows = await db.query<{
       enabled: boolean;
       config_data: Record<string, string>;
@@ -165,7 +175,6 @@ export class ConnectorRegistry {
     );
 
     const row = rows[0];
-    const schema = plugin.configSchema();
 
     let maskedConfig: Record<string, string> | null = {};
     let errorStatus = row?.error_status ?? null;
@@ -185,6 +194,51 @@ export class ConnectorRegistry {
       configSchema: schema,
       config: maskedConfig,
     };
+  }
+
+  /**
+   * On the first read of a connector that declares any `generated_secret`
+   * fields, materialise + persist them so the dashboard can show the user the
+   * value to copy into the upstream system. Requires the encryption key to be
+   * configured; if not, the registry leaves the schema untouched and the
+   * existing `secret_encryption_required` error surfaces normally.
+   */
+  private async ensureGeneratedSecrets(
+    db: ConnectorDatabasePort,
+    workspaceId: string,
+    connectorId: string,
+    schema: ConfigFieldDefinition[],
+  ): Promise<void> {
+    const generatedFields = schema.filter(isGeneratedSecretField);
+    if (generatedFields.length === 0) return;
+    if (!this.encryptionKey) return;
+
+    const rows = await db.query<{ config_data: Record<string, string> }>(
+      `SELECT config_data FROM connector_configs WHERE workspace_id = $1 AND connector_id = $2`,
+      [workspaceId, connectorId],
+    );
+    const existing = rows[0]?.config_data ?? {};
+
+    const additions: Record<string, string> = {};
+    for (const field of generatedFields) {
+      const stored = existing[field.key];
+      if (typeof stored === "string" && stored.length > 0) continue;
+      additions[field.key] = encryptField(
+        generateConnectorSecret(),
+        this.encryptionKey,
+        CONNECTOR_KEY_OPTIONS,
+      );
+    }
+    if (Object.keys(additions).length === 0) return;
+
+    const merged = { ...existing, ...additions };
+    await db.query(
+      `INSERT INTO connector_configs (workspace_id, connector_id, config_data, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (workspace_id, connector_id)
+       DO UPDATE SET config_data = $3, updated_at = NOW()`,
+      [workspaceId, connectorId, JSON.stringify(merged)],
+    );
   }
 
   async saveConfig(
@@ -284,6 +338,9 @@ export class ConnectorRegistry {
       };
     }
 
+    const schema = plugin.configSchema();
+    await this.ensureGeneratedSecrets(db, workspaceId, connectorId, schema);
+
     const rows = await db.query<{ config_data: Record<string, string> }>(
       `SELECT config_data FROM connector_configs WHERE workspace_id = $1 AND connector_id = $2`,
       [workspaceId, connectorId],
@@ -295,8 +352,6 @@ export class ConnectorRegistry {
         issues: [{ key: "config", message: "Save configuration before enabling" }],
       };
     }
-
-    const schema = plugin.configSchema();
     const storedConfig = rows[0].config_data;
     const secretState = this.describeSecretState(storedConfig, schema);
     if (secretState) {
@@ -333,6 +388,15 @@ export class ConnectorRegistry {
        WHERE workspace_id = $1 AND connector_id = $2`,
       [workspaceId, connectorId],
     );
+
+    if (plugin.onEnable) {
+      try {
+        await plugin.onEnable({ workspaceId });
+      } catch {
+        // Best-effort hook; the plugin owns logging. A failure here must not
+        // roll back the enable — the connector is already live in the DB.
+      }
+    }
 
     return { kind: "success" };
   }
@@ -397,7 +461,7 @@ export class ConnectorRegistry {
   ): Record<string, string> {
     if (!this.encryptionKey) return config;
 
-    const secretKeys = new Set(schema.filter((f) => f.type === "secret").map((f) => f.key));
+    const secretKeys = new Set(schema.filter(isSecretField).map((f) => f.key));
     const result: Record<string, string> = {};
     for (const [key, value] of Object.entries(config)) {
       result[key] = secretKeys.has(key) ? encryptField(value, this.encryptionKey, CONNECTOR_KEY_OPTIONS) : value;
@@ -411,7 +475,7 @@ export class ConnectorRegistry {
   ): Record<string, string> {
     if (!this.encryptionKey) return config;
 
-    const secretKeys = new Set(schema.filter((f) => f.type === "secret").map((f) => f.key));
+    const secretKeys = new Set(schema.filter(isSecretField).map((f) => f.key));
     const result: Record<string, string> = {};
     for (const [key, value] of Object.entries(config)) {
       result[key] = secretKeys.has(key) ? (this.tryDecryptValue(value) ?? value) : value;
@@ -423,10 +487,19 @@ export class ConnectorRegistry {
     config: Record<string, string>,
     schema: ConfigFieldDefinition[],
   ): Record<string, string> {
-    const secretKeys = new Set(schema.filter((f) => f.type === "secret").map((f) => f.key));
+    const userSecretKeys = new Set(
+      schema.filter((f) => f.type === "secret").map((f) => f.key),
+    );
+    const generatedSecretKeys = new Set(
+      schema.filter(isGeneratedSecretField).map((f) => f.key),
+    );
     const result: Record<string, string> = {};
     for (const [key, value] of Object.entries(config)) {
-      if (secretKeys.has(key)) {
+      if (generatedSecretKeys.has(key)) {
+        // Generated secrets are issued by Radioso and meant for the user to
+        // copy into the upstream system, so the dashboard needs the plaintext.
+        result[key] = this.tryDecryptValue(value) ?? value;
+      } else if (userSecretKeys.has(key)) {
         const decrypted = this.tryDecryptValue(value);
         result[key] = decrypted === null ? SECRET_REMEDIATION_PLACEHOLDER : maskSecret(decrypted);
       } else {
@@ -451,7 +524,7 @@ export class ConnectorRegistry {
     config: Record<string, string>,
     schema: ConfigFieldDefinition[],
   ): string | null {
-    const secretKeys = schema.filter((field) => field.type === "secret").map((field) => field.key);
+    const secretKeys = schema.filter(isSecretField).map((field) => field.key);
     if (secretKeys.length === 0) {
       return null;
     }
@@ -477,7 +550,7 @@ export class ConnectorRegistry {
     config: Record<string, string>,
     schema: ConfigFieldDefinition[],
   ): ConnectorValidationIssue[] {
-    const secretKeys = schema.filter((field) => field.type === "secret").map((field) => field.key);
+    const secretKeys = schema.filter(isSecretField).map((field) => field.key);
     const providedSecretKeys = secretKeys.filter((key) => {
       const value = config[key];
       return typeof value === "string" && value.length > 0;
@@ -501,7 +574,7 @@ export class ConnectorRegistry {
     config: Record<string, string>,
     schema: ConfigFieldDefinition[],
   ): boolean {
-    const secretKeys = schema.filter((field) => field.type === "secret").map((field) => field.key);
+    const secretKeys = schema.filter(isSecretField).map((field) => field.key);
     return (
       secretKeys.length > 0 &&
       secretKeys.every((key) => {
@@ -515,7 +588,7 @@ export class ConnectorRegistry {
     schema: ConfigFieldDefinition[],
     state: string,
   ): ConnectorValidationIssue[] {
-    const secretKeys = schema.filter((field) => field.type === "secret");
+    const secretKeys = schema.filter(isSecretField);
     const message =
       state === SECRET_ENCRYPTION_REQUIRED_STATUS
         ? "Connector secret encryption must be configured before this connector can use stored secret fields"

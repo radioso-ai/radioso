@@ -13,6 +13,7 @@ export type {
   ConnectorIngestionPort,
   ConnectorLogger,
   ConnectorPlugin,
+  ConnectorSourceDescriptor,
   ConnectorStatePort,
   ConnectorSummary,
   ConnectorValidationIssue,

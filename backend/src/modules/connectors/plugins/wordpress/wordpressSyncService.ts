@@ -19,6 +19,7 @@ import type {
 
 import { WordpressClient } from "./wordpressClient.js";
 import { mapRestPostToIngestInput } from "./wordpressIngest.js";
+import { wordpressSourceFor } from "./wordpressSource.js";
 
 const PER_PAGE = 100;
 const TICK_INTERVAL_MS = 30_000;
@@ -59,6 +60,7 @@ export const runBackfill = async (
 
   const client = (deps.buildClient ?? defaultBuildClient)(config.config);
   const types = postTypesFromConfig(config.config);
+  const source = wordpressSourceFor(config.config);
   let ingested = 0;
   let highWaterMark: string | null = null;
 
@@ -70,7 +72,10 @@ export const runBackfill = async (
       totalPages = result.totalPages;
       for (const post of result.posts) {
         try {
-          await deps.ingestion.ingest(mapRestPostToIngestInput(workspaceId, post));
+          await deps.ingestion.ingest({
+            ...mapRestPostToIngestInput(workspaceId, post),
+            ...(source ? { source } : {}),
+          });
           ingested += 1;
           if (!highWaterMark || post.modified_gmt > highWaterMark) {
             highWaterMark = post.modified_gmt;
@@ -126,6 +131,7 @@ export const runPoll = async (
 
   const client = (deps.buildClient ?? defaultBuildClient)(config.config);
   const types = postTypesFromConfig(config.config);
+  const source = wordpressSourceFor(config.config);
   let ingested = 0;
   let newCursor = cursor;
 
@@ -142,7 +148,10 @@ export const runPoll = async (
       totalPages = result.totalPages;
       for (const post of result.posts) {
         try {
-          await deps.ingestion.ingest(mapRestPostToIngestInput(workspaceId, post));
+          await deps.ingestion.ingest({
+            ...mapRestPostToIngestInput(workspaceId, post),
+            ...(source ? { source } : {}),
+          });
           ingested += 1;
           if (!newCursor || post.modified_gmt > newCursor) {
             newCursor = post.modified_gmt;

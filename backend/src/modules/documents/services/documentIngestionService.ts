@@ -35,6 +35,13 @@ export type DocumentSourceResolverInput =
       url: string;
       config?: Record<string, unknown>;
       metadata?: Record<string, unknown>;
+    }
+  | {
+      kind: "connector";
+      externalId: string;
+      name: string;
+      config?: Record<string, unknown>;
+      metadata?: Record<string, unknown>;
     };
 
 export interface DocumentSourceRecord {
@@ -809,6 +816,17 @@ export class DocumentIngestionService {
         throw notFound("Document source not found");
       }
       return existing;
+    }
+
+    if (source.kind === "connector") {
+      return this.documentSourceRepository.upsertByExternalId({
+        workspaceId,
+        kind: "connector",
+        name: source.name,
+        externalId: source.externalId,
+        config: source.config ?? {},
+        metadata: source.metadata ?? {},
+      });
     }
 
     const url = normalizeWebsiteSourceUrl(source.url);

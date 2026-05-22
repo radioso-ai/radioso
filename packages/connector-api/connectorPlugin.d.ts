@@ -40,6 +40,21 @@ export interface ConnectorHttpHost {
 }
 
 /**
+ * Source descriptor a connector hands to the ingestion port so that documents
+ * and the "Sources" view are tagged with the upstream channel they belong to.
+ *
+ * `externalId` is the connector-scoped identity of the channel (e.g.
+ * `"wordpress:https://example.com"`); it scopes the upsert key alongside the
+ * workspace, so the connector owns the namespace.
+ */
+export interface ConnectorSourceDescriptor {
+  externalId: string;
+  name: string;
+  config?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+/**
  * Document ingestion port exposed to connectors. Encapsulates the full ingest
  * pipeline (sanitization, externalDocumentId upsert, queueing, audit, analytics,
  * usage limits) so connector plugins never touch the documents schema directly.
@@ -51,6 +66,7 @@ export interface ConnectorIngestionPort {
     content: string;
     externalDocumentId: string;
     metadata?: Record<string, unknown>;
+    source?: ConnectorSourceDescriptor;
   }): Promise<{ documentId: string; status: string }>;
 
   /**
@@ -62,6 +78,16 @@ export interface ConnectorIngestionPort {
     workspaceId: string;
     externalDocumentId: string;
   }): Promise<boolean>;
+
+  /**
+   * Upsert the document source row for a connector channel without ingesting
+   * any documents. Used by connector lifecycle hooks (e.g. onEnable) so the
+   * Sources view reflects the wired channel before the first document arrives.
+   */
+  ensureSource(input: {
+    workspaceId: string;
+    source: ConnectorSourceDescriptor;
+  }): Promise<{ id: string }>;
 }
 
 export interface ConnectorContext {
@@ -125,6 +151,15 @@ export interface ConnectorPlugin {
    * Return an array of validation issues (empty = valid).
    */
   validateConfig(config: Record<string, string>): ConnectorValidationIssue[];
+
+  /**
+   * Best-effort hook called after a workspace successfully enables this
+   * connector. Use it for one-off side effects like registering a source row
+   * so the channel shows up in the Sources view immediately.
+   *
+   * Throwing here does not roll back the enable; the registry logs and moves on.
+   */
+  onEnable?(input: { workspaceId: string }): Promise<void>;
 }
 
 export interface ConnectorValidationIssue {

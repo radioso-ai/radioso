@@ -794,6 +794,7 @@ export const createTestDependencies = (overrides: {
     connectorIngestionPort: {
       async ingest() { return { documentId: "test-doc", status: "queued" }; },
       async deleteByExternalId() { return false; },
+      async ensureSource() { return { id: "test-source" }; },
     },
     connectorDb: connectorDb as any,
     chatTextGenerationClient: {

@@ -1,6 +1,6 @@
 import { API_BASE, requireWorkspaceApiToken, request } from './api-client'
 
-export type ConnectorConfigFieldType = 'text' | 'secret' | 'toggle' | 'select'
+export type ConnectorConfigFieldType = 'text' | 'secret' | 'generated_secret' | 'toggle' | 'select'
 
 export interface ConnectorConfigFieldDefinition {
   key: string

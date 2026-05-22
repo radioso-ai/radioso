@@ -108,6 +108,17 @@ export const createRadiosoCrawlerUtilityProvider = () => ({
     const { isPlaywrightAvailable } = await import("@radioso/crawler");
     return isPlaywrightAvailable();
   },
+  /**
+   * Convert a fragment or full HTML document into clean, paragraph-structured
+   * text suitable for chunking and embedding. Wraps the crawler's existing
+   * structured-text extractor so connectors that ingest HTML (e.g. WordPress)
+   * don't need to duplicate the rules for blocks, headings, lists, and inline
+   * styles.
+   */
+  async extractTextFromHtml(html: string, baseUrl?: string): Promise<string> {
+    const { extractStructuredTextFromHtml } = await import("@radioso/crawler");
+    return extractStructuredTextFromHtml(html, baseUrl);
+  },
 });
 
 const normalizeCheckpointUrl = (value: string): string => {

@@ -5,6 +5,23 @@
  * standard X-WP-TotalPages response header.
  */
 
+/**
+ * Maps a WordPress post-type slug to its REST API base (`rest_base`).
+ *
+ * The connector config stores post-type slugs (`post`, `page`, `tribe_events`)
+ * because that is what the WordPress UI labels them. The REST API exposes the
+ * same content under `rest_base` which for built-in types is the plural form
+ * (`posts`, `pages`). For custom types it is whatever the plugin registers;
+ * users may type the rest_base directly when configuring uncommon types.
+ */
+const REST_BASE_BY_POST_TYPE: Record<string, string> = {
+  post: "posts",
+  page: "pages",
+  attachment: "media",
+};
+
+const restBaseFor = (postType: string): string => REST_BASE_BY_POST_TYPE[postType] ?? postType;
+
 export interface WordpressClientConfig {
   siteUrl: string;
   username?: string;
@@ -64,7 +81,7 @@ export class WordpressClient {
     if (options.modifiedAfter) {
       params.set("modified_after", options.modifiedAfter);
     }
-    return `${this.baseUrl}/wp-json/wp/v2/${encodeURIComponent(options.type)}?${params.toString()}`;
+    return `${this.baseUrl}/wp-json/wp/v2/${encodeURIComponent(restBaseFor(options.type))}?${params.toString()}`;
   }
 
   async fetchPostsPage(options: FetchPostsOptions): Promise<FetchPostsResult> {
@@ -77,6 +94,12 @@ export class WordpressClient {
       // WP returns 400 "rest_post_invalid_page_number" past last page.
       return { posts: [], totalPages: options.page - 1 };
     }
+    if (response.status === 404) {
+      // Custom post types whose rest_base isn't registered (or that the user
+      // typed wrong) silently return no posts rather than erroring out the
+      // whole backfill — keeps the configured types that *do* exist working.
+      return { posts: [], totalPages: 0 };
+    }
     if (!response.ok) {
       throw new Error(`WordPress REST returned ${response.status} ${response.statusText} for ${url}`);
     }
@@ -88,7 +111,7 @@ export class WordpressClient {
   }
 
   async fetchPostById(type: string, postId: number): Promise<WordpressRestPost | null> {
-    const url = `${this.baseUrl}/wp-json/wp/v2/${encodeURIComponent(type)}/${postId}?_fields=id,type,status,slug,link,modified_gmt,title,content,excerpt,author`;
+    const url = `${this.baseUrl}/wp-json/wp/v2/${encodeURIComponent(restBaseFor(type))}/${postId}?_fields=id,type,status,slug,link,modified_gmt,title,content,excerpt,author`;
     const response = await this.fetchImpl(url, {
       headers: this.authHeader ? { Authorization: this.authHeader, Accept: "application/json" } : { Accept: "application/json" },
     });

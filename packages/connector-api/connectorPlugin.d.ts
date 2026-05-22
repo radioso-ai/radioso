@@ -55,6 +55,18 @@ export interface ConnectorSourceDescriptor {
 }
 
 /**
+ * How the connector's `content` payload should be interpreted by the ingestion
+ * pipeline.
+ *
+ * - `text` (default): treat the payload as already-clean text/markdown.
+ * - `html`: run the payload through the application's HTML-to-text normalizer
+ *   before sanitisation. Connectors that ingest HTML (e.g. WordPress post
+ *   bodies, which include block-builder wrappers and inline styles) opt into
+ *   this so they don't have to ship their own extractor.
+ */
+export type ConnectorIngestContentFormat = "text" | "html";
+
+/**
  * Document ingestion port exposed to connectors. Encapsulates the full ingest
  * pipeline (sanitization, externalDocumentId upsert, queueing, audit, analytics,
  * usage limits) so connector plugins never touch the documents schema directly.
@@ -64,6 +76,7 @@ export interface ConnectorIngestionPort {
     workspaceId: string;
     title: string;
     content: string;
+    contentFormat?: ConnectorIngestContentFormat;
     externalDocumentId: string;
     metadata?: Record<string, unknown>;
     source?: ConnectorSourceDescriptor;

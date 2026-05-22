@@ -16,6 +16,17 @@ const toResolverInput = (source: ConnectorSourceDescriptor) =>
   });
 
 /**
+ * Narrow view of the application's HTML-to-text capability. The composition
+ * layer satisfies it with `RadiosoCrawlerUtilityProvider.extractTextFromHtml`,
+ * which is the one place allowed to reach into `@radioso/crawler`. Connectors
+ * never see the underlying provider — they just declare `contentFormat: "html"`
+ * on their ingest call and the adapter takes care of the rest.
+ */
+export interface HtmlContentNormalizer {
+  extractTextFromHtml(html: string): Promise<string>;
+}
+
+/**
  * Adapter that exposes DocumentIngestionService + DocumentDeletionService to
  * connector plugins via the narrower ConnectorIngestionPort contract.
  *
@@ -26,12 +37,17 @@ export const createConnectorIngestionPort = (deps: {
   documentIngestionService: Pick<DocumentIngestionService, "ingest" | "resolveSource">;
   documentDeletionService: Pick<DocumentDeletionService, "delete">;
   documentRepository: Pick<DocumentRepositoryPort, "findByExternalDocumentId">;
+  htmlContentNormalizer: HtmlContentNormalizer;
 }): ConnectorIngestionPort => ({
   async ingest(input) {
+    const content =
+      input.contentFormat === "html"
+        ? await deps.htmlContentNormalizer.extractTextFromHtml(input.content)
+        : input.content;
     return deps.documentIngestionService.ingest({
       workspaceId: input.workspaceId,
       title: input.title,
-      content: input.content,
+      content,
       externalDocumentId: input.externalDocumentId,
       metadata: input.metadata,
       ...(input.source ? { source: toResolverInput(input.source) } : {}),

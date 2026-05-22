@@ -10,6 +10,7 @@ export type {
   ConnectorDatabasePort,
   ConnectorDetail,
   ConnectorHttpHost,
+  ConnectorIngestContentFormat,
   ConnectorIngestionPort,
   ConnectorLogger,
   ConnectorPlugin,

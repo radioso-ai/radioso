@@ -14,7 +14,7 @@ const baseWebhookPost: WebhookPostPayload = {
   status: "publish",
   slug: "about",
   title: "About us",
-  content_raw: "<!-- wp:paragraph --><p>Hello</p><!-- /wp:paragraph -->",
+  content_raw: "<!-- wp:paragraph --><p>Hello raw</p><!-- /wp:paragraph -->",
   content_rendered: "<p>Hello rendered</p>",
   excerpt_rendered: "Hello",
   link: "https://example.com/about",
@@ -29,17 +29,22 @@ describe("externalIdFor", () => {
 });
 
 describe("mapWebhookPostToIngestInput", () => {
-  it("prefers raw block content over rendered HTML and strips block comments", () => {
+  it("prefers rendered HTML (post-filters) over raw block markup and tags the payload as HTML", () => {
     const result = mapWebhookPostToIngestInput("ws-1", baseWebhookPost);
     expect(result.workspaceId).toBe("ws-1");
     expect(result.externalDocumentId).toBe("wp_post_42");
     expect(result.title).toBe("About us");
-    expect(result.content).toBe("<p>Hello</p>");
+    expect(result.content).toBe("<p>Hello rendered</p>");
+    expect(result.contentFormat).toBe("html");
   });
 
-  it("falls back to rendered HTML when raw is absent", () => {
-    const result = mapWebhookPostToIngestInput("ws-1", { ...baseWebhookPost, content_raw: undefined });
-    expect(result.content).toBe("<p>Hello rendered</p>");
+  it("falls back to raw content when rendered is absent", () => {
+    const result = mapWebhookPostToIngestInput("ws-1", {
+      ...baseWebhookPost,
+      content_rendered: undefined,
+    });
+    expect(result.content).toBe("<!-- wp:paragraph --><p>Hello raw</p><!-- /wp:paragraph -->");
+    expect(result.contentFormat).toBe("html");
   });
 
   it("uses the slug when the title is empty", () => {
@@ -79,19 +84,20 @@ describe("mapRestPostToIngestInput", () => {
     content: { rendered: "<p>From REST</p>" },
   };
 
-  it("maps a REST API post into the same shape as a webhook post", () => {
+  it("maps a REST API post into the same shape as a webhook post and tags the payload as HTML", () => {
     const result = mapRestPostToIngestInput("ws-1", restPost);
     expect(result.externalDocumentId).toBe("wp_post_7");
     expect(result.title).toBe("Hello World");
     expect(result.content).toBe("<p>From REST</p>");
+    expect(result.contentFormat).toBe("html");
     expect(result.metadata).toMatchObject({ wp_post_id: 7, wp_post_type: "post" });
   });
 
-  it("prefers content.raw when present", () => {
+  it("falls back to content.raw when rendered is absent", () => {
     const result = mapRestPostToIngestInput("ws-1", {
       ...restPost,
-      content: { rendered: "<p>r</p>", raw: "raw body" },
+      content: { rendered: "", raw: "<p>raw body</p>" },
     });
-    expect(result.content).toBe("raw body");
+    expect(result.content).toBe("<p>raw body</p>");
   });
 });

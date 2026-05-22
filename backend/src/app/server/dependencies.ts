@@ -204,16 +204,21 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
   });
   const connectorRegistry = buildConnectorRegistry({ composition, env, logger });
+
+  // Lazy-loaded crawler utility provider for EE agent wizard, also reused by
+  // the connector ingestion port for HTML-to-text normalisation.
+  const crawlerProvider = createRadiosoCrawlerUtilityProvider();
+
   const connectorIngestionPort = createConnectorIngestionPort({
     documentIngestionService: documents.documentIngestionService,
     documentDeletionService: documents.documentDeletionService,
     documentRepository: repositories.documentRepository,
+    htmlContentNormalizer: {
+      extractTextFromHtml: (html) => crawlerProvider.extractTextFromHtml(html),
+    },
   });
 
   const chatTextGenerationClient = llmRegistry.createChatTextClient();
-
-  // Lazy-loaded crawler utility provider for EE agent wizard.
-  const crawlerProvider = createRadiosoCrawlerUtilityProvider();
 
   return {
     env,

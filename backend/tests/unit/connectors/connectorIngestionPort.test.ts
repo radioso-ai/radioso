@@ -2,14 +2,36 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createConnectorIngestionPort } from "../../../src/modules/connectors/services/connectorIngestionPort.js";
 
+interface BuildPortOptions {
+  ingest?: ReturnType<typeof vi.fn>;
+  resolveSource?: ReturnType<typeof vi.fn>;
+  delete?: ReturnType<typeof vi.fn>;
+  findByExternalDocumentId?: ReturnType<typeof vi.fn>;
+  extractTextFromHtml?: ReturnType<typeof vi.fn>;
+}
+
+const buildPort = (overrides: BuildPortOptions = {}) => {
+  const extractTextFromHtml = overrides.extractTextFromHtml ?? vi.fn(async (html: string) => html);
+  return {
+    extractTextFromHtml,
+    port: createConnectorIngestionPort({
+      documentIngestionService: {
+        ingest: overrides.ingest ?? vi.fn(),
+        resolveSource: overrides.resolveSource ?? vi.fn(),
+      } as any,
+      documentDeletionService: { delete: overrides.delete ?? vi.fn() } as any,
+      documentRepository: {
+        findByExternalDocumentId: overrides.findByExternalDocumentId ?? vi.fn(),
+      } as any,
+      htmlContentNormalizer: { extractTextFromHtml },
+    }),
+  };
+};
+
 describe("createConnectorIngestionPort", () => {
-  it("forwards ingest() to DocumentIngestionService verbatim", async () => {
+  it("forwards ingest() to DocumentIngestionService verbatim when contentFormat is omitted", async () => {
     const ingest = vi.fn(async () => ({ documentId: "doc-1", status: "queued" }));
-    const port = createConnectorIngestionPort({
-      documentIngestionService: { ingest } as any,
-      documentDeletionService: { delete: vi.fn() } as any,
-      documentRepository: { findByExternalDocumentId: vi.fn() } as any,
-    });
+    const { port, extractTextFromHtml } = buildPort({ ingest });
 
     const result = await port.ingest({
       workspaceId: "ws-1",
@@ -20,6 +42,7 @@ describe("createConnectorIngestionPort", () => {
     });
 
     expect(result).toEqual({ documentId: "doc-1", status: "queued" });
+    expect(extractTextFromHtml).not.toHaveBeenCalled();
     expect(ingest).toHaveBeenCalledWith({
       workspaceId: "ws-1",
       title: "T",
@@ -29,14 +52,31 @@ describe("createConnectorIngestionPort", () => {
     });
   });
 
+  it("runs HTML content through the normalizer before handing it to the ingestion service", async () => {
+    const ingest = vi.fn(async () => ({ documentId: "doc-1", status: "queued" }));
+    const extractTextFromHtml = vi.fn(async () => "clean text");
+    const { port } = buildPort({ ingest, extractTextFromHtml });
+
+    await port.ingest({
+      workspaceId: "ws-1",
+      title: "T",
+      content: "<div class=\"elementor\"><p>Raw <b>HTML</b></p></div>",
+      contentFormat: "html",
+      externalDocumentId: "wp_post_1",
+    });
+
+    expect(extractTextFromHtml).toHaveBeenCalledWith(
+      "<div class=\"elementor\"><p>Raw <b>HTML</b></p></div>",
+    );
+    expect(ingest).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "clean text" }),
+    );
+  });
+
   it("returns false from deleteByExternalId when no matching document exists", async () => {
     const findByExternalDocumentId = vi.fn(async () => null);
     const deleteFn = vi.fn();
-    const port = createConnectorIngestionPort({
-      documentIngestionService: { ingest: vi.fn() } as any,
-      documentDeletionService: { delete: deleteFn } as any,
-      documentRepository: { findByExternalDocumentId } as any,
-    });
+    const { port } = buildPort({ findByExternalDocumentId, delete: deleteFn });
 
     const deleted = await port.deleteByExternalId({
       workspaceId: "ws-1",
@@ -49,11 +89,7 @@ describe("createConnectorIngestionPort", () => {
 
   it("forwards source descriptors as connector-kind resolver input", async () => {
     const ingest = vi.fn(async () => ({ documentId: "doc-2", status: "queued" }));
-    const port = createConnectorIngestionPort({
-      documentIngestionService: { ingest } as any,
-      documentDeletionService: { delete: vi.fn() } as any,
-      documentRepository: { findByExternalDocumentId: vi.fn() } as any,
-    });
+    const { port } = buildPort({ ingest });
 
     await port.ingest({
       workspaceId: "ws-1",
@@ -81,11 +117,7 @@ describe("createConnectorIngestionPort", () => {
 
   it("ensureSource delegates to DocumentIngestionService.resolveSource", async () => {
     const resolveSource = vi.fn(async () => ({ id: "source-xyz" }));
-    const port = createConnectorIngestionPort({
-      documentIngestionService: { ingest: vi.fn(), resolveSource } as any,
-      documentDeletionService: { delete: vi.fn() } as any,
-      documentRepository: { findByExternalDocumentId: vi.fn() } as any,
-    });
+    const { port } = buildPort({ resolveSource });
 
     const result = await port.ensureSource({
       workspaceId: "ws-1",
@@ -109,11 +141,7 @@ describe("createConnectorIngestionPort", () => {
   it("resolves external id then delegates to DocumentDeletionService", async () => {
     const findByExternalDocumentId = vi.fn(async () => ({ id: "doc-xyz" }));
     const deleteFn = vi.fn(async () => {});
-    const port = createConnectorIngestionPort({
-      documentIngestionService: { ingest: vi.fn() } as any,
-      documentDeletionService: { delete: deleteFn } as any,
-      documentRepository: { findByExternalDocumentId } as any,
-    });
+    const { port } = buildPort({ findByExternalDocumentId, delete: deleteFn });
 
     const deleted = await port.deleteByExternalId({
       workspaceId: "ws-1",

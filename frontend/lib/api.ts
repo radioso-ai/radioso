@@ -23,6 +23,7 @@ export {
 export { accountApi, answerFeedbackApi, enterpriseUsageApi, humanContactApi } from './api-account'
 export { authApi } from './api-auth'
 export { chatApi } from './api-chat'
+export { connectorsApi } from './api-connectors'
 export { documentsApi } from './api-documents'
 export { publicChatApi } from './api-public-chat'
 export { agentsApi, generalSettingsApi, settingsApi } from './api-settings'

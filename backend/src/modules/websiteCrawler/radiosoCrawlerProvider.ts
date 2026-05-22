@@ -85,6 +85,31 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
   }
 }
 
+export const createRadiosoCrawlerUtilityProvider = () => ({
+  async fetchPageWithScreenshot(url: string, options?: {
+    signal?: AbortSignal;
+    validateNavigationUrl?: (url: string) => Promise<void> | void;
+    [key: string]: unknown;
+  }) {
+    const { fetchPageWithScreenshot } = await import("@radioso/crawler");
+    return fetchPageWithScreenshot(url, options);
+  },
+  async crawlSite(params: {
+    baseUrl: string;
+    pageLimit: number;
+    seedPendingUrls?: string[];
+    includeBaseUrl?: boolean;
+    signal?: AbortSignal;
+  }) {
+    const { crawlSite } = await import("@radioso/crawler");
+    return crawlSite(params);
+  },
+  async isBrowserTransportAvailable() {
+    const { isPlaywrightAvailable } = await import("@radioso/crawler");
+    return isPlaywrightAvailable();
+  },
+});
+
 const normalizeCheckpointUrl = (value: string): string => {
   try {
     const parsed = new URL(value);

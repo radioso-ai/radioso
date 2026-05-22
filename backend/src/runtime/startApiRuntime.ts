@@ -41,6 +41,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
     db: dependencies.connectorDb,
     logger: dependencies.logger,
     chat: createConnectorChatPort(dependencies.chatService),
+    ingestion: dependencies.connectorIngestionPort,
   });
   await dependencies.applicationModules.initializeAll();
 

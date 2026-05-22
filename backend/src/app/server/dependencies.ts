@@ -32,7 +32,9 @@ import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { EmbeddingService } from "../../modules/retrieval/composition.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
+import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { SkillCatalogService } from "../../modules/skills/public.js";
+import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -202,34 +204,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
   });
   const connectorRegistry = buildConnectorRegistry({ composition, env, logger });
+  const connectorIngestionPort = createConnectorIngestionPort({
+    documentIngestionService: documents.documentIngestionService,
+    documentDeletionService: documents.documentDeletionService,
+    documentRepository: repositories.documentRepository,
+  });
 
   const chatTextGenerationClient = llmRegistry.createChatTextClient();
 
-  // Lazy-loaded crawler provider for EE agent wizard
-  const crawlerProvider = {
-    async fetchPageWithScreenshot(url: string, options?: {
-      signal?: AbortSignal;
-      validateNavigationUrl?: (url: string) => Promise<void> | void;
-      [key: string]: unknown;
-    }) {
-      const { fetchPageWithScreenshot } = await import("@radioso/crawler");
-      return fetchPageWithScreenshot(url, options);
-    },
-    async crawlSite(params: {
-      baseUrl: string;
-      pageLimit: number;
-      seedPendingUrls?: string[];
-      includeBaseUrl?: boolean;
-      signal?: AbortSignal;
-    }) {
-      const { crawlSite } = await import("@radioso/crawler");
-      return crawlSite(params);
-    },
-    async isBrowserTransportAvailable() {
-      const { isPlaywrightAvailable } = await import("@radioso/crawler");
-      return isPlaywrightAvailable();
-    },
-  };
+  // Lazy-loaded crawler utility provider for EE agent wizard.
+  const crawlerProvider = createRadiosoCrawlerUtilityProvider();
 
   return {
     env,
@@ -293,6 +277,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversationRepository: repositories.conversationRepository,
     messageRepository: repositories.messageRepository,
     connectorRegistry,
+    connectorIngestionPort,
     connectorDb: infrastructure.database,
     chatTextGenerationClient,
     crawlerProvider,

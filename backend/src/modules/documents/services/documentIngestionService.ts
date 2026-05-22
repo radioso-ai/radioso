@@ -35,6 +35,13 @@ export type DocumentSourceResolverInput =
       url: string;
       config?: Record<string, unknown>;
       metadata?: Record<string, unknown>;
+    }
+  | {
+      kind: "connector";
+      externalId: string;
+      name: string;
+      config?: Record<string, unknown>;
+      metadata?: Record<string, unknown>;
     };
 
 export interface DocumentSourceRecord {
@@ -157,6 +164,10 @@ export interface DocumentRepositoryPort {
     failureReason?: string | null;
   }): Promise<DocumentRecord | null>;
   findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null>;
+  findByExternalDocumentId(
+    workspaceId: string,
+    externalDocumentId: string,
+  ): Promise<DocumentRecord | null>;
   listSummariesByIdsAndWorkspaceId(workspaceId: string, documentIds: string[]): Promise<DocumentSummaryRecord[]>;
   listSummaryPageByWorkspaceId(
     workspaceId: string,
@@ -805,6 +816,17 @@ export class DocumentIngestionService {
         throw notFound("Document source not found");
       }
       return existing;
+    }
+
+    if (source.kind === "connector") {
+      return this.documentSourceRepository.upsertByExternalId({
+        workspaceId,
+        kind: "connector",
+        name: source.name,
+        externalId: source.externalId,
+        config: source.config ?? {},
+        metadata: source.metadata ?? {},
+      });
     }
 
     const url = normalizeWebsiteSourceUrl(source.url);

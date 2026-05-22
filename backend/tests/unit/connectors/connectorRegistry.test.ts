@@ -77,7 +77,11 @@ describe("ConnectorRegistry", () => {
       db: {} as any,
       logger: { info: () => {}, error: () => {}, warn: () => {} } as any,
       chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
-    } satisfies Pick<ConnectorContext, "db" | "logger" | "chat">;
+      ingestion: {
+        ingest: async () => ({ documentId: "doc-1", status: "queued" }),
+        deleteByExternalId: async () => false,
+      } as any,
+    } satisfies Pick<ConnectorContext, "db" | "logger" | "chat" | "ingestion">;
 
     await registry.initializeAll(context);
     expect(events).toContain("init-x");
@@ -102,7 +106,11 @@ describe("ConnectorRegistry", () => {
       db: {} as any,
       logger: { info: () => {}, error: () => {}, warn: () => {} } as any,
       chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
-    } satisfies Pick<ConnectorContext, "db" | "logger" | "chat">;
+      ingestion: {
+        ingest: async () => ({ documentId: "doc-1", status: "queued" }),
+        deleteByExternalId: async () => false,
+      } as any,
+    } satisfies Pick<ConnectorContext, "db" | "logger" | "chat" | "ingestion">;
 
     // Should not throw
     await registry.initializeAll(context);

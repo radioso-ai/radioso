@@ -1,7 +1,7 @@
 'use client'
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, FileUp, Globe, Pencil, Plus, SlidersHorizontal, X } from 'lucide-react'
+import { ChevronDown, FileUp, Globe, Pencil, Plug, Plus, SlidersHorizontal, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 import { DocumentCrawlDialog } from '@/components/dashboard/documents/document-crawl-dialog'
@@ -14,6 +14,7 @@ import {
   MANUALLY_ADDED_SOURCE_ID,
   type DocumentEditorValues,
 } from '@/components/dashboard/documents/document-editor-page'
+import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
 import { DocumentImportDialog } from '@/components/dashboard/documents/document-import-dialog'
 import {
   ChunkInspectorSheet,
@@ -121,6 +122,7 @@ export function DocumentsView({
   const [chunkInspectorRequest, setChunkInspectorRequest] = useState<ChunkInspectorRequest>(null)
   const [availableSources, setAvailableSources] = useState<DocumentSourceListItem[]>([])
   const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false)
+  const [activeConnectorId, setActiveConnectorId] = useState<string | null>(null)
 
   const sourceFilterId = routeState.documentSourceFilter ?? null
   const activeSource = sourceFilterId
@@ -900,6 +902,19 @@ export function DocumentsView({
         onApply={setSourceFilter}
       />
 
+      {activeConnectorId ? (
+        <ConnectorSetupDialog
+          open
+          connectorId={activeConnectorId}
+          onOpenChange={(next) => {
+            if (!next) {
+              setActiveConnectorId(null)
+              void loadDocuments(currentPage, { background: true, reset: true })
+            }
+          }}
+        />
+      ) : null}
+
       {selectedDocumentId ? (
         <DocumentEditorPage
           document={activeDetailDocument}
@@ -1011,6 +1026,10 @@ export function DocumentsView({
                   <DropdownMenuItem onClick={openCreateDialog}>
                     <Pencil className="mr-2 h-4 w-4" />
                     Write document
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setActiveConnectorId('wordpress')}>
+                    <Plug className="mr-2 h-4 w-4" />
+                    Connect WordPress
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

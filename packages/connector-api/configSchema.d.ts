@@ -2,7 +2,13 @@
  * Supported field types for connector configuration schemas.
  * The frontend renders each type with the appropriate UI control.
  */
-export type ConfigFieldType = "text" | "secret" | "toggle" | "select";
+/**
+ * - `secret`: user-supplied credential (encrypted at rest, masked on read).
+ * - `generated_secret`: connector-issued credential (encrypted at rest, returned
+ *   in plaintext so the user can copy it into the upstream system; auto-filled
+ *   by the registry on first read when missing).
+ */
+export type ConfigFieldType = "text" | "secret" | "generated_secret" | "toggle" | "select";
 
 /**
  * A single configuration field declared by a connector plugin.

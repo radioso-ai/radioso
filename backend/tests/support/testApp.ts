@@ -791,6 +791,11 @@ export const createTestDependencies = (overrides: {
     conversationRepository,
     messageRepository,
     connectorRegistry,
+    connectorIngestionPort: {
+      async ingest() { return { documentId: "test-doc", status: "queued" }; },
+      async deleteByExternalId() { return false; },
+      async ensureSource() { return { id: "test-source" }; },
+    },
     connectorDb: connectorDb as any,
     chatTextGenerationClient: {
       metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
@@ -810,6 +815,7 @@ export const createTestDependencies = (overrides: {
     db: connectorDb as any,
     logger: dependencies.logger,
     chat: createConnectorChatPort(dependencies.chatService),
+    ingestion: dependencies.connectorIngestionPort,
   });
 
   return {

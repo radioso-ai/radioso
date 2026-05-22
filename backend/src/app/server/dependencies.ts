@@ -24,6 +24,7 @@ import { EmbeddingService } from "../../modules/retrieval/composition.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { SkillCatalogService } from "../../modules/skills/public.js";
+import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -138,6 +139,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceService: workspace.workspaceService,
   });
   const connectorRegistry = buildConnectorRegistry({ composition, env, logger });
+  const connectorIngestionPort = createConnectorIngestionPort({
+    documentIngestionService: documents.documentIngestionService,
+    documentDeletionService: documents.documentDeletionService,
+    documentRepository: repositories.documentRepository,
+  });
 
   const chatTextGenerationClient = llmRegistry.createChatTextClient();
 
@@ -223,6 +229,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversationRepository: repositories.conversationRepository,
     messageRepository: repositories.messageRepository,
     connectorRegistry,
+    connectorIngestionPort,
     connectorDb: infrastructure.database,
     chatTextGenerationClient,
     crawlerProvider,

@@ -6,6 +6,7 @@ import type {
   ConnectorDatabasePort,
   ConnectorChatPort,
   ConnectorHttpHost,
+  ConnectorIngestionPort,
   ConnectorLogger,
   ConnectorStatePort,
   ConnectorSummary,
@@ -80,6 +81,7 @@ export class ConnectorRegistry {
     db: ConnectorDatabasePort;
     logger: ConnectorLogger;
     chat: ConnectorChatPort;
+    ingestion: ConnectorIngestionPort;
   }): Promise<void> {
     for (const plugin of this.plugins.values()) {
       try {
@@ -87,6 +89,7 @@ export class ConnectorRegistry {
           db: context.db,
           logger: context.logger,
           chat: context.chat,
+          ingestion: context.ingestion,
           state: this.createPluginState(context.db, plugin.id),
           http: this.createHttpHost(),
         });

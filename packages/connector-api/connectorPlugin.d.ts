@@ -39,12 +39,38 @@ export interface ConnectorHttpHost {
   mount(path: string, router: Router): void;
 }
 
+/**
+ * Document ingestion port exposed to connectors. Encapsulates the full ingest
+ * pipeline (sanitization, externalDocumentId upsert, queueing, audit, analytics,
+ * usage limits) so connector plugins never touch the documents schema directly.
+ */
+export interface ConnectorIngestionPort {
+  ingest(input: {
+    workspaceId: string;
+    title: string;
+    content: string;
+    externalDocumentId: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<{ documentId: string; status: string }>;
+
+  /**
+   * Delete the document keyed by (workspaceId, externalDocumentId), if any.
+   * Returns true when a document was found and deleted, false when no document
+   * matched. Idempotent — safe to call for unknown external ids.
+   */
+  deleteByExternalId(input: {
+    workspaceId: string;
+    externalDocumentId: string;
+  }): Promise<boolean>;
+}
+
 export interface ConnectorContext {
   db: ConnectorDatabasePort;
   logger: ConnectorLogger;
   chat: ConnectorChatPort;
   state: ConnectorStatePort;
   http: ConnectorHttpHost;
+  ingestion: ConnectorIngestionPort;
 }
 
 /**

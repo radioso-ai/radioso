@@ -1384,6 +1384,18 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return item && item.workspaceId === workspaceId ? item : null;
   }
 
+  async findByExternalDocumentId(
+    workspaceId: string,
+    externalDocumentId: string,
+  ): Promise<DocumentRecord | null> {
+    for (const item of this.items.values()) {
+      if (item.workspaceId === workspaceId && item.externalDocumentId === externalDocumentId) {
+        return item;
+      }
+    }
+    return null;
+  }
+
   async setStatus(input: {
     documentId: string;
     workspaceId: string;

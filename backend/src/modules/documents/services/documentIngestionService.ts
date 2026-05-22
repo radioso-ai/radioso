@@ -143,6 +143,10 @@ export interface DocumentRepositoryPort {
     failureReason?: string | null;
   }): Promise<DocumentRecord | null>;
   findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null>;
+  findByExternalDocumentId(
+    workspaceId: string,
+    externalDocumentId: string,
+  ): Promise<DocumentRecord | null>;
   listSummariesByIdsAndWorkspaceId(workspaceId: string, documentIds: string[]): Promise<DocumentSummaryRecord[]>;
   listSummaryPageByWorkspaceId(
     workspaceId: string,

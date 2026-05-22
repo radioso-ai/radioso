@@ -20,7 +20,8 @@ import type {
 
 import { createWordpressWebhookRouter } from "./wordpressWebhookRouter.js";
 import {
-  runBackfill,
+  requestBackfill,
+  runBackfillWithErrorStatus,
   startPollingLoop,
   stopPollingLoop,
   type WordpressSyncDeps,
@@ -195,10 +196,26 @@ export class WordpressConnector implements ConnectorPlugin {
 
   /** Exposed for an admin "Backfill now" action; safe to call repeatedly. */
   async backfillNow(workspaceId: string): Promise<{ ingested: number }> {
+    return this.runBackfillWithStatus(workspaceId, { force: true });
+  }
+
+  private async runBackfillWithStatus(
+    workspaceId: string,
+    options?: { force?: boolean; lockToken?: string },
+  ): Promise<{ ingested: number; alreadyRunning?: boolean }> {
     if (!this.syncDeps) {
       throw new Error("WordPress connector is not initialized");
     }
-    return runBackfill(this.syncDeps, workspaceId, { force: true });
+    const deps = this.syncDeps;
+    return runBackfillWithErrorStatus(deps, workspaceId, options);
+  }
+
+  async syncNow({ workspaceId }: { workspaceId: string }): Promise<{ accepted: boolean; alreadyRunning?: boolean }> {
+    if (!this.syncDeps) {
+      throw new Error("WordPress connector is not initialized");
+    }
+    const deps = this.syncDeps;
+    return requestBackfill(deps, workspaceId);
   }
 
   /**
@@ -227,8 +244,9 @@ export class WordpressConnector implements ConnectorPlugin {
       );
     }
 
-    const deps = this.syncDeps;
-    void runBackfill(deps, workspaceId).catch((error) => {
+    void this.runBackfillWithStatus(workspaceId).catch((error) => {
+      const deps = this.syncDeps;
+      if (!deps) return;
       deps.logger.warn(
         {
           workspaceId,

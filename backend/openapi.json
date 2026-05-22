@@ -7445,6 +7445,9 @@
               "string",
               "null"
             ]
+          },
+          "supportsManualSync": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -7452,7 +7455,8 @@
           "name",
           "description",
           "enabled",
-          "errorStatus"
+          "errorStatus",
+          "supportsManualSync"
         ]
       },
       "ConnectorListResponse": {
@@ -7502,14 +7506,75 @@
               "webhookUrl": {
                 "type": "string",
                 "format": "uri"
+              },
+              "syncState": {
+                "type": "object",
+                "properties": {
+                  "backfillCompletedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "syncRequestedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "syncStartedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lastRunAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lastModifiedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lastIngestedCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "backfillCompletedAt",
+                  "syncRequestedAt",
+                  "syncStartedAt",
+                  "lastRunAt",
+                  "lastModifiedAt",
+                  "lastIngestedCount"
+                ]
               }
             },
             "required": [
               "schema",
               "config",
-              "webhookUrl"
+              "webhookUrl",
+              "syncState"
             ]
           }
+        ]
+      },
+      "ConnectorSyncResponse": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accepted"
         ]
       },
       "ConnectorConfigUpdateRequest": {
@@ -12897,6 +12962,115 @@
                       "type": "string",
                       "enum": [
                         "Connector not found"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/connectors/{connectorId}/sync": {
+      "post": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Run a manual connector sync",
+        "operationId": "syncConnector",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectorId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Connector sync accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSyncResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Connector cannot sync in its current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Connector not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "Connector not found"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Manual sync unsupported or already running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "Manual sync unsupported"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "Connector sync already running"
+                          ]
+                        }
                       ]
                     }
                   },

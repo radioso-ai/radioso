@@ -128,3 +128,98 @@ test("expanding a source reveals actions; View documents deep-links to the filte
   await expect(page.getByText("Source", { exact: true }).first()).toBeVisible();
   await expect(page.getByText(websiteSourceName).last()).toBeVisible();
 });
+
+test("connector sources reopen setup with sync status and manual sync", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+
+  const connectorSourceId = "55555555-5555-5555-5555-555555555555";
+  const connectorDetail = {
+    id: "wordpress",
+    name: "WordPress",
+    description: "Auto-ingest WordPress pages and posts.",
+    enabled: true,
+    errorStatus: null,
+    supportsManualSync: true,
+    schema: [
+      {
+        key: "site_url",
+        label: "WordPress site URL",
+        type: "text",
+        required: true,
+      },
+    ],
+    config: {
+      site_url: "https://example.com",
+    },
+    webhookUrl: "https://radioso.test/api/connectors/wordpress/workspace-1/webhook",
+    syncState: {
+      backfillCompletedAt: nowIso,
+      syncRequestedAt: null,
+      syncStartedAt: null,
+      lastRunAt: nowIso,
+      lastModifiedAt: nowIso,
+      lastIngestedCount: 4,
+    },
+  };
+
+  await page.route("**/backend/api/v1/document/sources", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sources: [
+          {
+            id: connectorSourceId,
+            kind: "connector",
+            name: "example.com",
+            externalId: "wordpress:https://example.com",
+            documentCount: 4,
+            lastSyncedAt: nowIso,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route("**/backend/api/v1/document/crawl/jobs**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ jobs: [], total: 0, nextCursor: null, hasMore: false }),
+    });
+  });
+
+  await page.route("**/backend/api/v1/connectors/wordpress", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(connectorDetail),
+    });
+  });
+
+  await page.route("**/backend/api/v1/connectors/wordpress/sync", async (route) => {
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ accepted: true }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/knowledge?tab=sources`);
+
+  await page.getByText("wordpress:https://example.com").click();
+  await page.getByRole("button", { name: "Settings" }).click();
+
+  const dialog = page.getByRole("dialog", { name: /WordPress/ });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("Sync status")).toBeVisible();
+  await expect(dialog.getByText("4 documents")).toBeVisible();
+
+  await page.getByRole("button", { name: "Sync now" }).click();
+  await expect(page.getByText("Sync started.")).toBeVisible();
+});

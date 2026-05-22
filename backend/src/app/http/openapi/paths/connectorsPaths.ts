@@ -226,4 +226,63 @@ export const registerConnectorsPaths = (
       },
     },
   });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/connectors/{connectorId}/sync",
+    tags: ["Connectors"],
+    summary: "Run a manual connector sync",
+    operationId: "syncConnector",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.connectorIdPathParamsSchema,
+    },
+    responses: {
+      202: {
+        description: "Connector sync accepted",
+        content: {
+          "application/json": {
+            schema: schemas.ConnectorSyncResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Connector cannot sync in its current state",
+        content: {
+          "application/json": {
+            schema: schemas.ConnectorValidationErrorSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Connector not found",
+        content: {
+          "application/json": {
+            schema: z.object({ error: z.literal("Connector not found") }),
+          },
+        },
+      },
+      409: {
+        description: "Manual sync unsupported or already running",
+        content: {
+          "application/json": {
+            schema: z.object({
+              error: z.union([
+                z.literal("Manual sync unsupported"),
+                z.literal("Connector sync already running"),
+              ]),
+            }),
+          },
+        },
+      },
+    },
+  });
 };

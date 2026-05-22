@@ -1,6 +1,6 @@
 ---
 title: Connectors
-description: Read connector state, save connector config, and enable or disable connectors.
+description: Read connector state, save connector config, enable or disable connectors, and run manual syncs.
 ---
 
 # Connectors
@@ -15,6 +15,7 @@ GET  /api/v1/connectors/{connectorId}
 PUT  /api/v1/connectors/{connectorId}
 POST /api/v1/connectors/{connectorId}/enable
 POST /api/v1/connectors/{connectorId}/disable
+POST /api/v1/connectors/{connectorId}/sync
 ```
 
 ## How it works
@@ -23,8 +24,11 @@ POST /api/v1/connectors/{connectorId}/disable
 2. Read one connector's current detail.
 3. Save connector-specific config.
 4. Enable the connector when the config is ready.
+5. Run a manual sync when the connector supports it.
 
 The key point is that connector config is not one global schema. The body depends on the connector you are configuring, so the [API Reference](/api-reference) is the authoritative place for the exact shape.
+
+Connector detail responses also include `syncState`. This shows whether a sync is queued or running, the latest backfill completion time, latest sync attempt, upstream modified cursor, and count ingested by the last sync.
 
 ## Save connector config
 
@@ -46,12 +50,30 @@ Disable it with:
 POST /api/v1/connectors/{connectorId}/disable
 ```
 
+## Run a manual sync
+
+Use:
+
+```text
+POST /api/v1/connectors/{connectorId}/sync
+```
+
+The response returns `202` when the sync has been accepted:
+
+```json
+{
+  "accepted": true
+}
+```
+
+The sync continues after the HTTP request returns. Re-read the connector detail to see updated `syncState`. Not every connector supports manual sync. Unsupported or already-running syncs return `409`.
+
 ## Common failure modes
 
 - `400` usually means the connector config is incomplete or invalid.
 - `401` means the authenticated workspace context is missing for connector-management routes.
 - `404` means the connector or workspace was not found.
-- `409` usually means the connector is in a conflicting state for the requested save or enable action.
+- `409` usually means the connector is in a conflicting state for the requested save or enable action, does not support manual sync, or already has a sync running.
 
 ## Read next
 

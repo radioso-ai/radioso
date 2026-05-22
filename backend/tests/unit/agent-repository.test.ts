@@ -73,7 +73,7 @@ describe("AgentRepository", () => {
       },
     }), registry);
 
-    const agent = await repository.findById("agent-1");
+    const agent = await repository.findByIdAndWorkspaceId("agent-1", "workspace-1");
 
     expect(parse).toHaveBeenCalledWith({ enabled: true, token: "extension-token" });
     expect(agent).not.toBeNull();
@@ -105,7 +105,7 @@ describe("AgentRepository", () => {
       },
     }), registry);
 
-    const agent = await repository.findById("agent-1");
+    const agent = await repository.findByIdAndWorkspaceId("agent-1", "workspace-1");
 
     expect(agent).not.toBeNull();
     expect(getWebsiteEmbedSurfaceSettings(agent!)).toEqual(websiteEmbedDefaults());
@@ -124,7 +124,7 @@ describe("AgentRepository", () => {
       }),
     } as never);
 
-    const agent = await repository.findById("agent-1");
+    const agent = await repository.findByIdAndWorkspaceId("agent-1", "workspace-1");
 
     expect(agent?.sourceScope).toEqual({
       mode: "selected",

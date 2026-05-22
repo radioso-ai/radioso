@@ -861,7 +861,7 @@ export const createTestApp = (overrides: {
 export const issueTestToken = async (
   app: ReturnType<typeof createTestApp>["app"],
   email = `test-${randomUUID()}@example.com`,
-): Promise<{ token: string; cookie: string; workspaceId: string }> => {
+): Promise<{ token: string; cookie: string; workspaceId: string; accountId: string }> => {
   const { cookie, workspaceId, accountId } = await issueTestSession(app, email);
 
   const workspaces = await request(app)
@@ -875,7 +875,7 @@ export const issueTestToken = async (
 
   const tokenResponse = await dependencies.authService.getTokenForWorkspace(resolvedWorkspaceId, accountId);
 
-  return { token: tokenResponse.token, cookie, workspaceId: resolvedWorkspaceId };
+  return { token: tokenResponse.token, cookie, workspaceId: resolvedWorkspaceId, accountId };
 };
 
 export const issueTestSession = async (

@@ -198,13 +198,16 @@ export class WordpressConnector implements ConnectorPlugin {
     if (!this.syncDeps) {
       throw new Error("WordPress connector is not initialized");
     }
-    return runBackfill(this.syncDeps, workspaceId);
+    return runBackfill(this.syncDeps, workspaceId, { force: true });
   }
 
   /**
-   * Registers the workspace's WordPress channel in the Sources view as soon as
-   * the connector is enabled, so the user gets a "your site is connected"
-   * signal even before the first post arrives.
+   * On enable: register the source row so the user sees the channel in Sources
+   * immediately, then kick off a one-shot backfill in the background. The
+   * WordPress REST API is publicly readable by default, so backfill works on
+   * most sites even without an application password; for private sites it
+   * fails harmlessly and the connector still receives webhook events for new
+   * edits going forward.
    */
   async onEnable({ workspaceId }: { workspaceId: string }): Promise<void> {
     if (!this.syncDeps) return;
@@ -223,5 +226,16 @@ export class WordpressConnector implements ConnectorPlugin {
         "wordpress connector failed to register source on enable",
       );
     }
+
+    const deps = this.syncDeps;
+    void runBackfill(deps, workspaceId).catch((error) => {
+      deps.logger.warn(
+        {
+          workspaceId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "wordpress backfill on enable failed",
+      );
+    });
   }
 }

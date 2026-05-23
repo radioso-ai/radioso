@@ -11,16 +11,12 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY ee/package.json ./ee/package.json
 COPY ee/packages/auth-frontend/package.json ./ee/packages/auth-frontend/package.json
-COPY ee/packages/agent-wizard-frontend/package.json ./ee/packages/agent-wizard-frontend/package.json
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile \
-      --filter @radioso/enterprise-auth-frontend... \
-      --filter @radioso/enterprise-agent-wizard-frontend...
+      --filter @radioso/enterprise-auth-frontend...
 
 COPY ee/packages/auth-frontend ./ee/packages/auth-frontend
-COPY ee/packages/agent-wizard-frontend ./ee/packages/agent-wizard-frontend
 RUN pnpm --filter @radioso/enterprise-auth-frontend run build
-RUN pnpm --filter @radioso/enterprise-agent-wizard-frontend run build
 
 FROM base AS deps
 
@@ -32,16 +28,13 @@ COPY frontend/package.json ./frontend/package.json
 COPY packages/ui/package.json ./packages/ui/package.json
 COPY ee/package.json ./ee/package.json
 COPY --from=ee-frontend-build /app/ee/packages/auth-frontend ./ee/packages/auth-frontend
-COPY --from=ee-frontend-build /app/ee/packages/agent-wizard-frontend ./ee/packages/agent-wizard-frontend
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile \
       --filter radioso-frontend... \
-      --filter @radioso/enterprise-auth-frontend... \
-      --filter @radioso/enterprise-agent-wizard-frontend...
+      --filter @radioso/enterprise-auth-frontend...
 RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
       mkdir -p ./frontend/node_modules/@radioso && \
-      ln -s ../../../ee/packages/auth-frontend ./frontend/node_modules/@radioso/enterprise-auth-frontend && \
-      ln -s ../../../ee/packages/agent-wizard-frontend ./frontend/node_modules/@radioso/enterprise-agent-wizard-frontend; \
+      ln -s ../../../ee/packages/auth-frontend ./frontend/node_modules/@radioso/enterprise-auth-frontend; \
     fi
 
 FROM deps AS builder
@@ -58,9 +51,7 @@ COPY packages/ui ./packages/ui
 COPY scripts/sync-ee-frontend-routes.mjs ./scripts/sync-ee-frontend-routes.mjs
 COPY scripts/enterprise-feature-manifests.mjs ./scripts/enterprise-feature-manifests.mjs
 COPY --from=ee-frontend-build /app/ee/packages/auth-frontend/feature-manifest.mjs ./ee/packages/auth-frontend/feature-manifest.mjs
-COPY --from=ee-frontend-build /app/ee/packages/agent-wizard-frontend/feature-manifest.mjs ./ee/packages/agent-wizard-frontend/feature-manifest.mjs
 COPY --from=ee-frontend-build /app/ee/packages/auth-frontend/package.json ./ee/packages/auth-frontend/package.json
-COPY --from=ee-frontend-build /app/ee/packages/agent-wizard-frontend/package.json ./ee/packages/agent-wizard-frontend/package.json
 COPY ee/readme.md ./ee/readme.md
 
 RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \

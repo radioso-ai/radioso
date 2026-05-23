@@ -154,7 +154,7 @@ export const answerFeedbackApi = {
   async submit(
     input: { assistantMessageId: string; value: AnswerFeedbackValue; comment?: string | null },
   ): Promise<AnswerFeedbackEntry> {
-    return request<AnswerFeedbackEntry>(`/ee/answer-feedback/messages/${input.assistantMessageId}`, {
+    return request<AnswerFeedbackEntry>(`/answer-feedback/messages/${input.assistantMessageId}`, {
       method: 'PUT',
       body: JSON.stringify({
         value: input.value,
@@ -164,7 +164,7 @@ export const answerFeedbackApi = {
   },
 
   async clear(assistantMessageId: string): Promise<{ cleared: boolean }> {
-    return request<{ cleared: boolean }>(`/ee/answer-feedback/messages/${assistantMessageId}`, {
+    return request<{ cleared: boolean }>(`/answer-feedback/messages/${assistantMessageId}`, {
       method: 'DELETE',
     }, { withApiToken: true })
   },
@@ -173,7 +173,7 @@ export const answerFeedbackApi = {
     token: string,
     input: { assistantMessageId: string; value: AnswerFeedbackValue; comment?: string | null },
   ): Promise<AnswerFeedbackEntry> {
-    const response = await fetch(`${API_BASE}/ee/answer-feedback/public/chat/${encodeURIComponent(token)}/messages/${input.assistantMessageId}`, {
+    const response = await fetch(`${API_BASE}/answer-feedback/public/chat/${encodeURIComponent(token)}/messages/${input.assistantMessageId}`, {
       method: 'PUT',
       cache: 'no-store',
       credentials: 'include',
@@ -196,7 +196,7 @@ export const answerFeedbackApi = {
   },
 
   async clearPublic(token: string, assistantMessageId: string): Promise<{ cleared: boolean }> {
-    const response = await fetch(`${API_BASE}/ee/answer-feedback/public/chat/${encodeURIComponent(token)}/messages/${assistantMessageId}`, {
+    const response = await fetch(`${API_BASE}/answer-feedback/public/chat/${encodeURIComponent(token)}/messages/${assistantMessageId}`, {
       method: 'DELETE',
       cache: 'no-store',
       credentials: 'include',

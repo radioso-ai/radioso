@@ -1,13 +1,13 @@
 "use client";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { WizardShell } from "./wizard-shell.js";
+import { WizardShell } from "./wizard-shell";
 export {
   clearAgentCreationHandoff,
   readAgentCreationHandoff,
   type AgentCreationHandoff,
   type AgentCreationHandoffItem,
-} from "./handoff.js";
+} from "./handoff";
 
 interface WizardDialogProps {
   open: boolean;

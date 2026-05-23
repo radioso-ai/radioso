@@ -8,12 +8,16 @@ import {
 } from "../../src/modules/chat/services/chatService.js";
 import type { ChatIntakeProviderPort } from "../../src/modules/chat/services/chatIntakeProvider.js";
 import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
+import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import {
   createAuditService,
   InMemoryAuditEventRepository,
   InMemoryConversationRepository,
   InMemoryMessageRepository,
 } from "../support/fakes.js";
+
+const envelope = (answer: string, suggestions: unknown[]): string =>
+  `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(suggestions)}`;
 
 const groundedMissResponseComposer: GroundedMissResponseComposer = {
   async composeNoContext() {
@@ -953,7 +957,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "unused";
+        return "   ";
       },
       async *streamAnswer() {
         yield "";
@@ -1000,6 +1004,78 @@ describe("chat service streaming", () => {
         }),
       }),
     );
+  });
+
+  it("rejects a well-formed envelope whose answer is blank in the non-streaming path", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Intro",
+              content: "full answer",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return envelope("   ", []);
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      asChatActivityPipeline(retrievalPipeline) as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    await expect(
+      service.answer({
+        workspaceId: "workspace-1",
+        query: "What does this page do?",
+        stream: false,
+      }),
+    ).rejects.toBeInstanceOf(BlankChatAnswerError);
+
+    const [conversationId] = conversationRepository.items.keys();
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
+      { role: "user", content: "What does this page do?" },
+    ]);
   });
 
   it("answers assistant identity questions without retrieved document context", async () => {
@@ -2062,16 +2138,14 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          return JSON.stringify({
-            suggestions: [
-              { text: "How do import audits work?", kind: "deeper", contextIndex: 1 },
-            ],
-          });
+      async answer({ systemPrompt }) {
+        const answerText = "The guide covers parser setup and onboarding workflows.";
+        if (systemPrompt?.includes("Output envelope")) {
+          return envelope(answerText, [
+            { text: "How do import audits work?", kind: "deeper", contextIndex: 1 },
+          ]);
         }
-
-        return "The guide covers parser setup and onboarding workflows.";
+        return answerText;
       },
       async *streamAnswer() {
         yield "unused";
@@ -2151,12 +2225,16 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          throw new Error("suggestions should require cited answer content");
+      async answer({ systemPrompt }) {
+        const answerText = "Thanks for asking.";
+        if (systemPrompt?.includes("Output envelope")) {
+          // Envelope is requested even when the answer ends up uncited; the presenter
+          // gating drops suggestions for uncited answers.
+          return envelope(answerText, [
+            { text: "Should not appear.", kind: "deeper", contextIndex: 1 },
+          ]);
         }
-
-        return "Thanks for asking.";
+        return answerText;
       },
       async *streamAnswer() {
         yield "unused";
@@ -2430,7 +2508,7 @@ describe("chat service streaming", () => {
       .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
       .map((event) => event.text);
 
-    expect(chunkTexts).toEqual(["Narayani is a teacher", " and author."]);
+    expect(chunkTexts.join("")).toBe("Narayani is a teacher and author.");
     expect(events.at(-1)).toEqual(
       expect.objectContaining({
         type: "done",
@@ -2491,16 +2569,17 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          return '{"suggestions":[]}';
-        }
-        return [
+      async answer({ systemPrompt }) {
+        const answerText = [
           "The page explains testing and parsing content for users[[1]].",
           "",
           "- You can also inspect the onboarding FAQ[[1]].",
           "- The notes include worked examples[[1]].",
         ].join("\n");
+        if (systemPrompt?.includes("Output envelope")) {
+          return envelope(answerText, []);
+        }
+        return answerText;
       },
       async *streamAnswer() {
         yield "";
@@ -2584,17 +2663,16 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          return JSON.stringify({
-            suggestions: [
-              { text: "What does the interview say about Mahiya's spiritual path?", kind: "deeper", contextIndex: 1 },
-              { text: "Which books or projects is Mahiya associated with?", kind: "broader", contextIndex: 2 },
-              { text: "What challenges does Mahiya describe in the other interview?", kind: "broader", contextIndex: 3 },
-            ],
-          });
+      async answer({ systemPrompt }) {
+        const answerText = "Mahiya is a teacher and author[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
+          return envelope(answerText, [
+            { text: "What does the interview say about Mahiya's spiritual path?", kind: "deeper", contextIndex: 1 },
+            { text: "Which books or projects is Mahiya associated with?", kind: "broader", contextIndex: 2 },
+            { text: "What challenges does Mahiya describe in the other interview?", kind: "broader", contextIndex: 3 },
+          ]);
         }
-        return "Mahiya is a teacher and author[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
         yield "Mahiya is a teacher and author[[1]].";
@@ -2690,18 +2768,19 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          return JSON.stringify({
-            suggestions: [
-              { text: "What does the interview say about Mahiya's spiritual path?", contextIndex: 1 },
-            ],
-          });
+      async answer({ systemPrompt }) {
+        const answerText = "Mahiya is a teacher and author[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
+          return envelope(answerText, [
+            { text: "What does the interview say about Mahiya's spiritual path?", contextIndex: 1 },
+          ]);
         }
-        return "Mahiya is a teacher and author[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
-        yield "Mahiya is a teacher and author[[1]].";
+        yield envelope("Mahiya is a teacher and author[[1]].", [
+          { text: "What does the interview say about Mahiya's spiritual path?", contextIndex: 1 },
+        ]);
       },
     };
     const service = new ChatService(
@@ -2789,10 +2868,9 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          throw new Error("suggestions unavailable");
-        }
+      async answer() {
+        // Plain text instead of a valid JSON envelope — exercises the parser's
+        // tolerant fallback (answer is preserved, suggestions are empty).
         return "Mahiya is a teacher and author[[1]].";
       },
       async *streamAnswer() {
@@ -2819,7 +2897,10 @@ describe("chat service streaming", () => {
       events.push(event);
     }
 
-    expect(events.map((event) => event.type)).toEqual(["conversation", "chunk", "done"]);
+    expect(events[0]?.type).toBe("conversation");
+    expect(events.at(-1)?.type).toBe("done");
+    expect(events.filter((event) => event.type === "chunk").length).toBeGreaterThan(0);
+    expect(events.some((event) => event.type === "suggestions")).toBe(false);
     expect(auditEventRepository.items.filter((event) => event.eventType === "chat.answer")).toHaveLength(1);
     expect(auditEventRepository.items[0]?.eventStatus).toBe("success");
   });
@@ -2871,15 +2952,14 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          return JSON.stringify({
-            suggestions: [
-              { text: "Quale altro libro o progetto è collegato a Narayani?", kind: "broader", contextIndex: 1 },
-            ],
-          });
+      async answer({ systemPrompt }) {
+        const answerText = "Narayani ha scritto La mia anima ricorda Swami Kriyananda[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
+          return envelope(answerText, [
+            { text: "Quale altro libro o progetto è collegato a Narayani?", kind: "broader", contextIndex: 1 },
+          ]);
         }
-        return "Narayani ha scritto La mia anima ricorda Swami Kriyananda[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
         yield "Narayani ha scritto La mia anima ricorda Swami Kriyananda[[1]].";
@@ -2914,7 +2994,7 @@ describe("chat service streaming", () => {
     ]);
   });
 
-  it("filters suggestions that mostly restate the current query or answer", async () => {
+  it("filters suggestions that paraphrase the user query", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2961,17 +3041,18 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          return JSON.stringify({
-            suggestions: [
-              { text: "What videos are on page 3?", kind: "deeper", contextIndex: 2 },
-              { text: "How many Assisi archive pages are there?", kind: "broader", contextIndex: 2 },
-            ],
-          });
+      async answer({ systemPrompt }) {
+        const answerText = "Yes — here's the next page of the Assisi videos archive: https://anandaeurope.org/category/video-from-assisi/page/3/[[1]]";
+        if (systemPrompt?.includes("Output envelope")) {
+          return envelope(answerText, [
+            // Near-paraphrase of the user's query — should be filtered.
+            { text: "Where are the next Assisi videos links?", kind: "deeper", contextIndex: 2 },
+            // Legitimate adjacent angle — should survive even though it shares
+            // topic vocabulary ("Assisi", "archive") with the answer.
+            { text: "How many Assisi archive pages are there?", kind: "broader", contextIndex: 2 },
+          ]);
         }
-
-        return "Yes — here's the next page of the Assisi videos archive: https://anandaeurope.org/category/video-from-assisi/page/3/[[1]]";
+        return answerText;
       },
       async *streamAnswer() {
         yield "Yes — here's the next page of the Assisi videos archive: https://anandaeurope.org/category/video-from-assisi/page/3/[[1]]";
@@ -3051,21 +3132,18 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer({ prompt, query }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          return JSON.stringify({
-            suggestions: [
-              { text: "What should a beginner retreat schedule include?", kind: "deeper", contextIndex: 1 },
-              { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
-            ],
-          });
+      async answer({ systemPrompt, query }) {
+        const answerText =
+          query === "What should I include next?"
+            ? "You should include orientation and meals[[1]]."
+            : "Start with a beginner retreat schedule[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
+          return envelope(answerText, [
+            { text: "What should a beginner retreat schedule include?", kind: "deeper", contextIndex: 1 },
+            { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
+          ]);
         }
-
-        if (query === "What should I include next?") {
-          return "You should include orientation and meals[[1]].";
-        }
-
-        return "Start with a beginner retreat schedule[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
         yield "";
@@ -3200,30 +3278,24 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer({ prompt, query }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          if (prompt.includes("Active subject:\nFacilitator support")) {
-            return JSON.stringify({
-              suggestions: [
-                { text: "How should facilitators support retreat attendees?", kind: "deeper", contextIndex: 1 },
-                { text: "Which support roles should back up retreat facilitators?", kind: "broader", contextIndex: 2 },
-              ],
-            });
+      async answer({ systemPrompt, query }) {
+        const answerText =
+          query === "What about facilitator support?"
+            ? "Facilitators should balance logistics and attendee care[[1]]."
+            : "Start with a beginner retreat schedule[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
+          if (systemPrompt.includes("Active subject:\nFacilitator support")) {
+            return envelope(answerText, [
+              { text: "How should facilitators support retreat attendees?", kind: "deeper", contextIndex: 1 },
+              { text: "Which support roles should back up retreat facilitators?", kind: "broader", contextIndex: 2 },
+            ]);
           }
-
-          return JSON.stringify({
-            suggestions: [
-              { text: "What should a beginner retreat schedule include?", kind: "deeper", contextIndex: 1 },
-              { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
-            ],
-          });
+          return envelope(answerText, [
+            { text: "What should a beginner retreat schedule include?", kind: "deeper", contextIndex: 1 },
+            { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
+          ]);
         }
-
-        if (query === "What about facilitator support?") {
-          return "Facilitators should balance logistics and attendee care[[1]].";
-        }
-
-        return "Start with a beginner retreat schedule[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
         yield "";
@@ -3312,19 +3384,17 @@ describe("chat service streaming", () => {
     } as const;
     let suggestionCallCount = 0;
     const chatGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
+      async answer({ systemPrompt }) {
+        const answerText = "The guide covers testing, onboarding, and parser rules[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
           suggestionCallCount += 1;
-          return JSON.stringify({
-            suggestions: [
-              { text: "How should teams apply these rules?", kind: "deeper", contextIndex: 1 },
-              { text: "What setup examples are available?", kind: "deeper", contextIndex: 1 },
-              { text: "Which workflow risks should I compare?", kind: "broader", contextIndex: 1 },
-            ],
-          });
+          return envelope(answerText, [
+            { text: "How should teams apply these rules?", kind: "deeper", contextIndex: 1 },
+            { text: "What setup examples are available?", kind: "deeper", contextIndex: 1 },
+            { text: "Which workflow risks should I compare?", kind: "broader", contextIndex: 1 },
+          ]);
         }
-
-        return "The guide covers testing, onboarding, and parser rules[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
         yield "";
@@ -3410,19 +3480,17 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          return JSON.stringify({
-            suggestions: [
-              { text: "What does the archive cover?", kind: "deeper", contextIndex: 1 },
-              { text: "How is the archive organized?", kind: "broader", contextIndex: 2 },
-              { text: "How is the archive organized?", kind: "deeper", contextIndex: 2 },
-              { text: "Which archive videos are available?", kind: "invalid_kind", contextIndex: 1 },
-            ],
-          });
+      async answer({ systemPrompt }) {
+        const answerText = "The archive covers videos, audio, and retreat notes[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
+          return envelope(answerText, [
+            { text: "What does the archive cover?", kind: "deeper", contextIndex: 1 },
+            { text: "How is the archive organized?", kind: "broader", contextIndex: 2 },
+            { text: "How is the archive organized?", kind: "deeper", contextIndex: 2 },
+            { text: "Which archive videos are available?", kind: "invalid_kind", contextIndex: 1 },
+          ]);
         }
-
-        return "The archive covers videos, audio, and retreat notes[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
         yield "";
@@ -3515,19 +3583,17 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          return JSON.stringify({
-            suggestions: [
-              { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
-              { text: "How should retreat meals fit the schedule?", kind: "deeper", contextIndex: 2 },
-              { text: "What should orientation cover on day one?", kind: "deeper", contextIndex: 3 },
-              { text: "How should facilitators support retreat attendees?", kind: "broader", contextIndex: 4 },
-            ],
-          });
+      async answer({ systemPrompt }) {
+        const answerText = "Start with the retreat schedule and day-one orientation[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
+          return envelope(answerText, [
+            { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
+            { text: "How should retreat meals fit the schedule?", kind: "deeper", contextIndex: 2 },
+            { text: "What should orientation cover on day one?", kind: "deeper", contextIndex: 3 },
+            { text: "How should facilitators support retreat attendees?", kind: "broader", contextIndex: 4 },
+          ]);
         }
-
-        return "Start with the retreat schedule and day-one orientation[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
         yield "";

@@ -146,7 +146,7 @@ const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionA
 };
 
 export const resolveAnonymousSession = (
-  workspaceRepository: WorkspaceRepositoryPort,
+  workspaceRepository: Pick<WorkspaceRepositoryPort, "findById" | "findByAnonymousChatToken" | "findByWebsiteEmbedToken">,
   publicChatSessionSecret: string | undefined,
   anonymousRateLimitCookieSecret: string | undefined = publicChatSessionSecret,
   agentRepository?: Pick<AgentRepositoryPort, "findByAnonymousChatToken" | "findByWebsiteEmbedToken">,

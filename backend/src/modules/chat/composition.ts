@@ -31,6 +31,15 @@ export {
   type ChatAnswerFeedbackEntry,
   type ChatAnswerFeedbackValue,
 } from "./services/answerFeedbackHistoryProvider.js";
+export {
+  AnswerFeedbackService,
+  type AnswerFeedbackActor,
+  type AnswerFeedbackActorType,
+} from "./services/answerFeedbackService.js";
+export {
+  createAnswerFeedbackRoutes,
+  type AnswerFeedbackRouteDependencies,
+} from "./routes/answerFeedbackRoutes.js";
 export { ChatActionSuggestionRegistry } from "./services/actionSuggestions/chatActionSuggestionRegistry.js";
 export { ChatActionSuggestionService } from "./services/actionSuggestions/chatActionSuggestionService.js";
 export type {

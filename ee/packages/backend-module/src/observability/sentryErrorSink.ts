@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import type { IncidentSink } from "../../shared/incidents/incidentSink.js";
-import type { IncidentEvent } from "../../shared/incidents/incidentTypes.js";
+import type { ErrorEvent, ErrorSink } from "../radiosoModuleTypes.js";
 
-interface SentryIncidentSinkOptions {
+interface SentryErrorSinkOptions {
   clientName?: string;
   dsn: string;
   fetchImpl?: typeof fetch;
@@ -33,25 +32,25 @@ const parseDsn = (dsn: string): ParsedSentryDsn => {
   };
 };
 
-const toLevel = (severity: IncidentEvent["severity"]): "info" | "warning" | "error" => {
+const toLevel = (severity: ErrorEvent["severity"]): "info" | "warning" | "error" => {
   if (severity === "warn") {
     return "warning";
   }
   return severity;
 };
 
-export class SentryIncidentSink implements IncidentSink {
+export class SentryErrorSink implements ErrorSink {
   private readonly clientName: string;
   private readonly fetchImpl: typeof fetch;
   private readonly parsedDsn: ParsedSentryDsn;
 
-  constructor(options: SentryIncidentSinkOptions) {
+  constructor(options: SentryErrorSinkOptions) {
     this.clientName = options.clientName ?? "radioso-observability";
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.parsedDsn = parseDsn(options.dsn);
   }
 
-  async record(event: IncidentEvent): Promise<void> {
+  async record(event: ErrorEvent): Promise<void> {
     const eventId = randomUUID().replace(/-/g, "");
     const envelopeHeaders = JSON.stringify({
       dsn: this.parsedDsn.dsn,
@@ -74,7 +73,7 @@ export class SentryIncidentSink implements IncidentSink {
       },
       tags: {
         ...event.tags,
-        incidentType: event.incidentType,
+        errorType: event.errorType,
         service: event.service,
       },
       request: event.requestContext

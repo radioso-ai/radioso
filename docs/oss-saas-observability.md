@@ -15,7 +15,7 @@ Radioso should separate three concerns that are often mixed together:
 
 1. application telemetry
 2. product analytics
-3. crash and incident reporting
+3. crash and error reporting
 
 Each concern should use a stable internal interface owned by Radioso. Vendor SDKs, if enabled at all, should sit behind adapters that are disabled by default.
 
@@ -32,7 +32,7 @@ The missing layer is a small internal observability contract that routes:
 
 - runtime telemetry to logs, metrics, and traces
 - product events to audit storage and optional exporters
-- crashes to a normalized internal incident event stream plus optional external sinks
+- crashes to a normalized internal error event stream plus optional external sinks
 
 ## Design Principles
 
@@ -46,7 +46,7 @@ Instrumentation should be based on standards, not a storage vendor. OpenTelemetr
 
 ### Adapters at the edge
 
-Third-party integrations should be deployment choices. The core app should know about an `AnalyticsSink` or `IncidentSink`, not about PostHog or Sentry directly.
+Third-party integrations should be deployment choices. The core app should know about an `AnalyticsSink` or `ErrorSink`, not about PostHog or Sentry directly.
 
 ### Privacy by default
 
@@ -90,7 +90,7 @@ The current Prometheus-style surface is intentionally small and low-cardinality:
 - `radioso_document_worker_queue_jobs`
 - `radioso_document_worker_job_duration_ms`
 - `radioso_product_events_total`
-- `radioso_incidents_total`
+- `radioso_errors_total`
 
 Additional traces, request-in-flight gauges, and richer chat-specific metrics can
 be layered on later without changing the internal seams.
@@ -193,7 +193,7 @@ Analytics identity should be explicit and privacy-aware:
 - hash or pseudonymize end-user identifiers before export if the sink leaves Radioso infrastructure
 - never emit raw session cookies, access tokens, connector secrets, prompt bodies, or document payloads
 
-## Layer 3: Crash And Incident Reporting
+## Layer 3: Crash And Error Reporting
 
 Crash monitoring answers questions such as:
 
@@ -202,7 +202,7 @@ Crash monitoring answers questions such as:
 - what version shipped the regression
 - is the same exception recurring across workspaces
 
-### Internal incident event shape
+### Internal error event shape
 
 Normalize crashes into a Radioso-owned shape before any external export:
 
@@ -221,22 +221,22 @@ Normalize crashes into a Radioso-owned shape before any external export:
 
 ### Default OSS behavior
 
-- log the incident through Pino
-- record an internal audit-backed incident event
+- log the error through Pino
+- record an internal audit-backed error event
 - increment failure metrics when metrics exposure is enabled
 
 ### SaaS behavior
 
 - do the default OSS behavior
-- optionally forward the normalized incident to an external sink such as Sentry
+- optionally forward the normalized error to an external sink such as Sentry
 
 This keeps external crash tooling optional without weakening the product's default failure capture.
 
 ### Current implementation
 
 The current backend slice already routes unhandled request failures through the
-shared incident service in [`backend/src/app/http/middleware/errorHandler.ts`](../backend/src/app/http/middleware/errorHandler.ts).
-Analytics and incidents persist through audit-backed sinks first, and optional
+shared error service in [`backend/src/app/http/middleware/errorHandler.ts`](../backend/src/app/http/middleware/errorHandler.ts).
+Analytics and errors persist through audit-backed sinks first, and optional
 exporters fan out afterward.
 
 ## Recommended OSS Default Stack
@@ -266,7 +266,7 @@ For the hosted SaaS, use the same instrumentation with deployment-time sinks:
 - metrics and traces: OpenTelemetry Collector
 - storage and dashboards: whichever backend operations wants
 - product analytics: exporter from the internal event bus
-- incidents: exporter from the internal incident pipeline
+- errors: exporter from the internal error pipeline
 
 The key point is that the cloud deployment gets extra sinks, not a different product architecture.
 
@@ -288,10 +288,13 @@ One reasonable packaging split is:
 
 - `backend/src/shared/observability/telemetry/`
 - `backend/src/shared/analytics/`
-- `backend/src/shared/incidents/`
-- optional adapter folders such as `backend/src/integrations/posthog/` and `backend/src/integrations/sentry/`
+- `backend/src/shared/errors/`
+- optional Enterprise adapter modules such as `ee/packages/backend-module/src/observability/`
 
-If vendor-specific code becomes operationally noisy, move it into optional local packages under `packages/`.
+Vendor-specific hosted integrations should live outside the OSS backend. The
+OSS backend owns the sink interfaces and first-party audit or metrics sinks.
+Enterprise modules can register concrete hosted adapters through those
+interfaces.
 
 ## Environment Model
 
@@ -311,22 +314,24 @@ OTEL_ENABLED=false
 OTEL_EXPORTER_OTLP_ENDPOINT=
 
 PRODUCT_ANALYTICS_SINKS=audit
-INCIDENT_SINKS=audit
+ERROR_SINKS=audit
 ```
 
 `OBSERVABILITY_ENVIRONMENT` falls back to `NODE_ENV` when unset. `METRICS_ENABLED=true` requires `METRICS_AUTH_TOKEN`, and the backend serves `/metrics` only to callers that present `Authorization: Bearer <token>`.
 
-SaaS-only examples:
+Enterprise SaaS examples:
 
 ```bash
 PRODUCT_ANALYTICS_SINKS=audit,posthog
-INCIDENT_SINKS=audit,sentry
+ERROR_SINKS=audit,sentry
 SENTRY_DSN=...
 POSTHOG_API_KEY=...
 POSTHOG_HOST=...
 ```
 
-The public repo can support these variables without making them part of the default local run flow.
+The OSS runtime can carry the sink list without importing vendor code. The
+Enterprise backend module owns validation and registration for the vendor
+credentials.
 
 ## Frontend-only events
 
@@ -336,12 +341,16 @@ loads, use the isolated emitter seam in
 [`frontend/lib/product-analytics.ts`](../frontend/lib/product-analytics.ts)
 instead of scattering vendor calls through React components.
 
+The browser should send these events to Radioso's generic observability API.
+From there, the backend product analytics service persists the first-party
+audit event and Enterprise sinks can fan it out to hosted analytics providers.
+
 ## Rollout Plan
 
 ### Phase 1
 
-- formalize telemetry, analytics, and incident interfaces
-- replace direct `console.error` fallback paths with the internal logger and incident service
+- formalize telemetry, analytics, and error interfaces
+- replace direct `console.error` fallback paths with the internal logger and error service
 - document a small stable product event taxonomy
 
 ### Phase 2
@@ -358,7 +367,7 @@ instead of scattering vendor calls through React components.
 
 ### Phase 4
 
-- add optional SaaS-only sinks for incident reporting and product analytics
+- add optional SaaS-only sinks for error reporting and product analytics
 - document exporter redaction and privacy rules
 - add dashboards and alert examples
 
@@ -368,7 +377,7 @@ instead of scattering vendor calls through React components.
 - do not make Sentry the only place an error exists
 - do not send raw prompts, retrieved chunks, or document bodies to third-party telemetry tools by default
 - do not create separate event semantics for OSS and SaaS
-- do not block critical request paths on external analytics or incident vendors
+- do not block critical request paths on external analytics or error vendors
 
 ## Decision Summary
 

@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
 
-import type { IncidentReportingService } from "../../../shared/incidents/incidentReportingService.js";
+import type { ErrorReportingService } from "../../../shared/errors/errorReportingService.js";
 import { AppError } from "../../../shared/domain/errors.js";
 
 const isPayloadTooLargeError = (error: unknown): error is { status?: number; type?: string } =>
@@ -28,7 +28,7 @@ const isStructuredAppError = (error: unknown): error is {
       typeof error.message === "string",
   );
 
-export const createErrorHandler = (incidentReportingService?: IncidentReportingService) =>
+export const createErrorHandler = (errorReportingService?: ErrorReportingService) =>
   (error: unknown, req: Request, res: Response, next: NextFunction): void => {
     if (res.headersSent) {
       next(error);
@@ -103,7 +103,7 @@ export const createErrorHandler = (incidentReportingService?: IncidentReportingS
       return;
     }
 
-    void incidentReportingService?.reportUnhandledRequestError({
+    void errorReportingService?.reportUnhandledRequestError({
       error,
       request: req,
       statusCode: 500,

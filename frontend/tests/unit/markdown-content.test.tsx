@@ -5,7 +5,7 @@ import {
   MarkdownContent,
   isSafeHref,
   shouldHandleMarkdownLinkClick,
-  shouldOpenMarkdownLinkThroughEmbedLauncher,
+  shouldNavigateMarkdownLinkFromEmbed,
 } from '@/components/markdown/markdown-content'
 
 describe('isSafeHref', () => {
@@ -47,23 +47,23 @@ describe('shouldHandleMarkdownLinkClick', () => {
   })
 })
 
-describe('shouldOpenMarkdownLinkThroughEmbedLauncher', () => {
-  it('routes links through the launcher only from framed embedded chat pages', () => {
-    expect(shouldOpenMarkdownLinkThroughEmbedLauncher({
+describe('shouldNavigateMarkdownLinkFromEmbed', () => {
+  it('top-navigates links only from framed embedded chat pages', () => {
+    expect(shouldNavigateMarkdownLinkFromEmbed({
       isFramed: true,
       pathname: '/embed/embed-token',
       href: 'https://example.com/docs',
       baseUrl: 'https://app.example.com/embed/embed-token',
     })).toBe(true)
 
-    expect(shouldOpenMarkdownLinkThroughEmbedLauncher({
+    expect(shouldNavigateMarkdownLinkFromEmbed({
       isFramed: false,
       pathname: '/embed/embed-token',
       href: 'https://example.com/docs',
       baseUrl: 'https://app.example.com/embed/embed-token',
     })).toBe(false)
 
-    expect(shouldOpenMarkdownLinkThroughEmbedLauncher({
+    expect(shouldNavigateMarkdownLinkFromEmbed({
       isFramed: true,
       pathname: '/chat/public-token',
       href: 'https://example.com/docs',
@@ -72,10 +72,19 @@ describe('shouldOpenMarkdownLinkThroughEmbedLauncher', () => {
   })
 
   it('lets mailto links use default browser handling in embedded chat pages', () => {
-    expect(shouldOpenMarkdownLinkThroughEmbedLauncher({
+    expect(shouldNavigateMarkdownLinkFromEmbed({
       isFramed: true,
       pathname: '/embed/embed-token',
       href: 'mailto:hi@example.com',
+      baseUrl: 'https://app.example.com/embed/embed-token',
+    })).toBe(false)
+  })
+
+  it('lets hash-only links use default browser handling in embedded chat pages', () => {
+    expect(shouldNavigateMarkdownLinkFromEmbed({
+      isFramed: true,
+      pathname: '/embed/embed-token',
+      href: '#section',
       baseUrl: 'https://app.example.com/embed/embed-token',
     })).toBe(false)
   })

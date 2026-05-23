@@ -285,7 +285,7 @@ function CredentialsCard({
         <ul className="divide-y divide-border/70 overflow-hidden rounded-xl border border-border bg-background/40">
           {llmProviderNames.map((provider) => (
             <CredentialRow
-              key={provider}
+              key={`${provider}:${editingProvider === provider ? 'editing' : 'idle'}`}
               provider={provider}
               configured={configuredByProvider.get(provider) ?? null}
               envAvailable={envProviderAvailability[provider]}
@@ -326,13 +326,6 @@ function CredentialRow({
 }) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
-
-  useEffect(() => {
-    if (!editing) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Closing the editor clears the transient credential draft.
-      setDraft('')
-    }
-  }, [editing])
 
   const canSubmit = draft.trim().length > 0
 

@@ -109,21 +109,15 @@ export function EmbeddedChatFrame({
   const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
   const theme = getWebsiteEmbedTheme(themeOverrides)
   const [resetNonce, setResetNonce] = useState(0)
-  const [state, setState] = useState<BootstrapState>(() => {
-    if (typeof window !== 'undefined' && window.parent === window) {
-      return {
-        status: 'error',
-        message: copy.embeddedChatLauncherRequiredMessage,
-      }
-    }
-
-    const storedSession = readStoredEmbedBootstrapSession(token)
-    return { status: 'bootstrapping', workspaceName: storedSession?.workspaceName ?? null }
-  })
+  // Initialize without reading sessionStorage: SSR has no access to it, and the
+  // mount-time effect below hydrates workspaceName from the stored session.
+  // Reading here causes a server/client text mismatch on the bootstrapping screen.
+  const [state, setState] = useState<BootstrapState>({ status: 'bootstrapping', workspaceName: null })
   const isBootstrappedRef = useRef(false)
 
   useEffect(() => {
     if (window.parent === window) {
+      setState({ status: 'error', message: copy.embeddedChatLauncherRequiredMessage })
       return
     }
 

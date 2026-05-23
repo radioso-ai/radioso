@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, type ComponentPropsWithoutRef } from 'react'
+import { Fragment, useMemo, type ComponentPropsWithoutRef } from 'react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -281,6 +281,12 @@ const createComponents = (variant: MarkdownVariant, inline: boolean): Components
   }
 }
 
+// Memoizing keeps the `components` object identity stable across renders so
+// react-markdown reconciles tags in place instead of unmounting them. Without
+// this, every render replaced live DOM (e.g. a focused <a> inside an <li>),
+// which dropped focus mid-click and prevented link clicks from completing.
+const REMARK_PLUGINS = [remarkGfm]
+
 export function MarkdownContent({
   content,
   variant = 'chat',
@@ -290,11 +296,9 @@ export function MarkdownContent({
   variant?: MarkdownVariant
   inline?: boolean
 }) {
+  const components = useMemo(() => createComponents(variant, inline), [variant, inline])
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={createComponents(variant, inline)}
-    >
+    <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
       {content}
     </ReactMarkdown>
   )

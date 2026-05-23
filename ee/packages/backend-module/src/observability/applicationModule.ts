@@ -43,11 +43,17 @@ export const createEnterpriseObservabilityApplicationModule = (
       envName: "ERROR_SINKS",
       supportedSinks: ["audit", "sentry", "posthog"],
     });
+    const posthogCredentials = productAnalyticsSinks.has("posthog") || errorSinks.has("posthog")
+      ? {
+          apiKey: requireEnv(env, "POSTHOG_API_KEY"),
+          host: requireUrlEnv(env, "POSTHOG_HOST"),
+        }
+      : null;
 
-    if (productAnalyticsSinks.has("posthog")) {
+    if (productAnalyticsSinks.has("posthog") && posthogCredentials) {
       context.registerProductAnalyticsSink?.(new PosthogAnalyticsSink({
-        apiKey: requireEnv(env, "POSTHOG_API_KEY"),
-        host: requireUrlEnv(env, "POSTHOG_HOST"),
+        apiKey: posthogCredentials.apiKey,
+        host: posthogCredentials.host,
       }));
     }
 
@@ -57,10 +63,10 @@ export const createEnterpriseObservabilityApplicationModule = (
       }));
     }
 
-    if (errorSinks.has("posthog")) {
+    if (errorSinks.has("posthog") && posthogCredentials) {
       context.registerErrorSink?.(new PosthogErrorSink({
-        apiKey: requireEnv(env, "POSTHOG_API_KEY"),
-        host: requireUrlEnv(env, "POSTHOG_HOST"),
+        apiKey: posthogCredentials.apiKey,
+        host: posthogCredentials.host,
       }));
     }
   },

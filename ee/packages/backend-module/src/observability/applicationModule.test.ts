@@ -102,7 +102,11 @@ describe("enterprise observability module", () => {
       environment: "test",
       message: "worker exploded",
       errorClass: "WorkerError",
-      stack: "WorkerError: worker exploded\n    at runJob (/app/backend/src/worker.ts:10:15)",
+      stack: [
+        "WorkerError: worker exploded",
+        "    at runJob (/app/backend/src/worker.ts:10:15)",
+        "    at file:///app/backend/src/documentWorker.ts:22:3",
+      ].join("\n"),
       correlation: {
         requestId: "request-1",
       },
@@ -149,6 +153,15 @@ describe("enterprise observability module", () => {
       type: "WorkerError",
       value: "worker exploded",
     }));
+    expect(posthogErrorBody.properties.$exception_list[0].stacktrace.frames).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filename: "file:///app/backend/src/documentWorker.ts",
+          lineno: 22,
+          colno: 3,
+        }),
+      ]),
+    );
 
     expect(sentryFetch).toHaveBeenCalledWith(
       "https://example.ingest.sentry.io/api/123456/envelope/",

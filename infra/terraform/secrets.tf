@@ -1,6 +1,6 @@
 locals {
   radioso_mcp_signing_secret_configured = try(length(trimspace(nonsensitive(var.radioso_mcp_signing_secret))) > 0, false)
-  posthog_api_key_configured            = try(length(trimspace(nonsensitive(var.posthog_api_key))) > 0, false)
+  posthog_api_key_configured            = nonsensitive(try(length(trimspace(var.posthog_api_key)) > 0, false))
 
   secret_values = merge(
     {

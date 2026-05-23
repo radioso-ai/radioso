@@ -40,6 +40,7 @@ import {
 } from "./applicationModule.js";
 import { createAnswerFeedbackApplicationModule } from "./builtIn/answerFeedbackModule.js";
 import { createWebsiteEmbedApplicationModule } from "./builtIn/websiteEmbedModule.js";
+import { createAgentWizardApplicationModule } from "./builtIn/agentWizardModule.js";
 import {
   createDefaultSkillCatalogRegistry,
   type SkillCatalogRegistry,
@@ -95,6 +96,7 @@ export const createDefaultApplicationComposition = (options: {
   coordinator.apply([
     createAnswerFeedbackApplicationModule(),
     createWebsiteEmbedApplicationModule({ widgetOrigin: options.widgetOrigin }),
+    createAgentWizardApplicationModule(),
     ...(options.modules ?? []),
   ]);
 

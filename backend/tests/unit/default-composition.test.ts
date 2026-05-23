@@ -50,6 +50,7 @@ describe("default application composition", () => {
     expect(composition.modules.map((module) => module.id)).toEqual([
       "radioso-answer-feedback",
       "radioso-website-embed",
+      "radioso-agent-wizard",
     ]);
     expect(composition.routeMounts.map((mount) => mount.path)).toContain("/api/v1/answer-feedback");
     expect(composition.answerFeedbackHistoryProviderRegistration).toBeTypeOf("function");
@@ -75,6 +76,7 @@ describe("default application composition", () => {
     expect(composition.modules.map((module) => module.id)).toEqual([
       "radioso-answer-feedback",
       "radioso-website-embed",
+      "radioso-agent-wizard",
       "connector-module",
     ]);
   });

@@ -8,9 +8,9 @@ import {
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import type { AssistantSuggestionExpansionService } from "./assistantSuggestionExpansionService.js";
-import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
+import type { PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
 import { resolveCitationArtifacts } from "./implicitCitationSupport.js";
 
 export interface ChatPresentedAnswer {
@@ -75,10 +75,11 @@ export class ChatAnswerPresenter {
     session: PreparedSession,
     answer: string,
     query: string,
+    plannedSuggestions: PlannedEnvelopeSuggestion[],
     userExpectedLocale?: string | null,
   ): Promise<ChatPresentedAnswer> {
     const presentation = await this.presentWithoutSuggestions(session, answer, query, userExpectedLocale);
-    const withQuestionSuggestions = await this.applyAssistantSuggestions(session, presentation);
+    const withQuestionSuggestions = this.applyAssistantSuggestions(session, presentation, plannedSuggestions);
     return await this.applyActionSuggestions(session, withQuestionSuggestions, userExpectedLocale);
   }
 
@@ -112,20 +113,16 @@ export class ChatAnswerPresenter {
     };
   }
 
-  async applyAssistantSuggestions(
+  applyAssistantSuggestions(
     session: PreparedSession,
     presentation: ChatPresentedAnswer,
-  ): Promise<ChatPresentedAnswer> {
-    const conversationIntentSnapshot = buildConversationIntentSnapshot({
-      history: session.history,
-      latestQuery: session.userMessage.content,
-      priorRewriteContinuityState: session.priorRewriteContinuityState,
-      rewriteProposal: session.retrieval.diagnostics.rewriteProposal,
-    });
-    const expanded = await this.assistantSuggestionExpansionService.apply({
+    plannedSuggestions: PlannedEnvelopeSuggestion[],
+  ): ChatPresentedAnswer {
+    const expanded = this.assistantSuggestionExpansionService.apply({
       query: session.userMessage.content,
       suggestedQuestionsEnabled: session.retrieval.responseSettings?.suggestedQuestionsEnabled ?? true,
-      suggestedQuestionsCount: DEFAULT_SUGGESTED_QUESTIONS_COUNT,
+      suggestedQuestionsCount:
+        session.retrieval.responseSettings?.suggestedQuestionsCount ?? DEFAULT_SUGGESTED_QUESTIONS_COUNT,
       groundedAnswerSupported: hasGroundedSuggestionSupport({
         answerOutcome: presentation.answerOutcome,
         hasRetrievedContext: session.retrieval.contexts.length > 0,
@@ -135,19 +132,13 @@ export class ChatAnswerPresenter {
         ),
       }),
       answer: presentation.answer,
-      citations: presentation.citations,
       contexts: session.retrieval.contexts.map((context) => ({
         documentId: context.documentId,
         chunkId: context.chunkId,
         title: context.title,
         content: context.content,
       })),
-      history: session.history,
-      conversationIntentSnapshot,
-      workspaceContext: {
-        workspaceId: session.agent.workspaceId,
-        capabilityOverride: session.agent.chatModelOverride ?? undefined,
-      },
+      plannedSuggestions,
     });
 
     return {

@@ -38,6 +38,7 @@ import {
   createApplicationExtensionRegistry,
   type ApplicationModule,
 } from "./applicationModule.js";
+import { createAnswerFeedbackApplicationModule } from "./builtIn/answerFeedbackModule.js";
 import { createWebsiteEmbedApplicationModule } from "./builtIn/websiteEmbedModule.js";
 import { createAgentWizardApplicationModule } from "./builtIn/agentWizardModule.js";
 import {
@@ -93,6 +94,7 @@ export const createDefaultApplicationComposition = (options: {
   // Built-in OSS modules first; user-supplied modules can override their
   // registrations (e.g. a custom website-embed integration provider).
   coordinator.apply([
+    createAnswerFeedbackApplicationModule(),
     createWebsiteEmbedApplicationModule({ widgetOrigin: options.widgetOrigin }),
     createAgentWizardApplicationModule(),
     ...(options.modules ?? []),

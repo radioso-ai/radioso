@@ -32,6 +32,15 @@ import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer
 import { ChatAnswerPresenter, type ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
 import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
+import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
+import { composeGroundedAnswerSystemPrompt } from "./groundedAnswerPromptComposer.js";
+import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
+import {
+  GroundedAnswerEnvelopeReader,
+  parseGroundedAnswerEnvelope,
+  type GroundedAnswerEnvelope,
+  type PlannedEnvelopeSuggestion,
+} from "./groundedAnswerEnvelope.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -227,13 +236,7 @@ export class ChatService {
       agentService,
     );
     this.chatAnswerPresenter = new ChatAnswerPresenter(
-      new AssistantSuggestionExpansionService(async ({ query, history, prompt, workspaceContext }) =>
-        this.chatGateway.answer({
-          query,
-          history,
-          prompt,
-          workspaceContext,
-        })),
+      new AssistantSuggestionExpansionService(),
       chatActionSuggestionService,
     );
   }
@@ -287,22 +290,65 @@ export class ChatService {
     return pageContextBlock ? `${prompt}\n\n${pageContextBlock}` : prompt;
   }
 
+  private composeGroundedSystemPrompt(session: PreparedSession): string {
+    const conversationIntentSnapshot = buildConversationIntentSnapshot({
+      history: session.history,
+      latestQuery: session.userMessage.content,
+      priorRewriteContinuityState: session.priorRewriteContinuityState,
+      rewriteProposal: session.retrieval.diagnostics.rewriteProposal,
+    });
+    return composeGroundedAnswerSystemPrompt({
+      baseSystemPrompt: session.retrieval.systemPrompt,
+      suggestedQuestionsEnabled: session.retrieval.responseSettings?.suggestedQuestionsEnabled ?? true,
+      suggestedQuestionsCount:
+        session.retrieval.responseSettings?.suggestedQuestionsCount ?? DEFAULT_SUGGESTED_QUESTIONS_COUNT,
+      hasRetrievedContexts: session.retrieval.contexts.length > 0,
+      conversationIntentSnapshot,
+    }).systemPrompt;
+  }
+
+  private async generateGroundedAnswerEnvelope(
+    session: PreparedSession,
+    query: string,
+    prompt: string,
+  ): Promise<GroundedAnswerEnvelope> {
+    const raw = await this.chatGateway.answer({
+      query,
+      history: session.history,
+      systemPrompt: this.composeGroundedSystemPrompt(session),
+      prompt,
+      workspaceContext: this.buildChatWorkspaceContext(session),
+    });
+    const envelope = parseGroundedAnswerEnvelope(raw);
+    if (!envelope.answer.trim()) {
+      // A well-formed envelope with an empty answer (e.g. "<<<RADIOSO_FOLLOWUPS_JSON>>>[]")
+      // would otherwise persist a blank assistant turn. Treat it the same as a blank
+      // streamed response so the caller can fall back or surface an error.
+      throw new BlankChatAnswerError();
+    }
+    return envelope;
+  }
+
   private async generateAnswerWithPageContext(
     session: PreparedSession,
     query: string,
-  ): Promise<string | null> {
+  ): Promise<GroundedAnswerEnvelope | null> {
     const prompt = this.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext);
     if (prompt === session.retrieval.prompt) {
       return null;
     }
 
-    return (await this.chatGateway.answer({
-      query,
-      history: session.history,
-      systemPrompt: session.retrieval.systemPrompt,
-      prompt,
-      workspaceContext: this.buildChatWorkspaceContext(session),
-    })).trim();
+    try {
+      const envelope = await this.generateGroundedAnswerEnvelope(session, query, prompt);
+      return { ...envelope, answer: envelope.answer.trim() };
+    } catch (error) {
+      // Page-context fallback is best-effort — let blank envelopes drop through
+      // to the grounded-miss composer rather than failing the whole turn.
+      if (isBlankChatAnswerError(error)) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   private async generateNonRetrievalAnswer(
@@ -502,6 +548,7 @@ export class ChatService {
 
       session = await this.chatSessionPreparer.prepareRetrieval(input, session);
       let rawAnswer = "";
+      let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
       let noContextPresentation: ChatPresentedAnswer | null = null;
       const answerStartedAt = Date.now();
 
@@ -519,7 +566,8 @@ export class ChatService {
           text: rawAnswer,
         };
       } else if (session.retrieval.contexts.length === 0) {
-        rawAnswer = await this.generateAnswerWithPageContext(session, input.query)
+        const fallbackEnvelope = await this.generateAnswerWithPageContext(session, input.query);
+        rawAnswer = fallbackEnvelope?.answer
           ?? await this.groundedMissResponseComposer.composeNoContext({
             query: input.query,
             userExpectedLocale: input.userExpectedLocale,
@@ -531,39 +579,50 @@ export class ChatService {
           text: rawAnswer,
         };
       } else {
+        const reader = new GroundedAnswerEnvelopeReader();
         const sanitizer = new CitationAnchorSanitizer();
+        let hasEmittedAnyChunk = false;
         for await (const text of this.chatGateway.streamAnswer({
           query: input.query,
           history: session.history,
-          systemPrompt: session.retrieval.systemPrompt,
+          systemPrompt: this.composeGroundedSystemPrompt(session),
           prompt: this.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext),
           workspaceContext: this.buildChatWorkspaceContext(session),
         })) {
           if (!text) {
             continue;
           }
-          rawAnswer = `${rawAnswer}${text}`;
-          const safe = sanitizer.push(text);
+          const answerChunk = reader.push(text);
+          if (!answerChunk) {
+            continue;
+          }
+          const safe = sanitizer.push(answerChunk);
           if (!safe) {
             continue;
           }
-          if (safe.trim().length === 0 && rawAnswer.trim().length === 0) {
+          if (safe.trim().length === 0 && !hasEmittedAnyChunk) {
             continue;
           }
+          hasEmittedAnyChunk = true;
           yield {
             type: "chunk",
             text: safe,
           };
         }
 
-        const trailing = sanitizer.flush();
-        if (trailing) {
+        const finalized = reader.finalize();
+        plannedSuggestions = finalized.suggestions;
+        const trailingSafe = sanitizer.push(finalized.trailingAnswer);
+        const trailingFlush = sanitizer.flush();
+        const tail = `${trailingSafe ?? ""}${trailingFlush ?? ""}`;
+        if (tail) {
           yield {
             type: "chunk",
-            text: trailing,
+            text: tail,
           };
         }
 
+        rawAnswer = finalized.fullAnswer;
         if (!rawAnswer.trim()) {
           throw new BlankChatAnswerError();
         }
@@ -575,12 +634,19 @@ export class ChatService {
         input.query,
         input.userExpectedLocale,
       );
+      // The lazy promise can call chatActionSuggestionService.evaluate (which may
+      // hit an LLM). If completeAssistantTurn below throws, we rethrow but the
+      // promise stays in flight — swallow its rejection so it can't surface as an
+      // unhandled rejection. The post-`done` await still observes the failure and
+      // skips emitting suggestions, which is the desired behavior.
       lazySuggestionsPromise = this.composeLazySuggestions({
         session,
         presentationWithoutSuggestions,
         noContextPresentation,
+        plannedSuggestions,
         userExpectedLocale: input.userExpectedLocale,
       });
+      lazySuggestionsPromise.catch(() => undefined);
       const presentation: ChatPresentedAnswer = {
         ...presentationWithoutSuggestions,
         suggestions: undefined,
@@ -612,6 +678,11 @@ export class ChatService {
       await releaseUsageReservation();
     }
 
+    if (!lazySuggestionsPromise || !session) {
+      return;
+    }
+    const conversationId = session.conversation.id;
+
     try {
       const lazySuggestions = await lazySuggestionsPromise;
       if (lazySuggestions.suggestions && lazySuggestions.suggestions.length > 0) {
@@ -619,7 +690,7 @@ export class ChatService {
         if (assistantMessageId) {
           await this.chatTurnLifecycle.updateSuggestions({
             workspaceId: input.workspaceId,
-            conversationId: session.conversation.id,
+            conversationId,
             assistantMessageId,
             suggestions,
           });
@@ -627,7 +698,7 @@ export class ChatService {
 
         yield {
           type: "suggestions",
-          conversationId: session.conversation.id,
+          conversationId,
           suggestions,
         };
       }
@@ -640,26 +711,22 @@ export class ChatService {
     session: PreparedSession;
     presentationWithoutSuggestions: ChatPresentedAnswer;
     noContextPresentation: ChatPresentedAnswer | null;
+    plannedSuggestions: PlannedEnvelopeSuggestion[];
     userExpectedLocale?: string | null;
   }): Promise<Pick<ChatPresentedAnswer, "suggestions">> {
-    const { session, presentationWithoutSuggestions, noContextPresentation, userExpectedLocale } = input;
-    const questionSuggestionsPromise = noContextPresentation
-      ? Promise.resolve(noContextPresentation.suggestions ?? [])
-      : this.chatAnswerPresenter
-          .applyAssistantSuggestions(session, presentationWithoutSuggestions)
-          .then((result) => result.suggestions ?? []);
-    const actionSuggestionsPromise = this.chatAnswerPresenter
-      .applyActionSuggestions(session, presentationWithoutSuggestions, userExpectedLocale)
-      .then((result) => result.suggestions ?? []);
-
-    const [questionSuggestions, actionMergedSuggestions] = await Promise.all([
-      questionSuggestionsPromise,
-      actionSuggestionsPromise,
-    ]);
-    // applyActionSuggestions returns the merge of presentation.suggestions (none here) + action chips,
-    // so its result is the canonical action-chip list to prepend.
-    const merged = [...actionMergedSuggestions, ...questionSuggestions];
-    return { suggestions: merged };
+    const { session, presentationWithoutSuggestions, noContextPresentation, plannedSuggestions, userExpectedLocale } = input;
+    const questionSuggestions = noContextPresentation
+      ? (noContextPresentation.suggestions ?? [])
+      : (this.chatAnswerPresenter
+          .applyAssistantSuggestions(session, presentationWithoutSuggestions, plannedSuggestions)
+          .suggestions ?? []);
+    const actionSuggestionsResult = await this.chatAnswerPresenter.applyActionSuggestions(
+      session,
+      presentationWithoutSuggestions,
+      userExpectedLocale,
+    );
+    const actionMergedSuggestions = actionSuggestionsResult.suggestions ?? [];
+    return { suggestions: [...actionMergedSuggestions, ...questionSuggestions] };
   }
 
   private async generateAnswerPresentation(
@@ -674,23 +741,39 @@ export class ChatService {
       }
     }
 
-    const answer = session.retrieval.contexts.length === 0
-      ? await this.generateAnswerWithPageContext(session, query)
-        ?? await this.groundedMissResponseComposer.composeNoContext({
-            query,
-            userExpectedLocale,
-            answerInstructionBlock: this.buildAnswerInstructionBlock(session),
-            workspaceContext: this.buildChatWorkspaceContext(session),
-          })
-      : await this.chatGateway.answer({
+    let answer: string;
+    let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
+
+    if (session.retrieval.contexts.length === 0) {
+      const fallback = await this.generateAnswerWithPageContext(session, query);
+      if (fallback) {
+        answer = fallback.answer;
+        plannedSuggestions = fallback.suggestions;
+      } else {
+        answer = await this.groundedMissResponseComposer.composeNoContext({
           query,
-          history: session.history,
-          systemPrompt: session.retrieval.systemPrompt,
-          prompt: this.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext),
+          userExpectedLocale,
+          answerInstructionBlock: this.buildAnswerInstructionBlock(session),
           workspaceContext: this.buildChatWorkspaceContext(session),
         });
+      }
+    } else {
+      const envelope = await this.generateGroundedAnswerEnvelope(
+        session,
+        query,
+        this.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext),
+      );
+      answer = envelope.answer;
+      plannedSuggestions = envelope.suggestions;
+    }
 
-    return this.chatAnswerPresenter.presentWithSuggestions(session, answer, query, userExpectedLocale);
+    return this.chatAnswerPresenter.presentWithSuggestions(
+      session,
+      answer,
+      query,
+      plannedSuggestions,
+      userExpectedLocale,
+    );
   }
 
   private async handleSkillIntake(

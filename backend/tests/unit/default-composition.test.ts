@@ -48,9 +48,12 @@ describe("default application composition", () => {
     expect(composition.connectors).toEqual([]);
     expect(composition.websiteCrawlerProvider).toBeUndefined();
     expect(composition.modules.map((module) => module.id)).toEqual([
+      "radioso-answer-feedback",
       "radioso-website-embed",
       "radioso-agent-wizard",
     ]);
+    expect(composition.routeMounts.map((mount) => mount.path)).toContain("/api/v1/answer-feedback");
+    expect(composition.answerFeedbackHistoryProviderRegistration).toBeTypeOf("function");
     expect(composition.agentSurfaceExtensions.map((extension) => extension.key)).toEqual(["websiteEmbed"]);
     expect(composition.websiteEmbedIntegration).toBeDefined();
   });
@@ -71,6 +74,7 @@ describe("default application composition", () => {
 
     expect(composition.connectors).toEqual([connector]);
     expect(composition.modules.map((module) => module.id)).toEqual([
+      "radioso-answer-feedback",
       "radioso-website-embed",
       "radioso-agent-wizard",
       "connector-module",

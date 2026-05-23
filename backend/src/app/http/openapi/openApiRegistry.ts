@@ -32,6 +32,10 @@ export interface OpenApiSchemaCatalog {
   AgentParamsSchema: RouteParameterSchema;
   AgentSchema: z.ZodTypeAny;
   AnswerSegmentSchema: z.ZodTypeAny;
+  AnswerFeedbackEntrySchema: z.ZodTypeAny;
+  AnswerFeedbackRequestSchema: z.ZodTypeAny;
+  AnswerFeedbackResponseSchema: z.ZodTypeAny;
+  answerFeedbackParamsSchema: RouteParameterSchema;
   AppliedConstraintSchema: z.ZodTypeAny;
   AssistantChatRequestSchema: z.ZodTypeAny;
   AssistantChatResponseSchema: z.ZodTypeAny;
@@ -44,6 +48,7 @@ export interface OpenApiSchemaCatalog {
   ChatConversationDetailSchema: z.ZodTypeAny;
   ChatConversationMessageDebugSchema: z.ZodTypeAny;
   ChatConversationMessageSchema: z.ZodTypeAny;
+  ClearAnswerFeedbackResponseSchema: z.ZodTypeAny;
   ChatConversationSummarySchema: z.ZodTypeAny;
   ChatHistoryListResponseSchema: z.ZodTypeAny;
   ChatResponseSchema: z.ZodTypeAny;

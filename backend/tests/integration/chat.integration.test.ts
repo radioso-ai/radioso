@@ -4,9 +4,13 @@ import { describe, expect, it } from "vitest";
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import type { TriggerAnalysisGateway } from "../../src/modules/retrieval/services/queryRewriteService.js";
+import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import type { ProductAnalyticsEvent } from "../../src/shared/analytics/productAnalyticsTypes.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
+
+const envelope = (answer: string, suggestions: unknown[]): string =>
+  `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(suggestions)}`;
 
 const isoDateOffset = (offsetDays: number): string => {
   const value = new Date();
@@ -225,16 +229,15 @@ describe("chat integration", () => {
 
   it("adds bounded grounded continuations without conversation-mode metadata", async () => {
     const deterministicGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          return JSON.stringify({
-            suggestions: [
-              { text: "Which input formats do the parser notes list?", kind: "deeper", contextIndex: 1 },
-              { text: "Which onboarding questions are answered?", kind: "broader", contextIndex: 2 },
-            ],
-          });
+      async answer({ systemPrompt }) {
+        const answerText = "The testing guide explains testing and parsing content for users[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
+          return envelope(answerText, [
+            { text: "Which input formats do the parser notes list?", kind: "deeper", contextIndex: 1 },
+            { text: "Which onboarding questions are answered?", kind: "broader", contextIndex: 2 },
+          ]);
         }
-        return "The testing guide explains testing and parsing content for users[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
         yield "The testing guide explains testing and parsing content for users[[1]].";
@@ -295,13 +298,12 @@ describe("chat integration", () => {
 
   it("suppresses suggested questions when the setting is disabled", async () => {
     const deterministicGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          return JSON.stringify({
-            suggestions: [{ text: "What parser rules apply?", kind: "deeper", contextIndex: 1 }],
-          });
+      async answer({ systemPrompt }) {
+        const answerText = "The testing guide explains testing and parsing content for users[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
+          return envelope(answerText, [{ text: "What parser rules apply?", kind: "deeper", contextIndex: 1 }]);
         }
-        return "The testing guide explains testing and parsing content for users[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
         yield "The testing guide explains testing and parsing content for users[[1]].";
@@ -346,22 +348,19 @@ describe("chat integration", () => {
   it("uses recent conversation context for broader exploratory suggestions across turns", async () => {
     let latestSuggestionPrompt = "";
     const deterministicGateway: ChatGateway = {
-      async answer({ prompt, query }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          latestSuggestionPrompt = prompt;
-          return JSON.stringify({
-            suggestions: [
-              { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
-              { text: "How should facilitators support retreat attendees?", kind: "broader", contextIndex: 2 },
-            ],
-          });
+      async answer({ systemPrompt, query }) {
+        const answerText =
+          query === "What should I add next?"
+            ? "Add meals and orientation[[1]]."
+            : "Start with a beginner retreat schedule[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
+          latestSuggestionPrompt = systemPrompt;
+          return envelope(answerText, [
+            { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
+            { text: "How should facilitators support retreat attendees?", kind: "broader", contextIndex: 2 },
+          ]);
         }
-
-        if (query === "What should I add next?") {
-          return "Add meals and orientation[[1]].";
-        }
-
-        return "Start with a beginner retreat schedule[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
         yield "unused";
@@ -418,32 +417,27 @@ describe("chat integration", () => {
   it("recenters broader exploratory suggestions after an explicit subject pivot", async () => {
     let latestSuggestionPrompt = "";
     const deterministicGateway: ChatGateway = {
-      async answer({ prompt, query }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          latestSuggestionPrompt = prompt;
+      async answer({ systemPrompt, query }) {
+        const answerText =
+          query === "What about facilitator support?"
+            ? "Facilitators should balance logistics and attendee care[[1]]."
+            : "Start with a beginner retreat schedule[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
+          latestSuggestionPrompt = systemPrompt;
 
-          if (prompt.includes("Active subject:\nFacilitator support")) {
-            return JSON.stringify({
-              suggestions: [
-                { text: "How should facilitators support retreat attendees?", kind: "deeper", contextIndex: 1 },
-                { text: "Which support roles should back up retreat facilitators?", kind: "broader", contextIndex: 2 },
-              ],
-            });
+          if (systemPrompt.includes("Active subject:\nFacilitator support")) {
+            return envelope(answerText, [
+              { text: "How should facilitators support retreat attendees?", kind: "deeper", contextIndex: 1 },
+              { text: "Which support roles should back up retreat facilitators?", kind: "broader", contextIndex: 2 },
+            ]);
           }
 
-          return JSON.stringify({
-            suggestions: [
-              { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
-              { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
-            ],
-          });
+          return envelope(answerText, [
+            { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
+            { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
+          ]);
         }
-
-        if (query === "What about facilitator support?") {
-          return "Facilitators should balance logistics and attendee care[[1]].";
-        }
-
-        return "Start with a beginner retreat schedule[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
         yield "unused";
@@ -529,21 +523,20 @@ describe("chat integration", () => {
   });
 
   it("caps suggestions at three without directness-mode filtering", async () => {
-    let suggestionCallCount = 0;
+    let envelopeCallCount = 0;
     const deterministicGateway: ChatGateway = {
-      async answer({ prompt }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          suggestionCallCount += 1;
-          return JSON.stringify({
-            suggestions: [
-              { text: "How should teams apply these rules?", kind: "deeper", contextIndex: 1 },
-              { text: "What setup examples are available?", kind: "deeper", contextIndex: 1 },
-              { text: "Which workflow risks should I compare?", kind: "broader", contextIndex: 1 },
-              { text: "What rollout steps come next?", kind: "broader", contextIndex: 1 },
-            ],
-          });
+      async answer({ systemPrompt }) {
+        const answerText = "The testing guide explains testing and parsing content for users[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
+          envelopeCallCount += 1;
+          return envelope(answerText, [
+            { text: "How should teams apply these rules?", kind: "deeper", contextIndex: 1 },
+            { text: "What setup examples are available?", kind: "deeper", contextIndex: 1 },
+            { text: "Which workflow risks should I compare?", kind: "broader", contextIndex: 1 },
+            { text: "What rollout steps come next?", kind: "broader", contextIndex: 1 },
+          ]);
         }
-        return "The testing guide explains testing and parsing content for users[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
         yield "The testing guide explains testing and parsing content for users[[1]].";
@@ -581,7 +574,7 @@ describe("chat integration", () => {
       .send({ message: "Just the answer: what do the testing docs cover?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(suggestionCallCount).toBe(1);
+    expect(envelopeCallCount).toBe(1);
     expect(response.body.suggestions).toHaveLength(3);
     expect(response.body.conversationModeMetadata).toBeUndefined();
   });

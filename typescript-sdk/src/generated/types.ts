@@ -1042,6 +1042,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/answer-feedback/messages/{assistantMessageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Record feedback for an assistant answer */
+        put: operations["upsertAnswerFeedback"];
+        post?: never;
+        /** Clear feedback for an assistant answer */
+        delete: operations["clearAnswerFeedback"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/answer-feedback/public/chat/{token}/messages/{assistantMessageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Record feedback for a public chat assistant answer */
+        put: operations["upsertPublicAnswerFeedback"];
+        post?: never;
+        /** Clear feedback for a public chat assistant answer */
+        delete: operations["clearPublicAnswerFeedback"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/history": {
         parameters: {
             query?: never;
@@ -3108,6 +3144,52 @@ export interface components {
             activityTrace?: components["schemas"]["ActivityTrace"];
             errorMessage?: string | null;
         };
+        AnswerFeedbackEntry: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            value: "up" | "down";
+            comment: string | null;
+            /** @enum {string} */
+            actorType: "authenticated_user" | "api_token" | "anonymous_user";
+            actorId: string;
+            /** Format: uuid */
+            accountId: string | null;
+            /** Format: uuid */
+            userId: string | null;
+            anonymousSessionId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AnswerFeedbackRequest: {
+            /** @enum {string} */
+            value: "up" | "down";
+            comment?: string | null;
+        };
+        AnswerFeedbackResponse: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            value: "up" | "down";
+            comment: string | null;
+            /** @enum {string} */
+            actorType: "authenticated_user" | "api_token" | "anonymous_user";
+            actorId: string;
+            /** Format: uuid */
+            accountId: string | null;
+            /** Format: uuid */
+            userId: string | null;
+            anonymousSessionId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ClearAnswerFeedbackResponse: {
+            cleared: boolean;
+        };
         ChatConversationMessage: {
             /** Format: uuid */
             id: string;
@@ -3129,6 +3211,7 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
+            answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             debug?: components["schemas"]["ChatConversationMessageDebug"];
         };
         ChatConversationDetail: {
@@ -6504,6 +6587,176 @@ export interface operations {
                 };
             };
             /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upsertAnswerFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Feedback saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnswerFeedbackResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Assistant message not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    clearAnswerFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Feedback cleared if present */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearAnswerFeedbackResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Assistant message not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upsertPublicAnswerFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Feedback saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnswerFeedbackResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Public chat session or assistant message not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    clearPublicAnswerFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Feedback cleared if present */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearAnswerFeedbackResponse"];
+                };
+            };
+            /** @description Public chat session or assistant message not found */
             404: {
                 headers: {
                     [name: string]: unknown;

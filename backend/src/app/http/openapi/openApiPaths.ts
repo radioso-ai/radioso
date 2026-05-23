@@ -4,6 +4,7 @@ import type { OpenApiSchemas, OpenApiSecurity } from "./openApiRegistry.js";
 import { registerSystemPaths } from "./paths/systemPaths.js";
 import {
   registerAssistantAuthenticatedChatPaths,
+  registerAssistantFeedbackPaths,
   registerAssistantPublicChatPaths,
   registerAssistantSessionPaths,
 } from "./paths/assistantPaths.js";
@@ -36,6 +37,7 @@ export const registerOpenApiPaths = (
   registerRetrievalAnswerPaths(registry, schemas, security);
   registerDocumentsPaths(registry, schemas, security);
   registerAssistantAuthenticatedChatPaths(registry, schemas, security);
+  registerAssistantFeedbackPaths(registry, schemas, security);
   registerHistoryPaths(registry, schemas, security);
   registerConnectorsPaths(registry, schemas, security);
   registerAssistantPublicChatPaths(registry, schemas, security);

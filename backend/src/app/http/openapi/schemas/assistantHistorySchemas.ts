@@ -19,6 +19,9 @@ import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 
 export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
+  const answerFeedbackParamsSchema = z.object({
+    assistantMessageId: z.string().uuid(),
+  }).openapi("AnswerFeedbackParams");
   const SkillAvailabilitySchema = registry.register("SkillAvailability", skillAvailabilitySchema);
   const SkillContractReferenceSchema = registry.register("SkillContractReference", skillContractReferenceSchema);
   const SkillDiagnosticsSummarySchema = registry.register("SkillDiagnosticsSummary", skillDiagnosticsSummarySchema);
@@ -232,6 +235,42 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const AnswerFeedbackEntrySchema = registry.register(
+    "AnswerFeedbackEntry",
+    z.object({
+      id: z.string().uuid(),
+      value: z.enum(["up", "down"]),
+      comment: z.string().nullable(),
+      actorType: z.enum(["authenticated_user", "api_token", "anonymous_user"]),
+      actorId: z.string(),
+      accountId: z.string().uuid().nullable(),
+      userId: z.string().uuid().nullable(),
+      anonymousSessionId: z.string().nullable(),
+      createdAt: z.string().datetime(),
+      updatedAt: z.string().datetime(),
+    }),
+  );
+
+  const AnswerFeedbackRequestSchema = registry.register(
+    "AnswerFeedbackRequest",
+    z.object({
+      value: z.enum(["up", "down"]),
+      comment: z.string().max(2000).nullable().optional(),
+    }),
+  );
+
+  const AnswerFeedbackResponseSchema = registry.register(
+    "AnswerFeedbackResponse",
+    AnswerFeedbackEntrySchema,
+  );
+
+  const ClearAnswerFeedbackResponseSchema = registry.register(
+    "ClearAnswerFeedbackResponse",
+    z.object({
+      cleared: z.boolean(),
+    }),
+  );
+
   const ChatConversationMessageSchema = registry.register(
     "ChatConversationMessage",
     z.object({
@@ -250,6 +289,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       citations: z.array(schemas.CitationSchema).optional(),
       answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),
       suggestions: z.array(ChatSuggestionSchema).optional(),
+      answerFeedbackEntries: z.array(AnswerFeedbackEntrySchema).optional(),
       debug: ChatConversationMessageDebugSchema.optional(),
     }),
   );
@@ -310,6 +350,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   );
 
   Object.assign(schemas, {
+    answerFeedbackParamsSchema,
     conversationParamsSchema,
     publicConversationParamsSchema,
     SkillAvailabilitySchema,
@@ -335,6 +376,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     HistoryItemSchema,
     HistoryItemsResponseSchema,
     ChatConversationMessageDebugSchema,
+    AnswerFeedbackEntrySchema,
+    AnswerFeedbackRequestSchema,
+    AnswerFeedbackResponseSchema,
+    ClearAnswerFeedbackResponseSchema,
     ChatConversationMessageSchema,
     ChatConversationDetailSchema,
     PublicConversationSummarySchema,

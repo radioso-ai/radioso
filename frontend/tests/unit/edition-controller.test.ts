@@ -27,7 +27,7 @@ describe('editionController', () => {
     const controller = await loadController()
 
     expect(controller.canUseHumanContact()).toBe(false)
-    expect(controller.canUseAssistantAnswerFeedback()).toBe(false)
+    expect(controller.canUseAssistantAnswerFeedback()).toBe(true)
     expect(controller.canUseAgentCreationExtensions()).toBe(false)
     expect(controller.shouldLoadHumanContactSettings('assistant')).toBe(false)
     expect(controller.shouldRenderWebsiteEmbedSettings('channels')).toBe(true)

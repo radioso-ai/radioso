@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import { createEnterpriseBackendModule } from "./index.js";
 import type {
   ApplicationAccountCreatedHandler,
-  ApplicationAnswerFeedbackHistoryProviderRegistration,
   ApplicationChatIntakeProviderRegistration,
   ApplicationContactHistoryProviderRegistration,
   ApplicationDatabaseMigrator,
@@ -19,7 +18,6 @@ const createCaptureContext = () => {
   let usageLimitPolicy: ApplicationUsageLimitPolicyRegistration | undefined;
   let chatIntakeProvider: ApplicationChatIntakeProviderRegistration | undefined;
   let contactHistoryProvider: ApplicationContactHistoryProviderRegistration | undefined;
-  let answerFeedbackHistoryProvider: ApplicationAnswerFeedbackHistoryProviderRegistration | undefined;
 
   const context: ApplicationModuleRegistrationContext = {
     registerDatabaseMigrator(migrator) {
@@ -40,8 +38,8 @@ const createCaptureContext = () => {
     registerContactHistoryProvider(provider) {
       contactHistoryProvider = provider;
     },
-    registerAnswerFeedbackHistoryProvider(provider) {
-      answerFeedbackHistoryProvider = provider;
+    registerAnswerFeedbackHistoryProvider() {
+      throw new Error("answer feedback is registered by the OSS backend");
     },
   };
 
@@ -54,9 +52,6 @@ const createCaptureContext = () => {
     },
     get contactHistoryProvider() {
       return contactHistoryProvider;
-    },
-    get answerFeedbackHistoryProvider() {
-      return answerFeedbackHistoryProvider;
     },
     get usageLimitPolicy() {
       return usageLimitPolicy;
@@ -74,14 +69,12 @@ describe("Enterprise backend module aggregation", () => {
 
     expect(module.id).toBe("radioso-enterprise-backend");
     expect(capture.databaseMigrators.map((migrator) => migrator.id).sort()).toEqual([
-      "ee-assistant-answer-feedback",
       "ee-human-contact",
       "ee-skill-submissions",
       "ee-usage-limits",
     ]);
     expect(capture.routeMounts.map((mount) => mount.path).sort()).toEqual([
       "/api/v1/ee/agent-wizard",
-      "/api/v1/ee/answer-feedback",
       "/api/v1/ee/contact",
       "/api/v1/ee/usage-limits",
     ]);
@@ -89,7 +82,6 @@ describe("Enterprise backend module aggregation", () => {
     expect(capture.usageLimitPolicy).toBeTypeOf("function");
     expect(capture.chatIntakeProvider).toBeTypeOf("function");
     expect(capture.contactHistoryProvider).toBeTypeOf("function");
-    expect(capture.answerFeedbackHistoryProvider).toBeTypeOf("function");
   });
 
   it("registers chat intake through the public provider contract", async () => {

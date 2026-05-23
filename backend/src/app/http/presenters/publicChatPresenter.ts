@@ -82,6 +82,22 @@ const stripPublicSuggestionCitation = (suggestion: ChatSuggestion): ChatSuggesti
 const stripPublicAnswerSegmentCitations = (answerSegments?: AnswerSegment[]): AnswerSegment[] | undefined =>
   answerSegments?.map((segment) => ({ text: segment.text }));
 
+type ConversationFeedbackEntry = NonNullable<ChatConversationDetail["messages"][number]["answerFeedbackEntries"]>[number];
+
+const filterPublicAnswerFeedbackEntries = (
+  entries: ConversationFeedbackEntry[] | undefined,
+  anonymousSessionId: string,
+): ConversationFeedbackEntry[] | undefined => {
+  if (!entries) {
+    return undefined;
+  }
+
+  return entries.filter((entry) =>
+    entry.actorType === "anonymous_user" &&
+    entry.anonymousSessionId === anonymousSessionId,
+  );
+};
+
 export const stripPublicChatCitationArtifacts = <T extends {
   citations?: unknown;
   answerSegments?: AnswerSegment[];
@@ -114,6 +130,7 @@ export const stripPublicChatCitationArtifacts = <T extends {
 
 export const stripPublicConversationCitationArtifacts = (
   detail: ChatConversationDetail,
+  anonymousSessionId: string,
 ): ChatConversationDetail => ({
   ...detail,
   messages: detail.messages.map((message) => {
@@ -121,14 +138,21 @@ export const stripPublicConversationCitationArtifacts = (
       citations: _citations,
       answerSegments,
       suggestions,
+      answerFeedbackEntries,
       debug: _debug,
       ...publicMessage
     } = message;
+    const publicAnswerFeedbackEntries = message.role === "assistant"
+      ? filterPublicAnswerFeedbackEntries(answerFeedbackEntries, anonymousSessionId)
+      : undefined;
 
     return {
       ...publicMessage,
       ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments) } : {}),
       ...(suggestions ? { suggestions: suggestions.map(stripPublicSuggestionCitation) } : {}),
+      ...(publicAnswerFeedbackEntries && publicAnswerFeedbackEntries.length > 0
+        ? { answerFeedbackEntries: publicAnswerFeedbackEntries }
+        : {}),
     };
   }),
 });

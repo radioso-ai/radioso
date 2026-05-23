@@ -134,6 +134,186 @@ export const registerAssistantAuthenticatedChatPaths = (
   });
 };
 
+export const registerAssistantFeedbackPaths = (
+  registry: OpenAPIRegistry,
+  schemas: OpenApiSchemas,
+  security: OpenApiSecurity,
+) => {
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/answer-feedback/messages/{assistantMessageId}",
+    tags: ["Assistant"],
+    summary: "Record feedback for an assistant answer",
+    operationId: "upsertAnswerFeedback",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.answerFeedbackParamsSchema,
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.AnswerFeedbackRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Feedback saved",
+        content: {
+          "application/json": {
+            schema: schemas.AnswerFeedbackResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Assistant message not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/answer-feedback/messages/{assistantMessageId}",
+    tags: ["Assistant"],
+    summary: "Clear feedback for an assistant answer",
+    operationId: "clearAnswerFeedback",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.answerFeedbackParamsSchema,
+    },
+    responses: {
+      200: {
+        description: "Feedback cleared if present",
+        content: {
+          "application/json": {
+            schema: schemas.ClearAnswerFeedbackResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Assistant message not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/answer-feedback/public/chat/{token}/messages/{assistantMessageId}",
+    tags: ["Assistant"],
+    summary: "Record feedback for a public chat assistant answer",
+    operationId: "upsertPublicAnswerFeedback",
+    security: [{ [security.anonymousSessionCookieScheme.name]: [] }],
+    request: {
+      params: z.object({
+        token: z.string().min(1),
+        assistantMessageId: z.string().uuid(),
+      }),
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.AnswerFeedbackRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Feedback saved",
+        content: {
+          "application/json": {
+            schema: schemas.AnswerFeedbackResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Public chat session or assistant message not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/answer-feedback/public/chat/{token}/messages/{assistantMessageId}",
+    tags: ["Assistant"],
+    summary: "Clear feedback for a public chat assistant answer",
+    operationId: "clearPublicAnswerFeedback",
+    security: [{ [security.anonymousSessionCookieScheme.name]: [] }],
+    request: {
+      params: z.object({
+        token: z.string().min(1),
+        assistantMessageId: z.string().uuid(),
+      }),
+    },
+    responses: {
+      200: {
+        description: "Feedback cleared if present",
+        content: {
+          "application/json": {
+            schema: schemas.ClearAnswerFeedbackResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Public chat session or assistant message not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+};
+
 export const registerAssistantPublicChatPaths = (
   registry: OpenAPIRegistry,
   schemas: OpenApiSchemas,

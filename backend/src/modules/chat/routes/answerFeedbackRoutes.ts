@@ -1,30 +1,72 @@
 import { Router } from "express";
 import { z } from "zod";
 
-import type { ApplicationRouteMount } from "../radiosoModuleTypes.js";
-import { parseBody, parseParams, requirePublicChatSession, requireWorkspaceSession } from "../shared/chatRouteHelpers.js";
-import type { AnswerFeedbackActor, EnterpriseAnswerFeedbackService } from "./answerFeedbackService.js";
+import type { AppDependencies } from "../../../app/server/types.js";
+import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../../app/http/middleware/requireWorkspaceSession.js";
+import { validateBody } from "../../../app/http/middleware/validate.js";
+import { resolveAnonymousSession } from "../../../app/http/middleware/resolveAnonymousSession.js";
+import { resolvePublicChatSessionSecret } from "../../../app/http/shared/publicChatSessionSecret.js";
+import { badRequest } from "../../../shared/domain/errors.js";
+import type { AnswerFeedbackActor } from "../services/answerFeedbackService.js";
+import type { AnswerFeedbackService } from "../services/answerFeedbackService.js";
 
-type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
+export interface AnswerFeedbackRouteDependencies {
+  env: Pick<AppDependencies["env"],
+    | "NODE_ENV"
+    | "PUBLIC_CHAT_SESSION_SECRET"
+    | "SESSION_COOKIE_NAME"
+    | "SESSION_COOKIE_SECRET"
+    | "WORKSPACE_TOKEN_SECRET"
+  >;
+  authService: {
+    authenticateSession(token: string): Promise<{ accountId: string; userId: string; sessionId: string }>;
+    authenticateApiToken(token: string): Promise<{
+      accountId: string;
+      workspaceId: string;
+      principal: unknown;
+    }>;
+  };
+  accountAccessService: {
+    requireActiveMembership(accountId: string, userId: string): Promise<unknown>;
+  };
+  workspaceSessionService: {
+    resolve(input: { accountId: string; workspaceId?: string | null }): Promise<{ accountId: string; workspaceId: string }>;
+  };
+  workspaceRepository: Pick<AppDependencies["workspaceRepository"],
+    "findByAnonymousChatToken" | "findByWebsiteEmbedToken" | "findById"
+  >;
+  agentRepository: Pick<AppDependencies["agentRepository"], "findByAnonymousChatToken" | "findByWebsiteEmbedToken">;
+  agentService?: Pick<AppDependencies["agentService"], "resolve">;
+}
 
-const feedbackValueSchema = z.enum(["up", "down"]);
 const feedbackBodySchema = z.object({
-  value: feedbackValueSchema,
+  value: z.enum(["up", "down"]),
   comment: z.string().trim().max(2000).nullable().optional(),
 });
+
 const feedbackParamsSchema = z.object({
   assistantMessageId: z.string().uuid(),
 });
+
 const publicFeedbackParamsSchema = feedbackParamsSchema.extend({
   token: z.string().min(1),
 });
 
+const parseParams = <T>(schema: z.ZodType<T>, value: unknown): T => {
+  const parsed = schema.safeParse(value);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  throw badRequest("Invalid request params", parsed.error.flatten());
+};
+
 const getWorkspaceFeedbackActor = (locals: {
   accountId: string;
-  authType: "authenticated_user" | "api_token";
+  authMode: "session" | "bearer";
   userId?: string;
 }): AnswerFeedbackActor =>
-  locals.authType === "api_token"
+  locals.authMode === "bearer"
     ? {
         type: "api_token",
         id: locals.accountId,
@@ -44,28 +86,33 @@ const getPublicFeedbackActor = (anonymousSessionId: string): AnswerFeedbackActor
 });
 
 export const createAnswerFeedbackRoutes = (
-  dependencies: RouteDependencies,
-  service: EnterpriseAnswerFeedbackService,
+  dependencies: AnswerFeedbackRouteDependencies,
+  service: AnswerFeedbackService,
 ): Router => {
   const router = Router();
-  const workspaceSession = requireWorkspaceSession(dependencies);
-  const publicChatSession = requirePublicChatSession(dependencies);
+  const workspaceSession = requireWorkspaceSession(dependencies as unknown as WorkspaceSessionDependencies);
+  const publicSession = resolveAnonymousSession(
+    dependencies.workspaceRepository,
+    resolvePublicChatSessionSecret(dependencies.env),
+    dependencies.env.SESSION_COOKIE_SECRET,
+    dependencies.agentRepository,
+    dependencies.agentService,
+  );
 
-  router.put("/messages/:assistantMessageId", workspaceSession, async (req, res, next) => {
+  router.put("/messages/:assistantMessageId", workspaceSession, validateBody(feedbackBodySchema), async (req, res, next) => {
     try {
       const params = parseParams(feedbackParamsSchema, req.params);
-      const body = parseBody(feedbackBodySchema, req.body);
       const { workspaceId } = res.locals as {
         workspaceId: string;
       };
       const feedback = await service.upsert({
         workspaceId,
         assistantMessageId: params.assistantMessageId,
-        value: body.value,
-        comment: body.comment,
+        value: req.body.value,
+        comment: req.body.comment,
         actor: getWorkspaceFeedbackActor(res.locals as {
           accountId: string;
-          authType: "authenticated_user" | "api_token";
+          authMode: "session" | "bearer";
           userId?: string;
         }),
       });
@@ -86,7 +133,7 @@ export const createAnswerFeedbackRoutes = (
         assistantMessageId: params.assistantMessageId,
         actor: getWorkspaceFeedbackActor(res.locals as {
           accountId: string;
-          authType: "authenticated_user" | "api_token";
+          authMode: "session" | "bearer";
           userId?: string;
         }),
       }));
@@ -95,10 +142,9 @@ export const createAnswerFeedbackRoutes = (
     }
   });
 
-  router.put("/public/chat/:token/messages/:assistantMessageId", publicChatSession, async (req, res, next) => {
+  router.put("/public/chat/:token/messages/:assistantMessageId", publicSession, validateBody(feedbackBodySchema), async (req, res, next) => {
     try {
       const params = parseParams(publicFeedbackParamsSchema, req.params);
-      const body = parseBody(feedbackBodySchema, req.body);
       const { workspaceId, agentId, anonymousSessionId } = res.locals as {
         workspaceId: string;
         agentId?: string | null;
@@ -108,8 +154,8 @@ export const createAnswerFeedbackRoutes = (
         workspaceId,
         agentId,
         assistantMessageId: params.assistantMessageId,
-        value: body.value,
-        comment: body.comment,
+        value: req.body.value,
+        comment: req.body.comment,
         actor: getPublicFeedbackActor(anonymousSessionId),
       });
       res.status(200).json(feedback);
@@ -118,7 +164,7 @@ export const createAnswerFeedbackRoutes = (
     }
   });
 
-  router.delete("/public/chat/:token/messages/:assistantMessageId", publicChatSession, async (req, res, next) => {
+  router.delete("/public/chat/:token/messages/:assistantMessageId", publicSession, async (req, res, next) => {
     try {
       const params = parseParams(publicFeedbackParamsSchema, req.params);
       const { workspaceId, agentId, anonymousSessionId } = res.locals as {

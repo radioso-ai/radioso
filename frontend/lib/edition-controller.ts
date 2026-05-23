@@ -13,7 +13,7 @@ export const editionController = {
   canUseEnterpriseUsageLimits: () => isEnterprise,
   canHideAssistantBranding: () => isEnterprise,
   canUseHumanContact: () => isEnterprise,
-  canUseAssistantAnswerFeedback: () => isEnterprise,
+  canUseAssistantAnswerFeedback: () => true,
   canUseAgentCreationExtensions: () => isEnterprise,
 
   shouldLoadHumanContactSettings: (mode: 'workspace' | 'assistant' | 'channels') =>

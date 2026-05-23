@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
 
-import type {
-  AnswerFeedbackHistoryEntry,
-  AnswerFeedbackHistoryProvider,
-  UsageLimitDatabaseClient,
-  UsageLimitDatabasePort,
-} from "../radiosoModuleTypes.js";
+import type { QueryResultRow } from "pg";
 
-export type AnswerFeedbackValue = "up" | "down";
+import type { ApplicationDatabasePort } from "../../../app/composition/applicationModule.js";
+import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import type {
+  AnswerFeedbackHistoryProviderPort,
+  ChatAnswerFeedbackEntry,
+  ChatAnswerFeedbackValue,
+} from "./answerFeedbackHistoryProvider.js";
+
 export type AnswerFeedbackActorType = "authenticated_user" | "api_token" | "anonymous_user";
 
 export interface AnswerFeedbackActor {
@@ -18,7 +20,7 @@ export interface AnswerFeedbackActor {
   anonymousSessionId?: string | null;
 }
 
-interface FeedbackRow {
+type FeedbackRow = QueryResultRow & {
   id: string;
   workspace_id: string;
   conversation_id: string;
@@ -28,22 +30,13 @@ interface FeedbackRow {
   anonymous_session_id: string | null;
   actor_type: AnswerFeedbackActorType;
   actor_id: string;
-  value: AnswerFeedbackValue;
+  value: ChatAnswerFeedbackValue;
   comment: string | null;
   created_at: Date | string;
   updated_at: Date | string;
-}
+};
 
 const COMMENT_MAX_LENGTH = 2000;
-
-const queryRows = async <T = Record<string, unknown>>(
-  client: UsageLimitDatabaseClient,
-  text: string,
-  params: unknown[] = [],
-): Promise<T[]> => {
-  const result = await client.query<T>(text, params);
-  return Array.isArray(result) ? result : result.rows;
-};
 
 const serializeDate = (value: Date | string): string =>
   value instanceof Date ? value.toISOString() : new Date(value).toISOString();
@@ -54,16 +47,12 @@ const normalizeComment = (value: string | null | undefined): string | null => {
     return null;
   }
   if (trimmed.length > COMMENT_MAX_LENGTH) {
-    throw {
-      statusCode: 400,
-      code: "bad_request",
-      message: "Feedback comment must be 2000 characters or less",
-    };
+    throw badRequest("Feedback comment must be 2000 characters or less");
   }
   return trimmed;
 };
 
-const mapFeedbackRow = (row: FeedbackRow): AnswerFeedbackHistoryEntry => ({
+const mapFeedbackRow = (row: FeedbackRow): ChatAnswerFeedbackEntry => ({
   id: row.id,
   value: row.value,
   comment: row.comment,
@@ -76,17 +65,17 @@ const mapFeedbackRow = (row: FeedbackRow): AnswerFeedbackHistoryEntry => ({
   updatedAt: serializeDate(row.updated_at),
 });
 
-export class EnterpriseAnswerFeedbackService implements AnswerFeedbackHistoryProvider {
-  constructor(private readonly database: UsageLimitDatabasePort) {}
+export class AnswerFeedbackService implements AnswerFeedbackHistoryProviderPort {
+  constructor(private readonly database: ApplicationDatabasePort) {}
 
   async upsert(input: {
     workspaceId: string;
     agentId?: string | null;
     assistantMessageId: string;
-    value: AnswerFeedbackValue;
+    value: ChatAnswerFeedbackValue;
     comment?: string | null;
     actor: AnswerFeedbackActor;
-  }): Promise<AnswerFeedbackHistoryEntry> {
+  }): Promise<ChatAnswerFeedbackEntry> {
     const target = await this.findAssistantMessage({
       workspaceId: input.workspaceId,
       agentId: input.agentId,
@@ -94,17 +83,12 @@ export class EnterpriseAnswerFeedbackService implements AnswerFeedbackHistoryPro
       anonymousSessionId: input.actor.type === "anonymous_user" ? input.actor.anonymousSessionId : null,
     });
     if (!target) {
-      throw {
-        statusCode: 404,
-        code: "not_found",
-        message: "Assistant message not found",
-      };
+      throw notFound("Assistant message not found");
     }
 
     const comment = input.value === "down" ? normalizeComment(input.comment) : null;
-    const [row] = await queryRows<FeedbackRow>(
-      this.database,
-      `INSERT INTO ee_assistant_answer_feedback (
+    const [row] = await this.database.query<FeedbackRow>(
+      `INSERT INTO assistant_answer_feedback (
          id,
          workspace_id,
          conversation_id,
@@ -143,7 +127,7 @@ export class EnterpriseAnswerFeedbackService implements AnswerFeedbackHistoryPro
       ],
     );
 
-    return mapFeedbackRow(row);
+    return mapFeedbackRow(row!);
   }
 
   async clear(input: {
@@ -159,16 +143,11 @@ export class EnterpriseAnswerFeedbackService implements AnswerFeedbackHistoryPro
       anonymousSessionId: input.actor.type === "anonymous_user" ? input.actor.anonymousSessionId : null,
     });
     if (!target) {
-      throw {
-        statusCode: 404,
-        code: "not_found",
-        message: "Assistant message not found",
-      };
+      throw notFound("Assistant message not found");
     }
 
-    const rows = await queryRows<{ id: string }>(
-      this.database,
-      `DELETE FROM ee_assistant_answer_feedback
+    const rows = await this.database.query<{ id: string }>(
+      `DELETE FROM assistant_answer_feedback
        WHERE workspace_id = $1
          AND assistant_message_id = $2
          AND actor_type = $3
@@ -183,17 +162,16 @@ export class EnterpriseAnswerFeedbackService implements AnswerFeedbackHistoryPro
   async listByAssistantMessageIds(
     workspaceId: string,
     assistantMessageIds: string[],
-  ): Promise<Map<string, AnswerFeedbackHistoryEntry[]>> {
-    const feedback = new Map<string, AnswerFeedbackHistoryEntry[]>();
+  ): Promise<Map<string, ChatAnswerFeedbackEntry[]>> {
+    const feedback = new Map<string, ChatAnswerFeedbackEntry[]>();
     if (assistantMessageIds.length === 0) {
       return feedback;
     }
 
-    const rows = await queryRows<FeedbackRow>(
-      this.database,
+    const rows = await this.database.query<FeedbackRow>(
       `SELECT id, workspace_id, conversation_id, assistant_message_id, account_id, user_id,
               anonymous_session_id, actor_type, actor_id, value, comment, created_at, updated_at
-       FROM ee_assistant_answer_feedback
+       FROM assistant_answer_feedback
        WHERE workspace_id = $1
          AND assistant_message_id = ANY($2::uuid[])
        ORDER BY created_at ASC, id ASC`,
@@ -230,8 +208,7 @@ export class EnterpriseAnswerFeedbackService implements AnswerFeedbackHistoryPro
       params.push(input.agentId);
     }
 
-    const rows = await queryRows<{ conversation_id: string }>(
-      this.database,
+    const rows = await this.database.query<{ conversation_id: string }>(
       `SELECT m.conversation_id
        FROM messages m
        JOIN conversations c ON c.id = m.conversation_id

@@ -1,10 +1,10 @@
+import type { QueryResultRow } from "pg";
 import { describe, expect, it } from "vitest";
 
-import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
-import { answerFeedbackMigrator } from "./answerFeedbackMigrator.js";
-import { EnterpriseAnswerFeedbackService } from "./answerFeedbackService.js";
+import { AnswerFeedbackService } from "../../src/modules/chat/services/answerFeedbackService.js";
+import type { ApplicationDatabasePort } from "../../src/app/composition/applicationModule.js";
 
-type FeedbackRow = {
+type FeedbackRow = QueryResultRow & {
   id: string;
   workspace_id: string;
   conversation_id: string;
@@ -20,36 +20,41 @@ type FeedbackRow = {
   updated_at: Date;
 };
 
-class FakeAnswerFeedbackDatabase implements UsageLimitDatabasePort {
-  readonly queries: string[] = [];
+class FakeAnswerFeedbackDatabase implements ApplicationDatabasePort {
   readonly assistantMessages = new Map<string, {
     workspaceId: string;
     conversationId: string;
     anonymousSessionId: string | null;
+    agentId: string | null;
     role: "user" | "assistant";
   }>();
   readonly feedback = new Map<string, FeedbackRow>();
 
-  async query<T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> {
-    this.queries.push(text);
-
+  async query<T extends QueryResultRow = QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
     if (text.includes("SELECT m.conversation_id")) {
       const workspaceId = String(params[0]);
       const assistantMessageId = String(params[1]);
-      const anonymousSessionId = params[2] === undefined ? undefined : String(params[2]);
+      let nextParamIndex = 2;
+      const anonymousSessionId = text.includes("c.anonymous_session_id")
+        ? String(params[nextParamIndex++])
+        : undefined;
+      const agentId = text.includes("c.agent_id")
+        ? String(params[nextParamIndex++])
+        : undefined;
       const message = this.assistantMessages.get(assistantMessageId);
       if (
         !message ||
         message.workspaceId !== workspaceId ||
         message.role !== "assistant" ||
-        (anonymousSessionId !== undefined && message.anonymousSessionId !== anonymousSessionId)
+        (anonymousSessionId !== undefined && message.anonymousSessionId !== anonymousSessionId) ||
+        (agentId !== undefined && message.agentId !== agentId)
       ) {
         return [] as T[];
       }
-      return [{ conversation_id: message.conversationId }] as T[];
+      return [{ conversation_id: message.conversationId }] as unknown as T[];
     }
 
-    if (text.includes("INSERT INTO ee_assistant_answer_feedback")) {
+    if (text.includes("INSERT INTO assistant_answer_feedback")) {
       const assistantMessageId = String(params[3]);
       const actorType = params[7] as FeedbackRow["actor_type"];
       const actorId = String(params[8]);
@@ -71,22 +76,22 @@ class FakeAnswerFeedbackDatabase implements UsageLimitDatabasePort {
         updated_at: new Date("2026-05-07T10:01:00.000Z"),
       };
       this.feedback.set(key, row);
-      return [row] as T[];
+      return [row] as unknown as T[];
     }
 
-    if (text.includes("DELETE FROM ee_assistant_answer_feedback")) {
+    if (text.includes("DELETE FROM assistant_answer_feedback")) {
       const key = `${String(params[1])}:${String(params[2])}:${String(params[3])}`;
       const row = this.feedback.get(key);
       this.feedback.delete(key);
-      return (row ? [{ id: row.id }] : []) as T[];
+      return (row ? [{ id: row.id }] : []) as unknown as T[];
     }
 
-    if (text.includes("FROM ee_assistant_answer_feedback") && text.includes("assistant_message_id = ANY")) {
+    if (text.includes("FROM assistant_answer_feedback") && text.includes("assistant_message_id = ANY")) {
       const workspaceId = String(params[0]);
       const ids = params[1] as string[];
       return ([...this.feedback.values()]
         .filter((row) => row.workspace_id === workspaceId && ids.includes(row.assistant_message_id))
-        .sort((left, right) => left.created_at.getTime() - right.created_at.getTime())) as T[];
+        .sort((left, right) => left.created_at.getTime() - right.created_at.getTime())) as unknown as T[];
     }
 
     return [] as T[];
@@ -98,6 +103,7 @@ const seedAssistantMessage = (database: FakeAnswerFeedbackDatabase, input: {
   workspaceId?: string;
   conversationId?: string;
   anonymousSessionId?: string | null;
+  agentId?: string | null;
   role?: "user" | "assistant";
 } = {}) => {
   const id = input.id ?? "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -105,25 +111,17 @@ const seedAssistantMessage = (database: FakeAnswerFeedbackDatabase, input: {
     workspaceId: input.workspaceId ?? "workspace-1",
     conversationId: input.conversationId ?? "conversation-1",
     anonymousSessionId: input.anonymousSessionId ?? null,
+    agentId: input.agentId ?? null,
     role: input.role ?? "assistant",
   });
   return id;
 };
 
-describe("enterprise answer feedback service", () => {
-  it("migrates answer feedback storage idempotently", async () => {
-    const database = new FakeAnswerFeedbackDatabase();
-
-    await answerFeedbackMigrator.migrate(database);
-
-    expect(database.queries.some((query) => query.includes("CREATE TABLE IF NOT EXISTS ee_assistant_answer_feedback"))).toBe(true);
-    expect(database.queries.some((query) => query.includes("idx_ee_assistant_answer_feedback_actor_message"))).toBe(true);
-  });
-
+describe("answer feedback service", () => {
   it("upserts, switches, and clears one active feedback entry per actor and message", async () => {
     const database = new FakeAnswerFeedbackDatabase();
     const messageId = seedAssistantMessage(database);
-    const service = new EnterpriseAnswerFeedbackService(database);
+    const service = new AnswerFeedbackService(database);
 
     const first = await service.upsert({
       workspaceId: "workspace-1",
@@ -168,14 +166,15 @@ describe("enterprise answer feedback service", () => {
     expect(database.feedback.size).toBe(0);
   });
 
-  it("rejects non-assistant, wrong-workspace, and wrong-session messages", async () => {
+  it("rejects non-assistant, wrong-workspace, wrong-session, and wrong-agent messages", async () => {
     const database = new FakeAnswerFeedbackDatabase();
     const userMessageId = seedAssistantMessage(database, { id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", role: "user" });
     const publicMessageId = seedAssistantMessage(database, {
       id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
       anonymousSessionId: "session-1",
+      agentId: "agent-1",
     });
-    const service = new EnterpriseAnswerFeedbackService(database);
+    const service = new AnswerFeedbackService(database);
 
     await expect(service.upsert({
       workspaceId: "workspace-1",
@@ -193,22 +192,25 @@ describe("enterprise answer feedback service", () => {
 
     await expect(service.upsert({
       workspaceId: "workspace-1",
+      agentId: "agent-1",
       assistantMessageId: publicMessageId,
       value: "up",
       actor: { type: "anonymous_user", id: "session-2", anonymousSessionId: "session-2" },
     })).rejects.toMatchObject({ statusCode: 404 });
 
-    await expect(service.clear({
+    await expect(service.upsert({
       workspaceId: "workspace-1",
+      agentId: "agent-2",
       assistantMessageId: publicMessageId,
-      actor: { type: "anonymous_user", id: "session-2", anonymousSessionId: "session-2" },
+      value: "up",
+      actor: { type: "anonymous_user", id: "session-1", anonymousSessionId: "session-1" },
     })).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("returns feedback entries grouped by assistant message for history detail", async () => {
     const database = new FakeAnswerFeedbackDatabase();
     const messageId = seedAssistantMessage(database, { anonymousSessionId: "session-1" });
-    const service = new EnterpriseAnswerFeedbackService(database);
+    const service = new AnswerFeedbackService(database);
 
     await service.upsert({
       workspaceId: "workspace-1",
@@ -233,7 +235,7 @@ describe("enterprise answer feedback service", () => {
   it("limits free-form comments to 2000 characters", async () => {
     const database = new FakeAnswerFeedbackDatabase();
     const messageId = seedAssistantMessage(database);
-    const service = new EnterpriseAnswerFeedbackService(database);
+    const service = new AnswerFeedbackService(database);
 
     await expect(service.upsert({
       workspaceId: "workspace-1",

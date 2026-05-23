@@ -196,6 +196,7 @@ module.exports = {
         path: "^src/",
         pathNot: [
           "^src/modules/chat/",
+          "^src/app/composition/",
           "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
         ],
       },

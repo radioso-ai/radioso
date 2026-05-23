@@ -246,18 +246,44 @@ describe("public chat contract", () => {
         async listByAssistantMessageIds(_workspaceId, assistantMessageIds) {
           return new Map(assistantMessageIds.map((assistantMessageId) => [
             assistantMessageId,
-            [{
-              id: "11111111-1111-1111-1111-111111111111",
-              value: "down" as const,
-              comment: "Needs more detail.",
-              actorType: "anonymous_user" as const,
-              actorId: "public-session-feedback",
-              accountId: null,
-              userId: null,
-              anonymousSessionId: "public-session-feedback",
-              createdAt: "2026-05-08T10:00:00.000Z",
-              updatedAt: "2026-05-08T10:00:00.000Z",
-            }],
+            [
+              {
+                id: "11111111-1111-1111-1111-111111111111",
+                value: "down" as const,
+                comment: "Needs more detail.",
+                actorType: "anonymous_user" as const,
+                actorId: "44444444-4444-4444-4444-444444444444",
+                accountId: null,
+                userId: null,
+                anonymousSessionId: "44444444-4444-4444-4444-444444444444",
+                createdAt: "2026-05-08T10:00:00.000Z",
+                updatedAt: "2026-05-08T10:00:00.000Z",
+              },
+              {
+                id: "22222222-2222-2222-2222-222222222222",
+                value: "up" as const,
+                comment: "Internal note.",
+                actorType: "authenticated_user" as const,
+                actorId: "operator-user",
+                accountId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                userId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                anonymousSessionId: null,
+                createdAt: "2026-05-08T10:01:00.000Z",
+                updatedAt: "2026-05-08T10:01:00.000Z",
+              },
+              {
+                id: "33333333-3333-3333-3333-333333333333",
+                value: "up" as const,
+                comment: "Other anonymous session.",
+                actorType: "anonymous_user" as const,
+                actorId: "55555555-5555-5555-5555-555555555555",
+                accountId: null,
+                userId: null,
+                anonymousSessionId: "55555555-5555-5555-5555-555555555555",
+                createdAt: "2026-05-08T10:02:00.000Z",
+                updatedAt: "2026-05-08T10:02:00.000Z",
+              },
+            ],
           ]));
         },
       },
@@ -269,7 +295,7 @@ describe("public chat contract", () => {
       .send({ title: "Intro", content: "This page parses content and answers questions." });
 
     const chatToken = await enableAnonymousChat(app, session);
-    const publicSession = await createPublicSession(app, chatToken);
+    const publicSession = await createPublicSession(app, chatToken, "44444444-4444-4444-4444-444444444444");
 
     const chat = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
@@ -325,6 +351,25 @@ describe("public chat contract", () => {
     const assistantTurn = detail.body.messages.find((message: { role: string }) => message.role === "assistant");
     expect(assistantTurn).not.toHaveProperty("citations");
     expect(assistantTurn).not.toHaveProperty("debug");
+    expect(assistantTurn?.answerFeedbackEntries).toHaveLength(1);
+    expect(assistantTurn?.answerFeedbackEntries).toEqual([
+      expect.objectContaining({
+        value: "down",
+        comment: "Needs more detail.",
+        actorType: "anonymous_user",
+        anonymousSessionId: "44444444-4444-4444-4444-444444444444",
+      }),
+    ]);
+    expect(assistantTurn?.answerFeedbackEntries).toEqual(
+      expect.not.arrayContaining([
+        expect.objectContaining({
+          comment: "Internal note.",
+        }),
+        expect.objectContaining({
+          anonymousSessionId: "55555555-5555-5555-5555-555555555555",
+        }),
+      ]),
+    );
     expect(assistantTurn?.answerSegments).toEqual(
       expect.arrayContaining([
         expect.not.objectContaining({

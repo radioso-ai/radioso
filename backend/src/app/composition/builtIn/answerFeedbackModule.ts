@@ -1,5 +1,7 @@
-import { createAnswerFeedbackRoutes } from "../../../modules/chat/routes/answerFeedbackRoutes.js";
-import { AnswerFeedbackService } from "../../../modules/chat/services/answerFeedbackService.js";
+import {
+  AnswerFeedbackService,
+  createAnswerFeedbackRoutes,
+} from "../../../modules/chat/composition.js";
 import type { ApplicationModule } from "../applicationModule.js";
 
 export interface AnswerFeedbackModuleState {

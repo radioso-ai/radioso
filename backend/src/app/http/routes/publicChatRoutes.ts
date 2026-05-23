@@ -496,7 +496,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         parsedQuery.data,
         { includeAnswerFeedback: true },
       );
-      res.status(200).json(stripPublicConversationCitationArtifacts(detail));
+      res.status(200).json(stripPublicConversationCitationArtifacts(detail, anonymousSessionId));
     } catch (error) {
       next(error);
     }

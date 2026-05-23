@@ -1,9 +1,5 @@
-import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ChatSuggestion, ChatSuggestionKind } from "../types/chatResponses.js";
-import type { ConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
-import { formatConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
+import type { PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
 
 interface ExpansionContext {
   documentId: string;
@@ -12,13 +8,6 @@ interface ExpansionContext {
   content: string;
 }
 
-type SuggestionTextGenerator = (input: {
-  query: string;
-  history: MessageRecord[];
-  prompt: string;
-  workspaceContext?: LlmCapabilityResolveInput;
-}) => Promise<string>;
-
 export interface AssistantSuggestionExpansionInput {
   query: string;
   suggestedQuestionsEnabled: boolean;
@@ -26,10 +15,7 @@ export interface AssistantSuggestionExpansionInput {
   groundedAnswerSupported: boolean;
   answer: string;
   contexts: ExpansionContext[];
-  citations?: Array<{ documentId: string }>;
-  history: MessageRecord[];
-  conversationIntentSnapshot: ConversationIntentSnapshot;
-  workspaceContext?: LlmCapabilityResolveInput;
+  plannedSuggestions: PlannedEnvelopeSuggestion[];
 }
 
 export interface AssistantSuggestionExpansionResult {
@@ -39,10 +25,6 @@ export interface AssistantSuggestionExpansionResult {
 interface PlannedSuggestion {
   text: string;
   kind: ChatSuggestionKind;
-  contextIndex: number;
-}
-
-interface SuggestionPromptContext extends ExpansionContext {
   contextIndex: number;
 }
 
@@ -64,10 +46,7 @@ const extractComparableTerms = (value: string): Set<string> =>
       .filter((token) => /^\d+$/.test(token) || token.length >= 4),
   );
 
-const buildCharacterNgrams = (
-  value: string,
-  size: number,
-): Set<string> => {
+const buildCharacterNgrams = (value: string, size: number): Set<string> => {
   const normalized = normalizeComparableText(value).replace(/\s+/g, "");
 
   if (normalized.length === 0) {
@@ -86,10 +65,7 @@ const buildCharacterNgrams = (
   return grams;
 };
 
-const calculateSetSimilarity = (
-  left: Set<string>,
-  right: Set<string>,
-): number => {
+const calculateSetSimilarity = (left: Set<string>, right: Set<string>): number => {
   if (left.size === 0 || right.size === 0) {
     return 0;
   }
@@ -105,10 +81,7 @@ const calculateSetSimilarity = (
   return intersectionCount / (left.size + right.size - intersectionCount);
 };
 
-const calculateCoverage = (
-  candidate: Set<string>,
-  reference: Set<string>,
-): number => {
+const calculateCoverage = (candidate: Set<string>, reference: Set<string>): number => {
   if (candidate.size === 0 || reference.size === 0) {
     return 0;
   }
@@ -123,11 +96,7 @@ const calculateCoverage = (
   return overlapCount / candidate.size;
 };
 
-const isNearDuplicateSuggestion = (
-  suggestionText: string,
-  query: string,
-  answer: string,
-): boolean => {
+const isNearDuplicateSuggestion = (suggestionText: string, query: string, answer: string): boolean => {
   const normalizedSuggestion = normalizeComparableText(suggestionText);
   if (!normalizedSuggestion) {
     return true;
@@ -144,124 +113,58 @@ const isNearDuplicateSuggestion = (
     return true;
   }
 
+  // Only flag suggestions that paraphrase the user's question. A grounded follow-up
+  // necessarily shares topic vocabulary with the answer ("List more Shivani videos"
+  // after an answer about Shivani's videos is exactly what users want), so answer-side
+  // term overlap is not a duplicate signal. Literal restatements of the answer are
+  // already caught by the substring check above.
   const suggestionTrigrams = buildCharacterNgrams(suggestionText, 3);
   const suggestionTerms = extractComparableTerms(suggestionText);
   const queryTerms = extractComparableTerms(query);
-  const answerTerms = extractComparableTerms(answer);
   const queryTermCoverage = calculateCoverage(suggestionTerms, queryTerms);
-  const answerTermCoverage = calculateCoverage(suggestionTerms, answerTerms);
   const querySimilarity = calculateSetSimilarity(suggestionTrigrams, buildCharacterNgrams(query, 3));
-  const answerSimilarity = calculateSetSimilarity(suggestionTrigrams, buildCharacterNgrams(answer, 3));
 
-  return Math.max(queryTermCoverage, answerTermCoverage) >= 0.6 || Math.max(querySimilarity, answerSimilarity) >= 0.45;
-};
-
-const clampExcerpt = (value: string, maxLength: number): string => {
-  const normalized = normalizeWhitespace(value);
-  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
-};
-
-const formatContextsJson = (contexts: SuggestionPromptContext[]): string =>
-  JSON.stringify(
-    contexts.map((context) => ({
-      contextIndex: context.contextIndex,
-      title: normalizeWhitespace(context.title),
-      content: clampExcerpt(context.content, 600),
-    })),
-    null,
-    2,
-  );
-
-const parseSuggestionPayload = (value: string): unknown => {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  return JSON.parse(trimmed);
-};
-
-const normalizeSuggestionKind = (value: unknown): ChatSuggestionKind | null => {
-  if (value === undefined || value === "deeper") {
-    return "deeper";
-  }
-
-  return value === "broader" ? "broader" : null;
+  return queryTermCoverage >= 0.6 || querySimilarity >= 0.45;
 };
 
 export class AssistantSuggestionExpansionService {
-  constructor(private readonly generateSuggestionText: SuggestionTextGenerator) {}
-
-  async apply(input: AssistantSuggestionExpansionInput): Promise<AssistantSuggestionExpansionResult> {
+  apply(input: AssistantSuggestionExpansionInput): AssistantSuggestionExpansionResult {
     if (
       !input.groundedAnswerSupported ||
       !input.suggestedQuestionsEnabled ||
-      input.contexts.length === 0
+      input.contexts.length === 0 ||
+      input.plannedSuggestions.length === 0
     ) {
       return {};
     }
 
     const maxSuggestions = input.suggestedQuestionsCount;
-    const candidateContexts = input.contexts.slice(0, Math.max(maxSuggestions * 2, maxSuggestions));
-
-    if (candidateContexts.length === 0) {
+    if (maxSuggestions <= 0) {
       return {};
     }
 
-    const promptContexts = candidateContexts.map((context, index) => ({
-      ...context,
-      contextIndex: index + 1,
-    }));
-
-    try {
-      const rawResponse = await this.generateSuggestionText({
-        query: input.query,
-        history: input.history,
-        prompt: renderPromptTemplate("chat/assistant-suggestions.md", {
-          max_suggestions: String(maxSuggestions),
-          query: input.query,
-          answer: input.answer,
-          recent_turns_json: formatConversationIntentSnapshot(input.conversationIntentSnapshot),
-          active_subject: input.conversationIntentSnapshot.activeSubject ?? "None",
-          active_goal: input.conversationIntentSnapshot.activeGoal ?? "None",
-          contexts_json: formatContextsJson(promptContexts),
-        }),
-        workspaceContext: input.workspaceContext,
-      });
-
-      const suggestions = this.planSuggestions(
-        rawResponse,
-        promptContexts,
-        maxSuggestions,
-        input.query,
-        input.answer,
-      );
-      return suggestions.length > 0 ? { suggestions } : {};
-    } catch {
-      return {};
-    }
+    const suggestions = this.planSuggestions(
+      input.plannedSuggestions,
+      input.contexts,
+      maxSuggestions,
+      input.query,
+      input.answer,
+    );
+    return suggestions.length > 0 ? { suggestions } : {};
   }
 
   private planSuggestions(
-    rawResponse: string,
-    contexts: SuggestionPromptContext[],
+    plannedSuggestions: PlannedSuggestion[],
+    contexts: ExpansionContext[],
     maxSuggestions: number,
     query: string,
     answer: string,
   ): ChatSuggestion[] {
-    let parsed: unknown;
-    try {
-      parsed = parseSuggestionPayload(rawResponse);
-    } catch {
-      return [];
-    }
-
-    const candidates = this.readSuggestions(parsed);
-    const contextByIndex = new Map(contexts.map((context) => [context.contextIndex, context]));
+    const contextByIndex = new Map(contexts.map((context, index) => [index + 1, context]));
     const seenTexts = new Set<string>();
     const validatedSuggestions: ChatSuggestion[] = [];
 
-    for (const candidate of candidates) {
+    for (const candidate of plannedSuggestions) {
       const normalizedText = normalizeComparableText(candidate.text);
       if (
         !normalizedText ||
@@ -291,10 +194,7 @@ export class AssistantSuggestionExpansionService {
     return this.selectSuggestions(validatedSuggestions, maxSuggestions);
   }
 
-  private selectSuggestions(
-    suggestions: ChatSuggestion[],
-    maxSuggestions: number,
-  ): ChatSuggestion[] {
+  private selectSuggestions(suggestions: ChatSuggestion[], maxSuggestions: number): ChatSuggestion[] {
     if (suggestions.length <= maxSuggestions) {
       return suggestions;
     }
@@ -325,34 +225,5 @@ export class AssistantSuggestionExpansionService {
     }
 
     return selected;
-  }
-
-  private readSuggestions(parsed: unknown): PlannedSuggestion[] {
-    if (!parsed || typeof parsed !== "object" || !("suggestions" in parsed)) {
-      return [];
-    }
-
-    const rawSuggestions = (parsed as { suggestions?: unknown }).suggestions;
-    if (!Array.isArray(rawSuggestions)) {
-      return [];
-    }
-
-    return rawSuggestions.flatMap((entry) => {
-      if (!entry || typeof entry !== "object") {
-        return [];
-      }
-
-      const text = "text" in entry && typeof entry.text === "string" ? normalizeWhitespace(entry.text) : "";
-      const kind = normalizeSuggestionKind("kind" in entry ? entry.kind : undefined);
-      const contextIndex = "contextIndex" in entry && typeof entry.contextIndex === "number"
-        ? Math.trunc(entry.contextIndex)
-        : NaN;
-
-      if (!text || !kind || !Number.isInteger(contextIndex) || contextIndex < 1) {
-        return [];
-      }
-
-      return [{ text, kind, contextIndex }];
-    });
   }
 }

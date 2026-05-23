@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { resetRateLimiterState } from "../../src/app/http/middleware/anonymousRateLimiter.js";
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+
+const envelope = (answer: string, suggestions: unknown[]): string =>
+  `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(suggestions)}`;
 
 const findAnonymousCookie = (cookies: string[] | string | undefined) =>
   (Array.isArray(cookies) ? cookies : [cookies]).find((cookie: string | undefined) =>
@@ -105,21 +109,17 @@ describe("anonymous chat bootstrap integration", () => {
 
   it("returns typed deeper and broader suggestions for public exploratory chat", async () => {
     const publicGateway: ChatGateway = {
-      async answer({ prompt, query }) {
-        if (prompt.includes("Generate grounded follow-up suggestions")) {
-          return JSON.stringify({
-            suggestions: [
-              { text: "Which input formats do the parser notes list?", kind: "deeper", contextIndex: 1 },
-              { text: "Which onboarding topics are related?", kind: "broader", contextIndex: 2 },
-            ],
-          });
+      async answer({ systemPrompt, query }) {
+        const answerText = query.length === 0
+          ? "Hello! I'm Marta and I can help with your documents."
+          : "The testing guide explains testing and parsing content for users[[1]].";
+        if (systemPrompt?.includes("Output envelope")) {
+          return envelope(answerText, [
+            { text: "Which input formats do the parser notes list?", kind: "deeper", contextIndex: 1 },
+            { text: "Which onboarding topics are related?", kind: "broader", contextIndex: 2 },
+          ]);
         }
-
-        if (query.length === 0) {
-          return "Hello! I'm Marta and I can help with your documents.";
-        }
-
-        return "The testing guide explains testing and parsing content for users[[1]].";
+        return answerText;
       },
       async *streamAnswer() {
         yield "unused";

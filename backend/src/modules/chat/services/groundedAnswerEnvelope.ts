@@ -77,7 +77,6 @@ export interface ReaderFinalizeResult {
   trailingAnswer: string;
   fullAnswer: string;
   suggestions: PlannedEnvelopeSuggestion[];
-  rawSuggestionsBuffer: string;
 }
 
 /**
@@ -131,7 +130,6 @@ export class GroundedAnswerEnvelopeReader {
         trailingAnswer: "",
         fullAnswer: this.emittedAnswer,
         suggestions: parseSuggestionsBuffer(this.suggestionsBuffer),
-        rawSuggestionsBuffer: this.suggestionsBuffer,
       };
     }
     const trailingAnswer = this.buffer;
@@ -141,7 +139,6 @@ export class GroundedAnswerEnvelopeReader {
       trailingAnswer,
       fullAnswer: this.emittedAnswer,
       suggestions: [],
-      rawSuggestionsBuffer: "",
     };
   }
 }

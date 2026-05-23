@@ -1006,6 +1006,78 @@ describe("chat service streaming", () => {
     );
   });
 
+  it("rejects a well-formed envelope whose answer is blank in the non-streaming path", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Intro",
+              content: "full answer",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return envelope("   ", []);
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      asChatActivityPipeline(retrievalPipeline) as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    await expect(
+      service.answer({
+        workspaceId: "workspace-1",
+        query: "What does this page do?",
+        stream: false,
+      }),
+    ).rejects.toBeInstanceOf(BlankChatAnswerError);
+
+    const [conversationId] = conversationRepository.items.keys();
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
+      { role: "user", content: "What does this page do?" },
+    ]);
+  });
+
   it("answers assistant identity questions without retrieved document context", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

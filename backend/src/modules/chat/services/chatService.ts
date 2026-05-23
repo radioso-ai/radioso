@@ -319,7 +319,14 @@ export class ChatService {
       prompt,
       workspaceContext: this.buildChatWorkspaceContext(session),
     });
-    return parseGroundedAnswerEnvelope(raw);
+    const envelope = parseGroundedAnswerEnvelope(raw);
+    if (!envelope.answer.trim()) {
+      // A well-formed envelope with an empty answer (e.g. "<<<RADIOSO_FOLLOWUPS_JSON>>>[]")
+      // would otherwise persist a blank assistant turn. Treat it the same as a blank
+      // streamed response so the caller can fall back or surface an error.
+      throw new BlankChatAnswerError();
+    }
+    return envelope;
   }
 
   private async generateAnswerWithPageContext(
@@ -331,8 +338,17 @@ export class ChatService {
       return null;
     }
 
-    const envelope = await this.generateGroundedAnswerEnvelope(session, query, prompt);
-    return { ...envelope, answer: envelope.answer.trim() };
+    try {
+      const envelope = await this.generateGroundedAnswerEnvelope(session, query, prompt);
+      return { ...envelope, answer: envelope.answer.trim() };
+    } catch (error) {
+      // Page-context fallback is best-effort — let blank envelopes drop through
+      // to the grounded-miss composer rather than failing the whole turn.
+      if (isBlankChatAnswerError(error)) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   private async generateNonRetrievalAnswer(
@@ -596,15 +612,6 @@ export class ChatService {
 
         const finalized = reader.finalize();
         plannedSuggestions = finalized.suggestions;
-        // Diagnostic: when fewer suggestions reach the UI than configured, this
-        // log distinguishes "LLM under-emitted" from "dedup filter dropped some".
-        // Remove after the follow-up-count behavior is confirmed in production.
-        console.log("[chat.suggestions.envelope]", JSON.stringify({
-          conversationId: session.conversation.id,
-          query: input.query,
-          rawSuggestionsBuffer: finalized.rawSuggestionsBuffer,
-          parsedCount: finalized.suggestions.length,
-        }));
         const trailingSafe = sanitizer.push(finalized.trailingAnswer);
         const trailingFlush = sanitizer.flush();
         const tail = `${trailingSafe ?? ""}${trailingFlush ?? ""}`;

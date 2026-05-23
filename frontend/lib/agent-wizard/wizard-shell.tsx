@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AGENT_CREATION_HANDOFF_STORAGE_KEY } from "./handoff.js";
-import { wizardApi } from "./api.js";
-import type { WizardProgressEvent, WizardStep } from "./types.js";
-import { UrlInputStep } from "./steps/url-input-step.js";
-import { AnalyzingStep } from "./steps/analyzing-step.js";
-import { CreatingStep } from "./steps/creating-step.js";
+import { AGENT_CREATION_HANDOFF_STORAGE_KEY } from "./handoff";
+import { wizardApi } from "./api";
+import type { WizardProgressEvent, WizardStep } from "./types";
+import { UrlInputStep } from "./steps/url-input-step";
+import { AnalyzingStep } from "./steps/analyzing-step";
+import { CreatingStep } from "./steps/creating-step";
 
 const extractErrorMessage = (err: unknown): string | null => {
   if (err instanceof Error) return err.message;

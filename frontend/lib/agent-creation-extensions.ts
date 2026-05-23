@@ -23,6 +23,29 @@ export interface AgentCreationActionContext {
 
 const agentCreationActionsConfigFilename = 'agent-creation-actions.json'
 
+const builtInAgentCreationActionDefinitions: AgentCreationActionDefinition[] = [
+  {
+    id: 'website',
+    label: 'Create from website',
+    icon: 'globe',
+    kind: 'wizard-dialog',
+  },
+]
+
+const mergeAgentCreationActionDefinitions = (
+  builtIns: readonly AgentCreationActionDefinition[],
+  loaded: readonly AgentCreationActionDefinition[],
+): AgentCreationActionDefinition[] => {
+  const definitions = new Map<string, AgentCreationActionDefinition>()
+  for (const definition of builtIns) {
+    definitions.set(definition.id, definition)
+  }
+  for (const definition of loaded) {
+    definitions.set(definition.id, definition)
+  }
+  return [...definitions.values()]
+}
+
 const normalizeBasePath = (value: string): string => {
   const trimmed = value.trim()
   if (!trimmed || trimmed === '/') return ''
@@ -82,16 +105,19 @@ export const parseAgentCreationActionDefinitions = (payload: unknown): AgentCrea
 // right scope for caching this; the loader stays stateless.
 export const loadAgentCreationActionDefinitions = async (): Promise<AgentCreationActionDefinition[]> => {
   if (typeof window === 'undefined') {
-    return []
+    return builtInAgentCreationActionDefinitions
   }
   try {
     const response = await fetch(getAgentCreationActionsConfigPath(), { cache: 'no-store' })
     if (!response.ok) {
-      return []
+      return builtInAgentCreationActionDefinitions
     }
-    return parseAgentCreationActionDefinitions(await response.json())
+    return mergeAgentCreationActionDefinitions(
+      builtInAgentCreationActionDefinitions,
+      parseAgentCreationActionDefinitions(await response.json()),
+    )
   } catch {
-    return []
+    return builtInAgentCreationActionDefinitions
   }
 }
 

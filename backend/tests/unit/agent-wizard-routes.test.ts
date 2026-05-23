@@ -2,25 +2,20 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
-import { createAgentWizardRoutes } from "./agentWizardRoutes.js";
+import { createAgentWizardRoutes } from "../../src/modules/agentWizard/routes.js";
 import {
   AgentWizardError,
   type AgentWizardService,
-} from "./agentWizardService.js";
-import type { ApplicationRouteMount } from "../radiosoModuleTypes.js";
+} from "../../src/modules/agentWizard/service.js";
 
-type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
+type RouteDependencies = Parameters<typeof createAgentWizardRoutes>[0];
 
 const createDependencies = (overrides: Partial<RouteDependencies> = {}): RouteDependencies => ({
-  connectorDb: { query: vi.fn().mockResolvedValue([]) },
   env: {
     SESSION_COOKIE_NAME: "radioso_session",
   },
   abuseControlService: {
     enforce: vi.fn().mockResolvedValue(undefined),
-  },
-  auditService: {
-    record: vi.fn().mockResolvedValue(undefined),
   },
   authService: {
     authenticateSession: vi.fn().mockImplementation(async (token: string) => {
@@ -29,7 +24,11 @@ const createDependencies = (overrides: Partial<RouteDependencies> = {}): RouteDe
       }
       return { accountId: "account-1", userId: "user-1", sessionId: "session-1" };
     }),
-    authenticateApiToken: vi.fn().mockResolvedValue({ accountId: "account-1", workspaceId: "workspace-token" }),
+    authenticateApiToken: vi.fn().mockResolvedValue({
+      accountId: "account-1",
+      workspaceId: "workspace-token",
+      principal: { type: "workspace_api_token", role: "admin", tokenId: "token-1" },
+    }),
   },
   accountAccessService: {
     requireActiveMembership: vi.fn().mockResolvedValue(undefined),
@@ -37,14 +36,8 @@ const createDependencies = (overrides: Partial<RouteDependencies> = {}): RouteDe
   workspaceSessionService: {
     resolve: vi.fn().mockResolvedValue({ accountId: "account-1", workspaceId: "workspace-1" }),
   },
-  userRepository: {
-    findById: vi.fn().mockResolvedValue(null),
-  },
-  workspaceRepository: {
-    findByAnonymousChatToken: vi.fn().mockResolvedValue(null),
-  },
   ...overrides,
-});
+} as unknown as RouteDependencies);
 
 const createService = (overrides: Partial<AgentWizardService> = {}): AgentWizardService => ({
   analyzeWebsite: vi.fn().mockResolvedValue({
@@ -81,7 +74,7 @@ const createApp = (
     );
     next();
   });
-  app.use("/api/v1/ee/agent-wizard", createAgentWizardRoutes(dependencies, service));
+  app.use("/api/v1/agent-wizard", createAgentWizardRoutes(dependencies, service));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const statusCode = (error as { statusCode?: number })?.statusCode ?? 500;
     const code = (error as { code?: string })?.code ?? "internal_error";
@@ -100,10 +93,10 @@ describe("agent wizard routes", () => {
         code: "rate_limited",
         message: "Too many analyses",
       }),
-    };
+    } as unknown as RouteDependencies["abuseControlService"];
 
     const response = await request(createApp(service, createDependencies({ abuseControlService })))
-      .post("/api/v1/ee/agent-wizard/analyze-website")
+      .post("/api/v1/agent-wizard/analyze-website")
       .set("Cookie", "radioso_session=valid-session")
       .send({ url: "https://example.com" })
       .expect(429);
@@ -132,7 +125,7 @@ describe("agent wizard routes", () => {
     });
 
     const response = await request(createApp(service))
-      .post("/api/v1/ee/agent-wizard/analyze-website")
+      .post("/api/v1/agent-wizard/analyze-website")
       .set("Cookie", "radioso_session=valid-session")
       .send({ url: "https://example.com" })
       .expect(422);
@@ -166,7 +159,7 @@ describe("agent wizard routes", () => {
     });
 
     const response = await request(createApp(service))
-      .post("/api/v1/ee/agent-wizard/analyze-website/stream")
+      .post("/api/v1/agent-wizard/analyze-website/stream")
       .set("Cookie", "radioso_session=valid-session")
       .send({ url: "https://example.com" })
       .expect(200);

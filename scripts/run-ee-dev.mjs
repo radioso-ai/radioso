@@ -191,10 +191,9 @@ const main = async () => {
   const envPath = path.join(repoRoot, ".env");
   const enterpriseAuthFrontendPackage = path.join(eeRoot, "packages/auth-frontend");
   const enterpriseBackendPackage = path.join(eeRoot, "packages/backend-module");
-  const enterpriseAgentWizardFrontendPackage = path.join(eeRoot, "packages/agent-wizard-frontend");
   const appOrigin = process.env.RADIOSO_EE_APP_ORIGIN ?? "http://localhost:3000";
 
-  for (const requiredPath of [eeRoot, enterpriseAuthFrontendPackage, enterpriseBackendPackage, enterpriseAgentWizardFrontendPackage]) {
+  for (const requiredPath of [eeRoot, enterpriseAuthFrontendPackage, enterpriseBackendPackage]) {
     if (!(await pathExists(requiredPath))) {
       throw new Error(`Missing Enterprise Edition path: ${requiredPath}`);
     }
@@ -243,8 +242,6 @@ const main = async () => {
     "@radioso/enterprise-backend-module...",
     "--filter",
     "@radioso/enterprise-auth-frontend...",
-    "--filter",
-    "@radioso/enterprise-agent-wizard-frontend...",
   ]);
   await command("pnpm", ["run", "build"], { cwd: eeRoot });
 
@@ -262,12 +259,9 @@ const main = async () => {
     "@radioso/enterprise-backend-module...",
     "--filter",
     "@radioso/enterprise-auth-frontend...",
-    "--filter",
-    "@radioso/enterprise-agent-wizard-frontend...",
   ]);
   await linkPackage(backendDir, "@radioso/enterprise-backend-module", enterpriseBackendPackage);
   await linkPackage(frontendDir, "@radioso/enterprise-auth-frontend", enterpriseAuthFrontendPackage);
-  await linkPackage(frontendDir, "@radioso/enterprise-agent-wizard-frontend", enterpriseAgentWizardFrontendPackage);
 
   console.log("Generating Enterprise Edition frontend routes...");
   await command("node", ["scripts/sync-ee-frontend-routes.mjs", "enable"]);

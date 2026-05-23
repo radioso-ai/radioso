@@ -1,56 +1,50 @@
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { renderPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 
-import type {
-  AgentWizardAgentServicePort,
-  AgentWizardCrawlerLimits,
-  AgentWizardDocumentStoragePort,
-  AgentWizardTextGenerationPort,
-  AgentWizardUrlPolicy,
-  AgentWizardWebsiteCrawlerPort,
-} from "../radiosoModuleTypes.js";
+export interface AgentWizardAgentServicePort {
+  create(workspaceId: string, input: {
+    name: string;
+    customInstruction?: string;
+    greetingInstruction?: string;
+    retrievalEnabled?: boolean;
+  }): Promise<{ id: string; name: string }>;
+  update(workspaceId: string, agentId: string, input: Record<string, unknown>): Promise<{ id: string }>;
+}
 
-const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
-const packageRoot = path.resolve(moduleDirectory, "../..");
-// Look for prompts in both the package root (source/workspace mode) and
-// inside dist/ (copied by scripts/copy-prompts.mjs during build). This keeps
-// the wizard working in Docker stages that ship only dist/, in published
-// packages that omit prompts/ from `files`, and in the dev workspace.
-const enterprisePromptDirectories = [
-  path.join(packageRoot, "prompts"),
-  path.join(packageRoot, "dist", "prompts"),
-].filter((value): value is string => value.length > 0);
-const promptCache = new Map<string, string>();
+export interface AgentWizardDocumentStoragePort {
+  upload(input: {
+    workspaceId: string;
+    documentId: string;
+    filename: string;
+    mimeType: string;
+    buffer: Buffer;
+  }): Promise<{ bucket: string; objectPath: string; generation?: string | null; sizeBytes: number }>;
+}
 
-const loadEnterprisePromptTemplate = (relativePath: string): string => {
-  const cached = promptCache.get(relativePath);
-  if (cached) {
-    return cached;
-  }
+export interface AgentWizardWebsiteCrawlerPort {
+  enqueue(input: {
+    accountId?: string | null;
+    workspaceId: string;
+    url: string;
+    limit: number;
+  }): Promise<{ jobId: string; sourceId: string | null }>;
+}
 
-  for (const promptDirectory of enterprisePromptDirectories) {
-    const templatePath = path.join(promptDirectory, relativePath);
-    if (existsSync(templatePath)) {
-      const template = readFileSync(templatePath, "utf8").trimEnd();
-      promptCache.set(relativePath, template);
-      return template;
-    }
-  }
+export interface AgentWizardTextGenerationPort {
+  complete(input: {
+    prompt: string;
+    systemPrompt?: string;
+    temperature?: number;
+    maxOutputTokens?: number;
+    signal?: AbortSignal;
+  }): Promise<string>;
+}
 
-  throw new Error(`Enterprise prompt template not found: ${relativePath}`);
-};
+export type AgentWizardUrlPolicy = (url: string) => Promise<void>;
 
-const renderEnterprisePromptTemplate = (
-  relativePath: string,
-  variables: Record<string, string>,
-): string =>
-  loadEnterprisePromptTemplate(relativePath).replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, key: string) => {
-    if (!(key in variables)) {
-      throw new Error(`Missing prompt variable "${key}" for enterprise template ${relativePath}`);
-    }
-    return variables[key] ?? "";
-  });
+export interface AgentWizardCrawlerLimits {
+  defaultLimit: number;
+  maxLimit: number;
+}
 
 export interface WizardAnalysisResult {
   suggestedName: string;
@@ -296,7 +290,7 @@ const sanitizeUrlForPrompt = (url: string): string =>
   url.replace(/[<>"]/g, "");
 
 const buildAnalysisPrompt = (websiteUrl: string, pageCount: number, content: string): string => {
-  return renderEnterprisePromptTemplate("agent-wizard/analyze-website.md", {
+  return renderPromptTemplate("agent-wizard/analyze-website.md", {
     website_url: sanitizeUrlForPrompt(websiteUrl),
     page_count: String(pageCount),
     website_content: content,
@@ -722,21 +716,22 @@ export class AgentWizardService {
       : contentType.includes("gif") ? "gif"
       : "ico";
 
-    const objectPath = `assistant-logo-${agentId}-${crypto.randomUUID()}`;
     const uploadResult = await this.dependencies.documentStorage.upload({
-      key: objectPath,
-      body: buffer,
-      contentType,
+      workspaceId,
+      documentId: `assistant-logo-${agentId}-${crypto.randomUUID()}`,
+      filename: `favicon.${extension}`,
+      mimeType: contentType,
+      buffer: Buffer.from(buffer),
     });
 
     await this.dependencies.agentService.update(workspaceId, agentId, {
       logo: {
         bucket: uploadResult.bucket,
-        objectPath: uploadResult.key,
+        objectPath: uploadResult.objectPath,
         generation: uploadResult.generation ?? null,
         mimeType: contentType,
         filename: `favicon.${extension}`,
-        sizeBytes: buffer.length,
+        sizeBytes: uploadResult.sizeBytes,
       },
     });
   }

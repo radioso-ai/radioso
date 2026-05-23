@@ -1,11 +1,21 @@
 import { Router } from "express";
 import { z } from "zod";
 
-import type { ApplicationRouteMount } from "../radiosoModuleTypes.js";
-import { parseBody, requireWorkspaceSession } from "../shared/chatRouteHelpers.js";
-import { AgentWizardError, type AgentWizardProgressEvent, type AgentWizardService } from "./agentWizardService.js";
+import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
+import type { AppDependencies } from "../../app/server/types.js";
+import { badRequest } from "../../shared/domain/errors.js";
+import { AgentWizardError, type AgentWizardProgressEvent, type AgentWizardService } from "./service.js";
 
-type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
+type RouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "abuseControlService">;
+
+const parseBody = <T>(schema: z.ZodType<T>, value: unknown): T => {
+  const parsed = schema.safeParse(value);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  throw badRequest("Invalid request body", parsed.error.flatten());
+};
 
 const httpUrlSchema = z.string().url().max(2048).refine((value) => {
   try {

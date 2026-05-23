@@ -5,7 +5,7 @@ import { ChevronDown, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Spinner } from "@/components/ui/spinner";
-import type { WizardProgressEvent } from "../types.js";
+import type { WizardProgressEvent } from "../types";
 
 interface AnalyzingStepProps {
   url: string;

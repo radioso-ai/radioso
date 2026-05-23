@@ -21,7 +21,6 @@ route sync script reads Enterprise frontend manifests from:
 ```text
 ee/packages/auth-frontend/feature-manifest.mjs
 ee/packages/embed-widget/feature-manifest.mjs
-ee/packages/agent-wizard-frontend/feature-manifest.mjs
 ```
 
 Run boundary validation from the repository root with:

@@ -4,7 +4,7 @@ import {
   AgentWizardError,
   AgentWizardService,
   type CrawlerPort,
-} from "./agentWizardService.js";
+} from "../../src/modules/agentWizard/service.js";
 
 const createCrawler = (overrides: Partial<CrawlerPort> = {}): CrawlerPort => ({
   fetchPageWithScreenshot: vi.fn().mockResolvedValue({
@@ -52,7 +52,7 @@ const createService = (overrides: {
     textGenerationClient: { complete },
     agentService,
     documentStorage: {
-      upload: vi.fn().mockResolvedValue({ bucket: "logos", key: "logo-key" }),
+      upload: vi.fn().mockResolvedValue({ bucket: "logos", objectPath: "logo-key", sizeBytes: 128 }),
     },
     websiteCrawlJobService: {
       enqueue: vi.fn().mockResolvedValue({ jobId: "crawl-1", sourceId: null }),
@@ -452,7 +452,7 @@ describe("AgentWizardService", () => {
       headers: { get: (name: string) => name === "location" ? "http://169.254.169.254/logo.png" : null },
       arrayBuffer: async () => new Uint8Array().buffer,
     }) as unknown as typeof fetch;
-    const documentStorage = { upload: vi.fn().mockResolvedValue({ bucket: "logos", key: "k" }) };
+    const documentStorage = { upload: vi.fn().mockResolvedValue({ bucket: "logos", objectPath: "k", sizeBytes: 128 }) };
     const agentService = {
       create: vi.fn().mockResolvedValue({ id: "agent-1", name: "Example" }),
       update: vi.fn(),

@@ -9,7 +9,7 @@ import type {
   WizardCreateInput,
   WizardCreateResult,
   WizardProgressEvent,
-} from "./types.js";
+} from "./types";
 
 const parseSseBlock = (block: string): { event: string; data: string } | null => {
   const lines = block.split(/\r?\n/);
@@ -44,7 +44,7 @@ const requireActiveWorkspaceId = (): string => {
 export const wizardApi = {
   analyzeWebsite(url: string): Promise<WizardAnalysisResult> {
     requireActiveWorkspaceId();
-    return request<WizardAnalysisResult>("/ee/agent-wizard/analyze-website", {
+    return request<WizardAnalysisResult>("/agent-wizard/analyze-website", {
       method: "POST",
       body: JSON.stringify({ url }),
     }, { withSession: true });
@@ -64,7 +64,7 @@ export const wizardApi = {
       "X-Workspace-Id": workspaceId,
     });
 
-    const response = await fetch(`${API_BASE}/ee/agent-wizard/analyze-website/stream`, {
+    const response = await fetch(`${API_BASE}/agent-wizard/analyze-website/stream`, {
       method: "POST",
       body: JSON.stringify({ url }),
       cache: "no-store",
@@ -127,7 +127,7 @@ export const wizardApi = {
 
   createFromWizard(input: WizardCreateInput): Promise<WizardCreateResult> {
     requireActiveWorkspaceId();
-    return request<WizardCreateResult>("/ee/agent-wizard/create", {
+    return request<WizardCreateResult>("/agent-wizard/create", {
       method: "POST",
       body: JSON.stringify(input),
     }, { withSession: true });

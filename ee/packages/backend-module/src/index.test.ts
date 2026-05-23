@@ -74,7 +74,6 @@ describe("Enterprise backend module aggregation", () => {
       "ee-usage-limits",
     ]);
     expect(capture.routeMounts.map((mount) => mount.path).sort()).toEqual([
-      "/api/v1/ee/agent-wizard",
       "/api/v1/ee/contact",
       "/api/v1/ee/usage-limits",
     ]);

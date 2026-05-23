@@ -634,6 +634,11 @@ export class ChatService {
         input.query,
         input.userExpectedLocale,
       );
+      // The lazy promise can call chatActionSuggestionService.evaluate (which may
+      // hit an LLM). If completeAssistantTurn below throws, we rethrow but the
+      // promise stays in flight — swallow its rejection so it can't surface as an
+      // unhandled rejection. The post-`done` await still observes the failure and
+      // skips emitting suggestions, which is the desired behavior.
       lazySuggestionsPromise = this.composeLazySuggestions({
         session,
         presentationWithoutSuggestions,
@@ -641,6 +646,7 @@ export class ChatService {
         plannedSuggestions,
         userExpectedLocale: input.userExpectedLocale,
       });
+      lazySuggestionsPromise.catch(() => undefined);
       const presentation: ChatPresentedAnswer = {
         ...presentationWithoutSuggestions,
         suggestions: undefined,
@@ -672,6 +678,11 @@ export class ChatService {
       await releaseUsageReservation();
     }
 
+    if (!lazySuggestionsPromise || !session) {
+      return;
+    }
+    const conversationId = session.conversation.id;
+
     try {
       const lazySuggestions = await lazySuggestionsPromise;
       if (lazySuggestions.suggestions && lazySuggestions.suggestions.length > 0) {
@@ -679,7 +690,7 @@ export class ChatService {
         if (assistantMessageId) {
           await this.chatTurnLifecycle.updateSuggestions({
             workspaceId: input.workspaceId,
-            conversationId: session.conversation.id,
+            conversationId,
             assistantMessageId,
             suggestions,
           });
@@ -687,7 +698,7 @@ export class ChatService {
 
         yield {
           type: "suggestions",
-          conversationId: session.conversation.id,
+          conversationId,
           suggestions,
         };
       }

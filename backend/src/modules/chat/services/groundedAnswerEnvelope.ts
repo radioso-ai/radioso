@@ -15,6 +15,10 @@ export interface GroundedAnswerEnvelope {
 
 const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
 
+// The prompt asks the model to set kind explicitly, but it's the field most often
+// omitted in early-streaming model output. Defaulting to "deeper" keeps a valid
+// suggestion alive when the model drops the field; explicit "broader" still wins
+// and any other value is rejected so we don't accept arbitrary kinds silently.
 const normalizeKind = (value: unknown): ChatSuggestionKind | null => {
   if (value === "deeper" || value === undefined) {
     return "deeper";
@@ -55,6 +59,10 @@ const parseSuggestionsBuffer = (buffer: string): PlannedEnvelopeSuggestion[] => 
   if (Array.isArray(parsed)) {
     return readSuggestionsArray(parsed);
   }
+  // The prompt asks for a bare JSON array, but some providers occasionally wrap
+  // arrays in {"suggestions": [...]} when the surrounding system prompt mentions
+  // a "suggestions" field. Accepting that shape as a fallback prevents a single
+  // misformatted turn from dropping the whole list.
   if (parsed && typeof parsed === "object" && "suggestions" in parsed) {
     return readSuggestionsArray((parsed as { suggestions?: unknown }).suggestions);
   }
@@ -62,6 +70,12 @@ const parseSuggestionsBuffer = (buffer: string): PlannedEnvelopeSuggestion[] => 
 };
 
 export const parseGroundedAnswerEnvelope = (raw: string): GroundedAnswerEnvelope => {
+  // The prompt requires the sentinel to appear on a line by itself after the
+  // complete answer. We use first-occurrence indexOf rather than a stricter
+  // "newline-prefixed" match because a literal sentinel inside answer prose is
+  // not produced by the model in practice, and a substring search is cheaper
+  // than a regex on streamed bytes. If a future prompt change ever surfaces
+  // false positives, prefer requiring the sentinel be preceded by a newline.
   const sentinelIndex = raw.indexOf(SUGGESTIONS_SENTINEL);
   if (sentinelIndex === -1) {
     return { answer: raw.trim(), suggestions: [] };
@@ -71,6 +85,10 @@ export const parseGroundedAnswerEnvelope = (raw: string): GroundedAnswerEnvelope
   return { answer, suggestions: parseSuggestionsBuffer(suggestionsBuffer) };
 };
 
+// Hold back the trailing (sentinel.length - 1) bytes of the answer buffer before
+// emitting to the user: any shorter tail could still be the beginning of the
+// sentinel and would split incorrectly if released. Once the full sentinel is
+// observed it's stripped, so we never need to hold back more than this.
 const SENTINEL_HOLDBACK = SUGGESTIONS_SENTINEL.length - 1;
 
 export interface ReaderFinalizeResult {
@@ -89,7 +107,9 @@ export interface ReaderFinalizeResult {
  */
 export class GroundedAnswerEnvelopeReader {
   private buffer = "";
-  private suggestionsBuffer = "";
+  // Use a chunk array rather than concatenating onto a string to keep ingestion
+  // linear in total bytes even if a future caller sends many suggestion chunks.
+  private suggestionsChunks: string[] = [];
   private inSuggestions = false;
   private emittedAnswer = "";
 
@@ -98,7 +118,7 @@ export class GroundedAnswerEnvelopeReader {
       return "";
     }
     if (this.inSuggestions) {
-      this.suggestionsBuffer += chunk;
+      this.suggestionsChunks.push(chunk);
       return "";
     }
 
@@ -106,7 +126,10 @@ export class GroundedAnswerEnvelopeReader {
     const sentinelIndex = this.buffer.indexOf(SUGGESTIONS_SENTINEL);
     if (sentinelIndex !== -1) {
       const answerPortion = this.buffer.slice(0, sentinelIndex);
-      this.suggestionsBuffer = this.buffer.slice(sentinelIndex + SUGGESTIONS_SENTINEL.length);
+      const tailAfterSentinel = this.buffer.slice(sentinelIndex + SUGGESTIONS_SENTINEL.length);
+      if (tailAfterSentinel) {
+        this.suggestionsChunks.push(tailAfterSentinel);
+      }
       this.buffer = "";
       this.inSuggestions = true;
       this.emittedAnswer += answerPortion;
@@ -129,7 +152,7 @@ export class GroundedAnswerEnvelopeReader {
       return {
         trailingAnswer: "",
         fullAnswer: this.emittedAnswer,
-        suggestions: parseSuggestionsBuffer(this.suggestionsBuffer),
+        suggestions: parseSuggestionsBuffer(this.suggestionsChunks.join("")),
       };
     }
     const trailingAnswer = this.buffer;

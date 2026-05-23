@@ -25,8 +25,8 @@ import { AuditEventRepository } from "../../src/db/repositories/auditEventReposi
 import { HistoryItemsRepository } from "../../src/db/repositories/historyItemsRepository.js";
 import { AuditEventAnalyticsSink } from "../../src/shared/analytics/auditEventAnalyticsSink.js";
 import { ProductAnalyticsService } from "../../src/shared/analytics/productAnalyticsService.js";
-import { AuditIncidentSink } from "../../src/shared/incidents/auditIncidentSink.js";
-import { IncidentReportingService } from "../../src/shared/incidents/incidentReportingService.js";
+import { AuditErrorSink } from "../../src/shared/errors/auditErrorSink.js";
+import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
 import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -816,7 +816,7 @@ describeIfDatabase("persistence integration", () => {
     );
   });
 
-  it("persists analytics and incident sink events in audit storage", async () => {
+  it("persists analytics and error sink events in audit storage", async () => {
     const accountRepository = new AccountRepository(database);
     const account = await accountRepository.create({
       name: "Analytics Account",
@@ -831,12 +831,12 @@ describeIfDatabase("persistence integration", () => {
       logger: createLogger("silent"),
       sinks: [new AuditEventAnalyticsSink(auditService)],
     });
-    const incidentService = new IncidentReportingService({
+    const errorService = new ErrorReportingService({
       enabled: true,
       environment: "test",
       logger: createLogger("silent"),
       service: "radioso-api",
-      sinks: [new AuditIncidentSink(auditService)],
+      sinks: [new AuditErrorSink(auditService)],
     });
 
     await analyticsService.track({
@@ -847,8 +847,8 @@ describeIfDatabase("persistence integration", () => {
       subjectId: workspace.id,
       source: "backend",
     });
-    await incidentService.report({
-      incidentType: "http.request.unhandled",
+    await errorService.report({
+      errorType: "http.request.unhandled",
       severity: "error",
       correlation: {
         workspaceId: workspace.id,
@@ -865,7 +865,7 @@ describeIfDatabase("persistence integration", () => {
       `SELECT event_type, event_status, metadata_json
        FROM audit_events
        WHERE workspace_id = $1
-         AND event_type IN ('product.analytics', 'incident.recorded')
+         AND event_type IN ('product.analytics', 'error.recorded')
        ORDER BY created_at ASC`,
       [workspace.id],
     );
@@ -881,11 +881,11 @@ describeIfDatabase("persistence integration", () => {
         },
       }),
       expect.objectContaining({
-        event_type: "incident.recorded",
+        event_type: "error.recorded",
         event_status: "failure",
         metadata_json: {
-          incident: expect.objectContaining({
-            incidentType: "http.request.unhandled",
+          error: expect.objectContaining({
+            errorType: "http.request.unhandled",
           }),
         },
       }),

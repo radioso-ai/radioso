@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { AuditEventAnalyticsSink } from "../../src/shared/analytics/auditEventAnalyticsSink.js";
-import { AuditIncidentSink } from "../../src/shared/incidents/auditIncidentSink.js";
+import { AuditErrorSink } from "../../src/shared/errors/auditErrorSink.js";
 import { createAuditService, InMemoryAuditEventRepository } from "../support/fakes.js";
 
-describe("audit-backed analytics and incident sinks", () => {
+describe("audit-backed analytics and error sinks", () => {
   it("persists product analytics events via the audit service", async () => {
     const repository = new InMemoryAuditEventRepository();
     const auditService = createAuditService(repository);
@@ -36,13 +36,13 @@ describe("audit-backed analytics and incident sinks", () => {
     );
   });
 
-  it("persists incident events via the audit service", async () => {
+  it("persists error events via the audit service", async () => {
     const repository = new InMemoryAuditEventRepository();
     const auditService = createAuditService(repository);
-    const sink = new AuditIncidentSink(auditService);
+    const sink = new AuditErrorSink(auditService);
 
     await sink.record({
-      incidentType: "http.request.unhandled",
+      errorType: "http.request.unhandled",
       timestamp: new Date().toISOString(),
       severity: "error",
       service: "radioso-api",
@@ -58,11 +58,11 @@ describe("audit-backed analytics and incident sinks", () => {
       expect.objectContaining({
         accountId: "account-1",
         workspaceId: "workspace-1",
-        eventType: "incident.recorded",
+        eventType: "error.recorded",
         eventStatus: "failure",
         metadata: {
-          incident: expect.objectContaining({
-            incidentType: "http.request.unhandled",
+          error: expect.objectContaining({
+            errorType: "http.request.unhandled",
           }),
         },
       }),

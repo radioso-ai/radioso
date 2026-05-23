@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 import { ThemeProvider } from '@/components/theme-provider'
 import { DevBuildBadge } from '@/components/dev-build-badge'
+import { ProductAnalyticsProvider } from '@/components/product-analytics-provider'
 import { AuthProvider } from '@/lib/auth-context'
 import { WorkspaceProvider } from '@/lib/workspace-context'
 import { ChatProvider } from '@/lib/chat-context'
@@ -34,6 +36,9 @@ export default function RootLayout({
               <ChatProvider>{children}</ChatProvider>
             </WorkspaceProvider>
           </AuthProvider>
+          <Suspense fallback={null}>
+            <ProductAnalyticsProvider />
+          </Suspense>
           <DevBuildBadge />
         </ThemeProvider>
       </body>

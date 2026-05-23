@@ -1,25 +1,25 @@
-import { extractIncidentLogFields, type AppLogger } from "../observability/logger.js";
+import { extractErrorLogFields, type AppLogger } from "../observability/logger.js";
 import { createRequestCorrelation, type CorrelationFields, type RequestCorrelationSource } from "../observability/telemetry/correlation.js";
 import { redactRecord } from "../observability/telemetry/redactionPolicy.js";
-import type { IncidentEvent, IncidentRequestContext, IncidentSeverity } from "./incidentTypes.js";
-import type { IncidentSink } from "./incidentSink.js";
+import type { ErrorEvent, ErrorRequestContext, ErrorSeverity } from "./errorTypes.js";
+import type { ErrorSink } from "./errorSink.js";
 
-interface IncidentReportingServiceOptions {
+interface ErrorReportingServiceOptions {
   enabled?: boolean;
   environment: string;
   logger: AppLogger;
   service: string;
-  sinks?: IncidentSink[];
+  sinks?: ErrorSink[];
   version?: string;
 }
 
-interface IncidentInput {
-  incidentType: string;
-  severity?: IncidentSeverity;
+interface ErrorInput {
+  errorType: string;
+  severity?: ErrorSeverity;
   error?: unknown;
   message?: string;
   correlation?: CorrelationFields;
-  requestContext?: IncidentRequestContext;
+  requestContext?: ErrorRequestContext;
   metadata?: Record<string, unknown>;
   tags?: Record<string, string>;
 }
@@ -49,17 +49,17 @@ const serializeError = (
   };
 };
 
-export class IncidentReportingService {
-  constructor(private readonly options: IncidentReportingServiceOptions) {}
+export class ErrorReportingService {
+  constructor(private readonly options: ErrorReportingServiceOptions) {}
 
-  async report(input: IncidentInput): Promise<IncidentEvent | null> {
+  async report(input: ErrorInput): Promise<ErrorEvent | null> {
     if (this.options.enabled === false) {
       return null;
     }
 
     const serializedError = serializeError(input.error);
-    const incident: IncidentEvent = {
-      incidentType: input.incidentType,
+    const errorEvent: ErrorEvent = {
+      errorType: input.errorType,
       timestamp: new Date().toISOString(),
       severity: input.severity ?? "error",
       service: this.options.service,
@@ -79,37 +79,37 @@ export class IncidentReportingService {
 
     this.options.logger.error(
       {
-        incident: extractIncidentLogFields(incident),
-        metadata: incident.metadata,
-        stack: incident.stack,
+        error: extractErrorLogFields(errorEvent),
+        metadata: errorEvent.metadata,
+        stack: errorEvent.stack,
       },
-      "incident_recorded",
+      "error_recorded",
     );
 
     await Promise.all((this.options.sinks ?? []).map(async (sink) => {
       try {
-        await sink.record(incident);
-      } catch (error) {
+        await sink.record(errorEvent);
+      } catch (sinkError) {
         this.options.logger.error(
           {
-            err: error instanceof Error ? error.message : String(error),
-            incidentType: incident.incidentType,
+            err: sinkError instanceof Error ? sinkError.message : String(sinkError),
+            errorType: errorEvent.errorType,
           },
-          "incident_sink_failed",
+          "error_sink_failed",
         );
       }
     }));
 
-    return incident;
+    return errorEvent;
   }
 
   async reportUnhandledRequestError(input: {
     error: unknown;
     request: RequestCorrelationSource;
     statusCode?: number;
-  }): Promise<IncidentEvent | null> {
+  }): Promise<ErrorEvent | null> {
     return this.report({
-      incidentType: "http.request.unhandled",
+      errorType: "http.request.unhandled",
       correlation: createRequestCorrelation(input.request),
       error: input.error,
       requestContext: {

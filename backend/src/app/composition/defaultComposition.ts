@@ -23,8 +23,8 @@ import {
 } from "../../modules/retrieval/composition.js";
 import { buildAnalyticsSinks } from "../../shared/analytics/buildAnalyticsSinks.js";
 import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
-import { buildIncidentSinks } from "../../shared/incidents/buildIncidentSinks.js";
-import type { IncidentSink } from "../../shared/incidents/incidentSink.js";
+import { buildErrorSinks } from "../../shared/errors/buildErrorSinks.js";
+import type { ErrorSink } from "../../shared/errors/errorSink.js";
 import type { AuditService } from "../../modules/audit/contracts/index.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
@@ -58,7 +58,7 @@ export interface ApplicationComposition {
   connectors: ReturnType<typeof createApplicationExtensionRegistry>["connectors"];
   telemetrySinks: ReturnType<typeof createApplicationExtensionRegistry>["telemetrySinks"];
   productAnalyticsSinks: ReturnType<typeof createApplicationExtensionRegistry>["productAnalyticsSinks"];
-  incidentSinks: ReturnType<typeof createApplicationExtensionRegistry>["incidentSinks"];
+  errorSinks: ReturnType<typeof createApplicationExtensionRegistry>["errorSinks"];
   routeMounts: ReturnType<typeof createApplicationExtensionRegistry>["routeMounts"];
   accountCreatedHooks: ReturnType<typeof createApplicationExtensionRegistry>["accountCreatedHooks"];
   documentStorage?: ReturnType<typeof createApplicationExtensionRegistry>["documentStorage"];
@@ -101,7 +101,7 @@ export const createDefaultApplicationComposition = (options: {
     connectors: registry.connectors,
     telemetrySinks: registry.telemetrySinks,
     productAnalyticsSinks: registry.productAnalyticsSinks,
-    incidentSinks: registry.incidentSinks,
+    errorSinks: registry.errorSinks,
     routeMounts: registry.routeMounts,
     documentStorage: registry.documentStorage,
     accountCreatedHooks: registry.accountCreatedHooks,
@@ -140,15 +140,15 @@ export const createDefaultTelemetrySinks = (env: Pick<Env, "METRICS_ENABLED">): 
 
 export const createDefaultAnalyticsSinks = (input: {
   auditService: AuditService;
-  env: Pick<Env, "POSTHOG_API_KEY" | "POSTHOG_HOST" | "PRODUCT_ANALYTICS_SINKS">;
+  env: Pick<Env, "PRODUCT_ANALYTICS_SINKS">;
   metricsRegistry: MetricsRegistry | null;
 }): ProductAnalyticsSink[] => buildAnalyticsSinks(input);
 
-export const createDefaultIncidentSinks = (input: {
+export const createDefaultErrorSinks = (input: {
   auditService: AuditService;
-  env: Pick<Env, "INCIDENT_SINKS" | "SENTRY_DSN">;
+  env: Pick<Env, "ERROR_SINKS">;
   metricsRegistry: MetricsRegistry | null;
-}): IncidentSink[] => buildIncidentSinks(input);
+}): ErrorSink[] => buildErrorSinks(input);
 
 export const createDefaultDocumentStorage = (env: Pick<Env,
   "DOCUMENT_STORAGE_DRIVER" | "DOCUMENT_STORAGE_BUCKET" | "DOCUMENT_STORAGE_LOCAL_PATH"

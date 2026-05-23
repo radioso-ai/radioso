@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, type ComponentPropsWithoutRef, type MouseEvent } from 'react'
+import { Fragment, type ComponentPropsWithoutRef } from 'react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -9,9 +9,6 @@ import { cn } from '@/lib/utils'
 import { CodeBlock } from './code-block'
 
 const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
-// Keep in sync with the public embed route at app/embed/[token]/page.tsx.
-const EMBED_FRAME_PATH_PREFIX = '/embed/'
-const TOP_NAVIGATION_LINK_PROTOCOLS = new Set(['http:', 'https:'])
 
 type HastElement = NonNullable<ExtraProps['node']>
 type ElementContent = HastElement['children'][number]
@@ -28,75 +25,6 @@ export const isSafeHref = (href?: string) => {
   try {
     const url = new URL(href)
     return SAFE_LINK_PROTOCOLS.has(url.protocol)
-  } catch {
-    return false
-  }
-}
-
-export const shouldNavigateMarkdownLinkFromEmbed = ({
-  isFramed,
-  pathname,
-  href,
-  baseUrl,
-}: {
-  isFramed: boolean
-  pathname: string
-  href: string
-  baseUrl: string
-}) => {
-  if (!isFramed || !pathname.startsWith(EMBED_FRAME_PATH_PREFIX)) {
-    return false
-  }
-
-  if (href.startsWith('#')) {
-    return false
-  }
-
-  try {
-    const url = new URL(href, baseUrl)
-    return TOP_NAVIGATION_LINK_PROTOCOLS.has(url.protocol)
-  } catch {
-    return false
-  }
-}
-
-export const shouldHandleMarkdownLinkClick = ({
-  defaultPrevented,
-  button,
-  metaKey,
-  ctrlKey,
-  shiftKey,
-  altKey,
-}: {
-  defaultPrevented: boolean
-  button: number
-  metaKey: boolean
-  ctrlKey: boolean
-  shiftKey: boolean
-  altKey: boolean
-}) => !defaultPrevented && button === 0 && !metaKey && !ctrlKey && !shiftKey && !altKey
-
-const navigateEmbeddedMarkdownLink = (href?: string) => {
-  if (!href || typeof window === 'undefined') {
-    return false
-  }
-
-  if (!shouldNavigateMarkdownLinkFromEmbed({
-    isFramed: window.parent !== window,
-    pathname: window.location.pathname,
-    href,
-    baseUrl: window.location.href,
-  })) {
-    return false
-  }
-
-  try {
-    const url = new URL(href, window.location.href)
-    if (!window.top || window.top === window) {
-      return false
-    }
-    window.top.location.href = url.toString()
-    return true
   } catch {
     return false
   }
@@ -164,16 +92,7 @@ const MarkdownLink = ({
     <a
       href={href}
       target="_blank"
-      rel="noopener noreferrer"
-      onClick={(event: MouseEvent<HTMLAnchorElement>) => {
-        if (!shouldHandleMarkdownLinkClick(event)) {
-          return
-        }
-
-        if (navigateEmbeddedMarkdownLink(href)) {
-          event.preventDefault()
-        }
-      }}
+      rel="noopener"
       className={cn(
         'text-[var(--message-link-fg,var(--color-primary))] underline underline-offset-4 hover:text-[var(--message-link-hover-fg,var(--color-primary))]',
         className,

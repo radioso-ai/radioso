@@ -9,6 +9,7 @@ import { createAgentRoutes } from "./agentRoutes.js";
 import { createDocumentRoutes } from "./documentRoutes.js";
 import { createHistoryRoutes } from "./historyRoutes.js";
 import { createMetricsRoutes } from "./metricsRoutes.js";
+import { createObservabilityRoutes } from "./observabilityRoutes.js";
 import { createSettingsRoutes } from "./settingsRoutes.js";
 import { createSettingsCredentialsRoutes } from "./settingsCredentialsRoutes.js";
 import { createSettingsLlmModelsRoutes } from "./settingsLlmModelsRoutes.js";
@@ -47,6 +48,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/agents", createAgentRoutes(dependencies));
   router.use("/api/v1/assistant", createAssistantRoutes(dependencies));
   router.use("/api/v1/history", createHistoryRoutes(dependencies));
+  router.use("/api/v1/observability", createObservabilityRoutes(dependencies));
   router.use("/api/v1/retrieval", createRetrievalRoutes(dependencies));
   router.use("/api/v1/skills", createSkillRoutes(dependencies));
   router.use("/api/v1/settings", createSettingsRoutes(dependencies));

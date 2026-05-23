@@ -45,7 +45,7 @@ import type { WorkspaceProviderCredentialsService } from "../../modules/security
 import type { WorkspaceLlmCapabilitySettingsService } from "../../modules/settings/composition.js";
 import type { ProductAnalyticsPort } from "../../shared/analytics/productAnalyticsService.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
-import type { IncidentReportingService } from "../../shared/incidents/incidentReportingService.js";
+import type { ErrorReportingService } from "../../shared/errors/errorReportingService.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
@@ -67,7 +67,7 @@ export interface AppDependencies {
   logger: AppLogger;
   metricsRegistry: MetricsRegistry | null;
   telemetryService: TelemetryService;
-  incidentReportingService: IncidentReportingService;
+  errorReportingService: ErrorReportingService;
   productAnalyticsService: ProductAnalyticsPort;
   capabilityPolicy: CapabilityPolicy;
   usageLimitPolicy: UsageLimitPolicy;

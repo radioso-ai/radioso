@@ -26,7 +26,7 @@ export const createWorkerTaskApp = (dependencies: AppDependencies) => {
     next();
   });
   app.use(createDocumentWorkerTaskRoutes(dependencies));
-  app.use(createErrorHandler(dependencies.incidentReportingService));
+  app.use(createErrorHandler(dependencies.errorReportingService));
 
   return app;
 };

@@ -1,5 +1,4 @@
-import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
-import type { ProductAnalyticsEvent } from "../../shared/analytics/productAnalyticsTypes.js";
+import type { ProductAnalyticsEvent, ProductAnalyticsSink } from "../radiosoModuleTypes.js";
 
 interface PosthogAnalyticsSinkOptions {
   apiKey: string;

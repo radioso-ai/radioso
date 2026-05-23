@@ -3,7 +3,7 @@ import type { ConnectorPlugin } from "@radioso/connector-api";
 import type { QueryResultRow } from "pg";
 
 import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
-import type { IncidentSink } from "../../shared/incidents/incidentSink.js";
+import type { ErrorSink } from "../../shared/errors/errorSink.js";
 import type { TelemetrySink } from "../../shared/observability/telemetry/telemetrySink.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type {
@@ -127,7 +127,7 @@ export interface ApplicationExtensionRegistry {
   connectors: ConnectorPlugin[];
   telemetrySinks: TelemetrySink[];
   productAnalyticsSinks: ProductAnalyticsSink[];
-  incidentSinks: IncidentSink[];
+  errorSinks: ErrorSink[];
   databaseMigrators: ApplicationDatabaseMigrator[];
   routeMounts: ApplicationRouteMount[];
   accountCreatedHooks: ApplicationAccountCreatedHook[];
@@ -153,7 +153,7 @@ export interface ApplicationModuleRegistrationContext {
   registerConnector(plugin: ConnectorPlugin): void;
   registerTelemetrySink(sink: TelemetrySink): void;
   registerProductAnalyticsSink(sink: ProductAnalyticsSink): void;
-  registerIncidentSink(sink: IncidentSink): void;
+  registerErrorSink(sink: ErrorSink): void;
   registerDatabaseMigrator(migrator: ApplicationDatabaseMigrator): void;
   registerRouteMount(mount: ApplicationRouteMount): void;
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHook): void;
@@ -187,7 +187,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   connectors: [],
   telemetrySinks: [],
   productAnalyticsSinks: [],
-  incidentSinks: [],
+  errorSinks: [],
   databaseMigrators: [],
   routeMounts: [],
   accountCreatedHooks: [],
@@ -207,8 +207,8 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   registerProductAnalyticsSink(sink) {
     registry.productAnalyticsSinks.push(sink);
   },
-  registerIncidentSink(sink) {
-    registry.incidentSinks.push(sink);
+  registerErrorSink(sink) {
+    registry.errorSinks.push(sink);
   },
   registerDatabaseMigrator(migrator) {
     registry.databaseMigrators.push(migrator);

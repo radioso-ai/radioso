@@ -20,7 +20,7 @@ Default composition must build and run without optional modules or deployment-sp
 |---|---|---|---|---|
 | Connectors | Connector module | Connector registry through application composition | Built-in connector catalog is registered; no optional connector is required | Do not import connector implementations from route handlers |
 | Capability policy | Application composition | Capability policy contract | Default policy allows existing actions | Do not scatter availability checks through unrelated services |
-| Telemetry, analytics, and incidents | Shared observability modules | Sink contracts | Default sinks use existing audit, metrics, logs, or no-op behavior based on config | Do not put vendor payload logic in product workflows |
+| Telemetry, analytics, and errors | Shared observability modules | Sink contracts | Default sinks use existing audit, metrics, logs, or no-op behavior based on config | Do not put vendor payload logic in product workflows |
 | Document storage | Documents module | Storage adapter selection helper | Local or configured GCS storage follows existing environment behavior | Do not make storage-specific code part of document business logic |
 | Worker dispatch | Documents module | Job dispatcher and consumer adapter selection helpers | No-op polling, configured Cloud Tasks dispatch, or configured AMQP dispatch follows environment behavior | Do not make queue-provider logic part of ingestion orchestration |
 | Website crawler provider | Documents module | Website crawler provider registration through application composition | No provider is registered, so crawl requests return unavailable | Do not make a hosted or vendor-specific crawler part of the default OSS runtime |

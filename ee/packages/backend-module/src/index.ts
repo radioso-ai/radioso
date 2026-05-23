@@ -1,6 +1,7 @@
 import type { ApplicationModule } from "./radiosoModuleTypes.js";
 
 import { createHumanContactApplicationModule } from "./humanContact/applicationModule.js";
+import { createEnterpriseObservabilityApplicationModule } from "./observability/applicationModule.js";
 import { createUsageLimitsApplicationModule } from "./usageLimits/applicationModule.js";
 
 export {
@@ -11,9 +12,11 @@ export {
 } from "./featureManifest.js";
 export { createUsageLimitsApplicationModule } from "./usageLimits/applicationModule.js";
 export { createHumanContactApplicationModule } from "./humanContact/applicationModule.js";
+export { createEnterpriseObservabilityApplicationModule } from "./observability/applicationModule.js";
 
 export const createEnterpriseBackendModule = (): ApplicationModule => {
   const featureModules = [
+    createEnterpriseObservabilityApplicationModule(),
     createUsageLimitsApplicationModule(),
     createHumanContactApplicationModule(),
   ];

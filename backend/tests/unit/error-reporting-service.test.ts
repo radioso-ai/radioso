@@ -1,20 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { IncidentReportingService } from "../../src/shared/incidents/incidentReportingService.js";
-import type { IncidentSink } from "../../src/shared/incidents/incidentSink.js";
+import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
+import type { ErrorSink } from "../../src/shared/errors/errorSink.js";
 
 const createLogger = () => ({
   error: vi.fn(),
   info: vi.fn(),
 });
 
-describe("IncidentReportingService", () => {
+describe("ErrorReportingService", () => {
   it("normalizes unhandled request errors and records them", async () => {
-    const sink: IncidentSink = {
+    const sink: ErrorSink = {
       record: vi.fn().mockResolvedValue(undefined),
     };
     const logger = createLogger();
-    const service = new IncidentReportingService({
+    const service = new ErrorReportingService({
       enabled: true,
       environment: "test",
       logger: logger as any,
@@ -23,7 +23,7 @@ describe("IncidentReportingService", () => {
       version: "test",
     });
 
-    const incident = await service.reportUnhandledRequestError({
+    const error = await service.reportUnhandledRequestError({
       error: new Error("boom"),
       request: {
         id: "req-1",
@@ -36,8 +36,8 @@ describe("IncidentReportingService", () => {
       statusCode: 500,
     });
 
-    expect(incident).toMatchObject({
-      incidentType: "http.request.unhandled",
+    expect(error).toMatchObject({
+      errorType: "http.request.unhandled",
       message: "boom",
       errorClass: "Error",
       correlation: {
@@ -52,13 +52,13 @@ describe("IncidentReportingService", () => {
     });
     expect(logger.error).toHaveBeenCalledOnce();
     expect(sink.record).toHaveBeenCalledWith(expect.objectContaining({
-      incidentType: "http.request.unhandled",
+      errorType: "http.request.unhandled",
     }));
   });
 
   it("redacts sensitive metadata and logs sink failures", async () => {
     const logger = createLogger();
-    const service = new IncidentReportingService({
+    const service = new ErrorReportingService({
       enabled: true,
       environment: "test",
       logger: logger as any,
@@ -70,19 +70,19 @@ describe("IncidentReportingService", () => {
       ],
     });
 
-    const incident = await service.report({
-      incidentType: "test.incident",
+    const error = await service.report({
+      errorType: "test.error",
       error: {
         prompt: "private",
       },
     });
 
-    expect(incident?.metadata).toEqual({
+    expect(error?.metadata).toEqual({
       prompt: "[REDACTED]",
     });
     expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ err: "sink down", incidentType: "test.incident" }),
-      "incident_sink_failed",
+      expect.objectContaining({ err: "sink down", errorType: "test.error" }),
+      "error_sink_failed",
     );
   });
 });

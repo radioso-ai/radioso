@@ -76,7 +76,7 @@ export const createApp = (dependencies: AppDependencies) => {
     app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
   }
   app.use(createApiRouter(dependencies));
-  app.use(createErrorHandler(dependencies.incidentReportingService));
+  app.use(createErrorHandler(dependencies.errorReportingService));
 
   return app;
 };

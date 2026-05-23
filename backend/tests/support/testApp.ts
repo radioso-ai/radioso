@@ -65,8 +65,8 @@ import { WorkspaceProviderCredentialsService } from "../../src/modules/security/
 import { WorkspaceLlmCapabilitySettingsService } from "../../src/modules/settings/services/workspaceLlmCapabilitySettingsService.js";
 import { buildAnalyticsSinks } from "../../src/shared/analytics/buildAnalyticsSinks.js";
 import { ProductAnalyticsService } from "../../src/shared/analytics/productAnalyticsService.js";
-import { buildIncidentSinks } from "../../src/shared/incidents/buildIncidentSinks.js";
-import { IncidentReportingService } from "../../src/shared/incidents/incidentReportingService.js";
+import { buildErrorSinks } from "../../src/shared/errors/buildErrorSinks.js";
+import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
@@ -130,10 +130,7 @@ export const createTestEnv = (): Env => ({
   OTEL_ENABLED: false,
   OTEL_EXPORTER_OTLP_ENDPOINT: undefined,
   PRODUCT_ANALYTICS_SINKS: "audit",
-  INCIDENT_SINKS: "audit",
-  POSTHOG_HOST: undefined,
-  POSTHOG_API_KEY: undefined,
-  SENTRY_DSN: undefined,
+  ERROR_SINKS: "audit",
   GOOGLE_CLOUD_PROJECT: "radioso-test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   DB_POOL_MAX: 10,
@@ -264,13 +261,13 @@ export const createTestDependencies = (overrides: {
     }),
   });
   const usageLimitPolicy = overrides.usageLimitPolicy ?? new NoopUsageLimitPolicy();
-  const persistentIncidentReportingService = new IncidentReportingService({
+  const persistentErrorReportingService = new ErrorReportingService({
     enabled: env.OBSERVABILITY_ENABLED,
     environment: env.OBSERVABILITY_ENVIRONMENT,
     logger,
     service: env.OBSERVABILITY_SERVICE_NAME,
     version: env.OBSERVABILITY_VERSION,
-    sinks: buildIncidentSinks({
+    sinks: buildErrorSinks({
       auditService,
       env,
       metricsRegistry,
@@ -695,7 +692,7 @@ export const createTestDependencies = (overrides: {
     logger,
     metricsRegistry,
     telemetryService,
-    incidentReportingService: persistentIncidentReportingService,
+    errorReportingService: persistentErrorReportingService,
     productAnalyticsService,
     capabilityPolicy,
     usageLimitPolicy,

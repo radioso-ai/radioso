@@ -1,6 +1,8 @@
 import type { Router } from "express";
 
 export interface ApplicationModuleRegistrationContext {
+  registerProductAnalyticsSink?(sink: ProductAnalyticsSink): void;
+  registerErrorSink?(sink: ErrorSink): void;
   registerDatabaseMigrator(migrator: ApplicationDatabaseMigrator): void;
   registerRouteMount(mount: ApplicationRouteMount): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
@@ -45,6 +47,48 @@ export interface ApplicationModule {
   register?(context: ApplicationModuleRegistrationContext): void;
   initialize?(): Promise<void>;
   shutdown?(): Promise<void>;
+}
+
+export interface ProductAnalyticsEvent {
+  eventName: string;
+  timestamp: string;
+  workspaceId?: string;
+  accountId?: string;
+  actorType?: "operator" | "authenticated_user" | "anonymous_user" | "system";
+  subjectType?: "workspace" | "document" | "conversation" | "settings" | "embed_session";
+  subjectId?: string;
+  properties?: Record<string, unknown>;
+  source?: "backend" | "worker" | "frontend" | "embed";
+}
+
+export interface ProductAnalyticsSink {
+  emit(event: ProductAnalyticsEvent): Promise<void>;
+}
+
+export type ErrorSeverity = "info" | "warn" | "error";
+
+export interface ErrorEvent {
+  errorType: string;
+  timestamp: string;
+  severity: ErrorSeverity;
+  service: string;
+  environment: string;
+  version?: string;
+  message: string;
+  errorClass?: string;
+  stack?: string;
+  correlation?: Record<string, unknown>;
+  requestContext?: {
+    method?: string;
+    route?: string;
+    statusCode?: number;
+  };
+  metadata?: Record<string, unknown>;
+  tags?: Record<string, string>;
+}
+
+export interface ErrorSink {
+  record(event: ErrorEvent): Promise<void>;
 }
 
 export interface SkillDefinition {

@@ -115,7 +115,7 @@ describe("runtime configuration", () => {
     expect(env.METRICS_AUTH_TOKEN).toBeUndefined();
     expect(env.OTEL_ENABLED).toBe(false);
     expect(env.PRODUCT_ANALYTICS_SINKS).toBe("audit");
-    expect(env.INCIDENT_SINKS).toBe("audit");
+    expect(env.ERROR_SINKS).toBe("audit");
   });
 
   it("rejects a CONNECTOR_ENCRYPTION_KEY that does not decode to 32 bytes", () => {
@@ -141,34 +141,15 @@ describe("runtime configuration", () => {
     })).toThrow(/METRICS_AUTH_TOKEN/);
   });
 
-  it("requires PostHog credentials when the adapter is enabled", () => {
-    expect(() => getEnv({
-      ...baseEnv,
-      PRODUCT_ANALYTICS_SINKS: "audit,posthog",
-    })).toThrow(/POSTHOG_/);
-  });
-
-  it("requires a Sentry DSN when the adapter is enabled", () => {
-    expect(() => getEnv({
-      ...baseEnv,
-      INCIDENT_SINKS: "audit,sentry",
-    })).toThrow(/SENTRY_DSN/);
-  });
-
-  it("accepts explicitly configured optional exporters", () => {
+  it("accepts sink names for extension modules without owning vendor credentials", () => {
     const env = getEnv({
       ...baseEnv,
       PRODUCT_ANALYTICS_SINKS: "audit,posthog",
-      POSTHOG_HOST: "https://app.posthog.com",
-      POSTHOG_API_KEY: "posthog-test-key",
-      INCIDENT_SINKS: "audit,sentry",
-      SENTRY_DSN: "https://public@example.ingest.sentry.io/123456",
+      ERROR_SINKS: "audit,sentry",
     });
 
     expect(env.PRODUCT_ANALYTICS_SINKS).toBe("audit,posthog");
-    expect(env.POSTHOG_HOST).toBe("https://app.posthog.com");
-    expect(env.INCIDENT_SINKS).toBe("audit,sentry");
-    expect(env.SENTRY_DSN).toBe("https://public@example.ingest.sentry.io/123456");
+    expect(env.ERROR_SINKS).toBe("audit,sentry");
   });
 
   it("keeps no-op worker dispatch as the default without AMQP settings", () => {

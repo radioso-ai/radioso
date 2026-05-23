@@ -1,6 +1,6 @@
 import type { AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import {
-  extractIncidentLogFields,
+  extractErrorLogFields,
   extractProductAnalyticsLogFields,
   extractRetrievalLogFields,
   type AppLogger,
@@ -27,7 +27,7 @@ export class AuditService {
         audit: event,
         retrieval: extractRetrievalLogFields(event.metadata),
         analytics: extractProductAnalyticsLogFields(event.metadata?.analytics),
-        incident: extractIncidentLogFields(event.metadata?.incident),
+        error: extractErrorLogFields(event.metadata?.error),
       },
       "audit_event",
     );

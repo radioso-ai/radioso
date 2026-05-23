@@ -2,7 +2,7 @@ import type { RequestHandler } from "express";
 import pino from "pino";
 import { pinoHttp } from "pino-http";
 import type { ProductAnalyticsEvent } from "../analytics/productAnalyticsTypes.js";
-import type { IncidentEvent } from "../incidents/incidentTypes.js";
+import type { ErrorEvent } from "../errors/errorTypes.js";
 import type { CorrelationFields } from "./telemetry/correlation.js";
 
 export const createLogger = (level = process.env.NODE_ENV === "production" ? "info" : "debug") =>
@@ -38,26 +38,29 @@ export const extractCorrelationLogFields = (correlation?: CorrelationFields): Re
   return Object.keys(fields).length > 0 ? fields : undefined;
 };
 
-export const extractIncidentLogFields = (
-  incident?: Pick<IncidentEvent, "incidentType" | "severity" | "errorClass" | "correlation" | "requestContext">,
-): Record<string, string> | undefined => {
-  if (!incident) {
+export const extractErrorLogFields = (error?: unknown): Record<string, string> | undefined => {
+  if (!error || typeof error !== "object") {
     return undefined;
   }
 
-  const correlation = extractCorrelationLogFields(incident.correlation) ?? {};
-  const fields = Object.fromEntries(
+  const fields = error as Partial<Pick<ErrorEvent, "errorType" | "severity" | "errorClass" | "correlation" | "requestContext">>;
+  if (typeof fields.errorType !== "string" || typeof fields.severity !== "string") {
+    return undefined;
+  }
+
+  const correlation = extractCorrelationLogFields(fields.correlation) ?? {};
+  const logFields = Object.fromEntries(
     Object.entries({
-      incidentType: incident.incidentType,
-      severity: incident.severity,
-      errorClass: incident.errorClass,
-      method: incident.requestContext?.method,
-      route: incident.requestContext?.route,
+      errorType: fields.errorType,
+      severity: fields.severity,
+      errorClass: fields.errorClass,
+      method: fields.requestContext?.method,
+      route: fields.requestContext?.route,
       ...correlation,
     }).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0),
   );
 
-  return Object.keys(fields).length > 0 ? fields : undefined;
+  return Object.keys(logFields).length > 0 ? logFields : undefined;
 };
 
 export const extractProductAnalyticsLogFields = (

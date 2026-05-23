@@ -98,7 +98,7 @@ import { WorkspaceService, WorkspaceSummaryService } from "../../modules/workspa
 import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import { NoopUsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
-import { IncidentReportingService } from "../../shared/incidents/incidentReportingService.js";
+import { ErrorReportingService } from "../../shared/errors/errorReportingService.js";
 import { Database } from "../../shared/infra/database.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
@@ -107,7 +107,7 @@ import { createLogger, type AppLogger } from "../../shared/observability/logger.
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import {
   createDefaultAnalyticsSinks,
-  createDefaultIncidentSinks,
+  createDefaultErrorSinks,
   createDefaultTelemetrySinks,
 } from "../composition/index.js";
 import type { Env } from "../config/env.js";
@@ -149,19 +149,19 @@ export const buildInfrastructure = (input: {
       ...composition.productAnalyticsSinks,
     ],
   });
-  const incidentReportingService = new IncidentReportingService({
+  const errorReportingService = new ErrorReportingService({
     enabled: env.OBSERVABILITY_ENABLED,
     environment: env.OBSERVABILITY_ENVIRONMENT,
     logger,
     service: env.OBSERVABILITY_SERVICE_NAME,
     version: env.OBSERVABILITY_VERSION,
     sinks: [
-      ...createDefaultIncidentSinks({
+      ...createDefaultErrorSinks({
         auditService,
         env,
         metricsRegistry,
       }),
-      ...composition.incidentSinks,
+      ...composition.errorSinks,
     ],
   });
   const usageLimitPolicy = !composition.usageLimitPolicyRegistration
@@ -180,7 +180,7 @@ export const buildInfrastructure = (input: {
     auditEventRepository,
     auditService,
     database,
-    incidentReportingService,
+    errorReportingService,
     mailService,
     metricsRegistry,
     productAnalyticsService,

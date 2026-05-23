@@ -182,7 +182,7 @@ describe("default application composition", () => {
   it("collects optional sink and adapter contributions through module registration", () => {
     const telemetrySink = { emit: vi.fn().mockResolvedValue(undefined) };
     const productAnalyticsSink = { emit: vi.fn().mockResolvedValue(undefined) };
-    const incidentSink = { record: vi.fn().mockResolvedValue(undefined) };
+    const errorSink = { record: vi.fn().mockResolvedValue(undefined) };
     const websiteEmbedIntegration = {
       buildScriptUrl: vi.fn().mockReturnValue("https://widget.example.com/radioso-embed.js"),
       buildSnippet: vi.fn().mockReturnValue("<script></script>"),
@@ -213,7 +213,7 @@ describe("default application composition", () => {
           register(context) {
             context.registerTelemetrySink(telemetrySink);
             context.registerProductAnalyticsSink(productAnalyticsSink);
-            context.registerIncidentSink(incidentSink);
+            context.registerErrorSink(errorSink);
             context.registerDocumentStorage(documentStorage);
             context.registerDocumentJobDispatcher(documentJobDispatcher);
             context.registerWebsiteCrawlerProvider(websiteCrawlerProvider);
@@ -226,7 +226,7 @@ describe("default application composition", () => {
 
     expect(composition.telemetrySinks).toEqual([telemetrySink]);
     expect(composition.productAnalyticsSinks).toEqual([productAnalyticsSink]);
-    expect(composition.incidentSinks).toEqual([incidentSink]);
+    expect(composition.errorSinks).toEqual([errorSink]);
     expect(composition.documentStorage).toBe(documentStorage);
     expect(composition.documentJobDispatcher).toBe(documentJobDispatcher);
     expect(composition.websiteCrawlerProvider).toBe(websiteCrawlerProvider);

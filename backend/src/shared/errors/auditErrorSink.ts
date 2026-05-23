@@ -1,18 +1,18 @@
 import type { AuditService } from "../../modules/audit/contracts/index.js";
-import type { IncidentSink } from "./incidentSink.js";
-import type { IncidentEvent } from "./incidentTypes.js";
+import type { ErrorSink } from "./errorSink.js";
+import type { ErrorEvent } from "./errorTypes.js";
 
-export class AuditIncidentSink implements IncidentSink {
+export class AuditErrorSink implements ErrorSink {
   constructor(private readonly auditService: AuditService) {}
 
-  async record(event: IncidentEvent): Promise<void> {
+  async record(event: ErrorEvent): Promise<void> {
     await this.auditService.record({
       accountId: event.correlation?.accountId ?? null,
       workspaceId: event.correlation?.workspaceId ?? null,
-      eventType: "incident.recorded",
+      eventType: "error.recorded",
       eventStatus: event.severity === "error" ? "failure" : "success",
       metadata: {
-        incident: event,
+        error: event,
       },
     });
   }

@@ -1,11 +1,10 @@
 import type { RetrievalExecutionDiagnostics, RewriteContinuityState } from "../../retrieval/public.js";
 import type { ProductAnalyticsEvent } from "../../../shared/analytics/productAnalyticsTypes.js";
-import type { IncidentEvent } from "../../../shared/incidents/incidentTypes.js";
 
 export interface AuditEventMetadata extends Record<string, unknown> {
   retrieval?: RetrievalExecutionDiagnostics;
   analytics?: ProductAnalyticsEvent;
-  incident?: IncidentEvent;
+  error?: unknown;
 }
 
 export interface AuditEventInput {

@@ -225,7 +225,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     metricsRegistry: infrastructure.metricsRegistry,
     telemetryService: infrastructure.telemetryService,
-    incidentReportingService: infrastructure.incidentReportingService,
+    errorReportingService: infrastructure.errorReportingService,
     productAnalyticsService: infrastructure.productAnalyticsService,
     capabilityPolicy: composition.capabilityPolicy,
     usageLimitPolicy: infrastructure.usageLimitPolicy,

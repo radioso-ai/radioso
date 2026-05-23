@@ -26,10 +26,7 @@ const createEnv = (port: number): Env => ({
   OTEL_ENABLED: false,
   OTEL_EXPORTER_OTLP_ENDPOINT: undefined,
   PRODUCT_ANALYTICS_SINKS: "audit",
-  INCIDENT_SINKS: "audit",
-  POSTHOG_HOST: undefined,
-  POSTHOG_API_KEY: undefined,
-  SENTRY_DSN: undefined,
+  ERROR_SINKS: "audit",
   GOOGLE_CLOUD_PROJECT: "radioso-test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   DB_POOL_MAX: 10,
@@ -323,12 +320,12 @@ describe("runtime entrypoints", () => {
     expect(settings.body.anonymousChatEnabled).toBe(false);
   });
 
-  it("reports unhandled request failures through the incident reporting seam", async () => {
+  it("reports unhandled request failures through the error reporting seam", async () => {
     const { dependencies, repositories } = createTestDependencies({
       envOverrides: {
       },
     });
-    const reportIncidentSpy = vi.spyOn(dependencies.incidentReportingService, "reportUnhandledRequestError");
+    const reportErrorSpy = vi.spyOn(dependencies.errorReportingService, "reportUnhandledRequestError");
     vi.spyOn(dependencies.retrievalSettingsService, "getForWorkspace").mockRejectedValue(new Error("boom"));
 
     const runtime = await startApiRuntime({
@@ -363,7 +360,7 @@ describe("runtime entrypoints", () => {
       .set("X-Workspace-Id", register.body.workspaceId as string);
 
     expect(response.status).toBe(500);
-    expect(reportIncidentSpy).toHaveBeenCalledOnce();
+    expect(reportErrorSpy).toHaveBeenCalledOnce();
   });
 
   it("serves Prometheus-style metrics when metrics exposure is enabled", async () => {

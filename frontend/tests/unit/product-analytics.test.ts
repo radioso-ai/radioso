@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   BeaconFrontendProductAnalyticsSink,
   createFrontendProductAnalyticsEmitter,
+  sanitizePageViewPathname,
 } from '@/lib/product-analytics'
 
 describe('frontend product analytics', () => {
@@ -52,5 +53,14 @@ describe('frontend product analytics', () => {
       '/api/v1/observability/frontend-event',
       expect.stringContaining('"eventName":"website_embed.loaded"'),
     )
+  })
+
+  it('normalizes page-view paths without preserving secret route segments', () => {
+    expect(sanitizePageViewPathname('/invite/super-secret-token')).toBe('/invite/[token]')
+    expect(sanitizePageViewPathname('/chat/public-launch-token')).toBe('/chat/[token]')
+    expect(sanitizePageViewPathname('/embed/embed-token')).toBe('/embed/[token]')
+    expect(sanitizePageViewPathname('/account/account-id/settings')).toBe('/account/[accountId]/settings')
+    expect(sanitizePageViewPathname('/w/customer-key/chat')).toBe('/w/[workspaceKey]/chat')
+    expect(sanitizePageViewPathname('/reset-password')).toBe('/reset-password')
   })
 })

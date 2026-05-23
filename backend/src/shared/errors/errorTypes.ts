@@ -1,17 +1,17 @@
 import type { CorrelationFields } from "../observability/telemetry/correlation.js";
 
-export type IncidentSeverity = "info" | "warn" | "error";
+export type ErrorSeverity = "info" | "warn" | "error";
 
-export interface IncidentRequestContext {
+export interface ErrorRequestContext {
   method?: string;
   route?: string;
   statusCode?: number;
 }
 
-export interface IncidentEvent {
-  incidentType: string;
+export interface ErrorEvent {
+  errorType: string;
   timestamp: string;
-  severity: IncidentSeverity;
+  severity: ErrorSeverity;
   service: string;
   environment: string;
   version?: string;
@@ -19,7 +19,7 @@ export interface IncidentEvent {
   errorClass?: string;
   stack?: string;
   correlation?: CorrelationFields;
-  requestContext?: IncidentRequestContext;
+  requestContext?: ErrorRequestContext;
   metadata?: Record<string, unknown>;
   tags?: Record<string, string>;
 }

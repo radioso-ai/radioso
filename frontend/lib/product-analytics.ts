@@ -1,5 +1,6 @@
 export const frontendProductAnalyticsEventNames = [
   'chat.citation_clicked',
+  'frontend.page_view',
   'website_embed.loaded',
 ] as const
 
@@ -30,6 +31,17 @@ export interface FrontendProductAnalyticsInput {
   subjectId?: string
   properties?: Record<string, unknown>
   source?: FrontendProductAnalyticsEvent['source']
+}
+
+export const sanitizePageViewPathname = (pathname: string): string => {
+  const normalizedPathname = pathname.startsWith('/') ? pathname : `/${pathname}`
+
+  return normalizedPathname
+    .replace(/^\/invite\/[^/]+/, '/invite/[token]')
+    .replace(/^\/chat\/[^/]+/, '/chat/[token]')
+    .replace(/^\/embed\/[^/]+/, '/embed/[token]')
+    .replace(/^\/account\/[^/]+/, '/account/[accountId]')
+    .replace(/^\/w\/[^/]+/, '/w/[workspaceKey]')
 }
 
 export class NoopFrontendProductAnalyticsSink implements FrontendProductAnalyticsSink {

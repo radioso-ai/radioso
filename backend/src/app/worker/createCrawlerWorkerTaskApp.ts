@@ -26,7 +26,7 @@ export const createCrawlerWorkerTaskApp = (dependencies: AppDependencies) => {
     next();
   });
   app.use(createCrawlerWorkerTaskRoutes(dependencies));
-  app.use(createErrorHandler(dependencies.incidentReportingService));
+  app.use(createErrorHandler(dependencies.errorReportingService));
 
   return app;
 };

@@ -51,10 +51,13 @@ The Terraform workflow expects these GitHub environment secrets for each deploye
 - `PUBLIC_CHAT_SESSION_SECRET`
 - `CONNECTOR_ENCRYPTION_KEY`
 - `RESEND_MAIL_API_KEY`
+- `POSTHOG_API_KEY`
 
 `PUBLIC_CHAT_SESSION_SECRET` signs public chat session tokens for anonymous chat links and website embeds. In Terraform this maps to `public_chat_session_secret`, which is stored in Secret Manager and injected into the backend as `PUBLIC_CHAT_SESSION_SECRET`.
 
 Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`.
+
+The included staging and live Terraform environments also enable PostHog error reporting with `ERROR_SINKS=audit,posthog`. Set `POSTHOG_API_KEY` for each environment. `POSTHOG_HOST` defaults to the US ingestion host and can be overridden for another PostHog region or a self-hosted instance.
 
 ## Auth email cutover
 

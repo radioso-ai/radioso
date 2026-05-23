@@ -1,5 +1,6 @@
 locals {
   radioso_mcp_signing_secret_configured = try(length(trimspace(nonsensitive(var.radioso_mcp_signing_secret))) > 0, false)
+  posthog_api_key_configured            = try(length(trimspace(nonsensitive(var.posthog_api_key))) > 0, false)
 
   secret_values = merge(
     {
@@ -19,6 +20,9 @@ locals {
     nonsensitive(var.metrics_auth_token) == null ? {} : {
       "metrics-auth-token" = var.metrics_auth_token
     },
+    local.posthog_api_key_configured ? {
+      "posthog-api-key" = var.posthog_api_key
+    } : {},
   )
 
   secret_names = toset(keys(merge(
@@ -39,6 +43,9 @@ locals {
     nonsensitive(var.metrics_auth_token) == null ? {} : {
       "metrics-auth-token" = true
     },
+    local.posthog_api_key_configured ? {
+      "posthog-api-key" = true
+    } : {},
   )))
 }
 

@@ -151,6 +151,24 @@ variable "metrics_auth_token" {
   default     = null
 }
 
+variable "error_sinks" {
+  description = "Comma-separated error sink list for live."
+  type        = string
+  default     = "audit,posthog"
+}
+
+variable "posthog_api_key" {
+  description = "PostHog project token for live error reporting."
+  type        = string
+  sensitive   = true
+}
+
+variable "posthog_host" {
+  description = "PostHog ingestion host for live error reporting."
+  type        = string
+  default     = "https://us.i.posthog.com"
+}
+
 variable "openai_chat_model" {
   description = "OpenAI chat model name."
   type        = string

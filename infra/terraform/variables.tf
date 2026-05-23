@@ -266,7 +266,32 @@ variable "metrics_auth_token" {
   }
 }
 
+variable "posthog_api_key" {
+  description = "Optional PostHog project token used by Enterprise observability sinks."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
 # --- Backend env vars (non-secret) ---
+
+variable "product_analytics_sinks" {
+  description = "Comma-separated product analytics sink list passed to the backend runtime."
+  type        = string
+  default     = "audit"
+}
+
+variable "error_sinks" {
+  description = "Comma-separated error sink list passed to the backend runtime."
+  type        = string
+  default     = "audit"
+}
+
+variable "posthog_host" {
+  description = "Optional PostHog ingestion host used by Enterprise observability sinks."
+  type        = string
+  default     = null
+}
 
 variable "openai_chat_model" {
   description = "OpenAI chat model name"

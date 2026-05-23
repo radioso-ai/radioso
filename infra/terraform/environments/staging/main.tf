@@ -28,6 +28,11 @@ provider "google-beta" {
   region  = var.region
 }
 
+import {
+  to = module.radioso.google_secret_manager_secret.secrets["posthog-api-key"]
+  id = "projects/radioso-staging/secrets/radioso-staging-posthog-api-key"
+}
+
 module "radioso" {
   source = "../.."
 

@@ -9,10 +9,9 @@ import { cn } from '@/lib/utils'
 import { CodeBlock } from './code-block'
 
 const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
-const EMBED_OPEN_LINK_MESSAGE = 'radioso:embed:open-link'
 // Keep in sync with the public embed route at app/embed/[token]/page.tsx.
 const EMBED_FRAME_PATH_PREFIX = '/embed/'
-const FALLTHROUGH_EMBED_LINK_PROTOCOLS = new Set(['mailto:'])
+const TOP_NAVIGATION_LINK_PROTOCOLS = new Set(['http:', 'https:'])
 
 type HastElement = NonNullable<ExtraProps['node']>
 type ElementContent = HastElement['children'][number]
@@ -34,7 +33,7 @@ export const isSafeHref = (href?: string) => {
   }
 }
 
-export const shouldOpenMarkdownLinkThroughEmbedLauncher = ({
+export const shouldNavigateMarkdownLinkFromEmbed = ({
   isFramed,
   pathname,
   href,
@@ -49,9 +48,13 @@ export const shouldOpenMarkdownLinkThroughEmbedLauncher = ({
     return false
   }
 
+  if (href.startsWith('#')) {
+    return false
+  }
+
   try {
     const url = new URL(href, baseUrl)
-    return !FALLTHROUGH_EMBED_LINK_PROTOCOLS.has(url.protocol)
+    return TOP_NAVIGATION_LINK_PROTOCOLS.has(url.protocol)
   } catch {
     return false
   }
@@ -73,12 +76,12 @@ export const shouldHandleMarkdownLinkClick = ({
   altKey: boolean
 }) => !defaultPrevented && button === 0 && !metaKey && !ctrlKey && !shiftKey && !altKey
 
-const openMarkdownLinkThroughEmbedLauncher = (href?: string) => {
+const navigateEmbeddedMarkdownLink = (href?: string) => {
   if (!href || typeof window === 'undefined') {
     return false
   }
 
-  if (!shouldOpenMarkdownLinkThroughEmbedLauncher({
+  if (!shouldNavigateMarkdownLinkFromEmbed({
     isFramed: window.parent !== window,
     pathname: window.location.pathname,
     href,
@@ -89,7 +92,10 @@ const openMarkdownLinkThroughEmbedLauncher = (href?: string) => {
 
   try {
     const url = new URL(href, window.location.href)
-    window.parent.postMessage({ type: EMBED_OPEN_LINK_MESSAGE, href: url.toString() }, '*')
+    if (!window.top || window.top === window) {
+      return false
+    }
+    window.top.location.href = url.toString()
     return true
   } catch {
     return false
@@ -164,7 +170,7 @@ const MarkdownLink = ({
           return
         }
 
-        if (openMarkdownLinkThroughEmbedLauncher(href)) {
+        if (navigateEmbeddedMarkdownLink(href)) {
           event.preventDefault()
         }
       }}

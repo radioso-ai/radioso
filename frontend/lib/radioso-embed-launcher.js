@@ -105,6 +105,7 @@
     'publicChatSendMessageLabel',
     'publicChatNewChatLabel',
     'publicChatCollapseLabel',
+    'publicChatOpenFullScreenLabel',
     'publicChatDisclaimerTemplate',
     'publicChatRateLimitRetryTemplate',
   ]

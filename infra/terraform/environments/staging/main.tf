@@ -68,6 +68,9 @@ module "radioso" {
   mail_from_email                       = var.mail_from_email
   mail_from_name                        = var.mail_from_name
   metrics_auth_token                    = var.metrics_auth_token
+  error_sinks                           = "audit,posthog"
+  posthog_api_key                       = var.posthog_api_key
+  posthog_host                          = var.posthog_host
   openai_chat_model                     = var.openai_chat_model
   openai_rerank_model                   = var.openai_rerank_model
   openai_vector_model                   = var.openai_vector_model

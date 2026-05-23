@@ -1,6 +1,7 @@
 import type { ApplicationModule } from "../radiosoModuleTypes.js";
 import { parseConfiguredSinks } from "./configuredSinks.js";
 import { PosthogAnalyticsSink } from "./posthogAnalyticsSink.js";
+import { PosthogErrorSink } from "./posthogErrorSink.js";
 import { SentryErrorSink } from "./sentryErrorSink.js";
 
 interface ObservabilityEnv {
@@ -40,7 +41,7 @@ export const createEnterpriseObservabilityApplicationModule = (
     });
     const errorSinks = parseConfiguredSinks(env.ERROR_SINKS, {
       envName: "ERROR_SINKS",
-      supportedSinks: ["audit", "sentry"],
+      supportedSinks: ["audit", "sentry", "posthog"],
     });
 
     if (productAnalyticsSinks.has("posthog")) {
@@ -53,6 +54,13 @@ export const createEnterpriseObservabilityApplicationModule = (
     if (errorSinks.has("sentry")) {
       context.registerErrorSink?.(new SentryErrorSink({
         dsn: requireEnv(env, "SENTRY_DSN"),
+      }));
+    }
+
+    if (errorSinks.has("posthog")) {
+      context.registerErrorSink?.(new PosthogErrorSink({
+        apiKey: requireEnv(env, "POSTHOG_API_KEY"),
+        host: requireUrlEnv(env, "POSTHOG_HOST"),
       }));
     }
   },

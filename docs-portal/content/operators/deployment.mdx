@@ -56,6 +56,8 @@ The Terraform workflow expects these GitHub environment secrets for each deploye
 
 Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`.
 
+The included staging Terraform also enables PostHog error reporting with `ERROR_SINKS=audit,posthog`. Set `POSTHOG_API_KEY` for staging. `POSTHOG_HOST` defaults to the US ingestion host and can be overridden for another PostHog region or a self-hosted instance.
+
 ## Auth email cutover
 
 Password reset and email verification tokens are stored in OSS tables. Deployments upgrading from the older Enterprise auth email implementation do not migrate active `ee_password_reset_tokens` or `ee_email_verification_tokens` rows. In practice, reset or verification links sent before this deployment stop working after the migration runs. Users should request a new password reset or verification email after the rollout.

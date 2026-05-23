@@ -55,6 +55,21 @@ resource "google_cloud_run_v2_service" "backend" {
         value = "radioso-api"
       }
       env {
+        name  = "PRODUCT_ANALYTICS_SINKS"
+        value = var.product_analytics_sinks
+      }
+      env {
+        name  = "ERROR_SINKS"
+        value = var.error_sinks
+      }
+      dynamic "env" {
+        for_each = var.posthog_host == null ? [] : [var.posthog_host]
+        content {
+          name  = "POSTHOG_HOST"
+          value = env.value
+        }
+      }
+      env {
         name  = "RADIOSO_EDITION"
         value = var.radioso_edition
       }
@@ -196,6 +211,18 @@ resource "google_cloud_run_v2_service" "backend" {
           value_source {
             secret_key_ref {
               secret  = google_secret_manager_secret.secrets["metrics-auth-token"].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = local.posthog_api_key_configured ? [google_secret_manager_secret.secrets["posthog-api-key"].secret_id] : []
+        content {
+          name = "POSTHOG_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
               version = "latest"
             }
           }
@@ -418,6 +445,21 @@ resource "google_cloud_run_v2_service" "document_worker" {
         value = "radioso-worker"
       }
       env {
+        name  = "PRODUCT_ANALYTICS_SINKS"
+        value = var.product_analytics_sinks
+      }
+      env {
+        name  = "ERROR_SINKS"
+        value = var.error_sinks
+      }
+      dynamic "env" {
+        for_each = var.posthog_host == null ? [] : [var.posthog_host]
+        content {
+          name  = "POSTHOG_HOST"
+          value = env.value
+        }
+      }
+      env {
         name  = "RADIOSO_EDITION"
         value = var.radioso_edition
       }
@@ -526,6 +568,18 @@ resource "google_cloud_run_v2_service" "document_worker" {
         for_each = var.resend_mail_api_key != null ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
         content {
           name = "RESEND_MAIL_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = local.posthog_api_key_configured ? [google_secret_manager_secret.secrets["posthog-api-key"].secret_id] : []
+        content {
+          name = "POSTHOG_API_KEY"
           value_source {
             secret_key_ref {
               secret  = env.value
@@ -657,6 +711,21 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
         value = "radioso-crawler-worker"
       }
       env {
+        name  = "PRODUCT_ANALYTICS_SINKS"
+        value = var.product_analytics_sinks
+      }
+      env {
+        name  = "ERROR_SINKS"
+        value = var.error_sinks
+      }
+      dynamic "env" {
+        for_each = var.posthog_host == null ? [] : [var.posthog_host]
+        content {
+          name  = "POSTHOG_HOST"
+          value = env.value
+        }
+      }
+      env {
         name  = "RADIOSO_EDITION"
         value = var.radioso_edition
       }
@@ -760,6 +829,18 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
         content {
           name  = "PUBLIC_CHAT_BASE_URL"
           value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.posthog_api_key_configured ? [google_secret_manager_secret.secrets["posthog-api-key"].secret_id] : []
+        content {
+          name = "POSTHOG_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
         }
       }
 

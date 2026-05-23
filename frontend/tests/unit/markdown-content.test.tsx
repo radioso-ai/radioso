@@ -4,8 +4,6 @@ import { describe, expect, it } from 'vitest'
 import {
   MarkdownContent,
   isSafeHref,
-  shouldHandleMarkdownLinkClick,
-  shouldNavigateMarkdownLinkFromEmbed,
 } from '@/components/markdown/markdown-content'
 
 describe('isSafeHref', () => {
@@ -26,67 +24,24 @@ describe('isSafeHref', () => {
   })
 })
 
-describe('shouldHandleMarkdownLinkClick', () => {
-  const primaryClick = {
-    defaultPrevented: false,
-    button: 0,
-    metaKey: false,
-    ctrlKey: false,
-    shiftKey: false,
-    altKey: false,
-  }
+describe('MarkdownContent link rendering', () => {
+  it('renders safe http links with target="_blank" and noopener', () => {
+    const html = renderToStaticMarkup(
+      <MarkdownContent variant="chat" content="[docs](https://example.com/docs)" />,
+    )
 
-  it('handles only unmodified primary-button clicks', () => {
-    expect(shouldHandleMarkdownLinkClick(primaryClick)).toBe(true)
-    expect(shouldHandleMarkdownLinkClick({ ...primaryClick, button: 1 })).toBe(false)
-    expect(shouldHandleMarkdownLinkClick({ ...primaryClick, metaKey: true })).toBe(false)
-    expect(shouldHandleMarkdownLinkClick({ ...primaryClick, ctrlKey: true })).toBe(false)
-    expect(shouldHandleMarkdownLinkClick({ ...primaryClick, shiftKey: true })).toBe(false)
-    expect(shouldHandleMarkdownLinkClick({ ...primaryClick, altKey: true })).toBe(false)
-    expect(shouldHandleMarkdownLinkClick({ ...primaryClick, defaultPrevented: true })).toBe(false)
-  })
-})
-
-describe('shouldNavigateMarkdownLinkFromEmbed', () => {
-  it('top-navigates links only from framed embedded chat pages', () => {
-    expect(shouldNavigateMarkdownLinkFromEmbed({
-      isFramed: true,
-      pathname: '/embed/embed-token',
-      href: 'https://example.com/docs',
-      baseUrl: 'https://app.example.com/embed/embed-token',
-    })).toBe(true)
-
-    expect(shouldNavigateMarkdownLinkFromEmbed({
-      isFramed: false,
-      pathname: '/embed/embed-token',
-      href: 'https://example.com/docs',
-      baseUrl: 'https://app.example.com/embed/embed-token',
-    })).toBe(false)
-
-    expect(shouldNavigateMarkdownLinkFromEmbed({
-      isFramed: true,
-      pathname: '/chat/public-token',
-      href: 'https://example.com/docs',
-      baseUrl: 'https://app.example.com/chat/public-token',
-    })).toBe(false)
+    expect(html).toContain('href="https://example.com/docs"')
+    expect(html).toContain('target="_blank"')
+    expect(html).toContain('rel="noopener"')
   })
 
-  it('lets mailto links use default browser handling in embedded chat pages', () => {
-    expect(shouldNavigateMarkdownLinkFromEmbed({
-      isFramed: true,
-      pathname: '/embed/embed-token',
-      href: 'mailto:hi@example.com',
-      baseUrl: 'https://app.example.com/embed/embed-token',
-    })).toBe(false)
-  })
+  it('strips unsafe links and falls back to plain text', () => {
+    const html = renderToStaticMarkup(
+      <MarkdownContent variant="chat" content="[evil](javascript:alert(1))" />,
+    )
 
-  it('lets hash-only links use default browser handling in embedded chat pages', () => {
-    expect(shouldNavigateMarkdownLinkFromEmbed({
-      isFramed: true,
-      pathname: '/embed/embed-token',
-      href: '#section',
-      baseUrl: 'https://app.example.com/embed/embed-token',
-    })).toBe(false)
+    expect(html).not.toContain('<a')
+    expect(html).toContain('evil')
   })
 })
 

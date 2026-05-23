@@ -10,7 +10,6 @@
   const ERROR_MESSAGE = 'radioso:embed:error'
   const COLLAPSE_MESSAGE = 'radioso:embed:collapse'
   const TYPING_MESSAGE = 'radioso:embed:typing'
-  const OPEN_LINK_MESSAGE = 'radioso:embed:open-link'
   const STYLE_ELEMENT_ID = 'radioso-embed-style'
   const ATTENTION_PRESETS = new Set(['none', 'breathe', 'pulse', 'nudge', 'bounce-in'])
   const DEFAULT_TEASER_DELAY_MS = 4000
@@ -328,19 +327,6 @@
     try {
       const url = new URL(trimmed, baseUrl || window.location.href)
       return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
-    } catch {
-      return null
-    }
-  }
-
-  const resolveSafeLinkUrl = (value, baseUrl) => {
-    if (typeof value !== 'string' || !value.trim()) {
-      return null
-    }
-
-    try {
-      const url = new URL(value, baseUrl || window.location.href)
-      return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'mailto:' ? url.toString() : null
     } catch {
       return null
     }
@@ -1033,14 +1019,6 @@
       if (event.data.type === COLLAPSE_MESSAGE) {
         isOpen = false
         updatePanelVisibility()
-        return
-      }
-
-      if (event.data.type === OPEN_LINK_MESSAGE) {
-        const href = resolveSafeLinkUrl(event.data.href, scriptUrl)
-        if (href) {
-          window.open(href, '_blank', 'noopener,noreferrer')
-        }
         return
       }
 

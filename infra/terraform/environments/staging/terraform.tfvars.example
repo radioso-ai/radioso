@@ -22,6 +22,7 @@ frontend_image = "us-central1-docker.pkg.dev/radioso-staging/radioso-staging/fro
 # frontend_max_instances      = 2
 # worker_max_instances        = 5
 # document_storage_bucket_name = "radioso-staging-radioso-staging-documents"
+# error_sinks                 = "audit,posthog"
 # posthog_host                = "https://us.i.posthog.com"
 # radioso_mcp_enabled = true
 # radioso_mcp_base_url_override = "https://your-backend-url.a.run.app"

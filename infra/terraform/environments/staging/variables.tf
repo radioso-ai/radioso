@@ -151,6 +151,12 @@ variable "metrics_auth_token" {
   default     = null
 }
 
+variable "error_sinks" {
+  description = "Comma-separated error sink list for staging."
+  type        = string
+  default     = "audit,posthog"
+}
+
 variable "posthog_api_key" {
   description = "PostHog project token for staging error reporting."
   type        = string

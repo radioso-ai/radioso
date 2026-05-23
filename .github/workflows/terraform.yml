@@ -100,7 +100,7 @@ jobs:
             echo "TF_VAR_mail_from_name=${MAIL_FROM_NAME}" >> "$GITHUB_ENV"
           fi
 
-          if [ "${{ inputs.environment }}" = "staging" ]; then
+          if [ "${{ inputs.environment }}" = "staging" ] || [ "${{ inputs.environment }}" = "live" ]; then
             if [ -z "${POSTHOG_API_KEY}" ]; then
               echo "Missing required GitHub environment value: POSTHOG_API_KEY" >&2
               exit 1

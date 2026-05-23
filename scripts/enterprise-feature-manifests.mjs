@@ -6,7 +6,6 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 
 const manifestModulePaths = [
   "ee/packages/auth-frontend/feature-manifest.mjs",
-  "ee/packages/agent-wizard-frontend/feature-manifest.mjs",
 ];
 
 export const loadEnterpriseFeatureManifests = async () => {
@@ -153,7 +152,6 @@ const readEnterprisePackageExports = async () => {
   const exportsByPackage = new Map();
   for (const packageJsonPath of [
     "ee/packages/auth-frontend/package.json",
-    "ee/packages/agent-wizard-frontend/package.json",
   ]) {
     try {
       const packageJson = JSON.parse(await fs.readFile(path.join(repoRoot, packageJsonPath), "utf8"));

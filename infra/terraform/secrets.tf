@@ -25,7 +25,7 @@ locals {
     } : {},
   )
 
-  secret_names = toset(keys(merge(
+  secret_names = nonsensitive(toset(keys(merge(
     {
       "database-password"          = true
       "openai-api-key"             = true
@@ -46,7 +46,7 @@ locals {
     local.posthog_api_key_configured ? {
       "posthog-api-key" = true
     } : {},
-  )))
+  ))))
 }
 
 resource "google_secret_manager_secret" "secrets" {

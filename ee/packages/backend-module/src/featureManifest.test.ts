@@ -7,11 +7,11 @@ import {
 } from "./featureManifest.js";
 
 const baseManifest = (overrides: Partial<FeatureManifest> = {}): FeatureManifest => ({
-  id: "enterprise-agent-wizard",
-  name: "Enterprise Agent Wizard",
+  id: "enterprise-sample-feature",
+  name: "Enterprise Sample Feature",
   edition: "enterprise",
-  backendModuleId: "radioso-enterprise-agent-wizard",
-  apiNamespaces: ["/api/v1/ee/agent-wizard"],
+  backendModuleId: "radioso-enterprise-sample-feature",
+  apiNamespaces: ["/api/v1/ee/sample"],
   docs: ["ee/readme.md"],
   ...overrides,
 });
@@ -21,15 +21,15 @@ describe("feature manifests", () => {
     const result = validateFeatureManifests([
       baseManifest(),
       baseManifest({
-        id: "enterprise-agent-wizard-frontend",
-        name: "Enterprise Agent Wizard Frontend",
+        id: "enterprise-sample-frontend",
+        name: "Enterprise Sample Frontend",
         backendModuleId: undefined,
         apiNamespaces: undefined,
         frontendRoutes: [
           {
-            relativePath: "app/agents/wizard/page.tsx",
-            packageName: "@radioso/enterprise-agent-wizard-frontend",
-            exportPath: "wizard-page",
+            relativePath: "app/sample/page.tsx",
+            packageName: "@radioso/enterprise-sample-frontend",
+            exportPath: "sample-page",
             exports: ["default"],
           },
         ],
@@ -44,28 +44,28 @@ describe("feature manifests", () => {
   it("rejects duplicate feature identifiers", () => {
     const result = validateFeatureManifests([
       baseManifest(),
-      baseManifest({ name: "Duplicate Enterprise Agent Wizard" }),
+      baseManifest({ name: "Duplicate Enterprise Sample Feature" }),
     ], {
       existingDocs: new Set(["ee/readme.md"]),
     });
 
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain('Duplicate feature id "enterprise-agent-wizard"');
+    expect(result.errors).toContain('Duplicate feature id "enterprise-sample-feature"');
   });
 
   it("rejects duplicate frontend route ownership", () => {
     const frontendRoutes = [{
-      relativePath: "app/agents/wizard/page.tsx",
-      packageName: "@radioso/enterprise-agent-wizard-frontend",
-      exportPath: "wizard-page",
+      relativePath: "app/sample/page.tsx",
+      packageName: "@radioso/enterprise-sample-frontend",
+      exportPath: "sample-page",
       exports: ["default"],
     }];
 
     const result = validateFeatureManifests([
       baseManifest({ frontendRoutes }),
       baseManifest({
-        id: "other-agent-wizard",
-        name: "Other Agent Wizard",
+        id: "other-sample-feature",
+        name: "Other Sample Feature",
         frontendRoutes,
       }),
     ], {
@@ -74,7 +74,7 @@ describe("feature manifests", () => {
 
     expect(result.valid).toBe(false);
     expect(result.errors).toContain(
-      'Frontend route "app/agents/wizard/page.tsx" is owned by multiple features',
+      'Frontend route "app/sample/page.tsx" is owned by multiple features',
     );
   });
 
@@ -83,13 +83,13 @@ describe("feature manifests", () => {
       baseManifest({
         frontendRoutes: [
           {
-            relativePath: "app/agents/wizard/page.tsx",
-            exportPath: "wizard-page",
+            relativePath: "app/sample/page.tsx",
+            exportPath: "sample-page",
             exports: ["default"],
           } as any,
           {
-            relativePath: "app/agents/wizard/settings/page.tsx",
-            packageName: "@radioso/enterprise-agent-wizard-frontend",
+            relativePath: "app/sample/settings/page.tsx",
+            packageName: "@radioso/enterprise-sample-frontend",
             exports: ["default"],
           } as any,
         ],
@@ -100,10 +100,10 @@ describe("feature manifests", () => {
 
     expect(result.valid).toBe(false);
     expect(result.errors).toContain(
-      'Enterprise feature "enterprise-agent-wizard" route "app/agents/wizard/page.tsx" must declare packageName',
+      'Enterprise feature "enterprise-sample-feature" route "app/sample/page.tsx" must declare packageName',
     );
     expect(result.errors).toContain(
-      'Feature "enterprise-agent-wizard" route "app/agents/wizard/settings/page.tsx" must declare exportPath',
+      'Feature "enterprise-sample-feature" route "app/sample/settings/page.tsx" must declare exportPath',
     );
   });
 
@@ -115,14 +115,14 @@ describe("feature manifests", () => {
     });
 
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain('Feature "enterprise-agent-wizard" references missing doc "ee/missing.md"');
+    expect(result.errors).toContain('Feature "enterprise-sample-feature" references missing doc "ee/missing.md"');
   });
 
   it("collects frontend route contributions in feature order", () => {
     const route = {
-      relativePath: "app/agents/wizard/page.tsx",
-      packageName: "@radioso/enterprise-agent-wizard-frontend",
-      exportPath: "wizard-page",
+      relativePath: "app/sample/page.tsx",
+      packageName: "@radioso/enterprise-sample-frontend",
+      exportPath: "sample-page",
       exports: ["default"],
     };
 

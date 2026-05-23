@@ -39,6 +39,7 @@ import {
   type ApplicationModule,
 } from "./applicationModule.js";
 import { createWebsiteEmbedApplicationModule } from "./builtIn/websiteEmbedModule.js";
+import { createAgentWizardApplicationModule } from "./builtIn/agentWizardModule.js";
 import {
   createDefaultSkillCatalogRegistry,
   type SkillCatalogRegistry,
@@ -93,6 +94,7 @@ export const createDefaultApplicationComposition = (options: {
   // registrations (e.g. a custom website-embed integration provider).
   coordinator.apply([
     createWebsiteEmbedApplicationModule({ widgetOrigin: options.widgetOrigin }),
+    createAgentWizardApplicationModule(),
     ...(options.modules ?? []),
   ]);
 

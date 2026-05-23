@@ -18,6 +18,11 @@
   const DESKTOP_PANEL_CONTENT_WIDTH = 560
   const DESKTOP_BUBBLE_MAX_HEIGHT = 720
   const NARROW_VIEWPORT_MAX_WIDTH = 640
+  // Phones in landscape have width > 640 but very short height (~320-430px),
+  // so a width-only check leaves the chat as a tiny bubble that's barely
+  // usable. Treat short viewports as fullscreen too; tablets in landscape
+  // are typically ≥768px tall so they keep the bubble.
+  const NARROW_VIEWPORT_MAX_HEIGHT = 500
   const MAX_PAGE_CONTEXT_CONTENT_CHARS = 6000
   const defaultCopy = {
     launcherDefaultLabel: 'Chat with us',
@@ -887,7 +892,9 @@
 
     const applyResponsiveLayout = () => {
       const viewport = getViewportFrame()
-      isFullscreenOpen = isOpen && viewport.width <= NARROW_VIEWPORT_MAX_WIDTH
+      isFullscreenOpen =
+        isOpen &&
+        (viewport.width <= NARROW_VIEWPORT_MAX_WIDTH || viewport.height <= NARROW_VIEWPORT_MAX_HEIGHT)
 
       if (isFullscreenOpen) {
         host.style.top = `${viewport.offsetTop}px`

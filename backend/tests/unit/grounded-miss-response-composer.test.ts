@@ -51,7 +51,7 @@ describe("grounded miss response composer", () => {
 
     expect(observedPrompt).toContain("Answer Instructions:");
     expect(observedPrompt).toContain("Help visitors choose and book Ananda courses.");
-    expect(observedPrompt).toContain("points back to the configured assistant scope");
+    expect(observedPrompt).toContain("Redirect back to the Answer Instructions scope");
     expect(observedPrompt).toContain("Do not offer to help with unrelated topics from the user query");
     expect(observedPrompt).toContain("Do not mention internal labels");
   });
@@ -75,7 +75,7 @@ describe("grounded miss response composer", () => {
 
     await composer.composeNoContext({ query: "Draft a follow-up" });
 
-    expect(observedPrompt).toContain("decline directly in the team's voice");
+    expect(observedPrompt).toContain("Decline directly in the team's voice");
     expect(observedPrompt).toContain('Do not say "I don\'t have that information,"');
     expect(observedPrompt).toContain("anything that references documents, materials, sources, search, or retrieval");
   });

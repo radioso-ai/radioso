@@ -11,6 +11,7 @@ export interface WorkspaceTokenRecord {
   encryptedToken: string;
   createdAt: Date;
   lastUsedAt: Date | null;
+  revokedAt: Date | null;
 }
 
 interface WorkspaceTokenRow {
@@ -22,6 +23,7 @@ interface WorkspaceTokenRow {
   encrypted_token: string;
   created_at: Date;
   last_used_at: Date | null;
+  revoked_at: Date | null;
 }
 
 const mapToken = (row: WorkspaceTokenRow): WorkspaceTokenRecord => ({
@@ -33,6 +35,7 @@ const mapToken = (row: WorkspaceTokenRow): WorkspaceTokenRecord => ({
   encryptedToken: row.encrypted_token,
   createdAt: new Date(row.created_at),
   lastUsedAt: row.last_used_at ? new Date(row.last_used_at) : null,
+  revokedAt: row.revoked_at ? new Date(row.revoked_at) : null,
 });
 
 export interface WorkspaceTokenRepositoryPort {
@@ -53,9 +56,10 @@ export class WorkspaceTokenRepository implements WorkspaceTokenRepositoryPort {
 
   async findByWorkspaceId(workspaceId: string): Promise<WorkspaceTokenRecord | null> {
     const [row] = await this.database.query<WorkspaceTokenRow>(
-      `SELECT id, workspace_id, account_id, token_prefix, token_hash, encrypted_token, created_at, last_used_at
+      `SELECT id, workspace_id, account_id, token_prefix, token_hash, encrypted_token, created_at, last_used_at, revoked_at
        FROM workspace_tokens
-       WHERE workspace_id = $1`,
+       WHERE workspace_id = $1
+         AND revoked_at IS NULL`,
       [workspaceId],
     );
 
@@ -64,9 +68,10 @@ export class WorkspaceTokenRepository implements WorkspaceTokenRepositoryPort {
 
   async findByTokenHash(tokenHash: string): Promise<WorkspaceTokenRecord | null> {
     const [row] = await this.database.query<WorkspaceTokenRow>(
-      `SELECT id, workspace_id, account_id, token_prefix, token_hash, encrypted_token, created_at, last_used_at
+      `SELECT id, workspace_id, account_id, token_prefix, token_hash, encrypted_token, created_at, last_used_at, revoked_at
        FROM workspace_tokens
-       WHERE token_hash = $1`,
+       WHERE token_hash = $1
+         AND revoked_at IS NULL`,
       [tokenHash],
     );
 
@@ -86,8 +91,9 @@ export class WorkspaceTokenRepository implements WorkspaceTokenRepositoryPort {
        ON CONFLICT (workspace_id)
        DO UPDATE SET token_prefix = EXCLUDED.token_prefix,
                      token_hash = EXCLUDED.token_hash,
-                     encrypted_token = EXCLUDED.encrypted_token
-       RETURNING id, workspace_id, account_id, token_prefix, token_hash, encrypted_token, created_at, last_used_at`,
+                     encrypted_token = EXCLUDED.encrypted_token,
+                     revoked_at = NULL
+       RETURNING id, workspace_id, account_id, token_prefix, token_hash, encrypted_token, created_at, last_used_at, revoked_at`,
       [randomUUID(), params.workspaceId, params.accountId, params.tokenPrefix, params.tokenHash, params.encryptedToken],
     );
 
@@ -98,7 +104,8 @@ export class WorkspaceTokenRepository implements WorkspaceTokenRepositoryPort {
     await this.database.query(
       `UPDATE workspace_tokens
        SET last_used_at = $2
-       WHERE workspace_id = $1`,
+       WHERE workspace_id = $1
+         AND revoked_at IS NULL`,
       [workspaceId, lastUsedAt],
     );
   }

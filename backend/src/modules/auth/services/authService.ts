@@ -47,6 +47,7 @@ export interface WorkspaceTokenRecord {
   encryptedToken: string;
   createdAt: Date;
   lastUsedAt: Date | null;
+  revokedAt: Date | null;
 }
 
 export type WorkspaceApiTokenPrincipal = {

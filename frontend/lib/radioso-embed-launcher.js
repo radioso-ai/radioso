@@ -1040,7 +1040,7 @@
 
       if (event.data.type === FULLSCREEN_MESSAGE) {
         isOpen = true
-        isManualFullscreenOpen = true
+        isManualFullscreenOpen = !isManualFullscreenOpen
         ensureIframe()
         markOpened()
         updatePanelVisibility()

@@ -294,7 +294,7 @@ describe('radioso embed launcher', () => {
     expect(button.querySelector('[data-radioso-launcher-avatar="true"]')?.style.width).toBe('3rem')
   })
 
-  it('expands the mounted embed to fullscreen on iframe request', async () => {
+  it('toggles the mounted embed fullscreen state on iframe request', async () => {
     const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
@@ -387,6 +387,20 @@ describe('radioso embed launcher', () => {
     expect(host.style.maxWidth).toBe('none')
     expect(panel?.style.width).toBe('100%')
     expect(panel?.style.borderRadius).toBe('0')
+
+    for (const handler of messageHandlers) {
+      handler({
+        source: iframe.contentWindow,
+        origin: 'https://app.example.com',
+        data: { type: 'radioso:embed:fullscreen' },
+      })
+    }
+
+    expect(host.style.width).toBe('')
+    expect(host.style.height).toBe('')
+    expect(host.style.maxWidth).toBe('calc(100vw - 2rem)')
+    expect(panel?.style.width).toBe('min(560px, calc(100vw - 2rem))')
+    expect(panel?.style.borderRadius).toBe('28px')
   })
 
 })

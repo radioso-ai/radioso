@@ -22,6 +22,7 @@ export {
   removeWorkspaceToken,
   seedWorkspaceSession,
   setPendingAccountSwitchId,
+  storeAnonymousSessionId,
   storeEmbedBootstrapSession,
   storeEffectivePublicChatToken,
   storePublicSessionToken,

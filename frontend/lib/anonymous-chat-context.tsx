@@ -14,6 +14,7 @@ import {
 import { normalizeWebsiteEmbedLocale, type WebsiteEmbedThemeOverrides } from '@/lib/embed-widget'
 import { createClientId } from '@/lib/client-id'
 import { contrastRatio, mixHex, mixHexRgba, pickForeground, relativeLuminance } from '@/lib/color'
+import { consumePublicChatSessionHandoffHash } from '@/lib/public-chat-session-handoff'
 
 const MIN_LEGIBLE_CONTRAST = 3
 const ensureLegibleForeground = (background: string, foreground: string) =>
@@ -179,7 +180,8 @@ const resolveOwnFeedback = (
 }
 
 const stripPublicSuggestionCitation = (suggestion: ChatSuggestion): ChatSuggestion => {
-  const { citation: _citation, ...publicSuggestion } = suggestion
+  const publicSuggestion = { ...suggestion }
+  delete publicSuggestion.citation
   return publicSuggestion
 }
 
@@ -288,12 +290,14 @@ export const resolveAnonymousChatBootstrapLocale = ({
 export function AnonymousChatProvider({
   token,
   sessionChannel,
+  consumeSessionHandoff,
   localeOverride,
   pageContext,
   children,
 }: {
   token: string
   sessionChannel?: 'anonymous_link' | null
+  consumeSessionHandoff?: boolean
   localeOverride?: string | null
   pageContext?: WebsiteEmbedPageContext | null
   children: ReactNode
@@ -458,6 +462,9 @@ export function AnonymousChatProvider({
     let cancelled = false
 
     if (!cancelled) {
+      if (consumeSessionHandoff) {
+        consumePublicChatSessionHandoffHash(token)
+      }
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrates persisted public conversation state after mount/token changes.
       void hydrateConversation()
     }
@@ -465,7 +472,7 @@ export function AnonymousChatProvider({
     return () => {
       cancelled = true
     }
-  }, [hydrateConversation])
+  }, [consumeSessionHandoff, hydrateConversation, token])
 
   const applyCompletion = useCallback(
     (assistantMessageId: string, completion: ChatStreamCompletion) => {

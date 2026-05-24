@@ -13,6 +13,7 @@ import {
   type WebsiteEmbedCopyOverrides,
   type WebsiteEmbedThemeOverrides,
 } from '@/lib/embed-widget'
+import { buildPublicChatSessionHandoffHash } from '@/lib/public-chat-session-handoff'
 import {
   clearStoredAnonymousSession,
   clearStoredEmbedBootstrapSession,
@@ -56,6 +57,9 @@ type BootstrapState =
   | {
       status: 'ready'
       publicChatToken: string
+      publicSessionId: string
+      publicSessionToken: string
+      expiresAt: string
       workspaceName?: string | null
       pageContext?: WebsiteEmbedPageContext | null
     }
@@ -64,6 +68,7 @@ const READY_MESSAGE = 'radioso:embed:ready'
 const SESSION_MESSAGE = 'radioso:embed:session'
 const ERROR_MESSAGE = 'radioso:embed:error'
 const HANDSHAKE_TIMEOUT_MS = 30_000
+const FULLSCREEN_MESSAGE = 'radioso:embed:fullscreen'
 
 const sanitizePageContext = (value: unknown): WebsiteEmbedPageContext | null => {
   if (!value || typeof value !== 'object') {
@@ -117,24 +122,28 @@ export function EmbeddedChatFrame({
 
   useEffect(() => {
     if (window.parent === window) {
-      setState({ status: 'error', message: copy.embeddedChatLauncherRequiredMessage })
-      return
+      const errorTimer = window.setTimeout(() => {
+        setState({ status: 'error', message: copy.embeddedChatLauncherRequiredMessage })
+      }, 0)
+      return () => window.clearTimeout(errorTimer)
     }
 
     let isDisposed = false
     let handshakeInterval: number | null = null
     let handshakeTimeout: number | null = null
+    let storedWorkspaceNameTimer: number | null = null
     const storedSession = readStoredEmbedBootstrapSession(token)
     const resumeAnonymousSessionId =
       storedSession ? readStoredAnonymousSessionId(storedSession.publicChatToken) : null
 
     if (storedSession?.workspaceName) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Bootstrapping handshake reads sessionStorage on mount; this hydrates the workspace name from the stored session before the parent posts the launch payload.
-      setState((current) =>
-        current.status === 'bootstrapping'
-          ? { ...current, workspaceName: storedSession.workspaceName }
-          : current,
-      )
+      storedWorkspaceNameTimer = window.setTimeout(() => {
+        setState((current) =>
+          current.status === 'bootstrapping'
+            ? { ...current, workspaceName: storedSession.workspaceName }
+            : current,
+        )
+      }, 0)
     }
 
     const stopHandshake = () => {
@@ -146,6 +155,11 @@ export function EmbeddedChatFrame({
       if (handshakeTimeout !== null) {
         window.clearTimeout(handshakeTimeout)
         handshakeTimeout = null
+      }
+
+      if (storedWorkspaceNameTimer !== null) {
+        window.clearTimeout(storedWorkspaceNameTimer)
+        storedWorkspaceNameTimer = null
       }
     }
 
@@ -182,9 +196,13 @@ export function EmbeddedChatFrame({
           publicSessionToken: session.publicSessionToken,
           expiresAt: typeof session.expiresAt === 'string' ? session.expiresAt : new Date(Date.now() + 60_000).toISOString(),
         })
+        const expiresAt = typeof session.expiresAt === 'string' ? session.expiresAt : new Date(Date.now() + 60_000).toISOString()
         setState({
           status: 'ready',
           publicChatToken: session.publicChatToken,
+          publicSessionId: session.publicSessionId,
+          publicSessionToken: session.publicSessionToken,
+          expiresAt,
           workspaceName: session.workspaceName,
           pageContext: sanitizePageContext(event.data.pageContext),
         })
@@ -276,6 +294,36 @@ export function EmbeddedChatFrame({
     }
   }
 
+  const handleOpenFullScreen = () => {
+    if (typeof window !== 'undefined' && window.parent !== window) {
+      window.parent.postMessage({ type: FULLSCREEN_MESSAGE }, '*')
+    }
+  }
+
+  const handleOpenNewTab = () => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const url = new URL(`/chat/${encodeURIComponent(state.publicChatToken)}`, window.location.origin)
+    if (localeOverride) {
+      url.searchParams.set('locale', localeOverride)
+    }
+    if (copyOverrides && Object.keys(copyOverrides).length > 0) {
+      url.searchParams.set('copy', JSON.stringify(copyOverrides))
+    }
+    if (themeOverrides && Object.keys(themeOverrides).length > 0) {
+      url.searchParams.set('theme', JSON.stringify(themeOverrides))
+    }
+
+    url.hash = buildPublicChatSessionHandoffHash({
+      publicSessionId: state.publicSessionId,
+      publicSessionToken: state.publicSessionToken,
+      expiresAt: state.expiresAt,
+    })
+    window.open(url.toString(), '_blank', 'noopener,noreferrer')
+  }
+
   return (
     <PublicChatShell
       key={`${state.publicChatToken}:${resetNonce}`}
@@ -284,6 +332,8 @@ export function EmbeddedChatFrame({
       localeOverride={localeOverride}
       onStartNewChat={handleStartNewChat}
       onRequestCollapse={handleRequestCollapse}
+      onOpenFullScreen={handleOpenFullScreen}
+      onOpenNewTab={handleOpenNewTab}
       avatarUrl={avatarUrl}
       copyOverrides={copyOverrides}
       themeOverrides={themeOverrides}

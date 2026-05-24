@@ -2758,6 +2758,24 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     this.items.set(input.conversationId, items);
     return record;
   }
+
+  async setAnswerOutcome(input: {
+    workspaceId: string;
+    messageId: string;
+    answerOutcome: string;
+  }): Promise<void> {
+    for (const messages of this.items.values()) {
+      for (const message of messages) {
+        if (
+          message.id === input.messageId &&
+          message.workspaceId === input.workspaceId &&
+          message.role === "assistant"
+        ) {
+          message.answerOutcome = input.answerOutcome;
+        }
+      }
+    }
+  }
 }
 
 export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {

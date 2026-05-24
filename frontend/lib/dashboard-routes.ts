@@ -1,9 +1,11 @@
-export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'settings' | 'usage'
+export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'settings' | 'usage'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
 export type KnowledgeTab = 'documents' | 'sources' | 'ingestion' | 'retrieval'
 export type SettingsTab = 'workspace' | 'providers' | 'users'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
 export type HistoryItemKind = 'chat' | 'search' | 'contact'
+export type QualityOutcomeFilter = 'grounded_success' | 'no_context_refusal' | 'non_retrieval_response'
+export type QualityFeedbackFilter = 'up' | 'down'
 
 export interface DashboardRouteState {
   section: DashboardSection
@@ -20,6 +22,11 @@ export interface DashboardRouteState {
   historyPage?: number
   historyItemKind?: HistoryItemKind
   historyItemId?: string
+  historyMessageId?: string
+  qualityPage?: number
+  qualityOutcomes?: QualityOutcomeFilter[]
+  qualityFeedback?: QualityFeedbackFilter[]
+  qualityHasComment?: boolean
   anchor?: string
 }
 
@@ -38,6 +45,11 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'historyPage',
   'historyItemKind',
   'historyItemId',
+  'historyMessageId',
+  'qualityPage',
+  'qualityOutcomes',
+  'qualityFeedback',
+  'qualityHasComment',
   'anchor',
 ]
 
@@ -71,6 +83,30 @@ const parseHistoryItemKind = (value: string | null): HistoryItemKind | undefined
   }
 
   return undefined
+}
+
+const parseQualityOutcomes = (value: string | null): QualityOutcomeFilter[] | undefined => {
+  if (!value) {
+    return undefined
+  }
+  const parsed = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry): entry is QualityOutcomeFilter =>
+      entry === 'grounded_success' || entry === 'no_context_refusal' || entry === 'non_retrieval_response',
+    )
+  return parsed.length > 0 ? parsed : undefined
+}
+
+const parseQualityFeedback = (value: string | null): QualityFeedbackFilter[] | undefined => {
+  if (!value) {
+    return undefined
+  }
+  const parsed = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry): entry is QualityFeedbackFilter => entry === 'up' || entry === 'down')
+  return parsed.length > 0 ? parsed : undefined
 }
 
 const parseAgentTab = (value: string | null): AgentTab | undefined => {
@@ -172,6 +208,9 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.historyItemKind && state.historyItemId) {
       normalized.historyItemKind = state.historyItemKind
       normalized.historyItemId = state.historyItemId
+      if (state.historyMessageId) {
+        normalized.historyMessageId = state.historyMessageId
+      }
     }
     return normalized
   }
@@ -182,6 +221,22 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     }
     if (state.anchor) {
       normalized.anchor = state.anchor
+    }
+    return normalized
+  }
+
+  if (state.section === 'quality') {
+    if (state.qualityPage && state.qualityPage > 1) {
+      normalized.qualityPage = state.qualityPage
+    }
+    if (state.qualityOutcomes && state.qualityOutcomes.length > 0) {
+      normalized.qualityOutcomes = [...state.qualityOutcomes]
+    }
+    if (state.qualityFeedback && state.qualityFeedback.length > 0) {
+      normalized.qualityFeedback = [...state.qualityFeedback]
+    }
+    if (state.qualityHasComment) {
+      normalized.qualityHasComment = true
     }
     return normalized
   }
@@ -244,6 +299,9 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     if (normalized.historyItemKind && normalized.historyItemId) {
       searchParams.set('itemKind', normalized.historyItemKind)
       searchParams.set('itemId', normalized.historyItemId)
+      if (normalized.historyMessageId) {
+        searchParams.set('itemMessageId', normalized.historyMessageId)
+      }
     }
   }
 
@@ -253,6 +311,21 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.anchor) {
       searchParams.set('anchor', normalized.anchor)
+    }
+  }
+
+  if (normalized.section === 'quality') {
+    if (normalized.qualityPage && normalized.qualityPage > 1) {
+      searchParams.set('page', String(normalized.qualityPage))
+    }
+    if (normalized.qualityOutcomes && normalized.qualityOutcomes.length > 0) {
+      searchParams.set('outcomes', normalized.qualityOutcomes.join(','))
+    }
+    if (normalized.qualityFeedback && normalized.qualityFeedback.length > 0) {
+      searchParams.set('feedback', normalized.qualityFeedback.join(','))
+    }
+    if (normalized.qualityHasComment) {
+      searchParams.set('hasComment', 'true')
     }
   }
 
@@ -382,6 +455,7 @@ export const parseDashboardRoute = (
       historyPage: parsePositiveInt(searchParams?.get('page') ?? null),
       historyItemKind: parseHistoryItemKind(searchParams?.get('itemKind') ?? null),
       historyItemId: searchParams?.get('itemId') ?? undefined,
+      historyMessageId: searchParams?.get('itemMessageId') ?? undefined,
     })
   }
 
@@ -436,6 +510,7 @@ export const parseDashboardRoute = (
       historyPage: parsePositiveInt(searchParams?.get('page') ?? null),
       historyItemKind: parseHistoryItemKind(searchParams?.get('itemKind') ?? null),
       historyItemId: searchParams?.get('itemId') ?? undefined,
+      historyMessageId: searchParams?.get('itemMessageId') ?? undefined,
     })
   }
 
@@ -456,6 +531,20 @@ export const parseDashboardRoute = (
     return normalizeState({
       section: 'usage',
       workspaceId,
+    })
+  }
+
+  if (sectionCandidate === 'quality') {
+    if (secondSegment || thirdSegment || rest.length > 0) {
+      return null
+    }
+    return normalizeState({
+      section: 'quality',
+      workspaceId,
+      qualityPage: parsePositiveInt(searchParams?.get('page') ?? null),
+      qualityOutcomes: parseQualityOutcomes(searchParams?.get('outcomes') ?? null),
+      qualityFeedback: parseQualityFeedback(searchParams?.get('feedback') ?? null),
+      qualityHasComment: searchParams?.get('hasComment') === 'true' ? true : undefined,
     })
   }
 

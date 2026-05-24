@@ -13,6 +13,8 @@ export type {
   ChatIntakeStatus,
 } from "../services/chatIntakeProvider.js";
 export type { ChatGateway } from "./chatGateway.js";
+export type { AssistantTurnOutcome } from "../services/assistantTurnOutcomeTypes.js";
+export { ASSISTANT_TURN_OUTCOME } from "../services/assistantTurnOutcomeTypes.js";
 export type { ChatStreamEvent } from "./streamEvents.js";
 export type {
   ContactHistoryDetail,

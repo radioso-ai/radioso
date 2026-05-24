@@ -292,6 +292,11 @@ export class ChatTurnLifecycle {
   }): Promise<void> {
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
     await this.conversationRepository.touch(input.conversationId, input.workspaceId);
+    await this.messageRepository.setAnswerOutcome({
+      workspaceId: input.workspaceId,
+      messageId: input.assistantMessageId,
+      answerOutcome: input.answerOutcome,
+    });
     await this.auditService.record({
       accountId: input.accountId,
       workspaceId: input.workspaceId,

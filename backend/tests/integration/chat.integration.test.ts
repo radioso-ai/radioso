@@ -7,6 +7,7 @@ import type { TriggerAnalysisGateway } from "../../src/modules/retrieval/service
 import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import type { ProductAnalyticsEvent } from "../../src/shared/analytics/productAnalyticsTypes.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
+import { InMemoryMessageRepository } from "../support/fakes.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
 
 const envelope = (answer: string, suggestions: unknown[]): string =>
@@ -1118,6 +1119,12 @@ describe("chat integration", () => {
       answerOutcome: "grounded_success",
     });
     expect(chatAudit?.metadata).not.toHaveProperty("validation");
+
+    const assistantMessageId = (chatAudit?.metadata as { assistantMessageId?: string } | undefined)?.assistantMessageId;
+    const assistantMessage = [...(dependencies.messageRepository as InMemoryMessageRepository).items.values()]
+      .flat()
+      .find((message) => message.id === assistantMessageId);
+    expect(assistantMessage?.answerOutcome).toBe("grounded_success");
   });
 
   it("keeps no-context refusals distinct in audit metadata", async () => {
@@ -1139,6 +1146,12 @@ describe("chat integration", () => {
       answerOutcome: "no_context_refusal",
     });
     expect(chatAudit?.metadata).not.toHaveProperty("validation");
+
+    const assistantMessageId = (chatAudit?.metadata as { assistantMessageId?: string } | undefined)?.assistantMessageId;
+    const assistantMessage = [...(dependencies.messageRepository as InMemoryMessageRepository).items.values()]
+      .flat()
+      .find((message) => message.id === assistantMessageId);
+    expect(assistantMessage?.answerOutcome).toBe("no_context_refusal");
   });
 
   it("records a failure turn that can be inspected through history", async () => {

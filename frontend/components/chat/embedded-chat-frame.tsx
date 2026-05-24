@@ -68,6 +68,7 @@ const READY_MESSAGE = 'radioso:embed:ready'
 const SESSION_MESSAGE = 'radioso:embed:session'
 const ERROR_MESSAGE = 'radioso:embed:error'
 const HANDSHAKE_TIMEOUT_MS = 30_000
+const FULLSCREEN_MESSAGE = 'radioso:embed:fullscreen'
 
 const sanitizePageContext = (value: unknown): WebsiteEmbedPageContext | null => {
   if (!value || typeof value !== 'object') {
@@ -294,6 +295,12 @@ export function EmbeddedChatFrame({
   }
 
   const handleOpenFullScreen = () => {
+    if (typeof window !== 'undefined' && window.parent !== window) {
+      window.parent.postMessage({ type: FULLSCREEN_MESSAGE }, '*')
+    }
+  }
+
+  const handleOpenNewTab = () => {
     if (typeof window === 'undefined') {
       return
     }
@@ -326,6 +333,7 @@ export function EmbeddedChatFrame({
       onStartNewChat={handleStartNewChat}
       onRequestCollapse={handleRequestCollapse}
       onOpenFullScreen={handleOpenFullScreen}
+      onOpenNewTab={handleOpenNewTab}
       avatarUrl={avatarUrl}
       copyOverrides={copyOverrides}
       themeOverrides={themeOverrides}

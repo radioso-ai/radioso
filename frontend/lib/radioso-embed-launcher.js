@@ -9,6 +9,7 @@
   const SESSION_MESSAGE = 'radioso:embed:session'
   const ERROR_MESSAGE = 'radioso:embed:error'
   const COLLAPSE_MESSAGE = 'radioso:embed:collapse'
+  const FULLSCREEN_MESSAGE = 'radioso:embed:fullscreen'
   const TYPING_MESSAGE = 'radioso:embed:typing'
   const STYLE_ELEMENT_ID = 'radioso-embed-style'
   const ATTENTION_PRESETS = new Set(['none', 'breathe', 'pulse', 'nudge', 'bounce-in'])
@@ -106,6 +107,7 @@
     'publicChatNewChatLabel',
     'publicChatCollapseLabel',
     'publicChatOpenFullScreenLabel',
+    'publicChatOpenNewTabLabel',
     'publicChatDisclaimerTemplate',
     'publicChatRateLimitRetryTemplate',
   ]
@@ -888,6 +890,7 @@
 
     let isOpen = initialState === 'open'
     let isFullscreenOpen = false
+    let isManualFullscreenOpen = false
     let bootstrapPromise = null
     let iframe = null
 
@@ -895,7 +898,11 @@
       const viewport = getViewportFrame()
       isFullscreenOpen =
         isOpen &&
-        (viewport.width <= NARROW_VIEWPORT_MAX_WIDTH || viewport.height <= NARROW_VIEWPORT_MAX_HEIGHT)
+        (
+          isManualFullscreenOpen ||
+          viewport.width <= NARROW_VIEWPORT_MAX_WIDTH ||
+          viewport.height <= NARROW_VIEWPORT_MAX_HEIGHT
+        )
 
       if (isFullscreenOpen) {
         host.style.top = `${viewport.offsetTop}px`
@@ -1026,6 +1033,16 @@
 
       if (event.data.type === COLLAPSE_MESSAGE) {
         isOpen = false
+        isManualFullscreenOpen = false
+        updatePanelVisibility()
+        return
+      }
+
+      if (event.data.type === FULLSCREEN_MESSAGE) {
+        isOpen = true
+        isManualFullscreenOpen = true
+        ensureIframe()
+        markOpened()
         updatePanelVisibility()
         return
       }

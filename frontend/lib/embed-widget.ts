@@ -34,6 +34,7 @@ export interface WebsiteEmbedCopy {
   publicChatNewChatLabel: string
   publicChatCollapseLabel: string
   publicChatOpenFullScreenLabel: string
+  publicChatOpenNewTabLabel: string
   publicChatDisclaimerTemplate: string
   publicChatRateLimitRetryTemplate: string
   skillReceiptSubmittedLabel: string
@@ -98,6 +99,7 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatNewChatLabel: 'Clear chat',
   publicChatCollapseLabel: 'Collapse chat',
   publicChatOpenFullScreenLabel: 'Open full screen',
+  publicChatOpenNewTabLabel: 'Open in new tab',
   publicChatDisclaimerTemplate: '{name} uses AI and can make mistakes.',
   publicChatRateLimitRetryTemplate: 'Try again in {seconds}s.',
   skillReceiptSubmittedLabel: 'Submitted',
@@ -146,6 +148,7 @@ const COPY_OVERRIDE_KEYS = [
   'publicChatNewChatLabel',
   'publicChatCollapseLabel',
   'publicChatOpenFullScreenLabel',
+  'publicChatOpenNewTabLabel',
   'publicChatDisclaimerTemplate',
   'publicChatRateLimitRetryTemplate',
   'skillReceiptSubmittedLabel',

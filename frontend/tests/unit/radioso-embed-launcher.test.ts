@@ -294,4 +294,99 @@ describe('radioso embed launcher', () => {
     expect(button.querySelector('[data-radioso-launcher-avatar="true"]')?.style.width).toBe('3rem')
   })
 
+  it('expands the mounted embed to fullscreen on iframe request', async () => {
+    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const script = new FakeElement('script')
+    script.src = 'https://app.example.com/radioso-embed.js'
+    script.dataset.radiosoToken = 'embed-token'
+    script.dataset.radiosoInitialState = 'open'
+
+    const head = new FakeElement('head')
+    const body = new FakeElement('body')
+    const document = {
+      readyState: 'complete',
+      currentScript: script,
+      scripts: [script],
+      head,
+      body,
+      documentElement: { clientWidth: 1024, clientHeight: 768, lang: 'en' },
+      title: 'Host page',
+      createElement: (tagName: string) => new FakeElement(tagName),
+      getElementById: () => null,
+      addEventListener: vi.fn(),
+    }
+    const sessionStorage = {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+    }
+    const fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        launcherLabel: 'Chat with us',
+        launcherPosition: 'bottom-right',
+        theme: {
+          brand: '#0f172a',
+          brandText: '#f8fafc',
+          surface: '#ffffff',
+          text: '#0f172a',
+        },
+        copy: {},
+        expertOverrides: {},
+        proactiveGreetingEnabled: false,
+      }),
+    }))
+    const window = {
+      location: { href: 'https://host.example.com/page', origin: 'https://host.example.com' },
+      navigator: { languages: ['en-US'], language: 'en-US' },
+      sessionStorage,
+      matchMedia: vi.fn(() => ({ matches: false })),
+      innerWidth: 1024,
+      innerHeight: 768,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        callback(0)
+        return 1
+      },
+      setTimeout: vi.fn(),
+      clearTimeout: vi.fn(),
+      visualViewport: null,
+    }
+
+    vm.runInNewContext(launcherSource, {
+      document,
+      window,
+      fetch,
+      URL,
+      setTimeout: vi.fn(),
+      clearTimeout: vi.fn(),
+      requestAnimationFrame: window.requestAnimationFrame,
+    })
+    for (let index = 0; index < 10; index += 1) {
+      await Promise.resolve()
+    }
+
+    const iframe = collectElements(body, (element) => element.tagName === 'IFRAME')[0]
+    expect(iframe).toBeDefined()
+
+    const messageHandlers = window.addEventListener.mock.calls
+      .filter(([eventName]) => eventName === 'message')
+      .map(([, handler]) => handler as (event: unknown) => void)
+    for (const handler of messageHandlers) {
+      handler({
+        source: iframe.contentWindow,
+        origin: 'https://app.example.com',
+        data: { type: 'radioso:embed:fullscreen' },
+      })
+    }
+
+    const host = body.children[0]
+    const panel = iframe.parentNode
+    expect(host.style.width).toBe('1024px')
+    expect(host.style.height).toBe('768px')
+    expect(host.style.maxWidth).toBe('none')
+    expect(panel?.style.width).toBe('100%')
+    expect(panel?.style.borderRadius).toBe('0')
+  })
+
 })

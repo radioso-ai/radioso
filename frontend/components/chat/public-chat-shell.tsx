@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
-import { Maximize2, MoreHorizontal, RotateCcw, UserRound, X } from 'lucide-react'
+import { ExternalLink, Maximize2, MoreHorizontal, RotateCcw, UserRound, X } from 'lucide-react'
 
 import {
   AssistantAvatar,
@@ -220,8 +220,10 @@ function PublicChatOptionsMenu({
   contactAvailable,
   contactDisabled,
   clearDisabled,
+  openNewTabAvailable,
   onContact,
   onClear,
+  onOpenNewTab,
   className = 'h-8 w-8 hover:opacity-90',
   iconColor,
 }: {
@@ -230,8 +232,10 @@ function PublicChatOptionsMenu({
   contactAvailable: boolean
   contactDisabled: boolean
   clearDisabled: boolean
+  openNewTabAvailable: boolean
   onContact: () => void
   onClear: () => void
+  onOpenNewTab: () => void
   className?: string
   iconColor?: string
 }) {
@@ -268,6 +272,16 @@ function PublicChatOptionsMenu({
           >
             <UserRound className="mr-2 h-4 w-4" />
             {copy.publicChatContactHumanLabel}
+          </DropdownMenuItem>
+        ) : null}
+        {openNewTabAvailable ? (
+          <DropdownMenuItem
+            onSelect={() => {
+              onOpenNewTab()
+            }}
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            {copy.publicChatOpenNewTabLabel}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>
@@ -381,6 +395,7 @@ function PublicChatContent({
   onStartNewChat,
   onRequestCollapse,
   onOpenFullScreen,
+  onOpenNewTab,
   avatarUrl,
   copyOverrides,
   themeOverrides,
@@ -391,6 +406,7 @@ function PublicChatContent({
   onStartNewChat?: () => Promise<void>
   onRequestCollapse?: () => void
   onOpenFullScreen?: () => void
+  onOpenNewTab?: () => void
   avatarUrl?: string | null
   copyOverrides?: WebsiteEmbedCopyOverrides | null
   themeOverrides?: WebsiteEmbedThemeOverrides | null
@@ -638,8 +654,10 @@ function PublicChatContent({
             contactAvailable={contactAvailable}
             contactDisabled={contactDisabled}
             clearDisabled={clearDisabled}
+            openNewTabAvailable={Boolean(onOpenNewTab)}
             onContact={handleManualContact}
             onClear={() => void handleStartNewChat()}
+            onOpenNewTab={() => onOpenNewTab?.()}
           />
           {onRequestCollapse ? (
             <>
@@ -699,8 +717,10 @@ function PublicChatContent({
                 contactAvailable={contactAvailable}
                 contactDisabled={contactDisabled}
                 clearDisabled={clearDisabled}
+                openNewTabAvailable={Boolean(onOpenNewTab)}
                 onContact={handleManualContact}
                 onClear={() => void handleStartNewChat()}
+                onOpenNewTab={() => onOpenNewTab?.()}
                 iconColor={theme.accentForeground}
               />
               {onRequestCollapse ? (
@@ -891,6 +911,7 @@ export function PublicChatShell({
   onStartNewChat,
   onRequestCollapse,
   onOpenFullScreen,
+  onOpenNewTab,
   avatarUrl,
   copyOverrides,
   themeOverrides,
@@ -903,6 +924,7 @@ export function PublicChatShell({
   onStartNewChat?: () => Promise<void>
   onRequestCollapse?: () => void
   onOpenFullScreen?: () => void
+  onOpenNewTab?: () => void
   avatarUrl?: string | null
   copyOverrides?: WebsiteEmbedCopyOverrides | null
   themeOverrides?: WebsiteEmbedThemeOverrides | null
@@ -934,6 +956,7 @@ export function PublicChatShell({
           onStartNewChat={onStartNewChat}
           onRequestCollapse={onRequestCollapse}
           onOpenFullScreen={onOpenFullScreen}
+          onOpenNewTab={onOpenNewTab}
           avatarUrl={avatarUrl}
           copyOverrides={copyOverrides}
           themeOverrides={themeOverrides}

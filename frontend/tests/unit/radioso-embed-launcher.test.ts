@@ -335,6 +335,10 @@ describe('radioso embed launcher', () => {
         proactiveGreetingEnabled: false,
       }),
     }))
+    const requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
     const window = {
       location: { href: 'https://host.example.com/page', origin: 'https://host.example.com' },
       navigator: { languages: ['en-US'], language: 'en-US' },
@@ -344,10 +348,7 @@ describe('radioso embed launcher', () => {
       innerHeight: 768,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
-      requestAnimationFrame: (callback: FrameRequestCallback) => {
-        callback(0)
-        return 1
-      },
+      requestAnimationFrame,
       setTimeout: vi.fn(),
       clearTimeout: vi.fn(),
       visualViewport: null,
@@ -369,6 +370,7 @@ describe('radioso embed launcher', () => {
     const iframe = collectElements(body, (element) => element.tagName === 'IFRAME')[0]
     expect(iframe).toBeDefined()
 
+    requestAnimationFrame.mockClear()
     const messageHandlers = window.addEventListener.mock.calls
       .filter(([eventName]) => eventName === 'message')
       .map(([, handler]) => handler as (event: unknown) => void)
@@ -387,7 +389,9 @@ describe('radioso embed launcher', () => {
     expect(host.style.maxWidth).toBe('none')
     expect(panel?.style.width).toBe('100%')
     expect(panel?.style.borderRadius).toBe('0')
+    expect(requestAnimationFrame).toHaveBeenCalledTimes(2)
 
+    requestAnimationFrame.mockClear()
     for (const handler of messageHandlers) {
       handler({
         source: iframe.contentWindow,
@@ -401,6 +405,7 @@ describe('radioso embed launcher', () => {
     expect(host.style.maxWidth).toBe('calc(100vw - 2rem)')
     expect(panel?.style.width).toBe('min(560px, calc(100vw - 2rem))')
     expect(panel?.style.borderRadius).toBe('28px')
+    expect(requestAnimationFrame).toHaveBeenCalledTimes(2)
   })
 
 })

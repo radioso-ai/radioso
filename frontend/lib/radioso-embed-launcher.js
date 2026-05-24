@@ -838,6 +838,9 @@
       displayMode === 'panel'
         ? createPanelHandle(label, icon, avatarUrl, theme, position)
         : createButton(label, icon, avatarUrl, theme)
+    const panelMotionTransition = reducedMotion
+      ? 'none'
+      : 'opacity 200ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1)'
     const shell = displayMode === 'panel' ? document.createElement('div') : null
     if (shell) {
       shell.style.position = 'absolute'
@@ -865,9 +868,7 @@
     }
     if (displayMode !== 'panel') {
       panel.style.transformOrigin = position === 'bottom-left' ? '0% 100%' : '100% 100%'
-      panel.style.transition = reducedMotion
-        ? 'none'
-        : 'opacity 200ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1)'
+      panel.style.transition = panelMotionTransition
       panel.style.willChange = 'opacity, transform'
     }
 
@@ -1043,7 +1044,7 @@
         isManualFullscreenOpen = !isManualFullscreenOpen
         ensureIframe()
         markOpened()
-        updatePanelVisibility()
+        updatePanelVisibility({ animateFullscreenTransition: true })
         return
       }
 
@@ -1093,6 +1094,7 @@
     }
 
     let panelHideTimer = null
+    let panelLayoutAnimationTimer = null
     const animateBubblePanel = (visible) => {
       if (panelHideTimer) {
         clearTimeout(panelHideTimer)
@@ -1127,7 +1129,54 @@
       }, 240)
     }
 
-    const updatePanelVisibility = () => {
+    const animateFullscreenPanel = (direction) => {
+      if (panelHideTimer) {
+        clearTimeout(panelHideTimer)
+        panelHideTimer = null
+      }
+      if (panelLayoutAnimationTimer) {
+        clearTimeout(panelLayoutAnimationTimer)
+        panelLayoutAnimationTimer = null
+      }
+
+      panel.style.display = 'block'
+      if (reducedMotion) {
+        panel.style.opacity = '1'
+        panel.style.transform = 'none'
+        return
+      }
+
+      const previousTransition = panel.style.transition
+      const previousTransformOrigin = panel.style.transformOrigin
+      const previousWillChange = panel.style.willChange
+      const needsTemporaryTransition = displayMode === 'panel'
+
+      if (needsTemporaryTransition) {
+        panel.style.transition = panelMotionTransition
+        panel.style.transformOrigin = position === 'bottom-left' ? '0% 50%' : '100% 50%'
+      }
+      panel.style.willChange = 'opacity, transform'
+      panel.style.opacity = '0.92'
+      panel.style.transform = direction === 'contract' ? 'scale(1.03) translateY(-6px)' : 'scale(0.96) translateY(8px)'
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          panel.style.opacity = '1'
+          panel.style.transform = 'none'
+        })
+      })
+
+      if (needsTemporaryTransition) {
+        panelLayoutAnimationTimer = setTimeout(() => {
+          panel.style.transition = previousTransition
+          panel.style.transformOrigin = previousTransformOrigin
+          panel.style.willChange = previousWillChange
+          panelLayoutAnimationTimer = null
+        }, 260)
+      }
+    }
+
+    const updatePanelVisibility = (options = {}) => {
       applyResponsiveLayout()
       if (displayMode === 'panel' && shell) {
         shell.style.transform =
@@ -1141,8 +1190,15 @@
         button.style.opacity = isOpen ? '0' : '1'
         button.style.pointerEvents = isOpen ? 'none' : 'auto'
         panel.style.pointerEvents = isOpen ? 'auto' : 'none'
+        if (options.animateFullscreenTransition) {
+          animateFullscreenPanel(isFullscreenOpen ? 'expand' : 'contract')
+        }
       } else {
-        animateBubblePanel(isOpen || isFullscreenOpen)
+        if (options.animateFullscreenTransition) {
+          animateFullscreenPanel(isFullscreenOpen ? 'expand' : 'contract')
+        } else {
+          animateBubblePanel(isOpen || isFullscreenOpen)
+        }
         button.style.display = isFullscreenOpen ? 'none' : 'inline-flex'
         button.style.opacity = isOpen ? '0.94' : '1'
         button.style.pointerEvents = isFullscreenOpen ? 'none' : 'auto'

@@ -11,6 +11,9 @@ import {
 
 export type AmqpConnect = (url: string) => Promise<amqp.ChannelModel>;
 const DEFAULT_BUSY_REQUEUE_DELAY_MS = 1_000;
+const DEFAULT_RECONNECT_DELAY_MS = 5_000;
+const DEFAULT_RECONNECT_MAX_DELAY_MS = 60_000;
+const DEFAULT_RECONNECT_BACKOFF_MULTIPLIER = 2;
 
 interface AmqpDocumentJobQueueOptions {
   amqpUrl: string;
@@ -120,6 +123,8 @@ export interface AmqpDocumentJobConsumerOptions extends AmqpDocumentJobQueueOpti
   prefetch?: number;
   busyRequeueDelayMs?: number;
   reconnectDelayMs?: number;
+  reconnectMaxDelayMs?: number;
+  reconnectBackoffMultiplier?: number;
   worker: {
     runJobById(jobId: string): Promise<"processed" | "noop" | "busy">;
   };
@@ -134,6 +139,7 @@ export class AmqpDocumentJobConsumer implements DocumentJobConsumerPort {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private reconnectPromise: Promise<void> | null = null;
   private reconnecting = false;
+  private reconnectAttempt = 0;
   private running = false;
   private stopping = false;
 
@@ -312,12 +318,22 @@ export class AmqpDocumentJobConsumer implements DocumentJobConsumerPort {
       return;
     }
 
+    const delayMs = this.nextReconnectDelayMs();
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.reconnectPromise = this.reconnect().finally(() => {
         this.reconnectPromise = null;
       });
-    }, this.options.reconnectDelayMs ?? 5_000);
+    }, delayMs);
+  }
+
+  private nextReconnectDelayMs(): number {
+    const initialDelayMs = Math.max(0, this.options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS);
+    const maxDelayMs = Math.max(initialDelayMs, this.options.reconnectMaxDelayMs ?? DEFAULT_RECONNECT_MAX_DELAY_MS);
+    const multiplier = Math.max(1, this.options.reconnectBackoffMultiplier ?? DEFAULT_RECONNECT_BACKOFF_MULTIPLIER);
+    const delayMs = Math.min(initialDelayMs * multiplier ** this.reconnectAttempt, maxDelayMs);
+    this.reconnectAttempt += 1;
+    return delayMs;
   }
 
   private async reconnect(): Promise<void> {
@@ -329,6 +345,7 @@ export class AmqpDocumentJobConsumer implements DocumentJobConsumerPort {
     let retry = false;
     try {
       await this.openConsumer();
+      this.reconnectAttempt = 0;
       this.options.logger.info(
         {
           role: "amqp-document-job-consumer",

@@ -455,6 +455,42 @@ describe("AMQP document job queue", () => {
     await consumer.stop();
   });
 
+  it("backs off repeated AMQP reconnect failures up to the configured cap", async () => {
+    vi.useFakeTimers();
+    const first = createAmqpHarness();
+    first.channel.assertQueue.mockRejectedValueOnce(new Error("queue unavailable"));
+    const second = createAmqpHarness();
+    second.channel.assertQueue.mockRejectedValueOnce(new Error("queue still unavailable"));
+    const recovered = createAmqpHarness();
+    const connect = vi.fn()
+      .mockResolvedValueOnce(first.connection)
+      .mockResolvedValueOnce(second.connection)
+      .mockResolvedValueOnce(recovered.connection);
+    const consumer = new AmqpDocumentJobConsumer({
+      amqpUrl: "amqp://localhost:5672",
+      queueName: "radioso-document-jobs",
+      connect,
+      logger: createLogger() as any,
+      reconnectDelayMs: 10,
+      reconnectMaxDelayMs: 20,
+      worker: { runJobById: vi.fn() },
+    });
+
+    await consumer.start();
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(connect).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(19);
+    expect(connect).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(connect).toHaveBeenCalledTimes(3);
+    expect(recovered.channel.consume).toHaveBeenCalledOnce();
+
+    await consumer.stop();
+  });
+
   it("closes broker resources on stop", async () => {
     const { channel, connect, connection } = createAmqpHarness();
     const consumer = new AmqpDocumentJobConsumer({

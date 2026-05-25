@@ -300,8 +300,11 @@ const deriveExplanation = (stage: ActivityStage): string | null => {
         ? 'Quality check detected issues — fallback behavior was applied.'
         : 'Quality check passed — no fallback needed.'
     case 'answer_outcome': {
-      const outcome = (outputs.outcome as string | undefined)?.replaceAll('_', ' ')
-      return outcome ? `Outcome: ${outcome}.` : null
+      const skillName = outputs.skillName as string | undefined
+      const skillOutcome = (outputs.skillOutcome as string | undefined)?.replaceAll('_', ' ')
+      const outcome = skillOutcome ?? (outputs.outcome as string | undefined)?.replaceAll('_', ' ')
+      if (!outcome) return null
+      return skillName ? `Outcome: ${skillName} / ${outcome}.` : `Outcome: ${outcome}.`
     }
     case 'generation': {
       const model = inputs.model as string | undefined

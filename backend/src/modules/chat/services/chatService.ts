@@ -29,7 +29,13 @@ import {
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
-import { ChatAnswerPresenter, type ChatPresentedAnswer } from "./chatAnswerPresenter.js";
+import {
+  ChatAnswerPresenter,
+  type ChatPresentedAnswer,
+  type SkillOutcomeCapabilityProvider,
+  createSkillOutcomeCapabilityProvider,
+} from "./chatAnswerPresenter.js";
+import { createDefaultSkillCatalogRegistry } from "../../skills/public.js";
 import { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
 import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
@@ -220,6 +226,9 @@ export class ChatService {
     agentService?: Pick<AgentService, "resolve">,
     private readonly chatIntakeProvider: ChatIntakeProviderPort = new NoopChatIntakeProvider(),
     private readonly chatActionSuggestionService?: ChatActionSuggestionService,
+    skillOutcomeCapabilities: SkillOutcomeCapabilityProvider = createSkillOutcomeCapabilityProvider(
+      createDefaultSkillCatalogRegistry(),
+    ),
   ) {
     this.chatTurnLifecycle = new ChatTurnLifecycle(
       conversationRepository,
@@ -238,6 +247,7 @@ export class ChatService {
     this.chatAnswerPresenter = new ChatAnswerPresenter(
       new AssistantSuggestionExpansionService(),
       chatActionSuggestionService,
+      skillOutcomeCapabilities,
     );
   }
 

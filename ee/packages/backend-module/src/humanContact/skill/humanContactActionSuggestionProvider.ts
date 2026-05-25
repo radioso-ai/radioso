@@ -17,7 +17,8 @@ export class HumanContactActionSuggestionProvider implements ChatActionSuggestio
   }) {}
 
   async evaluate(context: ChatActionSuggestionContext): Promise<ChatActionSuggestion | null> {
-    if (context.answerOutcome !== "no_context_refusal") {
+    const isRetrievalNoContext = context.skillName === "retrieval.answer" && context.skillOutcome === "no_context";
+    if (!isRetrievalNoContext && context.answerOutcome !== "no_context_refusal") {
       return null;
     }
     const settings = await this.input.settingsService.findSettings(context.workspaceId);

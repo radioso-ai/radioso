@@ -190,6 +190,10 @@ const readAnonymousSessionId = (token: string) => {
 
 export const readStoredAnonymousSessionId = (token: string) => readAnonymousSessionId(token)
 
+export const storeAnonymousSessionId = (token: string, sessionId: string | null) => {
+  writeAnonymousSessionId(token, sessionId)
+}
+
 const readPublicSessionToken = (token: string) => {
   if (typeof window === 'undefined') {
     return null

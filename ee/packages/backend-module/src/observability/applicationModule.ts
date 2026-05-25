@@ -1,6 +1,7 @@
 import type { ApplicationModule } from "../radiosoModuleTypes.js";
 import { parseConfiguredSinks } from "./configuredSinks.js";
 import { PosthogAnalyticsSink } from "./posthogAnalyticsSink.js";
+import { PosthogErrorSink } from "./posthogErrorSink.js";
 import { SentryErrorSink } from "./sentryErrorSink.js";
 
 interface ObservabilityEnv {
@@ -40,19 +41,32 @@ export const createEnterpriseObservabilityApplicationModule = (
     });
     const errorSinks = parseConfiguredSinks(env.ERROR_SINKS, {
       envName: "ERROR_SINKS",
-      supportedSinks: ["audit", "sentry"],
+      supportedSinks: ["audit", "sentry", "posthog"],
     });
+    const posthogCredentials = productAnalyticsSinks.has("posthog") || errorSinks.has("posthog")
+      ? {
+          apiKey: requireEnv(env, "POSTHOG_API_KEY"),
+          host: requireUrlEnv(env, "POSTHOG_HOST"),
+        }
+      : null;
 
-    if (productAnalyticsSinks.has("posthog")) {
+    if (productAnalyticsSinks.has("posthog") && posthogCredentials) {
       context.registerProductAnalyticsSink?.(new PosthogAnalyticsSink({
-        apiKey: requireEnv(env, "POSTHOG_API_KEY"),
-        host: requireUrlEnv(env, "POSTHOG_HOST"),
+        apiKey: posthogCredentials.apiKey,
+        host: posthogCredentials.host,
       }));
     }
 
     if (errorSinks.has("sentry")) {
       context.registerErrorSink?.(new SentryErrorSink({
         dsn: requireEnv(env, "SENTRY_DSN"),
+      }));
+    }
+
+    if (errorSinks.has("posthog") && posthogCredentials) {
+      context.registerErrorSink?.(new PosthogErrorSink({
+        apiKey: posthogCredentials.apiKey,
+        host: posthogCredentials.host,
       }));
     }
   },

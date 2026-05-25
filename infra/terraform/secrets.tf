@@ -1,5 +1,6 @@
 locals {
   radioso_mcp_signing_secret_configured = try(length(trimspace(nonsensitive(var.radioso_mcp_signing_secret))) > 0, false)
+  posthog_api_key_configured            = nonsensitive(try(length(trimspace(var.posthog_api_key)) > 0, false))
 
   secret_values = merge(
     {
@@ -19,9 +20,12 @@ locals {
     nonsensitive(var.metrics_auth_token) == null ? {} : {
       "metrics-auth-token" = var.metrics_auth_token
     },
+    local.posthog_api_key_configured ? {
+      "posthog-api-key" = var.posthog_api_key
+    } : {},
   )
 
-  secret_names = toset(keys(merge(
+  secret_names = nonsensitive(toset(keys(merge(
     {
       "database-password"          = true
       "openai-api-key"             = true
@@ -39,7 +43,10 @@ locals {
     nonsensitive(var.metrics_auth_token) == null ? {} : {
       "metrics-auth-token" = true
     },
-  )))
+    local.posthog_api_key_configured ? {
+      "posthog-api-key" = true
+    } : {},
+  ))))
 }
 
 resource "google_secret_manager_secret" "secrets" {

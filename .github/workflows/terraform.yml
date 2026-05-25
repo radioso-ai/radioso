@@ -88,6 +88,8 @@ jobs:
         env:
           MAIL_FROM_NAME: ${{ vars.MAIL_FROM_NAME }}
           METRICS_AUTH_TOKEN: ${{ secrets.METRICS_AUTH_TOKEN }}
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
+          POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
           RADIOSO_MCP_SIGNING_SECRET: ${{ secrets.RADIOSO_MCP_SIGNING_SECRET }}
         run: |
           if [ -n "${METRICS_AUTH_TOKEN}" ]; then
@@ -96,6 +98,18 @@ jobs:
 
           if [ -n "${MAIL_FROM_NAME}" ]; then
             echo "TF_VAR_mail_from_name=${MAIL_FROM_NAME}" >> "$GITHUB_ENV"
+          fi
+
+          if [ "${{ inputs.environment }}" = "staging" ] || [ "${{ inputs.environment }}" = "live" ]; then
+            if [ -z "${POSTHOG_API_KEY}" ]; then
+              echo "Missing required GitHub environment value: POSTHOG_API_KEY" >&2
+              exit 1
+            fi
+            echo "TF_VAR_posthog_api_key=${POSTHOG_API_KEY}" >> "$GITHUB_ENV"
+
+            if [ -n "${POSTHOG_HOST}" ]; then
+              echo "TF_VAR_posthog_host=${POSTHOG_HOST}" >> "$GITHUB_ENV"
+            fi
           fi
 
           if [ "${RADIOSO_MCP_ENABLED}" = "true" ]; then

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
-import { MoreHorizontal, RotateCcw, UserRound, X } from 'lucide-react'
+import { ExternalLink, Maximize2, MoreHorizontal, RotateCcw, UserRound, X } from 'lucide-react'
 
 import {
   AssistantAvatar,
@@ -220,8 +220,10 @@ function PublicChatOptionsMenu({
   contactAvailable,
   contactDisabled,
   clearDisabled,
+  openNewTabAvailable,
   onContact,
   onClear,
+  onOpenNewTab,
   className = 'h-8 w-8 hover:opacity-90',
   iconColor,
 }: {
@@ -230,8 +232,10 @@ function PublicChatOptionsMenu({
   contactAvailable: boolean
   contactDisabled: boolean
   clearDisabled: boolean
+  openNewTabAvailable: boolean
   onContact: () => void
   onClear: () => void
+  onOpenNewTab: () => void
   className?: string
   iconColor?: string
 }) {
@@ -268,6 +272,16 @@ function PublicChatOptionsMenu({
           >
             <UserRound className="mr-2 h-4 w-4" />
             {copy.publicChatContactHumanLabel}
+          </DropdownMenuItem>
+        ) : null}
+        {openNewTabAvailable ? (
+          <DropdownMenuItem
+            onSelect={() => {
+              onOpenNewTab()
+            }}
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            {copy.publicChatOpenNewTabLabel}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>
@@ -380,6 +394,8 @@ function PublicChatContent({
   localeOverride,
   onStartNewChat,
   onRequestCollapse,
+  onOpenFullScreen,
+  onOpenNewTab,
   avatarUrl,
   copyOverrides,
   themeOverrides,
@@ -389,6 +405,8 @@ function PublicChatContent({
   localeOverride?: string | null
   onStartNewChat?: () => Promise<void>
   onRequestCollapse?: () => void
+  onOpenFullScreen?: () => void
+  onOpenNewTab?: () => void
   avatarUrl?: string | null
   copyOverrides?: WebsiteEmbedCopyOverrides | null
   themeOverrides?: WebsiteEmbedThemeOverrides | null
@@ -636,20 +654,49 @@ function PublicChatContent({
             contactAvailable={contactAvailable}
             contactDisabled={contactDisabled}
             clearDisabled={clearDisabled}
+            openNewTabAvailable={Boolean(onOpenNewTab)}
             onContact={handleManualContact}
             onClear={() => void handleStartNewChat()}
+            onOpenNewTab={() => onOpenNewTab?.()}
           />
           {onRequestCollapse ? (
+            <>
+              {onOpenFullScreen ? (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={onOpenFullScreen}
+                  className="h-8 w-8 hover:opacity-90"
+                  style={{ color: theme.mutedForeground }}
+                >
+                  <Maximize2 className="h-4 w-4" />
+                  <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={onRequestCollapse}
+                className="h-8 w-8 hover:opacity-90"
+                style={{ color: theme.mutedForeground }}
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+              </Button>
+            </>
+          ) : onOpenFullScreen ? (
             <Button
               type="button"
               size="icon"
               variant="ghost"
-              onClick={onRequestCollapse}
+              onClick={onOpenFullScreen}
               className="h-8 w-8 hover:opacity-90"
               style={{ color: theme.mutedForeground }}
             >
-              <X className="h-4 w-4" />
-              <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+              <Maximize2 className="h-4 w-4" />
+              <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
             </Button>
           ) : null}
         </div>
@@ -670,21 +717,50 @@ function PublicChatContent({
                 contactAvailable={contactAvailable}
                 contactDisabled={contactDisabled}
                 clearDisabled={clearDisabled}
+                openNewTabAvailable={Boolean(onOpenNewTab)}
                 onContact={handleManualContact}
                 onClear={() => void handleStartNewChat()}
+                onOpenNewTab={() => onOpenNewTab?.()}
                 iconColor={theme.accentForeground}
               />
               {onRequestCollapse ? (
+                <>
+                  {onOpenFullScreen ? (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={onOpenFullScreen}
+                      className="h-8 w-8 hover:opacity-90"
+                      style={{ color: theme.accentForeground }}
+                    >
+                      <Maximize2 className="h-4 w-4" />
+                      <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onClick={onRequestCollapse}
+                    className="h-8 w-8 hover:opacity-90"
+                    style={{ color: theme.accentForeground }}
+                  >
+                    <X className="h-4 w-4" />
+                    <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+                  </Button>
+                </>
+              ) : onOpenFullScreen ? (
                 <Button
                   type="button"
                   size="icon"
                   variant="ghost"
-                  onClick={onRequestCollapse}
+                  onClick={onOpenFullScreen}
                   className="h-8 w-8 hover:opacity-90"
                   style={{ color: theme.accentForeground }}
                 >
-                  <X className="h-4 w-4" />
-                  <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+                  <Maximize2 className="h-4 w-4" />
+                  <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
                 </Button>
               ) : null}
             </>
@@ -834,6 +910,8 @@ export function PublicChatShell({
   localeOverride,
   onStartNewChat,
   onRequestCollapse,
+  onOpenFullScreen,
+  onOpenNewTab,
   avatarUrl,
   copyOverrides,
   themeOverrides,
@@ -845,6 +923,8 @@ export function PublicChatShell({
   localeOverride?: string | null
   onStartNewChat?: () => Promise<void>
   onRequestCollapse?: () => void
+  onOpenFullScreen?: () => void
+  onOpenNewTab?: () => void
   avatarUrl?: string | null
   copyOverrides?: WebsiteEmbedCopyOverrides | null
   themeOverrides?: WebsiteEmbedThemeOverrides | null
@@ -858,6 +938,7 @@ export function PublicChatShell({
       key={token}
       token={token}
       sessionChannel={surface === 'public' ? 'anonymous_link' : null}
+      consumeSessionHandoff={surface === 'public'}
       localeOverride={localeOverride}
       pageContext={pageContext}
     >
@@ -874,6 +955,8 @@ export function PublicChatShell({
           localeOverride={localeOverride}
           onStartNewChat={onStartNewChat}
           onRequestCollapse={onRequestCollapse}
+          onOpenFullScreen={onOpenFullScreen}
+          onOpenNewTab={onOpenNewTab}
           avatarUrl={avatarUrl}
           copyOverrides={copyOverrides}
           themeOverrides={themeOverrides}

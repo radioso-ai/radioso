@@ -630,11 +630,11 @@ export class InMemoryWorkspaceTokenRepository implements WorkspaceTokenRepositor
   private readonly items = new Map<string, WorkspaceTokenRecord>();
 
   async findByWorkspaceId(workspaceId: string): Promise<WorkspaceTokenRecord | null> {
-    return [...this.items.values()].find((item) => item.workspaceId === workspaceId) ?? null;
+    return [...this.items.values()].find((item) => item.workspaceId === workspaceId && item.revokedAt === null) ?? null;
   }
 
   async findByTokenHash(tokenHash: string): Promise<WorkspaceTokenRecord | null> {
-    return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
+    return [...this.items.values()].find((item) => item.tokenHash === tokenHash && item.revokedAt === null) ?? null;
   }
 
   async save(params: {
@@ -654,6 +654,7 @@ export class InMemoryWorkspaceTokenRepository implements WorkspaceTokenRepositor
       encryptedToken: params.encryptedToken,
       createdAt: existing?.createdAt ?? new Date(),
       lastUsedAt: existing?.lastUsedAt ?? null,
+      revokedAt: null,
     };
 
     this.items.set(record.id, record);
@@ -661,7 +662,7 @@ export class InMemoryWorkspaceTokenRepository implements WorkspaceTokenRepositor
   }
 
   async touch(workspaceId: string, lastUsedAt: Date): Promise<void> {
-    const item = [...this.items.values()].find((i) => i.workspaceId === workspaceId);
+    const item = [...this.items.values()].find((i) => i.workspaceId === workspaceId && i.revokedAt === null);
     if (item) {
       item.lastUsedAt = lastUsedAt;
     }

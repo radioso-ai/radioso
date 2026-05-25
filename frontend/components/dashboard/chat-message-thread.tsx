@@ -225,6 +225,23 @@ export function ChatMessageThread({
   showCitations?: boolean
 }) {
   const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
+  const threadRef = useRef<HTMLDivElement | null>(null)
+  // Scroll the selected message into view when the selection is set programmatically
+  // (e.g. via a deep link from the Quality dashboard). Re-runs only when the target
+  // message id or the set of messages changes.
+  const messageIdsKey = useMemo(() => messages.map((message) => message.id).join('|'), [messages])
+  useEffect(() => {
+    if (!selectedMessageId || !threadRef.current) {
+      return
+    }
+    const node = threadRef.current.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(selectedMessageId)}"]`,
+    )
+    if (!node) {
+      return
+    }
+    node.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [selectedMessageId, messageIdsKey])
   const [localFeedback, setLocalFeedback] = useState<Record<string, AnswerFeedbackState | null | undefined>>({})
   const [pendingFeedbackId, setPendingFeedbackId] = useState<string | null>(null)
   const [feedbackError, setFeedbackError] = useState<Record<string, string | undefined>>({})
@@ -359,7 +376,7 @@ export function ChatMessageThread({
     : undefined
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div ref={threadRef} className="mx-auto max-w-3xl space-y-6">
       {messages.map((message, index) => {
         const currentDay = dayFormatter.format(new Date(message.createdAt))
         const previousDay =

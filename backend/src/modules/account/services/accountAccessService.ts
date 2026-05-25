@@ -26,6 +26,7 @@ export type AccountPermission =
   | "workspace.chat.use"
   | "workspace.retrieval.query"
   | "workspace.history.read"
+  | "workspace.quality.read"
   | "workspace.skills.read"
   | "workspace.agents.read"
   | "workspace.agents.manage"

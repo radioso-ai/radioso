@@ -1,9 +1,36 @@
-export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'settings' | 'usage'
+export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'settings' | 'usage'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
 export type KnowledgeTab = 'documents' | 'sources' | 'ingestion' | 'retrieval'
 export type SettingsTab = 'workspace' | 'providers' | 'users'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
 export type HistoryItemKind = 'chat' | 'search' | 'contact'
+export type QualityStatusFilter =
+  | 'active'
+  | 'paused'
+  | 'awaiting_confirmation'
+  | 'awaiting_tool'
+  | 'completed'
+  | 'cancelled'
+  | 'expired'
+  | 'failed'
+
+const QUALITY_STATUS_VALUES: ReadonlySet<QualityStatusFilter> = new Set([
+  'active',
+  'paused',
+  'awaiting_confirmation',
+  'awaiting_tool',
+  'completed',
+  'cancelled',
+  'expired',
+  'failed',
+])
+export type QualityFeedbackFilter = 'up' | 'down'
+export type QualityLatencyFilter = 'lt_2s' | '2s_5s' | '5s_10s' | 'gte_10s'
+
+export interface QualityActionRoute {
+  skillName: string
+  outcome: string
+}
 
 export interface DashboardRouteState {
   section: DashboardSection
@@ -20,6 +47,13 @@ export interface DashboardRouteState {
   historyPage?: number
   historyItemKind?: HistoryItemKind
   historyItemId?: string
+  historyMessageId?: string
+  qualityPage?: number
+  qualityActions?: QualityActionRoute[]
+  qualityStatuses?: QualityStatusFilter[]
+  qualityFeedback?: QualityFeedbackFilter[]
+  qualityLatency?: QualityLatencyFilter
+  qualityHasComment?: boolean
   anchor?: string
 }
 
@@ -38,6 +72,13 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'historyPage',
   'historyItemKind',
   'historyItemId',
+  'historyMessageId',
+  'qualityPage',
+  'qualityActions',
+  'qualityStatuses',
+  'qualityFeedback',
+  'qualityLatency',
+  'qualityHasComment',
   'anchor',
 ]
 
@@ -71,6 +112,59 @@ const parseHistoryItemKind = (value: string | null): HistoryItemKind | undefined
   }
 
   return undefined
+}
+
+const ACTION_PATTERN = /^[^:]+:[^:]+$/
+
+const parseQualityActions = (value: string | null): QualityActionRoute[] | undefined => {
+  if (!value) {
+    return undefined
+  }
+  const parsed = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => ACTION_PATTERN.test(entry))
+    .map((entry): QualityActionRoute => {
+      const colonIndex = entry.indexOf(':')
+      return {
+        skillName: entry.slice(0, colonIndex),
+        outcome: entry.slice(colonIndex + 1),
+      }
+    })
+  return parsed.length > 0 ? parsed : undefined
+}
+
+const serializeQualityActions = (actions: QualityActionRoute[]): string =>
+  actions.map((action) => `${action.skillName}:${action.outcome}`).join(',')
+
+const parseQualityFeedback = (value: string | null): QualityFeedbackFilter[] | undefined => {
+  if (!value) {
+    return undefined
+  }
+  const parsed = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry): entry is QualityFeedbackFilter => entry === 'up' || entry === 'down')
+  return parsed.length > 0 ? parsed : undefined
+}
+
+const parseQualityStatuses = (value: string | null): QualityStatusFilter[] | undefined => {
+  if (!value) {
+    return undefined
+  }
+  const parsed = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry): entry is QualityStatusFilter =>
+      QUALITY_STATUS_VALUES.has(entry as QualityStatusFilter),
+    )
+  return parsed.length > 0 ? parsed : undefined
+}
+
+const parseQualityLatency = (value: string | null): QualityLatencyFilter | undefined => {
+  return value === 'lt_2s' || value === '2s_5s' || value === '5s_10s' || value === 'gte_10s'
+    ? value
+    : undefined
 }
 
 const parseAgentTab = (value: string | null): AgentTab | undefined => {
@@ -172,6 +266,9 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.historyItemKind && state.historyItemId) {
       normalized.historyItemKind = state.historyItemKind
       normalized.historyItemId = state.historyItemId
+      if (state.historyMessageId) {
+        normalized.historyMessageId = state.historyMessageId
+      }
     }
     return normalized
   }
@@ -182,6 +279,28 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     }
     if (state.anchor) {
       normalized.anchor = state.anchor
+    }
+    return normalized
+  }
+
+  if (state.section === 'quality') {
+    if (state.qualityPage && state.qualityPage > 1) {
+      normalized.qualityPage = state.qualityPage
+    }
+    if (state.qualityActions && state.qualityActions.length > 0) {
+      normalized.qualityActions = [...state.qualityActions]
+    }
+    if (state.qualityStatuses && state.qualityStatuses.length > 0) {
+      normalized.qualityStatuses = [...state.qualityStatuses]
+    }
+    if (state.qualityFeedback && state.qualityFeedback.length > 0) {
+      normalized.qualityFeedback = [...state.qualityFeedback]
+    }
+    if (state.qualityLatency) {
+      normalized.qualityLatency = state.qualityLatency
+    }
+    if (state.qualityHasComment) {
+      normalized.qualityHasComment = true
     }
     return normalized
   }
@@ -244,6 +363,9 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     if (normalized.historyItemKind && normalized.historyItemId) {
       searchParams.set('itemKind', normalized.historyItemKind)
       searchParams.set('itemId', normalized.historyItemId)
+      if (normalized.historyMessageId) {
+        searchParams.set('itemMessageId', normalized.historyMessageId)
+      }
     }
   }
 
@@ -253,6 +375,27 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.anchor) {
       searchParams.set('anchor', normalized.anchor)
+    }
+  }
+
+  if (normalized.section === 'quality') {
+    if (normalized.qualityPage && normalized.qualityPage > 1) {
+      searchParams.set('page', String(normalized.qualityPage))
+    }
+    if (normalized.qualityActions && normalized.qualityActions.length > 0) {
+      searchParams.set('actions', serializeQualityActions(normalized.qualityActions))
+    }
+    if (normalized.qualityStatuses && normalized.qualityStatuses.length > 0) {
+      searchParams.set('statuses', normalized.qualityStatuses.join(','))
+    }
+    if (normalized.qualityFeedback && normalized.qualityFeedback.length > 0) {
+      searchParams.set('feedback', normalized.qualityFeedback.join(','))
+    }
+    if (normalized.qualityLatency) {
+      searchParams.set('latency', normalized.qualityLatency)
+    }
+    if (normalized.qualityHasComment) {
+      searchParams.set('hasComment', 'true')
     }
   }
 
@@ -382,6 +525,7 @@ export const parseDashboardRoute = (
       historyPage: parsePositiveInt(searchParams?.get('page') ?? null),
       historyItemKind: parseHistoryItemKind(searchParams?.get('itemKind') ?? null),
       historyItemId: searchParams?.get('itemId') ?? undefined,
+      historyMessageId: searchParams?.get('itemMessageId') ?? undefined,
     })
   }
 
@@ -436,6 +580,7 @@ export const parseDashboardRoute = (
       historyPage: parsePositiveInt(searchParams?.get('page') ?? null),
       historyItemKind: parseHistoryItemKind(searchParams?.get('itemKind') ?? null),
       historyItemId: searchParams?.get('itemId') ?? undefined,
+      historyMessageId: searchParams?.get('itemMessageId') ?? undefined,
     })
   }
 
@@ -456,6 +601,22 @@ export const parseDashboardRoute = (
     return normalizeState({
       section: 'usage',
       workspaceId,
+    })
+  }
+
+  if (sectionCandidate === 'quality') {
+    if (secondSegment || thirdSegment || rest.length > 0) {
+      return null
+    }
+    return normalizeState({
+      section: 'quality',
+      workspaceId,
+      qualityPage: parsePositiveInt(searchParams?.get('page') ?? null),
+      qualityActions: parseQualityActions(searchParams?.get('actions') ?? null),
+      qualityStatuses: parseQualityStatuses(searchParams?.get('statuses') ?? null),
+      qualityFeedback: parseQualityFeedback(searchParams?.get('feedback') ?? null),
+      qualityLatency: parseQualityLatency(searchParams?.get('latency') ?? null),
+      qualityHasComment: searchParams?.get('hasComment') === 'true' ? true : undefined,
     })
   }
 

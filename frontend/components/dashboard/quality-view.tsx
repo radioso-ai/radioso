@@ -33,6 +33,7 @@ import {
   type QualityActionFilter,
   type LowQualityTurn,
   type SkillCatalogEntry,
+  type SkillOwner,
   type SkillOutcomeDefinition,
 } from '@/lib/api'
 import {
@@ -255,7 +256,28 @@ interface ActionLookup {
   outcome: SkillOutcomeDefinition
 }
 
+interface ActionFilterGroup {
+  id: string
+  label: string
+  options: Array<{
+    value: string
+    label: string
+    description?: string
+  }>
+}
+
 const encodeAction = (skillName: string, outcome: string) => `${skillName}:${outcome}`
+
+const ACTION_GROUP_META: Record<SkillOwner | 'other', { id: string; label: string; order: number }> = {
+  assistant: { id: 'action-assistant', label: 'Assistant response', order: 0 },
+  retrieval: { id: 'action-retrieval', label: 'Retrieval outcome', order: 1 },
+  contact: { id: 'action-contact', label: 'Contact handoff', order: 2 },
+  documents: { id: 'action-documents', label: 'Document action', order: 3 },
+  mcp: { id: 'action-mcp', label: 'MCP action', order: 4 },
+  platform: { id: 'action-platform', label: 'Platform action', order: 5 },
+  auth: { id: 'action-auth', label: 'Authentication action', order: 6 },
+  other: { id: 'action-other', label: 'Other action', order: 7 },
+}
 
 const decodeAction = (value: string): QualityActionFilter | null => {
   const colonIndex = value.indexOf(':')
@@ -273,6 +295,11 @@ const buildActionLookup = (skills: SkillCatalogEntry[]): Map<string, ActionLooku
     }
   }
   return lookup
+}
+
+const formatActionFallbackLabel = (encodedAction: string): string => {
+  const decoded = decodeAction(encodedAction)
+  return decoded?.outcome.replaceAll('_', ' ') ?? encodedAction
 }
 
 export function QualityView({ accountId, routeState }: QualityViewProps) {
@@ -304,13 +331,15 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     ? { kind: 'chat', id: openedConversation.conversationId }
     : null
 
-  const actions: string[] = actionsKey ? actionsKey.split(',') : []
-  const statuses: QualityStatusFilter[] = statusesKey
-    ? (statusesKey.split(',') as QualityStatusFilter[])
-    : []
-  const feedback: QualityFeedbackFilter[] = feedbackKey
-    ? (feedbackKey.split(',') as QualityFeedbackFilter[])
-    : []
+  const actions = useMemo<string[]>(() => (actionsKey ? actionsKey.split(',') : []), [actionsKey])
+  const statuses = useMemo<QualityStatusFilter[]>(
+    () => (statusesKey ? (statusesKey.split(',') as QualityStatusFilter[]) : []),
+    [statusesKey],
+  )
+  const feedback = useMemo<QualityFeedbackFilter[]>(
+    () => (feedbackKey ? (feedbackKey.split(',') as QualityFeedbackFilter[]) : []),
+    [feedbackKey],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -333,17 +362,48 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
 
   const actionLookup = useMemo(() => buildActionLookup(skillCatalog), [skillCatalog])
 
-  const actionFilterOptions = useMemo(
-    () =>
-      skillCatalog.flatMap((skill) =>
-        (skill.outcomes ?? []).map((outcome) => ({
+  const actionFilterGroups = useMemo<ActionFilterGroup[]>(() => {
+    const groups = new Map<string, ActionFilterGroup>()
+
+    for (const skill of skillCatalog) {
+      const meta = ACTION_GROUP_META[skill.owner] ?? ACTION_GROUP_META.other
+      const group = groups.get(meta.id) ?? { id: meta.id, label: meta.label, options: [] }
+      for (const outcome of skill.outcomes ?? []) {
+        group.options.push({
           value: encodeAction(skill.name, outcome.name),
           label: outcome.displayName,
           description: outcome.description ? `${skill.displayName} — ${outcome.description}` : skill.displayName,
-        })),
-      ),
-    [skillCatalog],
-  )
+        })
+      }
+      if (group.options.length > 0) {
+        groups.set(meta.id, group)
+      }
+    }
+
+    const knownActionValues = new Set(
+      [...groups.values()].flatMap((group) => group.options.map((option) => option.value)),
+    )
+    const fallbackOptions = actions
+      .filter((value) => !knownActionValues.has(value))
+      .map((value) => ({
+        value,
+        label: actionLookup.get(value)?.outcome.displayName ?? formatActionFallbackLabel(value),
+        description: actionLookup.get(value)?.skill.displayName,
+      }))
+
+    if (fallbackOptions.length > 0) {
+      const meta = ACTION_GROUP_META.other
+      const group = groups.get(meta.id) ?? { id: meta.id, label: meta.label, options: [] }
+      group.options.push(...fallbackOptions)
+      groups.set(meta.id, group)
+    }
+
+    return [...groups.values()].sort((left, right) => {
+      const leftOrder = Object.values(ACTION_GROUP_META).find((meta) => meta.id === left.id)?.order ?? 99
+      const rightOrder = Object.values(ACTION_GROUP_META).find((meta) => meta.id === right.id)?.order ?? 99
+      return leftOrder - rightOrder
+    })
+  }, [actionLookup, actions, skillCatalog])
 
   const qualityFilters = useMemo<ReadonlyArray<FilterDefinition>>(
     () => [
@@ -358,13 +418,12 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           description: STATUS_META[value].description,
         })),
       },
-      {
-        id: 'action',
-        kind: 'multi-select',
-        label: 'Action type',
-        presentation: 'pills',
-        options: actionFilterOptions,
-      },
+      ...actionFilterGroups.map((group) => ({
+        id: group.id,
+        kind: 'multi-select' as const,
+        label: group.label,
+        options: group.options,
+      })),
       {
         id: 'feedback',
         kind: 'multi-select',
@@ -390,7 +449,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         label: 'Has written feedback',
       },
     ],
-    [actionFilterOptions],
+    [actionFilterGroups],
   )
 
   const filterValues = useMemo<FilterValues>(() => {
@@ -399,7 +458,24 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       next.status = { kind: 'multi-select', values: statuses }
     }
     if (actions.length > 0) {
-      next.action = { kind: 'multi-select', values: actions }
+      const unassignedActions = new Set(actions)
+      for (const group of actionFilterGroups) {
+        const groupValues = group.options
+          .map((option) => option.value)
+          .filter((value) => unassignedActions.has(value))
+        if (groupValues.length > 0) {
+          next[group.id] = { kind: 'multi-select', values: groupValues }
+          for (const value of groupValues) {
+            unassignedActions.delete(value)
+          }
+        }
+      }
+      if (unassignedActions.size > 0) {
+        next[ACTION_GROUP_META.other.id] = {
+          kind: 'multi-select',
+          values: [...unassignedActions],
+        }
+      }
     }
     if (feedback.length > 0) {
       next.feedback = { kind: 'multi-select', values: feedback }
@@ -411,9 +487,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       next.latency = { kind: 'single-select', value: latency }
     }
     return next
-    // statusesKey/actionsKey/feedbackKey/hasComment/latency together fully determine these values.
+    // statusesKey/actionsKey/feedbackKey/hasComment/latency plus the loaded action catalog
+    // together fully determine these values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusesKey, actionsKey, feedbackKey, hasComment, latency])
+  }, [statusesKey, actionsKey, actionFilterGroups, feedbackKey, hasComment, latency])
 
   const appliedFilterCount = countAppliedFilters(filterValues)
 
@@ -432,19 +509,26 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
 
   const applyFilters = useCallback(
     (next: FilterValues) => {
-      const actionValue = next.action
+      const actionValues = [
+        ...actionFilterGroups.flatMap((group) => {
+          const value = next[group.id]
+          return value?.kind === 'multi-select' ? value.values : []
+        }),
+        ...(next.action?.kind === 'multi-select' ? next.action.values : []),
+      ]
       const statusValue = next.status
       const feedbackValue = next.feedback
       const latencyValue = next.latency
       const hasCommentValue = next.hasComment
+      const uniqueActionValues = [...new Set(actionValues)]
       navigateWith({
         qualityStatuses:
           statusValue?.kind === 'multi-select' && statusValue.values.length > 0
             ? (statusValue.values as QualityStatusFilter[])
             : undefined,
         qualityActions:
-          actionValue?.kind === 'multi-select' && actionValue.values.length > 0
-            ? actionValue.values
+          uniqueActionValues.length > 0
+            ? uniqueActionValues
             : undefined,
         qualityFeedback:
           feedbackValue?.kind === 'multi-select' && feedbackValue.values.length > 0
@@ -458,17 +542,14 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         qualityPage: undefined,
       })
     },
-    [navigateWith],
+    [actionFilterGroups, navigateWith],
   )
 
-  const removeFilter = useCallback(
-    (id: string) => {
-      const next: FilterValues = { ...filterValues }
-      delete next[id]
-      applyFilters(next)
-    },
-    [applyFilters, filterValues],
-  )
+  const removeFilter = (id: string) => {
+    const next: FilterValues = { ...filterValues }
+    delete next[id]
+    applyFilters(next)
+  }
 
   const setPage = (next: number) =>
     navigateWith({ qualityPage: next > 1 ? next : undefined })

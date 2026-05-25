@@ -38,6 +38,7 @@ export { skillsApi } from './api-skills'
 export type {
   SkillCatalogEntry,
   SkillCatalogResponse,
+  SkillOwner,
   SkillOutcomeDefinition,
   SkillOutcomeStatus,
   SkillOutcomeTone,

@@ -11,6 +11,7 @@ export type SkillOutcomeStatus =
   | 'failed'
 
 export type SkillOutcomeTone = 'positive' | 'neutral' | 'info' | 'warning' | 'muted'
+export type SkillOwner = 'assistant' | 'retrieval' | 'documents' | 'mcp' | 'platform' | 'auth' | 'contact'
 
 export interface SkillOutcomeDefinition {
   name: string
@@ -25,6 +26,7 @@ export interface SkillCatalogEntry {
   name: string
   displayName: string
   description: string
+  owner: SkillOwner
   outcomes?: SkillOutcomeDefinition[]
 }
 

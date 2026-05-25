@@ -2790,6 +2790,7 @@ export interface components {
             description?: string;
             /** @enum {string} */
             status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+            groundedAnswer?: boolean;
         };
         SkillDiagnosticEvidence: {
             queryShape?: string;

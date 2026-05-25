@@ -10,7 +10,6 @@ UPDATE messages AS m
 SET
   skill_name = COALESCE(
     e.metadata_json->'skillTurn'->>'skillName',
-    e.metadata_json->>'skillName',
     e.metadata_json->'skillIntake'->>'skillName',
     CASE e.metadata_json->>'answerOutcome'
       WHEN 'grounded_success' THEN 'retrieval.answer'
@@ -21,7 +20,6 @@ SET
   ),
   skill_outcome = COALESCE(
     e.metadata_json->'skillTurn'->>'outcome',
-    e.metadata_json->>'skillOutcome',
     e.metadata_json->'skillIntake'->>'skillOutcome',
     CASE
       WHEN e.metadata_json->'skillIntake'->>'skillName' = 'human_contact.request'
@@ -41,7 +39,6 @@ SET
   ),
   skill_status = COALESCE(
     e.metadata_json->'skillTurn'->>'status',
-    e.metadata_json->>'skillStatus',
     e.metadata_json->'skillIntake'->>'status',
     CASE
       WHEN e.metadata_json ? 'answerOutcome' THEN 'completed'

@@ -3875,6 +3875,8 @@ components:
             - cancelled
             - expired
             - failed
+        groundedAnswer:
+          type: boolean
       required:
         - name
         - displayName

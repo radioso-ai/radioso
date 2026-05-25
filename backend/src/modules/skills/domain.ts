@@ -131,6 +131,7 @@ export const skillOutcomeDefinitionSchema = z.object({
   displayName: z.string(),
   description: z.string().optional(),
   status: skillOutcomeStatusSchema,
+  groundedAnswer: z.boolean().optional(),
 });
 export type SkillOutcomeDefinition = z.infer<typeof skillOutcomeDefinitionSchema>;
 

@@ -163,9 +163,6 @@ export interface PublicConversationPage {
 
 interface ChatAuditMetadata {
   answerOutcome?: AssistantTurnOutcome;
-  skillName?: unknown;
-  skillOutcome?: unknown;
-  skillStatus?: unknown;
   skillTurn?: unknown;
   skillIntake?: unknown;
   assistantMessageId?: string;
@@ -268,16 +265,6 @@ const normalizeSkillTurnOutcome = (
     if (normalized) {
       return normalized;
     }
-  }
-
-  const legacyTopLevelOutcome = normalizeSkillTurnFields({
-    skillName: metadata.skillName,
-    skillOutcome: metadata.skillOutcome,
-    skillStatus: metadata.skillStatus,
-    requireOutcome: true,
-  });
-  if (legacyTopLevelOutcome) {
-    return legacyTopLevelOutcome;
   }
 
   const messageSkillTurnOutcome = normalizeMessageSkillTurnOutcome(message);

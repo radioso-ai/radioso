@@ -71,7 +71,7 @@ describe("skills catalog", () => {
         expect.objectContaining({ name: "definition_lookup" }),
       ]),
       outcomes: expect.arrayContaining([
-        expect.objectContaining({ name: "grounded", status: "completed" }),
+        expect.objectContaining({ name: "grounded", status: "completed", groundedAnswer: true }),
         expect.objectContaining({ name: "no_context", status: "completed" }),
       ]),
     });

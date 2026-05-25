@@ -5776,6 +5776,9 @@
               "expired",
               "failed"
             ]
+          },
+          "groundedAnswer": {
+            "type": "boolean"
           }
         },
         "required": [

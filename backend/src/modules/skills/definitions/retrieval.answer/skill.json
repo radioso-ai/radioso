@@ -80,7 +80,8 @@
       "name": "grounded",
       "displayName": "Grounded answer",
       "description": "The retrieval skill answered from workspace evidence.",
-      "status": "completed"
+      "status": "completed",
+      "groundedAnswer": true
     },
     {
       "name": "no_context",

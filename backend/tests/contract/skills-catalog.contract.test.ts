@@ -59,6 +59,7 @@ describe("skills catalog contract", () => {
           expect.objectContaining({
             name: "grounded",
             status: "completed",
+            groundedAnswer: true,
           }),
           expect.objectContaining({
             name: "no_context",

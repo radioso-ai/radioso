@@ -169,7 +169,8 @@ export interface SkillDefinition {
     name: string;
     displayName: string;
     description?: string;
-    status: ChatIntakeStatus;
+    status: SkillTurnStatus;
+    groundedAnswer?: boolean;
   }>;
 }
 
@@ -526,7 +527,7 @@ export interface ChatIntakeReceipt {
   statusLabel?: string;
 }
 
-export type ChatIntakeStatus =
+export type SkillTurnStatus =
   | "active"
   | "paused"
   | "awaiting_confirmation"
@@ -538,7 +539,7 @@ export type ChatIntakeStatus =
 
 export interface ChatIntakeResult {
   skillName: string;
-  status: ChatIntakeStatus;
+  status: SkillTurnStatus;
   skillOutcome?: string;
   stateId?: string;
   answer: string;
@@ -626,7 +627,7 @@ export interface ChatActionSuggestionContext {
   answer: string;
   skillName: string;
   skillOutcome: string;
-  skillStatus: ChatIntakeResult["status"];
+  skillStatus: SkillTurnStatus;
   answerOutcome?: AssistantTurnOutcomeName;
   history: Array<{
     id: string;

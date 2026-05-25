@@ -28,18 +28,46 @@ export interface ChatPresentedAnswer {
   answerOutcome?: AssistantTurnOutcome;
 }
 
+export interface SkillOutcomeCapabilityProvider {
+  supportsGroundedAnswer(input: {
+    skillName: string;
+    outcome: string;
+  }): boolean;
+}
+
+export interface SkillOutcomeCapabilityRegistry {
+  get(name: string): {
+    outcomes?: Array<{
+      name: string;
+      groundedAnswer?: boolean;
+    }>;
+  } | null;
+}
+
+export const createSkillOutcomeCapabilityProvider = (
+  registry: SkillOutcomeCapabilityRegistry,
+): SkillOutcomeCapabilityProvider => ({
+  supportsGroundedAnswer: ({ skillName, outcome }) =>
+    registry.get(skillName)
+      ?.outcomes
+      ?.some((candidate) => candidate.name === outcome && candidate.groundedAnswer === true) ?? false,
+});
+
 const hasGroundedSuggestionSupport = (input: {
   skillName: string;
   skillOutcome: string;
   hasRetrievedContext: boolean;
   hasCitedAnswer: boolean;
+  skillOutcomeCapabilities: SkillOutcomeCapabilityProvider;
 }): boolean => {
   if (!input.hasRetrievedContext || !input.hasCitedAnswer) {
     return false;
   }
 
-  return input.skillName === SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.skillName
-    && input.skillOutcome === SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.outcome;
+  return input.skillOutcomeCapabilities.supportsGroundedAnswer({
+    skillName: input.skillName,
+    outcome: input.skillOutcome,
+  });
 };
 
 const toCitationEvidence = (session: PreparedSession): CitationEvidence[] =>
@@ -75,6 +103,9 @@ export class ChatAnswerPresenter {
   constructor(
     private readonly assistantSuggestionExpansionService: AssistantSuggestionExpansionService,
     private readonly chatActionSuggestionService?: ChatActionSuggestionService,
+    private readonly skillOutcomeCapabilities: SkillOutcomeCapabilityProvider = {
+      supportsGroundedAnswer: () => false,
+    },
   ) {}
 
   presentNonRetrievalAnswer(answer: string): ChatPresentedAnswer {
@@ -155,6 +186,7 @@ export class ChatAnswerPresenter {
           (presentation.citations?.length ?? 0) > 0
           && presentation.answerSegments?.some((segment) => (segment.citationIndices?.length ?? 0) > 0),
         ),
+        skillOutcomeCapabilities: this.skillOutcomeCapabilities,
       }),
       answer: presentation.answer,
       contexts: session.retrieval.contexts.map((context) => ({

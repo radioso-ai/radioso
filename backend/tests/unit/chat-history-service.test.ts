@@ -430,6 +430,51 @@ describe("chat history service", () => {
     ]);
   });
 
+  it("maps historical skill intake metadata to the skill-owned outcome", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+
+    const conversation = await conversationRepository.create("workspace-1");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Contact me",
+    });
+    const assistant = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "We will contact you.",
+    });
+
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        assistantMessageId: assistant.id,
+        answerOutcome: "non_retrieval_response",
+        citationCount: 0,
+        skillIntake: {
+          skillName: "human_contact.request",
+          status: "completed",
+          stateId: "state-1",
+        },
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+    const debug = detail.messages.find((message) => message.role === "assistant")?.debug;
+
+    expect(debug).toMatchObject({
+      answerOutcome: "non_retrieval_response",
+      skillName: "human_contact.request",
+      skillOutcome: "sent",
+      skillStatus: "completed",
+    });
+  });
+
   it("normalizes legacy stored suggestions without kind as deeper suggestions", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 

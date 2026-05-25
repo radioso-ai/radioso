@@ -166,6 +166,7 @@ interface ChatAuditMetadata {
   skillOutcome?: unknown;
   skillStatus?: unknown;
   skillTurn?: unknown;
+  skillIntake?: unknown;
   assistantMessageId?: string;
   stream?: boolean;
   citationCount?: number;
@@ -182,6 +183,39 @@ interface ChatAuditMetadata {
     retrievalInvoked?: unknown;
   };
 }
+
+const normalizeSkillIntakeOutcome = (value: unknown): SkillTurnOutcome | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const candidate = value as { skillName?: unknown; skillOutcome?: unknown; status?: unknown };
+  if (
+    typeof candidate.skillName !== "string" ||
+    candidate.skillName.trim().length === 0 ||
+    typeof candidate.status !== "string" ||
+    candidate.status.trim().length === 0
+  ) {
+    return undefined;
+  }
+
+  const skillName = candidate.skillName.trim();
+  const status = candidate.status.trim() as SkillTurnOutcome["status"];
+  const explicitOutcome = typeof candidate.skillOutcome === "string" && candidate.skillOutcome.trim().length > 0
+    ? candidate.skillOutcome.trim()
+    : undefined;
+  const outcome = explicitOutcome
+    ?? (
+      skillName === "human_contact.request" && status === "completed"
+        ? "sent"
+        : status
+    );
+
+  return {
+    skillName,
+    outcome,
+    status,
+  };
+};
 
 const normalizeSkillTurnOutcome = (metadata: ChatAuditMetadata): SkillTurnOutcome | undefined => {
   if (metadata.skillTurn && typeof metadata.skillTurn === "object" && !Array.isArray(metadata.skillTurn)) {
@@ -215,6 +249,11 @@ const normalizeSkillTurnOutcome = (metadata: ChatAuditMetadata): SkillTurnOutcom
       outcome: metadata.skillOutcome.trim(),
       status: metadata.skillStatus.trim() as SkillTurnOutcome["status"],
     };
+  }
+
+  const skillIntakeOutcome = normalizeSkillIntakeOutcome(metadata.skillIntake);
+  if (skillIntakeOutcome) {
+    return skillIntakeOutcome;
   }
 
   return skillTurnOutcomeFromLegacyAnswerOutcome(metadata.answerOutcome);

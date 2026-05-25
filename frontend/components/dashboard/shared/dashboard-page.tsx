@@ -39,8 +39,8 @@ export function DashboardPage({
         <div className={cn('space-y-4', headerClassName)}>
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-3">
-                <h1 className="text-lg font-medium text-foreground">{title}</h1>
+              <div className="flex min-w-0 items-end gap-3">
+                <h1 className="text-lg font-medium leading-none text-foreground">{title}</h1>
                 {titleAccessory}
               </div>
               {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}

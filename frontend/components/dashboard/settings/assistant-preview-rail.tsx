@@ -39,7 +39,7 @@ export function AssistantPreviewRail({
         <div className="space-y-2">
           <ThemeContrastWarning theme={theme} />
           <p className="text-xs text-muted-foreground">
-            Updates as you edit. Mirrors the public chat and the website widget.
+            Updates as you edit. Uses sample conversation data rendered with the public chat and website widget components.
           </p>
         </div>
       </div>

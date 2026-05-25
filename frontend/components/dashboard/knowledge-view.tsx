@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { DocumentsView } from '@/components/dashboard/documents-view'
 import { DocumentSourcesView } from '@/components/dashboard/document-sources-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
+import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-indicator'
 import { IngestionSettingsPanel } from '@/components/dashboard/settings/ingestion-settings-panel'
 import { RetrievalSettingsPanel } from '@/components/dashboard/settings/retrieval-settings-panel'
 import { Button } from '@/components/ui/button'
@@ -78,19 +79,7 @@ export function KnowledgeView({
     )
   }
 
-  const saveStateAccessory = (
-    <div className="text-sm">
-      {activeSaveState.state === 'saving' ? (
-        <span className="text-muted-foreground">Saving...</span>
-      ) : activeSaveState.state === 'error' ? (
-        <span className="text-destructive">
-          {activeSaveState.message ?? 'Failed to save changes'}
-        </span>
-      ) : activeSaveState.state === 'saved' ? (
-        <span className="text-muted-foreground">Saved</span>
-      ) : null}
-    </div>
-  )
+  const saveStateAccessory = <SaveStateIndicator saveState={activeSaveState} />
 
   useEffect(() => {
     if (!routeState.anchor) {

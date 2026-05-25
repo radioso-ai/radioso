@@ -6,6 +6,7 @@ import { Globe2, RefreshCw, X } from 'lucide-react'
 
 import { ChatView } from '@/components/dashboard/chat-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
+import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-indicator'
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -275,19 +276,7 @@ export function AgentView({
     </div>
   )
 
-  const saveStateAccessory = (
-    <div className="text-sm">
-      {saveState.state === 'saving' ? (
-        <span className="text-muted-foreground">Saving...</span>
-      ) : saveState.state === 'error' ? (
-        <span className="text-destructive">
-          {saveState.message ?? 'Failed to save changes'}
-        </span>
-      ) : saveState.state === 'saved' ? (
-        <span className="text-muted-foreground">Saved</span>
-      ) : null}
-    </div>
-  )
+  const saveStateAccessory = <SaveStateIndicator saveState={saveState} />
 
   const agentUnavailableContent = agentSelectionPending ? (
     <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">

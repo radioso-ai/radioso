@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
+import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-indicator'
 import { ProvidersPanel } from '@/components/dashboard/settings/providers-panel'
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
 import { UsersPanel } from '@/components/dashboard/users-view'
@@ -34,19 +35,7 @@ export function SettingsView({
     message?: string | null
   }>({ state: 'idle' })
 
-  const saveStateAccessory = (
-    <div className="text-sm">
-      {saveState.state === 'saving' ? (
-        <span className="text-muted-foreground">Saving...</span>
-      ) : saveState.state === 'error' ? (
-        <span className="text-destructive">
-          {saveState.message ?? 'Failed to save changes'}
-        </span>
-      ) : saveState.state === 'saved' ? (
-        <span className="text-muted-foreground">Saved</span>
-      ) : null}
-    </div>
-  )
+  const saveStateAccessory = <SaveStateIndicator saveState={saveState} />
 
   useEffect(() => {
     if (!routeState.anchor) {

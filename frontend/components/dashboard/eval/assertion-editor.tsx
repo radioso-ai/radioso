@@ -144,15 +144,15 @@ export function AssertionEditor({ caseId, initial, resolveDocumentTitle, onSaved
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {assertions.length === 0 ? (
-        <p className="rounded-md border border-dashed border-border bg-background p-4 text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           No expectations yet. Add one to grade what each run should produce.
         </p>
       ) : (
-        <ul className="space-y-3">
+        <div className="-mx-6 divide-y divide-border border-y border-border">
           {assertions.map((assertion, index) => (
-            <li key={index} className="rounded-md border border-border bg-background p-4">
+            <div key={index} className="px-6 py-4">
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-sm font-medium text-foreground">
@@ -167,7 +167,7 @@ export function AssertionEditor({ caseId, initial, resolveDocumentTitle, onSaved
                   size="sm"
                   onClick={() => removeAt(index)}
                   disabled={saving}
-                  aria-label="Remove assertion"
+                  aria-label="Remove expectation"
                 >
                   <Trash2 className="size-4" />
                 </Button>
@@ -178,9 +178,9 @@ export function AssertionEditor({ caseId, initial, resolveDocumentTitle, onSaved
                 resolveDocumentTitle={resolveDocumentTitle}
                 onChange={(next) => updateAt(index, next)}
               />
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
 
       <div className="flex flex-wrap items-center gap-2">
@@ -291,7 +291,7 @@ function JudgeAssertionFields({
         />
       </div>
       <p className="text-xs text-muted-foreground">
-        Each run with this assertion makes one extra LLM call. Requires <strong>full-assistant</strong> mode.
+        Each run with this expectation makes one extra LLM call to compare the new answer against your reference.
       </p>
     </div>
   )
@@ -423,7 +423,7 @@ function AnswerAssertionFields({
         </label>
       </div>
       <p className="text-xs text-muted-foreground">
-        Answer assertions only grade runs in <strong>full-assistant</strong> mode — use the dropdown next to "Run case" to switch modes.
+        Grades the generated answer when the case runs. The run automatically uses full-assistant mode so the assistant actually answers.
       </p>
     </div>
   )

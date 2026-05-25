@@ -183,7 +183,6 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   const [docTitlesById, setDocTitlesById] = useState<Map<string, string>>(new Map())
   const [error, setError] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
-  const [runMode, setRunMode] = useState<EvalRunMode>('retrieval_only')
 
   const load = useCallback(async () => {
     try {
@@ -201,15 +200,8 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
     void load()
   }, [load])
 
-  // Auto-switch to full_assistant when the assertions need it.
-  useEffect(() => {
-    if (caseWithRuns) {
-      setRunMode(inferDefaultMode(caseWithRuns.assertions))
-    }
-  }, [caseWithRuns])
-
-  // Best-effort: load a page of documents to resolve titles for the assertion editor
-  // and run output. Document IDs that aren't in the first page show as id slugs.
+  // Best-effort: load a page of documents to resolve titles for the expectation
+  // editor and run output. IDs not in the first page show as id slugs.
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -232,18 +224,22 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
 
   const titleFor = useCallback((id: string) => docTitlesById.get(id), [docTitlesById])
 
+  // Auto-pick the run mode from the expectations: any answer/judge expectation
+  // needs full_assistant; otherwise retrieval_only is enough and avoids an LLM call.
   const runAgain = useCallback(async () => {
+    if (!caseWithRuns) return
+    const mode: EvalRunMode = inferDefaultMode(caseWithRuns.assertions)
     setRunning(true)
     setError(null)
     try {
-      await evalsApi.runCase(caseId, { mode: runMode })
+      await evalsApi.runCase(caseId, { mode })
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err, 'Eval request failed'))
     } finally {
       setRunning(false)
     }
-  }, [caseId, load, runMode])
+  }, [caseId, caseWithRuns, load])
 
   const backHref = useMemo(
     () => buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: undefined }),
@@ -265,47 +261,66 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   }
 
   const latestRun = caseWithRuns.runs[0] ?? null
-  const hasAssertions = caseWithRuns.assertions.length > 0
+  const originalAnswer = [...snapshot.messages].reverse().find((m) => m.role === 'assistant')?.content ?? null
 
   return (
     <DashboardPage
       title={caseWithRuns.name}
-      titleAccessory={
-        <Badge variant="outline" className={statusBadgeClass(caseWithRuns.status)}>
-          {caseWithRuns.status}
-        </Badge>
-      }
       description={`Captured ${formatRelative(snapshot.capturedAt)}`}
+      headerContent={
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <Badge variant="outline" className={statusBadgeClass(caseWithRuns.status)}>
+            {caseWithRuns.status}
+          </Badge>
+          <span>·</span>
+          <span>
+            {caseWithRuns.assertions.length === 0
+              ? 'No expectations configured'
+              : `${caseWithRuns.assertions.length} expectation${caseWithRuns.assertions.length === 1 ? '' : 's'}`}
+          </span>
+        </div>
+      }
       actions={
         <>
           <Button variant="ghost" onClick={() => router.push(backHref)}>
             Back
           </Button>
-          <div className="flex items-center gap-1 rounded-md border border-border bg-background p-1 text-xs">
-            {(['retrieval_only', 'full_assistant'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setRunMode(mode)}
-                disabled={running}
-                className={`rounded px-2 py-1 transition-colors ${
-                  runMode === mode
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {mode === 'retrieval_only' ? 'Retrieval only' : 'Full assistant'}
-              </button>
-            ))}
-          </div>
           <Button onClick={runAgain} disabled={running}>
-            {running ? 'Running…' : hasAssertions ? 'Run case' : 'Run (no assertions)'}
+            {running ? 'Running…' : 'Run case'}
           </Button>
         </>
       }
     >
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="space-y-6">
         {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+
+        {/* Conversation */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Conversation</CardTitle>
+            <CardDescription>
+              {snapshot.messages.length} message{snapshot.messages.length === 1 ? '' : 's'} captured from this turn
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {snapshot.messages.map((m) => (
+              <div key={m.id} className="flex gap-3 text-sm">
+                <span className="w-16 shrink-0 text-xs uppercase tracking-wide text-muted-foreground">
+                  {m.role}
+                </span>
+                <span className="min-w-0 flex-1 whitespace-pre-wrap text-foreground">{m.content}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        {/* Latest run */}
+        <LatestRunCard
+          run={latestRun}
+          assertions={caseWithRuns.assertions}
+          originalAnswer={originalAnswer}
+          titleFor={titleFor}
+        />
 
         {/* Expectations */}
         <Card>
@@ -324,31 +339,6 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
                 setCaseWithRuns((prev) => (prev ? { ...prev, ...updated, runs: prev.runs } : prev))
               }}
             />
-          </CardContent>
-        </Card>
-
-        {/* Latest run */}
-        <LatestRunCard
-          run={latestRun}
-          assertions={caseWithRuns.assertions}
-          titleFor={titleFor}
-        />
-
-        {/* Conversation */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Conversation</CardTitle>
-            <CardDescription>
-              {snapshot.messages.length} message{snapshot.messages.length === 1 ? '' : 's'} captured from this turn
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {snapshot.messages.map((m) => (
-              <div key={m.id} className="rounded-md border border-border bg-background p-3">
-                <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">{m.role}</div>
-                <div className="whitespace-pre-wrap text-sm text-foreground">{m.content}</div>
-              </div>
-            ))}
           </CardContent>
         </Card>
 
@@ -384,10 +374,11 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
 interface LatestRunCardProps {
   run: EvalRun | null
   assertions: EvalAssertion[]
+  originalAnswer: string | null
   titleFor: (id: string) => string | undefined
 }
 
-function LatestRunCard({ run, assertions, titleFor }: LatestRunCardProps) {
+function LatestRunCard({ run, assertions, originalAnswer, titleFor }: LatestRunCardProps) {
   if (!run) {
     return (
       <Card>
@@ -395,22 +386,21 @@ function LatestRunCard({ run, assertions, titleFor }: LatestRunCardProps) {
           <CardTitle className="text-base">Latest run</CardTitle>
           <CardDescription>
             {assertions.length === 0
-              ? 'Add at least one expectation above to grade a run. You can also run without expectations to just capture output.'
+              ? 'Add at least one expectation below to grade a run. You can also run without expectations to just capture output.'
               : 'No runs yet — click "Run case" above to execute.'}
           </CardDescription>
         </CardHeader>
       </Card>
     )
   }
+  const newAnswer = run.observedOutput.answer
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Latest run</CardTitle>
-        <CardDescription>
-          {formatRelative(run.startedAt)} · {run.mode}
-        </CardDescription>
+        <CardDescription>{formatRelative(run.startedAt)}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className={statusBadgeClass(run.status)}>{run.status}</Badge>
           {run.outcomeReason ? (
@@ -418,39 +408,42 @@ function LatestRunCard({ run, assertions, titleFor }: LatestRunCardProps) {
           ) : null}
         </div>
 
-        {run.observedOutput.answer !== undefined ? (
-          <div className="space-y-1">
-            <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Generated answer
-            </h4>
-            <div className="whitespace-pre-wrap rounded-md border border-border bg-background p-3 text-sm">
-              {run.observedOutput.answer || <span className="text-muted-foreground">(empty)</span>}
+        {newAnswer !== undefined ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Original answer
+              </h4>
+              <div className="whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 text-sm">
+                {originalAnswer || <span className="text-muted-foreground">(not captured)</span>}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                New answer
+              </h4>
+              <div className="whitespace-pre-wrap rounded-md border border-border bg-background p-3 text-sm">
+                {newAnswer || <span className="text-muted-foreground">(empty)</span>}
+              </div>
             </div>
           </div>
         ) : null}
 
         {run.assertionVerdicts.length > 0 ? (
-          <div className="space-y-2">
-            <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Per-expectation verdicts
-            </h4>
-            <ul className="space-y-2">
-              {run.assertionVerdicts.map((v, i) => (
-                <li key={i} className="rounded-md border border-border bg-background p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="min-w-0 text-sm text-foreground">
-                      {assertionSummary(v.assertion, titleFor)}
-                    </span>
-                    <Badge variant="outline" className={statusBadgeClass(v.status)}>
-                      {v.status}
-                    </Badge>
-                  </div>
+          <div className="-mx-6 divide-y divide-border border-y border-border">
+            {run.assertionVerdicts.map((v, i) => (
+              <div key={i} className="flex items-start justify-between gap-3 px-6 py-3 text-sm">
+                <div className="min-w-0">
+                  <div className="text-foreground">{assertionSummary(v.assertion, titleFor)}</div>
                   {v.reason ? (
-                    <p className="mt-1 text-xs text-muted-foreground">{v.reason}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{v.reason}</p>
                   ) : null}
-                </li>
-              ))}
-            </ul>
+                </div>
+                <Badge variant="outline" className={statusBadgeClass(v.status)}>
+                  {v.status}
+                </Badge>
+              </div>
+            ))}
           </div>
         ) : null}
 

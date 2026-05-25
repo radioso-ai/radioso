@@ -8,6 +8,14 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
+import {
+  DashboardTable,
+  DashboardTableBody,
+  DashboardTableCell,
+  DashboardTableHead,
+  DashboardTableHeader,
+  DashboardTableRow,
+} from '@/components/dashboard/shared/dashboard-table'
 import { AssertionEditor } from './eval/assertion-editor'
 import { evalsApi, documentsApi } from '@/lib/api'
 import type {
@@ -117,10 +125,20 @@ function EvalList({ accountId, routeState }: EvalListProps) {
     router.push(buildDashboardHref(accountId, { ...routeState, section: 'activity' }))
   }
 
+  const howToHint = (
+    <div className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+      <span className="text-foreground">New eval cases come from real conversations.</span>{' '}
+      Open a <button type="button" onClick={goToChat} className="underline underline-offset-2 hover:text-foreground">chat</button>{' '}
+      or browse <button type="button" onClick={goToActivity} className="underline underline-offset-2 hover:text-foreground">activity</button>,
+      hover an assistant answer, and click the flask icon to capture it here.
+    </div>
+  )
+
   return (
     <DashboardPage
       title="Eval"
       description="Replay past conversations against the current corpus and settings, and verify the assistant behaves how you expect."
+      headerContent={howToHint}
     >
       {error ? <p className="mb-4 text-sm text-rose-600">{error}</p> : null}
       {cases === null ? (
@@ -128,43 +146,50 @@ function EvalList({ accountId, routeState }: EvalListProps) {
           <LogoSpinner imageClassName="h-6 w-6" />
         </div>
       ) : cases.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">No eval cases yet</CardTitle>
-            <CardDescription>
-              Eval cases come from real conversations. Open a chat or browse activity, hover an assistant
-              answer, and click the flask icon to send it here.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex gap-2">
-            <Button onClick={goToChat}>Open chat</Button>
-            <Button variant="ghost" onClick={goToActivity}>Browse activity</Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-2">
-          {cases.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => openCase(c.id)}
-              className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-background p-4 text-left hover:bg-accent"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-medium text-foreground">{c.name}</span>
-                  <Badge variant="outline" className={statusBadgeClass(c.status)}>{c.status}</Badge>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {c.assertions.length === 0
-                    ? 'No expectations configured'
-                    : `${c.assertions.length} expectation${c.assertions.length === 1 ? '' : 's'}`}
-                  {' · '}updated {formatRelative(c.updatedAt)}
-                </p>
-              </div>
-            </button>
-          ))}
+        <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+          No eval cases yet. Capture one from chat or activity using the steps above.
         </div>
+      ) : (
+        <DashboardTable aria-label="Eval cases" minWidth="min-w-[640px]">
+          <DashboardTableHead>
+            <DashboardTableHeader>Case</DashboardTableHeader>
+            <DashboardTableHeader className="w-32">Status</DashboardTableHeader>
+            <DashboardTableHeader className="w-40">Expectations</DashboardTableHeader>
+            <DashboardTableHeader className="w-44">Updated</DashboardTableHeader>
+          </DashboardTableHead>
+          <DashboardTableBody>
+            {cases.map((c) => (
+              <DashboardTableRow
+                key={c.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openCase(c.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    openCase(c.id)
+                  }
+                }}
+                className="cursor-pointer"
+              >
+                <DashboardTableCell>
+                  <span className="block truncate font-medium text-foreground">{c.name}</span>
+                </DashboardTableCell>
+                <DashboardTableCell className="w-32">
+                  <Badge variant="outline" className={statusBadgeClass(c.status)}>{c.status}</Badge>
+                </DashboardTableCell>
+                <DashboardTableCell className="w-40 text-muted-foreground">
+                  {c.assertions.length === 0
+                    ? 'None'
+                    : `${c.assertions.length} expectation${c.assertions.length === 1 ? '' : 's'}`}
+                </DashboardTableCell>
+                <DashboardTableCell className="w-44 text-muted-foreground">
+                  {formatRelative(c.updatedAt)}
+                </DashboardTableCell>
+              </DashboardTableRow>
+            ))}
+          </DashboardTableBody>
+        </DashboardTable>
       )}
     </DashboardPage>
   )

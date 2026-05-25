@@ -16,6 +16,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { evalsApi } from '@/lib/api'
+import type { EvalAssertion } from '@/lib/api-eval'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { useAuth } from '@/lib/auth-context'
@@ -27,6 +28,10 @@ interface SendToEvalActionProps {
   // First few characters of the user's last question, used as the default
   // case name suggestion. Optional — falls back to a date-based default.
   userQueryPreview?: string
+  // The assistant's answer for this turn. When present, the new case is
+  // pre-seeded with one LLM-judge expectation using this text as the
+  // reference answer. Operator can run immediately without configuring.
+  originalAnswer?: string
   className?: string
 }
 
@@ -34,6 +39,7 @@ export function SendToEvalAction({
   conversationId,
   assistantMessageId,
   userQueryPreview,
+  originalAnswer,
   className,
 }: SendToEvalActionProps) {
   const [open, setOpen] = useState(false)
@@ -57,6 +63,7 @@ export function SendToEvalAction({
           conversationId={conversationId}
           assistantMessageId={assistantMessageId}
           userQueryPreview={userQueryPreview}
+          originalAnswer={originalAnswer}
           onClose={() => setOpen(false)}
         />
       ) : null}
@@ -68,6 +75,7 @@ interface SendToEvalDialogProps {
   conversationId: string
   assistantMessageId: string
   userQueryPreview?: string
+  originalAnswer?: string
   onClose: () => void
 }
 
@@ -89,6 +97,7 @@ function SendToEvalDialog({
   conversationId,
   assistantMessageId,
   userQueryPreview,
+  originalAnswer,
   onClose,
 }: SendToEvalDialogProps) {
   const router = useRouter()
@@ -115,10 +124,17 @@ function SendToEvalDialog({
         conversationId,
         messageId: assistantMessageId,
       })
+      // Pre-seed the case with one LLM-judge expectation using the original
+      // answer as the reference. Most "send this to eval" turns translate to
+      // "the assistant should keep answering this way" — operator can run
+      // immediately, or edit/replace the expectation in the editor.
+      const seededAssertions: EvalAssertion[] = originalAnswer && originalAnswer.trim()
+        ? [{ type: 'llm_judge', expectedAnswer: originalAnswer.trim() }]
+        : []
       const created = await evalsApi.createCase({
         snapshotId: snapshot.id,
         name: name.trim() || defaultCaseName(userQueryPreview),
-        assertions: [],
+        assertions: seededAssertions,
       })
 
       if (user) {
@@ -142,6 +158,7 @@ function SendToEvalDialog({
     conversationId,
     name,
     onClose,
+    originalAnswer,
     router,
     user,
     userQueryPreview,
@@ -152,9 +169,11 @@ function SendToEvalDialog({
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Send to eval</DialogTitle>
+          <DialogTitle>Save this turn as an eval</DialogTitle>
           <DialogDescription>
-            Captures this conversation as a frozen snapshot. You'll configure assertions and run modes on the next screen.
+            {originalAnswer && originalAnswer.trim()
+              ? "We'll save this conversation along with the current answer as the expected answer. You can run the eval on the next screen to check the assistant still answers the same way."
+              : 'Captures this conversation. You can configure what to check and run the eval on the next screen.'}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">

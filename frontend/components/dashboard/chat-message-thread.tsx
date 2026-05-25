@@ -575,6 +575,7 @@ export function ChatMessageThread({
                                 }
                                 return undefined
                               })()}
+                              originalAnswer={message.content}
                               className="inline-flex size-5 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
                             />
                           ) : null}

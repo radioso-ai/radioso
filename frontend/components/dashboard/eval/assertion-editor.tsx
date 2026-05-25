@@ -125,13 +125,13 @@ export function AssertionEditor({ caseId, initial, resolveDocumentTitle, onSaved
     try {
       const incomplete = assertions.findIndex((a) => !isComplete(a))
       if (incomplete !== -1) {
-        throw new Error(`Assertion #${incomplete + 1} is missing required fields.`)
+        throw new Error(`Expectation #${incomplete + 1} is missing required fields.`)
       }
       const updated = await evalsApi.replaceAssertions(caseId, assertions)
       onSaved(updated)
       setDirty(false)
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to save assertions'))
+      setError(getApiErrorMessage(err, 'Failed to save expectations'))
     } finally {
       setSaving(false)
     }
@@ -147,7 +147,7 @@ export function AssertionEditor({ caseId, initial, resolveDocumentTitle, onSaved
     <div className="space-y-3">
       {assertions.length === 0 ? (
         <p className="rounded-md border border-dashed border-border bg-background p-4 text-sm text-muted-foreground">
-          No assertions yet. Add one to grade what each run should produce.
+          No expectations yet. Add one to grade what each run should produce.
         </p>
       ) : (
         <ul className="space-y-3">
@@ -187,7 +187,7 @@ export function AssertionEditor({ caseId, initial, resolveDocumentTitle, onSaved
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" disabled={saving}>
-              <Plus className="mr-1 size-4" /> Add assertion <ChevronDown className="ml-1 size-3" />
+              <Plus className="mr-1 size-4" /> Add expectation <ChevronDown className="ml-1 size-3" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-72">
@@ -210,7 +210,7 @@ export function AssertionEditor({ caseId, initial, resolveDocumentTitle, onSaved
               Discard
             </Button>
             <Button size="sm" onClick={save} disabled={saving}>
-              {saving ? 'Saving…' : 'Save assertions'}
+              {saving ? 'Saving…' : 'Save expectations'}
             </Button>
           </>
         ) : null}

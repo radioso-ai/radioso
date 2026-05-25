@@ -157,8 +157,8 @@ function EvalList({ accountId, routeState }: EvalListProps) {
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {c.assertions.length === 0
-                    ? 'No assertions configured'
-                    : `${c.assertions.length} assertion${c.assertions.length === 1 ? '' : 's'}`}
+                    ? 'No expectations configured'
+                    : `${c.assertions.length} expectation${c.assertions.length === 1 ? '' : 's'}`}
                   {' · '}updated {formatRelative(c.updatedAt)}
                 </p>
               </div>
@@ -275,7 +275,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
           {caseWithRuns.status}
         </Badge>
       }
-      description={`Snapshot ${snapshot.id.slice(0, 8)} · fidelity: ${snapshot.fidelity}`}
+      description={`Captured ${formatRelative(snapshot.capturedAt)}`}
       actions={
         <>
           <Button variant="ghost" onClick={() => router.push(backHref)}>
@@ -307,12 +307,12 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
       <div className="mx-auto max-w-4xl space-y-6">
         {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 
-        {/* Assertions */}
+        {/* Expectations */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Assertions</CardTitle>
+            <CardTitle className="text-base">Expectations</CardTitle>
             <CardDescription>
-              Each run must satisfy all assertions for the case to pass. Editing assertions resets case status.
+              Each run must satisfy every expectation for the case to pass. Editing expectations resets the case status.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -339,7 +339,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
           <CardHeader>
             <CardTitle className="text-base">Conversation</CardTitle>
             <CardDescription>
-              {snapshot.messages.length} message{snapshot.messages.length === 1 ? '' : 's'} captured from conversation {snapshot.sourceConversationId.slice(0, 8)}
+              {snapshot.messages.length} message{snapshot.messages.length === 1 ? '' : 's'} captured from this turn
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -395,7 +395,7 @@ function LatestRunCard({ run, assertions, titleFor }: LatestRunCardProps) {
           <CardTitle className="text-base">Latest run</CardTitle>
           <CardDescription>
             {assertions.length === 0
-              ? 'Add at least one assertion above to grade a run. You can also run without assertions to just capture output.'
+              ? 'Add at least one expectation above to grade a run. You can also run without expectations to just capture output.'
               : 'No runs yet — click "Run case" above to execute.'}
           </CardDescription>
         </CardHeader>
@@ -432,7 +432,7 @@ function LatestRunCard({ run, assertions, titleFor }: LatestRunCardProps) {
         {run.assertionVerdicts.length > 0 ? (
           <div className="space-y-2">
             <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Per-assertion verdicts
+              Per-expectation verdicts
             </h4>
             <ul className="space-y-2">
               {run.assertionVerdicts.map((v, i) => (

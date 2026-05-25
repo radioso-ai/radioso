@@ -55,6 +55,17 @@ describe("skills catalog contract", () => {
             name: "definition_lookup",
           }),
         ]),
+        outcomes: expect.arrayContaining([
+          expect.objectContaining({
+            name: "grounded",
+            status: "completed",
+            groundedAnswer: true,
+          }),
+          expect.objectContaining({
+            name: "no_context",
+            status: "completed",
+          }),
+        ]),
       }),
     ]));
     expect(response.body.skills).not.toEqual(expect.arrayContaining([

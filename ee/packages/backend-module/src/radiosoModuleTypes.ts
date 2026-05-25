@@ -165,6 +165,13 @@ export interface SkillDefinition {
     description?: string;
     stepOverrides: Record<string, Record<string, unknown>>;
   }>;
+  outcomes?: Array<{
+    name: string;
+    displayName: string;
+    description?: string;
+    status: SkillTurnStatus;
+    groundedAnswer?: boolean;
+  }>;
 }
 
 export interface UsageLimitReservation {
@@ -520,9 +527,20 @@ export interface ChatIntakeReceipt {
   statusLabel?: string;
 }
 
+export type SkillTurnStatus =
+  | "active"
+  | "paused"
+  | "awaiting_confirmation"
+  | "awaiting_tool"
+  | "completed"
+  | "cancelled"
+  | "expired"
+  | "failed";
+
 export interface ChatIntakeResult {
   skillName: string;
-  status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+  status: SkillTurnStatus;
+  skillOutcome?: string;
   stateId?: string;
   answer: string;
   activitySummary: ActivitySummary;
@@ -607,7 +625,10 @@ export interface ChatActionSuggestionContext {
   agentId?: string;
   query: string;
   answer: string;
-  answerOutcome: AssistantTurnOutcomeName;
+  skillName: string;
+  skillOutcome: string;
+  skillStatus: SkillTurnStatus;
+  answerOutcome?: AssistantTurnOutcomeName;
   history: Array<{
     id: string;
     role: "user" | "assistant" | "system";

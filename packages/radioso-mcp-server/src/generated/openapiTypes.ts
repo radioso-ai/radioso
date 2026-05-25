@@ -2784,6 +2784,14 @@ export interface components {
             strategyAware: boolean;
             supportedFields?: string[];
         };
+        SkillOutcomeDefinition: {
+            name: string;
+            displayName: string;
+            description?: string;
+            /** @enum {string} */
+            status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+            groundedAnswer?: boolean;
+        };
         SkillDiagnosticEvidence: {
             queryShape?: string;
             retrievalShape?: string;
@@ -2924,6 +2932,7 @@ export interface components {
                 displayName?: string;
                 description?: string;
             }[];
+            outcomes?: components["schemas"]["SkillOutcomeDefinition"][];
         };
         SkillCatalogResponse: {
             skills: components["schemas"]["SkillCatalogEntry"][];
@@ -3139,6 +3148,10 @@ export interface components {
             citationCount: number;
             /** @enum {string} */
             answerOutcome?: "grounded_success" | "no_context_refusal" | "non_retrieval_response";
+            skillName?: string;
+            skillOutcome?: string;
+            /** @enum {string} */
+            skillStatus?: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
             route?: components["schemas"]["AssistantRouteDiagnostics"];
             activitySummary?: components["schemas"]["ActivitySummary"];
             activityTrace?: components["schemas"]["ActivityTrace"];

@@ -12,7 +12,7 @@ import type {
 } from "../domain/types.js";
 import type { EvalRepositoryPort } from "./evalRepository.js";
 import type { EvalLlmJudgePort } from "./evalJudge.js";
-import { findLastUserMessage, type EvalRetrievalRunnerPort } from "./evalRunner.js";
+import { buildReplayInputs, type EvalRetrievalRunnerPort } from "./evalRunner.js";
 
 export interface EvalRunInput {
   workspaceId: string;
@@ -63,8 +63,8 @@ export class EvalRunService {
       throw badRequest("Case snapshot does not match provided snapshot");
     }
 
-    const query = findLastUserMessage(snapshot);
-    if (!query) {
+    const replay = buildReplayInputs(snapshot);
+    if (!replay) {
       throw badRequest("Snapshot has no user message to replay");
     }
 
@@ -76,7 +76,8 @@ export class EvalRunService {
       if (input.mode === "full_assistant") {
         const result = await this.retrievalRunner.answer({
           workspaceId: input.workspaceId,
-          query,
+          query: replay.query,
+          history: replay.history,
           retrievalSettingsOverride: overrides.retrievalSettingsOverride,
         });
         observed = { retrievedChunks: result.chunks, answer: result.answer };
@@ -85,7 +86,8 @@ export class EvalRunService {
       } else {
         const result = await this.retrievalRunner.retrieve({
           workspaceId: input.workspaceId,
-          query,
+          query: replay.query,
+          history: replay.history,
           retrievalSettingsOverride: overrides.retrievalSettingsOverride,
         });
         observed = { retrievedChunks: result.chunks };
@@ -126,7 +128,7 @@ export class EvalRunService {
               workspaceId: input.workspaceId,
               assertion,
               observedAnswer: observed.answer,
-              question: query,
+              question: replay.query,
             });
           }
           return evaluateAssertion(assertion, observed);

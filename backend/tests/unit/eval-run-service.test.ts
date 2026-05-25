@@ -154,18 +154,31 @@ class InMemoryEvalRepository implements EvalRepositoryPort {
 }
 
 class StubRunner implements EvalRetrievalRunnerPort {
+  public lastRetrieveCall: { query: string; historyLength: number; historyRoles: string[] } | null = null;
+  public lastAnswerCall: { query: string; historyLength: number; historyRoles: string[] } | null = null;
+
   constructor(
     private readonly chunks: EvalRunRetrievedChunk[],
     private readonly error?: Error,
     private readonly answerText?: string,
   ) {}
 
-  async retrieve() {
+  async retrieve(input: { query: string; history: { role: string }[] }) {
+    this.lastRetrieveCall = {
+      query: input.query,
+      historyLength: input.history.length,
+      historyRoles: input.history.map((m) => m.role),
+    };
     if (this.error) throw this.error;
     return { chunks: this.chunks };
   }
 
-  async answer() {
+  async answer(input: { query: string; history: { role: string }[] }) {
+    this.lastAnswerCall = {
+      query: input.query,
+      historyLength: input.history.length,
+      historyRoles: input.history.map((m) => m.role),
+    };
     if (this.error) throw this.error;
     return { chunks: this.chunks, answer: this.answerText ?? "" };
   }
@@ -414,6 +427,35 @@ describe("EvalRunService.execute (retrieval_only)", () => {
         mode: "retrieval_only",
       }),
     ).rejects.toThrow(/does not match/);
+  });
+
+  it("replays multi-turn conversations by passing prior turns as history to the runner", async () => {
+    const snapshot = makeSnapshot({
+      messages: [
+        { id: "m1", role: "user", content: "Tell me about your refund policy.", createdAt: fixedDate },
+        { id: "m2", role: "assistant", content: "Our refund window is 30 days.", createdAt: fixedDate },
+        { id: "m3", role: "user", content: "And what about international orders?", createdAt: fixedDate },
+        { id: "m4", role: "assistant", content: "International orders also get 30 days.", createdAt: fixedDate },
+      ],
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const runner = new StubRunner([
+      { chunkId: "c1", documentId: "doc-refund", title: "Refund Policy", rank: 0 },
+    ]);
+    const service = new EvalRunService(repo, runner, passJudge());
+
+    await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      mode: "retrieval_only",
+    });
+
+    // The query is the LAST user message; the history is everything before it
+    // (the prior user + assistant exchange). The trailing assistant message
+    // (m4) is the output being regenerated and must NOT be in history.
+    expect(runner.lastRetrieveCall?.query).toBe("And what about international orders?");
+    expect(runner.lastRetrieveCall?.historyLength).toBe(2);
+    expect(runner.lastRetrieveCall?.historyRoles).toEqual(["user", "assistant"]);
   });
 
   it("supports full_assistant mode, capturing the generated answer in the run output", async () => {

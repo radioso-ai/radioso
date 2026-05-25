@@ -21,12 +21,13 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
   async retrieve(input: {
     workspaceId: string;
     query: string;
+    history: Parameters<RetrievalPipelineService["run"]>[0]["history"];
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   }) {
     const result = await this.pipeline.run({
       workspaceId: input.workspaceId,
       query: input.query,
-      history: [],
+      history: input.history,
       retrievalSettingsOverride: input.retrievalSettingsOverride,
     });
 
@@ -45,18 +46,19 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
   async answer(input: {
     workspaceId: string;
     query: string;
+    history: Parameters<RetrievalPipelineService["run"]>[0]["history"];
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   }) {
     const pipelineResult = await this.pipeline.run({
       workspaceId: input.workspaceId,
       query: input.query,
-      history: [],
+      history: input.history,
       retrievalSettingsOverride: input.retrievalSettingsOverride,
     });
 
     const generated = await this.chatGateway.answer({
       query: input.query,
-      history: [],
+      history: input.history,
       prompt: pipelineResult.prompt,
       systemPrompt: pipelineResult.systemPrompt,
       workspaceContext: { workspaceId: input.workspaceId },

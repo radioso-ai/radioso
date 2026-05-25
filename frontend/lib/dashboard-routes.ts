@@ -27,6 +27,11 @@ const QUALITY_STATUS_VALUES: ReadonlySet<QualityStatusFilter> = new Set([
 export type QualityFeedbackFilter = 'up' | 'down'
 export type QualityLatencyFilter = 'lt_2s' | '2s_5s' | '5s_10s' | 'gte_10s'
 
+export interface QualityActionRoute {
+  skillName: string
+  outcome: string
+}
+
 export interface DashboardRouteState {
   section: DashboardSection
   workspaceId?: string
@@ -44,7 +49,7 @@ export interface DashboardRouteState {
   historyItemId?: string
   historyMessageId?: string
   qualityPage?: number
-  qualityActions?: string[]
+  qualityActions?: QualityActionRoute[]
   qualityStatuses?: QualityStatusFilter[]
   qualityFeedback?: QualityFeedbackFilter[]
   qualityLatency?: QualityLatencyFilter
@@ -111,7 +116,7 @@ const parseHistoryItemKind = (value: string | null): HistoryItemKind | undefined
 
 const ACTION_PATTERN = /^[^:]+:[^:]+$/
 
-const parseQualityActions = (value: string | null): string[] | undefined => {
+const parseQualityActions = (value: string | null): QualityActionRoute[] | undefined => {
   if (!value) {
     return undefined
   }
@@ -119,8 +124,18 @@ const parseQualityActions = (value: string | null): string[] | undefined => {
     .split(',')
     .map((entry) => entry.trim())
     .filter((entry) => ACTION_PATTERN.test(entry))
+    .map((entry): QualityActionRoute => {
+      const colonIndex = entry.indexOf(':')
+      return {
+        skillName: entry.slice(0, colonIndex),
+        outcome: entry.slice(colonIndex + 1),
+      }
+    })
   return parsed.length > 0 ? parsed : undefined
 }
+
+const serializeQualityActions = (actions: QualityActionRoute[]): string =>
+  actions.map((action) => `${action.skillName}:${action.outcome}`).join(',')
 
 const parseQualityFeedback = (value: string | null): QualityFeedbackFilter[] | undefined => {
   if (!value) {
@@ -368,7 +383,7 @@ const buildQueryString = (normalized: DashboardRouteState) => {
       searchParams.set('page', String(normalized.qualityPage))
     }
     if (normalized.qualityActions && normalized.qualityActions.length > 0) {
-      searchParams.set('actions', normalized.qualityActions.join(','))
+      searchParams.set('actions', serializeQualityActions(normalized.qualityActions))
     }
     if (normalized.qualityStatuses && normalized.qualityStatuses.length > 0) {
       searchParams.set('statuses', normalized.qualityStatuses.join(','))

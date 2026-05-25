@@ -58,8 +58,6 @@ export interface ListLowQualityTurnsOptions {
   hasComment?: boolean
   minTotalLatencyMs?: number
   maxTotalLatencyMs?: number
-  agentId?: string
-  channel?: string
   from?: string
   to?: string
   offset?: number
@@ -82,8 +80,6 @@ export const qualityApi = {
       hasComment: options.hasComment === undefined ? undefined : String(options.hasComment),
       minTotalLatencyMs: options.minTotalLatencyMs === undefined ? undefined : String(options.minTotalLatencyMs),
       maxTotalLatencyMs: options.maxTotalLatencyMs === undefined ? undefined : String(options.maxTotalLatencyMs),
-      agentId: options.agentId,
-      channel: options.channel,
       from: options.from,
       to: options.to,
       offset: options.offset === undefined ? undefined : String(options.offset),

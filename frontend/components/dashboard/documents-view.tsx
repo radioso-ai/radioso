@@ -1,14 +1,19 @@
 'use client'
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, FileUp, Globe, Pencil, Plug, Plus, SlidersHorizontal, X } from 'lucide-react'
+import { ChevronDown, FileUp, Globe, Pencil, Plug, Plus, SlidersHorizontal } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 import { DocumentCrawlDialog } from '@/components/dashboard/documents/document-crawl-dialog'
 import { DocumentCrawlJobsBanner } from '@/components/dashboard/documents/document-crawl-jobs-banner'
 import { DocumentDeleteDialog } from '@/components/dashboard/documents/document-delete-dialog'
 import { DocumentEditorDialog } from '@/components/dashboard/documents/document-editor-dialog'
-import { DocumentFilterDialog } from '@/components/dashboard/documents/document-filter-dialog'
+import {
+  ActiveFilterPills,
+  FilterDialog,
+  type FilterDefinition,
+  type FilterValues,
+} from '@/components/dashboard/shared/filters'
 import {
   DocumentEditorPage,
   MANUALLY_ADDED_SOURCE_ID,
@@ -128,6 +133,22 @@ export function DocumentsView({
   const activeSource = sourceFilterId
     ? availableSources.find((source) => source.id === sourceFilterId) ?? null
     : null
+  const documentFilters = useMemo<ReadonlyArray<FilterDefinition>>(
+    () => [
+      {
+        id: 'source',
+        kind: 'single-select',
+        label: 'Source',
+        placeholder: 'All sources',
+        options: availableSources.map((source) => ({ value: source.id, label: source.name })),
+      },
+    ],
+    [availableSources],
+  )
+  const filterValues = useMemo<FilterValues>(
+    () => (sourceFilterId ? { source: { kind: 'single-select', value: sourceFilterId } } : {}),
+    [sourceFilterId],
+  )
   const [isCrawlDialogOpen, setIsCrawlDialogOpen] = useState(false)
   const [isCrawling, setIsCrawling] = useState(false)
   const [crawlUrl, setCrawlUrl] = useState('')
@@ -894,12 +915,19 @@ export function DocumentsView({
         onConfirm={() => void handleConfirmDelete()}
       />
 
-      <DocumentFilterDialog
+      <FilterDialog
         open={isFilterDialogOpen}
         onOpenChange={setIsFilterDialogOpen}
-        sources={availableSources}
-        currentSourceId={sourceFilterId}
-        onApply={setSourceFilter}
+        filters={documentFilters}
+        values={filterValues}
+        title="Filter documents"
+        description="Narrow the document list. More filters will be added here over time."
+        onApply={(next) => {
+          const sourceValue = next.source
+          const nextSourceId =
+            sourceValue?.kind === 'single-select' ? sourceValue.value : null
+          setSourceFilter(nextSourceId)
+        }}
       />
 
       {activeConnectorId ? (
@@ -1058,20 +1086,13 @@ export function DocumentsView({
                     dismissingJobIds={dismissingCrawlJobIds}
                   />
                 ) : null}
-                {sourceFilterId ? (
-                  <div className="flex flex-wrap items-center gap-2" aria-label="Active filters">
-                    <button
-                      type="button"
-                      onClick={() => setSourceFilter(null)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1 text-xs text-foreground hover:bg-accent"
-                      aria-label={`Remove source filter${activeSource ? `: ${activeSource.name}` : ''}`}
-                    >
-                      <span className="text-muted-foreground">Source:</span>
-                      <span className="font-medium">{activeSource?.name ?? sourceFilterId}</span>
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                ) : null}
+                <ActiveFilterPills
+                  filters={documentFilters}
+                  values={filterValues}
+                  onRemove={(id) => {
+                    if (id === 'source') setSourceFilter(null)
+                  }}
+                />
                 <DocumentList
                 isLoading={isLoading}
                 totalDocuments={totalDocuments}

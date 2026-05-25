@@ -24,6 +24,25 @@ export {
 export { accountApi, answerFeedbackApi, enterpriseUsageApi, humanContactApi } from './api-account'
 export { authApi } from './api-auth'
 export { chatApi } from './api-chat'
+export { qualityApi } from './api-quality'
+export type {
+  FeedbackValue,
+  ListLowQualityTurnsOptions,
+  LowQualityTurn,
+  LowQualityTurnsPage,
+  QualityActionFilter,
+  QualityFeedbackSummary,
+  QualitySkillStatus,
+} from './api-quality'
+export { skillsApi } from './api-skills'
+export type {
+  SkillCatalogEntry,
+  SkillCatalogResponse,
+  SkillOwner,
+  SkillOutcomeDefinition,
+  SkillOutcomeStatus,
+  SkillOutcomeTone,
+} from './api-skills'
 export { connectorsApi } from './api-connectors'
 export { documentsApi } from './api-documents'
 export { publicChatApi } from './api-public-chat'

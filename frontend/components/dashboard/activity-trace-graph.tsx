@@ -220,6 +220,8 @@ const summaryLine = (stage: ActivityStage): string => {
     case 'diagnostics':
       return outputs.fallbackApplied ? 'fallback' : 'ok'
     case 'answer_outcome': {
+      const skillOutcome = outputs.skillOutcome as string | undefined
+      if (skillOutcome) return skillOutcome.replaceAll('_', ' ')
       const outcome = outputs.outcome as string | undefined
       if (outcome === 'non_retrieval_response' || outcome === 'non_retrieval_answer') return 'direct reply'
       return outcome?.replaceAll('_', ' ') ?? ''

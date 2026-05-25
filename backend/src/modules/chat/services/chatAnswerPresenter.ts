@@ -4,6 +4,9 @@ import type { AnswerSegment, ChatCitation, CitationEvidence } from "../contracts
 import {
   ASSISTANT_TURN_OUTCOME,
   type AssistantTurnOutcome,
+  SKILL_TURN_OUTCOME,
+  type SkillTurnOutcome,
+  legacyAnswerOutcomeForSkillTurnOutcome,
 } from "./assistantTurnOutcomeTypes.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
@@ -19,19 +22,52 @@ export interface ChatPresentedAnswer {
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
   planningCitations?: ChatCitation[];
-  answerOutcome: AssistantTurnOutcome;
+  skillName: string;
+  skillOutcome: string;
+  skillStatus: SkillTurnOutcome["status"];
+  answerOutcome?: AssistantTurnOutcome;
 }
 
+export interface SkillOutcomeCapabilityProvider {
+  supportsGroundedAnswer(input: {
+    skillName: string;
+    outcome: string;
+  }): boolean;
+}
+
+export interface SkillOutcomeCapabilityRegistry {
+  get(name: string): {
+    outcomes?: Array<{
+      name: string;
+      groundedAnswer?: boolean;
+    }>;
+  } | null;
+}
+
+export const createSkillOutcomeCapabilityProvider = (
+  registry: SkillOutcomeCapabilityRegistry,
+): SkillOutcomeCapabilityProvider => ({
+  supportsGroundedAnswer: ({ skillName, outcome }) =>
+    registry.get(skillName)
+      ?.outcomes
+      ?.some((candidate) => candidate.name === outcome && candidate.groundedAnswer === true) ?? false,
+});
+
 const hasGroundedSuggestionSupport = (input: {
-  answerOutcome: AssistantTurnOutcome;
+  skillName: string;
+  skillOutcome: string;
   hasRetrievedContext: boolean;
   hasCitedAnswer: boolean;
+  skillOutcomeCapabilities: SkillOutcomeCapabilityProvider;
 }): boolean => {
   if (!input.hasRetrievedContext || !input.hasCitedAnswer) {
     return false;
   }
 
-  return input.answerOutcome === ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS;
+  return input.skillOutcomeCapabilities.supportsGroundedAnswer({
+    skillName: input.skillName,
+    outcome: input.skillOutcome,
+  });
 };
 
 const toCitationEvidence = (session: PreparedSession): CitationEvidence[] =>
@@ -50,12 +86,26 @@ const toPlanningCitations = (citationEvidence: CitationEvidence[]): ChatCitation
     title: citation.title,
   }));
 
+const withLegacyAnswerOutcome = <T extends Omit<ChatPresentedAnswer, "answerOutcome">>(
+  presentation: T,
+): ChatPresentedAnswer => ({
+  ...presentation,
+  answerOutcome: legacyAnswerOutcomeForSkillTurnOutcome({
+    skillName: presentation.skillName,
+    outcome: presentation.skillOutcome,
+    status: presentation.skillStatus,
+  }),
+});
+
 export class ChatAnswerPresenter {
   private readonly answerPresentationService = new AnswerPresentationService();
 
   constructor(
     private readonly assistantSuggestionExpansionService: AssistantSuggestionExpansionService,
     private readonly chatActionSuggestionService?: ChatActionSuggestionService,
+    private readonly skillOutcomeCapabilities: SkillOutcomeCapabilityProvider = {
+      supportsGroundedAnswer: () => false,
+    },
   ) {}
 
   presentNonRetrievalAnswer(answer: string): ChatPresentedAnswer {
@@ -67,6 +117,9 @@ export class ChatAnswerPresenter {
     return {
       ...presented,
       planningCitations: [],
+      skillName: SKILL_TURN_OUTCOME.ASSISTANT_CONVERSATIONAL.skillName,
+      skillOutcome: SKILL_TURN_OUTCOME.ASSISTANT_CONVERSATIONAL.outcome,
+      skillStatus: SKILL_TURN_OUTCOME.ASSISTANT_CONVERSATIONAL.status,
       answerOutcome: ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE,
     };
   }
@@ -105,12 +158,14 @@ export class ChatAnswerPresenter {
     });
     const citationArtifacts = resolveCitationArtifacts(presented, normalized, citationEvidence);
 
-    return {
+    return withLegacyAnswerOutcome({
       ...presented,
       ...citationArtifacts,
       planningCitations: toPlanningCitations(normalized.citationEvidence),
-      answerOutcome: ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS,
-    };
+      skillName: SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.skillName,
+      skillOutcome: SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.outcome,
+      skillStatus: SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.status,
+    });
   }
 
   applyAssistantSuggestions(
@@ -124,12 +179,14 @@ export class ChatAnswerPresenter {
       suggestedQuestionsCount:
         session.retrieval.responseSettings?.suggestedQuestionsCount ?? DEFAULT_SUGGESTED_QUESTIONS_COUNT,
       groundedAnswerSupported: hasGroundedSuggestionSupport({
-        answerOutcome: presentation.answerOutcome,
+        skillName: presentation.skillName,
+        skillOutcome: presentation.skillOutcome,
         hasRetrievedContext: session.retrieval.contexts.length > 0,
         hasCitedAnswer: Boolean(
           (presentation.citations?.length ?? 0) > 0
           && presentation.answerSegments?.some((segment) => (segment.citationIndices?.length ?? 0) > 0),
         ),
+        skillOutcomeCapabilities: this.skillOutcomeCapabilities,
       }),
       answer: presentation.answer,
       contexts: session.retrieval.contexts.map((context) => ({
@@ -161,6 +218,9 @@ export class ChatAnswerPresenter {
       agentId: session.agent.id,
       query: session.userMessage.content,
       answer: presentation.answer,
+      skillName: presentation.skillName,
+      skillOutcome: presentation.skillOutcome,
+      skillStatus: presentation.skillStatus,
       answerOutcome: presentation.answerOutcome,
       history: session.history,
       userExpectedLocale: userExpectedLocale ?? undefined,
@@ -185,11 +245,13 @@ export class ChatAnswerPresenter {
       citations: citationEvidence,
     });
 
-    return {
+    return withLegacyAnswerOutcome({
       ...presented,
       suggestions: undefined,
       planningCitations: [],
-      answerOutcome: ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL,
-    };
+      skillName: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.skillName,
+      skillOutcome: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome,
+      skillStatus: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.status,
+    });
   }
 }

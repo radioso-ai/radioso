@@ -11,6 +11,9 @@ export interface MessageRecord {
   content: string;
   metadata?: Record<string, unknown>;
   inputMetadata?: UserMessageInputMetadata;
+  skillName?: string;
+  skillOutcome?: string;
+  skillStatus?: string;
   createdAt: Date;
 }
 
@@ -51,6 +54,9 @@ export interface MessageRepositoryPort {
     content: string;
     inputMetadata?: UserMessageInputMetadata;
     metadata?: Record<string, unknown>;
+    skillName?: string;
+    skillOutcome?: string;
+    skillStatus?: string;
   }): Promise<MessageRecord>;
 }
 
@@ -61,6 +67,9 @@ interface MessageRow {
   role: "user" | "assistant" | "system";
   content: string;
   metadata_json: unknown;
+  skill_name: string | null;
+  skill_outcome: string | null;
+  skill_status: string | null;
   created_at: Date;
 }
 
@@ -102,6 +111,9 @@ const mapMessage = (row: MessageRow): MessageRecord => ({
     ? row.metadata_json as Record<string, unknown>
     : undefined,
   inputMetadata: row.role === "user" ? mapInputMetadata(row.metadata_json) : undefined,
+  skillName: row.skill_name ?? undefined,
+  skillOutcome: row.skill_outcome ?? undefined,
+  skillStatus: row.skill_status ?? undefined,
   createdAt: new Date(row.created_at),
 });
 
@@ -110,7 +122,7 @@ export class MessageRepository implements MessageRepositoryPort {
 
   async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     const rows = await this.database.query<MessageRow>(
-      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, created_at
+      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at
        FROM messages
        WHERE workspace_id = $1
          AND conversation_id = $2
@@ -127,7 +139,7 @@ export class MessageRepository implements MessageRepositoryPort {
     }
 
     const rows = await this.database.query<MessageRow>(
-      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, created_at
+      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at
        FROM messages
        WHERE workspace_id = $1
          AND conversation_id = $2
@@ -176,7 +188,7 @@ export class MessageRepository implements MessageRepositoryPort {
     }
 
     const rows = await this.database.query<MessageRow>(
-      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, created_at
+      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at
        FROM messages
        WHERE workspace_id = $1
          AND conversation_id = $2
@@ -266,11 +278,14 @@ export class MessageRepository implements MessageRepositoryPort {
     content: string;
     inputMetadata?: UserMessageInputMetadata;
     metadata?: Record<string, unknown>;
+    skillName?: string;
+    skillOutcome?: string;
+    skillStatus?: string;
   }): Promise<MessageRecord> {
     const [row] = await this.database.query<MessageRow>(
-      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-       RETURNING id, conversation_id, workspace_id, role, content, metadata_json, created_at`,
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
+       RETURNING id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at`,
       [
         randomUUID(),
         input.conversationId,
@@ -278,6 +293,9 @@ export class MessageRepository implements MessageRepositoryPort {
         input.role,
         input.content,
         JSON.stringify(input.metadata ?? input.inputMetadata ?? {}),
+        input.skillName ?? null,
+        input.skillOutcome ?? null,
+        input.skillStatus ?? null,
       ],
     );
 

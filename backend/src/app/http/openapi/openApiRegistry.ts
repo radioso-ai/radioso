@@ -150,6 +150,7 @@ export interface OpenApiSchemaCatalog {
   SkillDiagnosticDefinitionSchema: z.ZodTypeAny;
   SkillDiagnosticEvidenceSchema: z.ZodTypeAny;
   SkillDiagnosticsSummarySchema: z.ZodTypeAny;
+  SkillOutcomeDefinitionSchema: z.ZodTypeAny;
   SkillParamsSchema: RouteParameterSchema;
   tokenPathParamsSchema: z.AnyZodObject;
   TriggerAnalysisRuleSchema: z.ZodTypeAny;

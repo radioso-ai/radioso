@@ -202,9 +202,9 @@ trigger and runs its own intake state machine.
 Action chips do not own execution. The chip is a hint surface that opens a
 skill intake; all validation, permissions, state, side effects, and audit
 remain with the intake provider. Modules contribute chips by registering a
-`ChatActionSuggestionProvider`, which is evaluated against the validated answer
-outcome (for example, `no_context_refusal`) and returns at most one chip per
-turn.
+`ChatActionSuggestionProvider`, which is evaluated against the skill-owned turn
+outcome (for example, `retrieval.answer` with `no_context`) and normalized
+status, then returns at most one chip per turn.
 
 ## Skill Intake And Execution
 

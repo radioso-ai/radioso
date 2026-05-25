@@ -2743,6 +2743,9 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
 	    content: string;
 	    inputMetadata?: MessageRecord["inputMetadata"];
 	    metadata?: Record<string, unknown>;
+	    skillName?: string;
+	    skillOutcome?: string;
+	    skillStatus?: string;
 	  }): Promise<MessageRecord> {
     const record: MessageRecord = {
       id: randomUUID(),
@@ -2752,6 +2755,9 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
 	      content: input.content,
 	      metadata: input.metadata ?? (input.inputMetadata ? { ...input.inputMetadata } : undefined),
 	      inputMetadata: input.inputMetadata,
+	      skillName: input.skillName,
+	      skillOutcome: input.skillOutcome,
+	      skillStatus: input.skillStatus,
 	      createdAt: new Date(),
     };
     const items = this.items.get(input.conversationId) ?? [];

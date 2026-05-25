@@ -1,15 +1,8 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ActivitySummary, ActivityTrace } from "../../retrieval/public.js";
+import type { SkillTurnStatus } from "./assistantTurnOutcomeTypes.js";
 
-export type ChatIntakeStatus =
-  | "active"
-  | "paused"
-  | "awaiting_confirmation"
-  | "awaiting_tool"
-  | "completed"
-  | "cancelled"
-  | "expired"
-  | "failed";
+export type ChatIntakeStatus = SkillTurnStatus;
 
 export interface ChatIntakeReceiptField {
   name: string;
@@ -25,6 +18,7 @@ export interface ChatIntakeReceipt {
 export interface ChatIntakeResult {
   skillName: string;
   status: ChatIntakeStatus;
+  skillOutcome?: string;
   stateId?: string;
   answer: string;
   activitySummary: ActivitySummary;

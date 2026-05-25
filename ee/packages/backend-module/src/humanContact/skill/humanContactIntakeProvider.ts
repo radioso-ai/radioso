@@ -289,6 +289,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
           result: {
             skillName: HUMAN_CONTACT_SKILL_NAME,
             status: "failed" as const,
+            skillOutcome: "failed",
             answer: failureAnswer,
             activityTrace,
             activitySummary: activityTrace.summary!,
@@ -319,6 +320,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       return {
         skillName: HUMAN_CONTACT_SKILL_NAME,
         status: "completed",
+        skillOutcome: "sent",
         stateId: state?.id,
         answer,
         activityTrace: submitResult.activityTrace,
@@ -636,6 +638,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
         result: {
           skillName: HUMAN_CONTACT_SKILL_NAME,
           status: "failed" as const,
+          skillOutcome: "failed",
           stateId: state.id,
           answer: failureAnswer,
           activityTrace,
@@ -665,6 +668,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
     return {
       skillName: HUMAN_CONTACT_SKILL_NAME,
       status: "completed",
+      skillOutcome: "sent",
       stateId: state.id,
       answer,
       activityTrace: submitResult.activityTrace,

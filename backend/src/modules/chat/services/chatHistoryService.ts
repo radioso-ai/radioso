@@ -16,7 +16,12 @@ import {
   type ActivitySummary,
   type ActivityTrace,
 } from "../../retrieval/public.js";
-import type { AssistantTurnOutcome } from "./assistantTurnOutcomeTypes.js";
+import {
+  type AssistantTurnOutcome,
+  type SkillTurnOutcome,
+  skillTurnOutcomeFromLegacyAnswerOutcome,
+} from "./assistantTurnOutcomeTypes.js";
+import { skillOutcomeStatusSchema } from "../../skills/public.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
 import {
@@ -53,6 +58,9 @@ export interface ChatConversationTurnDebug {
   stream: boolean;
   citationCount: number;
   answerOutcome?: AssistantTurnOutcome;
+  skillName?: string;
+  skillOutcome?: string;
+  skillStatus?: SkillTurnOutcome["status"];
   activitySummary?: ActivitySummary;
   activityTrace?: ActivityTrace;
   errorMessage?: string | null;
@@ -155,6 +163,8 @@ export interface PublicConversationPage {
 
 interface ChatAuditMetadata {
   answerOutcome?: AssistantTurnOutcome;
+  skillTurn?: unknown;
+  skillIntake?: unknown;
   assistantMessageId?: string;
   stream?: boolean;
   citationCount?: number;
@@ -171,6 +181,104 @@ interface ChatAuditMetadata {
     retrievalInvoked?: unknown;
   };
 }
+
+interface NormalizedSkillTurnOutcome {
+  skillName: string;
+  outcome?: string;
+  status: SkillTurnOutcome["status"];
+}
+
+const normalizeSkillStatus = (value: unknown): SkillTurnOutcome["status"] | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const parsed = skillOutcomeStatusSchema.safeParse(value.trim());
+  return parsed.success ? parsed.data : undefined;
+};
+
+const normalizeSkillTurnFields = (input: {
+  skillName?: unknown;
+  skillOutcome?: unknown;
+  skillStatus?: unknown;
+  requireOutcome: boolean;
+}): NormalizedSkillTurnOutcome | undefined => {
+  if (typeof input.skillName !== "string" || input.skillName.trim().length === 0) {
+    return undefined;
+  }
+  const status = normalizeSkillStatus(input.skillStatus);
+  if (!status) {
+    return undefined;
+  }
+  const outcome = typeof input.skillOutcome === "string" && input.skillOutcome.trim().length > 0
+    ? input.skillOutcome.trim()
+    : undefined;
+  if (input.requireOutcome && !outcome) {
+    return undefined;
+  }
+
+  return {
+    skillName: input.skillName.trim(),
+    outcome,
+    status,
+  };
+};
+
+const normalizeSkillIntakeOutcome = (value: unknown): NormalizedSkillTurnOutcome | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const candidate = value as { skillName?: unknown; skillOutcome?: unknown; status?: unknown };
+  const normalized = normalizeSkillTurnFields({
+    skillName: candidate.skillName,
+    skillOutcome: candidate.skillOutcome,
+    skillStatus: candidate.status,
+    requireOutcome: false,
+  });
+  return normalized
+    ? {
+        ...normalized,
+        outcome: normalized.outcome ?? "unknown",
+      }
+    : undefined;
+};
+
+const normalizeMessageSkillTurnOutcome = (message: MessageRecord | undefined): NormalizedSkillTurnOutcome | undefined =>
+  normalizeSkillTurnFields({
+    skillName: message?.skillName,
+    skillOutcome: message?.skillOutcome,
+    skillStatus: message?.skillStatus,
+    requireOutcome: false,
+  });
+
+const normalizeSkillTurnOutcome = (
+  metadata: ChatAuditMetadata,
+  message: MessageRecord | undefined,
+): NormalizedSkillTurnOutcome | undefined => {
+  if (metadata.skillTurn && typeof metadata.skillTurn === "object" && !Array.isArray(metadata.skillTurn)) {
+    const candidate = metadata.skillTurn as { skillName?: unknown; outcome?: unknown; status?: unknown };
+    const normalized = normalizeSkillTurnFields({
+      skillName: candidate.skillName,
+      skillOutcome: candidate.outcome,
+      skillStatus: candidate.status,
+      requireOutcome: true,
+    });
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  const messageSkillTurnOutcome = normalizeMessageSkillTurnOutcome(message);
+  if (messageSkillTurnOutcome) {
+    return messageSkillTurnOutcome;
+  }
+
+  const skillIntakeOutcome = normalizeSkillIntakeOutcome(metadata.skillIntake);
+  if (skillIntakeOutcome) {
+    return skillIntakeOutcome;
+  }
+
+  return skillTurnOutcomeFromLegacyAnswerOutcome(metadata.answerOutcome);
+};
 
 interface AssistantTurnArtifacts {
   citations?: ChatCitation[];
@@ -331,6 +439,7 @@ const reconstructActivityTrace = (input: {
   summary: ActivitySummary | undefined;
   diagnostics: RetrievalExecutionDiagnostics;
   answerOutcome?: AssistantTurnOutcome;
+  skillTurnOutcome?: NormalizedSkillTurnOutcome;
   citations?: ChatCitation[];
 }): ActivityTrace => {
   const execution = input.summary?.execution ?? toRetrievalExecutionPath(input.route);
@@ -458,6 +567,9 @@ const reconstructActivityTrace = (input: {
       startedAt: input.startedAt,
       outputs: {
         outcome: input.answerOutcome,
+        skillName: input.skillTurnOutcome?.skillName,
+        skillOutcome: input.skillTurnOutcome?.outcome,
+        skillStatus: input.skillTurnOutcome?.status,
       },
     },
   );
@@ -650,7 +762,7 @@ export class ChatHistoryService {
       : new Map<string, ChatAnswerFeedbackEntry[]>();
 
     const artifactsByAssistantMessageId = this.buildArtifactsIndex(auditEvents);
-    const debugByAssistantMessageId = this.buildDebugIndex(auditEvents);
+    const debugByAssistantMessageId = this.buildDebugIndex(auditEvents, messages);
     const messageSummary = messageSummaries.get(conversation.id);
 
     return {
@@ -686,8 +798,10 @@ export class ChatHistoryService {
 
   private buildDebugIndex(
     auditEvents: AuditEventRecord[],
+    messages: MessageRecord[],
   ): Map<string, ChatConversationTurnDebug> {
     const index = new Map<string, ChatConversationTurnDebug>();
+    const messagesById = new Map(messages.map((message) => [message.id, message]));
 
     for (const event of auditEvents) {
       const metadata = event.metadata as ChatAuditMetadata;
@@ -695,6 +809,7 @@ export class ChatHistoryService {
         continue;
       }
 
+      const skillTurnOutcome = normalizeSkillTurnOutcome(metadata, messagesById.get(metadata.assistantMessageId));
       const route = normalizeRouteDiagnostics(metadata.route);
       const activitySummary = metadata.activityTrace?.summary
         ?? (
@@ -714,6 +829,7 @@ export class ChatHistoryService {
                 summary: activitySummary,
                 diagnostics: metadata.retrieval as RetrievalExecutionDiagnostics,
                 answerOutcome: metadata.answerOutcome,
+                skillTurnOutcome,
                 citations: metadata.citations,
               })
             : undefined
@@ -724,6 +840,13 @@ export class ChatHistoryService {
         stream: Boolean(metadata.stream),
         citationCount: typeof metadata.citationCount === "number" ? metadata.citationCount : 0,
         answerOutcome: metadata.answerOutcome,
+        ...(skillTurnOutcome
+          ? {
+              skillName: skillTurnOutcome.skillName,
+              skillOutcome: skillTurnOutcome.outcome,
+              skillStatus: skillTurnOutcome.status,
+            }
+          : {}),
         activitySummary,
         activityTrace,
         errorMessage: metadata.errorMessage ?? null,

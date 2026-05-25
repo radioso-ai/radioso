@@ -5,7 +5,10 @@ import { ChatActionSuggestionRegistry } from "../../src/modules/chat/services/ac
 import { ChatActionSuggestionService } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionService.js";
 import type { ChatActionSuggestionProvider } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionProvider.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
-import type { AssistantSuggestionExpansionService } from "../../src/modules/chat/services/assistantSuggestionExpansionService.js";
+import type {
+  AssistantSuggestionExpansionInput,
+  AssistantSuggestionExpansionService,
+} from "../../src/modules/chat/services/assistantSuggestionExpansionService.js";
 import type { ChatSuggestion } from "../../src/modules/chat/types/chatResponses.js";
 import type { ConversationRecord } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
@@ -16,6 +19,13 @@ const stubExpansionService = {
     return { suggestions: [] as ChatSuggestion[] };
   },
 } as unknown as AssistantSuggestionExpansionService;
+
+const buildExpansionSpy = (captured: { groundedAnswerSupported?: boolean }): AssistantSuggestionExpansionService => ({
+  apply(input: AssistantSuggestionExpansionInput) {
+    captured.groundedAnswerSupported = input.groundedAnswerSupported;
+    return { suggestions: [] as ChatSuggestion[] };
+  },
+}) as unknown as AssistantSuggestionExpansionService;
 
 const buildSession = (): PreparedSession => {
   const conversation: ConversationRecord = {
@@ -42,7 +52,18 @@ const buildSession = (): PreparedSession => {
     agent,
     conversation,
     history: [],
-    retrieval: {} as PreparedSession["retrieval"],
+    retrieval: {
+      contexts: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Doc",
+          content: "Grounded evidence.",
+          metadata: {},
+        },
+      ],
+      responseSettings: {},
+    } as PreparedSession["retrieval"],
     turnRoute: "retrieval" as PreparedSession["turnRoute"],
     userMessage,
   };
@@ -51,7 +72,18 @@ const buildSession = (): PreparedSession => {
 const basePresentation: ChatPresentedAnswer = {
   answer: "I cannot answer.",
   citations: [],
+  skillName: "retrieval.answer",
+  skillOutcome: "no_context",
+  skillStatus: "completed",
   answerOutcome: "no_context_refusal",
+};
+
+const groundedPresentation: ChatPresentedAnswer = {
+  ...basePresentation,
+  citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Doc" }],
+  answerSegments: [{ text: "Grounded answer.", citationIndices: [0] }],
+  skillOutcome: "grounded",
+  answerOutcome: "grounded_success",
 };
 
 const buildProvider = (suggestion: ChatSuggestion): ChatActionSuggestionProvider => ({
@@ -90,13 +122,16 @@ describe("ChatAnswerPresenter.applyActionSuggestions", () => {
     expect(result.suggestions?.map((s) => s.kind)).toEqual(["contact_human", "deeper", "broader"]);
   });
 
-  it("passes the answerOutcome and workspaceId to the provider context", async () => {
-    const captured: { workspaceId?: string; outcome?: string } = {};
+  it("passes skill-owned outcome context to the provider", async () => {
+    const captured: { workspaceId?: string; skillName?: string; skillOutcome?: string; status?: string; legacyOutcome?: string } = {};
     const provider: ChatActionSuggestionProvider = {
       name: "spy",
       evaluate: async (ctx) => {
         captured.workspaceId = ctx.workspaceId;
-        captured.outcome = ctx.answerOutcome;
+        captured.skillName = ctx.skillName;
+        captured.skillOutcome = ctx.skillOutcome;
+        captured.status = ctx.skillStatus;
+        captured.legacyOutcome = ctx.answerOutcome;
         return null;
       },
     };
@@ -105,6 +140,50 @@ describe("ChatAnswerPresenter.applyActionSuggestions", () => {
 
     await presenter.applyActionSuggestions(buildSession(), basePresentation);
 
-    expect(captured).toEqual({ workspaceId: "ws-1", outcome: "no_context_refusal" });
+    expect(captured).toEqual({
+      workspaceId: "ws-1",
+      skillName: "retrieval.answer",
+      skillOutcome: "no_context",
+      status: "completed",
+      legacyOutcome: "no_context_refusal",
+    });
+  });
+
+  it("enables grounded question suggestions from the skill outcome capability", () => {
+    const captured: { groundedAnswerSupported?: boolean } = {};
+    const presenter = new ChatAnswerPresenter(
+      buildExpansionSpy(captured),
+      undefined,
+      {
+        supportsGroundedAnswer: ({ skillName, outcome }) =>
+          skillName === "custom.grounded" && outcome === "grounded",
+      },
+    );
+
+    presenter.applyAssistantSuggestions(
+      buildSession(),
+      {
+        ...groundedPresentation,
+        skillName: "custom.grounded",
+      },
+      [],
+    );
+
+    expect(captured.groundedAnswerSupported).toBe(true);
+  });
+
+  it("does not enable grounded question suggestions without the outcome capability", () => {
+    const captured: { groundedAnswerSupported?: boolean } = {};
+    const presenter = new ChatAnswerPresenter(
+      buildExpansionSpy(captured),
+      undefined,
+      {
+        supportsGroundedAnswer: () => false,
+      },
+    );
+
+    presenter.applyAssistantSuggestions(buildSession(), groundedPresentation, []);
+
+    expect(captured.groundedAnswerSupported).toBe(false);
   });
 });

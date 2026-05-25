@@ -12,6 +12,9 @@ export interface AnswerOutcomeInput {
   retrievalSkipped?: boolean;
   durationMs: number;
   answerOutcome?: string;
+  skillName?: string;
+  skillOutcome?: string;
+  skillStatus?: string;
 }
 
 const ALLOWED_STATUSES = new Set<ActivityStageStatus>([
@@ -102,6 +105,9 @@ export class ActivityTracePresenter {
                 ? "grounded_answer"
                 : "no_context"
         ),
+        skillName: input.outcome.skillName,
+        skillOutcome: input.outcome.skillOutcome,
+        skillStatus: input.outcome.skillStatus,
         retrievalSkipped,
       },
       metrics: {

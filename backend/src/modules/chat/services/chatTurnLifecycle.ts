@@ -11,6 +11,8 @@ import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import {
   ASSISTANT_TURN_OUTCOME,
   type AssistantTurnOutcome,
+  type SkillTurnOutcome,
+  legacyAnswerOutcomeForSkillTurnOutcome,
 } from "./assistantTurnOutcomeTypes.js";
 import type { ChatIntakeResult } from "./chatIntakeProvider.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
@@ -45,6 +47,18 @@ export interface CompletedAssistantTurn {
   assistantMessageId: string;
 }
 
+const toPresentationSkillTurnOutcome = (presentation: ChatPresentedAnswer): SkillTurnOutcome => ({
+  skillName: presentation.skillName,
+  outcome: presentation.skillOutcome,
+  status: presentation.skillStatus,
+});
+
+const toIntakeSkillTurnOutcome = (intakeResult: ChatIntakeResult): SkillTurnOutcome => ({
+  skillName: intakeResult.skillName,
+  outcome: intakeResult.skillOutcome ?? "unknown",
+  status: intakeResult.status,
+});
+
 export class ChatTurnLifecycle {
   private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
   private readonly activityTracePresenter = new ActivityTracePresenter();
@@ -65,6 +79,7 @@ export class ChatTurnLifecycle {
     stream: boolean;
   }): Promise<CompletedAssistantTurn> {
     const route = getChatTurnRoute(input.session);
+    const skillTurnOutcome = toPresentationSkillTurnOutcome(input.presentation);
     const activitySummary = this.activitySummaryPresenter.present(input.session.retrieval.diagnostics, {
       execution: {
         surface: "assistant",
@@ -82,6 +97,9 @@ export class ChatTurnLifecycle {
         retrievalSkipped: input.session.retrieval.diagnostics.retrievalSkipped,
         durationMs: Date.now() - input.answerStartedAt,
         answerOutcome: input.presentation.answerOutcome,
+        skillName: skillTurnOutcome.skillName,
+        skillOutcome: skillTurnOutcome.outcome,
+        skillStatus: skillTurnOutcome.status,
       },
     });
     const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
@@ -91,6 +109,12 @@ export class ChatTurnLifecycle {
       workspaceId: input.workspaceId,
       role: "assistant",
       content: input.presentation.answer,
+      skillName: skillTurnOutcome.skillName,
+      skillOutcome: skillTurnOutcome.outcome,
+      skillStatus: skillTurnOutcome.status,
+      metadata: {
+        skillTurn: skillTurnOutcome,
+      },
     });
     await this.finalizeAssistantTurn({
       workspaceId: input.workspaceId,
@@ -98,6 +122,7 @@ export class ChatTurnLifecycle {
       conversationId: input.session.conversation.id,
       userMessageId: input.session.userMessage.id,
       assistantMessageId: assistantMessage.id,
+      skillTurnOutcome,
       answerOutcome: input.presentation.answerOutcome,
       citations: input.presentation.citations ?? [],
       answerSegments: input.presentation.answerSegments,
@@ -138,15 +163,21 @@ export class ChatTurnLifecycle {
       type: "direct",
       reason: "social_only",
     };
+    const skillTurnOutcome = toIntakeSkillTurnOutcome(input.intakeResult);
     const assistantMessage = await this.messageRepository.create({
       conversationId: input.session.conversation.id,
       workspaceId: input.workspaceId,
       role: "assistant",
       content: input.intakeResult.answer,
+      skillName: skillTurnOutcome.skillName,
+      skillOutcome: skillTurnOutcome.outcome,
+      skillStatus: skillTurnOutcome.status,
       metadata: {
+        skillTurn: skillTurnOutcome,
         skillIntake: {
           skillName: input.intakeResult.skillName,
           status: input.intakeResult.status,
+          skillOutcome: input.intakeResult.skillOutcome,
           stateId: input.intakeResult.stateId,
         },
         activityTrace: input.intakeResult.activityTrace,
@@ -158,6 +189,7 @@ export class ChatTurnLifecycle {
       conversationId: input.session.conversation.id,
       userMessageId: input.session.userMessage.id,
       assistantMessageId: assistantMessage.id,
+      skillTurnOutcome,
       answerOutcome: ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE,
       citations: [],
       answerSegments: undefined,
@@ -170,6 +202,7 @@ export class ChatTurnLifecycle {
       skillIntake: {
         skillName: input.intakeResult.skillName,
         status: input.intakeResult.status,
+        skillOutcome: input.intakeResult.skillOutcome,
         stateId: input.intakeResult.stateId,
       },
     });
@@ -275,7 +308,8 @@ export class ChatTurnLifecycle {
     conversationId: string;
     userMessageId: string;
     assistantMessageId: string;
-    answerOutcome: AssistantTurnOutcome;
+    skillTurnOutcome: SkillTurnOutcome;
+    answerOutcome?: AssistantTurnOutcome;
     citations: ChatCitation[];
     answerSegments?: AnswerSegment[];
     suggestions?: ChatSuggestion[];
@@ -287,6 +321,7 @@ export class ChatTurnLifecycle {
     skillIntake?: {
       skillName: string;
       status: ChatIntakeResult["status"];
+      skillOutcome?: string;
       stateId?: string;
     };
   }): Promise<void> {
@@ -304,7 +339,8 @@ export class ChatTurnLifecycle {
         userMessageId: input.userMessageId,
         assistantMessageId: input.assistantMessageId,
         stream: input.stream,
-        answerOutcome: input.answerOutcome,
+        skillTurn: input.skillTurnOutcome,
+        answerOutcome: input.answerOutcome ?? legacyAnswerOutcomeForSkillTurnOutcome(input.skillTurnOutcome),
         route: {
           generator: "assistant",
           routeType: input.route.type,
@@ -335,6 +371,9 @@ export class ChatTurnLifecycle {
         properties: {
           stream: input.stream,
           answerOutcome: input.answerOutcome,
+          skillName: input.skillTurnOutcome.skillName,
+          skillOutcome: input.skillTurnOutcome.outcome,
+          skillStatus: input.skillTurnOutcome.status,
           citationCount: input.citations.length,
           suggestionCount: input.suggestions?.length ?? 0,
         },

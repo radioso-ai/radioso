@@ -187,6 +187,11 @@ describe("chat history service", () => {
       ],
     });
     expect(debug?.answerOutcome).toBe("grounded_success");
+    expect(debug).toMatchObject({
+      skillName: "retrieval.answer",
+      skillOutcome: "grounded",
+      skillStatus: "completed",
+    });
     expect(debug?.route).toEqual({
       generator: "assistant",
       routeType: "retrieval",
@@ -423,6 +428,137 @@ describe("chat history service", () => {
         kind: "contact_human",
       },
     ]);
+  });
+
+  it("replays backfilled message skill outcome for historical skill intake metadata", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+
+    const conversation = await conversationRepository.create("workspace-1");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Contact me",
+    });
+    const assistant = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "We will contact you.",
+      skillName: "human_contact.request",
+      skillOutcome: "sent",
+      skillStatus: "completed",
+    });
+
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        assistantMessageId: assistant.id,
+        answerOutcome: "non_retrieval_response",
+        citationCount: 0,
+        skillIntake: {
+          skillName: "human_contact.request",
+          status: "completed",
+          stateId: "state-1",
+        },
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+    const debug = detail.messages.find((message) => message.role === "assistant")?.debug;
+
+    expect(debug).toMatchObject({
+      answerOutcome: "non_retrieval_response",
+      skillName: "human_contact.request",
+      skillOutcome: "sent",
+      skillStatus: "completed",
+    });
+  });
+
+  it("ignores skill outcome metadata with invalid statuses", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+
+    const conversation = await conversationRepository.create("workspace-1");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "What happened?",
+    });
+    const assistant = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "Something happened.",
+    });
+
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        assistantMessageId: assistant.id,
+        citationCount: 0,
+        skillTurn: {
+          skillName: "custom.skill",
+          outcome: "done",
+          status: "not-a-status",
+        },
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+    const debug = detail.messages.find((message) => message.role === "assistant")?.debug;
+
+    expect(debug).not.toHaveProperty("skillName");
+    expect(debug).not.toHaveProperty("skillOutcome");
+    expect(debug).not.toHaveProperty("skillStatus");
+  });
+
+  it("uses unknown instead of status when legacy skill intake has no outcome", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+
+    const conversation = await conversationRepository.create("workspace-1");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Run the custom skill",
+    });
+    const assistant = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "Done.",
+    });
+
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        assistantMessageId: assistant.id,
+        citationCount: 0,
+        skillIntake: {
+          skillName: "custom.skill",
+          status: "completed",
+        },
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+    const debug = detail.messages.find((message) => message.role === "assistant")?.debug;
+
+    expect(debug).toMatchObject({
+      skillName: "custom.skill",
+      skillOutcome: "unknown",
+      skillStatus: "completed",
+    });
   });
 
   it("normalizes legacy stored suggestions without kind as deeper suggestions", async () => {

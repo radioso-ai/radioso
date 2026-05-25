@@ -21,6 +21,7 @@ import {
   type SkillTurnOutcome,
   skillTurnOutcomeFromLegacyAnswerOutcome,
 } from "./assistantTurnOutcomeTypes.js";
+import { skillOutcomeStatusSchema } from "../../skills/public.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
 import {
@@ -184,71 +185,104 @@ interface ChatAuditMetadata {
   };
 }
 
-const normalizeSkillIntakeOutcome = (value: unknown): SkillTurnOutcome | undefined => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  const candidate = value as { skillName?: unknown; skillOutcome?: unknown; status?: unknown };
-  if (
-    typeof candidate.skillName !== "string" ||
-    candidate.skillName.trim().length === 0 ||
-    typeof candidate.status !== "string" ||
-    candidate.status.trim().length === 0
-  ) {
-    return undefined;
-  }
+interface NormalizedSkillTurnOutcome {
+  skillName: string;
+  outcome?: string;
+  status: SkillTurnOutcome["status"];
+}
 
-  const skillName = candidate.skillName.trim();
-  const status = candidate.status.trim() as SkillTurnOutcome["status"];
-  const explicitOutcome = typeof candidate.skillOutcome === "string" && candidate.skillOutcome.trim().length > 0
-    ? candidate.skillOutcome.trim()
+const normalizeSkillStatus = (value: unknown): SkillTurnOutcome["status"] | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const parsed = skillOutcomeStatusSchema.safeParse(value.trim());
+  return parsed.success ? parsed.data : undefined;
+};
+
+const normalizeSkillTurnFields = (input: {
+  skillName?: unknown;
+  skillOutcome?: unknown;
+  skillStatus?: unknown;
+  requireOutcome: boolean;
+}): NormalizedSkillTurnOutcome | undefined => {
+  if (typeof input.skillName !== "string" || input.skillName.trim().length === 0) {
+    return undefined;
+  }
+  const status = normalizeSkillStatus(input.skillStatus);
+  if (!status) {
+    return undefined;
+  }
+  const outcome = typeof input.skillOutcome === "string" && input.skillOutcome.trim().length > 0
+    ? input.skillOutcome.trim()
     : undefined;
-  const outcome = explicitOutcome
-    ?? (
-      skillName === "human_contact.request" && status === "completed"
-        ? "sent"
-        : status
-    );
+  if (input.requireOutcome && !outcome) {
+    return undefined;
+  }
 
   return {
-    skillName,
+    skillName: input.skillName.trim(),
     outcome,
     status,
   };
 };
 
-const normalizeSkillTurnOutcome = (metadata: ChatAuditMetadata): SkillTurnOutcome | undefined => {
+const normalizeSkillIntakeOutcome = (value: unknown): NormalizedSkillTurnOutcome | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const candidate = value as { skillName?: unknown; skillOutcome?: unknown; status?: unknown };
+  const normalized = normalizeSkillTurnFields({
+    skillName: candidate.skillName,
+    skillOutcome: candidate.skillOutcome,
+    skillStatus: candidate.status,
+    requireOutcome: false,
+  });
+  return normalized
+    ? {
+        ...normalized,
+        outcome: normalized.outcome ?? "unknown",
+      }
+    : undefined;
+};
+
+const normalizeMessageSkillTurnOutcome = (message: MessageRecord | undefined): NormalizedSkillTurnOutcome | undefined =>
+  normalizeSkillTurnFields({
+    skillName: message?.skillName,
+    skillOutcome: message?.skillOutcome,
+    skillStatus: message?.skillStatus,
+    requireOutcome: false,
+  });
+
+const normalizeSkillTurnOutcome = (
+  metadata: ChatAuditMetadata,
+  message: MessageRecord | undefined,
+): NormalizedSkillTurnOutcome | undefined => {
   if (metadata.skillTurn && typeof metadata.skillTurn === "object" && !Array.isArray(metadata.skillTurn)) {
     const candidate = metadata.skillTurn as { skillName?: unknown; outcome?: unknown; status?: unknown };
-    if (
-      typeof candidate.skillName === "string" &&
-      candidate.skillName.trim().length > 0 &&
-      typeof candidate.outcome === "string" &&
-      candidate.outcome.trim().length > 0 &&
-      typeof candidate.status === "string" &&
-      candidate.status.trim().length > 0
-    ) {
-      return {
-        skillName: candidate.skillName.trim(),
-        outcome: candidate.outcome.trim(),
-        status: candidate.status.trim() as SkillTurnOutcome["status"],
-      };
+    const normalized = normalizeSkillTurnFields({
+      skillName: candidate.skillName,
+      skillOutcome: candidate.outcome,
+      skillStatus: candidate.status,
+      requireOutcome: true,
+    });
+    if (normalized) {
+      return normalized;
     }
   }
 
-  if (
-    typeof metadata.skillName === "string" &&
-    metadata.skillName.trim().length > 0 &&
-    typeof metadata.skillOutcome === "string" &&
-    metadata.skillOutcome.trim().length > 0 &&
-    typeof metadata.skillStatus === "string" &&
-    metadata.skillStatus.trim().length > 0
-  ) {
-    return {
-      skillName: metadata.skillName.trim(),
-      outcome: metadata.skillOutcome.trim(),
-      status: metadata.skillStatus.trim() as SkillTurnOutcome["status"],
-    };
+  const legacyTopLevelOutcome = normalizeSkillTurnFields({
+    skillName: metadata.skillName,
+    skillOutcome: metadata.skillOutcome,
+    skillStatus: metadata.skillStatus,
+    requireOutcome: true,
+  });
+  if (legacyTopLevelOutcome) {
+    return legacyTopLevelOutcome;
+  }
+
+  const messageSkillTurnOutcome = normalizeMessageSkillTurnOutcome(message);
+  if (messageSkillTurnOutcome) {
+    return messageSkillTurnOutcome;
   }
 
   const skillIntakeOutcome = normalizeSkillIntakeOutcome(metadata.skillIntake);
@@ -418,7 +452,7 @@ const reconstructActivityTrace = (input: {
   summary: ActivitySummary | undefined;
   diagnostics: RetrievalExecutionDiagnostics;
   answerOutcome?: AssistantTurnOutcome;
-  skillTurnOutcome?: SkillTurnOutcome;
+  skillTurnOutcome?: NormalizedSkillTurnOutcome;
   citations?: ChatCitation[];
 }): ActivityTrace => {
   const execution = input.summary?.execution ?? toRetrievalExecutionPath(input.route);
@@ -741,7 +775,7 @@ export class ChatHistoryService {
       : new Map<string, ChatAnswerFeedbackEntry[]>();
 
     const artifactsByAssistantMessageId = this.buildArtifactsIndex(auditEvents);
-    const debugByAssistantMessageId = this.buildDebugIndex(auditEvents);
+    const debugByAssistantMessageId = this.buildDebugIndex(auditEvents, messages);
     const messageSummary = messageSummaries.get(conversation.id);
 
     return {
@@ -777,8 +811,10 @@ export class ChatHistoryService {
 
   private buildDebugIndex(
     auditEvents: AuditEventRecord[],
+    messages: MessageRecord[],
   ): Map<string, ChatConversationTurnDebug> {
     const index = new Map<string, ChatConversationTurnDebug>();
+    const messagesById = new Map(messages.map((message) => [message.id, message]));
 
     for (const event of auditEvents) {
       const metadata = event.metadata as ChatAuditMetadata;
@@ -786,7 +822,7 @@ export class ChatHistoryService {
         continue;
       }
 
-      const skillTurnOutcome = normalizeSkillTurnOutcome(metadata);
+      const skillTurnOutcome = normalizeSkillTurnOutcome(metadata, messagesById.get(metadata.assistantMessageId));
       const route = normalizeRouteDiagnostics(metadata.route);
       const activitySummary = metadata.activityTrace?.summary
         ?? (
@@ -817,9 +853,13 @@ export class ChatHistoryService {
         stream: Boolean(metadata.stream),
         citationCount: typeof metadata.citationCount === "number" ? metadata.citationCount : 0,
         answerOutcome: metadata.answerOutcome,
-        skillName: skillTurnOutcome?.skillName,
-        skillOutcome: skillTurnOutcome?.outcome,
-        skillStatus: skillTurnOutcome?.status,
+        ...(skillTurnOutcome
+          ? {
+              skillName: skillTurnOutcome.skillName,
+              skillOutcome: skillTurnOutcome.outcome,
+              skillStatus: skillTurnOutcome.status,
+            }
+          : {}),
         activitySummary,
         activityTrace,
         errorMessage: metadata.errorMessage ?? null,

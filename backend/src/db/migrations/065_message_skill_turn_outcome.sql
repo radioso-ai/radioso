@@ -3,6 +3,9 @@ ADD COLUMN IF NOT EXISTS skill_name TEXT,
 ADD COLUMN IF NOT EXISTS skill_outcome TEXT,
 ADD COLUMN IF NOT EXISTS skill_status TEXT;
 
+-- One-time historical backfill. New turns write messages.skill_* directly;
+-- legacy skill-intake rows may only have audit metadata, so known historical
+-- skill semantics are handled here instead of in chat runtime code.
 UPDATE messages AS m
 SET
   skill_name = COALESCE(
@@ -26,7 +29,7 @@ SET
       WHEN e.metadata_json->'skillIntake'->>'skillName' = 'human_contact.request'
         AND e.metadata_json->'skillIntake'->>'status' IN ('failed', 'cancelled')
         THEN e.metadata_json->'skillIntake'->>'status'
-      WHEN e.metadata_json ? 'skillIntake' THEN e.metadata_json->'skillIntake'->>'status'
+      WHEN e.metadata_json ? 'skillIntake' THEN 'unknown'
       ELSE NULL
     END,
     CASE e.metadata_json->>'answerOutcome'

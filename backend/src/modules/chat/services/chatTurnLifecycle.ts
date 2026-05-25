@@ -50,12 +50,12 @@ export interface CompletedAssistantTurn {
 const toPresentationSkillTurnOutcome = (presentation: ChatPresentedAnswer): SkillTurnOutcome => ({
   skillName: presentation.skillName,
   outcome: presentation.skillOutcome,
-  status: presentation.status,
+  status: presentation.skillStatus,
 });
 
 const toIntakeSkillTurnOutcome = (intakeResult: ChatIntakeResult): SkillTurnOutcome => ({
   skillName: intakeResult.skillName,
-  outcome: intakeResult.skillOutcome ?? intakeResult.status,
+  outcome: intakeResult.skillOutcome ?? "unknown",
   status: intakeResult.status,
 });
 
@@ -339,9 +339,6 @@ export class ChatTurnLifecycle {
         userMessageId: input.userMessageId,
         assistantMessageId: input.assistantMessageId,
         stream: input.stream,
-        skillName: input.skillTurnOutcome.skillName,
-        skillOutcome: input.skillTurnOutcome.outcome,
-        skillStatus: input.skillTurnOutcome.status,
         skillTurn: input.skillTurnOutcome,
         answerOutcome: input.answerOutcome ?? legacyAnswerOutcomeForSkillTurnOutcome(input.skillTurnOutcome),
         route: {

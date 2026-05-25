@@ -169,7 +169,7 @@ export interface SkillDefinition {
     name: string;
     displayName: string;
     description?: string;
-    status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+    status: ChatIntakeStatus;
   }>;
 }
 
@@ -526,9 +526,19 @@ export interface ChatIntakeReceipt {
   statusLabel?: string;
 }
 
+export type ChatIntakeStatus =
+  | "active"
+  | "paused"
+  | "awaiting_confirmation"
+  | "awaiting_tool"
+  | "completed"
+  | "cancelled"
+  | "expired"
+  | "failed";
+
 export interface ChatIntakeResult {
   skillName: string;
-  status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+  status: ChatIntakeStatus;
   skillOutcome?: string;
   stateId?: string;
   answer: string;
@@ -616,7 +626,7 @@ export interface ChatActionSuggestionContext {
   answer: string;
   skillName: string;
   skillOutcome: string;
-  status: ChatIntakeResult["status"];
+  skillStatus: ChatIntakeResult["status"];
   answerOutcome?: AssistantTurnOutcomeName;
   history: Array<{
     id: string;

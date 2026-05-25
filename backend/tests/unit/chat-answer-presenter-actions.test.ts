@@ -53,7 +53,7 @@ const basePresentation: ChatPresentedAnswer = {
   citations: [],
   skillName: "retrieval.answer",
   skillOutcome: "no_context",
-  status: "completed",
+  skillStatus: "completed",
   answerOutcome: "no_context_refusal",
 };
 
@@ -101,7 +101,7 @@ describe("ChatAnswerPresenter.applyActionSuggestions", () => {
         captured.workspaceId = ctx.workspaceId;
         captured.skillName = ctx.skillName;
         captured.skillOutcome = ctx.skillOutcome;
-        captured.status = ctx.status;
+        captured.status = ctx.skillStatus;
         captured.legacyOutcome = ctx.answerOutcome;
         return null;
       },

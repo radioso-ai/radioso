@@ -10,7 +10,7 @@ export interface ChatActionSuggestionContext {
   answer: string;
   skillName: string;
   skillOutcome: string;
-  status: SkillTurnStatus;
+  skillStatus: SkillTurnStatus;
   answerOutcome?: AssistantTurnOutcome;
   history: MessageRecord[];
   userExpectedLocale?: string;

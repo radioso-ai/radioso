@@ -24,7 +24,7 @@ export interface ChatPresentedAnswer {
   planningCitations?: ChatCitation[];
   skillName: string;
   skillOutcome: string;
-  status: SkillTurnOutcome["status"];
+  skillStatus: SkillTurnOutcome["status"];
   answerOutcome?: AssistantTurnOutcome;
 }
 
@@ -65,7 +65,7 @@ const withLegacyAnswerOutcome = <T extends Omit<ChatPresentedAnswer, "answerOutc
   answerOutcome: legacyAnswerOutcomeForSkillTurnOutcome({
     skillName: presentation.skillName,
     outcome: presentation.skillOutcome,
-    status: presentation.status,
+    status: presentation.skillStatus,
   }),
 });
 
@@ -88,7 +88,7 @@ export class ChatAnswerPresenter {
       planningCitations: [],
       skillName: SKILL_TURN_OUTCOME.ASSISTANT_CONVERSATIONAL.skillName,
       skillOutcome: SKILL_TURN_OUTCOME.ASSISTANT_CONVERSATIONAL.outcome,
-      status: SKILL_TURN_OUTCOME.ASSISTANT_CONVERSATIONAL.status,
+      skillStatus: SKILL_TURN_OUTCOME.ASSISTANT_CONVERSATIONAL.status,
       answerOutcome: ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE,
     };
   }
@@ -133,7 +133,7 @@ export class ChatAnswerPresenter {
       planningCitations: toPlanningCitations(normalized.citationEvidence),
       skillName: SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.skillName,
       skillOutcome: SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.outcome,
-      status: SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.status,
+      skillStatus: SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.status,
     });
   }
 
@@ -188,7 +188,7 @@ export class ChatAnswerPresenter {
       answer: presentation.answer,
       skillName: presentation.skillName,
       skillOutcome: presentation.skillOutcome,
-      status: presentation.status,
+      skillStatus: presentation.skillStatus,
       answerOutcome: presentation.answerOutcome,
       history: session.history,
       userExpectedLocale: userExpectedLocale ?? undefined,
@@ -219,7 +219,7 @@ export class ChatAnswerPresenter {
       planningCitations: [],
       skillName: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.skillName,
       skillOutcome: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome,
-      status: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.status,
+      skillStatus: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.status,
     });
   }
 }

@@ -145,13 +145,18 @@ export class QualityTurnsService implements QualityTurnsServicePort {
       filters.push(`m.created_at <= $${params.length}::timestamptz`);
     }
 
+    const needsLatency = input.minTotalLatencyMs !== undefined || input.maxTotalLatencyMs !== undefined;
+
     const whereClause = filters.join("\n         AND ");
 
-    const [totalRow] = await this.database.query<{ total: string }>(
-      `SELECT COUNT(*)::text AS total
-       FROM messages m
-       JOIN conversations c ON c.id = m.conversation_id AND c.workspace_id = m.workspace_id
-       LEFT JOIN LATERAL (
+    // The audit-event lateral join is only needed to project per-turn latency.
+    // The count query can skip it unless a latency filter is set, since the
+    // count itself doesn't need the latency value. The list query always reads
+    // latency for the row.
+    // TODO(#follow-up): store totalLatencyMs on `messages` at write time so the
+    // dashboard read path stops scanning audit_events.metadata_json.
+    const countLatencyJoin = needsLatency
+      ? `LEFT JOIN LATERAL (
          SELECT
            CASE
              WHEN jsonb_typeof(ae.metadata_json #> '{activityTrace,totalDurationMs}') = 'number'
@@ -164,7 +169,14 @@ export class QualityTurnsService implements QualityTurnsServicePort {
            AND ae.metadata_json ->> 'assistantMessageId' = m.id::text
          ORDER BY ae.created_at DESC, ae.id DESC
          LIMIT 1
-       ) turn_event ON TRUE
+       ) turn_event ON TRUE`
+      : "";
+
+    const [totalRow] = await this.database.query<{ total: string }>(
+      `SELECT COUNT(*)::text AS total
+       FROM messages m
+       JOIN conversations c ON c.id = m.conversation_id AND c.workspace_id = m.workspace_id
+       ${countLatencyJoin}
        WHERE ${whereClause}`,
       params,
     );

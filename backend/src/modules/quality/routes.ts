@@ -3,31 +3,12 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../app/server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
+import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { badRequest } from "../../shared/domain/errors.js";
 import type { QualityTurnsServicePort } from "./contracts/index.js";
 
-export interface QualityRouteDependencies {
-  env: Pick<AppDependencies["env"],
-    | "NODE_ENV"
-    | "SESSION_COOKIE_NAME"
-    | "SESSION_COOKIE_SECRET"
-    | "WORKSPACE_TOKEN_SECRET"
-  >;
-  authService: {
-    authenticateSession(token: string): Promise<{ accountId: string; userId: string; sessionId: string }>;
-    authenticateApiToken(token: string): Promise<{
-      accountId: string;
-      workspaceId: string;
-      principal: unknown;
-    }>;
-  };
-  accountAccessService: {
-    requireActiveMembership(accountId: string, userId: string): Promise<unknown>;
-  };
-  workspaceSessionService: {
-    resolve(input: { accountId: string; workspaceId?: string | null }): Promise<{ accountId: string; workspaceId: string }>;
-  };
-}
+export type QualityRouteDependencies = WorkspaceSessionDependencies
+  & Pick<AppDependencies, "accountAccessService">;
 
 const csvOrArray = <T extends z.ZodTypeAny>(item: T) =>
   z.preprocess((value) => {
@@ -99,9 +80,13 @@ export const createQualityRoutes = (
   service: QualityTurnsServicePort,
 ): Router => {
   const router = Router();
-  const workspaceSession = requireWorkspaceSession(dependencies as unknown as WorkspaceSessionDependencies);
+  const workspaceSession = requireWorkspaceSession(dependencies);
+  // Quality reviewers can see thumbs-down comments authored by end users, so
+  // this surface is admin/owner only — `workspace.quality.read` is not in the
+  // workspace-member allowlist on AccountAccessService.
+  const qualityRead = requireWorkspacePermission(dependencies, "workspace.quality.read");
 
-  router.get("/turns", workspaceSession, async (req, res, next) => {
+  router.get("/turns", workspaceSession, qualityRead, async (req, res, next) => {
     try {
       const query = parseRequest(turnsQuerySchema, req.query);
       const { workspaceId } = res.locals as { workspaceId: string };

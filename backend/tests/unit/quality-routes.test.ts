@@ -24,40 +24,47 @@ class CapturingService implements QualityTurnsServicePort {
   }
 }
 
-const createDependencies = (): QualityRouteDependencies => ({
-  env: {
-    NODE_ENV: "test",
-    SESSION_COOKIE_NAME: "radioso_session",
-    SESSION_COOKIE_SECRET: "session-secret",
-    WORKSPACE_TOKEN_SECRET: "workspace-secret",
-  },
-  authService: {
-    async authenticateSession(token) {
-      if (token !== "valid-session") {
-        throw { statusCode: 401, code: "unauthorized", message: "Unauthorized" };
-      }
-      return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" };
+const createDependencies = (): QualityRouteDependencies =>
+  // Narrow fake — only the surface area required by the route is implemented.
+  ({
+    env: {
+      NODE_ENV: "test",
+      SESSION_COOKIE_NAME: "radioso_session",
+      SESSION_COOKIE_SECRET: "session-secret",
+      WORKSPACE_TOKEN_SECRET: "workspace-secret",
     },
-    async authenticateApiToken(token) {
-      if (token !== "valid-token") {
-        throw { statusCode: 401, code: "unauthorized", message: "Unauthorized" };
-      }
-      return {
-        accountId: ACCOUNT_ID,
-        workspaceId: WORKSPACE_ID,
-        principal: { type: "workspace_api_token", role: "admin", tokenId: "token-id" },
-      };
+    authService: {
+      async authenticateSession(token: string) {
+        if (token !== "valid-session") {
+          throw { statusCode: 401, code: "unauthorized", message: "Unauthorized" };
+        }
+        return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" };
+      },
+      async authenticateApiToken(token: string) {
+        if (token !== "valid-token") {
+          throw { statusCode: 401, code: "unauthorized", message: "Unauthorized" };
+        }
+        return {
+          accountId: ACCOUNT_ID,
+          workspaceId: WORKSPACE_ID,
+          principal: { type: "workspace_api_token", role: "admin", tokenId: "token-id" },
+        };
+      },
     },
-  },
-  accountAccessService: {
-    async requireActiveMembership() {},
-  },
-  workspaceSessionService: {
-    async resolve() {
-      return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID };
+    accountAccessService: {
+      async requireActiveMembership() {
+        return undefined;
+      },
+      async requirePermission() {
+        return undefined;
+      },
     },
-  },
-});
+    workspaceSessionService: {
+      async resolve() {
+        return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID };
+      },
+    },
+  }) as unknown as QualityRouteDependencies;
 
 const createApp = (service: QualityTurnsServicePort) => {
   const app = express();

@@ -1270,6 +1270,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/quality/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List low-quality assistant turns
+         * @description Returns assistant turns for the dashboard's quality review surface. Admin/owner only (requires the `workspace.quality.read` permission). Filters apply to skill action, skill status, user feedback, latency, agent, channel, and time range.
+         */
+        get: operations["listLowQualityTurns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/chat/{token}": {
         parameters: {
             query?: never;
@@ -3333,6 +3353,47 @@ export interface components {
             /** @enum {string} */
             error: "Channel identity conflict";
             detail: string;
+        };
+        /** @enum {string} */
+        QualityFeedbackValue: "up" | "down";
+        /** @enum {string} */
+        QualitySkillStatus: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+        QualityFeedbackComment: {
+            value: components["schemas"]["QualityFeedbackValue"];
+            comment: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        QualityFeedbackSummary: {
+            upCount: number;
+            downCount: number;
+            comments: components["schemas"]["QualityFeedbackComment"][];
+        };
+        LowQualityTurn: {
+            /** Format: uuid */
+            assistantMessageId: string;
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            agentId: string | null;
+            agentName: string | null;
+            channel: string | null;
+            question: string | null;
+            answerPreview: string;
+            skillName: string | null;
+            skillOutcome: string | null;
+            skillStatus: components["schemas"]["QualitySkillStatus"] & (string | null);
+            totalLatencyMs: number | null;
+            /** Format: date-time */
+            createdAt: string;
+            feedback: components["schemas"]["QualityFeedbackSummary"];
+        };
+        LowQualityTurnsPage: {
+            items: components["schemas"]["LowQualityTurn"][];
+            total: number;
+            page: number;
+            pageSize: number;
+            totalPages: number;
         };
         AssistantChatSseStream: string;
         ConnectorNotFoundResponse: {
@@ -7334,6 +7395,69 @@ export interface operations {
                     "application/json": {
                         error: "Manual sync unsupported" | "Connector sync already running";
                     };
+                };
+            };
+        };
+    };
+    listLowQualityTurns: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated `skillName:outcome` tuples, e.g. `retrieval.answer:no_context`. */
+                actions?: string;
+                /** @description Comma-separated `QualitySkillStatus` values. */
+                statuses?: string;
+                /** @description Comma-separated `QualityFeedbackValue` values (`up`, `down`). */
+                feedback?: string;
+                hasComment?: boolean | null;
+                agentId?: string;
+                channel?: string;
+                from?: string;
+                to?: string;
+                minTotalLatencyMs?: number | null;
+                maxTotalLatencyMs?: number | null;
+                offset?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of low-quality assistant turns */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LowQualityTurnsPage"];
+                };
+            };
+            /** @description Invalid query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks the workspace.quality.read permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

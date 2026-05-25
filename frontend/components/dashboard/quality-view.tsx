@@ -309,7 +309,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const currentPage = routeState.qualityPage ?? 1
   // Serialized filter keys: routeState supplies a fresh array every render
   // (`?? []` makes the reference unstable), so we depend on stable strings.
-  const actionsKey = (routeState.qualityActions ?? []).join(',')
+  const actionsKey = (routeState.qualityActions ?? [])
+    .map((action) => encodeAction(action.skillName, action.outcome))
+    .join(',')
   const statusesKey = (routeState.qualityStatuses ?? []).join(',')
   const feedbackKey = (routeState.qualityFeedback ?? []).join(',')
   const latency = routeState.qualityLatency
@@ -509,13 +511,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
 
   const applyFilters = useCallback(
     (next: FilterValues) => {
-      const actionValues = [
-        ...actionFilterGroups.flatMap((group) => {
-          const value = next[group.id]
-          return value?.kind === 'multi-select' ? value.values : []
-        }),
-        ...(next.action?.kind === 'multi-select' ? next.action.values : []),
-      ]
+      const actionValues = actionFilterGroups.flatMap((group) => {
+        const value = next[group.id]
+        return value?.kind === 'multi-select' ? value.values : []
+      })
       const statusValue = next.status
       const feedbackValue = next.feedback
       const latencyValue = next.latency
@@ -529,6 +528,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         qualityActions:
           uniqueActionValues.length > 0
             ? uniqueActionValues
+                .map(decodeAction)
+                .filter((entry): entry is QualityActionFilter => entry !== null)
             : undefined,
         qualityFeedback:
           feedbackValue?.kind === 'multi-select' && feedbackValue.values.length > 0

@@ -114,6 +114,26 @@ const skillShapeSummarySchema = z.object({
 });
 export type SkillShapeSummary = z.infer<typeof skillShapeSummarySchema>;
 
+export const skillOutcomeStatusSchema = z.enum([
+  "active",
+  "paused",
+  "awaiting_confirmation",
+  "awaiting_tool",
+  "completed",
+  "cancelled",
+  "expired",
+  "failed",
+]);
+export type SkillOutcomeStatus = z.infer<typeof skillOutcomeStatusSchema>;
+
+export const skillOutcomeDefinitionSchema = z.object({
+  name: z.string(),
+  displayName: z.string(),
+  description: z.string().optional(),
+  status: skillOutcomeStatusSchema,
+});
+export type SkillOutcomeDefinition = z.infer<typeof skillOutcomeDefinitionSchema>;
+
 export const skillCatalogEntrySchema = z.object({
   name: z.string(),
   displayName: z.string(),
@@ -130,6 +150,7 @@ export const skillCatalogEntrySchema = z.object({
   diagnostics: skillDiagnosticsSummarySchema,
   steps: z.array(skillStepSummarySchema).optional(),
   shapes: z.array(skillShapeSummarySchema).optional(),
+  outcomes: z.array(skillOutcomeDefinitionSchema).optional(),
 });
 export type SkillCatalogEntry = Omit<z.infer<typeof skillCatalogEntrySchema>, "requiredCapabilities"> & {
   requiredCapabilities: CapabilityName[];

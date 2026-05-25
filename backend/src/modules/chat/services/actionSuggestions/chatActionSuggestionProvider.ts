@@ -1,6 +1,6 @@
 import type { MessageRecord } from "../../../../db/repositories/messageRepository.js";
 import type { ChatSuggestion } from "../../types/chatResponses.js";
-import type { AssistantTurnOutcome } from "../assistantTurnOutcomeTypes.js";
+import type { AssistantTurnOutcome, SkillTurnStatus } from "../assistantTurnOutcomeTypes.js";
 
 export interface ChatActionSuggestionContext {
   workspaceId: string;
@@ -8,7 +8,10 @@ export interface ChatActionSuggestionContext {
   agentId?: string;
   query: string;
   answer: string;
-  answerOutcome: AssistantTurnOutcome;
+  skillName: string;
+  skillOutcome: string;
+  status: SkillTurnStatus;
+  answerOutcome?: AssistantTurnOutcome;
   history: MessageRecord[];
   userExpectedLocale?: string;
   sourceChannel?: string | null;

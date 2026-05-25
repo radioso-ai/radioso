@@ -16,7 +16,11 @@ import {
   type ActivitySummary,
   type ActivityTrace,
 } from "../../retrieval/public.js";
-import type { AssistantTurnOutcome } from "./assistantTurnOutcomeTypes.js";
+import {
+  type AssistantTurnOutcome,
+  type SkillTurnOutcome,
+  skillTurnOutcomeFromLegacyAnswerOutcome,
+} from "./assistantTurnOutcomeTypes.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
 import {
@@ -53,6 +57,9 @@ export interface ChatConversationTurnDebug {
   stream: boolean;
   citationCount: number;
   answerOutcome?: AssistantTurnOutcome;
+  skillName?: string;
+  skillOutcome?: string;
+  skillStatus?: SkillTurnOutcome["status"];
   activitySummary?: ActivitySummary;
   activityTrace?: ActivityTrace;
   errorMessage?: string | null;
@@ -155,6 +162,10 @@ export interface PublicConversationPage {
 
 interface ChatAuditMetadata {
   answerOutcome?: AssistantTurnOutcome;
+  skillName?: unknown;
+  skillOutcome?: unknown;
+  skillStatus?: unknown;
+  skillTurn?: unknown;
   assistantMessageId?: string;
   stream?: boolean;
   citationCount?: number;
@@ -171,6 +182,43 @@ interface ChatAuditMetadata {
     retrievalInvoked?: unknown;
   };
 }
+
+const normalizeSkillTurnOutcome = (metadata: ChatAuditMetadata): SkillTurnOutcome | undefined => {
+  if (metadata.skillTurn && typeof metadata.skillTurn === "object" && !Array.isArray(metadata.skillTurn)) {
+    const candidate = metadata.skillTurn as { skillName?: unknown; outcome?: unknown; status?: unknown };
+    if (
+      typeof candidate.skillName === "string" &&
+      candidate.skillName.trim().length > 0 &&
+      typeof candidate.outcome === "string" &&
+      candidate.outcome.trim().length > 0 &&
+      typeof candidate.status === "string" &&
+      candidate.status.trim().length > 0
+    ) {
+      return {
+        skillName: candidate.skillName.trim(),
+        outcome: candidate.outcome.trim(),
+        status: candidate.status.trim() as SkillTurnOutcome["status"],
+      };
+    }
+  }
+
+  if (
+    typeof metadata.skillName === "string" &&
+    metadata.skillName.trim().length > 0 &&
+    typeof metadata.skillOutcome === "string" &&
+    metadata.skillOutcome.trim().length > 0 &&
+    typeof metadata.skillStatus === "string" &&
+    metadata.skillStatus.trim().length > 0
+  ) {
+    return {
+      skillName: metadata.skillName.trim(),
+      outcome: metadata.skillOutcome.trim(),
+      status: metadata.skillStatus.trim() as SkillTurnOutcome["status"],
+    };
+  }
+
+  return skillTurnOutcomeFromLegacyAnswerOutcome(metadata.answerOutcome);
+};
 
 interface AssistantTurnArtifacts {
   citations?: ChatCitation[];
@@ -331,6 +379,7 @@ const reconstructActivityTrace = (input: {
   summary: ActivitySummary | undefined;
   diagnostics: RetrievalExecutionDiagnostics;
   answerOutcome?: AssistantTurnOutcome;
+  skillTurnOutcome?: SkillTurnOutcome;
   citations?: ChatCitation[];
 }): ActivityTrace => {
   const execution = input.summary?.execution ?? toRetrievalExecutionPath(input.route);
@@ -458,6 +507,9 @@ const reconstructActivityTrace = (input: {
       startedAt: input.startedAt,
       outputs: {
         outcome: input.answerOutcome,
+        skillName: input.skillTurnOutcome?.skillName,
+        skillOutcome: input.skillTurnOutcome?.outcome,
+        skillStatus: input.skillTurnOutcome?.status,
       },
     },
   );
@@ -695,6 +747,7 @@ export class ChatHistoryService {
         continue;
       }
 
+      const skillTurnOutcome = normalizeSkillTurnOutcome(metadata);
       const route = normalizeRouteDiagnostics(metadata.route);
       const activitySummary = metadata.activityTrace?.summary
         ?? (
@@ -714,6 +767,7 @@ export class ChatHistoryService {
                 summary: activitySummary,
                 diagnostics: metadata.retrieval as RetrievalExecutionDiagnostics,
                 answerOutcome: metadata.answerOutcome,
+                skillTurnOutcome,
                 citations: metadata.citations,
               })
             : undefined
@@ -724,6 +778,9 @@ export class ChatHistoryService {
         stream: Boolean(metadata.stream),
         citationCount: typeof metadata.citationCount === "number" ? metadata.citationCount : 0,
         answerOutcome: metadata.answerOutcome,
+        skillName: skillTurnOutcome?.skillName,
+        skillOutcome: skillTurnOutcome?.outcome,
+        skillStatus: skillTurnOutcome?.status,
         activitySummary,
         activityTrace,
         errorMessage: metadata.errorMessage ?? null,

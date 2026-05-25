@@ -187,6 +187,11 @@ describe("chat history service", () => {
       ],
     });
     expect(debug?.answerOutcome).toBe("grounded_success");
+    expect(debug).toMatchObject({
+      skillName: "retrieval.answer",
+      skillOutcome: "grounded",
+      skillStatus: "completed",
+    });
     expect(debug?.route).toEqual({
       generator: "assistant",
       routeType: "retrieval",

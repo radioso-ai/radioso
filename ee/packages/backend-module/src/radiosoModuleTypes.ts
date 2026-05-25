@@ -165,6 +165,12 @@ export interface SkillDefinition {
     description?: string;
     stepOverrides: Record<string, Record<string, unknown>>;
   }>;
+  outcomes?: Array<{
+    name: string;
+    displayName: string;
+    description?: string;
+    status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+  }>;
 }
 
 export interface UsageLimitReservation {
@@ -523,6 +529,7 @@ export interface ChatIntakeReceipt {
 export interface ChatIntakeResult {
   skillName: string;
   status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+  skillOutcome?: string;
   stateId?: string;
   answer: string;
   activitySummary: ActivitySummary;
@@ -607,7 +614,10 @@ export interface ChatActionSuggestionContext {
   agentId?: string;
   query: string;
   answer: string;
-  answerOutcome: AssistantTurnOutcomeName;
+  skillName: string;
+  skillOutcome: string;
+  status: ChatIntakeResult["status"];
+  answerOutcome?: AssistantTurnOutcomeName;
   history: Array<{
     id: string;
     role: "user" | "assistant" | "system";

@@ -51,6 +51,9 @@ const buildSession = (): PreparedSession => {
 const basePresentation: ChatPresentedAnswer = {
   answer: "I cannot answer.",
   citations: [],
+  skillName: "retrieval.answer",
+  skillOutcome: "no_context",
+  status: "completed",
   answerOutcome: "no_context_refusal",
 };
 
@@ -90,13 +93,16 @@ describe("ChatAnswerPresenter.applyActionSuggestions", () => {
     expect(result.suggestions?.map((s) => s.kind)).toEqual(["contact_human", "deeper", "broader"]);
   });
 
-  it("passes the answerOutcome and workspaceId to the provider context", async () => {
-    const captured: { workspaceId?: string; outcome?: string } = {};
+  it("passes skill-owned outcome context to the provider", async () => {
+    const captured: { workspaceId?: string; skillName?: string; skillOutcome?: string; status?: string; legacyOutcome?: string } = {};
     const provider: ChatActionSuggestionProvider = {
       name: "spy",
       evaluate: async (ctx) => {
         captured.workspaceId = ctx.workspaceId;
-        captured.outcome = ctx.answerOutcome;
+        captured.skillName = ctx.skillName;
+        captured.skillOutcome = ctx.skillOutcome;
+        captured.status = ctx.status;
+        captured.legacyOutcome = ctx.answerOutcome;
         return null;
       },
     };
@@ -105,6 +111,12 @@ describe("ChatAnswerPresenter.applyActionSuggestions", () => {
 
     await presenter.applyActionSuggestions(buildSession(), basePresentation);
 
-    expect(captured).toEqual({ workspaceId: "ws-1", outcome: "no_context_refusal" });
+    expect(captured).toEqual({
+      workspaceId: "ws-1",
+      skillName: "retrieval.answer",
+      skillOutcome: "no_context",
+      status: "completed",
+      legacyOutcome: "no_context_refusal",
+    });
   });
 });

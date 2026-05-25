@@ -9,6 +9,7 @@ import {
   skillDiagnosticEvidenceSchema,
   skillDiagnosticSchema,
   skillDiagnosticsSummarySchema,
+  skillOutcomeDefinitionSchema,
   skillParamsSchema,
 } from "../../../../modules/skills/public.js";
 import {
@@ -25,12 +26,14 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   const SkillAvailabilitySchema = registry.register("SkillAvailability", skillAvailabilitySchema);
   const SkillContractReferenceSchema = registry.register("SkillContractReference", skillContractReferenceSchema);
   const SkillDiagnosticsSummarySchema = registry.register("SkillDiagnosticsSummary", skillDiagnosticsSummarySchema);
+  const SkillOutcomeDefinitionSchema = registry.register("SkillOutcomeDefinition", skillOutcomeDefinitionSchema);
   const SkillDiagnosticEvidenceSchema = registry.register("SkillDiagnosticEvidence", skillDiagnosticEvidenceSchema);
   const SkillDiagnosticDefinitionSchema = registry.register("SkillDiagnosticDefinition", skillDiagnosticSchema);
   const SkillCatalogEntrySchema = registry.register("SkillCatalogEntry", skillCatalogEntrySchema.extend({
     availability: SkillAvailabilitySchema,
     contractReferences: z.array(SkillContractReferenceSchema),
     diagnostics: SkillDiagnosticsSummarySchema,
+    outcomes: z.array(SkillOutcomeDefinitionSchema).optional(),
   }));
   const SkillCatalogResponseSchema = registry.register("SkillCatalogResponse", skillCatalogResponseSchema.extend({
     skills: z.array(SkillCatalogEntrySchema),
@@ -228,6 +231,18 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       stream: z.boolean(),
       citationCount: z.number().int().min(0),
       answerOutcome: z.enum(["grounded_success", "no_context_refusal", "non_retrieval_response"]).optional(),
+      skillName: z.string().optional(),
+      skillOutcome: z.string().optional(),
+      skillStatus: z.enum([
+        "active",
+        "paused",
+        "awaiting_confirmation",
+        "awaiting_tool",
+        "completed",
+        "cancelled",
+        "expired",
+        "failed",
+      ]).optional(),
       route: AssistantRouteDiagnosticsSchema.optional(),
       activitySummary: schemas.ActivitySummarySchema.optional(),
       activityTrace: schemas.ActivityTraceSchema.optional(),
@@ -356,6 +371,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     SkillAvailabilitySchema,
     SkillContractReferenceSchema,
     SkillDiagnosticsSummarySchema,
+    SkillOutcomeDefinitionSchema,
     SkillDiagnosticEvidenceSchema,
     SkillDiagnosticDefinitionSchema,
     SkillCatalogEntrySchema,

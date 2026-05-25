@@ -9,6 +9,9 @@ const baseContext: ChatActionSuggestionContext = {
   conversationId: "conv-1",
   query: "Why does X happen?",
   answer: "I don't have that information.",
+  skillName: "retrieval.answer",
+  skillOutcome: "no_context",
+  status: "completed",
   answerOutcome: "no_context_refusal",
   history: [],
 };
@@ -61,7 +64,11 @@ describe("HumanContactActionSuggestionProvider", () => {
 
   it("returns null when the answer was grounded successfully", async () => {
     const { provider, composeChipLabel } = buildProvider();
-    const suggestion = await provider.evaluate({ ...baseContext, answerOutcome: "grounded_success" });
+    const suggestion = await provider.evaluate({
+      ...baseContext,
+      skillOutcome: "grounded",
+      answerOutcome: "grounded_success",
+    });
     expect(suggestion).toBeNull();
     expect(composeChipLabel).not.toHaveBeenCalled();
   });
@@ -70,6 +77,7 @@ describe("HumanContactActionSuggestionProvider", () => {
     const { provider, composeChipLabel } = buildProvider();
     const suggestion = await provider.evaluate({
       ...baseContext,
+      skillOutcome: "grounded",
       answerOutcome: "grounded_success",
     });
     expect(suggestion).toBeNull();

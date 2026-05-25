@@ -1124,7 +1124,8 @@ describe("chat integration", () => {
     const assistantMessage = [...(dependencies.messageRepository as InMemoryMessageRepository).items.values()]
       .flat()
       .find((message) => message.id === assistantMessageId);
-    expect(assistantMessage?.answerOutcome).toBe("grounded_success");
+    expect(assistantMessage?.skillName).toBe("retrieval.answer");
+    expect(assistantMessage?.skillOutcome).toBe("grounded");
   });
 
   it("keeps no-context refusals distinct in audit metadata", async () => {
@@ -1151,7 +1152,8 @@ describe("chat integration", () => {
     const assistantMessage = [...(dependencies.messageRepository as InMemoryMessageRepository).items.values()]
       .flat()
       .find((message) => message.id === assistantMessageId);
-    expect(assistantMessage?.answerOutcome).toBe("no_context_refusal");
+    expect(assistantMessage?.skillName).toBe("retrieval.answer");
+    expect(assistantMessage?.skillOutcome).toBe("no_context");
   });
 
   it("records a failure turn that can be inspected through history", async () => {

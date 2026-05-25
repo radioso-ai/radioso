@@ -11,7 +11,6 @@ export interface MessageRecord {
   content: string;
   metadata?: Record<string, unknown>;
   inputMetadata?: UserMessageInputMetadata;
-  answerOutcome?: string | null;
   skillName?: string;
   skillOutcome?: string;
   skillStatus?: string;
@@ -59,11 +58,6 @@ export interface MessageRepositoryPort {
     skillOutcome?: string;
     skillStatus?: string;
   }): Promise<MessageRecord>;
-  setAnswerOutcome(input: {
-    workspaceId: string;
-    messageId: string;
-    answerOutcome: string;
-  }): Promise<void>;
 }
 
 interface MessageRow {
@@ -73,7 +67,6 @@ interface MessageRow {
   role: "user" | "assistant" | "system";
   content: string;
   metadata_json: unknown;
-  answer_outcome: string | null;
   skill_name: string | null;
   skill_outcome: string | null;
   skill_status: string | null;
@@ -118,7 +111,6 @@ const mapMessage = (row: MessageRow): MessageRecord => ({
     ? row.metadata_json as Record<string, unknown>
     : undefined,
   inputMetadata: row.role === "user" ? mapInputMetadata(row.metadata_json) : undefined,
-  answerOutcome: row.role === "assistant" ? row.answer_outcome : null,
   skillName: row.skill_name ?? undefined,
   skillOutcome: row.skill_outcome ?? undefined,
   skillStatus: row.skill_status ?? undefined,
@@ -130,7 +122,7 @@ export class MessageRepository implements MessageRepositoryPort {
 
   async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     const rows = await this.database.query<MessageRow>(
-      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, answer_outcome, skill_name, skill_outcome, skill_status, created_at
+      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at
        FROM messages
        WHERE workspace_id = $1
          AND conversation_id = $2
@@ -147,7 +139,7 @@ export class MessageRepository implements MessageRepositoryPort {
     }
 
     const rows = await this.database.query<MessageRow>(
-      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, answer_outcome, skill_name, skill_outcome, skill_status, created_at
+      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at
        FROM messages
        WHERE workspace_id = $1
          AND conversation_id = $2
@@ -196,7 +188,7 @@ export class MessageRepository implements MessageRepositoryPort {
     }
 
     const rows = await this.database.query<MessageRow>(
-      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, answer_outcome, skill_name, skill_outcome, skill_status, created_at
+      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at
        FROM messages
        WHERE workspace_id = $1
          AND conversation_id = $2
@@ -293,7 +285,7 @@ export class MessageRepository implements MessageRepositoryPort {
     const [row] = await this.database.query<MessageRow>(
       `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
-       RETURNING id, conversation_id, workspace_id, role, content, metadata_json, answer_outcome, skill_name, skill_outcome, skill_status, created_at`,
+       RETURNING id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at`,
       [
         randomUUID(),
         input.conversationId,
@@ -308,20 +300,5 @@ export class MessageRepository implements MessageRepositoryPort {
     );
 
     return mapMessage(row);
-  }
-
-  async setAnswerOutcome(input: {
-    workspaceId: string;
-    messageId: string;
-    answerOutcome: string;
-  }): Promise<void> {
-    await this.database.query(
-      `UPDATE messages
-       SET answer_outcome = $3
-       WHERE workspace_id = $1
-         AND id = $2
-         AND role = 'assistant'`,
-      [input.workspaceId, input.messageId, input.answerOutcome],
-    );
   }
 }

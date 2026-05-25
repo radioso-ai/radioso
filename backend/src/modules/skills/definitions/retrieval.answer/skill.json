@@ -75,6 +75,31 @@
       "evidence"
     ]
   },
+  "outcomes": [
+    {
+      "name": "grounded",
+      "displayName": "Grounded answer",
+      "description": "The retrieval skill answered from workspace evidence.",
+      "status": "completed",
+      "groundedAnswer": true,
+      "tone": "positive"
+    },
+    {
+      "name": "no_context",
+      "displayName": "No context",
+      "description": "The retrieval skill could not find enough workspace evidence to answer.",
+      "status": "completed",
+      "groundedAnswer": false,
+      "tone": "warning"
+    },
+    {
+      "name": "clarification_needed",
+      "displayName": "Clarification needed",
+      "description": "The retrieval skill needs a clearer question before it can answer.",
+      "status": "paused",
+      "tone": "info"
+    }
+  ],
   "steps": [
     {
       "name": "query_interpretation",

@@ -10,6 +10,7 @@ import { ChatHistoryView } from './chat-history-view'
 import { KnowledgeView } from './knowledge-view'
 import { SettingsView } from './settings-view'
 import { UsageView } from './usage-view'
+import { QualityView } from './quality-view'
 import { EvalView } from './eval-view'
 import { FirstRunExperience } from './first-run-experience'
 import {
@@ -183,6 +184,9 @@ export function DashboardShell({
           )}
           {currentView === 'usage' && (
             <UsageView />
+          )}
+          {currentView === 'quality' && (
+            <QualityView accountId={accountId} routeState={routeState} />
           )}
           {currentView === 'eval' && (
             <EvalView accountId={accountId} routeState={routeState} />

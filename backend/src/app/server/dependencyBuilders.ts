@@ -39,6 +39,7 @@ import {
   ChatHistoryService,
   ChatService,
   ChainedChatIntakeProvider,
+  createSkillOutcomeCapabilityProvider,
   NoopAnswerFeedbackHistoryProvider,
   NoopChatIntakeProvider,
   NoopContactHistoryProvider,
@@ -676,6 +677,7 @@ export const buildChatServices = (input: {
     input.agentService,
     chatIntakeProvider,
     chatActionSuggestionService,
+    createSkillOutcomeCapabilityProvider(input.composition.skillCatalogRegistry),
   );
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,

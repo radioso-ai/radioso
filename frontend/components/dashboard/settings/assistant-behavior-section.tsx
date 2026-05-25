@@ -271,19 +271,21 @@ export function AssistantBehaviorSection({
           <Label htmlFor="assistantAnswerInstruction" className="text-foreground">
             Instructions for the assistant
           </Label>
-          <div className="flex flex-wrap gap-2">
-            {INSTRUCTION_PRESETS.map((preset) => (
-              <Button
-                key={preset.label}
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => openPreset(preset)}
-              >
-                {preset.label}
-              </Button>
-            ))}
-          </div>
+          {!hasPersonaText ? (
+            <div className="flex flex-wrap gap-2">
+              {INSTRUCTION_PRESETS.map((preset) => (
+                <Button
+                  key={preset.label}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => openPreset(preset)}
+                >
+                  {preset.label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
           <Textarea
             id="assistantAnswerInstruction"
             value={assistantBehaviorSettings.customInstruction}
@@ -297,7 +299,10 @@ export function AssistantBehaviorSection({
             rows={4}
           />
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>Sets the purpose, scope, and tone applied to every answer. Pick a preset to start.</span>
+            <span>
+              Sets the purpose, scope, and tone applied to every answer.
+              {!hasPersonaText ? ' Pick a preset to start.' : ''}
+            </span>
             <span>{assistantBehaviorSettings.customInstruction.length} / {INSTRUCTION_MAX_LENGTH}</span>
           </div>
         </div>

@@ -13,6 +13,9 @@ const baseContext: ChatActionSuggestionContext = {
   conversationId: "conv-1",
   query: "Why?",
   answer: "I don't have that information.",
+  skillName: "retrieval.answer",
+  skillOutcome: "no_context",
+  skillStatus: "completed",
   answerOutcome: "no_context_refusal",
   history: [],
 };

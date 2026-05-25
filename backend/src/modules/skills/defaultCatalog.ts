@@ -38,6 +38,15 @@ export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
       },
     ],
     diagnostics: legacyStrategyDiagnostics,
+    outcomes: [
+      {
+        name: "conversational",
+        displayName: "Conversational response",
+        description: "The assistant answered without invoking a skill-specific action.",
+        status: "completed",
+        tone: "info",
+      },
+    ],
   },
   {
     name: "retrieval.search",

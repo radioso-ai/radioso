@@ -1,9 +1,10 @@
-import type { AssistantTurnOutcome } from "../../chat/contracts/index.js";
-
-export type { AssistantTurnOutcome } from "../../chat/contracts/index.js";
-
 export type QualityConversationStatus = "success" | "failure";
 export type QualityFeedbackValue = "up" | "down";
+
+export interface QualityActionFilter {
+  skillName: string;
+  outcome: string;
+}
 
 export interface QualityFeedbackSummary {
   upCount: number;
@@ -23,7 +24,9 @@ export interface LowQualityTurn {
   channel: string | null;
   question: string | null;
   answerPreview: string;
-  answerOutcome: AssistantTurnOutcome | null;
+  skillName: string | null;
+  skillOutcome: string | null;
+  skillStatus: string | null;
   conversationStatus: QualityConversationStatus | null;
   totalLatencyMs: number | null;
   createdAt: string;
@@ -31,7 +34,7 @@ export interface LowQualityTurn {
 }
 
 export interface ListLowQualityTurnsInput {
-  outcomes?: AssistantTurnOutcome[];
+  actions?: QualityActionFilter[];
   statuses?: QualityConversationStatus[];
   feedbackValues?: QualityFeedbackValue[];
   hasComment?: boolean;

@@ -1,9 +1,13 @@
 import { request } from './api-client'
 import { withQuery } from './api-query'
 
-export type AnswerOutcome = 'grounded_success' | 'no_context_refusal' | 'non_retrieval_response'
 export type QualityConversationStatus = 'success' | 'failure'
 export type FeedbackValue = 'up' | 'down'
+
+export interface QualityActionFilter {
+  skillName: string
+  outcome: string
+}
 
 export interface QualityFeedbackSummary {
   upCount: number
@@ -23,7 +27,9 @@ export interface LowQualityTurn {
   channel: string | null
   question: string | null
   answerPreview: string
-  answerOutcome: AnswerOutcome | null
+  skillName: string | null
+  skillOutcome: string | null
+  skillStatus: string | null
   conversationStatus: QualityConversationStatus | null
   totalLatencyMs: number | null
   createdAt: string
@@ -39,7 +45,7 @@ export interface LowQualityTurnsPage {
 }
 
 export interface ListLowQualityTurnsOptions {
-  outcomes?: AnswerOutcome[]
+  actions?: QualityActionFilter[]
   statuses?: QualityConversationStatus[]
   feedback?: FeedbackValue[]
   hasComment?: boolean
@@ -53,10 +59,17 @@ export interface ListLowQualityTurnsOptions {
   limit?: number
 }
 
+const encodeActions = (actions: QualityActionFilter[] | undefined): string | undefined => {
+  if (!actions || actions.length === 0) {
+    return undefined
+  }
+  return actions.map((action) => `${action.skillName}:${action.outcome}`).join(',')
+}
+
 export const qualityApi = {
   async listTurns(options: ListLowQualityTurnsOptions = {}): Promise<LowQualityTurnsPage> {
     const query: Record<string, string | undefined> = {
-      outcomes: options.outcomes && options.outcomes.length > 0 ? options.outcomes.join(',') : undefined,
+      actions: encodeActions(options.actions),
       statuses: options.statuses && options.statuses.length > 0 ? options.statuses.join(',') : undefined,
       feedback: options.feedback && options.feedback.length > 0 ? options.feedback.join(',') : undefined,
       hasComment: options.hasComment === undefined ? undefined : String(options.hasComment),

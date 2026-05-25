@@ -118,7 +118,9 @@ describe("quality routes", () => {
           channel: "embed",
           question: "Why?",
           answerPreview: "Because.",
-          answerOutcome: "no_context_refusal",
+          skillName: "retrieval.answer",
+          skillOutcome: "no_context",
+          skillStatus: "completed",
           conversationStatus: "success",
           totalLatencyMs: 3200,
           createdAt: "2026-05-22T10:00:00.000Z",
@@ -150,7 +152,7 @@ describe("quality routes", () => {
     const response = await request(app)
       .get("/api/v1/quality/turns")
       .query({
-        outcomes: "no_context_refusal,non_retrieval_response",
+        actions: "retrieval.answer:no_context,human_contact.request:sent",
         statuses: "success",
         feedback: "down",
         hasComment: "true",
@@ -166,7 +168,10 @@ describe("quality routes", () => {
 
     expect(response.status).toBe(200);
     expect(service.calls[0]?.input).toEqual({
-      outcomes: ["no_context_refusal", "non_retrieval_response"],
+      actions: [
+        { skillName: "retrieval.answer", outcome: "no_context" },
+        { skillName: "human_contact.request", outcome: "sent" },
+      ],
       statuses: ["success"],
       feedbackValues: ["down"],
       hasComment: true,
@@ -180,13 +185,13 @@ describe("quality routes", () => {
     });
   });
 
-  it("rejects malformed query parameters with 400", async () => {
+  it("rejects malformed action filter entries with 400", async () => {
     const service = new CapturingService(emptyPage);
     const app = createApp(service);
 
     const response = await request(app)
       .get("/api/v1/quality/turns")
-      .query({ outcomes: "not_a_real_outcome" })
+      .query({ actions: "no_colon_separator" })
       .set("Authorization", "Bearer valid-token");
 
     expect(response.status).toBe(400);

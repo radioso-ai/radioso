@@ -4,7 +4,6 @@ export type KnowledgeTab = 'documents' | 'sources' | 'ingestion' | 'retrieval'
 export type SettingsTab = 'workspace' | 'providers' | 'users'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
 export type HistoryItemKind = 'chat' | 'search' | 'contact'
-export type QualityOutcomeFilter = 'grounded_success' | 'no_context_refusal' | 'non_retrieval_response'
 export type QualityStatusFilter = 'success' | 'failure'
 export type QualityFeedbackFilter = 'up' | 'down'
 export type QualityLatencyFilter = 'lt_2s' | '2s_5s' | '5s_10s' | 'gte_10s'
@@ -26,7 +25,7 @@ export interface DashboardRouteState {
   historyItemId?: string
   historyMessageId?: string
   qualityPage?: number
-  qualityOutcomes?: QualityOutcomeFilter[]
+  qualityActions?: string[]
   qualityStatuses?: QualityStatusFilter[]
   qualityFeedback?: QualityFeedbackFilter[]
   qualityLatency?: QualityLatencyFilter
@@ -51,7 +50,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'historyItemId',
   'historyMessageId',
   'qualityPage',
-  'qualityOutcomes',
+  'qualityActions',
   'qualityStatuses',
   'qualityFeedback',
   'qualityLatency',
@@ -91,16 +90,16 @@ const parseHistoryItemKind = (value: string | null): HistoryItemKind | undefined
   return undefined
 }
 
-const parseQualityOutcomes = (value: string | null): QualityOutcomeFilter[] | undefined => {
+const ACTION_PATTERN = /^[^:]+:[^:]+$/
+
+const parseQualityActions = (value: string | null): string[] | undefined => {
   if (!value) {
     return undefined
   }
   const parsed = value
     .split(',')
     .map((entry) => entry.trim())
-    .filter((entry): entry is QualityOutcomeFilter =>
-      entry === 'grounded_success' || entry === 'no_context_refusal' || entry === 'non_retrieval_response',
-    )
+    .filter((entry) => ACTION_PATTERN.test(entry))
   return parsed.length > 0 ? parsed : undefined
 }
 
@@ -252,8 +251,8 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.qualityPage && state.qualityPage > 1) {
       normalized.qualityPage = state.qualityPage
     }
-    if (state.qualityOutcomes && state.qualityOutcomes.length > 0) {
-      normalized.qualityOutcomes = [...state.qualityOutcomes]
+    if (state.qualityActions && state.qualityActions.length > 0) {
+      normalized.qualityActions = [...state.qualityActions]
     }
     if (state.qualityStatuses && state.qualityStatuses.length > 0) {
       normalized.qualityStatuses = [...state.qualityStatuses]
@@ -347,8 +346,8 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     if (normalized.qualityPage && normalized.qualityPage > 1) {
       searchParams.set('page', String(normalized.qualityPage))
     }
-    if (normalized.qualityOutcomes && normalized.qualityOutcomes.length > 0) {
-      searchParams.set('outcomes', normalized.qualityOutcomes.join(','))
+    if (normalized.qualityActions && normalized.qualityActions.length > 0) {
+      searchParams.set('actions', normalized.qualityActions.join(','))
     }
     if (normalized.qualityStatuses && normalized.qualityStatuses.length > 0) {
       searchParams.set('statuses', normalized.qualityStatuses.join(','))
@@ -577,7 +576,7 @@ export const parseDashboardRoute = (
       section: 'quality',
       workspaceId,
       qualityPage: parsePositiveInt(searchParams?.get('page') ?? null),
-      qualityOutcomes: parseQualityOutcomes(searchParams?.get('outcomes') ?? null),
+      qualityActions: parseQualityActions(searchParams?.get('actions') ?? null),
       qualityStatuses: parseQualityStatuses(searchParams?.get('statuses') ?? null),
       qualityFeedback: parseQualityFeedback(searchParams?.get('feedback') ?? null),
       qualityLatency: parseQualityLatency(searchParams?.get('latency') ?? null),

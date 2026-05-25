@@ -1,7 +1,6 @@
 import type { QueryResultRow } from "pg";
 
 import type { ApplicationDatabasePort } from "../../app/composition/applicationModule.js";
-import type { AssistantTurnOutcome } from "../chat/contracts/index.js";
 import type {
   ListLowQualityTurnsInput,
   LowQualityTurn,
@@ -17,7 +16,9 @@ type TurnRow = QueryResultRow & {
   agent_name: string | null;
   source_channel: string | null;
   answer_content: string;
-  answer_outcome: AssistantTurnOutcome | null;
+  skill_name: string | null;
+  skill_outcome: string | null;
+  skill_status: string | null;
   conversation_status: "success" | "failure" | null;
   total_latency_ms: number | string | null;
   user_question: string | null;
@@ -71,13 +72,22 @@ export class QualityTurnsService implements QualityTurnsServicePort {
     const params: unknown[] = [workspaceId];
     const filters: string[] = ["m.workspace_id = $1", "m.role = 'assistant'"];
 
-    const outcomes = input.outcomes ?? [];
+    const actions = input.actions ?? [];
     const statuses = input.statuses ?? [];
     const feedbackValues = input.feedbackValues ?? [];
 
-    if (outcomes.length > 0) {
-      params.push(outcomes);
-      filters.push(`m.answer_outcome = ANY($${params.length}::text[])`);
+    if (actions.length > 0) {
+      params.push(actions.map((action) => action.skillName));
+      const skillsParam = params.length;
+      params.push(actions.map((action) => action.outcome));
+      const outcomesParam = params.length;
+      filters.push(
+        `EXISTS (
+           SELECT 1
+           FROM unnest($${skillsParam}::text[], $${outcomesParam}::text[]) AS t(skill_name, outcome)
+           WHERE t.skill_name = m.skill_name AND t.outcome = m.skill_outcome
+         )`,
+      );
     }
 
     if (statuses.length > 0) {
@@ -175,7 +185,9 @@ export class QualityTurnsService implements QualityTurnsServicePort {
          a.name AS agent_name,
          c.source_channel,
          m.content AS answer_content,
-         m.answer_outcome,
+         m.skill_name,
+         m.skill_outcome,
+         m.skill_status,
          turn_event.event_status AS conversation_status,
          turn_event.total_latency_ms,
          m.created_at,
@@ -233,7 +245,9 @@ export class QualityTurnsService implements QualityTurnsServicePort {
       channel: row.source_channel,
       question: buildPreview(row.user_question) || null,
       answerPreview: buildPreview(row.answer_content),
-      answerOutcome: row.answer_outcome,
+      skillName: row.skill_name,
+      skillOutcome: row.skill_outcome,
+      skillStatus: row.skill_status,
       conversationStatus: row.conversation_status,
       totalLatencyMs: row.total_latency_ms === null ? null : Number(row.total_latency_ms),
       createdAt: serializeDate(row.created_at),

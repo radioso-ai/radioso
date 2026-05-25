@@ -29,16 +29,18 @@ import {
 } from '@/components/dashboard/shared/dashboard-table'
 import {
   qualityApi,
-  type AnswerOutcome,
+  skillsApi,
+  type QualityActionFilter,
   type QualityConversationStatus,
   type LowQualityTurn,
+  type SkillCatalogEntry,
+  type SkillOutcomeDefinition,
 } from '@/lib/api'
 import {
   buildDashboardHref,
   type DashboardRouteState,
   type QualityFeedbackFilter,
   type QualityLatencyFilter,
-  type QualityOutcomeFilter,
   type QualityStatusFilter,
 } from '@/lib/dashboard-routes'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -48,12 +50,6 @@ const PAGE_SIZE = 25
 interface QualityViewProps {
   accountId: string
   routeState: DashboardRouteState
-}
-
-interface OutcomeMeta {
-  label: string
-  description: string
-  tone: 'neutral' | 'warning' | 'info'
 }
 
 interface StatusMeta {
@@ -67,30 +63,6 @@ interface LatencyBucketMeta {
   minTotalLatencyMs?: number
   maxTotalLatencyMs?: number
 }
-
-const OUTCOME_META: Record<AnswerOutcome, OutcomeMeta> = {
-  grounded_success: {
-    label: 'Answered from sources',
-    description: 'The assistant used at least one source document.',
-    tone: 'neutral',
-  },
-  no_context_refusal: {
-    label: "Couldn't find an answer",
-    description: 'Retrieval found no usable source, so the assistant declined to answer.',
-    tone: 'warning',
-  },
-  non_retrieval_response: {
-    label: 'Conversational reply',
-    description: 'No documents were needed for small talk or assistant identity questions.',
-    tone: 'info',
-  },
-}
-
-const OUTCOME_FILTERS: QualityOutcomeFilter[] = [
-  'no_context_refusal',
-  'non_retrieval_response',
-  'grounded_success',
-]
 
 const FEEDBACK_LABEL: Record<QualityFeedbackFilter, string> = {
   down: 'Thumbs down',
@@ -188,11 +160,14 @@ const getChannelLabel = (channel: string | null): string => {
   return channel
 }
 
-const outcomeBadgeClass = (tone: OutcomeMeta['tone']): string | undefined => {
-  switch (tone) {
-    case 'warning':
+const actionBadgeClass = (status: SkillOutcomeDefinition['status'] | undefined): string | undefined => {
+  switch (status) {
+    case 'failed':
+    case 'expired':
       return 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-    case 'info':
+    case 'paused':
+    case 'awaiting_confirmation':
+    case 'awaiting_tool':
       return 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300'
     default:
       return undefined
@@ -204,6 +179,31 @@ const statusBadgeClass = (tone: StatusMeta['tone']): string | undefined =>
     ? 'border-destructive/40 bg-destructive/10 text-destructive'
     : undefined
 
+interface ActionLookup {
+  skill: SkillCatalogEntry
+  outcome: SkillOutcomeDefinition
+}
+
+const encodeAction = (skillName: string, outcome: string) => `${skillName}:${outcome}`
+
+const decodeAction = (value: string): QualityActionFilter | null => {
+  const colonIndex = value.indexOf(':')
+  if (colonIndex <= 0 || colonIndex === value.length - 1) {
+    return null
+  }
+  return { skillName: value.slice(0, colonIndex), outcome: value.slice(colonIndex + 1) }
+}
+
+const buildActionLookup = (skills: SkillCatalogEntry[]): Map<string, ActionLookup> => {
+  const lookup = new Map<string, ActionLookup>()
+  for (const skill of skills) {
+    for (const outcome of skill.outcomes ?? []) {
+      lookup.set(encodeAction(skill.name, outcome.name), { skill, outcome })
+    }
+  }
+  return lookup
+}
+
 export function QualityView({ accountId, routeState }: QualityViewProps) {
   const router = useRouter()
   const { activeWorkspaceId } = useWorkspace()
@@ -211,7 +211,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const currentPage = routeState.qualityPage ?? 1
   // Serialized filter keys: routeState supplies a fresh array every render
   // (`?? []` makes the reference unstable), so we depend on stable strings.
-  const outcomesKey = (routeState.qualityOutcomes ?? []).join(',')
+  const actionsKey = (routeState.qualityActions ?? []).join(',')
   const statusesKey = (routeState.qualityStatuses ?? []).join(',')
   const feedbackKey = (routeState.qualityFeedback ?? []).join(',')
   const latency = routeState.qualityLatency
@@ -228,19 +228,51 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     assistantMessageId: string
   } | null>(null)
   const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false)
+  const [skillCatalog, setSkillCatalog] = useState<SkillCatalogEntry[]>([])
   const drawerSelectedItem: SelectedHistoryItem = openedConversation
     ? { kind: 'chat', id: openedConversation.conversationId }
     : null
 
-  const outcomes: QualityOutcomeFilter[] = outcomesKey
-    ? (outcomesKey.split(',') as QualityOutcomeFilter[])
-    : []
+  const actions: string[] = actionsKey ? actionsKey.split(',') : []
   const statuses: QualityStatusFilter[] = statusesKey
     ? (statusesKey.split(',') as QualityStatusFilter[])
     : []
   const feedback: QualityFeedbackFilter[] = feedbackKey
     ? (feedbackKey.split(',') as QualityFeedbackFilter[])
     : []
+
+  useEffect(() => {
+    let cancelled = false
+    const loadCatalog = async () => {
+      try {
+        const response = await skillsApi.list()
+        if (!cancelled) {
+          setSkillCatalog(response.skills)
+        }
+      } catch {
+        // Skill catalog is purely cosmetic for the filter — failing to load it
+        // shouldn't block the dashboard. Fall back to raw skill/outcome names.
+      }
+    }
+    void loadCatalog()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const actionLookup = useMemo(() => buildActionLookup(skillCatalog), [skillCatalog])
+
+  const actionFilterOptions = useMemo(
+    () =>
+      skillCatalog.flatMap((skill) =>
+        (skill.outcomes ?? []).map((outcome) => ({
+          value: encodeAction(skill.name, outcome.name),
+          label: outcome.displayName,
+          description: outcome.description ? `${skill.displayName} — ${outcome.description}` : skill.displayName,
+        })),
+      ),
+    [skillCatalog],
+  )
 
   const qualityFilters = useMemo<ReadonlyArray<FilterDefinition>>(
     () => [
@@ -255,14 +287,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         })),
       },
       {
-        id: 'outcome',
+        id: 'action',
         kind: 'multi-select',
-        label: 'Answer type',
-        options: OUTCOME_FILTERS.map((value) => ({
-          value,
-          label: OUTCOME_META[value].label,
-          description: OUTCOME_META[value].description,
-        })),
+        label: 'Action type',
+        options: actionFilterOptions,
       },
       {
         id: 'feedback',
@@ -289,7 +317,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         label: 'Has written feedback',
       },
     ],
-    [],
+    [actionFilterOptions],
   )
 
   const filterValues = useMemo<FilterValues>(() => {
@@ -297,8 +325,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     if (statuses.length > 0) {
       next.status = { kind: 'multi-select', values: statuses }
     }
-    if (outcomes.length > 0) {
-      next.outcome = { kind: 'multi-select', values: outcomes }
+    if (actions.length > 0) {
+      next.action = { kind: 'multi-select', values: actions }
     }
     if (feedback.length > 0) {
       next.feedback = { kind: 'multi-select', values: feedback }
@@ -310,9 +338,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       next.latency = { kind: 'single-select', value: latency }
     }
     return next
-    // statusesKey/outcomesKey/feedbackKey/hasComment/latency together fully determine these values.
+    // statusesKey/actionsKey/feedbackKey/hasComment/latency together fully determine these values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusesKey, outcomesKey, feedbackKey, hasComment, latency])
+  }, [statusesKey, actionsKey, feedbackKey, hasComment, latency])
 
   const appliedFilterCount = countAppliedFilters(filterValues)
 
@@ -331,7 +359,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
 
   const applyFilters = useCallback(
     (next: FilterValues) => {
-      const outcomeValue = next.outcome
+      const actionValue = next.action
       const statusValue = next.status
       const feedbackValue = next.feedback
       const latencyValue = next.latency
@@ -341,9 +369,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           statusValue?.kind === 'multi-select' && statusValue.values.length > 0
             ? (statusValue.values as QualityStatusFilter[])
             : undefined,
-        qualityOutcomes:
-          outcomeValue?.kind === 'multi-select' && outcomeValue.values.length > 0
-            ? (outcomeValue.values as QualityOutcomeFilter[])
+        qualityActions:
+          actionValue?.kind === 'multi-select' && actionValue.values.length > 0
+            ? actionValue.values
             : undefined,
         qualityFeedback:
           feedbackValue?.kind === 'multi-select' && feedbackValue.values.length > 0
@@ -375,7 +403,12 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   useEffect(() => {
     let cancelled = false
 
-    const outcomesList = outcomesKey ? (outcomesKey.split(',') as QualityOutcomeFilter[]) : undefined
+    const actionTuples = actionsKey
+      ? actionsKey
+          .split(',')
+          .map(decodeAction)
+          .filter((entry): entry is QualityActionFilter => entry !== null)
+      : undefined
     const statusesList = statusesKey ? (statusesKey.split(',') as QualityStatusFilter[]) : undefined
     const feedbackList = feedbackKey ? (feedbackKey.split(',') as QualityFeedbackFilter[]) : undefined
     const latencyBucket = latency ? LATENCY_BUCKETS[latency] : undefined
@@ -388,7 +421,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         setIsFetching(true)
         setError(null)
         const page = await qualityApi.listTurns({
-          outcomes: outcomesList,
+          actions: actionTuples && actionTuples.length > 0 ? actionTuples : undefined,
           statuses: statusesList,
           feedback: feedbackList,
           hasComment: hasComment || undefined,
@@ -422,7 +455,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     return () => {
       cancelled = true
     }
-  }, [currentPage, feedbackKey, hasComment, latency, outcomesKey, statusesKey])
+  }, [currentPage, feedbackKey, hasComment, latency, actionsKey, statusesKey])
 
   const openConversation = (turn: LowQualityTurn) =>
     setOpenedConversation({
@@ -481,7 +514,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     <>
     <DashboardPage
       title="Assistant answers to review"
-      description="Browse assistant answers by conversation status, answer type, user feedback, and response time."
+      description="Browse assistant turns by conversation status, action type, user feedback, and response time."
       titleAccessory={<MessageSquareWarning className="h-4 w-4 text-muted-foreground" />}
       actions={filterButton}
       headerContent={headerPills}
@@ -498,7 +531,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-          {statuses.length === 0 && outcomes.length === 0 && feedback.length === 0 && !hasComment && !latency
+          {statuses.length === 0 && actions.length === 0 && feedback.length === 0 && !hasComment && !latency
             ? 'No assistant answers are available yet. Answers will show up here as your assistant handles traffic.'
             : 'No assistant answers match these filters. Try clearing one of them.'}
         </div>
@@ -513,7 +546,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
             <DashboardTableHead>
               <DashboardTableHeader className="w-36">Agent</DashboardTableHeader>
               <DashboardTableHeader>Question &amp; answer</DashboardTableHeader>
-              <DashboardTableHeader className="w-52">Answer type</DashboardTableHeader>
+              <DashboardTableHeader className="w-52">Action</DashboardTableHeader>
               <DashboardTableHeader className="w-32">Status</DashboardTableHeader>
               <DashboardTableHeader className="w-28">Latency</DashboardTableHeader>
               <DashboardTableHeader className="w-32">Feedback</DashboardTableHeader>
@@ -522,10 +555,19 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
             </DashboardTableHead>
             <DashboardTableBody>
               {items.map((turn) => {
-                const meta = turn.answerOutcome ? OUTCOME_META[turn.answerOutcome] : null
+                const actionKey = turn.skillName && turn.skillOutcome
+                  ? encodeAction(turn.skillName, turn.skillOutcome)
+                  : null
+                const action = actionKey ? actionLookup.get(actionKey) ?? null : null
                 const statusMeta = turn.conversationStatus ? STATUS_META[turn.conversationStatus] : null
                 const isExpanded = expandedMessageId === turn.assistantMessageId
                 const hasComments = turn.feedback.comments.length > 0
+                const actionLabel = action
+                  ? action.outcome.displayName
+                  : turn.skillOutcome ?? null
+                const actionTooltip = action
+                  ? `${action.skill.displayName}${action.outcome.description ? ` — ${action.outcome.description}` : ''}`
+                  : actionLabel ?? ''
                 return (
                   <Fragment key={turn.assistantMessageId}>
                     <DashboardTableRow>
@@ -553,14 +595,14 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                         </p>
                       </DashboardTableCell>
                       <DashboardTableCell className="w-52">
-                        {meta ? (
+                        {actionLabel ? (
                           <Badge
-                            variant={meta.tone === 'neutral' ? 'secondary' : 'outline'}
-                            className={cn('whitespace-nowrap', outcomeBadgeClass(meta.tone))}
-                            title={meta.description}
-                            aria-label={`${meta.label}: ${meta.description}`}
+                            variant={action ? 'secondary' : 'outline'}
+                            className={cn('whitespace-nowrap', actionBadgeClass(action?.outcome.status))}
+                            title={actionTooltip}
+                            aria-label={actionTooltip || actionLabel}
                           >
-                            {meta.label}
+                            {actionLabel}
                           </Badge>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
@@ -682,7 +724,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       filters={qualityFilters}
       values={filterValues}
       title="Filter assistant answers"
-      description="Choose the statuses, answer types, feedback, and latency band you want to inspect."
+      description="Choose the statuses, actions, feedback, and latency band you want to inspect."
       onApply={applyFilters}
     />
     <ConversationDrawer

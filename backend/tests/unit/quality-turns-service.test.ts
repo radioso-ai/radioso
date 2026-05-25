@@ -35,7 +35,9 @@ describe("QualityTurnsService", () => {
           agent_name: "Support",
           source_channel: "embed",
           answer_content: "We do not currently support refunds for that plan.",
-          answer_outcome: "no_context_refusal",
+          skill_name: "retrieval.answer",
+          skill_outcome: "no_context",
+          skill_status: "completed",
           conversation_status: "success",
           total_latency_ms: 1840,
           user_question: "Can I get a refund?",
@@ -66,7 +68,9 @@ describe("QualityTurnsService", () => {
         channel: "embed",
         question: "Can I get a refund?",
         answerPreview: "We do not currently support refunds for that plan.",
-        answerOutcome: "no_context_refusal",
+        skillName: "retrieval.answer",
+        skillOutcome: "no_context",
+        skillStatus: "completed",
         conversationStatus: "success",
         totalLatencyMs: 1840,
         createdAt: "2026-05-22T10:00:00.000Z",
@@ -97,10 +101,10 @@ describe("QualityTurnsService", () => {
 
     const [countQuery] = database.queries;
     expect(countQuery?.text).toMatch(/SELECT COUNT/);
-    expect(countQuery?.text).not.toMatch(/m\.answer_outcome IS DISTINCT FROM 'grounded_success'/);
+    expect(countQuery?.text).not.toMatch(/m\.skill_outcome IS DISTINCT FROM/);
   });
 
-  it("applies status, outcome, feedback, latency, agent, channel, and date filters with offset pagination", async () => {
+  it("applies status, action, feedback, latency, agent, channel, and date filters with offset pagination", async () => {
     const database = new CapturingDatabase([totalRow(0), [], []]);
     const service = new QualityTurnsService(database);
 
@@ -108,7 +112,10 @@ describe("QualityTurnsService", () => {
       limit: 10,
       offset: 20,
       statuses: ["success"],
-      outcomes: ["no_context_refusal"],
+      actions: [
+        { skillName: "retrieval.answer", outcome: "no_context" },
+        { skillName: "human_contact.request", outcome: "sent" },
+      ],
       feedbackValues: ["down"],
       hasComment: true,
       minTotalLatencyMs: 2000,
@@ -122,7 +129,8 @@ describe("QualityTurnsService", () => {
     const [, listQuery] = database.queries;
     expect(listQuery?.params).toEqual([
       "workspace-1",
-      ["no_context_refusal"],
+      ["retrieval.answer", "human_contact.request"],
+      ["no_context", "sent"],
       ["success"],
       ["down"],
       2000,
@@ -134,17 +142,17 @@ describe("QualityTurnsService", () => {
       10,
       20,
     ]);
-    expect(listQuery?.text).toMatch(/m\.answer_outcome = ANY\(\$2::text\[\]\)/);
-    expect(listQuery?.text).toMatch(/turn_event\.event_status = ANY\(\$3::text\[\]\)/);
-    expect(listQuery?.text).toMatch(/f\.value = ANY\(\$4::text\[\]\)/);
-    expect(listQuery?.text).toMatch(/turn_event\.total_latency_ms >= \$5/);
-    expect(listQuery?.text).toMatch(/turn_event\.total_latency_ms <= \$6/);
-    expect(listQuery?.text).toMatch(/c\.agent_id = \$7/);
-    expect(listQuery?.text).toMatch(/c\.source_channel = \$8/);
-    expect(listQuery?.text).toMatch(/m\.created_at >= \$9::timestamptz/);
-    expect(listQuery?.text).toMatch(/m\.created_at <= \$10::timestamptz/);
-    expect(listQuery?.text).toMatch(/LIMIT \$11/);
-    expect(listQuery?.text).toMatch(/OFFSET \$12/);
+    expect(listQuery?.text).toMatch(/unnest\(\$2::text\[\], \$3::text\[\]\)/);
+    expect(listQuery?.text).toMatch(/turn_event\.event_status = ANY\(\$4::text\[\]\)/);
+    expect(listQuery?.text).toMatch(/f\.value = ANY\(\$5::text\[\]\)/);
+    expect(listQuery?.text).toMatch(/turn_event\.total_latency_ms >= \$6/);
+    expect(listQuery?.text).toMatch(/turn_event\.total_latency_ms <= \$7/);
+    expect(listQuery?.text).toMatch(/c\.agent_id = \$8/);
+    expect(listQuery?.text).toMatch(/c\.source_channel = \$9/);
+    expect(listQuery?.text).toMatch(/m\.created_at >= \$10::timestamptz/);
+    expect(listQuery?.text).toMatch(/m\.created_at <= \$11::timestamptz/);
+    expect(listQuery?.text).toMatch(/LIMIT \$12/);
+    expect(listQuery?.text).toMatch(/OFFSET \$13/);
   });
 
   it("computes page numbers from the requested offset", async () => {
@@ -157,7 +165,9 @@ describe("QualityTurnsService", () => {
         agent_name: null,
         source_channel: null,
         answer_content: `Answer ${index}`,
-        answer_outcome: "no_context_refusal",
+        skill_name: "retrieval.answer",
+        skill_outcome: "no_context",
+        skill_status: "completed",
         conversation_status: "success",
         total_latency_ms: null,
         user_question: `Question ${index}`,

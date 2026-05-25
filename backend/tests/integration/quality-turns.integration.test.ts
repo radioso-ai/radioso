@@ -84,12 +84,12 @@ describeIfDatabase("quality turns integration", () => {
     const refusalAssistantMessageId = randomUUID();
 
     await database.query(
-      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, answer_outcome, created_at)
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, skill_name, skill_outcome, skill_status, created_at)
        VALUES
-         ($1, $2, $3, 'user',      'What is the refund policy?', NULL,                $4),
-         ($5, $2, $3, 'assistant', 'Refunds are processed within 7 days.', 'grounded_success', $6),
-         ($7, $8, $3, 'user',      'What is the capital of Mars?', NULL,                $9),
-         ($10, $8, $3, 'assistant', 'I do not have information about that.', 'no_context_refusal', $11)`,
+         ($1, $2, $3, 'user',      'What is the refund policy?', NULL,               NULL,           NULL,         $4),
+         ($5, $2, $3, 'assistant', 'Refunds are processed within 7 days.', 'retrieval.answer', 'grounded',     'completed',  $6),
+         ($7, $8, $3, 'user',      'What is the capital of Mars?', NULL,               NULL,           NULL,         $9),
+         ($10, $8, $3, 'assistant', 'I do not have information about that.', 'retrieval.answer', 'no_context',   'completed',  $11)`,
       [
         groundedUserMessageId,
         groundedConversationId,
@@ -121,7 +121,8 @@ describeIfDatabase("quality turns integration", () => {
     expect(ids).toContain(groundedAssistantMessageId);
 
     const refusal = page.items.find((item) => item.assistantMessageId === refusalAssistantMessageId);
-    expect(refusal?.answerOutcome).toBe("no_context_refusal");
+    expect(refusal?.skillName).toBe("retrieval.answer");
+    expect(refusal?.skillOutcome).toBe("no_context");
     expect(refusal?.question).toBe("What is the capital of Mars?");
     expect(refusal?.agentName).toBe("Support Bot");
     expect(refusal?.channel).toBe("embed");
@@ -134,7 +135,7 @@ describeIfDatabase("quality turns integration", () => {
     ]);
   });
 
-  it("filters by outcome and feedback value, and scopes to workspace", async () => {
+  it("filters by action tuple and scopes to workspace", async () => {
     const accountId = randomUUID();
     const workspaceA = randomUUID();
     const workspaceB = randomUUID();
@@ -174,10 +175,10 @@ describeIfDatabase("quality turns integration", () => {
     const messageInWorkspaceB = randomUUID();
 
     await database.query(
-      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, answer_outcome, created_at)
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, skill_name, skill_outcome, skill_status, created_at)
        VALUES
-         ($1, $2, $3, 'assistant', 'A refusal', 'no_context_refusal', $4),
-         ($5, $6, $7, 'assistant', 'B refusal', 'no_context_refusal', $8)`,
+         ($1, $2, $3, 'assistant', 'A refusal', 'retrieval.answer', 'no_context', 'completed', $4),
+         ($5, $6, $7, 'assistant', 'B refusal', 'retrieval.answer', 'no_context', 'completed', $8)`,
       [
         messageInWorkspaceA,
         conversationA,
@@ -193,7 +194,7 @@ describeIfDatabase("quality turns integration", () => {
     const service = new QualityTurnsService(database);
     const page = await service.listLowQualityTurns(workspaceA, {
       limit: 25,
-      outcomes: ["no_context_refusal"],
+      actions: [{ skillName: "retrieval.answer", outcome: "no_context" }],
     });
 
     const ids = page.items.map((item) => item.assistantMessageId);

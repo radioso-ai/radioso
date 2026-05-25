@@ -43,8 +43,19 @@ const csvOrArray = <T extends z.ZodTypeAny>(item: T) =>
     return value;
   }, z.array(item).optional());
 
+const actionTupleSchema = z
+  .string()
+  .regex(/^[^:]+:[^:]+$/, "Action filter entries must use the form skillName:outcome")
+  .transform((value) => {
+    const colonIndex = value.indexOf(":");
+    return {
+      skillName: value.slice(0, colonIndex),
+      outcome: value.slice(colonIndex + 1),
+    };
+  });
+
 const turnsQuerySchema = z.object({
-  outcomes: csvOrArray(z.enum(["grounded_success", "no_context_refusal", "non_retrieval_response"])),
+  actions: csvOrArray(actionTupleSchema),
   statuses: csvOrArray(z.enum(["success", "failure"])),
   feedback: csvOrArray(z.enum(["up", "down"])),
   hasComment: z.preprocess((value) => {
@@ -84,7 +95,7 @@ export const createQualityRoutes = (
       const query = parseRequest(turnsQuerySchema, req.query);
       const { workspaceId } = res.locals as { workspaceId: string };
       const page = await service.listLowQualityTurns(workspaceId, {
-        outcomes: query.outcomes,
+        actions: query.actions,
         statuses: query.statuses,
         feedbackValues: query.feedback,
         hasComment: query.hasComment,

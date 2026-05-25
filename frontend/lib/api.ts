@@ -26,14 +26,21 @@ export { authApi } from './api-auth'
 export { chatApi } from './api-chat'
 export { qualityApi } from './api-quality'
 export type {
-  AnswerOutcome,
   FeedbackValue,
   ListLowQualityTurnsOptions,
   LowQualityTurn,
   LowQualityTurnsPage,
+  QualityActionFilter,
   QualityConversationStatus,
   QualityFeedbackSummary,
 } from './api-quality'
+export { skillsApi } from './api-skills'
+export type {
+  SkillCatalogEntry,
+  SkillCatalogResponse,
+  SkillOutcomeDefinition,
+  SkillOutcomeStatus,
+} from './api-skills'
 export { connectorsApi } from './api-connectors'
 export { documentsApi } from './api-documents'
 export { publicChatApi } from './api-public-chat'

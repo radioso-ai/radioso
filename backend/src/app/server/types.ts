@@ -61,6 +61,11 @@ import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobSer
 import type { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 import type { TextGenerationClient } from "../../shared/infra/llm/providerTypes.js";
 import type { EmailService } from "../../modules/mail/public.js";
+import type {
+  EvalCaseService,
+  EvalRunService,
+  EvalSnapshotService,
+} from "../../modules/eval/composition.js";
 
 export interface AppDependencies {
   env: Env;
@@ -112,6 +117,9 @@ export interface AppDependencies {
   assistantHistoryService: AssistantHistoryService;
   retrievalSearchService: RetrievalSearchService;
   retrievalAnswerService: RetrievalAnswerService;
+  evalSnapshotService: EvalSnapshotService;
+  evalCaseService: EvalCaseService;
+  evalRunService: EvalRunService;
   platformSettingsService: PlatformSettingsService;
   skillCatalogService: SkillCatalogService;
   agentService: AgentService;

@@ -10,6 +10,7 @@ import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedThe
 import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
 import { getSkillDisplay } from '@/lib/skill-display'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
+import { SendToEvalAction } from './send-to-eval-action'
 import type {
   AnswerFeedbackEntry,
   AnswerFeedbackState,
@@ -207,6 +208,7 @@ export function ChatMessageThread({
   hideFeedbackEntries = false,
   copy = DEFAULT_WEBSITE_EMBED_COPY,
   showCitations = true,
+  conversationId,
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
@@ -223,6 +225,10 @@ export function ChatMessageThread({
   hideFeedbackEntries?: boolean
   copy?: WebsiteEmbedCopy
   showCitations?: boolean
+  // When provided, assistant turns show a "Send to eval" hover action.
+  // Authenticated dashboard surfaces (chat + activity) pass this; the public
+  // embed and website chat omit it so end users never see the action.
+  conversationId?: string
 }) {
   const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
   const [localFeedback, setLocalFeedback] = useState<Record<string, AnswerFeedbackState | null | undefined>>({})
@@ -539,6 +545,21 @@ export function ChatMessageThread({
                         <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100">
                           {message.content ? (
                             <MessageCopyButton content={message.content} theme={theme} />
+                          ) : null}
+                          {conversationId && assistantMessageId ? (
+                            <SendToEvalAction
+                              conversationId={conversationId}
+                              assistantMessageId={assistantMessageId}
+                              userQueryPreview={(() => {
+                                // Walk back to find the user message that triggered this assistant turn.
+                                for (let i = index - 1; i >= 0; i--) {
+                                  const m = messages[i]
+                                  if (m?.role === 'user') return m.content
+                                }
+                                return undefined
+                              })()}
+                              className="inline-flex size-5 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                            />
                           ) : null}
                           {canSubmitFeedback && assistantMessageId ? (
                             <>

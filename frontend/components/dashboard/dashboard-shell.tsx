@@ -10,6 +10,7 @@ import { ChatHistoryView } from './chat-history-view'
 import { KnowledgeView } from './knowledge-view'
 import { SettingsView } from './settings-view'
 import { UsageView } from './usage-view'
+import { EvalView } from './eval-view'
 import { FirstRunExperience } from './first-run-experience'
 import {
   buildDashboardHref,
@@ -182,6 +183,9 @@ export function DashboardShell({
           )}
           {currentView === 'usage' && (
             <UsageView />
+          )}
+          {currentView === 'eval' && (
+            <EvalView accountId={accountId} routeState={routeState} />
           )}
         </div>
       </SidebarInset>

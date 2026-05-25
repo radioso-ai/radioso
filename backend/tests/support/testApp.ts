@@ -71,6 +71,12 @@ import { createLogger } from "../../src/shared/observability/logger.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
+import {
+  EvalCaseService,
+  EvalRepository,
+  EvalRunService,
+  EvalSnapshotService,
+} from "../../src/modules/eval/composition.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
@@ -776,6 +782,26 @@ export const createTestDependencies = (overrides: {
     assistantHistoryService,
     retrievalSearchService,
     retrievalAnswerService,
+    evalSnapshotService: new EvalSnapshotService(
+      conversationRepository,
+      messageRepository,
+      agentRepository,
+      retrievalSettingsService,
+      new EvalRepository(connectorDb as any),
+    ),
+    evalCaseService: new EvalCaseService(new EvalRepository(connectorDb as any)),
+    evalRunService: new EvalRunService(
+      new EvalRepository(connectorDb as any),
+      {
+        async retrieve() { return { chunks: [] }; },
+        async answer() { return { chunks: [], answer: "" }; },
+      },
+      {
+        async judge({ assertion }) {
+          return { assertion, status: "error" as const, reason: "Judge is not configured in test app." };
+        },
+      },
+    ),
     platformSettingsService,
     agentService,
     agentSurfaceExtensions,

@@ -38,5 +38,6 @@ export {
   AgentSurfaceExtensionRegistry,
   type AgentSurfaceExtension,
 } from "./surfaceExtensions.js";
+export { freezeAgent, type AgentSnapshot } from "./agentSnapshot.js";
 export { createWebsiteEmbedSurfaceExtension } from "./services/websiteEmbedSurfaceExtension.js";
 export type { ValidateAgentInputOptions } from "./domain.js";

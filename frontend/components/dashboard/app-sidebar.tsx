@@ -59,6 +59,7 @@ import {
   RefreshCw,
   Users,
   Gauge,
+  FlaskConical,
 } from 'lucide-react'
 import {
   buildDashboardHref,
@@ -95,6 +96,7 @@ interface AppSidebarProps {
 const navItems = [
   { id: 'knowledge' as const, label: 'Knowledge Base', icon: BookOpen },
   { id: 'activity' as const, label: 'Activity', icon: Activity },
+  { id: 'eval' as const, label: 'Eval', icon: FlaskConical },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
 

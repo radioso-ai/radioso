@@ -35,6 +35,14 @@ import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.j
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { SkillCatalogService } from "../../modules/skills/public.js";
 import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
+import {
+  ChatGatewayLlmJudge,
+  EvalCaseService,
+  EvalRepository,
+  EvalRunService,
+  EvalSnapshotService,
+  RetrievalPipelineEvalRunner,
+} from "../../modules/eval/composition.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -220,6 +228,21 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
 
   const chatTextGenerationClient = llmRegistry.createChatTextClient();
 
+  const evalRepository = new EvalRepository(infrastructure.database);
+  const evalSnapshotService = new EvalSnapshotService(
+    repositories.conversationRepository,
+    repositories.messageRepository,
+    repositories.agentRepository,
+    settings.retrievalSettingsService,
+    evalRepository,
+  );
+  const evalCaseService = new EvalCaseService(evalRepository);
+  const evalRunService = new EvalRunService(
+    evalRepository,
+    new RetrievalPipelineEvalRunner(retrieval.retrievalPipeline, chat.chatGateway),
+    new ChatGatewayLlmJudge(chat.chatGateway),
+  );
+
   return {
     env,
     logger,
@@ -270,6 +293,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     assistantHistoryService: chat.assistantHistoryService,
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,
+    evalSnapshotService,
+    evalCaseService,
+    evalRunService,
     platformSettingsService,
     agentService,
     agentSurfaceExtensions,

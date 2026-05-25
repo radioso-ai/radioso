@@ -311,6 +311,31 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       assistantMessageId: turn.assistantMessageId,
     })
 
+  const PaginationBar = () => (
+    <DashboardPagination
+      summary={formatPageSummary({
+        currentPage,
+        pageSize: PAGE_SIZE,
+        pageItemCount: items.length,
+        totalItems: total,
+      })}
+      currentPage={currentPage}
+      totalPages={totalPages}
+      previousHref={buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'quality',
+        qualityPage: Math.max(1, currentPage - 1),
+      })}
+      nextHref={buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'quality',
+        qualityPage: Math.min(totalPages, currentPage + 1),
+      })}
+      onPrevious={() => setPage(Math.max(1, currentPage - 1))}
+      onNext={() => setPage(Math.min(totalPages, currentPage + 1))}
+    />
+  )
+
   const filterButton = (
     <Button
       type="button"
@@ -363,28 +388,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           className={cn('space-y-4 transition-opacity', isFetching && 'opacity-60')}
           aria-busy={isFetching}
         >
-          <DashboardPagination
-            summary={formatPageSummary({
-              currentPage,
-              pageSize: PAGE_SIZE,
-              pageItemCount: items.length,
-              totalItems: total,
-            })}
-            currentPage={currentPage}
-            totalPages={totalPages}
-            previousHref={buildDashboardHref(accountId, {
-              ...routeState,
-              section: 'quality',
-              qualityPage: Math.max(1, currentPage - 1),
-            })}
-            nextHref={buildDashboardHref(accountId, {
-              ...routeState,
-              section: 'quality',
-              qualityPage: Math.min(totalPages, currentPage + 1),
-            })}
-            onPrevious={() => setPage(Math.max(1, currentPage - 1))}
-            onNext={() => setPage(Math.min(totalPages, currentPage + 1))}
-          />
+          <PaginationBar />
 
           <DashboardTable aria-label="Quality turns" minWidth="min-w-[960px]">
             <DashboardTableHead>
@@ -524,6 +528,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
               })}
             </DashboardTableBody>
           </DashboardTable>
+
+          <PaginationBar />
         </div>
       )}
     </DashboardPage>

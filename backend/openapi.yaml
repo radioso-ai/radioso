@@ -3877,6 +3877,14 @@ components:
             - failed
         groundedAnswer:
           type: boolean
+        tone:
+          type: string
+          enum:
+            - positive
+            - neutral
+            - info
+            - warning
+            - muted
       required:
         - name
         - displayName

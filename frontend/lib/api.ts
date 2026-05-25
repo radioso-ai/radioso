@@ -40,6 +40,7 @@ export type {
   SkillCatalogResponse,
   SkillOutcomeDefinition,
   SkillOutcomeStatus,
+  SkillOutcomeTone,
 } from './api-skills'
 export { connectorsApi } from './api-connectors'
 export { documentsApi } from './api-documents'

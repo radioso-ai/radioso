@@ -54,7 +54,7 @@ interface QualityViewProps {
 interface StatusMeta {
   label: string
   description: string
-  tone: 'neutral' | 'warning' | 'info' | 'muted'
+  tone: BadgeTone
 }
 
 interface LatencyBucketMeta {
@@ -198,10 +198,17 @@ const getChannelLabel = (channel: string | null): string => {
   return channel
 }
 
-const actionBadgeTone = (outcome: SkillOutcomeDefinition | undefined): 'neutral' | 'warning' | 'info' | 'muted' => {
+type BadgeTone = 'positive' | 'neutral' | 'info' | 'warning' | 'muted'
+
+const actionBadgeTone = (outcome: SkillOutcomeDefinition | undefined): BadgeTone => {
   if (!outcome) {
     return 'neutral'
   }
+  if (outcome.tone) {
+    return outcome.tone
+  }
+  // Fallback: derive a tone from status + groundedAnswer for skill outcomes that
+  // haven't yet declared one. Keeps unknown future outcomes visually coherent.
   if (outcome.status === 'failed' || outcome.status === 'expired') {
     return 'warning'
   }
@@ -221,23 +228,12 @@ const actionBadgeTone = (outcome: SkillOutcomeDefinition | undefined): 'neutral'
   return 'neutral'
 }
 
-const actionBadgeClass = (tone: 'neutral' | 'warning' | 'info' | 'muted'): string | undefined => {
+const badgeToneClass = (tone: BadgeTone): string | undefined => {
   switch (tone) {
+    case 'positive':
+      return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
     case 'warning':
       return 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-    case 'info':
-      return 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300'
-    case 'muted':
-      return 'border-muted-foreground/30 bg-muted text-muted-foreground'
-    default:
-      return undefined
-  }
-}
-
-const statusBadgeClass = (tone: StatusMeta['tone']): string | undefined => {
-  switch (tone) {
-    case 'warning':
-      return 'border-destructive/40 bg-destructive/10 text-destructive'
     case 'info':
       return 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300'
     case 'muted':
@@ -355,6 +351,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         id: 'status',
         kind: 'multi-select',
         label: 'Conversation status',
+        presentation: 'pills',
         options: STATUS_FILTERS.map((value) => ({
           value,
           label: STATUS_META[value].label,
@@ -365,6 +362,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         id: 'action',
         kind: 'multi-select',
         label: 'Action type',
+        presentation: 'pills',
         options: actionFilterOptions,
       },
       {
@@ -674,7 +672,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                         {actionLabel ? (
                           <Badge
                             variant={action && actionTone === 'neutral' ? 'secondary' : 'outline'}
-                            className={cn('whitespace-nowrap', actionBadgeClass(actionTone))}
+                            className={cn('whitespace-nowrap', badgeToneClass(actionTone))}
                             title={actionTooltip}
                             aria-label={actionTooltip || actionLabel}
                           >
@@ -688,7 +686,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                         {statusMeta ? (
                           <Badge
                             variant={statusMeta.tone === 'neutral' ? 'secondary' : 'outline'}
-                            className={cn('whitespace-nowrap', statusBadgeClass(statusMeta.tone))}
+                            className={cn('whitespace-nowrap', badgeToneClass(statusMeta.tone))}
                             title={statusMeta.description}
                             aria-label={`${statusMeta.label}: ${statusMeta.description}`}
                           >

@@ -31,6 +31,7 @@ export type FilterDefinition =
       kind: 'multi-select'
       label: string
       options: ReadonlyArray<FilterOption>
+      presentation?: 'list' | 'pills'
     }
   | {
       id: string

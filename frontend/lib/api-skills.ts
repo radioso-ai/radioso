@@ -10,12 +10,15 @@ export type SkillOutcomeStatus =
   | 'expired'
   | 'failed'
 
+export type SkillOutcomeTone = 'positive' | 'neutral' | 'info' | 'warning' | 'muted'
+
 export interface SkillOutcomeDefinition {
   name: string
   displayName: string
   description?: string
   status: SkillOutcomeStatus
   groundedAnswer?: boolean
+  tone?: SkillOutcomeTone
 }
 
 export interface SkillCatalogEntry {

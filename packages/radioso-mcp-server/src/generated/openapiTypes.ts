@@ -2791,6 +2791,8 @@ export interface components {
             /** @enum {string} */
             status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
             groundedAnswer?: boolean;
+            /** @enum {string} */
+            tone?: "positive" | "neutral" | "info" | "warning" | "muted";
         };
         SkillDiagnosticEvidence: {
             queryShape?: string;

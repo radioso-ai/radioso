@@ -150,6 +150,7 @@ function FilterRow({ filter, value, onChange }: FilterRowProps) {
         <MultiSelectRow
           label={filter.label}
           options={filter.options}
+          presentation={filter.presentation ?? 'list'}
           selected={value?.kind === 'multi-select' ? value.values : []}
           onChange={(next) =>
             onChange(next.length === 0 ? undefined : { kind: 'multi-select', values: next })
@@ -182,16 +183,49 @@ function FilterRow({ filter, value, onChange }: FilterRowProps) {
 function MultiSelectRow({
   label,
   options,
+  presentation,
   selected,
   onChange,
 }: {
   label: string
   options: ReadonlyArray<FilterOption>
+  presentation: 'list' | 'pills'
   selected: string[]
   onChange: (next: string[]) => void
 }) {
   const toggle = (value: string) => {
     onChange(selected.includes(value) ? selected.filter((entry) => entry !== value) : [...selected, value])
+  }
+
+  if (presentation === 'pills') {
+    return (
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        <div className="flex flex-wrap gap-1.5">
+          {options.map((option) => {
+            const checked = selected.includes(option.value)
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => toggle(option.value)}
+                title={option.description}
+                aria-pressed={checked}
+                className={cn(
+                  'inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                  checked
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-input bg-background text-foreground hover:bg-accent/40',
+                )}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
   }
 
   return (

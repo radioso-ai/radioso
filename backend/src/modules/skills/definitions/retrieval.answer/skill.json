@@ -87,7 +87,8 @@
       "name": "no_context",
       "displayName": "No context",
       "description": "The retrieval skill could not find enough workspace evidence to answer.",
-      "status": "completed"
+      "status": "completed",
+      "groundedAnswer": false
     },
     {
       "name": "clarification_needed",

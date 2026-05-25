@@ -31,7 +31,6 @@ import {
   qualityApi,
   skillsApi,
   type QualityActionFilter,
-  type QualityConversationStatus,
   type LowQualityTurn,
   type SkillCatalogEntry,
   type SkillOutcomeDefinition,
@@ -55,7 +54,7 @@ interface QualityViewProps {
 interface StatusMeta {
   label: string
   description: string
-  tone: 'neutral' | 'warning'
+  tone: 'neutral' | 'warning' | 'info' | 'muted'
 }
 
 interface LatencyBucketMeta {
@@ -69,20 +68,59 @@ const FEEDBACK_LABEL: Record<QualityFeedbackFilter, string> = {
   up: 'Thumbs up',
 }
 
-const STATUS_META: Record<QualityConversationStatus, StatusMeta> = {
-  success: {
+const STATUS_META: Record<QualityStatusFilter, StatusMeta> = {
+  completed: {
     label: 'Completed',
-    description: 'The assistant produced an answer.',
+    description: 'The skill finished its work for this turn.',
     tone: 'neutral',
   },
-  failure: {
+  failed: {
     label: 'Failed',
-    description: 'The assistant turn ended in an error.',
+    description: 'The skill could not complete its work.',
     tone: 'warning',
+  },
+  expired: {
+    label: 'Expired',
+    description: 'The skill timed out before completing.',
+    tone: 'warning',
+  },
+  paused: {
+    label: 'Paused',
+    description: 'The skill is waiting on the user before it can continue.',
+    tone: 'info',
+  },
+  awaiting_confirmation: {
+    label: 'Awaiting confirmation',
+    description: 'The skill is waiting for the user to confirm before continuing.',
+    tone: 'info',
+  },
+  awaiting_tool: {
+    label: 'Awaiting tool',
+    description: 'The skill is waiting on an external tool or workflow.',
+    tone: 'info',
+  },
+  active: {
+    label: 'In progress',
+    description: 'The skill is still running.',
+    tone: 'info',
+  },
+  cancelled: {
+    label: 'Cancelled',
+    description: 'The skill was cancelled before completing.',
+    tone: 'muted',
   },
 }
 
-const STATUS_FILTERS: QualityStatusFilter[] = ['success', 'failure']
+const STATUS_FILTERS: QualityStatusFilter[] = [
+  'completed',
+  'paused',
+  'awaiting_confirmation',
+  'awaiting_tool',
+  'failed',
+  'expired',
+  'cancelled',
+  'active',
+]
 
 const LATENCY_BUCKETS: Record<QualityLatencyFilter, LatencyBucketMeta> = {
   lt_2s: {
@@ -160,24 +198,61 @@ const getChannelLabel = (channel: string | null): string => {
   return channel
 }
 
-const actionBadgeClass = (status: SkillOutcomeDefinition['status'] | undefined): string | undefined => {
-  switch (status) {
-    case 'failed':
-    case 'expired':
+const actionBadgeTone = (outcome: SkillOutcomeDefinition | undefined): 'neutral' | 'warning' | 'info' | 'muted' => {
+  if (!outcome) {
+    return 'neutral'
+  }
+  if (outcome.status === 'failed' || outcome.status === 'expired') {
+    return 'warning'
+  }
+  if (outcome.status === 'completed' && outcome.groundedAnswer === false) {
+    return 'warning'
+  }
+  if (
+    outcome.status === 'paused'
+    || outcome.status === 'awaiting_confirmation'
+    || outcome.status === 'awaiting_tool'
+  ) {
+    return 'info'
+  }
+  if (outcome.status === 'cancelled') {
+    return 'muted'
+  }
+  return 'neutral'
+}
+
+const actionBadgeClass = (tone: 'neutral' | 'warning' | 'info' | 'muted'): string | undefined => {
+  switch (tone) {
+    case 'warning':
       return 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-    case 'paused':
-    case 'awaiting_confirmation':
-    case 'awaiting_tool':
+    case 'info':
       return 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300'
+    case 'muted':
+      return 'border-muted-foreground/30 bg-muted text-muted-foreground'
     default:
       return undefined
   }
 }
 
-const statusBadgeClass = (tone: StatusMeta['tone']): string | undefined =>
-  tone === 'warning'
-    ? 'border-destructive/40 bg-destructive/10 text-destructive'
-    : undefined
+const statusBadgeClass = (tone: StatusMeta['tone']): string | undefined => {
+  switch (tone) {
+    case 'warning':
+      return 'border-destructive/40 bg-destructive/10 text-destructive'
+    case 'info':
+      return 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300'
+    case 'muted':
+      return 'border-muted-foreground/30 bg-muted text-muted-foreground'
+    default:
+      return undefined
+  }
+}
+
+const resolveStatusMeta = (skillStatus: string | null): StatusMeta | null => {
+  if (!skillStatus) {
+    return null
+  }
+  return (STATUS_META as Record<string, StatusMeta | undefined>)[skillStatus] ?? null
+}
 
 interface ActionLookup {
   skill: SkillCatalogEntry
@@ -532,8 +607,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       ) : items.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
           {statuses.length === 0 && actions.length === 0 && feedback.length === 0 && !hasComment && !latency
-            ? 'No assistant answers are available yet. Answers will show up here as your assistant handles traffic.'
-            : 'No assistant answers match these filters. Try clearing one of them.'}
+            ? 'No assistant turns are available yet. Turns will show up here as your assistant handles traffic.'
+            : 'No assistant turns match these filters. Try clearing one of them.'}
         </div>
       ) : (
         <div
@@ -559,12 +634,13 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                   ? encodeAction(turn.skillName, turn.skillOutcome)
                   : null
                 const action = actionKey ? actionLookup.get(actionKey) ?? null : null
-                const statusMeta = turn.conversationStatus ? STATUS_META[turn.conversationStatus] : null
+                const statusMeta = resolveStatusMeta(turn.skillStatus)
                 const isExpanded = expandedMessageId === turn.assistantMessageId
                 const hasComments = turn.feedback.comments.length > 0
                 const actionLabel = action
                   ? action.outcome.displayName
                   : turn.skillOutcome ?? null
+                const actionTone = actionBadgeTone(action?.outcome)
                 const actionTooltip = action
                   ? `${action.skill.displayName}${action.outcome.description ? ` — ${action.outcome.description}` : ''}`
                   : actionLabel ?? ''
@@ -597,8 +673,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                       <DashboardTableCell className="w-52">
                         {actionLabel ? (
                           <Badge
-                            variant={action ? 'secondary' : 'outline'}
-                            className={cn('whitespace-nowrap', actionBadgeClass(action?.outcome.status))}
+                            variant={action && actionTone === 'neutral' ? 'secondary' : 'outline'}
+                            className={cn('whitespace-nowrap', actionBadgeClass(actionTone))}
                             title={actionTooltip}
                             aria-label={actionTooltip || actionLabel}
                           >
@@ -617,6 +693,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                             aria-label={`${statusMeta.label}: ${statusMeta.description}`}
                           >
                             {statusMeta.label}
+                          </Badge>
+                        ) : turn.skillStatus ? (
+                          <Badge variant="outline" className="whitespace-nowrap" aria-label={turn.skillStatus}>
+                            {turn.skillStatus}
                           </Badge>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>

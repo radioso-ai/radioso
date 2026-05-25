@@ -1,7 +1,15 @@
 import { request } from './api-client'
 import { withQuery } from './api-query'
 
-export type QualityConversationStatus = 'success' | 'failure'
+export type QualitySkillStatus =
+  | 'active'
+  | 'paused'
+  | 'awaiting_confirmation'
+  | 'awaiting_tool'
+  | 'completed'
+  | 'cancelled'
+  | 'expired'
+  | 'failed'
 export type FeedbackValue = 'up' | 'down'
 
 export interface QualityActionFilter {
@@ -30,7 +38,6 @@ export interface LowQualityTurn {
   skillName: string | null
   skillOutcome: string | null
   skillStatus: string | null
-  conversationStatus: QualityConversationStatus | null
   totalLatencyMs: number | null
   createdAt: string
   feedback: QualityFeedbackSummary
@@ -46,7 +53,7 @@ export interface LowQualityTurnsPage {
 
 export interface ListLowQualityTurnsOptions {
   actions?: QualityActionFilter[]
-  statuses?: QualityConversationStatus[]
+  statuses?: QualitySkillStatus[]
   feedback?: FeedbackValue[]
   hasComment?: boolean
   minTotalLatencyMs?: number

@@ -31,8 +31,8 @@ export type {
   LowQualityTurn,
   LowQualityTurnsPage,
   QualityActionFilter,
-  QualityConversationStatus,
   QualityFeedbackSummary,
+  QualitySkillStatus,
 } from './api-quality'
 export { skillsApi } from './api-skills'
 export type {

@@ -121,7 +121,6 @@ describe("quality routes", () => {
           skillName: "retrieval.answer",
           skillOutcome: "no_context",
           skillStatus: "completed",
-          conversationStatus: "success",
           totalLatencyMs: 3200,
           createdAt: "2026-05-22T10:00:00.000Z",
           feedback: { upCount: 0, downCount: 1, comments: [] },
@@ -153,7 +152,7 @@ describe("quality routes", () => {
       .get("/api/v1/quality/turns")
       .query({
         actions: "retrieval.answer:no_context,human_contact.request:sent",
-        statuses: "success",
+        statuses: "paused,failed",
         feedback: "down",
         hasComment: "true",
         minTotalLatencyMs: "2000",
@@ -172,7 +171,7 @@ describe("quality routes", () => {
         { skillName: "retrieval.answer", outcome: "no_context" },
         { skillName: "human_contact.request", outcome: "sent" },
       ],
-      statuses: ["success"],
+      statuses: ["paused", "failed"],
       feedbackValues: ["down"],
       hasComment: true,
       minTotalLatencyMs: 2000,

@@ -4,7 +4,26 @@ export type KnowledgeTab = 'documents' | 'sources' | 'ingestion' | 'retrieval'
 export type SettingsTab = 'workspace' | 'providers' | 'users'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
 export type HistoryItemKind = 'chat' | 'search' | 'contact'
-export type QualityStatusFilter = 'success' | 'failure'
+export type QualityStatusFilter =
+  | 'active'
+  | 'paused'
+  | 'awaiting_confirmation'
+  | 'awaiting_tool'
+  | 'completed'
+  | 'cancelled'
+  | 'expired'
+  | 'failed'
+
+const QUALITY_STATUS_VALUES: ReadonlySet<QualityStatusFilter> = new Set([
+  'active',
+  'paused',
+  'awaiting_confirmation',
+  'awaiting_tool',
+  'completed',
+  'cancelled',
+  'expired',
+  'failed',
+])
 export type QualityFeedbackFilter = 'up' | 'down'
 export type QualityLatencyFilter = 'lt_2s' | '2s_5s' | '5s_10s' | 'gte_10s'
 
@@ -121,7 +140,9 @@ const parseQualityStatuses = (value: string | null): QualityStatusFilter[] | und
   const parsed = value
     .split(',')
     .map((entry) => entry.trim())
-    .filter((entry): entry is QualityStatusFilter => entry === 'success' || entry === 'failure')
+    .filter((entry): entry is QualityStatusFilter =>
+      QUALITY_STATUS_VALUES.has(entry as QualityStatusFilter),
+    )
   return parsed.length > 0 ? parsed : undefined
 }
 

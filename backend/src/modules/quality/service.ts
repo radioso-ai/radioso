@@ -19,7 +19,6 @@ type TurnRow = QueryResultRow & {
   skill_name: string | null;
   skill_outcome: string | null;
   skill_status: string | null;
-  conversation_status: "success" | "failure" | null;
   total_latency_ms: number | string | null;
   user_question: string | null;
   up_count: string;
@@ -92,7 +91,7 @@ export class QualityTurnsService implements QualityTurnsServicePort {
 
     if (statuses.length > 0) {
       params.push(statuses);
-      filters.push(`turn_event.event_status = ANY($${params.length}::text[])`);
+      filters.push(`m.skill_status = ANY($${params.length}::text[])`);
     }
 
     if (feedbackValues.length > 0) {
@@ -154,7 +153,6 @@ export class QualityTurnsService implements QualityTurnsServicePort {
        JOIN conversations c ON c.id = m.conversation_id AND c.workspace_id = m.workspace_id
        LEFT JOIN LATERAL (
          SELECT
-           ae.event_status,
            CASE
              WHEN jsonb_typeof(ae.metadata_json #> '{activityTrace,totalDurationMs}') = 'number'
                THEN ((ae.metadata_json #>> '{activityTrace,totalDurationMs}')::numeric)::int
@@ -188,7 +186,6 @@ export class QualityTurnsService implements QualityTurnsServicePort {
          m.skill_name,
          m.skill_outcome,
          m.skill_status,
-         turn_event.event_status AS conversation_status,
          turn_event.total_latency_ms,
          m.created_at,
          (
@@ -215,7 +212,6 @@ export class QualityTurnsService implements QualityTurnsServicePort {
        LEFT JOIN agents a ON a.id = c.agent_id
        LEFT JOIN LATERAL (
          SELECT
-           ae.event_status,
            CASE
              WHEN jsonb_typeof(ae.metadata_json #> '{activityTrace,totalDurationMs}') = 'number'
                THEN ((ae.metadata_json #>> '{activityTrace,totalDurationMs}')::numeric)::int
@@ -248,7 +244,6 @@ export class QualityTurnsService implements QualityTurnsServicePort {
       skillName: row.skill_name,
       skillOutcome: row.skill_outcome,
       skillStatus: row.skill_status,
-      conversationStatus: row.conversation_status,
       totalLatencyMs: row.total_latency_ms === null ? null : Number(row.total_latency_ms),
       createdAt: serializeDate(row.created_at),
       feedback: {

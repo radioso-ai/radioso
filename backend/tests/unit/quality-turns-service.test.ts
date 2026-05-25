@@ -38,7 +38,6 @@ describe("QualityTurnsService", () => {
           skill_name: "retrieval.answer",
           skill_outcome: "no_context",
           skill_status: "completed",
-          conversation_status: "success",
           total_latency_ms: 1840,
           user_question: "Can I get a refund?",
           up_count: "0",
@@ -71,7 +70,6 @@ describe("QualityTurnsService", () => {
         skillName: "retrieval.answer",
         skillOutcome: "no_context",
         skillStatus: "completed",
-        conversationStatus: "success",
         totalLatencyMs: 1840,
         createdAt: "2026-05-22T10:00:00.000Z",
         feedback: {
@@ -111,7 +109,7 @@ describe("QualityTurnsService", () => {
     await service.listLowQualityTurns("workspace-1", {
       limit: 10,
       offset: 20,
-      statuses: ["success"],
+      statuses: ["paused", "failed"],
       actions: [
         { skillName: "retrieval.answer", outcome: "no_context" },
         { skillName: "human_contact.request", outcome: "sent" },
@@ -131,7 +129,7 @@ describe("QualityTurnsService", () => {
       "workspace-1",
       ["retrieval.answer", "human_contact.request"],
       ["no_context", "sent"],
-      ["success"],
+      ["paused", "failed"],
       ["down"],
       2000,
       10000,
@@ -143,7 +141,7 @@ describe("QualityTurnsService", () => {
       20,
     ]);
     expect(listQuery?.text).toMatch(/unnest\(\$2::text\[\], \$3::text\[\]\)/);
-    expect(listQuery?.text).toMatch(/turn_event\.event_status = ANY\(\$4::text\[\]\)/);
+    expect(listQuery?.text).toMatch(/m\.skill_status = ANY\(\$4::text\[\]\)/);
     expect(listQuery?.text).toMatch(/f\.value = ANY\(\$5::text\[\]\)/);
     expect(listQuery?.text).toMatch(/turn_event\.total_latency_ms >= \$6/);
     expect(listQuery?.text).toMatch(/turn_event\.total_latency_ms <= \$7/);
@@ -168,7 +166,6 @@ describe("QualityTurnsService", () => {
         skill_name: "retrieval.answer",
         skill_outcome: "no_context",
         skill_status: "completed",
-        conversation_status: "success",
         total_latency_ms: null,
         user_question: `Question ${index}`,
         up_count: "0",

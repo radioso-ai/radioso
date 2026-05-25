@@ -1,4 +1,12 @@
-export type QualityConversationStatus = "success" | "failure";
+export type QualitySkillStatus =
+  | "active"
+  | "paused"
+  | "awaiting_confirmation"
+  | "awaiting_tool"
+  | "completed"
+  | "cancelled"
+  | "expired"
+  | "failed";
 export type QualityFeedbackValue = "up" | "down";
 
 export interface QualityActionFilter {
@@ -27,7 +35,6 @@ export interface LowQualityTurn {
   skillName: string | null;
   skillOutcome: string | null;
   skillStatus: string | null;
-  conversationStatus: QualityConversationStatus | null;
   totalLatencyMs: number | null;
   createdAt: string;
   feedback: QualityFeedbackSummary;
@@ -35,7 +42,7 @@ export interface LowQualityTurn {
 
 export interface ListLowQualityTurnsInput {
   actions?: QualityActionFilter[];
-  statuses?: QualityConversationStatus[];
+  statuses?: QualitySkillStatus[];
   feedbackValues?: QualityFeedbackValue[];
   hasComment?: boolean;
   minTotalLatencyMs?: number;

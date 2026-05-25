@@ -56,7 +56,18 @@ const actionTupleSchema = z
 
 const turnsQuerySchema = z.object({
   actions: csvOrArray(actionTupleSchema),
-  statuses: csvOrArray(z.enum(["success", "failure"])),
+  statuses: csvOrArray(
+    z.enum([
+      "active",
+      "paused",
+      "awaiting_confirmation",
+      "awaiting_tool",
+      "completed",
+      "cancelled",
+      "expired",
+      "failed",
+    ]),
+  ),
   feedback: csvOrArray(z.enum(["up", "down"])),
   hasComment: z.preprocess((value) => {
     if (value === undefined) return undefined;

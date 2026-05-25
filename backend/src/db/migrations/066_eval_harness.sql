@@ -87,6 +87,19 @@ CREATE INDEX IF NOT EXISTS idx_eval_runs_case
 CREATE INDEX IF NOT EXISTS idx_eval_runs_snapshot
   ON eval_runs (workspace_id, snapshot_id, started_at DESC);
 
-ALTER TABLE eval_cases
-  ADD CONSTRAINT eval_cases_last_run_fk
-  FOREIGN KEY (last_run_id) REFERENCES eval_runs(id) ON DELETE SET NULL;
+-- Idempotent constraint add: dev databases that already applied earlier
+-- iterations of the eval migrations may have this FK in place.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.table_constraints
+    WHERE table_name = 'eval_cases'
+      AND constraint_name = 'eval_cases_last_run_fk'
+  ) THEN
+    ALTER TABLE eval_cases
+      ADD CONSTRAINT eval_cases_last_run_fk
+      FOREIGN KEY (last_run_id) REFERENCES eval_runs(id) ON DELETE SET NULL;
+  END IF;
+END
+$$;

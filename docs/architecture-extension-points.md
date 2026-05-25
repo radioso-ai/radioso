@@ -62,9 +62,9 @@ validation, permissions, durable side effects, or audit records still belong
 behind a chat skill intake provider; the chip only invites the visitor into it.
 
 Modules contribute action chips by registering a `ChatActionSuggestionProvider`
-through composition. Each provider receives the validated answer outcome and
-decides whether to offer a chip; the registry caps the result at one action
-chip per turn and dedupes by `kind`.
+through composition. Each provider receives the skill-owned turn outcome plus
+the normalized status and decides whether to offer a chip; the registry caps the
+result at one action chip per turn and dedupes by `kind`.
 
 Worker dispatch has two parts. The dispatcher publishes a wake-up notification after a durable document processing job exists. The optional consumer listens for broker deliveries in worker runtimes and delegates back to the worker's job-by-id processing path. The PostgreSQL job table remains authoritative for status, retries, leases, and recovery. AMQP dispatch intentionally keeps the worker polling loop active; broker messages improve wake-up latency, while polling preserves recovery and scheduled retry behavior through `available_at`.
 

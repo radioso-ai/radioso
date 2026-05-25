@@ -5752,6 +5752,41 @@
           "strategyAware"
         ]
       },
+      "SkillOutcomeDefinition": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "awaiting_confirmation",
+              "awaiting_tool",
+              "completed",
+              "cancelled",
+              "expired",
+              "failed"
+            ]
+          },
+          "groundedAnswer": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "displayName",
+          "status"
+        ]
+      },
       "SkillDiagnosticEvidence": {
         "type": "object",
         "properties": {
@@ -6296,6 +6331,12 @@
               "required": [
                 "name"
               ]
+            }
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillOutcomeDefinition"
             }
           }
         },
@@ -7087,6 +7128,25 @@
               "grounded_success",
               "no_context_refusal",
               "non_retrieval_response"
+            ]
+          },
+          "skillName": {
+            "type": "string"
+          },
+          "skillOutcome": {
+            "type": "string"
+          },
+          "skillStatus": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "awaiting_confirmation",
+              "awaiting_tool",
+              "completed",
+              "cancelled",
+              "expired",
+              "failed"
             ]
           },
           "route": {

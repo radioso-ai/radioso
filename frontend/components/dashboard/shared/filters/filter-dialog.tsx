@@ -41,6 +41,25 @@ interface FilterDialogProps {
   description?: string
 }
 
+const normalizeValues = (values: FilterValues): string => {
+  const entries = Object.entries(values)
+    .flatMap(([id, value]) => {
+      if (!value || !isFilterApplied(value)) {
+        return []
+      }
+      if (value.kind === 'multi-select') {
+        return [[id, value.kind, [...value.values].sort().join(',')]]
+      }
+      if (value.kind === 'single-select') {
+        return [[id, value.kind, value.value]]
+      }
+      return [[id, value.kind, 'true']]
+    })
+    .sort(([left], [right]) => left.localeCompare(right))
+
+  return JSON.stringify(entries)
+}
+
 export function FilterDialog({
   open,
   onOpenChange,
@@ -71,6 +90,10 @@ export function FilterDialog({
   const hasAnyDraftApplied = useMemo(
     () => Object.values(draft).some(isFilterApplied),
     [draft],
+  )
+  const hasDraftChanged = useMemo(
+    () => normalizeValues(draft) !== normalizeValues(values),
+    [draft, values],
   )
 
   return (
@@ -105,7 +128,7 @@ export function FilterDialog({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="button" onClick={handleApply}>
+          <Button type="button" onClick={handleApply} disabled={!hasDraftChanged}>
             Apply
           </Button>
         </DialogFooter>
@@ -184,7 +207,7 @@ function MultiSelectRow({
               onClick={() => toggle(option.value)}
               className={cn(
                 'flex w-full items-start gap-3 rounded-md border border-transparent px-2 py-1.5 text-left transition',
-                'hover:bg-accent/40',
+                'hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                 checked && 'bg-accent/60',
               )}
               aria-pressed={checked}

@@ -2,6 +2,7 @@ import { request } from './api-client'
 import { withQuery } from './api-query'
 
 export type AnswerOutcome = 'grounded_success' | 'no_context_refusal' | 'non_retrieval_response'
+export type QualityConversationStatus = 'success' | 'failure'
 export type FeedbackValue = 'up' | 'down'
 
 export interface QualityFeedbackSummary {
@@ -23,6 +24,8 @@ export interface LowQualityTurn {
   question: string | null
   answerPreview: string
   answerOutcome: AnswerOutcome | null
+  conversationStatus: QualityConversationStatus | null
+  totalLatencyMs: number | null
   createdAt: string
   feedback: QualityFeedbackSummary
 }
@@ -37,8 +40,11 @@ export interface LowQualityTurnsPage {
 
 export interface ListLowQualityTurnsOptions {
   outcomes?: AnswerOutcome[]
+  statuses?: QualityConversationStatus[]
   feedback?: FeedbackValue[]
   hasComment?: boolean
+  minTotalLatencyMs?: number
+  maxTotalLatencyMs?: number
   agentId?: string
   channel?: string
   from?: string
@@ -51,8 +57,11 @@ export const qualityApi = {
   async listTurns(options: ListLowQualityTurnsOptions = {}): Promise<LowQualityTurnsPage> {
     const query: Record<string, string | undefined> = {
       outcomes: options.outcomes && options.outcomes.length > 0 ? options.outcomes.join(',') : undefined,
+      statuses: options.statuses && options.statuses.length > 0 ? options.statuses.join(',') : undefined,
       feedback: options.feedback && options.feedback.length > 0 ? options.feedback.join(',') : undefined,
       hasComment: options.hasComment === undefined ? undefined : String(options.hasComment),
+      minTotalLatencyMs: options.minTotalLatencyMs === undefined ? undefined : String(options.minTotalLatencyMs),
+      maxTotalLatencyMs: options.maxTotalLatencyMs === undefined ? undefined : String(options.maxTotalLatencyMs),
       agentId: options.agentId,
       channel: options.channel,
       from: options.from,

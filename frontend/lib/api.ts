@@ -31,6 +31,7 @@ export type {
   ListLowQualityTurnsOptions,
   LowQualityTurn,
   LowQualityTurnsPage,
+  QualityConversationStatus,
   QualityFeedbackSummary,
 } from './api-quality'
 export { connectorsApi } from './api-connectors'

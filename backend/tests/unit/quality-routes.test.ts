@@ -119,6 +119,8 @@ describe("quality routes", () => {
           question: "Why?",
           answerPreview: "Because.",
           answerOutcome: "no_context_refusal",
+          conversationStatus: "success",
+          totalLatencyMs: 3200,
           createdAt: "2026-05-22T10:00:00.000Z",
           feedback: { upCount: 0, downCount: 1, comments: [] },
         },
@@ -149,8 +151,11 @@ describe("quality routes", () => {
       .get("/api/v1/quality/turns")
       .query({
         outcomes: "no_context_refusal,non_retrieval_response",
+        statuses: "success",
         feedback: "down",
         hasComment: "true",
+        minTotalLatencyMs: "2000",
+        maxTotalLatencyMs: "10000",
         channel: "embed",
         from: "2026-05-01T00:00:00.000Z",
         to: "2026-05-23T00:00:00.000Z",
@@ -162,8 +167,11 @@ describe("quality routes", () => {
     expect(response.status).toBe(200);
     expect(service.calls[0]?.input).toEqual({
       outcomes: ["no_context_refusal", "non_retrieval_response"],
+      statuses: ["success"],
       feedbackValues: ["down"],
       hasComment: true,
+      minTotalLatencyMs: 2000,
+      maxTotalLatencyMs: 10000,
       channel: "embed",
       from: "2026-05-01T00:00:00.000Z",
       to: "2026-05-23T00:00:00.000Z",

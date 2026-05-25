@@ -5,7 +5,9 @@ export type SettingsTab = 'workspace' | 'providers' | 'users'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
 export type HistoryItemKind = 'chat' | 'search' | 'contact'
 export type QualityOutcomeFilter = 'grounded_success' | 'no_context_refusal' | 'non_retrieval_response'
+export type QualityStatusFilter = 'success' | 'failure'
 export type QualityFeedbackFilter = 'up' | 'down'
+export type QualityLatencyFilter = 'lt_2s' | '2s_5s' | '5s_10s' | 'gte_10s'
 
 export interface DashboardRouteState {
   section: DashboardSection
@@ -25,7 +27,9 @@ export interface DashboardRouteState {
   historyMessageId?: string
   qualityPage?: number
   qualityOutcomes?: QualityOutcomeFilter[]
+  qualityStatuses?: QualityStatusFilter[]
   qualityFeedback?: QualityFeedbackFilter[]
+  qualityLatency?: QualityLatencyFilter
   qualityHasComment?: boolean
   anchor?: string
 }
@@ -48,7 +52,9 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'historyMessageId',
   'qualityPage',
   'qualityOutcomes',
+  'qualityStatuses',
   'qualityFeedback',
+  'qualityLatency',
   'qualityHasComment',
   'anchor',
 ]
@@ -107,6 +113,23 @@ const parseQualityFeedback = (value: string | null): QualityFeedbackFilter[] | u
     .map((entry) => entry.trim())
     .filter((entry): entry is QualityFeedbackFilter => entry === 'up' || entry === 'down')
   return parsed.length > 0 ? parsed : undefined
+}
+
+const parseQualityStatuses = (value: string | null): QualityStatusFilter[] | undefined => {
+  if (!value) {
+    return undefined
+  }
+  const parsed = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry): entry is QualityStatusFilter => entry === 'success' || entry === 'failure')
+  return parsed.length > 0 ? parsed : undefined
+}
+
+const parseQualityLatency = (value: string | null): QualityLatencyFilter | undefined => {
+  return value === 'lt_2s' || value === '2s_5s' || value === '5s_10s' || value === 'gte_10s'
+    ? value
+    : undefined
 }
 
 const parseAgentTab = (value: string | null): AgentTab | undefined => {
@@ -232,8 +255,14 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.qualityOutcomes && state.qualityOutcomes.length > 0) {
       normalized.qualityOutcomes = [...state.qualityOutcomes]
     }
+    if (state.qualityStatuses && state.qualityStatuses.length > 0) {
+      normalized.qualityStatuses = [...state.qualityStatuses]
+    }
     if (state.qualityFeedback && state.qualityFeedback.length > 0) {
       normalized.qualityFeedback = [...state.qualityFeedback]
+    }
+    if (state.qualityLatency) {
+      normalized.qualityLatency = state.qualityLatency
     }
     if (state.qualityHasComment) {
       normalized.qualityHasComment = true
@@ -321,8 +350,14 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     if (normalized.qualityOutcomes && normalized.qualityOutcomes.length > 0) {
       searchParams.set('outcomes', normalized.qualityOutcomes.join(','))
     }
+    if (normalized.qualityStatuses && normalized.qualityStatuses.length > 0) {
+      searchParams.set('statuses', normalized.qualityStatuses.join(','))
+    }
     if (normalized.qualityFeedback && normalized.qualityFeedback.length > 0) {
       searchParams.set('feedback', normalized.qualityFeedback.join(','))
+    }
+    if (normalized.qualityLatency) {
+      searchParams.set('latency', normalized.qualityLatency)
     }
     if (normalized.qualityHasComment) {
       searchParams.set('hasComment', 'true')
@@ -543,7 +578,9 @@ export const parseDashboardRoute = (
       workspaceId,
       qualityPage: parsePositiveInt(searchParams?.get('page') ?? null),
       qualityOutcomes: parseQualityOutcomes(searchParams?.get('outcomes') ?? null),
+      qualityStatuses: parseQualityStatuses(searchParams?.get('statuses') ?? null),
       qualityFeedback: parseQualityFeedback(searchParams?.get('feedback') ?? null),
+      qualityLatency: parseQualityLatency(searchParams?.get('latency') ?? null),
       qualityHasComment: searchParams?.get('hasComment') === 'true' ? true : undefined,
     })
   }

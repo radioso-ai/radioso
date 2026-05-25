@@ -18,6 +18,8 @@ type TurnRow = QueryResultRow & {
   source_channel: string | null;
   answer_content: string;
   answer_outcome: AssistantTurnOutcome | null;
+  conversation_status: "success" | "failure" | null;
+  total_latency_ms: number | string | null;
   user_question: string | null;
   up_count: string;
   down_count: string;
@@ -70,11 +72,17 @@ export class QualityTurnsService implements QualityTurnsServicePort {
     const filters: string[] = ["m.workspace_id = $1", "m.role = 'assistant'"];
 
     const outcomes = input.outcomes ?? [];
+    const statuses = input.statuses ?? [];
     const feedbackValues = input.feedbackValues ?? [];
 
     if (outcomes.length > 0) {
       params.push(outcomes);
       filters.push(`m.answer_outcome = ANY($${params.length}::text[])`);
+    }
+
+    if (statuses.length > 0) {
+      params.push(statuses);
+      filters.push(`turn_event.event_status = ANY($${params.length}::text[])`);
     }
 
     if (feedbackValues.length > 0) {
@@ -98,18 +106,14 @@ export class QualityTurnsService implements QualityTurnsServicePort {
       );
     }
 
-    // No explicit outcome / feedback filter: surface assistant turns that are natural
-    // candidates for review — non-grounded outcomes or any feedback at all.
-    if (outcomes.length === 0 && feedbackValues.length === 0 && !input.hasComment) {
-      filters.push(
-        `(
-           m.answer_outcome IS DISTINCT FROM 'grounded_success'
-           OR EXISTS (
-             SELECT 1 FROM assistant_answer_feedback f
-             WHERE f.assistant_message_id = m.id
-           )
-         )`,
-      );
+    if (input.minTotalLatencyMs !== undefined) {
+      params.push(input.minTotalLatencyMs);
+      filters.push(`turn_event.total_latency_ms >= $${params.length}`);
+    }
+
+    if (input.maxTotalLatencyMs !== undefined) {
+      params.push(input.maxTotalLatencyMs);
+      filters.push(`turn_event.total_latency_ms <= $${params.length}`);
     }
 
     if (input.agentId) {
@@ -138,6 +142,21 @@ export class QualityTurnsService implements QualityTurnsServicePort {
       `SELECT COUNT(*)::text AS total
        FROM messages m
        JOIN conversations c ON c.id = m.conversation_id AND c.workspace_id = m.workspace_id
+       LEFT JOIN LATERAL (
+         SELECT
+           ae.event_status,
+           CASE
+             WHEN jsonb_typeof(ae.metadata_json #> '{activityTrace,totalDurationMs}') = 'number'
+               THEN ((ae.metadata_json #>> '{activityTrace,totalDurationMs}')::numeric)::int
+             ELSE NULL
+           END AS total_latency_ms
+         FROM audit_events ae
+         WHERE ae.workspace_id = m.workspace_id
+           AND ae.event_type = 'chat.answer'
+           AND ae.metadata_json ->> 'assistantMessageId' = m.id::text
+         ORDER BY ae.created_at DESC, ae.id DESC
+         LIMIT 1
+       ) turn_event ON TRUE
        WHERE ${whereClause}`,
       params,
     );
@@ -157,6 +176,8 @@ export class QualityTurnsService implements QualityTurnsServicePort {
          c.source_channel,
          m.content AS answer_content,
          m.answer_outcome,
+         turn_event.event_status AS conversation_status,
+         turn_event.total_latency_ms,
          m.created_at,
          (
            SELECT um.content
@@ -180,6 +201,21 @@ export class QualityTurnsService implements QualityTurnsServicePort {
        FROM messages m
        JOIN conversations c ON c.id = m.conversation_id AND c.workspace_id = m.workspace_id
        LEFT JOIN agents a ON a.id = c.agent_id
+       LEFT JOIN LATERAL (
+         SELECT
+           ae.event_status,
+           CASE
+             WHEN jsonb_typeof(ae.metadata_json #> '{activityTrace,totalDurationMs}') = 'number'
+               THEN ((ae.metadata_json #>> '{activityTrace,totalDurationMs}')::numeric)::int
+             ELSE NULL
+           END AS total_latency_ms
+         FROM audit_events ae
+         WHERE ae.workspace_id = m.workspace_id
+           AND ae.event_type = 'chat.answer'
+           AND ae.metadata_json ->> 'assistantMessageId' = m.id::text
+         ORDER BY ae.created_at DESC, ae.id DESC
+         LIMIT 1
+       ) turn_event ON TRUE
        WHERE ${whereClause}
        ORDER BY m.created_at DESC, m.id DESC
        LIMIT $${limitParamIndex}
@@ -198,6 +234,8 @@ export class QualityTurnsService implements QualityTurnsServicePort {
       question: buildPreview(row.user_question) || null,
       answerPreview: buildPreview(row.answer_content),
       answerOutcome: row.answer_outcome,
+      conversationStatus: row.conversation_status,
+      totalLatencyMs: row.total_latency_ms === null ? null : Number(row.total_latency_ms),
       createdAt: serializeDate(row.created_at),
       feedback: {
         upCount: Number(row.up_count),

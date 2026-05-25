@@ -2,6 +2,7 @@ import type { AssistantTurnOutcome } from "../../chat/contracts/index.js";
 
 export type { AssistantTurnOutcome } from "../../chat/contracts/index.js";
 
+export type QualityConversationStatus = "success" | "failure";
 export type QualityFeedbackValue = "up" | "down";
 
 export interface QualityFeedbackSummary {
@@ -23,14 +24,19 @@ export interface LowQualityTurn {
   question: string | null;
   answerPreview: string;
   answerOutcome: AssistantTurnOutcome | null;
+  conversationStatus: QualityConversationStatus | null;
+  totalLatencyMs: number | null;
   createdAt: string;
   feedback: QualityFeedbackSummary;
 }
 
 export interface ListLowQualityTurnsInput {
   outcomes?: AssistantTurnOutcome[];
+  statuses?: QualityConversationStatus[];
   feedbackValues?: QualityFeedbackValue[];
   hasComment?: boolean;
+  minTotalLatencyMs?: number;
+  maxTotalLatencyMs?: number;
   agentId?: string;
   channel?: string;
   from?: string;

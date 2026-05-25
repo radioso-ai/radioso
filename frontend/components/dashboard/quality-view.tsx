@@ -30,14 +30,16 @@ import {
 import {
   qualityApi,
   type AnswerOutcome,
-  type FeedbackValue,
+  type QualityConversationStatus,
   type LowQualityTurn,
 } from '@/lib/api'
 import {
   buildDashboardHref,
   type DashboardRouteState,
   type QualityFeedbackFilter,
+  type QualityLatencyFilter,
   type QualityOutcomeFilter,
+  type QualityStatusFilter,
 } from '@/lib/dashboard-routes'
 import { useWorkspace } from '@/lib/workspace-context'
 
@@ -54,20 +56,32 @@ interface OutcomeMeta {
   tone: 'neutral' | 'warning' | 'info'
 }
 
+interface StatusMeta {
+  label: string
+  description: string
+  tone: 'neutral' | 'warning'
+}
+
+interface LatencyBucketMeta {
+  label: string
+  minTotalLatencyMs?: number
+  maxTotalLatencyMs?: number
+}
+
 const OUTCOME_META: Record<AnswerOutcome, OutcomeMeta> = {
   grounded_success: {
     label: 'Answered from sources',
-    description: 'The assistant cited at least one document to answer the user.',
+    description: 'The assistant used at least one source document.',
     tone: 'neutral',
   },
   no_context_refusal: {
     label: "Couldn't find an answer",
-    description: 'The assistant searched but found no relevant documents and declined to answer.',
+    description: 'Retrieval found no usable source, so the assistant declined to answer.',
     tone: 'warning',
   },
   non_retrieval_response: {
     label: 'Conversational reply',
-    description: "Small talk or assistant-identity questions — the assistant didn't consult documents.",
+    description: 'No documents were needed for small talk or assistant identity questions.',
     tone: 'info',
   },
 }
@@ -83,6 +97,44 @@ const FEEDBACK_LABEL: Record<QualityFeedbackFilter, string> = {
   up: 'Thumbs up',
 }
 
+const STATUS_META: Record<QualityConversationStatus, StatusMeta> = {
+  success: {
+    label: 'Completed',
+    description: 'The assistant produced an answer.',
+    tone: 'neutral',
+  },
+  failure: {
+    label: 'Failed',
+    description: 'The assistant turn ended in an error.',
+    tone: 'warning',
+  },
+}
+
+const STATUS_FILTERS: QualityStatusFilter[] = ['success', 'failure']
+
+const LATENCY_BUCKETS: Record<QualityLatencyFilter, LatencyBucketMeta> = {
+  lt_2s: {
+    label: 'Under 2 seconds',
+    maxTotalLatencyMs: 1999,
+  },
+  '2s_5s': {
+    label: '2-5 seconds',
+    minTotalLatencyMs: 2000,
+    maxTotalLatencyMs: 4999,
+  },
+  '5s_10s': {
+    label: '5-10 seconds',
+    minTotalLatencyMs: 5000,
+    maxTotalLatencyMs: 9999,
+  },
+  gte_10s: {
+    label: '10 seconds or more',
+    minTotalLatencyMs: 10000,
+  },
+}
+
+const LATENCY_FILTERS: QualityLatencyFilter[] = ['lt_2s', '2s_5s', '5s_10s', 'gte_10s']
+
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short',
@@ -91,6 +143,17 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 const formatTimestamp = (iso: string) => {
   const date = new Date(iso)
   return Number.isNaN(date.getTime()) ? iso : dateFormatter.format(date)
+}
+
+const formatDuration = (durationMs: number | null): string => {
+  if (durationMs === null) {
+    return '—'
+  }
+  if (durationMs < 1000) {
+    return `${durationMs} ms`
+  }
+  const seconds = durationMs / 1000
+  return `${seconds >= 10 ? Math.round(seconds) : seconds.toFixed(1)} s`
 }
 
 const formatPageSummary = ({
@@ -136,6 +199,11 @@ const outcomeBadgeClass = (tone: OutcomeMeta['tone']): string | undefined => {
   }
 }
 
+const statusBadgeClass = (tone: StatusMeta['tone']): string | undefined =>
+  tone === 'warning'
+    ? 'border-destructive/40 bg-destructive/10 text-destructive'
+    : undefined
+
 export function QualityView({ accountId, routeState }: QualityViewProps) {
   const router = useRouter()
   const { activeWorkspaceId } = useWorkspace()
@@ -144,7 +212,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   // Serialized filter keys: routeState supplies a fresh array every render
   // (`?? []` makes the reference unstable), so we depend on stable strings.
   const outcomesKey = (routeState.qualityOutcomes ?? []).join(',')
+  const statusesKey = (routeState.qualityStatuses ?? []).join(',')
   const feedbackKey = (routeState.qualityFeedback ?? []).join(',')
+  const latency = routeState.qualityLatency
 
   const [items, setItems] = useState<LowQualityTurn[]>([])
   const [total, setTotal] = useState(0)
@@ -165,6 +235,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const outcomes: QualityOutcomeFilter[] = outcomesKey
     ? (outcomesKey.split(',') as QualityOutcomeFilter[])
     : []
+  const statuses: QualityStatusFilter[] = statusesKey
+    ? (statusesKey.split(',') as QualityStatusFilter[])
+    : []
   const feedback: QualityFeedbackFilter[] = feedbackKey
     ? (feedbackKey.split(',') as QualityFeedbackFilter[])
     : []
@@ -172,9 +245,19 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const qualityFilters = useMemo<ReadonlyArray<FilterDefinition>>(
     () => [
       {
+        id: 'status',
+        kind: 'multi-select',
+        label: 'Conversation status',
+        options: STATUS_FILTERS.map((value) => ({
+          value,
+          label: STATUS_META[value].label,
+          description: STATUS_META[value].description,
+        })),
+      },
+      {
         id: 'outcome',
         kind: 'multi-select',
-        label: 'Outcome',
+        label: 'Answer type',
         options: OUTCOME_FILTERS.map((value) => ({
           value,
           label: OUTCOME_META[value].label,
@@ -184,16 +267,26 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       {
         id: 'feedback',
         kind: 'multi-select',
-        label: 'Feedback',
+        label: 'User rating',
         options: (Object.keys(FEEDBACK_LABEL) as QualityFeedbackFilter[]).map((value) => ({
           value,
           label: FEEDBACK_LABEL[value],
         })),
       },
       {
+        id: 'latency',
+        kind: 'single-select',
+        label: 'Total latency',
+        placeholder: 'Any latency',
+        options: LATENCY_FILTERS.map((value) => ({
+          value,
+          label: LATENCY_BUCKETS[value].label,
+        })),
+      },
+      {
         id: 'hasComment',
         kind: 'boolean',
-        label: 'With comment',
+        label: 'Has written feedback',
       },
     ],
     [],
@@ -201,6 +294,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
 
   const filterValues = useMemo<FilterValues>(() => {
     const next: FilterValues = {}
+    if (statuses.length > 0) {
+      next.status = { kind: 'multi-select', values: statuses }
+    }
     if (outcomes.length > 0) {
       next.outcome = { kind: 'multi-select', values: outcomes }
     }
@@ -210,10 +306,13 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     if (hasComment) {
       next.hasComment = { kind: 'boolean', value: true }
     }
+    if (latency) {
+      next.latency = { kind: 'single-select', value: latency }
+    }
     return next
-    // outcomesKey/feedbackKey/hasComment together fully determine these values.
+    // statusesKey/outcomesKey/feedbackKey/hasComment/latency together fully determine these values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outcomesKey, feedbackKey, hasComment])
+  }, [statusesKey, outcomesKey, feedbackKey, hasComment, latency])
 
   const appliedFilterCount = countAppliedFilters(filterValues)
 
@@ -233,9 +332,15 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const applyFilters = useCallback(
     (next: FilterValues) => {
       const outcomeValue = next.outcome
+      const statusValue = next.status
       const feedbackValue = next.feedback
+      const latencyValue = next.latency
       const hasCommentValue = next.hasComment
       navigateWith({
+        qualityStatuses:
+          statusValue?.kind === 'multi-select' && statusValue.values.length > 0
+            ? (statusValue.values as QualityStatusFilter[])
+            : undefined,
         qualityOutcomes:
           outcomeValue?.kind === 'multi-select' && outcomeValue.values.length > 0
             ? (outcomeValue.values as QualityOutcomeFilter[])
@@ -243,6 +348,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         qualityFeedback:
           feedbackValue?.kind === 'multi-select' && feedbackValue.values.length > 0
             ? (feedbackValue.values as QualityFeedbackFilter[])
+            : undefined,
+        qualityLatency:
+          latencyValue?.kind === 'single-select'
+            ? (latencyValue.value as QualityLatencyFilter)
             : undefined,
         qualityHasComment: hasCommentValue?.kind === 'boolean' ? true : undefined,
         qualityPage: undefined,
@@ -265,45 +374,55 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
 
   useEffect(() => {
     let cancelled = false
-    setIsFetching(true)
-    setError(null)
 
     const outcomesList = outcomesKey ? (outcomesKey.split(',') as QualityOutcomeFilter[]) : undefined
+    const statusesList = statusesKey ? (statusesKey.split(',') as QualityStatusFilter[]) : undefined
     const feedbackList = feedbackKey ? (feedbackKey.split(',') as QualityFeedbackFilter[]) : undefined
+    const latencyBucket = latency ? LATENCY_BUCKETS[latency] : undefined
 
-    void qualityApi
-      .listTurns({
-        outcomes: outcomesList,
-        feedback: feedbackList,
-        hasComment: hasComment || undefined,
-        limit: PAGE_SIZE,
-        offset: (currentPage - 1) * PAGE_SIZE,
-      })
-      .then((page) => {
+    const loadTurns = async () => {
+      try {
+        if (cancelled) {
+          return
+        }
+        setIsFetching(true)
+        setError(null)
+        const page = await qualityApi.listTurns({
+          outcomes: outcomesList,
+          statuses: statusesList,
+          feedback: feedbackList,
+          hasComment: hasComment || undefined,
+          minTotalLatencyMs: latencyBucket?.minTotalLatencyMs,
+          maxTotalLatencyMs: latencyBucket?.maxTotalLatencyMs,
+          limit: PAGE_SIZE,
+          offset: (currentPage - 1) * PAGE_SIZE,
+        })
+
         if (cancelled) {
           return
         }
         setItems(page.items)
         setTotal(page.total)
         setTotalPages(page.totalPages)
-      })
-      .catch((caught: unknown) => {
+      } catch (caught) {
         if (cancelled) {
           return
         }
-        setError(caught instanceof Error ? caught.message : 'Failed to load quality turns')
-      })
-      .finally(() => {
+        setError(caught instanceof Error ? caught.message : 'Failed to load assistant answers')
+      } finally {
         if (!cancelled) {
           setIsFetching(false)
           setHasLoadedOnce(true)
         }
-      })
+      }
+    }
+
+    void loadTurns()
 
     return () => {
       cancelled = true
     }
-  }, [currentPage, feedbackKey, hasComment, outcomesKey])
+  }, [currentPage, feedbackKey, hasComment, latency, outcomesKey, statusesKey])
 
   const openConversation = (turn: LowQualityTurn) =>
     setOpenedConversation({
@@ -311,7 +430,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       assistantMessageId: turn.assistantMessageId,
     })
 
-  const PaginationBar = () => (
+  const renderPagination = () => (
     <DashboardPagination
       summary={formatPageSummary({
         currentPage,
@@ -361,8 +480,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   return (
     <>
     <DashboardPage
-      title="Quality"
-      description="Assistant turns worth a second look — refusals, conversational fallbacks, and turns with reader feedback. Use this to find content gaps and reasoning failures."
+      title="Assistant answers to review"
+      description="Browse assistant answers by conversation status, answer type, user feedback, and response time."
       titleAccessory={<MessageSquareWarning className="h-4 w-4 text-muted-foreground" />}
       actions={filterButton}
       headerContent={headerPills}
@@ -379,22 +498,24 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-          {outcomes.length === 0 && feedback.length === 0 && !hasComment
-            ? 'No quality issues to review. As your assistant handles more traffic, refusals and feedback will show up here.'
-            : 'No turns match these filters. Try clearing one of them.'}
+          {statuses.length === 0 && outcomes.length === 0 && feedback.length === 0 && !hasComment && !latency
+            ? 'No assistant answers are available yet. Answers will show up here as your assistant handles traffic.'
+            : 'No assistant answers match these filters. Try clearing one of them.'}
         </div>
       ) : (
         <div
           className={cn('space-y-4 transition-opacity', isFetching && 'opacity-60')}
           aria-busy={isFetching}
         >
-          <PaginationBar />
+          {renderPagination()}
 
-          <DashboardTable aria-label="Quality turns" minWidth="min-w-[960px]">
+          <DashboardTable aria-label="Assistant answers to review" minWidth="min-w-[1120px]">
             <DashboardTableHead>
               <DashboardTableHeader className="w-36">Agent</DashboardTableHeader>
               <DashboardTableHeader>Question &amp; answer</DashboardTableHeader>
-              <DashboardTableHeader className="w-52">Outcome</DashboardTableHeader>
+              <DashboardTableHeader className="w-52">Answer type</DashboardTableHeader>
+              <DashboardTableHeader className="w-32">Status</DashboardTableHeader>
+              <DashboardTableHeader className="w-28">Latency</DashboardTableHeader>
               <DashboardTableHeader className="w-32">Feedback</DashboardTableHeader>
               <DashboardTableHeader className="w-44">When</DashboardTableHeader>
               <DashboardTableHeader className="w-24" />
@@ -402,6 +523,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
             <DashboardTableBody>
               {items.map((turn) => {
                 const meta = turn.answerOutcome ? OUTCOME_META[turn.answerOutcome] : null
+                const statusMeta = turn.conversationStatus ? STATUS_META[turn.conversationStatus] : null
                 const isExpanded = expandedMessageId === turn.assistantMessageId
                 const hasComments = turn.feedback.comments.length > 0
                 return (
@@ -435,12 +557,31 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                           <Badge
                             variant={meta.tone === 'neutral' ? 'secondary' : 'outline'}
                             className={cn('whitespace-nowrap', outcomeBadgeClass(meta.tone))}
+                            title={meta.description}
+                            aria-label={`${meta.label}: ${meta.description}`}
                           >
                             {meta.label}
                           </Badge>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
+                      </DashboardTableCell>
+                      <DashboardTableCell className="w-32">
+                        {statusMeta ? (
+                          <Badge
+                            variant={statusMeta.tone === 'neutral' ? 'secondary' : 'outline'}
+                            className={cn('whitespace-nowrap', statusBadgeClass(statusMeta.tone))}
+                            title={statusMeta.description}
+                            aria-label={`${statusMeta.label}: ${statusMeta.description}`}
+                          >
+                            {statusMeta.label}
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </DashboardTableCell>
+                      <DashboardTableCell className="w-28 text-xs text-muted-foreground">
+                        {formatDuration(turn.totalLatencyMs)}
                       </DashboardTableCell>
                       <DashboardTableCell className="w-32">
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -489,7 +630,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                             variant="outline"
                             onClick={() => openConversation(turn)}
                           >
-                            Open
+                            Review
                           </Button>
                         </div>
                       </DashboardTableCell>
@@ -519,6 +660,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                         </DashboardTableCell>
                         <DashboardTableCell className="w-52">{null}</DashboardTableCell>
                         <DashboardTableCell className="w-32">{null}</DashboardTableCell>
+                        <DashboardTableCell className="w-28">{null}</DashboardTableCell>
+                        <DashboardTableCell className="w-32">{null}</DashboardTableCell>
                         <DashboardTableCell className="w-44">{null}</DashboardTableCell>
                         <DashboardTableCell className="w-24">{null}</DashboardTableCell>
                       </DashboardTableRow>
@@ -529,7 +672,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
             </DashboardTableBody>
           </DashboardTable>
 
-          <PaginationBar />
+          {renderPagination()}
         </div>
       )}
     </DashboardPage>
@@ -538,8 +681,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       onOpenChange={setIsFilterDialogOpen}
       filters={qualityFilters}
       values={filterValues}
-      title="Filter quality turns"
-      description="Narrow the list to the turns you want to review."
+      title="Filter assistant answers"
+      description="Choose the statuses, answer types, feedback, and latency band you want to inspect."
       onApply={applyFilters}
     />
     <ConversationDrawer

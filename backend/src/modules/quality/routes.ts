@@ -45,6 +45,7 @@ const csvOrArray = <T extends z.ZodTypeAny>(item: T) =>
 
 const turnsQuerySchema = z.object({
   outcomes: csvOrArray(z.enum(["grounded_success", "no_context_refusal", "non_retrieval_response"])),
+  statuses: csvOrArray(z.enum(["success", "failure"])),
   feedback: csvOrArray(z.enum(["up", "down"])),
   hasComment: z.preprocess((value) => {
     if (value === undefined) return undefined;
@@ -57,11 +58,13 @@ const turnsQuerySchema = z.object({
   channel: z.string().trim().min(1).max(64).optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
+  minTotalLatencyMs: z.coerce.number().int().min(0).optional(),
+  maxTotalLatencyMs: z.coerce.number().int().min(0).optional(),
   offset: z.coerce.number().int().min(0).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
-const parseRequest = <T>(schema: z.ZodType<T>, value: unknown): T => {
+const parseRequest = <T extends z.ZodTypeAny>(schema: T, value: unknown): z.infer<T> => {
   const parsed = schema.safeParse(value);
   if (parsed.success) {
     return parsed.data;
@@ -82,8 +85,11 @@ export const createQualityRoutes = (
       const { workspaceId } = res.locals as { workspaceId: string };
       const page = await service.listLowQualityTurns(workspaceId, {
         outcomes: query.outcomes,
+        statuses: query.statuses,
         feedbackValues: query.feedback,
         hasComment: query.hasComment,
+        minTotalLatencyMs: query.minTotalLatencyMs,
+        maxTotalLatencyMs: query.maxTotalLatencyMs,
         agentId: query.agentId,
         channel: query.channel,
         from: query.from,

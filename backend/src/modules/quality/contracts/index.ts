@@ -1,0 +1,68 @@
+export type QualitySkillStatus =
+  | "active"
+  | "paused"
+  | "awaiting_confirmation"
+  | "awaiting_tool"
+  | "completed"
+  | "cancelled"
+  | "expired"
+  | "failed";
+export type QualityFeedbackValue = "up" | "down";
+
+export interface QualityActionFilter {
+  skillName: string;
+  outcome: string;
+}
+
+export interface QualityFeedbackSummary {
+  upCount: number;
+  downCount: number;
+  comments: Array<{
+    value: QualityFeedbackValue;
+    comment: string;
+    createdAt: string;
+  }>;
+}
+
+export interface LowQualityTurn {
+  assistantMessageId: string;
+  conversationId: string;
+  agentId: string | null;
+  agentName: string | null;
+  channel: string | null;
+  question: string | null;
+  answerPreview: string;
+  skillName: string | null;
+  skillOutcome: string | null;
+  skillStatus: string | null;
+  totalLatencyMs: number | null;
+  createdAt: string;
+  feedback: QualityFeedbackSummary;
+}
+
+export interface ListLowQualityTurnsInput {
+  actions?: QualityActionFilter[];
+  statuses?: QualitySkillStatus[];
+  feedbackValues?: QualityFeedbackValue[];
+  hasComment?: boolean;
+  minTotalLatencyMs?: number;
+  maxTotalLatencyMs?: number;
+  agentId?: string;
+  channel?: string;
+  from?: string;
+  to?: string;
+  offset?: number;
+  limit: number;
+}
+
+export interface LowQualityTurnsPage {
+  items: LowQualityTurn[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface QualityTurnsServicePort {
+  listLowQualityTurns(workspaceId: string, input: ListLowQualityTurnsInput): Promise<LowQualityTurnsPage>;
+}

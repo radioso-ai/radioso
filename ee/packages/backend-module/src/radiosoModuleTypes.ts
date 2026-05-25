@@ -171,6 +171,7 @@ export interface SkillDefinition {
     description?: string;
     status: SkillTurnStatus;
     groundedAnswer?: boolean;
+    tone?: "positive" | "neutral" | "info" | "warning" | "muted";
   }>;
 }
 

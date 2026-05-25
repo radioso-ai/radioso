@@ -391,11 +391,13 @@ const isNotFoundError = (error: unknown) =>
 export function useHistoryDetailState({
   selectedItem,
   setSelectedItem,
-  pushHistoryRoute,
+  onItemNotFound,
+  anchorMessageId,
 }: {
   selectedItem: SelectedHistoryItem
   setSelectedItem: (item: SelectedHistoryItem) => void
-  pushHistoryRoute: PushHistoryRoute
+  onItemNotFound?: () => void
+  anchorMessageId?: string | null
 }) {
   const [conversationDetail, setConversationDetail] = useState<ChatConversationDetail | null>(null)
   const [searchDetail, setSearchDetail] = useState<DocumentSearchResponse | null>(null)
@@ -439,7 +441,11 @@ export function useHistoryDetailState({
             return
           }
           setConversationDetail(detail)
+          const anchoredMessage = anchorMessageId
+            ? detail.messages.find((message) => message.id === anchorMessageId && message.role === 'assistant') ?? null
+            : null
           const traceBearingMessage =
+            anchoredMessage ??
             [...detail.messages]
               .reverse()
               .find((message) => message.role === 'assistant' && message.debug) ?? null
@@ -495,7 +501,7 @@ export function useHistoryDetailState({
         )
         if (isNotFoundError(error)) {
           setSelectedItem(null)
-          pushHistoryRoute({ selectedItem: null })
+          onItemNotFound?.()
         }
       } finally {
         if (isActive) {
@@ -509,7 +515,7 @@ export function useHistoryDetailState({
     return () => {
       isActive = false
     }
-  }, [pushHistoryRoute, selectedItem, setSelectedItem])
+  }, [anchorMessageId, onItemNotFound, selectedItem, setSelectedItem])
 
   const assistantMessages = useMemo(
     () => conversationDetail?.messages.filter((message) => message.role === 'assistant') ?? [],

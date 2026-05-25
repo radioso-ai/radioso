@@ -18,6 +18,7 @@ import { registerSkillsPaths } from "./paths/skillsPaths.js";
 import { registerDocumentsPaths } from "./paths/documentsPaths.js";
 import { registerHistoryPaths } from "./paths/historyPaths.js";
 import { registerConnectorsPaths } from "./paths/connectorsPaths.js";
+import { registerQualityPaths } from "./paths/qualityPaths.js";
 
 export const registerOpenApiPaths = (
   registry: OpenAPIRegistry,
@@ -40,5 +41,6 @@ export const registerOpenApiPaths = (
   registerAssistantFeedbackPaths(registry, schemas, security);
   registerHistoryPaths(registry, schemas, security);
   registerConnectorsPaths(registry, schemas, security);
+  registerQualityPaths(registry, schemas, security);
   registerAssistantPublicChatPaths(registry, schemas, security);
 };

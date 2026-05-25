@@ -126,12 +126,22 @@ export const skillOutcomeStatusSchema = z.enum([
 ]);
 export type SkillOutcomeStatus = z.infer<typeof skillOutcomeStatusSchema>;
 
+export const skillOutcomeToneSchema = z.enum([
+  "positive",
+  "neutral",
+  "info",
+  "warning",
+  "muted",
+]);
+export type SkillOutcomeTone = z.infer<typeof skillOutcomeToneSchema>;
+
 export const skillOutcomeDefinitionSchema = z.object({
   name: z.string(),
   displayName: z.string(),
   description: z.string().optional(),
   status: skillOutcomeStatusSchema,
   groundedAnswer: z.boolean().optional(),
+  tone: skillOutcomeToneSchema.optional(),
 });
 export type SkillOutcomeDefinition = z.infer<typeof skillOutcomeDefinitionSchema>;
 

@@ -5779,6 +5779,16 @@
           },
           "groundedAnswer": {
             "type": "boolean"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "neutral",
+              "info",
+              "warning",
+              "muted"
+            ]
           }
         },
         "required": [
@@ -7898,6 +7908,198 @@
         "required": [
           "error",
           "detail"
+        ]
+      },
+      "QualityFeedbackValue": {
+        "type": "string",
+        "enum": [
+          "up",
+          "down"
+        ]
+      },
+      "QualitySkillStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "paused",
+          "awaiting_confirmation",
+          "awaiting_tool",
+          "completed",
+          "cancelled",
+          "expired",
+          "failed"
+        ]
+      },
+      "QualityFeedbackComment": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "$ref": "#/components/schemas/QualityFeedbackValue"
+          },
+          "comment": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "value",
+          "comment",
+          "createdAt"
+        ]
+      },
+      "QualityFeedbackSummary": {
+        "type": "object",
+        "properties": {
+          "upCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "downCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "comments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QualityFeedbackComment"
+            }
+          }
+        },
+        "required": [
+          "upCount",
+          "downCount",
+          "comments"
+        ]
+      },
+      "LowQualityTurn": {
+        "type": "object",
+        "properties": {
+          "assistantMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "question": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "answerPreview": {
+            "type": "string"
+          },
+          "skillName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "skillOutcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "skillStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QualitySkillStatus"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "totalLatencyMs": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "feedback": {
+            "$ref": "#/components/schemas/QualityFeedbackSummary"
+          }
+        },
+        "required": [
+          "assistantMessageId",
+          "conversationId",
+          "agentId",
+          "agentName",
+          "channel",
+          "question",
+          "answerPreview",
+          "skillName",
+          "skillOutcome",
+          "skillStatus",
+          "totalLatencyMs",
+          "createdAt",
+          "feedback"
+        ]
+      },
+      "LowQualityTurnsPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LowQualityTurn"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "totalPages": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize",
+          "totalPages"
         ]
       },
       "AssistantChatSseStream": {
@@ -13584,6 +13786,189 @@
                   "required": [
                     "error"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quality/turns": {
+      "get": {
+        "tags": [
+          "Quality"
+        ],
+        "summary": "List low-quality assistant turns",
+        "description": "Returns assistant turns for the dashboard's quality review surface. Admin/owner only (requires the `workspace.quality.read` permission). Filters apply to skill action, skill status, user feedback, latency, agent, channel, and time range.",
+        "operationId": "listLowQualityTurns",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated `skillName:outcome` tuples, e.g. `retrieval.answer:no_context`."
+            },
+            "required": false,
+            "description": "Comma-separated `skillName:outcome` tuples, e.g. `retrieval.answer:no_context`.",
+            "name": "actions",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated `QualitySkillStatus` values."
+            },
+            "required": false,
+            "description": "Comma-separated `QualitySkillStatus` values.",
+            "name": "statuses",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated `QualityFeedbackValue` values (`up`, `down`)."
+            },
+            "required": false,
+            "description": "Comma-separated `QualityFeedbackValue` values (`up`, `down`).",
+            "name": "feedback",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "required": false,
+            "name": "hasComment",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "required": false,
+            "name": "channel",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "required": false,
+            "name": "minTotalLatencyMs",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "required": false,
+            "name": "maxTotalLatencyMs",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of low-quality assistant turns",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LowQualityTurnsPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks the workspace.quality.read permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

@@ -41,6 +41,7 @@ import {
 import { createAnswerFeedbackApplicationModule } from "./builtIn/answerFeedbackModule.js";
 import { createWebsiteEmbedApplicationModule } from "./builtIn/websiteEmbedModule.js";
 import { createAgentWizardApplicationModule } from "./builtIn/agentWizardModule.js";
+import { createQualityApplicationModule } from "./builtIn/qualityModule.js";
 import {
   createDefaultSkillCatalogRegistry,
   type SkillCatalogRegistry,
@@ -97,6 +98,7 @@ export const createDefaultApplicationComposition = (options: {
     createAnswerFeedbackApplicationModule(),
     createWebsiteEmbedApplicationModule({ widgetOrigin: options.widgetOrigin }),
     createAgentWizardApplicationModule(),
+    createQualityApplicationModule(),
     ...(options.modules ?? []),
   ]);
 

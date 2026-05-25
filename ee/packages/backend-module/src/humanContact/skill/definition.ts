@@ -76,18 +76,21 @@ export const humanContactRequestSkillDefinition: SkillDefinition = {
       displayName: "Sent",
       description: "The contact handoff was accepted for delivery.",
       status: "completed",
+      tone: "positive",
     },
     {
       name: "failed",
       displayName: "Failed",
       description: "The contact handoff could not be submitted.",
       status: "failed",
+      tone: "warning",
     },
     {
       name: "cancelled",
       displayName: "Cancelled",
       description: "The contact handoff was cancelled before submission.",
       status: "cancelled",
+      tone: "muted",
     },
   ],
   steps: [

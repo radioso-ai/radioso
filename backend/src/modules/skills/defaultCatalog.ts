@@ -44,6 +44,7 @@ export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
         displayName: "Conversational response",
         description: "The assistant answered without invoking a skill-specific action.",
         status: "completed",
+        tone: "info",
       },
     ],
   },

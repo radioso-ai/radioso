@@ -85,4 +85,34 @@ describe("ErrorReportingService", () => {
       "error_sink_failed",
     );
   });
+
+  it("preserves caller-provided sanitized error class and stack", async () => {
+    const sink: ErrorSink = {
+      record: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new ErrorReportingService({
+      enabled: true,
+      environment: "test",
+      logger: createLogger() as any,
+      service: "radioso-api",
+      sinks: [sink],
+    });
+
+    const error = await service.report({
+      errorType: "frontend.react.unhandled",
+      errorClass: "TypeError",
+      message: "Client render failed",
+      stack: "TypeError: Client render failed\n    at Dashboard (/w/[workspaceKey]/chat:1:2)",
+    });
+
+    expect(error).toMatchObject({
+      errorClass: "TypeError",
+      message: "Client render failed",
+      stack: "TypeError: Client render failed\n    at Dashboard (/w/[workspaceKey]/chat:1:2)",
+    });
+    expect(sink.record).toHaveBeenCalledWith(expect.objectContaining({
+      errorClass: "TypeError",
+      stack: expect.stringContaining("/w/[workspaceKey]/chat"),
+    }));
+  });
 });

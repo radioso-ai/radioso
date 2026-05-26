@@ -54,6 +54,7 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
     initializeSession,
     sendMessage,
     startNewChat,
+    conversationId,
   } = useChatSession(chatSessionKey, agentId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [showCitations, setShowCitations] = useState<boolean>(() => {
@@ -295,6 +296,7 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
               onAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleAnswerFeedback : undefined}
               onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
               showCitations={showCitations}
+              conversationId={conversationId}
             />
             <div ref={messagesEndRef} />
           </div>

@@ -9,7 +9,10 @@ export class RetrievalContextStageService implements RetrievalContextStageContra
   ) {}
 
   async execute(input: RetrievalPipelineRequest) {
-    const settings = await this.retrievalSettingsService.getForWorkspace(input.workspaceId);
+    const baseSettings = await this.retrievalSettingsService.getForWorkspace(input.workspaceId);
+    const settings = input.retrievalSettingsOverride
+      ? { ...baseSettings, ...input.retrievalSettingsOverride, workspaceId: baseSettings.workspaceId }
+      : baseSettings;
     const contextWindow = this.conversationContextService.select({
       history: input.history,
     });

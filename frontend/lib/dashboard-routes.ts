@@ -1,4 +1,4 @@
-export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'settings' | 'usage'
+export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'eval' | 'settings' | 'usage'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
 export type KnowledgeTab = 'documents' | 'sources' | 'ingestion' | 'retrieval'
 export type SettingsTab = 'workspace' | 'providers' | 'users'
@@ -54,6 +54,7 @@ export interface DashboardRouteState {
   qualityFeedback?: QualityFeedbackFilter[]
   qualityLatency?: QualityLatencyFilter
   qualityHasComment?: boolean
+  evalCaseId?: string
   anchor?: string
 }
 
@@ -79,6 +80,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'qualityFeedback',
   'qualityLatency',
   'qualityHasComment',
+  'evalCaseId',
   'anchor',
 ]
 
@@ -305,6 +307,13 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     return normalized
   }
 
+  if (state.section === 'eval') {
+    if (state.evalCaseId) {
+      normalized.evalCaseId = state.evalCaseId
+    }
+    return normalized
+  }
+
   return normalized
 }
 
@@ -445,6 +454,12 @@ export const buildDashboardHref = (
     pathname = normalized.documentId
       ? `${basePath}/knowledge/documents/${normalized.documentId}`
       : `${basePath}/knowledge`
+  }
+
+  if (normalized.section === 'eval') {
+    pathname = normalized.evalCaseId
+      ? `${basePath}/eval/${normalized.evalCaseId}`
+      : `${basePath}/eval`
   }
 
   return `${pathname}${buildQueryString(normalized)}`
@@ -617,6 +632,17 @@ export const parseDashboardRoute = (
       qualityFeedback: parseQualityFeedback(searchParams?.get('feedback') ?? null),
       qualityLatency: parseQualityLatency(searchParams?.get('latency') ?? null),
       qualityHasComment: searchParams?.get('hasComment') === 'true' ? true : undefined,
+    })
+  }
+
+  if (sectionCandidate === 'eval') {
+    if (thirdSegment || rest.length > 0) {
+      return null
+    }
+    return normalizeState({
+      section: 'eval',
+      workspaceId,
+      ...(secondSegment ? { evalCaseId: secondSegment } : {}),
     })
   }
 

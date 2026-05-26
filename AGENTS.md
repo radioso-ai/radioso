@@ -171,6 +171,10 @@ Watch for tactical tells that signal dodged design work: "for now," "the cheap o
 
 Before editing `readme.md`, files under `docs/`, files under `docs-portal/content/`, or settings docs used by the product UI, read `docs/document-writer-prompt.md` and follow it.
 
+For context-efficient feature work, start with `docs/agent-context-workflow.md`, then use `docs/architecture/code-map.md` to find the owning area, public entry points, focused tests, and related specs before reading broad directories.
+
+When changing an area that has a local `README.md` brief, read it before editing and keep it accurate if the change moves ownership, changes public entry points, adds a new recurring test path, or alters the module boundary. If a change makes agents repeatedly rediscover the same context, update the relevant local brief or `docs/architecture/code-map.md` instead of expanding this file.
+
 Update `readme.md` whenever a feature changes Docker run flow, authentication or token setup, common API usage, or important ingestion or retrieval settings operators are likely to tune.
 
 ## Project Layout
@@ -191,6 +195,7 @@ radioso/
 |   `-- ui/                      # shared shadcn primitives (frontend + docs-portal)
 |-- typescript-sdk/              # first-party TypeScript SDK
 |-- docs/                        # product, SDK, MCP, and settings docs
+|   `-- architecture/            # durable architecture maps and boundaries
 |-- docs-portal/                 # public documentation site
 |-- ee/                          # commercial Enterprise Edition packages and license
 |   `-- packages/

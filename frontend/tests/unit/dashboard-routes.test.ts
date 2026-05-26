@@ -245,4 +245,27 @@ describe('dashboard route state', () => {
 
     expect(areDashboardRouteStatesEqual(current, next)).toBe(true)
   })
+
+  it('parses the eval list route', () => {
+    const parsed = parseDashboardRoute(['eval'], new URLSearchParams())
+    expect(parsed).toEqual({ section: 'eval' })
+  })
+
+  it('parses the eval case detail route', () => {
+    const parsed = parseDashboardRoute(['eval', 'case-xyz'], new URLSearchParams())
+    expect(parsed).toEqual({ section: 'eval', evalCaseId: 'case-xyz' })
+  })
+
+  it('builds eval list and detail hrefs with workspace key', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'eval',
+      workspacePublicRouteKey: 'ws-key',
+    })).toBe('/w/ws-key/eval')
+
+    expect(buildDashboardHref('account-1', {
+      section: 'eval',
+      evalCaseId: 'case-xyz',
+      workspacePublicRouteKey: 'ws-key',
+    })).toBe('/w/ws-key/eval/case-xyz')
+  })
 })

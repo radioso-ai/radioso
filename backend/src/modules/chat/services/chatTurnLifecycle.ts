@@ -114,6 +114,26 @@ export class ChatTurnLifecycle {
       skillStatus: skillTurnOutcome.status,
       metadata: {
         skillTurn: skillTurnOutcome,
+        // Per-turn context required for full-fidelity eval snapshot capture.
+        // The eval module reads these fields back when an operator sends the
+        // turn to eval, so the snapshot can carry the actual retrieval
+        // baseline and composed system prompt this answer was generated
+        // from (not just messages_only fidelity).
+        retrievedChunks: input.session.retrieval.contexts.map((ctx, index) => ({
+          chunkId: ctx.chunkId,
+          documentId: ctx.documentId,
+          title: ctx.title,
+          rank: typeof ctx.promptPosition === "number" ? ctx.promptPosition : index,
+          similarity: typeof ctx.similarity === "number" ? ctx.similarity : undefined,
+        })),
+        composedInstructions: input.session.retrieval.systemPrompt,
+        // Best-effort: agent-level chat model override is what we know at
+        // this layer. The workspace default chat model (when no override) is
+        // not threaded through, so future snapshots from those turns will
+        // have a null modelId — acceptable; the eval run record captures the
+        // actual model resolved at run time.
+        modelProvider: input.session.agent.chatModelOverride?.provider,
+        modelId: input.session.agent.chatModelOverride?.model,
       },
     });
     await this.finalizeAssistantTurn({

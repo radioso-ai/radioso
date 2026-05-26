@@ -19,6 +19,7 @@ import { createRetrievalRoutes } from "./retrievalRoutes.js";
 import { createConnectorRoutes } from "../../../modules/connectors/http/connectorRoutes.js";
 import { createPublicChatRoutes } from "./publicChatRoutes.js";
 import { createSkillRoutes } from "./skillRoutes.js";
+import { createEvalRoutes } from "../../../modules/eval/composition.js";
 import { getMcpMountStatus } from "../../server/mcpMount.js";
 
 export const createApiRouter = (dependencies: AppDependencies): Router => {
@@ -56,6 +57,12 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/settings/llm-models", createSettingsLlmModelsRoutes(dependencies));
   router.use("/api/v1/connectors", createConnectorRoutes(dependencies));
   router.use("/api/v1/document", createDocumentRoutes(dependencies));
+  router.use("/api/v1/evals", createEvalRoutes({
+    ...dependencies,
+    snapshotService: dependencies.evalSnapshotService,
+    caseService: dependencies.evalCaseService,
+    runService: dependencies.evalRunService,
+  }));
   router.use("/api/v1/public/chat", createPublicChatRoutes(dependencies));
   for (const mount of dependencies.applicationRouteMounts) {
     router.use(mount.path, mount.createRouter(dependencies));

@@ -35,6 +35,15 @@ import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.j
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { SkillCatalogService } from "../../modules/skills/public.js";
 import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
+import {
+  ChatGatewayLlmJudge,
+  EvalCaseService,
+  EvalRepository,
+  EvalRunService,
+  EvalSnapshotService,
+  EvalUsageMeter,
+  RetrievalPipelineEvalRunner,
+} from "../../modules/eval/composition.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -220,6 +229,31 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
 
   const chatTextGenerationClient = llmRegistry.createChatTextClient();
 
+  const evalRepository = new EvalRepository(infrastructure.database);
+  const evalSnapshotService = new EvalSnapshotService(
+    repositories.conversationRepository,
+    repositories.messageRepository,
+    repositories.agentRepository,
+    settings.retrievalSettingsService,
+    evalRepository,
+  );
+  const evalCaseService = new EvalCaseService(evalRepository);
+  // Both the full-assistant runner and the LLM judge make billable chat
+  // gateway calls. Route them through a shared usage meter so EE-side
+  // metering can ledger eval LLM spend distinctly from production traffic.
+  const evalUsageMeter = new EvalUsageMeter(infrastructure.usageEventRecorder, llmCapabilityResolver);
+  const evalRunService = new EvalRunService(
+    evalRepository,
+    new RetrievalPipelineEvalRunner(
+      retrieval.retrievalPipeline,
+      chat.chatGateway,
+      evalUsageMeter,
+      llmCapabilityResolver,
+      settings.retrievalSettingsService,
+    ),
+    new ChatGatewayLlmJudge(chat.chatGateway, evalUsageMeter),
+  );
+
   return {
     env,
     logger,
@@ -270,6 +304,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     assistantHistoryService: chat.assistantHistoryService,
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,
+    evalSnapshotService,
+    evalCaseService,
+    evalRunService,
     platformSettingsService,
     agentService,
     agentSurfaceExtensions,

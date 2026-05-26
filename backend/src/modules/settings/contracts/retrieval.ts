@@ -30,3 +30,8 @@ export {
   type RetrievalSettingsInput,
   type RetrievalSettingsRecord,
 } from "../domain/retrievalSettings.js";
+
+export {
+  freezeRetrievalSettings,
+  type RetrievalSettingsSnapshot,
+} from "../domain/retrievalSettingsSnapshot.js";

@@ -31,6 +31,7 @@ export interface RetrievalPipelineRequest {
   sourceScope?: RetrievalSourceScope;
   sourceFilter?: RetrievalSourceFilter;
   execution?: RetrievalExecutionMetadata;
+  retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
 }
 
 export interface RetrievalContextStageResult {

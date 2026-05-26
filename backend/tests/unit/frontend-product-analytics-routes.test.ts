@@ -76,6 +76,37 @@ describe("frontend product analytics routes", () => {
     ]);
   });
 
+  it("accepts frontend beacon event envelopes without trusting client timestamps", async () => {
+    const { app, repositories } = createTestApp();
+
+    await request(app)
+      .post("/api/v1/observability/product-analytics")
+      .send({
+        eventName: "frontend.page_view",
+        timestamp: "2026-04-22T10:00:00.000Z",
+        properties: {
+          path: "/w/acme/chat",
+        },
+        source: "frontend",
+      })
+      .expect(202);
+
+    expect(repositories.auditEventRepository.items).toContainEqual(expect.objectContaining({
+      eventType: "product.analytics",
+      eventStatus: "success",
+      metadata: {
+        analytics: expect.objectContaining({
+          eventName: "frontend.page_view",
+          properties: {
+            path: "/w/[workspaceKey]/chat",
+          },
+          source: "frontend",
+          timestamp: expect.not.stringMatching("2026-04-22T10:00:00.000Z"),
+        }),
+      },
+    }));
+  });
+
   it("rejects unsupported frontend analytics event names", async () => {
     const { app } = createTestApp();
 

@@ -7,6 +7,7 @@ import { validateBody } from "../middleware/validate.js";
 
 const frontendProductAnalyticsSchema = z.object({
   eventName: z.literal("frontend.page_view"),
+  timestamp: z.string().datetime().optional(),
   properties: z.object({
     path: z.string().min(1).max(2048),
   }).strict(),

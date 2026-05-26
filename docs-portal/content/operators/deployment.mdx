@@ -57,7 +57,7 @@ The Terraform workflow expects these GitHub environment secrets for each deploye
 
 Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`.
 
-The included staging and live Terraform environments also enable PostHog error reporting with `ERROR_SINKS=audit,posthog`. Set `POSTHOG_API_KEY` for each environment. `POSTHOG_HOST` defaults to the US ingestion host and can be overridden for another PostHog region or a self-hosted instance.
+The included staging and live Terraform environments enable PostHog error reporting with `ERROR_SINKS=audit,posthog`. Staging also sends product analytics to PostHog with `PRODUCT_ANALYTICS_SINKS=audit,posthog`. Set `POSTHOG_API_KEY` for each environment. `POSTHOG_HOST` defaults to the US ingestion host and can be overridden for another PostHog region or a self-hosted instance.
 
 ## Auth email cutover
 

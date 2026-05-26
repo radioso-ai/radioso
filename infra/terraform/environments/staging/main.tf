@@ -73,6 +73,7 @@ module "radioso" {
   mail_from_email                       = var.mail_from_email
   mail_from_name                        = var.mail_from_name
   metrics_auth_token                    = var.metrics_auth_token
+  product_analytics_sinks               = var.product_analytics_sinks
   error_sinks                           = var.error_sinks
   posthog_api_key                       = var.posthog_api_key
   posthog_host                          = var.posthog_host

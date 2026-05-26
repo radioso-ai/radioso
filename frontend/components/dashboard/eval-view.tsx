@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -385,27 +386,11 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
 
         {/* Run history */}
         {caseWithRuns.runs.length > 1 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Run history</CardTitle>
-              <CardDescription>{caseWithRuns.runs.length} runs</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-1 text-sm">
-                {caseWithRuns.runs.map((r) => (
-                  <li key={r.id} className="flex items-center gap-2">
-                    <span className="text-muted-foreground">{formatRelative(r.startedAt)}</span>
-                    <Badge variant="outline" className={statusBadgeClass(r.status)}>
-                      {r.status}
-                    </Badge>
-                    {r.outcomeReason ? (
-                      <span className="truncate text-xs text-muted-foreground">{r.outcomeReason}</span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
+          <RunHistoryCard
+            runs={caseWithRuns.runs.slice(1)}
+            originalAnswer={originalAnswer}
+            titleFor={titleFor}
+          />
         ) : null}
       </div>
     </DashboardPage>
@@ -434,69 +419,143 @@ function LatestRunCard({ run, assertions, originalAnswer, titleFor }: LatestRunC
       </Card>
     )
   }
-  const newAnswer = run.observedOutput.answer
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Latest run</CardTitle>
         <CardDescription>{formatRelative(run.startedAt)}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent>
+        <RunOutputDetail run={run} originalAnswer={originalAnswer} titleFor={titleFor} />
+      </CardContent>
+    </Card>
+  )
+}
+
+interface RunOutputDetailProps {
+  run: EvalRun
+  originalAnswer: string | null
+  titleFor: (id: string) => string | undefined
+  /** When true, omits the top status row (caller renders its own). */
+  hideStatus?: boolean
+}
+
+function RunOutputDetail({ run, originalAnswer, titleFor, hideStatus = false }: RunOutputDetailProps) {
+  const newAnswer = run.observedOutput.answer
+  return (
+    <div className="space-y-5">
+      {hideStatus ? null : (
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className={statusBadgeClass(run.status)}>{run.status}</Badge>
           {run.outcomeReason ? (
             <span className="text-sm text-muted-foreground">{run.outcomeReason}</span>
           ) : null}
         </div>
+      )}
 
-        {newAnswer !== undefined ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Original answer
-              </h4>
-              <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
-                {originalAnswer ? (
-                  <MarkdownContent content={originalAnswer} variant="chat" />
-                ) : (
-                  <span className="text-muted-foreground">(not captured)</span>
-                )}
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                New answer
-              </h4>
-              <div className="rounded-md border border-border bg-background p-3 text-sm">
-                {newAnswer ? (
-                  <MarkdownContent content={newAnswer} variant="chat" />
-                ) : (
-                  <span className="text-muted-foreground">(empty)</span>
-                )}
-              </div>
+      {newAnswer !== undefined ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1.5">
+            <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Original answer
+            </h4>
+            <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+              {originalAnswer ? (
+                <MarkdownContent content={originalAnswer} variant="chat" />
+              ) : (
+                <span className="text-muted-foreground">(not captured)</span>
+              )}
             </div>
           </div>
-        ) : null}
+          <div className="space-y-1.5">
+            <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              New answer
+            </h4>
+            <div className="rounded-md border border-border bg-background p-3 text-sm">
+              {newAnswer ? (
+                <MarkdownContent content={newAnswer} variant="chat" />
+              ) : (
+                <span className="text-muted-foreground">(empty)</span>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
-        {run.assertionVerdicts.length > 0 ? (
-          <div className="-mx-6 divide-y divide-border border-y border-border">
-            {run.assertionVerdicts.map((v, i) => (
-              <div key={i} className="flex items-start justify-between gap-3 px-6 py-3 text-sm">
-                <div className="min-w-0">
-                  <div className="text-foreground">{assertionSummary(v.assertion, titleFor)}</div>
-                  {v.reason ? (
-                    <p className="mt-0.5 text-xs text-muted-foreground">{v.reason}</p>
+      {run.assertionVerdicts.length > 0 ? (
+        <div className="divide-y divide-border border-y border-border">
+          {run.assertionVerdicts.map((v, i) => (
+            <div key={i} className="flex items-start justify-between gap-3 py-3 text-sm">
+              <div className="min-w-0">
+                <div className="text-foreground">{assertionSummary(v.assertion, titleFor)}</div>
+                {v.reason ? (
+                  <p className="mt-0.5 text-xs text-muted-foreground">{v.reason}</p>
+                ) : null}
+              </div>
+              <Badge variant="outline" className={statusBadgeClass(v.status)}>
+                {v.status}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <ChunksList run={run} verdicts={run.assertionVerdicts} titleFor={titleFor} />
+    </div>
+  )
+}
+
+interface RunHistoryCardProps {
+  runs: EvalRun[]
+  originalAnswer: string | null
+  titleFor: (id: string) => string | undefined
+}
+
+function RunHistoryCard({ runs, originalAnswer, titleFor }: RunHistoryCardProps) {
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Run history</CardTitle>
+        <CardDescription>
+          {runs.length} earlier run{runs.length === 1 ? '' : 's'} — click a row to see its answer, verdicts, and retrieved chunks.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="divide-y divide-border border-t border-border">
+          {runs.map((r) => {
+            const isExpanded = expandedId === r.id
+            const Chevron = isExpanded ? ChevronDown : ChevronRight
+            return (
+              <Fragment key={r.id}>
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                  className="flex w-full items-center gap-3 px-6 py-3 text-left text-sm transition-colors hover:bg-accent/40"
+                  aria-expanded={isExpanded}
+                >
+                  <Chevron className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="w-44 shrink-0 text-muted-foreground">{formatRelative(r.startedAt)}</span>
+                  <Badge variant="outline" className={statusBadgeClass(r.status)}>{r.status}</Badge>
+                  {r.outcomeReason ? (
+                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{r.outcomeReason}</span>
                   ) : null}
-                </div>
-                <Badge variant="outline" className={statusBadgeClass(v.status)}>
-                  {v.status}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        <ChunksList run={run} verdicts={run.assertionVerdicts} titleFor={titleFor} />
+                </button>
+                {isExpanded ? (
+                  <div className="border-t border-border bg-muted/10 px-6 py-4">
+                    <RunOutputDetail
+                      run={r}
+                      originalAnswer={originalAnswer}
+                      titleFor={titleFor}
+                      hideStatus
+                    />
+                  </div>
+                ) : null}
+              </Fragment>
+            )
+          })}
+        </div>
       </CardContent>
     </Card>
   )

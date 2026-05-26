@@ -257,6 +257,10 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   const [modelOverride, setModelOverride] = useState<EvalRunModelOverride | null>(null)
   const [workspaceChatModel, setWorkspaceChatModel] = useState<{ provider: LlmProviderName; model: string } | null>(null)
   const [knownModels, setKnownModels] = useState<KnownModelsByProvider | null>(null)
+  // A provider is "available" iff it has a workspace credential configured
+  // OR the env supplies a default key. Used to filter the model picker so
+  // operators can't pick a provider the workspace can't actually call.
+  const [availableProviders, setAvailableProviders] = useState<Set<LlmProviderName>>(new Set())
 
   const load = useCallback(async () => {
     try {
@@ -298,14 +302,18 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
 
   const titleFor = useCallback((id: string) => docTitlesById.get(id), [docTitlesById])
 
-  // Pull workspace chat model + known models for the Advanced model picker.
-  // Falls back silently if the user lacks settings.read permission — the
-  // picker just shows the workspace default as the only option in that case.
+  // Pull workspace chat model + known models + credential availability for
+  // the Advanced model picker. Falls back silently if the user lacks the
+  // settings.read permission — the picker then shows the workspace default
+  // as the only option.
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
-        const models = await llmProvidersApi.getModels()
+        const [models, credentials] = await Promise.all([
+          llmProvidersApi.getModels(),
+          llmProvidersApi.listCredentials().catch(() => null),
+        ])
         if (cancelled) return
         setKnownModels(models.knownModelsByProvider)
         if (models.chat) {
@@ -314,6 +322,22 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
             model: models.chat.model,
           })
         }
+        const available = new Set<LlmProviderName>()
+        if (credentials) {
+          for (const cred of credentials.credentials) {
+            available.add(cred.provider)
+          }
+          for (const [provider, hasEnv] of Object.entries(credentials.envProviderAvailability)) {
+            if (hasEnv) available.add(provider as LlmProviderName)
+          }
+        }
+        // Always include the workspace's configured chat provider — if a run
+        // is hitting it today, eval should be able to too even if creds are
+        // hidden from this user.
+        if (models.chat) {
+          available.add(models.chat.provider as LlmProviderName)
+        }
+        setAvailableProviders(available)
       } catch {
         // Operator can still run; they just can't pick a different model.
       }
@@ -350,16 +374,25 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
 
   // Computed BEFORE the loading early return — must run on every render to
   // keep hook ordering stable.
+  // Only providers the workspace can actually call (credentialed or
+  // env-configured) are surfaced; otherwise the operator could pick a model
+  // that immediately errors at the gateway. The 'openai-compatible' provider
+  // is intentionally omitted from the picker — it serves arbitrary model
+  // identifiers that aren't enumerable, so a free-form input would be
+  // needed; out of scope for the eval picker today.
   const modelOptions: ModelOption[] = useMemo(() => {
     if (!knownModels) return []
     const out: ModelOption[] = []
     for (const [provider, models] of Object.entries(knownModels)) {
+      const providerName = provider as LlmProviderName
+      if (providerName === 'openai-compatible') continue
+      if (!availableProviders.has(providerName)) continue
       for (const model of models) {
-        out.push({ provider: provider as LlmProviderName, model })
+        out.push({ provider: providerName, model })
       }
     }
     return out
-  }, [knownModels])
+  }, [availableProviders, knownModels])
 
   if (!caseWithRuns || !snapshot) {
     return (

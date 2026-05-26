@@ -27,7 +27,7 @@ jobs:
       crawler: ${{ steps.filter.outputs.crawler }}
       ee: ${{ steps.filter.outputs.ee }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           fetch-depth: 0
 
@@ -137,7 +137,7 @@ jobs:
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -163,7 +163,7 @@ jobs:
         run: pnpm run build
 
       - name: Upload backend OpenAPI artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: backend-openapi
           path: |
@@ -177,7 +177,7 @@ jobs:
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -220,7 +220,7 @@ jobs:
     env:
       INTEGRATION_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/radioso_test
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -247,7 +247,7 @@ jobs:
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -301,7 +301,7 @@ jobs:
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -352,7 +352,7 @@ jobs:
       - backend-build-openapi
     if: always() && needs.changes.outputs.docs == 'true' && (needs.changes.outputs.backend_openapi != 'true' || needs['backend-build-openapi'].result == 'success')
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -368,7 +368,7 @@ jobs:
 
       - name: Download backend OpenAPI artifacts
         if: needs.changes.outputs.backend_openapi == 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: backend-openapi
           path: backend
@@ -392,7 +392,7 @@ jobs:
       - backend-build-openapi
     if: always() && needs.changes.outputs.typescript_sdk == 'true' && (needs.changes.outputs.backend_openapi != 'true' || needs['backend-build-openapi'].result == 'success')
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -408,7 +408,7 @@ jobs:
 
       - name: Download backend OpenAPI artifacts
         if: needs.changes.outputs.backend_openapi == 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: backend-openapi
           path: backend
@@ -444,7 +444,7 @@ jobs:
     env:
       RADIOSO_MCP_SMOKE_REDIS_URL: redis://127.0.0.1:6379
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -460,7 +460,7 @@ jobs:
 
       - name: Download backend OpenAPI artifacts
         if: needs.changes.outputs.backend_openapi == 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: backend-openapi
           path: backend
@@ -486,7 +486,7 @@ jobs:
     if: needs.changes.outputs.crawler == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -517,7 +517,7 @@ jobs:
     if: needs.changes.outputs.ee == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm for dependency cache
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate

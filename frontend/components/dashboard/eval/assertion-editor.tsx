@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { ChevronDown, Plus, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -97,12 +97,6 @@ export function AssertionEditor({ caseId, initial, resolveDocumentTitle, onSaved
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
-
-  // If the case is reloaded from server, reset local edits to match.
-  useEffect(() => {
-    setAssertions(initial)
-    setDirty(false)
-  }, [initial])
 
   const updateAt = (index: number, next: EvalAssertion) => {
     setAssertions((prev) => prev.map((a, i) => (i === index ? next : a)))

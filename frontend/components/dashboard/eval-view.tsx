@@ -257,10 +257,11 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   const [modelOverride, setModelOverride] = useState<EvalRunModelOverride | null>(null)
   const [workspaceChatModel, setWorkspaceChatModel] = useState<{ provider: LlmProviderName; model: string } | null>(null)
   const [knownModels, setKnownModels] = useState<KnownModelsByProvider | null>(null)
-  // A provider is "available" iff it has a workspace credential configured
-  // OR the env supplies a default key. Used to filter the model picker so
-  // operators can't pick a provider the workspace can't actually call.
-  const [availableProviders, setAvailableProviders] = useState<Set<LlmProviderName>>(new Set())
+  // null means "haven't looked yet OR the credentials lookup wasn't available
+  // (likely 403)" — in that case the picker falls back to showing every known
+  // provider rather than starving. When a non-null Set is present we strictly
+  // filter to credentialed/env-configured providers.
+  const [availableProviders, setAvailableProviders] = useState<Set<LlmProviderName> | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -303,9 +304,14 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   const titleFor = useCallback((id: string) => docTitlesById.get(id), [docTitlesById])
 
   // Pull workspace chat model + known models + credential availability for
-  // the Advanced model picker. Falls back silently if the user lacks the
-  // settings.read permission — the picker then shows the workspace default
-  // as the only option.
+  // the Advanced model picker.
+  //
+  // Availability is a soft filter, not a hard one: if listCredentials fails
+  // or returns no signal we fall back to showing every known provider, so a
+  // permission gap on /settings/credentials doesn't starve the picker. The
+  // run still resolves the capability at call time, so an unreachable model
+  // would error there with a clear message rather than silently disappear
+  // from the dropdown.
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -322,22 +328,31 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
             model: models.chat.model,
           })
         }
+
+        if (!credentials) {
+          // No availability info — let everything through and let the run
+          // surface the real error if the picked provider is unreachable.
+          setAvailableProviders(null)
+          return
+        }
+
         const available = new Set<LlmProviderName>()
-        if (credentials) {
-          for (const cred of credentials.credentials) {
-            available.add(cred.provider)
-          }
-          for (const [provider, hasEnv] of Object.entries(credentials.envProviderAvailability)) {
-            if (hasEnv) available.add(provider as LlmProviderName)
-          }
+        for (const cred of credentials.credentials) {
+          available.add(cred.provider)
+        }
+        for (const [provider, hasEnv] of Object.entries(credentials.envProviderAvailability)) {
+          if (hasEnv) available.add(provider as LlmProviderName)
         }
         // Always include the workspace's configured chat provider — if a run
-        // is hitting it today, eval should be able to too even if creds are
-        // hidden from this user.
+        // is hitting it today, eval should be able to too.
         if (models.chat) {
           available.add(models.chat.provider as LlmProviderName)
         }
-        setAvailableProviders(available)
+        // If the credentials lookup came back fully empty, surface every
+        // known provider rather than offering nothing. This handles the
+        // case where the operator can read settings but creds returned no
+        // entries (unusual but observed).
+        setAvailableProviders(available.size > 0 ? available : null)
       } catch {
         // Operator can still run; they just can't pick a different model.
       }
@@ -374,19 +389,20 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
 
   // Computed BEFORE the loading early return — must run on every render to
   // keep hook ordering stable.
-  // Only providers the workspace can actually call (credentialed or
-  // env-configured) are surfaced; otherwise the operator could pick a model
-  // that immediately errors at the gateway. The 'openai-compatible' provider
-  // is intentionally omitted from the picker — it serves arbitrary model
-  // identifiers that aren't enumerable, so a free-form input would be
-  // needed; out of scope for the eval picker today.
+  // When availableProviders is a Set we filter to providers the workspace
+  // can actually call (credentialed or env-configured). When it's null we
+  // couldn't determine availability and surface every known provider rather
+  // than starving the picker; an unreachable pick will surface a clear
+  // error at run time instead. 'openai-compatible' is intentionally omitted
+  // because it serves arbitrary self-hosted model ids that aren't
+  // enumerable and would need a free-form input.
   const modelOptions: ModelOption[] = useMemo(() => {
     if (!knownModels) return []
     const out: ModelOption[] = []
     for (const [provider, models] of Object.entries(knownModels)) {
       const providerName = provider as LlmProviderName
       if (providerName === 'openai-compatible') continue
-      if (!availableProviders.has(providerName)) continue
+      if (availableProviders && !availableProviders.has(providerName)) continue
       for (const model of models) {
         out.push({ provider: providerName, model })
       }

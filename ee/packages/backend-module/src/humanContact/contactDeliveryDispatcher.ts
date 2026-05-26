@@ -10,6 +10,7 @@ import type {
 import {
   HUMAN_CONTACT_SKILL_NAME,
   MAX_ATTEMPTS,
+  normalizeEmailRecipients,
   serializeDate,
 } from "./humanContactTypes.js";
 import { buildContactStage, replaceContactTraceStage } from "./contactActivityTrace.js";
@@ -127,29 +128,32 @@ export class HumanContactDeliveryDispatcher {
     };
     const errors: string[] = [];
 
-    if (settings.email_enabled && settings.default_email) {
+    const emailRecipients = normalizeEmailRecipients(settings.default_emails ?? (settings.default_email ? [settings.default_email] : []));
+    if (settings.email_enabled && emailRecipients.length > 0) {
       const [workspace, recentTurns] = await Promise.all([
         this.loadWorkspaceContactInfo(row.workspace_id),
         this.loadRecentTurns(row.workspace_id, row.conversation_id),
       ]);
       const dashboardUrl = this.buildDashboardUrl(workspace, row.id);
-      try {
-        await this.input.mailService.send(renderHumanContactRequestEmail({
-          to: settings.default_email,
-          visitorEmail: email,
-          message,
-          workspace: workspace
-            ? { name: workspace.name, publicRouteKey: workspace.publicRouteKey }
-            : null,
-          sourceChannel: row.source_channel,
-          createdAt: row.created_at,
-          requestId: row.id,
-          workspaceId: row.workspace_id,
-          dashboardUrl,
-          recentTurns,
-        }));
-      } catch (error) {
-        errors.push(`Email: ${error instanceof Error ? error.message : "delivery failed"}`);
+      for (const recipient of emailRecipients) {
+        try {
+          await this.input.mailService.send(renderHumanContactRequestEmail({
+            to: recipient,
+            visitorEmail: email,
+            message,
+            workspace: workspace
+              ? { name: workspace.name, publicRouteKey: workspace.publicRouteKey }
+              : null,
+            sourceChannel: row.source_channel,
+            createdAt: row.created_at,
+            requestId: row.id,
+            workspaceId: row.workspace_id,
+            dashboardUrl,
+            recentTurns,
+          }));
+        } catch (error) {
+          errors.push(`Email[${recipient}]: ${error instanceof Error ? error.message : "delivery failed"}`);
+        }
       }
     }
 
@@ -180,7 +184,8 @@ export class HumanContactDeliveryDispatcher {
         buildContactStage("delivery_dispatch", "delivery_dispatch", "Delivery dispatch", "applied", {
           outputs: {
             status: "delivered",
-            emailDeliveryAttempted: Boolean(settings.email_enabled && settings.default_email),
+            emailDeliveryAttempted: Boolean(settings.email_enabled && emailRecipients.length > 0),
+            emailRecipientCount: emailRecipients.length,
             webhookDeliveryAttempted: Boolean(settings.webhook_enabled && settings.webhook_url),
           },
           metrics: {

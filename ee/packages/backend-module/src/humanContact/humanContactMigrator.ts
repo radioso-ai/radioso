@@ -26,6 +26,7 @@ export const humanContactMigrator: ApplicationDatabaseMigrator = {
         signing_secret TEXT,
         email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
         default_email TEXT,
+        default_emails TEXT[],
         webhook_enabled BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -42,7 +43,15 @@ export const humanContactMigrator: ApplicationDatabaseMigrator = {
       ALTER TABLE ee_contact_settings
         ADD COLUMN IF NOT EXISTS email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS default_email TEXT,
+        ADD COLUMN IF NOT EXISTS default_emails TEXT[],
         ADD COLUMN IF NOT EXISTS webhook_enabled BOOLEAN NOT NULL DEFAULT FALSE
+    `);
+
+    await database.query(`
+      UPDATE ee_contact_settings
+      SET default_emails = ARRAY[default_email]
+      WHERE default_emails IS NULL
+        AND default_email IS NOT NULL
     `);
 
     await database.query(`

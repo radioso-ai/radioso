@@ -2,6 +2,7 @@ import type { AuditService, HumanContactSettingsRow } from "./humanContactTypes.
 import {
   generateSecret,
   mapSettings,
+  normalizeEmailRecipients,
   normalizeOptionalText,
   queryRows,
 } from "./humanContactTypes.js";
@@ -31,6 +32,7 @@ export class HumanContactSettingsService {
     enabled: boolean;
     emailEnabled?: boolean;
     defaultEmail?: string | null;
+    defaultEmails?: string[] | null;
     webhookEnabled?: boolean;
     webhookUrl?: string | null;
     signingSecret?: string | null;
@@ -38,9 +40,16 @@ export class HumanContactSettingsService {
   }) {
     const existing = await this.findSettingsRow(input.workspaceId);
     const emailEnabled = input.emailEnabled ?? existing?.email_enabled ?? false;
-    const defaultEmail = input.defaultEmail !== undefined
-      ? normalizeOptionalText(input.defaultEmail)
-      : existing?.default_email ?? null;
+    const existingDefaultEmails = normalizeEmailRecipients(
+      existing?.default_emails ?? (existing?.default_email ? [existing.default_email] : []),
+    );
+    const defaultEmails = input.defaultEmails !== undefined
+      ? normalizeEmailRecipients(input.defaultEmails)
+      : input.defaultEmail !== undefined
+        ? normalizeEmailRecipients(input.defaultEmail ? [input.defaultEmail] : [])
+        : existingDefaultEmails;
+    // Keep default_email as a legacy mirror for older readers while default_emails owns delivery.
+    const defaultEmail = defaultEmails[0] ?? null;
     const webhookEnabled = input.webhookEnabled ?? existing?.webhook_enabled ?? false;
     const webhookUrl = input.webhookUrl !== undefined
       ? normalizeOptionalText(input.webhookUrl)
@@ -60,22 +69,33 @@ export class HumanContactSettingsService {
          enabled,
          email_enabled,
          default_email,
+         default_emails,
          webhook_enabled,
          webhook_url,
          signing_secret
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (workspace_id)
        DO UPDATE SET
          enabled = EXCLUDED.enabled,
          email_enabled = EXCLUDED.email_enabled,
          default_email = EXCLUDED.default_email,
+         default_emails = EXCLUDED.default_emails,
          webhook_enabled = EXCLUDED.webhook_enabled,
          webhook_url = EXCLUDED.webhook_url,
          signing_secret = EXCLUDED.signing_secret,
          updated_at = NOW()
-       RETURNING workspace_id, enabled, email_enabled, default_email, webhook_enabled, webhook_url, signing_secret, updated_at`,
-      [input.workspaceId, input.enabled, emailEnabled, defaultEmail, webhookEnabled, webhookUrl, signingSecret],
+       RETURNING workspace_id, enabled, email_enabled, default_email, default_emails, webhook_enabled, webhook_url, signing_secret, updated_at`,
+      [
+        input.workspaceId,
+        input.enabled,
+        emailEnabled,
+        defaultEmail,
+        defaultEmails.length > 0 ? defaultEmails : null,
+        webhookEnabled,
+        webhookUrl,
+        signingSecret,
+      ],
     );
 
     await this.input.auditService.record({
@@ -84,7 +104,8 @@ export class HumanContactSettingsService {
       eventStatus: "success",
       metadata: {
         enabled: input.enabled,
-        emailConfigured: emailEnabled && Boolean(defaultEmail),
+        emailConfigured: emailEnabled && defaultEmails.length > 0,
+        emailRecipientCount: defaultEmails.length,
         webhookConfigured: webhookEnabled && Boolean(webhookUrl),
         signingSecretConfigured: Boolean(signingSecret),
         secretRotated: Boolean(input.rotateSigningSecret || input.signingSecret),
@@ -104,7 +125,7 @@ export class HumanContactSettingsService {
   async findSettingsRow(workspaceId: string): Promise<HumanContactSettingsRow | null> {
     const [row] = await queryRows<HumanContactSettingsRow>(
       this.input.database,
-      `SELECT workspace_id, enabled, email_enabled, default_email, webhook_enabled, webhook_url, signing_secret, updated_at
+      `SELECT workspace_id, enabled, email_enabled, default_email, default_emails, webhook_enabled, webhook_url, signing_secret, updated_at
        FROM ee_contact_settings
        WHERE workspace_id = $1`,
       [workspaceId],
@@ -118,7 +139,8 @@ export class HumanContactSettingsService {
 
   async requireConfigured(workspaceId: string): Promise<HumanContactSettingsRow> {
     const row = await this.findSettingsRow(workspaceId);
-    const hasEmailDelivery = Boolean(row?.email_enabled && row.default_email);
+    const defaultEmails = normalizeEmailRecipients(row?.default_emails ?? (row?.default_email ? [row.default_email] : []));
+    const hasEmailDelivery = Boolean(row?.email_enabled && defaultEmails.length > 0);
     const hasWebhookDelivery = Boolean(row?.webhook_enabled && row.webhook_url && row.signing_secret);
     if (!row?.enabled || (!hasEmailDelivery && !hasWebhookDelivery)) {
       throw {

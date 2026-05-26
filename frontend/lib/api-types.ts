@@ -189,6 +189,7 @@ export interface HumanContactAvailability {
   configured: boolean
   emailEnabled?: boolean
   defaultEmail?: string | null
+  defaultEmails?: string[]
   webhookEnabled?: boolean
   webhookUrl?: string | null
   signingSecretConfigured?: boolean
@@ -199,6 +200,7 @@ export interface HumanContactSettingsUpdate {
   enabled: boolean
   emailEnabled?: boolean
   defaultEmail?: string | null
+  defaultEmails?: string[] | null
   webhookEnabled?: boolean
   webhookUrl?: string | null
   signingSecret?: string | null

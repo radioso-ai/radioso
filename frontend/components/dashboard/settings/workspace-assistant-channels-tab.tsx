@@ -34,6 +34,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   accountApi,
@@ -83,6 +84,34 @@ const isValidHumanContactWebhookUrl = (value: string) => {
     return false
   }
 }
+
+const parseHumanContactEmails = (value: string): string[] =>
+  value
+    .split(/[\n,;\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+const normalizeHumanContactEmails = (values: readonly string[] | undefined | null): string[] => {
+  const emails: string[] = []
+  const seen = new Set<string>()
+  for (const value of values ?? []) {
+    const trimmed = value.trim()
+    const key = trimmed.toLowerCase()
+    if (!trimmed || seen.has(key)) {
+      continue
+    }
+    emails.push(trimmed)
+    seen.add(key)
+  }
+  return emails
+}
+
+const getHumanContactEmailListText = (settings: HumanContactAvailability | null): string => {
+  const emails = normalizeHumanContactEmails(settings?.defaultEmails ?? (settings?.defaultEmail ? [settings.defaultEmail] : []))
+  return emails.join('\n')
+}
+
+const HUMAN_CONTACT_EMAIL_RECIPIENT_LIMIT = 25
 
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
 
@@ -148,6 +177,7 @@ export function WorkspaceAssistantChannelsTab({
   const [isAnonSaving, setIsAnonSaving] = useState(false)
   const [humanContactSettings, setHumanContactSettings] = useState<HumanContactAvailability | null>(null)
   const [savedHumanContactSettings, setSavedHumanContactSettings] = useState<HumanContactAvailability | null>(null)
+  const [humanContactDefaultEmailsText, setHumanContactDefaultEmailsText] = useState('')
   const [humanContactSigningSecret, setHumanContactSigningSecret] = useState('')
   const [isHumanContactSecretLoading, setIsHumanContactSecretLoading] = useState(false)
   const [isHumanContactLoading, setIsHumanContactLoading] = useState(false)
@@ -358,6 +388,7 @@ export function WorkspaceAssistantChannelsTab({
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Leaving channels mode clears Enterprise-only channel draft state.
       setHumanContactSettings(null)
       setSavedHumanContactSettings(null)
+      setHumanContactDefaultEmailsText('')
       setHumanContactSigningSecret('')
       setHumanContactError(null)
       setIsHumanContactLoading(false)
@@ -377,12 +408,14 @@ export function WorkspaceAssistantChannelsTab({
         if (!active) return
         setHumanContactSettings(settings)
         setSavedHumanContactSettings(settings)
+        setHumanContactDefaultEmailsText(getHumanContactEmailListText(settings))
         setHumanContactSigningSecret('')
         setHumanContactError(null)
       } catch (error) {
         if (!active) return
         setHumanContactSettings(null)
         setSavedHumanContactSettings(null)
+        setHumanContactDefaultEmailsText('')
         setHumanContactError(getApiErrorMessage(error, 'Contact handoff is not available in this build.'))
       } finally {
         if (active) {
@@ -620,19 +653,23 @@ export function WorkspaceAssistantChannelsTab({
       ? (
           humanContactSettings.enabled !== savedHumanContactSettings.enabled ||
           Boolean(humanContactSettings.emailEnabled) !== Boolean(savedHumanContactSettings.emailEnabled) ||
-          (humanContactSettings.defaultEmail ?? '') !== (savedHumanContactSettings.defaultEmail ?? '') ||
+          normalizeHumanContactEmails(parseHumanContactEmails(humanContactDefaultEmailsText)).join('\n') !==
+            getHumanContactEmailListText(savedHumanContactSettings) ||
           Boolean(humanContactSettings.webhookEnabled) !== Boolean(savedHumanContactSettings.webhookEnabled) ||
           (humanContactSettings.webhookUrl ?? '') !== (savedHumanContactSettings.webhookUrl ?? '')
         )
       : false
 
   const humanContactEmailEnabled = Boolean(humanContactSettings?.emailEnabled)
-  const humanContactDefaultEmail = humanContactSettings?.defaultEmail ?? ''
-  const humanContactDefaultEmailTrimmed = humanContactDefaultEmail.trim()
-  const humanContactDefaultEmailInvalid =
-    humanContactDefaultEmailTrimmed.length > 0 && !isValidEmailAddress(humanContactDefaultEmailTrimmed)
+  const humanContactDefaultEmails = useMemo(
+    () => normalizeHumanContactEmails(parseHumanContactEmails(humanContactDefaultEmailsText)),
+    [humanContactDefaultEmailsText],
+  )
+  const invalidHumanContactDefaultEmails = humanContactDefaultEmails.filter((email) => !isValidEmailAddress(email))
+  const humanContactDefaultEmailInvalid = invalidHumanContactDefaultEmails.length > 0
+  const humanContactDefaultEmailTooMany = humanContactDefaultEmails.length > HUMAN_CONTACT_EMAIL_RECIPIENT_LIMIT
   const humanContactMissingEmail =
-    Boolean(humanContactSettings?.enabled) && humanContactEmailEnabled && humanContactDefaultEmailTrimmed.length === 0
+    Boolean(humanContactSettings?.enabled) && humanContactEmailEnabled && humanContactDefaultEmails.length === 0
   const humanContactWebhookEnabled = Boolean(humanContactSettings?.webhookEnabled)
   const humanContactWebhookUrl = humanContactSettings?.webhookUrl ?? ''
   const humanContactWebhookUrlTrimmed = humanContactWebhookUrl.trim()
@@ -828,6 +865,7 @@ export function WorkspaceAssistantChannelsTab({
       humanContactMissingDelivery ||
       humanContactMissingEmail ||
       humanContactMissingWebhook ||
+      humanContactDefaultEmailTooMany ||
       humanContactDefaultEmailInvalid ||
       humanContactWebhookUrlInvalid
     ) {
@@ -846,7 +884,7 @@ export function WorkspaceAssistantChannelsTab({
         const updated = await humanContactApi.updateSettings({
           enabled: humanContactSettings.enabled,
           emailEnabled: humanContactEmailEnabled,
-          defaultEmail: humanContactEmailEnabled && humanContactDefaultEmailTrimmed ? humanContactDefaultEmailTrimmed : null,
+          defaultEmails: humanContactEmailEnabled && humanContactDefaultEmails.length > 0 ? humanContactDefaultEmails : null,
           webhookEnabled: humanContactWebhookEnabled,
           webhookUrl: humanContactWebhookEnabled && humanContactWebhookUrlTrimmed ? humanContactWebhookUrlTrimmed : null,
         })
@@ -855,6 +893,7 @@ export function WorkspaceAssistantChannelsTab({
         setHumanContactSigningSecret('')
         if (humanContactDraftVersionRef.current === draftVersionAtRequestStart) {
           setHumanContactSettings(updated)
+          setHumanContactDefaultEmailsText(getHumanContactEmailListText(updated))
           setSaveState('saved')
         }
       } catch (error) {
@@ -873,8 +912,9 @@ export function WorkspaceAssistantChannelsTab({
     return () => window.clearTimeout(timeout)
   }, [
     hasHumanContactChanges,
+    humanContactDefaultEmails,
     humanContactDefaultEmailInvalid,
-    humanContactDefaultEmailTrimmed,
+    humanContactDefaultEmailTooMany,
     humanContactEmailEnabled,
     humanContactMissingDelivery,
     humanContactMissingEmail,
@@ -904,13 +944,14 @@ export function WorkspaceAssistantChannelsTab({
       const updated = await humanContactApi.updateSettings({
         enabled: humanContactSettings.enabled,
         emailEnabled: humanContactEmailEnabled,
-        defaultEmail: humanContactEmailEnabled && humanContactDefaultEmailTrimmed ? humanContactDefaultEmailTrimmed : null,
+        defaultEmails: humanContactEmailEnabled && humanContactDefaultEmails.length > 0 ? humanContactDefaultEmails : null,
         webhookEnabled: humanContactWebhookEnabled,
         webhookUrl: humanContactWebhookEnabled && humanContactWebhookUrlTrimmed ? humanContactWebhookUrlTrimmed : null,
         rotateSigningSecret: true,
       })
       setHumanContactSettings(updated)
       setSavedHumanContactSettings(updated)
+      setHumanContactDefaultEmailsText(getHumanContactEmailListText(updated))
       setHumanContactSigningSecret('')
       setSaveState('saved')
     } catch (error) {
@@ -1149,21 +1190,33 @@ export function WorkspaceAssistantChannelsTab({
                           </div>
                           {humanContactEmailEnabled ? (
                             <div className="space-y-2">
-                              <Label htmlFor="humanContactDefaultEmail" className="text-foreground">Default email</Label>
-                              <Input
-                                id="humanContactDefaultEmail"
-                                type="email"
-                                value={humanContactDefaultEmail}
-                                onChange={(event) => updateHumanContactSettingsDraft({ defaultEmail: event.target.value })}
-                                placeholder="support@example.com"
+                              <Label htmlFor="humanContactDefaultEmails" className="text-foreground">Contact emails</Label>
+                              <Textarea
+                                id="humanContactDefaultEmails"
+                                value={humanContactDefaultEmailsText}
+                                onChange={(event) => {
+                                  humanContactDraftVersionRef.current += 1
+                                  setHumanContactError(null)
+                                  setHumanContactDefaultEmailsText(event.target.value)
+                                }}
+                                placeholder={'support@example.com\nescalations@example.com'}
+                                className="min-h-24"
                                 disabled={isHumanContactSaving}
                               />
-                              {humanContactDefaultEmailInvalid ? (
-                                <p className="text-xs text-destructive">Enter a valid email address.</p>
+                              {humanContactDefaultEmailTooMany ? (
+                                <p className="text-xs text-destructive">
+                                  Add no more than {HUMAN_CONTACT_EMAIL_RECIPIENT_LIMIT} contact email addresses.
+                                </p>
+                              ) : humanContactDefaultEmailInvalid ? (
+                                <p className="text-xs text-destructive">
+                                  Fix invalid addresses: {invalidHumanContactDefaultEmails.join(', ')}
+                                </p>
                               ) : humanContactMissingEmail ? (
-                                <p className="text-xs text-destructive">Add a default email address.</p>
+                                <p className="text-xs text-destructive">Add at least one contact email address.</p>
                               ) : (
-                                <p className="text-xs text-muted-foreground">Requests are emailed here.</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Requests are emailed to each address, up to {HUMAN_CONTACT_EMAIL_RECIPIENT_LIMIT}.
+                                </p>
                               )}
                             </div>
                           ) : null}
@@ -1228,7 +1281,13 @@ export function WorkspaceAssistantChannelsTab({
                                     size="sm"
                                     variant="outline"
                                     onClick={handleRotateHumanContactSecret}
-                                    disabled={isHumanContactSaving || humanContactWebhookUrlInvalid || !humanContactSettings.signingSecretConfigured}
+                                    disabled={
+                                      isHumanContactSaving ||
+                                      humanContactDefaultEmailInvalid ||
+                                      humanContactDefaultEmailTooMany ||
+                                      humanContactWebhookUrlInvalid ||
+                                      !humanContactSettings.signingSecretConfigured
+                                    }
                                   >
                                     {isHumanContactSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                                     Rotate token

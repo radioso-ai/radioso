@@ -124,6 +124,22 @@ module_can_load() {
   node -e "require(require.resolve(process.argv[1], { paths: ['/app/frontend'] }))" "$1" >/dev/null 2>&1
 }
 
+module_is_ready_from() {
+  node -e "
+    const path = require('node:path');
+    const owner = path.dirname(require.resolve(process.argv[1], { paths: ['/app/frontend'] }));
+    require.resolve(process.argv[2], { paths: [owner] });
+  " "$1" "$2" >/dev/null 2>&1
+}
+
+module_can_load_from() {
+  node -e "
+    const path = require('node:path');
+    const owner = path.dirname(require.resolve(process.argv[1], { paths: ['/app/frontend'] }));
+    require(require.resolve(process.argv[2], { paths: [owner] }));
+  " "$1" "$2" >/dev/null 2>&1
+}
+
 frontend_modules_ready() {
   if [ ! -d frontend/node_modules ]; then
     return 1
@@ -134,15 +150,15 @@ frontend_modules_ready() {
   fi
 
   if [ -n "$EXPECTED_SWC_PACKAGE" ]; then
-    module_can_load "$EXPECTED_SWC_PACKAGE" || return 1
+    module_can_load_from "next/package.json" "$EXPECTED_SWC_PACKAGE" || return 1
   fi
 
   if [ -n "$EXPECTED_LIGHTNINGCSS_PACKAGE" ]; then
-    module_can_load "lightningcss" || return 1
+    module_can_load_from "next/package.json" "lightningcss" || return 1
   fi
 
   if [ -n "$EXPECTED_TAILWIND_OXIDE_PACKAGE" ]; then
-    module_can_load "$EXPECTED_TAILWIND_OXIDE_PACKAGE" || return 1
+    module_can_load_from "next/package.json" "$EXPECTED_TAILWIND_OXIDE_PACKAGE" || return 1
   fi
 
   for required_module in \
@@ -150,11 +166,12 @@ frontend_modules_ready() {
     "next/dist/pages/_error" \
     "next/dist/build/webpack/loaders/next-app-loader" \
     "next/dist/build/webpack/loaders/next-flight-client-entry-loader" \
-    "next/dist/compiled/jest-worker/processChild.js" \
-    "@swc/helpers/package.json"
+    "next/dist/compiled/jest-worker/processChild.js"
   do
     module_is_ready "$required_module" || return 1
   done
+
+  module_is_ready_from "next/package.json" "@swc/helpers/package.json" || return 1
 
   return 0
 }

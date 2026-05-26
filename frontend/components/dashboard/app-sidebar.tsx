@@ -59,6 +59,7 @@ import {
   RefreshCw,
   Users,
   Gauge,
+  FlaskConical,
   ShieldAlert,
 } from 'lucide-react'
 import {
@@ -97,6 +98,7 @@ const navItems = [
   { id: 'knowledge' as const, label: 'Knowledge Base', icon: BookOpen },
   { id: 'activity' as const, label: 'Activity', icon: Activity },
   { id: 'quality' as const, label: 'Quality', icon: ShieldAlert },
+  { id: 'eval' as const, label: 'Eval', icon: FlaskConical },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
 

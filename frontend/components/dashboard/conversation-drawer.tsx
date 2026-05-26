@@ -408,10 +408,20 @@ export function ConversationDrawer({
                     </div>
                   ) : null}
                   <ChatMessageThread
-                    messages={conversationDetail.messages}
+                    messages={conversationDetail.messages.map((message) =>
+                      // History messages already have a persisted DB id; the
+                      // ChatMessageThread component derives `assistantMessageId`
+                      // from `persistedAssistantMessageId`, which is only set
+                      // by the live-streaming flow. Mirror it from `id` here so
+                      // feedback + send-to-eval render on historical turns.
+                      message.role === 'assistant'
+                        ? { ...message, persistedAssistantMessageId: message.id }
+                        : message
+                    )}
                     onOpenDocument={handleOpenCitation}
                     onMessageSelect={handleSelectThreadMessage}
                     selectedMessageId={selectedThreadMessageId ?? undefined}
+                    conversationId={selectedItem?.kind === 'chat' ? selectedItem.id : undefined}
                   />
                 </div>
 

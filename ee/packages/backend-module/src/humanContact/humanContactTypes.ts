@@ -81,6 +81,7 @@ export interface HumanContactSettingsRow {
   enabled: boolean;
   email_enabled: boolean;
   default_email: string | null;
+  default_emails: string[] | null;
   webhook_enabled: boolean;
   webhook_url: string | null;
   signing_secret: string | null;
@@ -122,6 +123,21 @@ export const queryRows = async <T = Record<string, unknown>>(
 export const normalizeOptionalText = (value: string | null | undefined): string | null => {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+};
+
+export const normalizeEmailRecipients = (values: readonly string[] | null | undefined): string[] => {
+  const recipients: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values ?? []) {
+    const trimmed = value.trim();
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) {
+      continue;
+    }
+    recipients.push(trimmed);
+    seen.add(key);
+  }
+  return recipients;
 };
 
 export const normalizeIdempotencyKey = (value: string | null | undefined): string | null => {
@@ -177,16 +193,18 @@ export const mapSettings = (row: HumanContactSettingsRow | undefined | null) => 
   const webhookUrl = row?.webhook_url ?? null;
   const signingSecretConfigured = Boolean(row?.signing_secret);
   const emailEnabled = Boolean(row?.email_enabled);
-  const defaultEmail = row?.default_email ?? null;
+  const defaultEmails = normalizeEmailRecipients(row?.default_emails ?? (row?.default_email ? [row.default_email] : []));
+  const defaultEmail = defaultEmails[0] ?? null;
   const webhookEnabled = Boolean(row?.webhook_enabled);
   const enabled = Boolean(row?.enabled);
-  const emailConfigured = emailEnabled && Boolean(defaultEmail);
+  const emailConfigured = emailEnabled && defaultEmails.length > 0;
   const webhookConfigured = webhookEnabled && Boolean(webhookUrl) && signingSecretConfigured;
   return {
     enabled,
     configured: enabled && (emailConfigured || webhookConfigured),
     emailEnabled,
     defaultEmail,
+    defaultEmails,
     webhookEnabled,
     webhookUrl,
     signingSecretConfigured,

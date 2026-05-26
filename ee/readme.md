@@ -97,7 +97,7 @@ through the chat skill intake runtime.
 Operators configure it with:
 
 - an enabled flag
-- optional email delivery with a default recipient
+- optional email delivery with one or more default recipients
 - optional webhook delivery with a webhook URL
 - an auto-generated signing token for webhook signatures
 

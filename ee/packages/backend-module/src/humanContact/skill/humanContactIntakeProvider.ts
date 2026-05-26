@@ -250,7 +250,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
 
     const slots = await this.extractSlots(input.query);
     const message = slots.message ?? this.deriveMessageFromPriorContext(input);
-    const { email } = slots;
+    const email = slots.email ?? await this.findLatestSubmittedEmail(input.workspaceId, input.conversationId);
     const collected: Record<string, unknown> = {
       ...(email ? { email } : {}),
       ...(message ? { message } : {}),
@@ -386,7 +386,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
   ): Promise<ChatIntakeResult | null> {
     const collected = withLanguageContext(normalizeCollected(state.collected), input);
     const requestedByIntent = hasHumanContactIntent(input);
-    const email = await this.extractEmailSlot(input.query);
+    let email = await this.extractEmailSlot(input.query);
     if (
       email &&
       !normalizeEmailField(input.query) &&
@@ -440,6 +440,20 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       }
 
       if (requestedByIntent || await this.requireIntakePrompts().shouldStart(input.query)) {
+        email = await this.findLatestSubmittedEmail(input.workspaceId, input.conversationId);
+        if (email) {
+          const storedMessage = normalizeMessageField(collected.message);
+          const nextCollected: Record<string, unknown> = {
+            ...collected,
+            email,
+            ...(storedMessage ? { message: storedMessage } : {}),
+          };
+          if (!storedMessage) {
+            return this.promptForMessage(state, input, nextCollected);
+          }
+          return this.submitFromState(state, input, { email, message: storedMessage, collected: nextCollected });
+        }
+
         await this.updateIntakeState(state.id, {
           status: "active",
           collected,
@@ -779,6 +793,29 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       [workspaceId, conversationId, HUMAN_CONTACT_SKILL_NAME],
     );
     return row ?? null;
+  }
+
+  private async findLatestSubmittedEmail(workspaceId: string, conversationId: string): Promise<string | null> {
+    const rows = await queryRows<{ email: string | null }>(
+      this.input.database,
+      `SELECT fields->>'email' AS email
+       FROM skill_submissions
+       WHERE workspace_id = $1
+         AND conversation_id = $2
+         AND skill_name = $3
+         AND status IN ('pending', 'delivering', 'delivered')
+         AND fields ? 'email'
+       ORDER BY created_at DESC
+       LIMIT 5`,
+      [workspaceId, conversationId, HUMAN_CONTACT_SKILL_NAME],
+    );
+    for (const row of rows) {
+      const email = normalizeEmailField(row.email);
+      if (email) {
+        return email;
+      }
+    }
+    return null;
   }
 
   private async insertIntakeState(input: {

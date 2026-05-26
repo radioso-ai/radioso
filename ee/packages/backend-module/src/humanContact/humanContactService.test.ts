@@ -59,6 +59,7 @@ class FakeSkillSubmissionDatabase implements UsageLimitDatabasePort {
     enabled: boolean;
     email_enabled: boolean;
     default_email: string | null;
+    default_emails: string[] | null;
     webhook_enabled: boolean;
     webhook_url: string | null;
     signing_secret: string | null;
@@ -85,9 +86,10 @@ class FakeSkillSubmissionDatabase implements UsageLimitDatabasePort {
         enabled: Boolean(params[1]),
         email_enabled: Boolean(params[2]),
         default_email: params[3] === null ? null : String(params[3]),
-        webhook_enabled: Boolean(params[4]),
-        webhook_url: params[5] === null ? null : String(params[5]),
-        signing_secret: params[6] === null ? null : String(params[6]),
+        default_emails: Array.isArray(params[4]) ? params[4] as string[] : null,
+        webhook_enabled: Boolean(params[5]),
+        webhook_url: params[6] === null ? null : String(params[6]),
+        signing_secret: params[7] === null ? null : String(params[7]),
         updated_at: new Date("2026-05-04T10:00:00.000Z"),
       };
       this.settings.set(row.workspace_id, row);
@@ -314,6 +316,7 @@ const createService = (input: {
   webhookFetch?: typeof fetch;
   chatGateway?: { answer(input: { prompt: string; query: string; history: Array<{ role: string; content: string }> }): Promise<string> };
   abuseControlService?: { enforce(input: { scope: string; subjectKey: string; limit: number; windowMs: number; blockMs?: number }): Promise<void> };
+  mailService?: MailService;
 } = {}) => {
   const database = input.database ?? new FakeSkillSubmissionDatabase();
   const auditEvents: unknown[] = [];
@@ -362,7 +365,7 @@ const createService = (input: {
         return undefined;
       },
     },
-    mailService: {
+    mailService: input.mailService ?? {
       async send(message) {
         sentEmails.push(message);
       },
@@ -497,6 +500,7 @@ describe("enterprise human contact service", () => {
       enabled: true,
       emailEnabled: false,
       defaultEmail: null,
+      defaultEmails: [],
       webhookEnabled: true,
       configured: true,
       webhookUrl: "https://hooks.example.com/radioso",
@@ -570,6 +574,111 @@ describe("enterprise human contact service", () => {
       workspaceId: "workspace-1",
     });
     expect(database.submissions.get("request-1")?.status).toBe("delivered");
+  });
+
+  it("delivers contact request emails to each configured recipient", async () => {
+    const database = new FakeSkillSubmissionDatabase();
+    const { service, sentEmails } = createService({ database });
+    const settings = await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmails: ["support@example.com", " Escalations@Example.com ", "support@example.com"],
+    });
+
+    expect(settings).toMatchObject({
+      configured: true,
+      defaultEmail: "support@example.com",
+      defaultEmails: ["support@example.com", "Escalations@Example.com"],
+    });
+
+    database.submissions.set("request-1", {
+      id: "request-1",
+      account_id: "account-1",
+      workspace_id: "workspace-1",
+      conversation_id: "conversation-1",
+      assistant_message_id: null,
+      skill_name: "human_contact.request",
+      source_channel: "authenticated_chat",
+      source_origin: null,
+      trigger_source: "manual",
+      trigger_reason: null,
+      idempotency_key: null,
+      fields: { email: "user@example.com", message: "Please contact me." },
+      subject_identity: "user@example.com",
+      attempts: 0,
+      status: "pending",
+      next_retry_at: new Date("2026-05-04T10:00:00.000Z"),
+      final_delivery_error: null,
+      activity_trace: null,
+      created_at: new Date("2026-05-04T10:00:00.000Z"),
+      updated_at: new Date("2026-05-04T10:00:00.000Z"),
+    });
+
+    await service.processDueDeliveries(1);
+
+    expect(sentEmails.map((message) => message.to)).toEqual([
+      "support@example.com",
+      "Escalations@Example.com",
+    ]);
+    expect(database.submissions.get("request-1")?.status).toBe("delivered");
+  });
+
+  it("continues sending remaining contact request emails when one recipient fails", async () => {
+    const database = new FakeSkillSubmissionDatabase();
+    const sentEmails: CapturedMail[] = [];
+    const { service } = createService({
+      database,
+      mailService: {
+        async send(message) {
+          if (message.to === "broken@example.com") {
+            throw new Error("mailbox unavailable");
+          }
+          sentEmails.push(message);
+        },
+      },
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmails: ["support@example.com", "broken@example.com", "escalations@example.com"],
+    });
+
+    database.submissions.set("request-1", {
+      id: "request-1",
+      account_id: "account-1",
+      workspace_id: "workspace-1",
+      conversation_id: "conversation-1",
+      assistant_message_id: null,
+      skill_name: "human_contact.request",
+      source_channel: "authenticated_chat",
+      source_origin: null,
+      trigger_source: "manual",
+      trigger_reason: null,
+      idempotency_key: null,
+      fields: { email: "user@example.com", message: "Please contact me." },
+      subject_identity: "user@example.com",
+      attempts: 0,
+      status: "pending",
+      next_retry_at: new Date("2026-05-04T10:00:00.000Z"),
+      final_delivery_error: null,
+      activity_trace: null,
+      created_at: new Date("2026-05-04T10:00:00.000Z"),
+      updated_at: new Date("2026-05-04T10:00:00.000Z"),
+    });
+
+    await service.processDueDeliveries(1);
+
+    expect(sentEmails.map((message) => message.to)).toEqual([
+      "support@example.com",
+      "escalations@example.com",
+    ]);
+    expect(database.submissions.get("request-1")).toMatchObject({
+      status: "pending",
+      attempts: 1,
+      final_delivery_error: "Email[broken@example.com]: mailbox unavailable",
+    });
   });
 
   it("starts a chat intake for explicit human-contact requests and asks for email first", async () => {

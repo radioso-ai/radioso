@@ -41,4 +41,21 @@ describe("humanContactMigrator", () => {
     expect(queries.join("\n")).not.toContain("CREATE TABLE IF NOT EXISTS skill_submissions");
     expect(queries.join("\n")).not.toContain("CREATE UNIQUE INDEX IF NOT EXISTS skill_submissions_idempotency_key_idx");
   });
+
+  it("adds default email recipients and backfills the legacy single recipient", async () => {
+    const queries: string[] = [];
+    const database = {
+      query: vi.fn(async (text: string) => {
+        queries.push(text);
+        return [];
+      }),
+    };
+
+    await humanContactMigrator.migrate(database);
+
+    const allQueries = queries.join("\n");
+    expect(allQueries).toContain("default_emails TEXT[]");
+    expect(allQueries).toContain("ADD COLUMN IF NOT EXISTS default_emails TEXT[]");
+    expect(allQueries).toContain("SET default_emails = ARRAY[default_email]");
+  });
 });

@@ -11,6 +11,7 @@ const contactSettingsUpdateSchema = z.object({
   enabled: z.boolean(),
   emailEnabled: z.boolean().optional(),
   defaultEmail: z.string().trim().email().max(320).nullable().optional(),
+  defaultEmails: z.array(z.string().trim().email().max(320)).max(25).nullable().optional(),
   webhookEnabled: z.boolean().optional(),
   webhookUrl: z.string().trim().url().max(2048).nullable().optional(),
   signingSecret: z.string().min(16).max(256).nullable().optional(),

@@ -13,7 +13,7 @@
     "overrides": {
       "@sentry/browser": "7.119.1",
       "@types/react": "19.2.14",
-      "@types/react-dom": "19.2.2",
+      "@types/react-dom": "19.2.3",
       "@tootallnate/once": "3.0.1",
       "file-type": "21.3.2",
       "js-cookie": "3.0.7",

@@ -39,7 +39,7 @@
   "devDependencies": {
     "@types/node": "^24.3.0",
     "openapi-typescript": "^7.10.1",
-    "tsx": "^4.20.5",
+    "tsx": "^4.22.1",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }

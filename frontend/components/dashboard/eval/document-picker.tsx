@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Check, FileText, Search } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
@@ -51,21 +51,25 @@ export function DocumentPicker({
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
 
-  const load = useCallback(async () => {
-    try {
-      const result = await loadAllDocuments()
-      setDocuments(result.documents)
-      setMoreAvailable(result.hasMore)
-      setError(null)
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to load documents'))
-      setDocuments([])
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const result = await loadAllDocuments()
+        if (cancelled) return
+        setDocuments(result.documents)
+        setMoreAvailable(result.hasMore)
+        setError(null)
+      } catch (err) {
+        if (cancelled) return
+        setError(getApiErrorMessage(err, 'Failed to load documents'))
+        setDocuments([])
+      }
+    })()
+    return () => {
+      cancelled = true
     }
   }, [])
-
-  useEffect(() => {
-    void load()
-  }, [load])
 
   const filtered = useMemo(() => {
     if (!documents) return []
@@ -124,7 +128,7 @@ export function DocumentPicker({
       </div>
       {moreAvailable ? (
         <p className="text-xs text-muted-foreground">
-          Showing the first {documents?.length ?? 0} documents. Refine your search if the one you want isn't listed.
+          Showing the first {documents?.length ?? 0} documents. Refine your search if the one you want is not listed.
         </p>
       ) : null}
     </div>

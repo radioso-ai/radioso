@@ -130,9 +130,6 @@ export function DocumentsView({
   const [activeConnectorId, setActiveConnectorId] = useState<string | null>(null)
 
   const sourceFilterId = routeState.documentSourceFilter ?? null
-  const activeSource = sourceFilterId
-    ? availableSources.find((source) => source.id === sourceFilterId) ?? null
-    : null
   const documentFilters = useMemo<ReadonlyArray<FilterDefinition>>(
     () => [
       {

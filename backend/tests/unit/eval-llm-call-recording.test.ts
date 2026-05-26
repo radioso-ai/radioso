@@ -41,6 +41,30 @@ const buildResolver = (): LlmCapabilityResolver => ({
   },
 });
 
+const buildSettingsService = () => ({
+  async getForWorkspace(workspaceId: string) {
+    return {
+      workspaceId,
+      queryRewriteEnabled: true,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 3,
+      rerankEnabled: false,
+      vectorTopK: 20,
+      similarityThreshold: 0.2,
+      rerankTopK: 5,
+      citationDisplayEnabled: true,
+      metadataRules: [],
+      customInstruction: "",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  },
+  async listMetadataFieldSuggestions() { return []; },
+  async updateForWorkspace() { throw new Error("not implemented in test"); },
+}) as any;
+
 const buildRecorder = () => {
   const events: ModelUsageEvent[] = [];
   const recorder: UsageEventRecorder = {
@@ -59,6 +83,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       buildChatGateway("the answer"),
       meter,
       buildResolver(),
+      buildSettingsService(),
     );
 
     const result = await runner.answer({
@@ -92,6 +117,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       failingGateway,
       meter,
       buildResolver(),
+      buildSettingsService(),
     );
 
     await expect(

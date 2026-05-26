@@ -1,5 +1,6 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { RetrievalSettingsRecord } from "../../settings/contracts/retrieval.js";
+import type { AgentSnapshot } from "../../agents/public.js";
+import type { RetrievalSettingsRecord, RetrievalSettingsSnapshot } from "../../settings/contracts/retrieval.js";
 import type { EvalRunModelOverride, EvalRunRetrievedChunk, EvalSnapshot, EvalSnapshotMessage } from "../domain/types.js";
 
 /**
@@ -15,13 +16,23 @@ import type { EvalRunModelOverride, EvalRunRetrievedChunk, EvalSnapshot, EvalSna
  * and ChatGateway. The eval module never depends on those contracts
  * directly — only on this port shape.
  */
+export interface EvalReplayContext {
+  /** Frozen agent snapshot to apply during replay: persona, custom
+   * instruction, source scope, suggested-question behavior. */
+  agent?: AgentSnapshot | null;
+  /** Custom-instruction override that takes precedence over the agent's
+   * baked-in customInstruction. Plumbed from EvalRunOverrides. */
+  customInstructionOverride?: string;
+}
+
 export interface EvalRetrievalRunnerPort {
   retrieve(input: {
     workspaceId: string;
     query: string;
     history: MessageRecord[];
+    context?: EvalReplayContext;
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
-  }): Promise<{ chunks: EvalRunRetrievedChunk[]; resolvedSettings?: Partial<RetrievalSettingsRecord> }>;
+  }): Promise<{ chunks: EvalRunRetrievedChunk[]; resolvedSettings?: RetrievalSettingsSnapshot }>;
 
   answer(input: {
     workspaceId: string;
@@ -29,13 +40,14 @@ export interface EvalRetrievalRunnerPort {
     runId: string;
     query: string;
     history: MessageRecord[];
+    context?: EvalReplayContext;
     modelOverride?: EvalRunModelOverride;
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   }): Promise<{
     chunks: EvalRunRetrievedChunk[];
     answer: string;
     composedInstructions?: string;
-    resolvedSettings?: Partial<RetrievalSettingsRecord>;
+    resolvedSettings?: RetrievalSettingsSnapshot;
     resolvedModel?: { provider: string; model: string };
   }>;
 }

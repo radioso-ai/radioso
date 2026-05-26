@@ -797,7 +797,7 @@ export const createTestDependencies = (overrides: {
         async answer(_input: { history: unknown[]; runId: string }) {
           return { chunks: [], answer: "" };
         },
-      },
+      } as any,
       {
         async judge({ assertion }) {
           return { assertion, status: "error" as const, reason: "Judge is not configured in test app." };

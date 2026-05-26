@@ -78,6 +78,15 @@ export class EvalRunService {
     const resolvedConfig: EvalRunResolvedConfig = {};
     let observed: EvalRunObservedOutput;
 
+    // Replay context (agent + per-run instruction override) is sourced from
+    // the snapshot's frozen agent and the operator's runtime override. Both
+    // retrieval_only and full_assistant runs need it: sourceScope and
+    // suggested-question behavior shape retrieval too, not just generation.
+    const replayContext = {
+      agent: snapshot.originalAgent,
+      customInstructionOverride: overrides.assistantInstructionsOverride?.customInstruction,
+    };
+
     try {
       if (input.mode === "full_assistant") {
         const result = await this.retrievalRunner.answer({
@@ -86,6 +95,7 @@ export class EvalRunService {
           runId,
           query: replay.query,
           history: replay.history,
+          context: replayContext,
           modelOverride: overrides.modelOverride,
           retrievalSettingsOverride: overrides.retrievalSettingsOverride,
         });
@@ -101,6 +111,7 @@ export class EvalRunService {
           workspaceId: input.workspaceId,
           query: replay.query,
           history: replay.history,
+          context: replayContext,
           retrievalSettingsOverride: overrides.retrievalSettingsOverride,
         });
         observed = { retrievedChunks: result.chunks };

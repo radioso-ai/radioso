@@ -1,4 +1,8 @@
-import type { AgentChatModelOverride, ConversationAgent } from "./domain.js";
+import type {
+  AgentChatModelOverride,
+  AgentSourceScope,
+  ConversationAgent,
+} from "./domain.js";
 
 /**
  * Immutable, point-in-time copy of the agent fields that influence chat
@@ -18,6 +22,8 @@ export interface AgentSnapshot {
   greetingInstruction: string;
   assistantDefaultLocale: string | null;
   retrievalEnabled: boolean;
+  suggestedQuestionsEnabled: boolean;
+  sourceScope: AgentSourceScope;
   chatModelOverride: AgentChatModelOverride | null;
 }
 
@@ -28,5 +34,7 @@ export const freezeAgent = (agent: ConversationAgent): AgentSnapshot => ({
   greetingInstruction: agent.greetingInstruction,
   assistantDefaultLocale: agent.assistantDefaultLocale,
   retrievalEnabled: agent.retrievalEnabled,
+  suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
+  sourceScope: agent.sourceScope,
   chatModelOverride: agent.chatModelOverride,
 });

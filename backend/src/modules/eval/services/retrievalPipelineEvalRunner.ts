@@ -1,28 +1,36 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ChatGateway } from "../../chat/contracts/index.js";
-import type { RetrievalPipelineService } from "../../retrieval/public.js";
-import type { RetrievalSettingsRecord } from "../../settings/contracts/retrieval.js";
+import type { RetrievalPipelineRequest, RetrievalPipelineService } from "../../retrieval/public.js";
+import type {
+  RetrievalSettingsRecord,
+  RetrievalSettingsSnapshot,
+} from "../../settings/contracts/retrieval.js";
+import { freezeRetrievalSettings } from "../../settings/contracts/retrieval.js";
+import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
 import type { LlmCapabilityResolver } from "../../../shared/infra/llm/capabilityResolver.js";
 import type { EvalRunModelOverride } from "../domain/types.js";
-import type { EvalRetrievalRunnerPort } from "./evalRunner.js";
+import type { EvalReplayContext, EvalRetrievalRunnerPort } from "./evalRunner.js";
 import type { EvalUsageMeter } from "./evalUsageMeter.js";
 
 const UNKNOWN_MODEL = { provider: "unknown", model: "unknown" } as const;
 
 /**
  * Wraps the existing retrieval pipeline and chat gateway so the eval module
- * can drive the same code path production assistant traffic uses, with an
- * explicit retrievalSettingsOverride, optional per-run model override, and
- * conversation history threaded from the snapshot.
+ * can drive the same code path production assistant traffic uses.
  *
- * Resolves the chat capability once up front so the same (provider, model)
- * lands on:
- *   * the chat gateway via workspaceContext.capabilityOverride (so the
- *     gateway uses our pre-picked model, not a re-resolution),
- *   * the usage meter (so EE-side ledger has provider+model regardless of
- *     whether the gateway surfaces them), and
- *   * the returned resolvedConfig so EvalRunService can persist
- *     `modelProvider` + `modelId` on the run record.
+ * Responsibilities the runner owns and the bare retrieval pipeline doesn't:
+ *   * Thread the snapshot's frozen agent context (responseIdentity,
+ *     customInstruction, suggestedQuestions, sourceScope) into the pipeline
+ *     input so the eval replay applies the same persona, instructions, and
+ *     document scope the original turn ran with.
+ *   * Apply the operator's assistantInstructionsOverride on top of the
+ *     agent's baked-in custom instruction.
+ *   * Resolve the chat capability once up front (with optional model
+ *     override) and thread the same (provider, model) to the gateway, the
+ *     usage meter, and the returned resolvedConfig.
+ *   * Return the *fully resolved* retrieval settings actually used (the
+ *     workspace's settings record + override, merged and frozen) so the run
+ *     row is auditable on its own — not just the delta override.
  */
 export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
   constructor(
@@ -30,20 +38,25 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     private readonly chatGateway: ChatGateway,
     private readonly usageMeter: EvalUsageMeter,
     private readonly capabilityResolver: LlmCapabilityResolver,
+    private readonly retrievalSettings: RetrievalSettingsService,
   ) {}
 
   async retrieve(input: {
     workspaceId: string;
     query: string;
     history: MessageRecord[];
+    context?: EvalReplayContext;
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   }) {
-    const result = await this.pipeline.run({
-      workspaceId: input.workspaceId,
-      query: input.query,
-      history: input.history,
-      retrievalSettingsOverride: input.retrievalSettingsOverride,
-    });
+    const result = await this.pipeline.run(
+      this.buildPipelineRequest({
+        workspaceId: input.workspaceId,
+        query: input.query,
+        history: input.history,
+        context: input.context,
+        retrievalSettingsOverride: input.retrievalSettingsOverride,
+      }),
+    );
 
     return {
       chunks: result.contexts.map((ctx, index) => ({
@@ -53,7 +66,10 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
         rank: typeof ctx.promptPosition === "number" ? ctx.promptPosition : index,
         similarity: typeof ctx.similarity === "number" ? ctx.similarity : undefined,
       })),
-      resolvedSettings: input.retrievalSettingsOverride,
+      resolvedSettings: await this.resolveSettingsSnapshot(
+        input.workspaceId,
+        input.retrievalSettingsOverride,
+      ),
     };
   }
 
@@ -63,6 +79,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     runId: string;
     query: string;
     history: MessageRecord[];
+    context?: EvalReplayContext;
     modelOverride?: EvalRunModelOverride;
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   }) {
@@ -83,12 +100,15 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       // own resolution error when called below.
     }
 
-    const pipelineResult = await this.pipeline.run({
-      workspaceId: input.workspaceId,
-      query: input.query,
-      history: input.history,
-      retrievalSettingsOverride: input.retrievalSettingsOverride,
-    });
+    const pipelineResult = await this.pipeline.run(
+      this.buildPipelineRequest({
+        workspaceId: input.workspaceId,
+        query: input.query,
+        history: input.history,
+        context: input.context,
+        retrievalSettingsOverride: input.retrievalSettingsOverride,
+      }),
+    );
 
     let generated = "";
     let status: "succeeded" | "failed" = "succeeded";
@@ -142,8 +162,62 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       })),
       answer: generated,
       composedInstructions: pipelineResult.systemPrompt,
-      resolvedSettings: input.retrievalSettingsOverride,
+      resolvedSettings: await this.resolveSettingsSnapshot(
+        input.workspaceId,
+        input.retrievalSettingsOverride,
+      ),
       resolvedModel: { provider: resolvedProvider, model: resolvedModel },
     };
+  }
+
+  private buildPipelineRequest(input: {
+    workspaceId: string;
+    query: string;
+    history: MessageRecord[];
+    context?: EvalReplayContext;
+    retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
+  }): RetrievalPipelineRequest {
+    const agent = input.context?.agent ?? null;
+    const customInstruction =
+      input.context?.customInstructionOverride !== undefined
+        ? input.context.customInstructionOverride
+        : (agent?.customInstruction ?? "");
+    const responseBehavior = agent
+      ? {
+          customInstruction,
+          suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
+          suggestedQuestionsCount: 3,
+        }
+      : customInstruction
+        ? { customInstruction, suggestedQuestionsEnabled: true, suggestedQuestionsCount: 3 }
+        : undefined;
+
+    return {
+      workspaceId: input.workspaceId,
+      query: input.query,
+      history: input.history,
+      responseIdentity: agent && agent.name.trim() ? { name: agent.name } : undefined,
+      responseBehavior,
+      responseBehaviorEnabled: Boolean(responseBehavior),
+      sourceScope: agent?.sourceScope,
+      retrievalSettingsOverride: input.retrievalSettingsOverride,
+    };
+  }
+
+  private async resolveSettingsSnapshot(
+    workspaceId: string,
+    override: Partial<RetrievalSettingsRecord> | undefined,
+  ): Promise<RetrievalSettingsSnapshot | undefined> {
+    try {
+      const base = await this.retrievalSettings.getForWorkspace(workspaceId);
+      const merged: RetrievalSettingsRecord = override
+        ? { ...base, ...override, workspaceId: base.workspaceId }
+        : base;
+      return freezeRetrievalSettings(merged);
+    } catch {
+      // Auditing must not break run execution. The run row will simply have
+      // no resolved settings recorded; EE-side audit can flag it.
+      return undefined;
+    }
   }
 }

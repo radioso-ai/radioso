@@ -348,6 +348,19 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
     [accountId, routeState],
   )
 
+  // Computed BEFORE the loading early return — must run on every render to
+  // keep hook ordering stable.
+  const modelOptions: ModelOption[] = useMemo(() => {
+    if (!knownModels) return []
+    const out: ModelOption[] = []
+    for (const [provider, models] of Object.entries(knownModels)) {
+      for (const model of models) {
+        out.push({ provider: provider as LlmProviderName, model })
+      }
+    }
+    return out
+  }, [knownModels])
+
   if (!caseWithRuns || !snapshot) {
     return (
       <DashboardPage title="Eval case" description="Loading…">
@@ -364,17 +377,6 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
 
   const latestRun = caseWithRuns.runs[0] ?? null
   const originalAnswer = [...snapshot.messages].reverse().find((m) => m.role === 'assistant')?.content ?? null
-
-  const modelOptions: ModelOption[] = useMemo(() => {
-    if (!knownModels) return []
-    const out: ModelOption[] = []
-    for (const [provider, models] of Object.entries(knownModels)) {
-      for (const model of models) {
-        out.push({ provider: provider as LlmProviderName, model })
-      }
-    }
-    return out
-  }, [knownModels])
 
   return (
     <DashboardPage

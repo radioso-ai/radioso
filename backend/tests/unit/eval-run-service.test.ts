@@ -153,9 +153,18 @@ class InMemoryEvalRepository implements EvalRepositoryPort {
   }
 }
 
+type StubRunnerCall = {
+  query: string;
+  historyLength: number;
+  historyRoles: string[];
+  agentName?: string | null;
+  agentSourceScopeMode?: string;
+  customInstruction?: string;
+};
+
 class StubRunner implements EvalRetrievalRunnerPort {
-  public lastRetrieveCall: { query: string; historyLength: number; historyRoles: string[] } | null = null;
-  public lastAnswerCall: { query: string; historyLength: number; historyRoles: string[] } | null = null;
+  public lastRetrieveCall: StubRunnerCall | null = null;
+  public lastAnswerCall: StubRunnerCall | null = null;
 
   constructor(
     private readonly chunks: EvalRunRetrievedChunk[],
@@ -163,22 +172,34 @@ class StubRunner implements EvalRetrievalRunnerPort {
     private readonly answerText?: string,
   ) {}
 
-  async retrieve(input: { query: string; history: { role: string }[] }) {
-    this.lastRetrieveCall = {
+  private capture(input: {
+    query: string;
+    history: { role: string }[];
+    context?: {
+      agent?: { name: string; sourceScope: { mode: string }; customInstruction: string } | null;
+      customInstructionOverride?: string;
+    };
+  }): StubRunnerCall {
+    return {
       query: input.query,
       historyLength: input.history.length,
       historyRoles: input.history.map((m) => m.role),
+      agentName: input.context?.agent?.name ?? null,
+      agentSourceScopeMode: input.context?.agent?.sourceScope?.mode,
+      customInstruction:
+        input.context?.customInstructionOverride ??
+        input.context?.agent?.customInstruction,
     };
+  }
+
+  async retrieve(input: any) {
+    this.lastRetrieveCall = this.capture(input);
     if (this.error) throw this.error;
     return { chunks: this.chunks };
   }
 
-  async answer(input: { query: string; history: { role: string }[]; runId: string; accountId?: string | null }) {
-    this.lastAnswerCall = {
-      query: input.query,
-      historyLength: input.history.length,
-      historyRoles: input.history.map((m) => m.role),
-    };
+  async answer(input: any) {
+    this.lastAnswerCall = this.capture(input);
     if (this.error) throw this.error;
     return { chunks: this.chunks, answer: this.answerText ?? "" };
   }
@@ -461,6 +482,48 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     expect(runner.lastRetrieveCall?.query).toBe("And what about international orders?");
     expect(runner.lastRetrieveCall?.historyLength).toBe(2);
     expect(runner.lastRetrieveCall?.historyRoles).toEqual(["user", "assistant"]);
+  });
+
+  it("threads the snapshot's agent context and assistantInstructionsOverride into the runner", async () => {
+    const snapshot = makeSnapshot({
+      originalAgent: {
+        agentId: "agent-1",
+        name: "Support Bot",
+        customInstruction: "Default agent instruction",
+        greetingInstruction: "",
+        assistantDefaultLocale: null,
+        retrievalEnabled: true,
+        suggestedQuestionsEnabled: true,
+        sourceScope: { mode: "selected", sourceIds: ["src-1", "src-2"] },
+        chatModelOverride: null,
+      },
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      name: "agent-context case",
+      assertions: [refundIncludes],
+    });
+    const runner = new StubRunner([
+      { chunkId: "c1", documentId: "doc-refund", title: "Refund Policy", rank: 0 },
+    ]);
+    const service = new EvalRunService(repo, runner, passJudge());
+
+    await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "retrieval_only",
+      overrides: {
+        assistantInstructionsOverride: { customInstruction: "Reply tersely." },
+      },
+    });
+
+    expect(runner.lastRetrieveCall?.agentName).toBe("Support Bot");
+    expect(runner.lastRetrieveCall?.agentSourceScopeMode).toBe("selected");
+    // The override wins over the agent's baked-in instruction.
+    expect(runner.lastRetrieveCall?.customInstruction).toBe("Reply tersely.");
   });
 
   it("supports full_assistant mode, capturing the generated answer in the run output", async () => {

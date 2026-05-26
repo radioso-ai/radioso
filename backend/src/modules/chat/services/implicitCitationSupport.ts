@@ -37,6 +37,9 @@ const extractSignificantTerms = (value: string): string[] => {
   return [...new Set(terms)];
 };
 
+const normalizeComparableText = (value: string): string =>
+  value.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+
 export const splitIntoSentenceLikeSegments = (value: string): string[] => {
   const rawSegments = [...sentenceSegmenter.segment(value)]
     .map((segment) => segment.segment)
@@ -81,7 +84,11 @@ export const resolveImplicitCitationIndices = (
   // overlap or a clear win when multiple citations compete.
   const segmentTerms = extractSignificantTerms(text);
   if (segmentTerms.length < 3) {
-    return undefined;
+    const normalizedText = normalizeComparableText(text);
+    const exactIndex = citationEvidence.findIndex((citation) =>
+      normalizeComparableText(`${citation.title} ${citation.content}`).includes(normalizedText),
+    );
+    return exactIndex >= 0 ? [exactIndex] : undefined;
   }
 
   const scores = citationEvidence

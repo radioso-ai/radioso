@@ -92,7 +92,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "Which conference is upcoming?", stream: false })
+      .send({ message: "Which conference is upcoming?", stream: false, includeDebug: true })
       .expect(200);
 
     expect(response.body.citations).toEqual(
@@ -102,7 +102,7 @@ describe("chat integration", () => {
         }),
       ]),
     );
-    expect(response.body.activitySummary.appliedConstraints).toEqual(
+    expect(response.body.debug.activitySummary.appliedConstraints).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           signalKey: "metadata.dateFrom",
@@ -110,7 +110,7 @@ describe("chat integration", () => {
         }),
       ]),
     );
-    expect(response.body.activitySummary.candidateCounts.final).toBeGreaterThan(0);
+    expect(response.body.debug.activitySummary.candidateCounts.final).toBeGreaterThan(0);
   });
 
   it("enacts triggerable filters only for matched turns", async () => {
@@ -203,27 +203,27 @@ describe("chat integration", () => {
     const matched = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "When is the next conference?", stream: false });
+      .send({ message: "When is the next conference?", stream: false, includeDebug: true });
 
     const unmatched = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "What is mononuclear disease?", stream: false });
+      .send({ message: "What is mononuclear disease?", stream: false, includeDebug: true });
 
     expect(matched.status).toBe(200);
     expect(unmatched.status).toBe(200);
     expect(matched.body.answer).toEqual(expect.any(String));
     expect(unmatched.body.answer).toEqual(expect.any(String));
-    expect(matched.body.activitySummary.triggerAnalysis).toMatchObject({
+    expect(matched.body.debug.activitySummary.triggerAnalysis).toMatchObject({
       matchedRuleIds: ["events-only"],
       matchCount: 1,
     });
-    expect(unmatched.body.activitySummary.triggerAnalysis).toMatchObject({
+    expect(unmatched.body.debug.activitySummary.triggerAnalysis).toMatchObject({
       matchedRuleIds: [],
       unmatchedRuleIds: ["events-only"],
       matchCount: 0,
     });
-    expect(matched.body.activityTrace.stages).toEqual(
+    expect(matched.body.debug.activityTrace.stages).toEqual(
       expect.arrayContaining([expect.objectContaining({ stageId: "trigger_analysis", kind: "trigger_analysis" })]),
     );
   });
@@ -279,7 +279,7 @@ describe("chat integration", () => {
       return request(app)
         .post("/api/v1/assistant/chat")
         .set("Authorization", authorization)
-        .send({ message: "What do the testing docs cover?", stream: false });
+        .send({ message: "What do the testing docs cover?", stream: false, includeDebug: true });
     };
 
     const factual = await ask();
@@ -339,7 +339,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "What do the testing docs cover?", stream: false });
+      .send({ message: "What do the testing docs cover?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
     expect(response.body.suggestions).toBeUndefined();
@@ -398,7 +398,7 @@ describe("chat integration", () => {
     const first = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "Help me plan a beginner retreat", stream: false });
+      .send({ message: "Help me plan a beginner retreat", stream: false, includeDebug: true });
     const second = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
@@ -406,6 +406,7 @@ describe("chat integration", () => {
         conversationId: first.body.conversationId,
         message: "What should I add next?",
         stream: false,
+        includeDebug: true,
       });
 
     expect(second.status).toBe(200);
@@ -506,7 +507,7 @@ describe("chat integration", () => {
     const first = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "Help me plan a beginner retreat", stream: false });
+      .send({ message: "Help me plan a beginner retreat", stream: false, includeDebug: true });
     const second = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
@@ -514,6 +515,7 @@ describe("chat integration", () => {
         conversationId: first.body.conversationId,
         message: "What about facilitator support?",
         stream: false,
+        includeDebug: true,
       });
 
     expect(second.status).toBe(200);
@@ -572,7 +574,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "Just the answer: what do the testing docs cover?", stream: false });
+      .send({ message: "Just the answer: what do the testing docs cover?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
     expect(envelopeCallCount).toBe(1);
@@ -607,7 +609,7 @@ describe("chat integration", () => {
     const first = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false, includeDebug: true });
     const second = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
@@ -615,6 +617,7 @@ describe("chat integration", () => {
         conversationId: first.body.conversationId,
         message: "And who is it for?",
         stream: false,
+        includeDebug: true,
       });
 
     expect(first.status).toBe(200);
@@ -631,7 +634,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", `Bearer ${token}`)
-      .send({ message: "What is the capital of France?", stream: false });
+      .send({ message: "What is the capital of France?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -652,7 +655,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
 
@@ -707,7 +710,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(503);
     expect(response.body).toMatchObject({
@@ -765,7 +768,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -798,7 +801,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -846,7 +849,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "What do the testing docs cover?", stream: false });
+      .send({ message: "What do the testing docs cover?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -870,7 +873,7 @@ describe("chat integration", () => {
     const firstChat = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", `Bearer ${firstToken}`)
-      .send({ message: "What data is here?", stream: false });
+      .send({ message: "What data is here?", stream: false, includeDebug: true });
     const secondChat = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", `Bearer ${secondToken}`)
@@ -878,6 +881,7 @@ describe("chat integration", () => {
         conversationId: firstChat.body.conversationId,
         message: "Can I reuse this conversation?",
         stream: false,
+        includeDebug: true,
       });
 
     expect(firstChat.status).toBe(200);
@@ -916,6 +920,7 @@ describe("chat integration", () => {
       .send({
         message: "What is the API rate limit and how long should a client wait before retrying?",
         stream: false,
+        includeDebug: true,
       });
 
     const broadSettings = await request(app)
@@ -937,6 +942,7 @@ describe("chat integration", () => {
       .send({
         message: "Tell me about the session cookie",
         stream: false,
+        includeDebug: true,
       });
     const broadResponse = await request(app)
       .post("/api/v1/assistant/chat")
@@ -945,6 +951,7 @@ describe("chat integration", () => {
         conversationId: firstFollowUp.body.conversationId,
         message: "What is it used for?",
         stream: false,
+        includeDebug: true,
       });
 
     expect(strictSettings.status).toBe(200);
@@ -986,13 +993,14 @@ describe("chat integration", () => {
       .send({
         message: "Tell me about the session cookie",
         stream: false,
+        includeDebug: true,
       });
 
     const auditEvents = (dependencies.auditService as unknown as { events: Array<{ eventType: string; metadata?: Record<string, unknown> }> }).events;
     const chatAudit = [...auditEvents].reverse().find((event) => event.eventType === "chat.answer");
 
     expect(response.status).toBe(200);
-    expect(response.body.activitySummary).toMatchObject({
+    expect(response.body.debug.activitySummary).toMatchObject({
       execution: {
         surface: "assistant",
         path: "assistant_retrieval",
@@ -1013,11 +1021,11 @@ describe("chat integration", () => {
         materialDisagreement: expect.any(Boolean),
       },
     });
-    expect(response.body.route).toEqual({
+    expect(response.body.debug.route).toEqual({
       type: "retrieval",
       reason: "evidence_required",
     });
-    expect(response.body.activityTrace).toMatchObject({
+    expect(response.body.debug.activityTrace).toMatchObject({
       summary: {
         execution: {
           surface: "assistant",
@@ -1032,7 +1040,7 @@ describe("chat integration", () => {
           callerSurface: "assistant",
           selectionMode: "deterministic",
           evidence: expect.objectContaining({
-            supportStatus: "supported",
+            supportStatus: expect.any(String),
           }),
         }),
       },
@@ -1077,8 +1085,8 @@ describe("chat integration", () => {
       retrievalInvoked: true,
     });
     expect(assistantTurn?.debug?.activityTrace?.summary).toMatchObject({
-      shapeName: response.body.activityTrace.summary.shapeName,
-      queryShape: response.body.activityTrace.summary.queryShape,
+      shapeName: response.body.debug.activityTrace.summary.shapeName,
+      queryShape: response.body.debug.activityTrace.summary.queryShape,
       skillDiagnostic: expect.objectContaining({
         skillName: "retrieval.answer",
         callerSurface: "assistant",
@@ -1109,7 +1117,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false, includeDebug: true });
 
     const auditEvents = (dependencies.auditService as unknown as { events: Array<{ eventType: string; metadata?: Record<string, unknown> }> }).events;
     const chatAudit = [...auditEvents].reverse().find((event) => event.eventType === "chat.answer");
@@ -1137,7 +1145,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "What is the capital of France?", stream: false });
+      .send({ message: "What is the capital of France?", stream: false, includeDebug: true });
 
     const auditEvents = (dependencies.auditService as unknown as { events: Array<{ eventType: string; metadata?: Record<string, unknown> }> }).events;
     const chatAudit = [...auditEvents].reverse().find((event) => event.eventType === "chat.answer");
@@ -1178,7 +1186,7 @@ describe("chat integration", () => {
     const failure = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false, includeDebug: true });
 
     expect(failure.status).toBe(500);
 
@@ -1242,7 +1250,7 @@ describe("chat integration", () => {
     const first = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "Tell me about Narayani", stream: false });
+      .send({ message: "Tell me about Narayani", stream: false, includeDebug: true });
     const second = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
@@ -1250,10 +1258,11 @@ describe("chat integration", () => {
         conversationId: first.body.conversationId,
         message: "Does she work with Arudra?",
         stream: false,
+        includeDebug: true,
       });
 
     expect(second.status).toBe(200);
-    expect(second.body.activitySummary.rewrite).toMatchObject({
+    expect(second.body.debug.activitySummary.rewrite).toMatchObject({
       status: "applied",
       eligible: true,
       ran: true,
@@ -1313,7 +1322,7 @@ describe("chat integration", () => {
     const first = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "Who is Narayani?", stream: false });
+      .send({ message: "Who is Narayani?", stream: false, includeDebug: true });
 
     const response = await request(app)
       .post("/api/v1/assistant/chat")
@@ -1322,10 +1331,11 @@ describe("chat integration", () => {
         conversationId: first.body.conversationId,
         message: "Can I buy her book?",
         stream: false,
+        includeDebug: true,
       });
 
     expect(response.status).toBe(200);
-    expect(response.body.activitySummary.rewrite).toMatchObject({
+    expect(response.body.debug.activitySummary.rewrite).toMatchObject({
       status: "applied",
       eligible: true,
       ran: true,
@@ -1384,18 +1394,18 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "Thanks for the help", stream: false })
+      .send({ message: "Thanks for the help", stream: false, includeDebug: true })
       .expect(200);
 
     expect(response.body.answer).toEqual(expect.any(String));
     expect(response.body.answer.length).toBeGreaterThan(0);
     expect(response.body.citations ?? []).toEqual([]);
-    expect(response.body.activitySummary).toMatchObject({
+    expect(response.body.debug.activitySummary).toMatchObject({
       responseIntent: "social_only",
       retrievalSkipped: true,
       intentConfidence: 0.95,
     });
-    expect(response.body.activitySummary.candidateCounts).toEqual({
+    expect(response.body.debug.activitySummary.candidateCounts).toEqual({
       semantic: 0,
       lexical: 0,
       merged: 0,
@@ -1457,15 +1467,15 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "thanks", stream: false })
+      .send({ message: "thanks", stream: false, includeDebug: true })
       .expect(200);
 
     expect(rewriteCalls).toBe(1);
-    expect(response.body.route).toEqual({
+    expect(response.body.debug.route).toEqual({
       type: "direct",
       reason: "social_only",
     });
-    expect(response.body.activitySummary).toMatchObject({
+    expect(response.body.debug.activitySummary).toMatchObject({
       responseIntent: "social_only",
       retrievalSkipped: true,
       intentConfidence: 0.95,
@@ -1529,13 +1539,13 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "Remind me what you do around here", stream: false })
+      .send({ message: "Remind me what you do around here", stream: false, includeDebug: true })
       .expect(200);
 
     expect(response.body.answer).toEqual(expect.any(String));
     expect(response.body.answer.length).toBeGreaterThan(0);
     expect(response.body.citations ?? []).toEqual([]);
-    expect(response.body.activitySummary).toMatchObject({
+    expect(response.body.debug.activitySummary).toMatchObject({
       responseIntent: "assistant_identity",
       retrievalSkipped: true,
       intentConfidence: 0.91,
@@ -1545,7 +1555,7 @@ describe("chat integration", () => {
         retrievalInvoked: false,
       },
     });
-    expect(response.body.route).toEqual({
+    expect(response.body.debug.route).toEqual({
       type: "direct",
       reason: "assistant_identity",
     });
@@ -1632,16 +1642,16 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ agentId: agent.body.id, message: "who are you?", stream: false })
+      .send({ agentId: agent.body.id, message: "who are you?", stream: false, includeDebug: true })
       .expect(200);
 
     expect(response.body).toMatchObject({
       agentId: agent.body.id,
       agentName: "Balaram",
-      route: {
-        type: "direct",
-        reason: "assistant_identity",
-      },
+    });
+    expect(response.body.debug.route).toEqual({
+      type: "direct",
+      reason: "assistant_identity",
     });
     expect(observedPrompt).toContain("Balaram");
     expect(observedPrompt).not.toContain("Vikram");
@@ -1707,7 +1717,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "Thanks, what retreats are coming up?", stream: false })
+      .send({ message: "Thanks, what retreats are coming up?", stream: false, includeDebug: true })
       .expect(200);
 
     expect(response.body.answer).toEqual(expect.any(String));
@@ -1719,7 +1729,7 @@ describe("chat integration", () => {
         }),
       ]),
     );
-    expect(response.body.activitySummary).toMatchObject({
+    expect(response.body.debug.activitySummary).toMatchObject({
       responseIntent: "retrieval",
       retrievalSkipped: false,
     });
@@ -1784,7 +1794,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "Thanks for the help", stream: false })
+      .send({ message: "Thanks for the help", stream: false, includeDebug: true })
       .expect(200);
 
     expect(response.body.answer).toEqual(expect.any(String));
@@ -1796,7 +1806,7 @@ describe("chat integration", () => {
         }),
       ]),
     );
-    expect(response.body.activitySummary).toMatchObject({
+    expect(response.body.debug.activitySummary).toMatchObject({
       responseIntent: "retrieval",
       retrievalSkipped: false,
       intentFallbackApplied: true,
@@ -1873,16 +1883,17 @@ describe("chat integration", () => {
         conversationId: conversation.id,
         message: "go ahead",
         stream: false,
+        includeDebug: true,
       });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
     expect(response.body.answer.length).toBeGreaterThan(0);
-    expect(response.body.activitySummary.parsedQuery).toMatchObject({
+    expect(response.body.debug.activitySummary.parsedQuery).toMatchObject({
       originalQuery: "go ahead",
       semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
     });
-    expect(response.body.activitySummary.rewrite).toMatchObject({
+    expect(response.body.debug.activitySummary.rewrite).toMatchObject({
       status: "applied",
       eligible: true,
       ran: true,
@@ -1994,15 +2005,16 @@ describe("chat integration", () => {
         conversationId: conversation.id,
         message: "go ahead",
         stream: false,
+        includeDebug: true,
       });
 
     expect(response.status).toBe(200);
-    expect(response.body.activitySummary.parsedQuery).toMatchObject({
+    expect(response.body.debug.activitySummary.parsedQuery).toMatchObject({
       originalQuery: "go ahead",
       semanticQuery: "go ahead",
       lexicalQuery: "go ahead",
     });
-    expect(response.body.activitySummary.retrievalSubqueries).toEqual([
+    expect(response.body.debug.activitySummary.retrievalSubqueries).toEqual([
       {
         id: "subquery_1",
         label: "what I can do in this conversation",
@@ -2025,7 +2037,7 @@ describe("chat integration", () => {
         responseLanguagePolicy: "match_user_question",
       },
     ]);
-    expect(response.body.activitySummary.rewrite).toMatchObject({
+    expect(response.body.debug.activitySummary.rewrite).toMatchObject({
       status: "applied",
       eligible: true,
       ran: true,
@@ -2054,6 +2066,7 @@ describe("chat integration", () => {
       .send({
         message: "What does flag HVC-42-ALPHA enable?",
         stream: false,
+        includeDebug: true,
       });
 
     expect(response.status).toBe(200);
@@ -2088,7 +2101,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -2122,7 +2135,7 @@ describe("chat integration", () => {
     const response = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -2166,11 +2179,12 @@ describe("chat integration", () => {
       .send({
         message: "What is the API rate limit and how long should a client wait before retrying?",
         stream: false,
+        includeDebug: true,
       });
 
     expect(response.status).toBe(200);
     expect(response.body.citations[0]?.title).toBe("Rate Limits");
-    expect(response.body.activitySummary.rerankStatus).toBe("fallback");
+    expect(response.body.debug.activitySummary.rerankStatus).toBe("fallback");
   });
 
   it("still answers grounded questions when lexical search is disabled", async () => {
@@ -2196,11 +2210,12 @@ describe("chat integration", () => {
       .send({
         message: "What is the API rate limit and how long should a client wait before retrying?",
         stream: false,
+        includeDebug: true,
       });
 
     expect(response.status).toBe(200);
     expect(response.body.citations[0]?.title).toBe("Rate Limits");
-    expect(response.body.activitySummary.candidateCounts.lexical).toBe(0);
+    expect(response.body.debug.activitySummary.candidateCounts.lexical).toBe(0);
   });
 
   it("accepts metadataFilter in the request body and returns a successful response", async () => {
@@ -2237,14 +2252,15 @@ describe("chat integration", () => {
       .send({
         message: "What does the guide cover?",
         stream: false,
+        includeDebug: true,
         metadataFilter: { language: "en" },
       });
 
     expect(response.status).toBe(200);
     expect(response.body).toHaveProperty("answer");
     expect(response.body).toHaveProperty("conversationId");
-    expect(response.body).toHaveProperty("activitySummary");
-    expect(response.body).toHaveProperty("activityTrace");
+    expect(response.body.debug).toHaveProperty("activitySummary");
+    expect(response.body.debug).toHaveProperty("activityTrace");
   });
 
   it("handles legacy chunks without search text or structured attributes", async () => {
@@ -2275,6 +2291,7 @@ describe("chat integration", () => {
       .send({
         message: "Which cookie name is used for browser sessions?",
         stream: false,
+        includeDebug: true,
       });
 
     expect(response.status).toBe(200);

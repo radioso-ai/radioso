@@ -24,25 +24,28 @@ describe("retrieval answer integration", () => {
       .set(headers)
       .send({
         query: "When does the advanced workshop run?",
+        includeDebug: true,
       })
       .expect(200);
 
     expect(response.body).toMatchObject({
       outcome: "answer",
       answer: expect.any(String),
-      activitySummary: {
-        execution: {
-          surface: "retrieval",
-          path: "retrieval_answer",
-          retrievalInvoked: true,
-        },
-      },
-      activityTrace: {
-        summary: {
+      debug: {
+        activitySummary: {
           execution: {
             surface: "retrieval",
             path: "retrieval_answer",
             retrievalInvoked: true,
+          },
+        },
+        activityTrace: {
+          summary: {
+            execution: {
+              surface: "retrieval",
+              path: "retrieval_answer",
+              retrievalInvoked: true,
+            },
           },
         },
       },
@@ -103,6 +106,7 @@ describe("retrieval answer integration", () => {
       .set(headers)
       .send({
         query: "What about that one?",
+        includeDebug: true,
         conversationContext: {
           previousUserMessages: ["Do you have an advanced workshop?"],
           previousAssistantMessages: ["The advanced workshop is available for returning students."],
@@ -116,22 +120,24 @@ describe("retrieval answer integration", () => {
     ]);
     expect(response.body).toMatchObject({
       outcome: "answer",
-      activitySummary: {
-        parsedQuery: {
-          originalQuery: "What about that one?",
-          semanticQuery: "advanced workshop next month returning students",
-          lexicalQuery: "advanced workshop next month",
-        },
-        rewrite: {
-          status: "applied",
-          eligible: true,
-          ran: true,
-          continuityDecision: "updated",
-        },
-        execution: {
-          surface: "retrieval",
-          path: "retrieval_answer",
-          retrievalInvoked: true,
+      debug: {
+        activitySummary: {
+          parsedQuery: {
+            originalQuery: "What about that one?",
+            semanticQuery: "advanced workshop next month returning students",
+            lexicalQuery: "advanced workshop next month",
+          },
+          rewrite: {
+            status: "applied",
+            eligible: true,
+            ran: true,
+            continuityDecision: "updated",
+          },
+          execution: {
+            surface: "retrieval",
+            path: "retrieval_answer",
+            retrievalInvoked: true,
+          },
         },
       },
     });
@@ -204,15 +210,16 @@ describe("retrieval answer integration", () => {
       .set("x-radioso-capability-client", "mcp")
       .send({
         query: "When does the advanced workshop run?",
+        includeDebug: true,
       })
       .expect(200);
 
-    expect(response.body.activitySummary.execution).toMatchObject({
+    expect(response.body.debug.activitySummary.execution).toMatchObject({
       surface: "mcp_capability",
       path: "mcp_grounded_answer",
       retrievalInvoked: true,
     });
-    expect(response.body.activityTrace.summary.execution).toMatchObject({
+    expect(response.body.debug.activityTrace.summary.execution).toMatchObject({
       surface: "mcp_capability",
       path: "mcp_grounded_answer",
       retrievalInvoked: true,

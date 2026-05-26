@@ -17,7 +17,9 @@ interface ErrorInput {
   errorType: string;
   severity?: ErrorSeverity;
   error?: unknown;
+  errorClass?: string;
   message?: string;
+  stack?: string;
   correlation?: CorrelationFields;
   requestContext?: ErrorRequestContext;
   metadata?: Record<string, unknown>;
@@ -66,8 +68,8 @@ export class ErrorReportingService {
       environment: this.options.environment,
       version: this.options.version,
       message: input.message ?? serializedError.message,
-      errorClass: serializedError.errorClass,
-      stack: serializedError.stack,
+      errorClass: input.errorClass ?? serializedError.errorClass,
+      stack: input.stack ?? serializedError.stack,
       correlation: input.correlation,
       requestContext: input.requestContext,
       metadata: redactRecord({

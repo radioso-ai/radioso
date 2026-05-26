@@ -169,10 +169,7 @@ describe("anonymous chat bootstrap integration", () => {
       .send({ message: "What do the testing docs cover?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(response.body.route).toEqual({
-      type: "retrieval",
-      reason: "evidence_required",
-    });
+    expect(response.body).not.toHaveProperty("route");
     expect(response.body).not.toHaveProperty("citations");
     expect(response.body.answerSegments).toEqual(
       expect.arrayContaining([
@@ -181,11 +178,7 @@ describe("anonymous chat bootstrap integration", () => {
         }),
       ]),
     );
-    expect(response.body.activitySummary.execution).toMatchObject({
-      surface: "assistant",
-      path: "assistant_retrieval",
-      retrievalInvoked: true,
-    });
+    expect(response.body).not.toHaveProperty("activitySummary");
     expect(response.body.suggestions.length).toBeGreaterThan(0);
     expect(
       response.body.suggestions.every((suggestion: { kind: string }) =>
@@ -210,11 +203,6 @@ describe("anonymous chat bootstrap integration", () => {
         }),
       ]),
     );
-    expect(assistantTurn?.debug?.route).toMatchObject({
-      generator: "assistant",
-      routeType: "retrieval",
-      routeReason: "evidence_required",
-      retrievalInvoked: true,
-    });
+    expect(assistantTurn).not.toHaveProperty("debug");
   });
 });

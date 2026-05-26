@@ -59,6 +59,8 @@ export class BlankChatAnswerError extends Error {
 }
 
 const isBlankChatAnswerError = (error: unknown): error is BlankChatAnswerError => error instanceof BlankChatAnswerError;
+const hasCitedAnswerSegment = (presentation: ChatPresentedAnswer): boolean =>
+  presentation.answerSegments?.some((segment) => (segment.citationIndices?.length ?? 0) > 0) ?? false;
 
 export class ModelChatGateway implements ChatGateway {
   constructor(private readonly client: TextGenerationClient) {}
@@ -638,12 +640,25 @@ export class ChatService {
         }
       }
 
-      const presentationWithoutSuggestions = noContextPresentation ?? await this.chatAnswerPresenter.presentWithoutSuggestions(
+      let presentationWithoutSuggestions = noContextPresentation ?? await this.chatAnswerPresenter.presentWithoutSuggestions(
         session,
         rawAnswer,
         input.query,
         input.userExpectedLocale,
       );
+      if (
+        !noContextPresentation
+        && session.retrieval.contexts.length > 0
+        && !hasCitedAnswerSegment(presentationWithoutSuggestions)
+      ) {
+        const groundedMiss = await this.groundedMissResponseComposer.composeNoContext({
+          query: input.query,
+          userExpectedLocale: input.userExpectedLocale,
+          answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+          workspaceContext: this.buildChatWorkspaceContext(session),
+        });
+        presentationWithoutSuggestions = this.chatAnswerPresenter.presentGroundedMissAnswer(groundedMiss);
+      }
       // The lazy promise can call chatActionSuggestionService.evaluate (which may
       // hit an LLM). If completeAssistantTurn below throws, we rethrow but the
       // promise stays in flight — swallow its rejection so it can't surface as an
@@ -777,13 +792,24 @@ export class ChatService {
       plannedSuggestions = envelope.suggestions;
     }
 
-    return this.chatAnswerPresenter.presentWithSuggestions(
+    const presentation = await this.chatAnswerPresenter.presentWithSuggestions(
       session,
       answer,
       query,
       plannedSuggestions,
       userExpectedLocale,
     );
+    if (session.retrieval.contexts.length > 0 && !hasCitedAnswerSegment(presentation)) {
+      const groundedMiss = await this.groundedMissResponseComposer.composeNoContext({
+        query,
+        userExpectedLocale,
+        answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+        workspaceContext: this.buildChatWorkspaceContext(session),
+      });
+      return this.chatAnswerPresenter.presentGroundedMissAnswer(groundedMiss);
+    }
+
+    return presentation;
   }
 
   private async handleSkillIntake(

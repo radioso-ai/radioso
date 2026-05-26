@@ -427,6 +427,18 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   const latestRun = caseWithRuns.runs[0] ?? null
   const originalAnswer = [...snapshot.messages].reverse().find((m) => m.role === 'assistant')?.content ?? null
 
+  // When a run exists with an answer, the original assistant answer is the
+  // left-hand side of the Latest run diff — no need to repeat it in the
+  // conversation card. Drop the trailing assistant turn (and only that) so
+  // the conversation reads "what the user asked + any prior context" and the
+  // diff card owns the answer being graded.
+  const hasRunWithAnswer = latestRun?.observedOutput.answer !== undefined
+  const conversationMessages = (() => {
+    if (!hasRunWithAnswer || snapshot.messages.length === 0) return snapshot.messages
+    const last = snapshot.messages[snapshot.messages.length - 1]
+    return last?.role === 'assistant' ? snapshot.messages.slice(0, -1) : snapshot.messages
+  })()
+
   return (
     <DashboardPage
       title={caseWithRuns.name}
@@ -507,12 +519,13 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
           <CardHeader>
             <CardTitle className="text-base">Conversation</CardTitle>
             <CardDescription>
-              {snapshot.messages.length} message{snapshot.messages.length === 1 ? '' : 's'} captured from this turn
+              {conversationMessages.length} message{conversationMessages.length === 1 ? '' : 's'} captured from this turn
+              {hasRunWithAnswer ? ' — original answer shown in the latest-run diff below' : ''}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <ChatMessageThread
-              messages={toThreadMessages(snapshot.messages)}
+              messages={toThreadMessages(conversationMessages)}
               onOpenDocument={noopOpenDocument}
               showCitations={false}
             />

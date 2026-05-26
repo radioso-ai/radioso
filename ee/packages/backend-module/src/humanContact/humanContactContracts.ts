@@ -4,6 +4,7 @@ export interface HumanContactSettingsProvider {
     configured: boolean;
     emailEnabled: boolean;
     defaultEmail: string | null;
+    defaultEmails: string[];
     webhookEnabled: boolean;
     webhookUrl: string | null;
     signingSecretConfigured: boolean;
@@ -15,6 +16,7 @@ export interface HumanContactSettingsProvider {
     enabled: boolean;
     emailEnabled?: boolean;
     defaultEmail?: string | null;
+    defaultEmails?: string[] | null;
     webhookEnabled?: boolean;
     webhookUrl?: string | null;
     signingSecret?: string | null;
@@ -24,6 +26,7 @@ export interface HumanContactSettingsProvider {
     configured: boolean;
     emailEnabled: boolean;
     defaultEmail: string | null;
+    defaultEmails: string[];
     webhookEnabled: boolean;
     webhookUrl: string | null;
     signingSecretConfigured: boolean;

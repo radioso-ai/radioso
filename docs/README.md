@@ -7,6 +7,8 @@ Before creating or revising documentation in this repo, read [Document Writer Pr
 ## Start here
 
 - [Documentation Improvement Plan](./documentation-improvement-plan.md) - current audit of thin docs and the rewrite priorities
+- [Code Map](./architecture/code-map.md) - stable map from product areas to owners, entry points, tests, and related docs
+- [Agent Context Workflow](./agent-context-workflow.md) - lightweight workflow and `.context/` template for low-context feature starts
 - [OSS And SaaS Observability](./oss-saas-observability.md) - runtime flags, `/metrics`, and optional PostHog or Sentry adapters
 - [Self-hosting Operations](../docs-portal/content/operators/self-hosting-operations.mdx) - backup, restore, upgrade, and worker error practices
 - [Assistant Execution Model](./assistant-execution-model.md) - why interactive chat and deferred work stay separate

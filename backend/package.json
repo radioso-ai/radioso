@@ -79,7 +79,7 @@
     "dependency-cruiser": "^17.4.0",
     "openapi-typescript": "^7.13.0",
     "supertest": "^7.1.4",
-    "tsx": "^4.20.5",
+    "tsx": "^4.22.1",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },

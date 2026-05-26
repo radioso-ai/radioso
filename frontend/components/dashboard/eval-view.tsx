@@ -126,20 +126,24 @@ function EvalList({ accountId, routeState }: EvalListProps) {
   const [cases, setCases] = useState<EvalCase[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const refresh = useCallback(async () => {
-    try {
-      const response = await evalsApi.listCases()
-      setCases(response.cases)
-      setError(null)
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Eval request failed'))
-      setCases([])
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const response = await evalsApi.listCases()
+        if (cancelled) return
+        setCases(response.cases)
+        setError(null)
+      } catch (err) {
+        if (cancelled) return
+        setError(getApiErrorMessage(err, 'Eval request failed'))
+        setCases([])
+      }
+    })()
+    return () => {
+      cancelled = true
     }
   }, [])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
 
   const openCase = (caseId: string) => {
     router.push(buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: caseId }))
@@ -263,21 +267,30 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   // filter to credentialed/env-configured providers.
   const [availableProviders, setAvailableProviders] = useState<Set<LlmProviderName> | null>(null)
 
-  const load = useCallback(async () => {
-    try {
-      const c = await evalsApi.getCase(caseId)
-      setCaseWithRuns(c)
-      const snap = await evalsApi.getSnapshot(c.snapshotId)
-      setSnapshot(snap)
-      setError(null)
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Eval request failed'))
-    }
+  const loadCase = useCallback(async () => {
+    const c = await evalsApi.getCase(caseId)
+    const snap = await evalsApi.getSnapshot(c.snapshotId)
+    return { c, snap }
   }, [caseId])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    let cancelled = false
+    void (async () => {
+      try {
+        const { c, snap } = await loadCase()
+        if (cancelled) return
+        setCaseWithRuns(c)
+        setSnapshot(snap)
+        setError(null)
+      } catch (err) {
+        if (cancelled) return
+        setError(getApiErrorMessage(err, 'Eval request failed'))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [loadCase])
 
   // Best-effort: load a page of documents to resolve titles for the expectation
   // editor and run output. IDs not in the first page show as id slugs.
@@ -374,13 +387,15 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
         mode,
         overrides: modelOverride ? { modelOverride } : undefined,
       })
-      await load()
+      const { c, snap } = await loadCase()
+      setCaseWithRuns(c)
+      setSnapshot(snap)
     } catch (err) {
       setError(getApiErrorMessage(err, 'Eval request failed'))
     } finally {
       setRunning(false)
     }
-  }, [caseId, caseWithRuns, load, modelOverride])
+  }, [caseId, caseWithRuns, loadCase, modelOverride])
 
   const backHref = useMemo(
     () => buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: undefined }),
@@ -493,7 +508,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground">
-                  One-shot override for the next run. Doesn't change the workspace's chat model. The judge always uses the workspace default.
+                  One-shot override for the next run. It does not change the workspace chat model. The judge always uses the workspace default.
                 </p>
               </div>
             </div>
@@ -550,6 +565,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
           </CardHeader>
           <CardContent>
             <AssertionEditor
+              key={`${caseWithRuns.id}:${JSON.stringify(caseWithRuns.assertions)}`}
               caseId={caseWithRuns.id}
               initial={caseWithRuns.assertions}
               resolveDocumentTitle={titleFor}

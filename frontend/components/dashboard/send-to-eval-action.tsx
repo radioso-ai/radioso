@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { FlaskConical } from 'lucide-react'
 
@@ -107,14 +107,20 @@ function SendToEvalDialog({
     ? workspaces.find((w) => w.id === activeWorkspaceId)?.publicRouteKey
     : undefined
 
-  const [name, setName] = useState(() => defaultCaseName(userQueryPreview))
+  const defaultName = defaultCaseName(userQueryPreview)
+  const [nameState, setNameState] = useState(() => ({
+    source: userQueryPreview,
+    value: defaultName,
+  }))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Re-seed the name suggestion if the dialog is reopened on a different turn.
-  useEffect(() => {
-    setName(defaultCaseName(userQueryPreview))
-  }, [userQueryPreview])
+  if (nameState.source !== userQueryPreview) {
+    setNameState({ source: userQueryPreview, value: defaultName })
+  }
+
+  const name = nameState.source === userQueryPreview ? nameState.value : defaultName
+  const setName = (value: string) => setNameState({ source: userQueryPreview, value })
 
   const submit = useCallback(async () => {
     setError(null)

@@ -345,6 +345,15 @@ The browser should send these events to Radioso's generic observability API.
 From there, the backend product analytics service persists the first-party
 audit event and Enterprise sinks can fan it out to hosted analytics providers.
 
+Frontend render and runtime errors follow the same rule. The application shell
+uses Radioso's own error boundary and reporter in
+[`frontend/components/frontend-error-boundary.tsx`](../frontend/components/frontend-error-boundary.tsx)
+and [`frontend/lib/frontend-errors.ts`](../frontend/lib/frontend-errors.ts).
+The browser posts sanitized error envelopes to
+`/api/v1/observability/frontend-errors`; the backend records them through the
+generic error reporting service and configured error sinks. React components do
+not import PostHog, Sentry, or any other vendor SDK.
+
 ## Rollout Plan
 
 ### Phase 1

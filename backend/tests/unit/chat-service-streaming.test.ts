@@ -1801,9 +1801,9 @@ describe("chat service streaming", () => {
         reason: "evidence_required",
       },
       answer: "full answer",
-      citations: undefined,
+      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [
-        { text: "full answer" },
+        { text: "full answer", citationIndices: [0] },
       ],
       suggestions: undefined,
       activitySummary: expect.objectContaining({
@@ -1940,7 +1940,7 @@ describe("chat service streaming", () => {
     ]);
   });
 
-  it("preserves mixed unsupported substantive content before returning a non-streaming grounded answer", async () => {
+  it("omits mixed unsupported substantive content before returning a non-streaming grounded answer", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2005,10 +2005,9 @@ describe("chat service streaming", () => {
 
     expect(response.answer).toEqual(expect.any(String));
     expect(response.answer.length).toBeGreaterThan(0);
-    expect(response.answer).toContain("24/7 phone support");
+    expect(response.answer).not.toContain("24/7 phone support");
     expect(response.answerSegments).toEqual([
       expect.objectContaining({ text: expect.any(String), citationIndices: [0] }),
-      expect.objectContaining({ text: expect.stringContaining("24/7 phone support") }),
     ]);
 
     const [conversationId] = conversationRepository.items.keys();
@@ -2016,7 +2015,7 @@ describe("chat service streaming", () => {
     expect(persisted.at(-1)?.content).toBe(response.answer);
   });
 
-  it("keeps generated substantive content outside cited segments", async () => {
+  it("drops generated substantive content outside cited segments", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2079,7 +2078,7 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(response.answer).toContain("24/7 phone support");
+    expect(response.answer).not.toContain("24/7 phone support");
     expect(response.citations).toEqual([{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }]);
     expect(response.answerSegments).toEqual([
       {
@@ -2087,7 +2086,7 @@ describe("chat service streaming", () => {
         citationIndices: [0],
       },
       {
-        text: ". It also offers 24/7 phone support.",
+        text: ".",
       },
     ]);
     expect(response.activityTrace.stages).toEqual(expect.arrayContaining([
@@ -2341,7 +2340,7 @@ describe("chat service streaming", () => {
     expect(persisted.at(-1)?.content).toBe(response.answer);
   });
 
-  it("streams provisional strict-mode chunks and preserves the mixed final answer", async () => {
+  it("streams provisional strict-mode chunks and omits unsupported content from the final answer", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2431,7 +2430,7 @@ describe("chat service streaming", () => {
     expect(events.at(-1)).toEqual(
       expect.objectContaining({
         type: "done",
-        answer: "The page explains testing and parsing content for users. It also offers 24/7 phone support.",
+        answer: "The page explains testing and parsing content for users.",
       }),
     );
   });
@@ -2519,7 +2518,7 @@ describe("chat service streaming", () => {
               stageId: "answer",
               kind: "answer_outcome",
               outputs: expect.objectContaining({
-                outcome: "grounded_success",
+                outcome: "no_context_refusal",
               }),
             }),
           ]),

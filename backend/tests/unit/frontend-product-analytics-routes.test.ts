@@ -122,6 +122,8 @@ describe("frontend product analytics routes", () => {
   it("rejects forged tenant identity and extra page-view properties", async () => {
     const { app } = createTestApp();
 
+    // The route is intentionally strict: browser-originated observability
+    // payloads cannot claim tenant or actor identity.
     await request(app)
       .post("/api/v1/observability/product-analytics")
       .send({
@@ -144,6 +146,105 @@ describe("frontend product analytics routes", () => {
           path: "/chat/secret",
           url: "https://radioso.app/chat/secret?token=secret",
         },
+        source: "frontend",
+      })
+      .expect(400);
+  });
+});
+
+describe("frontend error reporting routes", () => {
+  it("captures frontend errors through the generic error reporting service", async () => {
+    const { app, repositories } = createTestApp();
+
+    await request(app)
+      .post("/api/v1/observability/frontend-errors")
+      .send({
+        errorType: "frontend.react.unhandled",
+        message: "Dashboard render failed",
+        errorClass: "TypeError",
+        stack: "TypeError: Dashboard render failed\n    at Dashboard (https://app.example/w/acme/chat?token=secret:1:2)",
+        componentStack: "\n    at Dashboard\n    at App",
+        path: "/w/acme/chat?token=secret",
+        source: "frontend",
+      })
+      .expect(202, {
+        accepted: true,
+        recorded: true,
+      });
+
+    expect(repositories.auditEventRepository.items).toContainEqual(expect.objectContaining({
+      eventType: "error.recorded",
+      eventStatus: "failure",
+      metadata: {
+        error: expect.objectContaining({
+          errorType: "frontend.react.unhandled",
+          message: "Dashboard render failed",
+          errorClass: "TypeError",
+          requestContext: {
+            method: "CLIENT",
+            route: "/w/[workspaceKey]/chat",
+          },
+          metadata: expect.objectContaining({
+            componentStack: "\n    at Dashboard\n    at App",
+            source: "frontend",
+            userAgent: expect.any(String),
+          }),
+          stack: expect.not.stringContaining("secret"),
+        }),
+      },
+    }));
+  });
+
+  it("truncates oversized frontend error payload fields instead of rejecting the report", async () => {
+    const { app, repositories } = createTestApp();
+
+    await request(app)
+      .post("/api/v1/observability/frontend-errors")
+      .send({
+        errorType: "frontend.runtime.unhandled",
+        message: "m".repeat(2058),
+        errorClass: "TypeError",
+        stack: "s".repeat(16_394),
+        componentStack: "c".repeat(8202),
+        path: "/w/acme/chat",
+        source: "frontend",
+      })
+      .expect(202);
+
+    expect(repositories.auditEventRepository.items).toContainEqual(expect.objectContaining({
+      eventType: "error.recorded",
+      metadata: {
+        error: expect.objectContaining({
+          message: "m".repeat(2048),
+          stack: "s".repeat(16_384),
+          metadata: expect.objectContaining({
+            componentStack: "c".repeat(8192),
+          }),
+        }),
+      },
+    }));
+  });
+
+  it("rejects forged identity and unsupported frontend error types", async () => {
+    const { app } = createTestApp();
+
+    await request(app)
+      .post("/api/v1/observability/frontend-errors")
+      .send({
+        errorType: "posthog.capture",
+        message: "boom",
+        path: "/w/acme/chat",
+        source: "frontend",
+      })
+      .expect(400);
+
+    await request(app)
+      .post("/api/v1/observability/frontend-errors")
+      .send({
+        errorType: "frontend.runtime.unhandled",
+        message: "boom",
+        workspaceId: "workspace-1",
+        path: "/w/acme/chat",
         source: "frontend",
       })
       .expect(400);

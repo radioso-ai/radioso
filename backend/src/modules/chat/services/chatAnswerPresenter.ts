@@ -16,6 +16,80 @@ import type { ChatActionSuggestionService } from "./actionSuggestions/chatAction
 import type { PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
 import { resolveCitationArtifacts } from "./implicitCitationSupport.js";
 
+const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
+
+const hasWordLikeContent = (value: string): boolean => {
+  for (const segment of wordSegmenter.segment(value)) {
+    if (segment.isWordLike) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const leadingNonWordText = (value: string): string => {
+  for (const segment of wordSegmenter.segment(value)) {
+    if (segment.isWordLike) {
+      return value.slice(0, segment.index).trimEnd();
+    }
+  }
+
+  return value;
+};
+
+const includesIdentityName = (segment: AnswerSegment, identityName?: string): boolean =>
+  Boolean(identityName && segment.text.toLocaleLowerCase().includes(identityName.toLocaleLowerCase()));
+
+const hasMarkdownLink = (segment: AnswerSegment): boolean => /\[[^\]\n]+]\([^)]+\)/.test(segment.text);
+
+const filterUnsupportedGroundedSegments = (
+  answerSegments: AnswerSegment[] | undefined,
+  identityName?: string,
+): AnswerSegment[] | undefined => {
+  if (!answerSegments) {
+    return undefined;
+  }
+
+  const filtered: AnswerSegment[] = [];
+
+  for (const segment of answerSegments) {
+    if (
+      (segment.citationIndices?.length ?? 0) > 0
+      || !hasWordLikeContent(segment.text)
+      || includesIdentityName(segment, identityName)
+      || hasMarkdownLink(segment)
+    ) {
+      filtered.push(segment);
+      continue;
+    }
+
+    const prefix = leadingNonWordText(segment.text);
+    if (prefix && filtered.some((candidate) => (candidate.citationIndices?.length ?? 0) > 0)) {
+      filtered.push({ text: prefix });
+    }
+  }
+
+  return filtered;
+};
+
+const hasCitedSegment = (answerSegments: AnswerSegment[] | undefined): boolean =>
+  answerSegments?.some((segment) => (segment.citationIndices?.length ?? 0) > 0) ?? false;
+
+const hasUnsupportedSubstantiveSegment = (
+  answerSegments: AnswerSegment[] | undefined,
+  identityName?: string,
+): boolean =>
+  answerSegments?.some((segment) =>
+    (segment.citationIndices?.length ?? 0) === 0
+    && hasWordLikeContent(segment.text)
+    && !includesIdentityName(segment, identityName)
+    && !hasMarkdownLink(segment),
+  ) ?? false;
+
+const rebuildAnswerFromSegments = (answerSegments: AnswerSegment[]): string =>
+  answerSegments.map((segment) => segment.text).join("").trim();
+
 export interface ChatPresentedAnswer {
   answer: string;
   citations?: ChatCitation[];
@@ -157,10 +231,19 @@ export class ChatAnswerPresenter {
       citations: citationEvidence,
     });
     const citationArtifacts = resolveCitationArtifacts(presented, normalized, citationEvidence);
+    const identityName = session.retrieval.responseIdentity?.name;
+    const answerSegments = hasUnsupportedSubstantiveSegment(citationArtifacts.answerSegments, identityName)
+      ? filterUnsupportedGroundedSegments(citationArtifacts.answerSegments, identityName)
+      : citationArtifacts.answerSegments;
+    const filteredAnswer = answerSegments && hasCitedSegment(answerSegments)
+      ? rebuildAnswerFromSegments(answerSegments)
+      : presented.answer;
 
     return withLegacyAnswerOutcome({
       ...presented,
       ...citationArtifacts,
+      answer: filteredAnswer,
+      answerSegments,
       planningCitations: toPlanningCitations(normalized.citationEvidence),
       skillName: SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.skillName,
       skillOutcome: SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.outcome,
@@ -253,5 +336,9 @@ export class ChatAnswerPresenter {
       skillOutcome: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome,
       skillStatus: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.status,
     });
+  }
+
+  presentGroundedMissAnswer(answer: string): ChatPresentedAnswer {
+    return this.presentNoContextRefusal(answer, []);
   }
 }

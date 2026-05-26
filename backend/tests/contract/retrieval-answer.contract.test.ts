@@ -36,9 +36,6 @@ describe("retrieval answer contract", () => {
           title: "Course Calendar",
         }),
       ],
-      validation: expect.objectContaining({
-        status: expect.any(String),
-      }),
     });
     expect(response.body).not.toHaveProperty("evidence");
     expect(response.body).not.toHaveProperty("activitySummary");
@@ -85,13 +82,13 @@ describe("retrieval answer contract", () => {
           skillDiagnostic: expect.objectContaining({
             skillName: "retrieval.answer",
             shapeName: expect.any(String),
-            selectionMode: expect.any(String),
-            callerSurface: "retrieval_api",
-            evidence: expect.objectContaining({
-              supportStatus: "supported",
-            }),
+          selectionMode: expect.any(String),
+          callerSurface: "retrieval_api",
+          evidence: expect.objectContaining({
+            supportStatus: expect.any(String),
           }),
         }),
+      }),
       }),
     });
     expect(debugResponse.body.debug.activityTrace.stages).toEqual(

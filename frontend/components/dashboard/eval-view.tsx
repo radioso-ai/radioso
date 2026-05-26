@@ -16,6 +16,9 @@ import {
   DashboardTableHeader,
   DashboardTableRow,
 } from '@/components/dashboard/shared/dashboard-table'
+import { ChatMessageThread, type ChatThreadMessage } from './chat-message-thread'
+import type { CitationOpenResult } from './chat-citations'
+import { MarkdownContent } from '@/components/markdown/markdown-content'
 import { AssertionEditor } from './eval/assertion-editor'
 import { evalsApi, documentsApi } from '@/lib/api'
 import type {
@@ -75,6 +78,22 @@ const assertionSummary = (a: EvalAssertion, titleFor: (id: string) => string | u
       return `LLM judge against reference answer`
   }
 }
+
+const noopOpenDocument = async (): Promise<CitationOpenResult> => 'unavailable'
+
+// Map a frozen snapshot message to the shape ChatMessageThread expects so the
+// eval detail page can reuse the same bubble + markdown renderer the dashboard
+// chat uses. Snapshots don't carry citations / suggestions / feedback per
+// message yet, so those slots stay empty and ChatMessageThread degrades to
+// plain bubbles + markdown — which is exactly what we want here.
+const toThreadMessages = (
+  messages: EvalSnapshot['messages'],
+): ChatThreadMessage[] => messages.map((m) => ({
+  id: m.id,
+  role: m.role,
+  content: m.content,
+  createdAt: m.createdAt,
+}))
 
 // A case with any answer-based or judge assertion needs full_assistant mode
 // for those assertions to grade. The detail page auto-selects this mode.
@@ -327,15 +346,12 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
               {snapshot.messages.length} message{snapshot.messages.length === 1 ? '' : 's'} captured from this turn
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
-            {snapshot.messages.map((m) => (
-              <div key={m.id} className="flex gap-3 text-sm">
-                <span className="w-16 shrink-0 text-xs uppercase tracking-wide text-muted-foreground">
-                  {m.role}
-                </span>
-                <span className="min-w-0 flex-1 whitespace-pre-wrap text-foreground">{m.content}</span>
-              </div>
-            ))}
+          <CardContent>
+            <ChatMessageThread
+              messages={toThreadMessages(snapshot.messages)}
+              onOpenDocument={noopOpenDocument}
+              showCitations={false}
+            />
           </CardContent>
         </Card>
 
@@ -439,16 +455,24 @@ function LatestRunCard({ run, assertions, originalAnswer, titleFor }: LatestRunC
               <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Original answer
               </h4>
-              <div className="whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 text-sm">
-                {originalAnswer || <span className="text-muted-foreground">(not captured)</span>}
+              <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+                {originalAnswer ? (
+                  <MarkdownContent content={originalAnswer} variant="chat" />
+                ) : (
+                  <span className="text-muted-foreground">(not captured)</span>
+                )}
               </div>
             </div>
             <div className="space-y-1.5">
               <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 New answer
               </h4>
-              <div className="whitespace-pre-wrap rounded-md border border-border bg-background p-3 text-sm">
-                {newAnswer || <span className="text-muted-foreground">(empty)</span>}
+              <div className="rounded-md border border-border bg-background p-3 text-sm">
+                {newAnswer ? (
+                  <MarkdownContent content={newAnswer} variant="chat" />
+                ) : (
+                  <span className="text-muted-foreground">(empty)</span>
+                )}
               </div>
             </div>
           </div>

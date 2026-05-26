@@ -173,7 +173,7 @@ class StubRunner implements EvalRetrievalRunnerPort {
     return { chunks: this.chunks };
   }
 
-  async answer(input: { query: string; history: { role: string }[] }) {
+  async answer(input: { query: string; history: { role: string }[]; runId: string; accountId?: string | null }) {
     this.lastAnswerCall = {
       query: input.query,
       historyLength: input.history.length,
@@ -185,13 +185,18 @@ class StubRunner implements EvalRetrievalRunnerPort {
 }
 
 class StubJudge implements EvalLlmJudgePort {
-  public calls: Array<{ observedAnswer: string; question: string }> = [];
+  public calls: Array<{ observedAnswer: string; question: string; runId: string; assertionIndex: number }> = [];
   constructor(
     private readonly verdict: "pass" | "fail" | "error" = "pass",
     private readonly reason = "stub judge reason",
   ) {}
-  async judge(input: { assertion: any; observedAnswer: string; question: string }) {
-    this.calls.push({ observedAnswer: input.observedAnswer, question: input.question });
+  async judge(input: { assertion: any; observedAnswer: string; question: string; runId: string; assertionIndex: number }) {
+    this.calls.push({
+      observedAnswer: input.observedAnswer,
+      question: input.question,
+      runId: input.runId,
+      assertionIndex: input.assertionIndex,
+    });
     return { assertion: input.assertion, status: this.verdict, reason: this.reason } as const;
   }
 }

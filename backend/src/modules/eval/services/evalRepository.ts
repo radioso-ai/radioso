@@ -154,6 +154,10 @@ export interface CreateCaseInput {
 }
 
 export interface CreateRunInput {
+  /** Optional pre-allocated UUID — pass when the caller needs to reference
+   * the run id from external events (e.g. usage metering) recorded before
+   * the row is inserted. When omitted the repository generates a fresh UUID. */
+  id?: string;
   workspaceId: string;
   snapshotId: string;
   caseId: string | null;
@@ -330,7 +334,7 @@ export class EvalRepository implements EvalRepositoryPort {
                  overrides, resolved_config, observed_output, assertion_verdicts,
                  status, outcome_reason, started_at, completed_at`,
       [
-        randomUUID(),
+        input.id ?? randomUUID(),
         input.workspaceId,
         input.snapshotId,
         input.caseId,

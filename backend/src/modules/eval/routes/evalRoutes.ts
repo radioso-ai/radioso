@@ -240,11 +240,12 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     validateBody(caseRunSchema),
     async (req, res, next) => {
       try {
-        const { workspaceId } = res.locals as { workspaceId: string };
+        const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
         const caseId = String(req.params.id);
         const evalCase = await dependencies.caseService.getWithRuns(workspaceId, caseId);
         const result = await dependencies.runService.execute({
           workspaceId,
+          accountId: accountId ?? null,
           snapshotId: evalCase.snapshotId,
           caseId: evalCase.id,
           mode: req.body.mode,
@@ -264,9 +265,10 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     validateBody(oneOffRunSchema),
     async (req, res, next) => {
       try {
-        const { workspaceId } = res.locals as { workspaceId: string };
+        const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
         const result = await dependencies.runService.execute({
           workspaceId,
+          accountId: accountId ?? null,
           snapshotId: req.body.snapshotId,
           mode: req.body.mode,
           overrides: req.body.overrides,

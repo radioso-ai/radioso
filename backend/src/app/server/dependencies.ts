@@ -41,6 +41,7 @@ import {
   EvalRepository,
   EvalRunService,
   EvalSnapshotService,
+  EvalUsageMeter,
   RetrievalPipelineEvalRunner,
 } from "../../modules/eval/composition.js";
 
@@ -237,10 +238,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalRepository,
   );
   const evalCaseService = new EvalCaseService(evalRepository);
+  // Both the full-assistant runner and the LLM judge make billable chat
+  // gateway calls. Route them through a shared usage meter so EE-side
+  // metering can ledger eval LLM spend distinctly from production traffic.
+  const evalUsageMeter = new EvalUsageMeter(infrastructure.usageEventRecorder, llmCapabilityResolver);
   const evalRunService = new EvalRunService(
     evalRepository,
-    new RetrievalPipelineEvalRunner(retrieval.retrievalPipeline, chat.chatGateway),
-    new ChatGatewayLlmJudge(chat.chatGateway),
+    new RetrievalPipelineEvalRunner(retrieval.retrievalPipeline, chat.chatGateway, evalUsageMeter),
+    new ChatGatewayLlmJudge(chat.chatGateway, evalUsageMeter),
   );
 
   return {

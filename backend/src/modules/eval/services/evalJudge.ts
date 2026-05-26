@@ -1,5 +1,6 @@
 import type { ChatGateway } from "../../chat/contracts/index.js";
 import type { AssertionVerdict, EvalAssertion } from "../domain/types.js";
+import type { EvalUsageMeter } from "./evalUsageMeter.js";
 
 /**
  * Port for the LLM-as-judge primitive. Given a judge assertion + the
@@ -12,6 +13,9 @@ import type { AssertionVerdict, EvalAssertion } from "../domain/types.js";
 export interface EvalLlmJudgePort {
   judge(input: {
     workspaceId: string;
+    accountId?: string | null;
+    runId: string;
+    assertionIndex: number;
     assertion: Extract<EvalAssertion, { type: "llm_judge" }>;
     observedAnswer: string;
     question: string;
@@ -93,10 +97,16 @@ const parseJudgeResponse = (raw: string): JudgeVerdict | { error: string } => {
 };
 
 export class ChatGatewayLlmJudge implements EvalLlmJudgePort {
-  constructor(private readonly chatGateway: ChatGateway) {}
+  constructor(
+    private readonly chatGateway: ChatGateway,
+    private readonly usageMeter: EvalUsageMeter,
+  ) {}
 
   async judge(input: {
     workspaceId: string;
+    accountId?: string | null;
+    runId: string;
+    assertionIndex: number;
     assertion: Extract<EvalAssertion, { type: "llm_judge" }>;
     observedAnswer: string;
     question: string;
@@ -108,7 +118,10 @@ export class ChatGatewayLlmJudge implements EvalLlmJudgePort {
       input.assertion.criteria,
     );
 
-    let raw: string;
+    let raw = "";
+    let status: "succeeded" | "failed" = "succeeded";
+    let errorCode: string | null = null;
+    let callError: unknown = null;
     try {
       raw = await this.chatGateway.answer({
         query: input.question,
@@ -118,10 +131,34 @@ export class ChatGatewayLlmJudge implements EvalLlmJudgePort {
         workspaceContext: { workspaceId: input.workspaceId },
       });
     } catch (err) {
+      callError = err;
+      status = "failed";
+      errorCode = err instanceof Error ? err.message.slice(0, 200) : "unknown";
+    }
+
+    // Record usage for every judge call — provider was hit regardless of
+    // whether the response parsed cleanly.
+    await this.usageMeter.record(
+      {
+        workspaceId: input.workspaceId,
+        accountId: input.accountId ?? null,
+        runId: input.runId,
+        operation: "llm_judge",
+        attemptKey: `assertion-${input.assertionIndex}`,
+      },
+      {
+        promptText: `${JUDGE_SYSTEM_PROMPT}\n\n${prompt}`,
+        responseText: raw,
+        status,
+        errorCode,
+      },
+    );
+
+    if (callError) {
       return {
         assertion: input.assertion,
         status: "error",
-        reason: `Judge LLM call failed: ${err instanceof Error ? err.message : "unknown error"}`,
+        reason: `Judge LLM call failed: ${callError instanceof Error ? callError.message : "unknown error"}`,
       };
     }
 

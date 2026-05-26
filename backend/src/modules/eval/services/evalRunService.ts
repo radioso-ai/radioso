@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { combineVerdicts, evaluateAssertion, isLlmJudgeAssertion } from "../domain/outcomes.js";
 import type {
@@ -16,6 +18,7 @@ import { buildReplayInputs, type EvalRetrievalRunnerPort } from "./evalRunner.js
 
 export interface EvalRunInput {
   workspaceId: string;
+  accountId?: string | null;
   snapshotId: string;
   caseId?: string | null;
   mode: EvalRunMode;
@@ -68,6 +71,9 @@ export class EvalRunService {
       throw badRequest("Snapshot has no user message to replay");
     }
 
+    // Generate the run id up front so usage events recorded inside the
+    // runner/judge can reference the same id that ends up on eval_runs.
+    const runId = randomUUID();
     const overrides = input.overrides ?? {};
     const resolvedConfig: EvalRunResolvedConfig = {};
     let observed: EvalRunObservedOutput;
@@ -76,6 +82,8 @@ export class EvalRunService {
       if (input.mode === "full_assistant") {
         const result = await this.retrievalRunner.answer({
           workspaceId: input.workspaceId,
+          accountId: input.accountId,
+          runId,
           query: replay.query,
           history: replay.history,
           retrievalSettingsOverride: overrides.retrievalSettingsOverride,
@@ -115,7 +123,7 @@ export class EvalRunService {
       }));
     } else {
       verdicts = await Promise.all(
-        assertions.map(async (assertion) => {
+        assertions.map(async (assertion, assertionIndex) => {
           if (isLlmJudgeAssertion(assertion)) {
             if (typeof observed.answer !== "string") {
               return {
@@ -126,6 +134,9 @@ export class EvalRunService {
             }
             return this.judge.judge({
               workspaceId: input.workspaceId,
+              accountId: input.accountId,
+              runId,
+              assertionIndex,
               assertion,
               observedAnswer: observed.answer,
               question: replay.query,
@@ -139,6 +150,7 @@ export class EvalRunService {
     const aggregate = combineVerdicts(verdicts);
 
     const run = await this.repository.createRun({
+      id: runId,
       workspaceId: input.workspaceId,
       snapshotId: snapshot.id,
       caseId: evalCase?.id ?? null,

@@ -51,4 +51,10 @@ export {
   ChatGatewayLlmJudge,
   type EvalLlmJudgePort,
 } from "./services/evalJudge.js";
+export {
+  EvalUsageMeter,
+  type EvalUsageContext,
+  type EvalUsageMeasurement,
+  type EvalUsageOperation,
+} from "./services/evalUsageMeter.js";
 export { createEvalRoutes, type EvalRouteDependencies } from "./routes/evalRoutes.js";

@@ -25,6 +25,8 @@ export interface EvalRetrievalRunnerPort {
 
   answer(input: {
     workspaceId: string;
+    accountId?: string | null;
+    runId: string;
     query: string;
     history: MessageRecord[];
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;

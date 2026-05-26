@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { ThemeProvider } from '@/components/theme-provider'
 import { DevBuildBadge } from '@/components/dev-build-badge'
+import { FrontendErrorBoundary } from '@/components/frontend-error-boundary'
 import { ProductAnalyticsProvider } from '@/components/product-analytics-provider'
 import { AuthProvider } from '@/lib/auth-context'
 import { WorkspaceProvider } from '@/lib/workspace-context'
@@ -31,11 +32,13 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <AuthProvider>
-            <WorkspaceProvider>
-              <ChatProvider>{children}</ChatProvider>
-            </WorkspaceProvider>
-          </AuthProvider>
+          <FrontendErrorBoundary>
+            <AuthProvider>
+              <WorkspaceProvider>
+                <ChatProvider>{children}</ChatProvider>
+              </WorkspaceProvider>
+            </AuthProvider>
+          </FrontendErrorBoundary>
           <Suspense fallback={null}>
             <ProductAnalyticsProvider />
           </Suspense>

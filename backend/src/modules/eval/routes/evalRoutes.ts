@@ -54,7 +54,12 @@ const assertionsSchema = z.array(assertionSchema).max(20);
 
 const overridesSchema = z
   .object({
-    modelOverride: z.string().min(1).optional(),
+    modelOverride: z
+      .object({
+        provider: z.enum(["openai", "openai-compatible", "gemini", "claude"]),
+        model: z.string().min(1).max(200),
+      })
+      .optional(),
     assistantInstructionsOverride: z
       .object({
         customInstruction: z.string().max(4000).optional(),

@@ -95,8 +95,18 @@ export interface EvalCase {
 export type EvalRunMode = "retrieval_only" | "full_assistant";
 export type EvalRunStatus = "pass" | "fail" | "error" | "recorded";
 
+export interface EvalRunModelOverride {
+  provider: string;
+  model: string;
+}
+
 export interface EvalRunOverrides {
-  modelOverride?: string;
+  // Per-run override for the chat model. When set, this exact provider+model
+  // is used for the full_assistant answer call instead of the workspace's
+  // configured chat capability. The judge call still uses the workspace's
+  // default chat capability — model overrides apply to "what we're testing",
+  // not to the grader.
+  modelOverride?: EvalRunModelOverride;
   assistantInstructionsOverride?: {
     customInstruction?: string;
   };
@@ -131,6 +141,9 @@ export interface AssertionVerdict {
 
 export interface EvalRunResolvedConfig {
   retrievalSettings?: RetrievalSettingsSnapshot | Partial<RetrievalSettingsRecord>;
+  /** Provider/model the chat call actually resolved to. Populated only for
+   * full_assistant runs where the assistant actually answered. */
+  modelProvider?: string;
   modelId?: string;
   composedInstructions?: string;
 }

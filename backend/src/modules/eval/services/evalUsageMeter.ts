@@ -46,20 +46,26 @@ export class EvalUsageMeter {
     private readonly capabilityResolver: LlmCapabilityResolver,
   ) {}
 
-  async record(context: EvalUsageContext, measurement: EvalUsageMeasurement): Promise<void> {
+  async record(
+    context: EvalUsageContext,
+    measurement: EvalUsageMeasurement,
+    resolvedModel?: { provider: string; model: string },
+  ): Promise<void> {
     const inputBytes = utf8Bytes(measurement.promptText);
     const outputBytes = utf8Bytes(measurement.responseText);
-    let provider = "unknown";
-    let model = "unknown";
-    try {
-      const config = await this.capabilityResolver.resolve("chat", {
-        workspaceId: context.workspaceId,
-      });
-      provider = config.provider;
-      model = config.model;
-    } catch {
-      // Recorder still gets an event; provider/model marked "unknown" so the
-      // EE-side ledger can flag it but never silently drops usage.
+    let provider = resolvedModel?.provider ?? "unknown";
+    let model = resolvedModel?.model ?? "unknown";
+    if (!resolvedModel) {
+      try {
+        const config = await this.capabilityResolver.resolve("chat", {
+          workspaceId: context.workspaceId,
+        });
+        provider = config.provider;
+        model = config.model;
+      } catch {
+        // Recorder still gets an event; provider/model marked "unknown" so the
+        // EE-side ledger can flag it but never silently drops usage.
+      }
     }
 
     const event: ModelUsageEvent = {

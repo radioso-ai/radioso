@@ -244,7 +244,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const evalUsageMeter = new EvalUsageMeter(infrastructure.usageEventRecorder, llmCapabilityResolver);
   const evalRunService = new EvalRunService(
     evalRepository,
-    new RetrievalPipelineEvalRunner(retrieval.retrievalPipeline, chat.chatGateway, evalUsageMeter),
+    new RetrievalPipelineEvalRunner(
+      retrieval.retrievalPipeline,
+      chat.chatGateway,
+      evalUsageMeter,
+      llmCapabilityResolver,
+    ),
     new ChatGatewayLlmJudge(chat.chatGateway, evalUsageMeter),
   );
 

@@ -86,11 +86,16 @@ export class EvalRunService {
           runId,
           query: replay.query,
           history: replay.history,
+          modelOverride: overrides.modelOverride,
           retrievalSettingsOverride: overrides.retrievalSettingsOverride,
         });
         observed = { retrievedChunks: result.chunks, answer: result.answer };
         resolvedConfig.retrievalSettings = result.resolvedSettings;
         resolvedConfig.composedInstructions = result.composedInstructions;
+        if (result.resolvedModel) {
+          resolvedConfig.modelProvider = result.resolvedModel.provider;
+          resolvedConfig.modelId = result.resolvedModel.model;
+        }
       } else {
         const result = await this.retrievalRunner.retrieve({
           workspaceId: input.workspaceId,

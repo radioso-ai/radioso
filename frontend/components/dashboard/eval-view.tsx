@@ -31,9 +31,11 @@ import type {
   EvalCaseWithRuns,
   EvalRun,
   EvalRunMode,
+  EvalRunModelOverride,
   EvalRunStatus,
   EvalSnapshot,
 } from '@/lib/api-eval'
+import { llmProvidersApi, type KnownModelsByProvider, type LlmProviderName } from '@/lib/api-llm-providers'
 import type { DocumentSummary } from '@/lib/api-types'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -95,6 +97,12 @@ const toThreadMessages = (
   content: m.content,
   createdAt: m.createdAt,
 }))
+
+const formatRunModel = (run: { resolvedConfig: Record<string, unknown> }): string | null => {
+  const config = run.resolvedConfig as { modelProvider?: string; modelId?: string }
+  if (!config.modelId) return null
+  return config.modelProvider ? `${config.modelProvider}/${config.modelId}` : config.modelId
+}
 
 // A case with any answer-based or judge assertion needs full_assistant mode
 // for those assertions to grade. The detail page auto-selects this mode.
@@ -221,6 +229,23 @@ interface EvalDetailProps {
   caseId: string
 }
 
+interface ModelOption {
+  provider: LlmProviderName
+  model: string
+}
+
+const WORKSPACE_DEFAULT_MODEL_VALUE = '__workspace_default__'
+const encodeModelValue = (m: EvalRunModelOverride) => `${m.provider}::${m.model}`
+const decodeModelValue = (value: string): EvalRunModelOverride | null => {
+  if (value === WORKSPACE_DEFAULT_MODEL_VALUE) return null
+  const sep = value.indexOf('::')
+  if (sep === -1) return null
+  return {
+    provider: value.slice(0, sep) as LlmProviderName,
+    model: value.slice(sep + 2),
+  }
+}
+
 function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   const router = useRouter()
   const [caseWithRuns, setCaseWithRuns] = useState<EvalCaseWithRuns | null>(null)
@@ -228,6 +253,10 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   const [docTitlesById, setDocTitlesById] = useState<Map<string, string>>(new Map())
   const [error, setError] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [modelOverride, setModelOverride] = useState<EvalRunModelOverride | null>(null)
+  const [workspaceChatModel, setWorkspaceChatModel] = useState<{ provider: LlmProviderName; model: string } | null>(null)
+  const [knownModels, setKnownModels] = useState<KnownModelsByProvider | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -269,6 +298,31 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
 
   const titleFor = useCallback((id: string) => docTitlesById.get(id), [docTitlesById])
 
+  // Pull workspace chat model + known models for the Advanced model picker.
+  // Falls back silently if the user lacks settings.read permission — the
+  // picker just shows the workspace default as the only option in that case.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const models = await llmProvidersApi.getModels()
+        if (cancelled) return
+        setKnownModels(models.knownModelsByProvider)
+        if (models.chat) {
+          setWorkspaceChatModel({
+            provider: models.chat.provider as LlmProviderName,
+            model: models.chat.model,
+          })
+        }
+      } catch {
+        // Operator can still run; they just can't pick a different model.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   // Auto-pick the run mode from the expectations: any answer/judge expectation
   // needs full_assistant; otherwise retrieval_only is enough and avoids an LLM call.
   const runAgain = useCallback(async () => {
@@ -277,14 +331,17 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
     setRunning(true)
     setError(null)
     try {
-      await evalsApi.runCase(caseId, { mode })
+      await evalsApi.runCase(caseId, {
+        mode,
+        overrides: modelOverride ? { modelOverride } : undefined,
+      })
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err, 'Eval request failed'))
     } finally {
       setRunning(false)
     }
-  }, [caseId, caseWithRuns, load])
+  }, [caseId, caseWithRuns, load, modelOverride])
 
   const backHref = useMemo(
     () => buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: undefined }),
@@ -308,21 +365,76 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   const latestRun = caseWithRuns.runs[0] ?? null
   const originalAnswer = [...snapshot.messages].reverse().find((m) => m.role === 'assistant')?.content ?? null
 
+  const modelOptions: ModelOption[] = useMemo(() => {
+    if (!knownModels) return []
+    const out: ModelOption[] = []
+    for (const [provider, models] of Object.entries(knownModels)) {
+      for (const model of models) {
+        out.push({ provider: provider as LlmProviderName, model })
+      }
+    }
+    return out
+  }, [knownModels])
+
   return (
     <DashboardPage
       title={caseWithRuns.name}
       description={`Captured ${formatRelative(snapshot.capturedAt)}`}
       headerContent={
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline" className={statusBadgeClass(caseWithRuns.status)}>
-            {caseWithRuns.status}
-          </Badge>
-          <span>·</span>
-          <span>
-            {caseWithRuns.assertions.length === 0
-              ? 'No expectations configured'
-              : `${caseWithRuns.assertions.length} expectation${caseWithRuns.assertions.length === 1 ? '' : 's'}`}
-          </span>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline" className={statusBadgeClass(caseWithRuns.status)}>
+              {caseWithRuns.status}
+            </Badge>
+            <span>·</span>
+            <span>
+              {caseWithRuns.assertions.length === 0
+                ? 'No expectations configured'
+                : `${caseWithRuns.assertions.length} expectation${caseWithRuns.assertions.length === 1 ? '' : 's'}`}
+            </span>
+            {modelOverride ? (
+              <>
+                <span>·</span>
+                <span>Next run uses {modelOverride.provider}/{modelOverride.model}</span>
+              </>
+            ) : null}
+          </div>
+          <details
+            className="group rounded-md border border-border bg-background/50"
+            open={advancedOpen}
+            onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)}
+          >
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground">
+              <ChevronRight className="size-3 transition-transform group-open:rotate-90" aria-hidden />
+              Advanced
+            </summary>
+            <div className="space-y-3 border-t border-border px-3 py-3">
+              <div className="space-y-1.5">
+                <label htmlFor="eval-model-select" className="block text-xs font-medium text-foreground">
+                  Model for this run
+                </label>
+                <select
+                  id="eval-model-select"
+                  className="w-full max-w-md rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                  value={modelOverride ? encodeModelValue(modelOverride) : WORKSPACE_DEFAULT_MODEL_VALUE}
+                  onChange={(e) => setModelOverride(decodeModelValue(e.target.value))}
+                  disabled={running}
+                >
+                  <option value={WORKSPACE_DEFAULT_MODEL_VALUE}>
+                    Workspace default{workspaceChatModel ? ` (${workspaceChatModel.provider}/${workspaceChatModel.model})` : ''}
+                  </option>
+                  {modelOptions.map((o) => (
+                    <option key={`${o.provider}::${o.model}`} value={encodeModelValue(o)}>
+                      {o.provider} / {o.model}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  One-shot override for the next run. Doesn't change the workspace's chat model. The judge always uses the workspace default.
+                </p>
+              </div>
+            </div>
+          </details>
         </div>
       }
       actions={
@@ -423,7 +535,10 @@ function LatestRunCard({ run, assertions, originalAnswer, titleFor }: LatestRunC
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Latest run</CardTitle>
-        <CardDescription>{formatRelative(run.startedAt)}</CardDescription>
+        <CardDescription>
+          {formatRelative(run.startedAt)}
+          {formatRunModel(run) ? ` · ${formatRunModel(run)}` : ''}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <RunOutputDetail run={run} originalAnswer={originalAnswer} titleFor={titleFor} />
@@ -538,6 +653,11 @@ function RunHistoryCard({ runs, originalAnswer, titleFor }: RunHistoryCardProps)
                   <Chevron className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                   <span className="w-44 shrink-0 text-muted-foreground">{formatRelative(r.startedAt)}</span>
                   <Badge variant="outline" className={statusBadgeClass(r.status)}>{r.status}</Badge>
+                  {formatRunModel(r) ? (
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                      {formatRunModel(r)}
+                    </span>
+                  ) : null}
                   {r.outcomeReason ? (
                     <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{r.outcomeReason}</span>
                   ) : null}

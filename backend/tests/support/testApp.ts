@@ -794,7 +794,9 @@ export const createTestDependencies = (overrides: {
       new EvalRepository(connectorDb as any),
       {
         async retrieve(_input: { history: unknown[] }) { return { chunks: [] }; },
-        async answer(_input: { history: unknown[]; runId: string }) { return { chunks: [], answer: "" }; },
+        async answer(_input: { history: unknown[]; runId: string }) {
+          return { chunks: [], answer: "" };
+        },
       },
       {
         async judge({ assertion }) {

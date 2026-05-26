@@ -117,8 +117,13 @@ export interface EvalCaseWithRuns extends EvalCase {
   runs: EvalRun[]
 }
 
+export interface EvalRunModelOverride {
+  provider: 'openai' | 'openai-compatible' | 'gemini' | 'claude'
+  model: string
+}
+
 export interface EvalRunOverridesInput {
-  modelOverride?: string
+  modelOverride?: EvalRunModelOverride
   assistantInstructionsOverride?: { customInstruction?: string }
   retrievalSettingsOverride?: Record<string, unknown>
 }

@@ -1,6 +1,6 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { RetrievalSettingsRecord } from "../../settings/contracts/retrieval.js";
-import type { EvalRunRetrievedChunk, EvalSnapshot, EvalSnapshotMessage } from "../domain/types.js";
+import type { EvalRunModelOverride, EvalRunRetrievedChunk, EvalSnapshot, EvalSnapshotMessage } from "../domain/types.js";
 
 /**
  * Narrow port the eval module uses to drive the assistant pipeline.
@@ -29,12 +29,14 @@ export interface EvalRetrievalRunnerPort {
     runId: string;
     query: string;
     history: MessageRecord[];
+    modelOverride?: EvalRunModelOverride;
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   }): Promise<{
     chunks: EvalRunRetrievedChunk[];
     answer: string;
     composedInstructions?: string;
     resolvedSettings?: Partial<RetrievalSettingsRecord>;
+    resolvedModel?: { provider: string; model: string };
   }>;
 }
 

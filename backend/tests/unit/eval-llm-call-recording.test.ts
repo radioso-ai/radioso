@@ -58,9 +58,10 @@ describe("eval LLM-call usage recording end-to-end", () => {
       buildPipeline() as never,
       buildChatGateway("the answer"),
       meter,
+      buildResolver(),
     );
 
-    await runner.answer({
+    const result = await runner.answer({
       workspaceId: "ws-1",
       accountId: "acc-1",
       runId: "run-1",
@@ -74,6 +75,9 @@ describe("eval LLM-call usage recording end-to-end", () => {
     expect(events[0]!.status).toBe("succeeded");
     expect(events[0]!.workspaceId).toBe("ws-1");
     expect(events[0]!.accountId).toBe("acc-1");
+    expect(events[0]!.provider).toBe("openai");
+    expect(events[0]!.model).toBe("gpt-4o-mini");
+    expect(result.resolvedModel).toEqual({ provider: "openai", model: "gpt-4o-mini" });
   });
 
   it("still records usage when the chat gateway throws", async () => {
@@ -87,6 +91,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       buildPipeline() as never,
       failingGateway,
       meter,
+      buildResolver(),
     );
 
     await expect(

@@ -2364,6 +2364,15 @@ components:
                 type: string
               intentName:
                 type: string
+              display:
+                type: object
+                properties:
+                  icon:
+                    type: string
+                    minLength: 1
+                  title:
+                    type: string
+                    minLength: 1
             required:
               - skillName
               - intentName
@@ -3855,6 +3864,15 @@ components:
         - defined
         - shapeAware
         - strategyAware
+    SkillDisplayMetadata:
+      type: object
+      properties:
+        icon:
+          type: string
+          minLength: 1
+        title:
+          type: string
+          minLength: 1
     SkillOutcomeDefinition:
       type: object
       properties:
@@ -4021,6 +4039,15 @@ components:
           type: string
         description:
           type: string
+        display:
+          type: object
+          properties:
+            icon:
+              type: string
+              minLength: 1
+            title:
+              type: string
+              minLength: 1
         owner:
           type: string
           enum:
@@ -4288,6 +4315,8 @@ components:
                   type: string
                 intentName:
                   type: string
+                display:
+                  $ref: "#/components/schemas/SkillDisplayMetadata"
               required:
                 - skillName
           required:
@@ -4689,6 +4718,8 @@ components:
                 type: string
               intentName:
                 type: string
+              display:
+                $ref: "#/components/schemas/SkillDisplayMetadata"
             required:
               - skillName
               - intentName

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
 import { ExternalLink, Maximize2, MoreHorizontal, RotateCcw, UserRound, X } from 'lucide-react'
 
@@ -25,6 +25,7 @@ import { AssistantMessageContent } from '@/components/dashboard/chat-citations'
 import { ScrollToBottomButton } from '@/components/chat/scroll-to-bottom-button'
 import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
+import { skillCatalogFromPublicIntakeActions } from '@/lib/skill-catalog'
 import {
   answerFeedbackApi,
   type AgentBrandingSettings,
@@ -449,6 +450,7 @@ function PublicChatContent({
   const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages
   const clearDisabled = isLoading || isHydrating || isLoadingOlderMessages
   const visibleMessages = messages
+  const skillCatalog = useMemo(() => skillCatalogFromPublicIntakeActions(intakeActions), [intakeActions])
   const hasUserMessage = visibleMessages.some((message) => message.role === 'user')
   const useCenteredIntro = !hasUserMessage && !isCompactKeyboardLayout && !isNarrowLayout
   const greetingMessage = visibleMessages.find((message) => message.role === 'assistant') ?? null
@@ -847,6 +849,7 @@ function PublicChatContent({
                   theme={theme}
                   themedSuggestionButtons
                   showCitations={false}
+                  skillCatalog={skillCatalog}
                 />
                 <div ref={messagesEndRef} />
               </div>

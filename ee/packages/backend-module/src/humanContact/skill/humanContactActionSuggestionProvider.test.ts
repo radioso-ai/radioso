@@ -49,6 +49,10 @@ describe("HumanContactActionSuggestionProvider", () => {
         intent: {
           skillName: HUMAN_CONTACT_SKILL_NAME,
           intentName: "no_context_refusal",
+          display: {
+            icon: "handshake",
+            title: "Contact us",
+          },
         },
       },
     });

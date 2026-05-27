@@ -28,6 +28,7 @@ import { useChatSession } from '@/lib/chat-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { editionController } from '@/lib/edition-controller'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
+import { useSkillCatalog } from '@/lib/skill-catalog'
 import { useWorkspace } from '@/lib/workspace-context'
 import { ScrollToBottomButton } from '@/components/chat/scroll-to-bottom-button'
 import { useChatScroll } from '@/hooks/use-chat-scroll'
@@ -56,6 +57,7 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
     startNewChat,
     conversationId,
   } = useChatSession(chatSessionKey, agentId)
+  const skillCatalog = useSkillCatalog(activeWorkspaceId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [showCitations, setShowCitations] = useState<boolean>(() => {
     if (typeof window === 'undefined') {
@@ -297,6 +299,7 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
               onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
               showCitations={showCitations}
               conversationId={conversationId}
+              skillCatalog={skillCatalog}
             />
             <div ref={messagesEndRef} />
           </div>

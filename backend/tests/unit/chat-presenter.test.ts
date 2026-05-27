@@ -93,4 +93,29 @@ describe("chat presenter", () => {
     expect(donePayload).toContain("\"suggestions\":[");
     expect(donePayload).toContain("\"kind\":\"deeper\"");
   });
+
+  it("includes skill display metadata in streamed skill events", async () => {
+    const { response, writes } = createMockResponse();
+    const events: ChatStreamEvent[] = [
+      { type: "conversation", conversationId: "conversation-1" },
+      {
+        type: "skill",
+        conversationId: "conversation-1",
+        skillName: "human_contact.request",
+        phase: "completed",
+        display: {
+          icon: "handshake",
+          title: "Contact us",
+        },
+        localizedTitle: "Contact us",
+      },
+    ];
+
+    await sendChatSse(response as never, (async function* () {
+      yield* events;
+    })());
+
+    const skillPayload = writes.find((entry) => entry.startsWith("data: {") && entry.includes("\"skillName\":\"human_contact.request\""));
+    expect(skillPayload).toContain("\"display\":{\"icon\":\"handshake\",\"title\":\"Contact us\"}");
+  });
 });

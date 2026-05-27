@@ -80,6 +80,7 @@ export class DocumentProcessingWorker {
   }
 
   async runOnce(now: Date = new Date()): Promise<boolean> {
+    await this.releaseStaleClaims(now);
     const job = await this.claimNextAvailableJob(now);
     if (!job) {
       if (this.lastActivityState !== "idle") {
@@ -143,6 +144,34 @@ export class DocumentProcessingWorker {
     }
 
     return this.jobRepository.claimNext();
+  }
+
+  private async releaseStaleClaims(now: Date): Promise<void> {
+    const claimedAtOrBefore = new Date(now.getTime() - this.jobLeaseMs);
+    const processingJobs = await this.jobRepository.listProcessingJobs();
+    const staleJobs = processingJobs.filter((job) =>
+      job.claimedAt !== null && job.claimedAt.getTime() <= claimedAtOrBefore.getTime()
+    );
+
+    if (staleJobs.length === 0) {
+      return;
+    }
+
+    const releaseResults = await Promise.all(
+      staleJobs.map((job) => this.jobRepository.releaseTimedOutClaim(job.id, claimedAtOrBefore, "claim_expired")),
+    );
+    const releasedCount = releaseResults.filter(Boolean).length;
+    if (releasedCount === 0) {
+      return;
+    }
+
+    this.logger.warn(
+      {
+        role: "worker",
+        releasedCount,
+      },
+      "Released stale processing document jobs back to queue",
+    );
   }
 
   private scheduleNextTick(delayMs = this.pollIntervalMs): void {

@@ -30,15 +30,3 @@ resource "google_service_networking_connection" "private_services" {
 
   depends_on = [google_project_service.apis]
 }
-
-# VPC connector for Cloud Run → Cloud SQL
-resource "google_vpc_access_connector" "connector" {
-  name          = "${local.resource_name_prefix}-vpc-cx"
-  region        = var.region
-  network       = google_compute_network.vpc.name
-  ip_cidr_range = "10.8.0.0/28"
-  min_instances = 2
-  max_instances = 3
-
-  depends_on = [google_project_service.apis]
-}

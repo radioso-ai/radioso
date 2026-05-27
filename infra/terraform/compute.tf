@@ -31,8 +31,11 @@ resource "google_cloud_run_v2_service" "backend" {
     }
 
     vpc_access {
-      connector = google_vpc_access_connector.connector.id
-      egress    = "PRIVATE_RANGES_ONLY"
+      egress = "PRIVATE_RANGES_ONLY"
+      network_interfaces {
+        network    = google_compute_network.vpc.name
+        subnetwork = google_compute_subnetwork.subnet.name
+      }
     }
 
     containers {
@@ -100,8 +103,13 @@ resource "google_cloud_run_v2_service" "backend" {
         value = tostring(var.metrics_enabled)
       }
       env {
-        name  = "DATABASE_URL"
-        value = "postgres://${google_sql_user.radioso.name}:${random_password.db_password.result}@${google_sql_database_instance.postgres.private_ip_address}:5432/${google_sql_database.radioso.name}"
+        name = "DATABASE_URL"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.secrets["database-url"].secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "OPENAI_CHAT_MODEL"
@@ -423,8 +431,11 @@ resource "google_cloud_run_v2_service" "document_worker" {
     }
 
     vpc_access {
-      connector = google_vpc_access_connector.connector.id
-      egress    = "PRIVATE_RANGES_ONLY"
+      egress = "PRIVATE_RANGES_ONLY"
+      network_interfaces {
+        network    = google_compute_network.vpc.name
+        subnetwork = google_compute_subnetwork.subnet.name
+      }
     }
 
     containers {
@@ -479,8 +490,13 @@ resource "google_cloud_run_v2_service" "document_worker" {
         value = var.project_id
       }
       env {
-        name  = "DATABASE_URL"
-        value = "postgres://${google_sql_user.radioso.name}:${random_password.db_password.result}@${google_sql_database_instance.postgres.private_ip_address}:5432/${google_sql_database.radioso.name}"
+        name = "DATABASE_URL"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.secrets["database-url"].secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "OPENAI_CHAT_MODEL"
@@ -603,10 +619,6 @@ resource "google_cloud_run_v2_service" "document_worker" {
         }
       }
 
-      resources {
-        cpu_idle = false
-      }
-
       env {
         name = "OPENAI_API_KEY"
         value_source {
@@ -670,10 +682,9 @@ resource "google_cloud_run_v2_service_iam_member" "document_worker_invoker" {
 }
 
 # --- Crawler worker Cloud Run service ---
-# A dedicated worker service receives website-crawl Cloud Tasks pushes and runs
-# the polling fallback. Splitting it from the document worker isolates long
-# crawls from chunking/embedding work so the two workloads cannot starve each
-# other's CPU, memory, or event loop.
+# A dedicated worker service receives website-crawl Cloud Tasks pushes.
+# Scheduled recovery handles missed dispatches without keeping a crawler
+# instance warm continuously.
 
 resource "google_cloud_run_v2_service" "crawler_worker" {
   count    = var.deploy_services ? 1 : 0
@@ -689,8 +700,11 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
     }
 
     vpc_access {
-      connector = google_vpc_access_connector.connector.id
-      egress    = "PRIVATE_RANGES_ONLY"
+      egress = "PRIVATE_RANGES_ONLY"
+      network_interfaces {
+        network    = google_compute_network.vpc.name
+        subnetwork = google_compute_subnetwork.subnet.name
+      }
     }
 
     containers {
@@ -745,8 +759,13 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
         value = var.project_id
       }
       env {
-        name  = "DATABASE_URL"
-        value = "postgres://${google_sql_user.radioso.name}:${random_password.db_password.result}@${google_sql_database_instance.postgres.private_ip_address}:5432/${google_sql_database.radioso.name}"
+        name = "DATABASE_URL"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.secrets["database-url"].secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "OPENAI_CHAT_MODEL"
@@ -842,10 +861,6 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
             }
           }
         }
-      }
-
-      resources {
-        cpu_idle = false
       }
 
       env {

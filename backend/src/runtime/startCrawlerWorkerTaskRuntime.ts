@@ -34,8 +34,6 @@ export const startCrawlerWorkerTaskRuntime = async (
   const dependencies = (options.buildDependencies ?? buildDependencies)(options.env);
   dependencies.logger.info({ role: "crawler-worker-task" }, "Radioso crawler worker task runtime starting");
   await dependencies.applicationModules.initializeAll();
-  await dependencies.websiteCrawlWorker.start();
-  await dependencies.websiteCrawlJobConsumer?.start();
   const app = (options.createApp ?? createCrawlerWorkerTaskApp)(dependencies);
   const server = (options.listen ?? defaultListen)(app, options.env.PORT, () => {
     dependencies.logger.info(
@@ -63,8 +61,6 @@ export const startCrawlerWorkerTaskRuntime = async (
           resolve();
         });
       });
-      await dependencies.websiteCrawlJobConsumer?.stop();
-      await dependencies.websiteCrawlWorker.stop();
       await dependencies.applicationModules.shutdownAll();
     },
   };

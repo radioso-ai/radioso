@@ -20,6 +20,7 @@ import {
   DEFAULT_WEBSITE_EMBED_COPY,
   getWebsiteEmbedTheme,
 } from '@/lib/embed-widget'
+import { useSkillCatalog } from '@/lib/skill-catalog'
 
 const MIN_WCAG_AA_CONTRAST = 4.5
 const PREVIEW_TIMESTAMP = '2025-01-01T12:00:00.000Z'
@@ -140,6 +141,7 @@ export function ChatPreview({
 }) {
   const displayName = assistantName.trim() || 'Assistant'
   const resolvedLogo = logoUrl ?? '/radioso-icon.svg'
+  const skillCatalog = useSkillCatalog()
 
   const themeOverrides = useMemo(
     () => deriveThemeOverridesFromModel(themeSettings),
@@ -225,6 +227,7 @@ export function ChatPreview({
           assistantAvatarLabel={displayName}
           theme={embedTheme}
           themedSuggestionButtons
+          skillCatalog={skillCatalog}
         />
       </div>
 

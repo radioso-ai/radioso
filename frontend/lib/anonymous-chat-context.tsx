@@ -633,6 +633,7 @@ export function AnonymousChatProvider({
                           skill: {
                             skillName: skillPayload.skillName,
                             phase: skillPayload.phase,
+                            display: skillPayload.display,
                             localizedTitle: skillPayload.localizedTitle,
                             receipt: skillPayload.receipt,
                           },

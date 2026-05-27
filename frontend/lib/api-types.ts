@@ -135,6 +135,7 @@ export type WebsiteEmbedPageContext = NonNullable<ApiSchemas['PublicChatSessionR
 export interface PublicChatIntakeAction {
   skillName: string
   intentName?: string
+  display?: SkillDisplayMetadata
 }
 export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse'] & {
   intakeActions?: PublicChatIntakeAction[]
@@ -178,6 +179,7 @@ export type ChatUserInputMetadata = Omit<GeneratedChatUserInputMetadata, 'method
   intent?: PublicChatIntakeAction
 }
 export type Citation = ApiSchemas['Citation']
+export type SkillDisplayMetadata = NonNullable<ApiSchemas['SkillCatalogEntry']['display']>
 export type AnswerSegment = ApiSchemas['AnswerSegment']
 export type ChatSuggestionKind = ApiSchemas['ChatSuggestion']['kind']
 export type ChatSuggestion = Omit<ApiSchemas['ChatSuggestion'], 'kind'> & {
@@ -271,6 +273,7 @@ export interface SkillReceipt {
 export interface SkillStreamPayload {
   skillName: string
   phase: SkillStreamPhase
+  display?: SkillDisplayMetadata
   localizedTitle?: string
   receipt?: SkillReceipt
 }

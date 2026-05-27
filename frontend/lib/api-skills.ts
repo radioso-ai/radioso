@@ -1,38 +1,15 @@
 import { request } from './api-client'
+import type { components } from '../../typescript-sdk/src/generated/types'
 
-export type SkillOutcomeStatus =
-  | 'active'
-  | 'paused'
-  | 'awaiting_confirmation'
-  | 'awaiting_tool'
-  | 'completed'
-  | 'cancelled'
-  | 'expired'
-  | 'failed'
+type ApiSchemas = components['schemas']
 
-export type SkillOutcomeTone = 'positive' | 'neutral' | 'info' | 'warning' | 'muted'
-export type SkillOwner = 'assistant' | 'retrieval' | 'documents' | 'mcp' | 'platform' | 'auth' | 'contact'
-
-export interface SkillOutcomeDefinition {
-  name: string
-  displayName: string
-  description?: string
-  status: SkillOutcomeStatus
-  groundedAnswer?: boolean
-  tone?: SkillOutcomeTone
-}
-
-export interface SkillCatalogEntry {
-  name: string
-  displayName: string
-  description: string
-  owner: SkillOwner
-  outcomes?: SkillOutcomeDefinition[]
-}
-
-export interface SkillCatalogResponse {
-  skills: SkillCatalogEntry[]
-}
+export type SkillCatalogEntry = ApiSchemas['SkillCatalogEntry']
+export type SkillCatalogResponse = ApiSchemas['SkillCatalogResponse']
+export type SkillDisplayMetadata = NonNullable<SkillCatalogEntry['display']>
+export type SkillOwner = SkillCatalogEntry['owner']
+export type SkillOutcomeDefinition = NonNullable<SkillCatalogEntry['outcomes']>[number]
+export type SkillOutcomeStatus = SkillOutcomeDefinition['status']
+export type SkillOutcomeTone = NonNullable<SkillOutcomeDefinition['tone']>
 
 export const skillsApi = {
   async list(): Promise<SkillCatalogResponse> {

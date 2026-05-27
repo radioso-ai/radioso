@@ -49,6 +49,9 @@ importers:
       '@radioso/mcp-server':
         specifier: workspace:*
         version: link:../packages/radioso-mcp-server
+      '@radioso/skill-contract':
+        specifier: workspace:*
+        version: link:../packages/skill-contract
       '@types/swagger-ui-express':
         specifier: ^4.1.8
         version: 4.1.8
@@ -264,6 +267,9 @@ importers:
 
   ee/packages/backend-module:
     dependencies:
+      '@radioso/skill-contract':
+        specifier: workspace:*
+        version: link:../../../packages/skill-contract
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
@@ -494,6 +500,8 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.13)(@types/node@24.12.4)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0)(tsx@4.22.1)(yaml@2.9.0)
+
+  packages/skill-contract: {}
 
   packages/ui:
     dependencies:
@@ -2934,6 +2942,7 @@ packages:
 
   '@swc/helpers@0.5.22':
     resolution: {integrity: sha512-/e2Ly3Docn9kYByap6TV4oquJ3wQuz3c+kC74riqtkwU9CwTMeuj6t2rW+bRr4pyOx/CYQM4wr0RgaKQwGEz0A==}
+    deprecated: This version contains a decorator helper regression from swc-project/swc#11847. Please upgrade to @swc/helpers@0.5.23 or newer.
 
   '@tailwindcss/node@4.3.0':
     resolution: {integrity: sha512-aFb4gUhFOgdh9AXo4IzBEOzBkkAxm9VigwDJnMIYv3lcfXCJVesNfbEaBl4BNgVRyid92AmdviqwBUBRKSeY3g==}

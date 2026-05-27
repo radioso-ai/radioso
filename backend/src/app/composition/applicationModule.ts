@@ -26,7 +26,12 @@ import type { AbuseControlService } from "../../modules/security/services/abuseC
 import type { AuditService } from "../../modules/audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
-import type { SkillCatalogEntryDefinition, SkillDefinition } from "../../modules/skills/public.js";
+import type {
+  SkillCatalogEntryDefinition,
+  SkillDefinition,
+  SkillExecutorRegistration,
+  SkillExecutorRegistry,
+} from "../../modules/skills/public.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { AgentSurfaceExtension } from "../../modules/agents/public.js";
 import type { TextChunkingProviderPort } from "../../modules/retrieval/public.js";
@@ -101,6 +106,7 @@ export type ApplicationChatIntakeProviderRegistration =
       abuseControlService: AbuseControlService;
       mailService: MailTransportPort;
       dashboardBaseUrl: string | null;
+      skillExecutorRegistry: SkillExecutorRegistry;
     }) => ChatIntakeProviderPort);
 
 export type ApplicationContactHistoryProviderRegistration =
@@ -140,11 +146,12 @@ export interface ApplicationExtensionRegistry {
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
   chunkingProvider?: TextChunkingProviderPort;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
-  chatIntakeProviderRegistration?: ApplicationChatIntakeProviderRegistration;
+  chatIntakeProviderRegistrations: ApplicationChatIntakeProviderRegistration[];
   contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
   answerFeedbackHistoryProviderRegistration?: ApplicationAnswerFeedbackHistoryProviderRegistration;
   skillCatalogEntries: SkillCatalogEntryDefinition[];
   skillDefinitions: SkillDefinition[];
+  skillExecutors: SkillExecutorRegistration[];
   agentSurfaceExtensions: AgentSurfaceExtension[];
   chatActionSuggestionProviders: ApplicationChatActionSuggestionProviderRegistration[];
 }
@@ -171,6 +178,7 @@ export interface ApplicationModuleRegistrationContext {
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillCatalogEntry(entry: SkillCatalogEntryDefinition): void;
   registerSkillDefinition(definition: SkillDefinition): void;
+  registerSkillExecutor(registration: SkillExecutorRegistration): void;
   registerAgentSurfaceExtension(extension: AgentSurfaceExtension): void;
   registerChatActionSuggestionProvider(provider: ApplicationChatActionSuggestionProviderRegistration): void;
 }
@@ -191,8 +199,10 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   databaseMigrators: [],
   routeMounts: [],
   accountCreatedHooks: [],
+  chatIntakeProviderRegistrations: [],
   skillCatalogEntries: [],
   skillDefinitions: [],
+  skillExecutors: [],
   agentSurfaceExtensions: [],
   chatActionSuggestionProviders: [],
 });
@@ -247,7 +257,7 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
     registry.websiteEmbedIntegration = provider;
   },
   registerChatIntakeProvider(provider) {
-    registry.chatIntakeProviderRegistration = provider;
+    registry.chatIntakeProviderRegistrations.push(provider);
   },
   registerContactHistoryProvider(provider) {
     registry.contactHistoryProviderRegistration = provider;
@@ -260,6 +270,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerSkillDefinition(definition) {
     registry.skillDefinitions.push(definition);
+  },
+  registerSkillExecutor(registration) {
+    registry.skillExecutors.push(registration);
   },
   registerAgentSurfaceExtension(extension) {
     registry.agentSurfaceExtensions.push(extension);

@@ -10,6 +10,10 @@ const documentProcessingTaskSchema = z.object({
   revision: z.number().int().positive().optional(),
 });
 
+const recoveryTaskSchema = z.object({
+  maxJobs: z.number().int().min(1).max(50).default(5),
+}).default({});
+
 type DocumentWorkerTaskRouteDependencies = Pick<AppDependencies, "documentProcessingWorker">;
 
 export const createDocumentWorkerTaskRoutes = (
@@ -43,6 +47,31 @@ export const createDocumentWorkerTaskRoutes = (
     }
   });
 
+  router.post("/internal/tasks/document-processing/recover", async (req, res, next) => {
+    const parsed = recoveryTaskSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_task_payload",
+      });
+      return;
+    }
+
+    try {
+      let processedJobCount = 0;
+      for (let index = 0; index < parsed.data.maxJobs; index += 1) {
+        const processed = await dependencies.documentProcessingWorker.runOnce(new Date());
+        if (!processed) {
+          break;
+        }
+        processedJobCount += 1;
+      }
+
+      res.status(200).json({ processedJobCount });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Compatibility stub for in-flight Cloud Tasks pushes that were enqueued
   // before the website-crawl Cloud Run service was split out. We respond 410
   // (Gone) so Cloud Tasks treats it as a permanent failure and stops retrying;
@@ -51,7 +80,7 @@ export const createDocumentWorkerTaskRoutes = (
   router.post("/internal/tasks/website-crawl", (_req, res) => {
     res.status(410).json({
       error: "moved",
-      message: "Website crawl tasks are handled by the dedicated crawler worker. The polling fallback will reclaim this job.",
+      message: "Website crawl tasks are handled by the dedicated crawler worker. Scheduled recovery will reclaim this job.",
     });
   });
 

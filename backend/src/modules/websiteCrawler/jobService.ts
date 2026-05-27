@@ -168,7 +168,7 @@ export class WebsiteCrawlJobService {
           workspaceId: job.workspaceId,
           error: error instanceof Error ? error.message : String(error),
         },
-        "Website crawl job dispatch failed; database polling remains active",
+        "Website crawl job dispatch failed; scheduled recovery remains active",
       );
     }
 
@@ -227,7 +227,7 @@ export class WebsiteCrawlJobService {
             workspaceId: job.workspaceId,
             error: error instanceof Error ? error.message : String(error),
           },
-          "Website crawl job resume dispatch failed; database polling remains active",
+          "Website crawl job resume dispatch failed; scheduled recovery remains active",
         );
       }
     }

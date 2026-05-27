@@ -8,6 +8,10 @@ const websiteCrawlTaskSchema = z.object({
   workspaceId: z.string().uuid().optional(),
 });
 
+const recoveryTaskSchema = z.object({
+  maxJobs: z.number().int().min(1).max(50).default(5),
+}).default({});
+
 type CrawlerWorkerTaskRouteDependencies = Pick<AppDependencies, "websiteCrawlWorker">;
 
 export const createCrawlerWorkerTaskRoutes = (
@@ -36,6 +40,31 @@ export const createCrawlerWorkerTaskRoutes = (
       }
 
       res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/internal/tasks/website-crawl/recover", async (req, res, next) => {
+    const parsed = recoveryTaskSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_task_payload",
+      });
+      return;
+    }
+
+    try {
+      let processedJobCount = 0;
+      for (let index = 0; index < parsed.data.maxJobs; index += 1) {
+        const processed = await dependencies.websiteCrawlWorker.runOnce(new Date());
+        if (!processed) {
+          break;
+        }
+        processedJobCount += 1;
+      }
+
+      res.status(200).json({ processedJobCount });
     } catch (error) {
       next(error);
     }

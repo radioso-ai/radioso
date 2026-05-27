@@ -217,7 +217,7 @@ describe("runtime startup", () => {
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
   });
 
-  it("starts the worker task runtime with the document polling worker loop and internal task server", async () => {
+  it("starts the worker task runtime with only the internal task server", async () => {
     const env = createEnv();
     const dependencies = createDependencies();
     const ensureNoPendingMigrations = vi.fn().mockResolvedValue(undefined);
@@ -241,11 +241,11 @@ describe("runtime startup", () => {
 
     expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
-    expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
-    expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.documentProcessingWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
   });
@@ -273,7 +273,7 @@ describe("runtime startup", () => {
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
   });
 
-  it("starts the crawler worker task runtime with the polling crawl loop and internal task server", async () => {
+  it("starts the crawler worker task runtime with only the internal task server", async () => {
     const env = createEnv();
     const dependencies = createDependencies();
     const ensureNoPendingMigrations = vi.fn().mockResolvedValue(undefined);
@@ -297,11 +297,11 @@ describe("runtime startup", () => {
 
     expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
-    expect(dependencies.websiteCrawlWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
-    expect(dependencies.websiteCrawlWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.documentProcessingWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
   });

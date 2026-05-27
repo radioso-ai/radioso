@@ -272,7 +272,9 @@ The Terraform configuration provisions two Cloud Run services:
 
 The dispatcher reads `WORKER_TASKS_CRAWL_SERVICE_URL` to know where website crawl Cloud Tasks pushes should land. When unset it falls back to `WORKER_TASKS_SERVICE_URL`, so a single-worker deployment still works. Terraform discovers the crawler worker URL automatically by referencing `google_cloud_run_v2_service.crawler_worker.uri` from the backend and document worker — no override variable is needed. The document worker URL still needs `worker_tasks_service_url_override` on the second apply because the document worker self-references its own URI for retry dispatch.
 
-Scaling defaults are independent: `worker_min_instances` / `worker_max_instances` for the document worker, `crawler_worker_min_instances` / `crawler_worker_max_instances` for the crawler. The document worker can use `worker_min_instances = 0` in Cloud Tasks driven environments to scale to zero when idle. Set it above zero only when the document queue needs a continuously warm polling fallback. The crawler worker keeps its own minimum instance setting because website crawl recovery is managed separately.
+Scaling defaults are independent: `worker_min_instances` / `worker_max_instances` for the document worker, `crawler_worker_min_instances` / `crawler_worker_max_instances` for the crawler. In Cloud Tasks driven environments, both worker services can use `min_instances = 0` and request-based CPU so they scale to zero when idle. The task-server runtimes process explicit Cloud Tasks deliveries by job ID. They do not start the continuous database polling loops.
+
+Terraform also provisions Cloud Scheduler recovery jobs for both workers. Each recovery request performs a bounded `runOnce` pass over queued or stale jobs. This keeps missed-dispatch recovery available without keeping a Cloud Run instance warm continuously.
 
 ### Rollout ordering
 
@@ -282,7 +284,7 @@ When upgrading from a single combined worker to the split topology (this PR), th
 2. Apply Terraform / restart the backend so newly enqueued crawl Cloud Tasks land on the new worker URL via `WORKER_TASKS_CRAWL_SERVICE_URL`.
 3. Roll the document worker last.
 
-In-flight Cloud Tasks pushes that were enqueued against the old combined worker URL will keep arriving at `/internal/tasks/website-crawl` on the **document worker** for a few minutes. The document worker responds `410 Gone` to that path so Cloud Tasks stops retrying immediately. The polling fallback in the new crawler worker then reclaims those jobs on the next 5-second tick. A delay of one polling interval is the worst case; no work is lost. The 410 stub is a one-release compatibility shim and can be removed after the next release.
+In-flight Cloud Tasks pushes that were enqueued against the old combined worker URL will keep arriving at `/internal/tasks/website-crawl` on the **document worker** for a few minutes. The document worker responds `410 Gone` to that path so Cloud Tasks stops retrying immediately. Scheduled recovery in the crawler worker then reclaims those jobs on its next run. The 410 stub is a one-release compatibility shim and can be removed after the next release.
 
 ## Disabling the crawler
 

@@ -78,13 +78,13 @@ variable "worker_max_instances" {
 }
 
 variable "crawler_worker_min_instances" {
-  description = "Minimum number of crawler worker Cloud Run instances. Must stay at least 1 so queued website crawls have a live recovery poller even if Cloud Tasks dispatch fails."
+  description = "Minimum number of crawler worker Cloud Run instances (0 = scale to zero). Scheduled recovery handles missed Cloud Tasks dispatches."
   type        = number
-  default     = 1
+  default     = 0
 
   validation {
-    condition     = var.crawler_worker_min_instances >= 1
-    error_message = "crawler_worker_min_instances must be at least 1 so the crawler worker can recover queued website crawl jobs."
+    condition     = var.crawler_worker_min_instances >= 0
+    error_message = "crawler_worker_min_instances must be 0 or greater."
   }
 }
 
@@ -180,6 +180,23 @@ variable "website_crawl_job_lease_ms" {
   description = "Lease duration for an in-flight website crawl job before a later delivery may reclaim it."
   type        = number
   default     = 900000
+}
+
+variable "worker_recovery_schedule" {
+  description = "Cron schedule for bounded worker recovery requests that process jobs missed by Cloud Tasks dispatch."
+  type        = string
+  default     = "*/15 * * * *"
+}
+
+variable "worker_recovery_max_jobs" {
+  description = "Maximum jobs each scheduled worker recovery request may process."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.worker_recovery_max_jobs >= 1 && var.worker_recovery_max_jobs <= 50
+    error_message = "worker_recovery_max_jobs must be between 1 and 50."
+  }
 }
 
 # --- Document storage ---

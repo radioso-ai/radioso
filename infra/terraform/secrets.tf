@@ -4,6 +4,7 @@ locals {
 
   secret_values = merge(
     {
+      "database-url"               = "postgres://${google_sql_user.radioso.name}:${random_password.db_password.result}@${google_sql_database_instance.postgres.private_ip_address}:5432/${google_sql_database.radioso.name}"
       "database-password"          = random_password.db_password.result
       "openai-api-key"             = var.openai_api_key
       "session-cookie-secret"      = var.session_cookie_secret
@@ -27,6 +28,7 @@ locals {
 
   secret_names = nonsensitive(toset(keys(merge(
     {
+      "database-url"               = true
       "database-password"          = true
       "openai-api-key"             = true
       "session-cookie-secret"      = true

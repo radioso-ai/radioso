@@ -10,7 +10,7 @@ locals {
     "sts.googleapis.com",
     "storage.googleapis.com",
     "cloudtasks.googleapis.com",
-    "vpcaccess.googleapis.com",
+    "cloudscheduler.googleapis.com",
     "servicenetworking.googleapis.com",
     "compute.googleapis.com",
   ]

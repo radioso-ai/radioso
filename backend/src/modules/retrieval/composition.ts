@@ -35,11 +35,13 @@ export {
 } from "./domain/chunking/structuredSemanticChunkingStrategy.js";
 export { ChonkieChunkingProvider } from "./infra/chonkieChunkingProvider.js";
 export {
+  PgVectorChunkStorage,
+} from "./infra/chunkVectorStorage.js";
+export {
   PgLexicalSearch,
   type LexicalSearchPort,
 } from "./infra/lexicalSearch.js";
 export {
-  hasNonEmptyFilter,
   PgVectorSearch,
   type RetrievedChunk,
   type VectorSearchPort,

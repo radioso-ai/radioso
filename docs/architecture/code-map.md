@@ -162,6 +162,7 @@ Focused checks:
 
 Related docs and specs:
 
+- [Vector Search Indexing](./vector-search-indexing.md)
 - [Retrieval Pipeline](../../docs-portal/content/architecture/retrieval-pipeline.mdx)
 - [Retrieval Tuning](../../docs-portal/content/guides/retrieval-tuning.mdx)
 - `specs/058-retrieval-module-boundaries/`

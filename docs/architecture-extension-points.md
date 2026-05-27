@@ -26,6 +26,7 @@ Default composition must build and run without optional modules or deployment-sp
 | Website crawler provider | Documents module | Website crawler provider registration through application composition | No provider is registered, so crawl requests return unavailable | Do not make a hosted or vendor-specific crawler part of the default OSS runtime |
 | Retrieval construction | Retrieval module | Stage and strategy construction helpers | Existing vector, lexical, rewrite, rerank, and prompt assembly behavior remains the default | Do not add retrieval ranking behavior to HTTP routes |
 | Chat skill intake | Chat module | Intake provider registration through application composition | Default provider is a no-op and produces no intake turn | Do not use suggestions as an action transport or add Enterprise-specific route contracts to OSS chat services |
+| Skill catalog and execution | Skills module | Catalog entries, full skill definitions, and skill executors registered through application composition | Built-in catalog entries are registered; no optional executor is registered, so skills with declared execution metadata must register an executor before runtime dispatch | Do not bypass the executor registry when a skill declares execution metadata, and do not encode skill product behavior in routes or chat services |
 
 ## Capability Policy
 

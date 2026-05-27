@@ -46,6 +46,7 @@ import {
   type WebsiteEmbedCopyOverrides,
   type WebsiteEmbedThemeOverrides,
 } from '@/lib/embed-widget'
+import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 
 type PublicChatSurface = 'public' | 'embed'
 const HUMAN_CONTACT_SKILL_NAME = 'human_contact.request'
@@ -920,6 +921,7 @@ export function PublicChatShell({
   themeOverrides,
   surface = 'public',
   pageContext,
+  onAnalyticsEvent,
 }: {
   token: string
   initialWorkspaceName?: string | null
@@ -933,6 +935,7 @@ export function PublicChatShell({
   themeOverrides?: WebsiteEmbedThemeOverrides | null
   surface?: PublicChatSurface
   pageContext?: WebsiteEmbedPageContext | null
+  onAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
 }) {
   const theme = getWebsiteEmbedTheme(themeOverrides)
 
@@ -944,6 +947,7 @@ export function PublicChatShell({
       consumeSessionHandoff={surface === 'public'}
       localeOverride={localeOverride}
       pageContext={pageContext}
+      onAnalyticsEvent={surface === 'embed' ? onAnalyticsEvent : undefined}
     >
       <div
         className="flex min-h-0 flex-1 flex-col overflow-hidden"

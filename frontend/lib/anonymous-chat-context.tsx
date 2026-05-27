@@ -42,6 +42,7 @@ import {
   type WebsiteEmbedPageContext,
   type WebsiteEmbedThemeSettings,
 } from '@/lib/api'
+import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 
 export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings | null): WebsiteEmbedThemeOverrides | null => {
   if (!theme) {
@@ -203,6 +204,7 @@ const toChatMessages = (
       content: message.content,
       createdAt: message.createdAt,
       inputMetadata: message.inputMetadata,
+      citations: message.citations,
       answerSegments: stripPublicAnswerSegmentCitations(message.answerSegments),
       suggestions: stripPublicSuggestionCitations(message.suggestions),
       answerFeedback: message.role === 'assistant'
@@ -293,6 +295,7 @@ export function AnonymousChatProvider({
   consumeSessionHandoff,
   localeOverride,
   pageContext,
+  onAnalyticsEvent,
   children,
 }: {
   token: string
@@ -300,6 +303,7 @@ export function AnonymousChatProvider({
   consumeSessionHandoff?: boolean
   localeOverride?: string | null
   pageContext?: WebsiteEmbedPageContext | null
+  onAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
   children: ReactNode
 }) {
   const [effectivePublicChatToken, setEffectivePublicChatToken] = useState(() => readStoredEffectivePublicChatToken(token) ?? token)
@@ -504,7 +508,7 @@ export function AnonymousChatProvider({
   const recoverAssistantMessage = useCallback(
     async (nextConversationId: string | undefined, assistantMessageId: string, activeToken: string) => {
       if (!nextConversationId) {
-        return false
+        return null
       }
 
       const detail = await publicChatApi.getConversationDetail(activeToken, nextConversationId, {
@@ -512,7 +516,7 @@ export function AnonymousChatProvider({
       })
       const assistantMessage = getLatestAssistantMessage(detail, readStoredAnonymousSessionId(activeToken))
       if (!assistantMessage) {
-        return false
+        return null
       }
 
       setConversationId(detail.conversationId)
@@ -537,7 +541,7 @@ export function AnonymousChatProvider({
         ),
       )
       setIsLoading(false)
-      return true
+      return assistantMessage
     },
     [],
   )
@@ -562,6 +566,17 @@ export function AnonymousChatProvider({
 
       const assistantMessageId = createClientId('public-chat-assistant')
       const assistantCreatedAt = new Date().toISOString()
+      const inputMethod = inputMetadata?.method ?? 'typed'
+
+      onAnalyticsEvent?.({
+        event: 'chat.started',
+        subjectType: conversationId ? 'conversation' : undefined,
+        subjectId: conversationId,
+        properties: {
+          inputMethod,
+          hasExistingConversation: Boolean(conversationId),
+        },
+      })
 
       setIsLoading(true)
       setMessages((prev) => [
@@ -652,8 +667,44 @@ export function AnonymousChatProvider({
         if (needsRecovery) {
           const recovered = await recoverAssistantMessage(nextConversationId, assistantMessageId, activeRequestToken)
           if (recovered) {
+            onAnalyticsEvent?.({
+              event: 'chat.completed',
+              subjectType: 'conversation',
+              subjectId: nextConversationId,
+              properties: {
+                inputMethod,
+                citationCount: recovered.citations?.length ?? 0,
+                hasAnswer: Boolean(recovered.content.trim()),
+                recovered: true,
+                suggestionCount: recovered.suggestions?.length ?? 0,
+              },
+            })
             return
           }
+
+          if (!didComplete) {
+            applyCompletion(assistantMessageId, {
+              conversationId: nextConversationId,
+              answer: completion.answer,
+              citations: completion.citations,
+              answerSegments: completion.answerSegments,
+              suggestions: completion.suggestions,
+              debug: completion.debug,
+            })
+          }
+          onAnalyticsEvent?.({
+            event: 'chat.failed',
+            subjectType: nextConversationId ? 'conversation' : undefined,
+            subjectId: nextConversationId,
+            properties: {
+              inputMethod,
+              errorCode: 'empty_answer',
+              hasAnswer: false,
+              rateLimited: false,
+              recovered: false,
+            },
+          })
+          return
         }
 
         if (!didComplete) {
@@ -666,9 +717,33 @@ export function AnonymousChatProvider({
             debug: completion.debug,
           })
         }
+        onAnalyticsEvent?.({
+          event: 'chat.completed',
+          subjectType: 'conversation',
+          subjectId: nextConversationId,
+          properties: {
+            inputMethod,
+            citationCount: completion.citations?.length ?? 0,
+            hasAnswer: Boolean(completion.answer?.trim()),
+            suggestionCount: completion.suggestions?.length ?? 0,
+            recovered: false,
+          },
+        })
       } catch (error) {
+        const structuredError = getErrorResponse(error)
         const rateLimit = isRateLimitError(error)
         if (rateLimit) {
+          onAnalyticsEvent?.({
+            event: 'chat.failed',
+            subjectType: conversationId ? 'conversation' : undefined,
+            subjectId: conversationId,
+            properties: {
+              inputMethod,
+              errorCode: structuredError?.code ?? 'rate_limit_exceeded',
+              rateLimited: true,
+              retryAfterSeconds: rateLimit.retryAfterSeconds,
+            },
+          })
           setRateLimitError(rateLimit.message)
           setRetryAfterSeconds(rateLimit.retryAfterSeconds)
           setMessages((prev) =>
@@ -681,7 +756,17 @@ export function AnonymousChatProvider({
           return
         }
 
-        if (getErrorResponse(error)?.code === 'not_found') {
+        if (structuredError?.code === 'not_found') {
+          onAnalyticsEvent?.({
+            event: 'chat.failed',
+            subjectType: conversationId ? 'conversation' : undefined,
+            subjectId: conversationId,
+            properties: {
+              inputMethod,
+              errorCode: structuredError.code,
+              rateLimited: false,
+            },
+          })
           setIsUnavailable(true)
           setMessages(previousMessages)
           setIsLoading(false)
@@ -689,6 +774,16 @@ export function AnonymousChatProvider({
         }
 
         const errorMessage = getErrorMessage(error)
+        onAnalyticsEvent?.({
+          event: 'chat.failed',
+          subjectType: conversationId ? 'conversation' : undefined,
+          subjectId: conversationId,
+          properties: {
+            inputMethod,
+            errorCode: structuredError?.code ?? 'unknown_error',
+            rateLimited: false,
+          },
+        })
         setMessages((prev) =>
           restoreMessageSuggestions(
             prev.map((message) => {
@@ -707,7 +802,7 @@ export function AnonymousChatProvider({
         setIsLoading(false)
       }
     },
-    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, pageContext, recoverAssistantMessage, withPublicSessionRetry],
+    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, withPublicSessionRetry],
   )
 
   const loadOlderMessages = useCallback(async () => {

@@ -13,7 +13,7 @@ import {
   resolveRetrievalSourceFilter,
   type RetrievalExecutionDiagnostics,
 } from "../domain/retrievalPipelineTypes.js";
-import type { VectorSearchPort } from "../infra/vectorSearch.js";
+import type { VectorSearchPort } from "../domain/vectorSearch.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import { PromptBuilder } from "./promptBuilder.js";
 import { CandidateRetrievalStageService } from "./candidateRetrievalStage.js";

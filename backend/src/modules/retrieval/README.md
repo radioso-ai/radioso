@@ -32,6 +32,8 @@ imports from `services/` or `infra/`.
 - `services/retrievalPipelineStages.ts`: stage construction and ordering.
 - `services/retrievalSearchService.ts`: candidate search coordination.
 - `services/retrievalAnswerService.ts`: retrieval answer assembly.
+- `domain/vectorSearch.ts`: backend-neutral vector search contract consumed by
+  retrieval services.
 - `infra/vectorSearch.ts` and `infra/lexicalSearch.ts`: concrete search
   adapters.
 

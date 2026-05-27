@@ -77,8 +77,9 @@ export type { LexicalSearchPort } from "./infra/lexicalSearch.js";
 export type { ChunkVectorStoragePort } from "./infra/chunkVectorStorage.js";
 export type {
   RetrievedChunk,
+  VectorSearchInput,
   VectorSearchPort,
-} from "./infra/vectorSearch.js";
+} from "./domain/vectorSearch.js";
 export {
   ModelEmbeddingGateway,
   OpenAIEmbeddingGateway,

@@ -16,7 +16,7 @@ import type {
   TriggerBackoffDecision,
 } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
-import type { RetrievedChunk } from "../infra/vectorSearch.js";
+import type { RetrievedChunk } from "../domain/vectorSearch.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 
 export interface RetrievalPipelineRequest {

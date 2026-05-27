@@ -2,7 +2,7 @@ import type { EmbeddingService } from "./embeddingService.js";
 import type { IngestionSettingsRecord } from "../../settings/contracts/ingestion.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
-import type { RetrievedChunk, VectorSearchPort } from "../infra/vectorSearch.js";
+import type { RetrievedChunk, VectorSearchPort } from "../domain/vectorSearch.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalPipelineTypes.js";
 import type { CandidateRetrievalStage as CandidateRetrievalStageContract, QueryInterpretationStageResult } from "./retrievalPipelineStages.js";
 

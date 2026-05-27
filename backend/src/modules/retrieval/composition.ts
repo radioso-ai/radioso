@@ -43,9 +43,12 @@ export {
 } from "./infra/lexicalSearch.js";
 export {
   PgVectorSearch,
-  type RetrievedChunk,
-  type VectorSearchPort,
 } from "./infra/vectorSearch.js";
+export type {
+  RetrievedChunk,
+  VectorSearchInput,
+  VectorSearchPort,
+} from "./domain/vectorSearch.js";
 export { CandidatePreparationService } from "./services/candidatePreparationService.js";
 export { ConversationContextService } from "./services/conversationContextService.js";
 export {

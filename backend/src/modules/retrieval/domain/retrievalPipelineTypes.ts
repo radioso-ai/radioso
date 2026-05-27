@@ -1,7 +1,7 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ResolvedSkillRun, SkillDiagnostic } from "../../skills/public.js";
-import type { RetrievedChunk } from "../infra/vectorSearch.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "./queryConstraintTypes.js";
+import type { RetrievedChunk } from "./vectorSearch.js";
 
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";
 

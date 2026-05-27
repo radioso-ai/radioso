@@ -1,6 +1,8 @@
 import { z } from "zod";
 
-import type { CapabilityName } from "../../shared/domain/capabilityPolicy.js";
+import type { SkillDefinition as ContractSkillDefinition } from "@radioso/skill-contract";
+
+export type { SkillDefinition } from "@radioso/skill-contract";
 
 export const skillOwnerSchema = z.enum(["assistant", "retrieval", "documents", "mcp", "platform", "auth", "contact"]);
 export type SkillOwner = z.infer<typeof skillOwnerSchema>;
@@ -170,9 +172,11 @@ export const skillCatalogEntrySchema = z.object({
   shapes: z.array(skillShapeSummarySchema).optional(),
   outcomes: z.array(skillOutcomeDefinitionSchema).optional(),
 });
-export type SkillCatalogEntry = Omit<z.infer<typeof skillCatalogEntrySchema>, "requiredCapabilities"> & {
-  requiredCapabilities: CapabilityName[];
-};
+// requiredCapabilities is exposed as string[] (matching the runtime Zod
+// schema). Capability names are validated through `capabilityPolicy.can`
+// before any privileged work, so the TypeScript-only CapabilityName narrowing
+// that used to live here was unsound and is no longer maintained.
+export type SkillCatalogEntry = z.infer<typeof skillCatalogEntrySchema>;
 
 export type SkillCatalogEntryDefinition = Omit<SkillCatalogEntry, "availability"> & {
   availability?: SkillAvailability;
@@ -259,10 +263,10 @@ export interface SkillShapeDefinition {
   stepOverrides: Record<string, SkillStepOverride>;
 }
 
-export interface SkillDefinition extends SkillCatalogEntryDefinition {
-  steps: SkillStepDefinition[];
-  shapes?: SkillShapeDefinition[];
-}
+// SkillDefinition is re-exported from @radioso/skill-contract above so OSS
+// and Enterprise modules share a single typed shape. The Zod schema below
+// remains the runtime contract; the static assertion at the bottom of this
+// file fails the build if the inferred shape ever drifts from the contract.
 
 export interface ResolvedSkillStep {
   name: string;
@@ -327,3 +331,13 @@ export const skillDefinitionSchema = skillCatalogEntrySchema.omit({
   steps: z.array(skillStepDefinitionSchema),
   shapes: z.array(skillShapeDefinitionSchema).optional(),
 });
+
+// Compile-time guard: fails the build if skillDefinitionSchema ever infers a
+// shape that no longer matches the @radioso/skill-contract SkillDefinition.
+type _SkillDefinitionContractAssertion = z.infer<typeof skillDefinitionSchema> extends ContractSkillDefinition
+  ? ContractSkillDefinition extends z.infer<typeof skillDefinitionSchema>
+    ? true
+    : never
+  : never;
+const _skillDefinitionContractAssertion: _SkillDefinitionContractAssertion = true;
+void _skillDefinitionContractAssertion;

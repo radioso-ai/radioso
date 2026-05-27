@@ -20,6 +20,7 @@ import { DocumentProcessingWorker } from "../../src/modules/documents/services/d
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
+import { PgVectorChunkStorage } from "../../src/modules/retrieval/infra/chunkVectorStorage.js";
 import { PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { AuditEventRepository } from "../../src/db/repositories/auditEventRepository.js";
 import { HistoryItemsRepository } from "../../src/db/repositories/historyItemsRepository.js";
@@ -126,7 +127,7 @@ describeIfDatabase("persistence integration", () => {
   it("persists records and returns workspace-scoped vector matches", async () => {
     const accountRepository = new AccountRepository(database);
     const documentRepository = new DocumentRepository(database);
-    const chunkRepository = new ChunkRepository(database);
+    const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
     const vectorSearch = new PgVectorSearch(database);
 
     const accountA = await accountRepository.create({
@@ -203,7 +204,7 @@ describeIfDatabase("persistence integration", () => {
   it("persists and searches workspace chunks with non-1536-dimensional embeddings", async () => {
     const accountRepository = new AccountRepository(database);
     const documentRepository = new DocumentRepository(database);
-    const chunkRepository = new ChunkRepository(database);
+    const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
     const vectorSearch = new PgVectorSearch(database);
 
     const account = await accountRepository.create({
@@ -491,7 +492,7 @@ describeIfDatabase("persistence integration", () => {
   it("stores raw chunk content while generating title-aware retrieval embeddings", async () => {
     const accountRepository = new AccountRepository(database);
     const documentRepository = new DocumentRepository(database);
-    const chunkRepository = new ChunkRepository(database);
+    const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
     const jobRepository = new DocumentProcessingJobRepository(database);
     const vectorSearch = new PgVectorSearch(database);
 
@@ -577,7 +578,7 @@ describeIfDatabase("persistence integration", () => {
   it("deletes documents only within the matching workspace scope and cascades chunks", async () => {
     const accountRepository = new AccountRepository(database);
     const documentRepository = new DocumentRepository(database);
-    const chunkRepository = new ChunkRepository(database);
+    const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
 
     const ownerAccount = await accountRepository.create({
       name: "Delete Owner Organization",

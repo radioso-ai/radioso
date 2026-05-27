@@ -1,5 +1,6 @@
 import type { Database } from "../../../shared/infra/database.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalPipelineTypes.js";
+import { compilePgChunkFilter } from "./pgChunkFilter.js";
 
 export interface RetrievedChunk {
   chunkId: string;
@@ -59,7 +60,6 @@ export class PgVectorSearch implements VectorSearchPort {
     const distanceExpression = queryEmbeddingDimensions === 1536
       ? `${embeddingExpression} <=> $2::vector(1536)`
       : `${embeddingExpression} <=> $2::vector`;
-    const hasMetadataFilter = hasNonEmptyFilter(input.metadataFilter);
     const params: unknown[] = [
       input.workspaceId,
       `[${input.queryEmbedding.join(",")}]`,
@@ -68,42 +68,7 @@ export class PgVectorSearch implements VectorSearchPort {
       input.embeddingModel ?? "text-embedding-3-small",
       queryEmbeddingDimensions,
     ];
-    const hasConstrainedSourceFilter = input.sourceFilter?.constrained ?? false;
-    let includeUnassignedDocuments = false;
-    let sourceIds: string[] = [];
-    let hasSourceFilter = false;
-
-    if (hasConstrainedSourceFilter && input.sourceFilter) {
-      const constrainedFilter = input.sourceFilter;
-      if (constrainedFilter.constrained) {
-        includeUnassignedDocuments = constrainedFilter.includeUnassignedDocuments;
-        sourceIds = constrainedFilter.sourceIds;
-        hasSourceFilter = sourceIds.length > 0;
-      }
-    }
-
-    const sourceClause =
-      hasConstrainedSourceFilter && hasSourceFilter && includeUnassignedDocuments
-        ? `AND (d.source_id = ANY($${params.length + 1}::uuid[]) OR d.source_id IS NULL)`
-        : hasConstrainedSourceFilter && hasSourceFilter
-          ? `AND d.source_id = ANY($${params.length + 1}::uuid[])`
-          : hasConstrainedSourceFilter && includeUnassignedDocuments
-            ? `AND d.source_id IS NULL`
-            : hasConstrainedSourceFilter
-              ? `AND d.source_id = ANY($${params.length + 1}::uuid[])`
-              : "";
-
-    const sourceIdsParameterRequired = hasConstrainedSourceFilter && (hasSourceFilter || !includeUnassignedDocuments);
-
-    if (sourceIdsParameterRequired) {
-      params.push(hasSourceFilter ? sourceIds : []);
-    }
-
-    const metadataClause = hasMetadataFilter ? `AND c.metadata @> $${params.length + 1}::jsonb` : "";
-
-    if (hasMetadataFilter) {
-      params.push(JSON.stringify(input.metadataFilter));
-    }
+    const chunkFilterClause = compilePgChunkFilter(input, params);
 
     const sql = `WITH nearest_results AS MATERIALIZED (
       SELECT c.id AS chunk_id,
@@ -123,8 +88,7 @@ export class PgVectorSearch implements VectorSearchPort {
         AND ${embeddingExpression} IS NOT NULL
         AND c.embedding_model = $5
         AND vector_dims(${embeddingExpression}) = $6
-        ${sourceClause}
-        ${metadataClause}
+        ${chunkFilterClause}
       ORDER BY ${distanceExpression} ASC
       LIMIT $3
     )
@@ -174,9 +138,6 @@ export class PgVectorSearch implements VectorSearchPort {
     }
   }
 }
-
-export const hasNonEmptyFilter = (filter?: Record<string, unknown>): filter is Record<string, unknown> =>
-  filter !== undefined && Object.keys(filter).length > 0;
 
 const isIterativeScanUnsupported = (error: unknown): boolean => {
   if (!(error instanceof Error)) {

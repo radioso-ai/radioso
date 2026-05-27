@@ -69,6 +69,7 @@ import {
 import {
   EmbeddingService,
   createDefaultRetrievalServices,
+  PgVectorChunkStorage,
   RetrievalAnswerService,
   type RetrievalPipelineService,
 } from "../../modules/retrieval/composition.js";
@@ -199,7 +200,7 @@ export const buildRepositories = (
   accountRepository: new AccountRepository(database),
   agentRepository: new AgentRepository(database, options.agentSurfaceExtensions),
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database),
-  chunkRepository: new ChunkRepository(database),
+  chunkRepository: new ChunkRepository(database, new PgVectorChunkStorage()),
   conversationRepository: new ConversationRepository(database),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database),
   documentRepository: new DocumentRepository(database),

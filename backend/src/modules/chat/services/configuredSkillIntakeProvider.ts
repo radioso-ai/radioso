@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import type { QueryResultRow } from "pg";
 import { z } from "zod";
 
-import type { SkillDefinition, SkillIntakeField } from "../../skills/public.js";
+import type {
+  SkillDefinition,
+  SkillExecutorRegistry,
+  SkillIntakeField,
+} from "../../skills/public.js";
 import type { ActivityStage, ActivityStageStatus, ActivitySummary, ActivityTrace } from "../../retrieval/public.js";
 import type { ChatIntakeProviderPort, ChatIntakeResult } from "./chatIntakeProvider.js";
 
@@ -64,7 +68,7 @@ export interface ConfiguredSkillIntakeAdapter {
     chat: ChatIntakeInput;
     userExpectedLocale?: string | null;
   }): Promise<string>;
-  execute(input: {
+  execute?(input: {
     skill: SkillDefinition;
     collected: Record<string, unknown>;
     chat: ChatIntakeInput;
@@ -409,12 +413,17 @@ const validateExtractedFields = (
 
 export class ConfiguredSkillIntakeProvider implements ChatIntakeProviderPort {
   private readonly stateStore: SkillIntakeStateStore;
+  private readonly executorRegistry: SkillExecutorRegistry | null;
 
   constructor(
     private readonly adapters: ConfiguredSkillIntakeAdapter[],
-    options: { stateStore?: SkillIntakeStateStore } = {},
+    options: {
+      stateStore?: SkillIntakeStateStore;
+      executorRegistry?: SkillExecutorRegistry;
+    } = {},
   ) {
     this.stateStore = options.stateStore ?? new InMemorySkillIntakeStateStore();
+    this.executorRegistry = options.executorRegistry ?? null;
   }
 
   async handle(input: ChatIntakeInput): Promise<ChatIntakeResult | null> {
@@ -449,6 +458,32 @@ export class ConfiguredSkillIntakeProvider implements ChatIntakeProviderPort {
       }
     }
     return null;
+  }
+
+  private async dispatchExecution(
+    adapter: ConfiguredSkillIntakeAdapter,
+    collected: Record<string, unknown>,
+    input: ChatIntakeInput,
+  ): Promise<SkillIntakeExecutionResult> {
+    const { skill } = adapter;
+    if (skill.execution) {
+      const executor = this.executorRegistry?.resolve(skill.execution) ?? null;
+      if (!executor) {
+        const identifier = skill.execution.kind === "webhook"
+          ? `provider=${skill.execution.provider}`
+          : `adapter=${skill.execution.adapter}`;
+        throw new Error(
+          `No skill executor registered for ${skill.execution.kind} (${identifier}) declared by skill "${skill.name}"`,
+        );
+      }
+      return executor.execute({ skill, collected, context: { chat: input } });
+    }
+    if (!adapter.execute) {
+      throw new Error(
+        `Skill "${skill.name}" has no execution metadata and its intake adapter provides no execute() fallback`,
+      );
+    }
+    return adapter.execute({ skill, collected, chat: input });
   }
 
   private async startState(input: ChatIntakeInput, adapter: ConfiguredSkillIntakeAdapter): Promise<ChatIntakeResult> {
@@ -551,11 +586,7 @@ export class ConfiguredSkillIntakeProvider implements ChatIntakeProviderPort {
       };
     }
 
-    const execution = await adapter.execute({
-      skill: adapter.skill,
-      collected,
-      chat: input,
-    });
+    const execution = await this.dispatchExecution(adapter, collected, input);
     const trace = buildTrace(adapter.skill.name, [
       buildStage("intake_collect", "intake_collect", "Intake collect", "applied", {
         outputs: {

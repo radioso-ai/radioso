@@ -200,6 +200,10 @@ describe("skills catalog", () => {
         name: "appointments.schedule",
         displayName: "Appointment schedule",
         description: "Schedule an appointment through a configured delivery adapter.",
+        display: {
+          icon: "calendar",
+          title: "Book an appointment",
+        },
         owner: "platform",
         executionClass: "interactive",
         supportedCallers: ["assistant", "public_embed"],
@@ -268,6 +272,10 @@ describe("skills catalog", () => {
       endpointId: "appointment_schedule",
       enqueue: false,
       timeoutMs: 15_000,
+    });
+    expect(entry?.display).toEqual({
+      icon: "calendar",
+      title: "Book an appointment",
     });
     expect(entry?.contractReferences).not.toContainEqual(expect.objectContaining({
       path: expect.stringContaining("/skills/"),

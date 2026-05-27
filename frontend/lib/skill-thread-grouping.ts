@@ -35,6 +35,7 @@ export const computeSkillGroupInfo = <T extends SkillGroupedMessage>(
     // The chip title is sticky: the first non-empty localized title in the group wins, so the chip
     // does not visibly flip to a later turn's title (which may be empty or in a different language).
     let stickyTitle: string | undefined = seed.skill.localizedTitle?.trim() || undefined
+    let display = seed.skill.display
     let latestPhase: SkillStreamPayload['phase'] = seed.skill.phase
     let latestReceipt: SkillStreamPayload['receipt'] = seed.skill.receipt
     let scan = i + 1
@@ -49,6 +50,7 @@ export const computeSkillGroupInfo = <T extends SkillGroupedMessage>(
         if (!stickyTitle) {
           stickyTitle = next.skill.localizedTitle?.trim() || undefined
         }
+        display = display ?? next.skill.display
         latestPhase = next.skill.phase
         latestReceipt = next.skill.receipt
         scan += 1
@@ -60,6 +62,7 @@ export const computeSkillGroupInfo = <T extends SkillGroupedMessage>(
     const aggregatedSkill: SkillStreamPayload = {
       skillName,
       phase: latestPhase,
+      display,
       localizedTitle: stickyTitle,
       receipt: latestReceipt,
     }

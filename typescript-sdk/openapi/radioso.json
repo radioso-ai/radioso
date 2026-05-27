@@ -3609,6 +3609,19 @@
                 },
                 "intentName": {
                   "type": "string"
+                },
+                "display": {
+                  "type": "object",
+                  "properties": {
+                    "icon": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
                 }
               },
               "required": [
@@ -5752,6 +5765,19 @@
           "strategyAware"
         ]
       },
+      "SkillDisplayMetadata": {
+        "type": "object",
+        "properties": {
+          "icon": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
       "SkillOutcomeDefinition": {
         "type": "object",
         "properties": {
@@ -6021,6 +6047,19 @@
           },
           "description": {
             "type": "string"
+          },
+          "display": {
+            "type": "object",
+            "properties": {
+              "icon": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
           },
           "owner": {
             "type": "string",
@@ -6422,6 +6461,9 @@
                   },
                   "intentName": {
                     "type": "string"
+                  },
+                  "display": {
+                    "$ref": "#/components/schemas/SkillDisplayMetadata"
                   }
                 },
                 "required": [
@@ -6995,6 +7037,9 @@
                 },
                 "intentName": {
                   "type": "string"
+                },
+                "display": {
+                  "$ref": "#/components/schemas/SkillDisplayMetadata"
                 }
               },
               "required": [

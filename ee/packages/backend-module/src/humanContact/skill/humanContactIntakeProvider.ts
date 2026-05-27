@@ -216,6 +216,11 @@ const hasHumanContactIntent = (input: ChatIntakeInput): boolean =>
   input.inputMetadata?.method === "intent_click" &&
   input.inputMetadata.intent?.skillName === HUMAN_CONTACT_SKILL_NAME;
 
+const withHumanContactDisplay = (result: ChatIntakeResult): ChatIntakeResult => ({
+  ...result,
+  display: humanContactRequestSkillDefinition.display,
+});
+
 export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
   private readonly intakePrompts: DefinitionBackedIntakePrompts;
 
@@ -240,7 +245,8 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
     await this.expireStaleOpenIntakeStates(input.workspaceId, input.conversationId);
     const existingState = await this.findOpenIntakeState(input.workspaceId, input.conversationId);
     if (existingState) {
-      return this.continueIntake(existingState, input);
+      const result = await this.continueIntake(existingState, input);
+      return result ? withHumanContactDisplay(result) : null;
     }
 
     const requestedByIntent = hasHumanContactIntent(input);
@@ -286,14 +292,14 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
         const activityTrace = failedContactTrace(error instanceof Error ? error.message : "Contact request submit failed.");
         return {
           failed: true as const,
-          result: {
+          result: withHumanContactDisplay({
             skillName: HUMAN_CONTACT_SKILL_NAME,
             status: "failed" as const,
             skillOutcome: "failed",
             answer: failureAnswer,
             activityTrace,
             activitySummary: activityTrace.summary!,
-          },
+          }),
         };
       });
       if ("failed" in submitResult) {
@@ -317,7 +323,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       } catch {
         state = null;
       }
-      return {
+      return withHumanContactDisplay({
         skillName: HUMAN_CONTACT_SKILL_NAME,
         status: "completed",
         skillOutcome: "sent",
@@ -326,7 +332,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
         activityTrace: submitResult.activityTrace,
         activitySummary: submitResult.activityTrace.summary!,
         receipt: buildContactReceipt({ email }),
-      };
+      });
     }
 
     const nextField: "email" | "message" = email ? "message" : "email";
@@ -360,14 +366,14 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       }),
     ], nextField === "email" ? "intake_waiting_for_email" : "intake_waiting_for_message", "pending");
 
-    return {
+    return withHumanContactDisplay({
       skillName: HUMAN_CONTACT_SKILL_NAME,
       status: "active",
       stateId: state.id,
       answer,
       activityTrace,
       activitySummary: activityTrace.summary!,
-    };
+    });
   }
 
   private async continueIntake(
@@ -729,6 +735,7 @@ export class HumanContactSkillIntakeProvider implements ChatIntakeProvider {
       ? [{
           skillName: HUMAN_CONTACT_SKILL_NAME,
           intentName: EXPLICIT_CONTACT_INTENT_NAME,
+          display: humanContactRequestSkillDefinition.display,
         }]
       : [];
   }

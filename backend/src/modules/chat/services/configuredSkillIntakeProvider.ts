@@ -544,6 +544,7 @@ export class ConfiguredSkillIntakeProvider implements ChatIntakeProviderPort {
       return {
         skillName: adapter.skill.name,
         status: "active",
+        display: adapter.skill.display,
         stateId: nextState.id,
         answer,
         activityTrace: trace,
@@ -570,6 +571,7 @@ export class ConfiguredSkillIntakeProvider implements ChatIntakeProviderPort {
     return {
       skillName: adapter.skill.name,
       status: "completed",
+      display: adapter.skill.display,
       stateId: nextState.id,
       answer: execution.answer,
       activityTrace: trace,

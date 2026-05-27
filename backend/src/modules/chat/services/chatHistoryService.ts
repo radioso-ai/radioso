@@ -21,7 +21,7 @@ import {
   type SkillTurnOutcome,
   skillTurnOutcomeFromLegacyAnswerOutcome,
 } from "./assistantTurnOutcomeTypes.js";
-import { skillOutcomeStatusSchema } from "../../skills/public.js";
+import { skillDisplayMetadataSchema, skillOutcomeStatusSchema, type SkillDisplayMetadata } from "../../skills/public.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
 import {
@@ -337,15 +337,19 @@ const normalizeSuggestionAction = (
   if (!candidate.intent || typeof candidate.intent !== "object") {
     return undefined;
   }
-  const intentCandidate = candidate.intent as { skillName?: unknown; intentName?: unknown };
+  const intentCandidate = candidate.intent as { skillName?: unknown; intentName?: unknown; display?: unknown };
   if (typeof intentCandidate.skillName !== "string" || intentCandidate.skillName.trim().length === 0) {
     return undefined;
   }
-  const intent: { skillName: string; intentName?: string } = {
+  const intent: { skillName: string; intentName?: string; display?: SkillDisplayMetadata } = {
     skillName: intentCandidate.skillName.trim(),
   };
   if (typeof intentCandidate.intentName === "string" && intentCandidate.intentName.trim().length > 0) {
     intent.intentName = intentCandidate.intentName.trim();
+  }
+  const display = skillDisplayMetadataSchema.safeParse(intentCandidate.display);
+  if (display.success) {
+    intent.display = display.data;
   }
   return { kind: "start_intent", intent };
 };

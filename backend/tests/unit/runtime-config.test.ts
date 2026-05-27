@@ -290,6 +290,9 @@ describe("runtime configuration", () => {
     const terraformWorkflow = await readFile(new URL("../../../.github/workflows/terraform.yml", import.meta.url), "utf8");
     const terraformMain = await readFile(new URL("../../../infra/terraform/main.tf", import.meta.url), "utf8");
     const terraformVariables = await readFile(new URL("../../../infra/terraform/variables.tf", import.meta.url), "utf8");
+    const terraformApis = await readFile(new URL("../../../infra/terraform/apis.tf", import.meta.url), "utf8");
+    const schedulerTf = await readFile(new URL("../../../infra/terraform/scheduler.tf", import.meta.url), "utf8");
+    const registryTf = await readFile(new URL("../../../infra/terraform/registry.tf", import.meta.url), "utf8");
     const stagingEnv = await readFile(new URL("../../../infra/terraform/environments/staging/main.tf", import.meta.url), "utf8");
     const liveEnv = await readFile(new URL("../../../infra/terraform/environments/live/main.tf", import.meta.url), "utf8");
 
@@ -310,6 +313,9 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('resource "google_cloud_run_v2_service_iam_member" "crawler_worker_invoker"');
     expect(computeTf).toContain('value = try(google_cloud_run_v2_service.crawler_worker[0].uri, "")');
     expect(computeTf).toContain('name  = "WORKER_TASKS_CRAWL_SERVICE_URL"');
+    expect(computeTf).toContain('network_interfaces {');
+    expect(computeTf).toContain('secret  = google_secret_manager_secret.secrets["database-url"].secret_id');
+    expect(computeTf).not.toContain("cpu_idle = false");
     expect(computeTf).not.toContain('name  = "MAIL_DRIVER"');
     expect(computeTf).toContain('for_each = var.resend_mail_api_key != null ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []');
     expect(computeTf).toContain('name = "RESEND_MAIL_API_KEY"');
@@ -330,6 +336,13 @@ describe("runtime configuration", () => {
     expect(terraformMain).toContain('app_base_url = coalesce(var.app_base_url_override, "https://example.invalid")');
     expect(terraformVariables).toContain('app_base_url_override must be set when radioso_edition is enterprise.');
     expect(terraformVariables).toContain('variable "mail_from_email"');
+    expect(terraformVariables).toContain('default     = "*/15 * * * *"');
+    expect(terraformApis).toContain('"cloudscheduler.googleapis.com"');
+    expect(terraformApis).not.toContain('"vpcaccess.googleapis.com"');
+    expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "document_worker_recovery"');
+    expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "crawler_worker_recovery"');
+    expect(registryTf).toContain('id     = "delete-untagged-older-than-7-days"');
+    expect(registryTf).toContain('id     = "delete-tagged-older-than-30-days"');
     expect(terraformWorkflow).toContain("TF_VAR_resend_mail_api_key: ${{ secrets.RESEND_MAIL_API_KEY }}");
     expect(terraformWorkflow).toContain("APP_BASE_URL: ${{ vars.APP_BASE_URL }}");
     expect(terraformWorkflow).toContain("PUBLIC_CHAT_BASE_URL: ${{ vars.PUBLIC_CHAT_BASE_URL }}");

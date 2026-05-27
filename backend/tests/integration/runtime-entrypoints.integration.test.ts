@@ -208,7 +208,7 @@ describe("runtime entrypoints", () => {
 
     expect(response.status).toBe(204);
     expect(runJobByIdSpy).toHaveBeenCalledWith(jobId);
-    expect(crawlerWorkerStartSpy).toHaveBeenCalledOnce();
+    expect(crawlerWorkerStartSpy).not.toHaveBeenCalled();
     expect(documentWorkerStartSpy).not.toHaveBeenCalled();
   });
 
@@ -229,6 +229,60 @@ describe("runtime entrypoints", () => {
       .send({ jobId: randomUUID() });
 
     expect(response.status).toBe(404);
+  });
+
+  it("worker task runtime exposes bounded document recovery without starting the polling loop", async () => {
+    const { dependencies } = createTestDependencies();
+    const workerStartSpy = vi.spyOn(dependencies.documentProcessingWorker, "start");
+    const runOnceSpy = vi
+      .spyOn(dependencies.documentProcessingWorker, "runOnce")
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    const runtime = await startWorkerTaskRuntime({
+      env: createEnv(8101),
+      logger: dependencies.logger,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => dependencies,
+      createApp: createWorkerTaskApp,
+    });
+    runtimes.push(runtime);
+
+    const response = await request(runtime.server!)
+      .post("/internal/tasks/document-processing/recover")
+      .send({ maxJobs: 5 });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ processedJobCount: 1 });
+    expect(workerStartSpy).not.toHaveBeenCalled();
+    expect(runOnceSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("crawler worker task runtime exposes bounded crawl recovery without starting the polling loop", async () => {
+    const { dependencies } = createTestDependencies();
+    const crawlerWorkerStartSpy = vi.spyOn(dependencies.websiteCrawlWorker, "start");
+    const runOnceSpy = vi
+      .spyOn(dependencies.websiteCrawlWorker, "runOnce")
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true);
+
+    const runtime = await startCrawlerWorkerTaskRuntime({
+      env: createEnv(8102),
+      logger: dependencies.logger,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => dependencies,
+      createApp: createCrawlerWorkerTaskApp,
+    });
+    runtimes.push(runtime);
+
+    const response = await request(runtime.server!)
+      .post("/internal/tasks/website-crawl/recover")
+      .send({ maxJobs: 2 });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ processedJobCount: 2 });
+    expect(crawlerWorkerStartSpy).not.toHaveBeenCalled();
+    expect(runOnceSpy).toHaveBeenCalledTimes(2);
   });
 
   it("starts the worker task runtime and serves internal task routes", async () => {
@@ -271,12 +325,12 @@ describe("runtime entrypoints", () => {
       .send({ jobId: job.id });
 
     expect(response.status).toBe(204);
-    expect(workerStartSpy).toHaveBeenCalledOnce();
+    expect(workerStartSpy).not.toHaveBeenCalled();
     expect(repositories.documentProcessingJobRepository.items.get(job.id)?.status).toBe("completed");
 
     await runtime.shutdown("test");
     runtimes.pop();
-    expect(workerStopSpy).toHaveBeenCalledOnce();
+    expect(workerStopSpy).not.toHaveBeenCalled();
   });
 
   it("serves session-authenticated admin routes after login bootstrap", async () => {

@@ -35,6 +35,7 @@ import {
   presentActivityOutcome,
   presentRunParameters,
 } from '@/lib/activity-diagnostics'
+import { useSkillCatalog } from '@/lib/skill-catalog'
 
 const toneStyles: Record<DiagnosticPresentation['tone'], string> = {
   neutral: 'border-border/70 bg-background/60',
@@ -270,6 +271,7 @@ export function ConversationDrawer({
   anchorMessageId,
   onAfterClose,
 }: ConversationDrawerProps) {
+  const skillCatalog = useSkillCatalog(selectedItem?.id ?? null)
   const handleItemNotFound = useCallback(() => {
     onAfterClose?.()
   }, [onAfterClose])
@@ -422,6 +424,7 @@ export function ConversationDrawer({
                     onMessageSelect={handleSelectThreadMessage}
                     selectedMessageId={selectedThreadMessageId ?? undefined}
                     conversationId={selectedItem?.kind === 'chat' ? selectedItem.id : undefined}
+                    skillCatalog={skillCatalog}
                   />
                 </div>
 

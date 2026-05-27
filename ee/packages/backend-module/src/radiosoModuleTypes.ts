@@ -91,10 +91,21 @@ export interface ErrorSink {
   record(event: ErrorEvent): Promise<void>;
 }
 
+export interface SkillDisplayMetadata {
+  icon?: string;
+  title?: string;
+}
+
+/**
+ * Mirrors OSS's public `SkillDefinition` (in `backend/src/modules/skills/public.ts`).
+ * Kept structurally compatible so EE modules can register skill definitions
+ * without importing OSS runtime code directly.
+ */
 export interface SkillDefinition {
   name: string;
   displayName: string;
   description: string;
+  display?: SkillDisplayMetadata;
   owner: "assistant" | "retrieval" | "documents" | "mcp" | "platform" | "auth" | "contact";
   executionClass: "interactive" | "deferred" | "administrative";
   supportedCallers: Array<"assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed">;
@@ -542,6 +553,7 @@ export interface ChatIntakeResult {
   skillName: string;
   status: SkillTurnStatus;
   skillOutcome?: string;
+  display?: SkillDisplayMetadata;
   stateId?: string;
   answer: string;
   activitySummary: ActivitySummary;
@@ -552,6 +564,7 @@ export interface ChatIntakeResult {
 export interface PublicChatIntakeAction {
   skillName: string;
   intentName: string;
+  display?: SkillDisplayMetadata;
 }
 
 export interface ChatInputIntentMetadata {
@@ -616,6 +629,7 @@ export interface ChatActionSuggestion {
         intent: {
           skillName: string;
           intentName?: string;
+          display?: SkillDisplayMetadata;
         };
       };
 }

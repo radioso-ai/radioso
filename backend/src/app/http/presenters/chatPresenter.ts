@@ -106,6 +106,7 @@ export const sendChatSse = (
         conversationId: event.conversationId,
         skillName: event.skillName,
         phase: event.phase,
+        display: event.display,
         localizedTitle: event.localizedTitle,
         receipt: event.receipt,
       })}\n\n`);

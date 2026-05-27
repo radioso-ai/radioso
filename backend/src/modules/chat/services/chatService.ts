@@ -206,6 +206,7 @@ const buildSkillStreamPayload = (
 ): SkillStreamPayload => ({
   skillName: intakeResult.skillName,
   phase: intakeStatusToSkillPhase(intakeResult.status),
+  display: intakeResult.display,
   localizedTitle,
   receipt: intakeResult.receipt,
 });

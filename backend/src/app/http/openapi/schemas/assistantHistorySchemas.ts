@@ -9,6 +9,7 @@ import {
   skillDiagnosticEvidenceSchema,
   skillDiagnosticSchema,
   skillDiagnosticsSummarySchema,
+  skillDisplayMetadataSchema,
   skillOutcomeDefinitionSchema,
   skillParamsSchema,
 } from "../../../../modules/skills/public.js";
@@ -26,6 +27,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   const SkillAvailabilitySchema = registry.register("SkillAvailability", skillAvailabilitySchema);
   const SkillContractReferenceSchema = registry.register("SkillContractReference", skillContractReferenceSchema);
   const SkillDiagnosticsSummarySchema = registry.register("SkillDiagnosticsSummary", skillDiagnosticsSummarySchema);
+  const SkillDisplayMetadataSchema = registry.register("SkillDisplayMetadata", skillDisplayMetadataSchema);
   const SkillOutcomeDefinitionSchema = registry.register("SkillOutcomeDefinition", skillOutcomeDefinitionSchema);
   const SkillDiagnosticEvidenceSchema = registry.register("SkillDiagnosticEvidence", skillDiagnosticEvidenceSchema);
   const SkillDiagnosticDefinitionSchema = registry.register("SkillDiagnosticDefinition", skillDiagnosticSchema);
@@ -51,6 +53,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         intent: z.object({
           skillName: z.string(),
           intentName: z.string().optional(),
+          display: SkillDisplayMetadataSchema.optional(),
         }),
       }),
     ]).openapi({
@@ -188,6 +191,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       intakeActions: z.array(z.object({
         skillName: z.string(),
         intentName: z.string(),
+        display: SkillDisplayMetadataSchema.optional(),
       })).optional(),
       total: z.number().int().min(0),
       nextCursor: z.string().nullable(),

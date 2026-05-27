@@ -19,6 +19,10 @@ export const humanContactRequestSkillDefinition: SkillDefinition = {
   name: "human_contact.request",
   displayName: "Contact handoff request",
   description: "Let a chat user request follow-up through configured Enterprise contact delivery.",
+  display: {
+    icon: "handshake",
+    title: "Contact us",
+  },
   owner: "contact",
   executionClass: "deferred",
   supportedCallers: ["assistant", "dashboard", "public_embed"],

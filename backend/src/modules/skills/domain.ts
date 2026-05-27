@@ -40,6 +40,12 @@ export const skillDiagnosticsSummarySchema = z.object({
 });
 export type SkillDiagnosticsSummary = z.infer<typeof skillDiagnosticsSummarySchema>;
 
+export const skillDisplayMetadataSchema = z.object({
+  icon: z.string().min(1).optional(),
+  title: z.string().min(1).optional(),
+});
+export type SkillDisplayMetadata = z.infer<typeof skillDisplayMetadataSchema>;
+
 export const skillSchemaReferencesSchema = z.object({
   inputSchemaRef: z.string(),
   settingsSchemaRef: z.string().optional(),
@@ -149,6 +155,7 @@ export const skillCatalogEntrySchema = z.object({
   name: z.string(),
   displayName: z.string(),
   description: z.string(),
+  display: skillDisplayMetadataSchema.optional(),
   owner: skillOwnerSchema,
   executionClass: skillExecutionClassSchema,
   availability: skillAvailabilitySchema,

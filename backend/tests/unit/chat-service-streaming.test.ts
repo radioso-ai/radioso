@@ -453,6 +453,10 @@ describe("chat service streaming", () => {
         return {
           skillName: "human_contact.request",
           status: "completed",
+          display: {
+            icon: "handshake",
+            title: "Contact us",
+          },
           answer: "<skill_chip>Связаться</skill_chip>Ваш запрос получен.",
           activitySummary: {
             outcome: "request_queued",
@@ -516,6 +520,10 @@ describe("chat service streaming", () => {
       expect(skillEvent.localizedTitle).toBe("Связаться");
       expect(skillEvent.phase).toBe("completed");
       expect(skillEvent.skillName).toBe("human_contact.request");
+      expect(skillEvent.display).toEqual({
+        icon: "handshake",
+        title: "Contact us",
+      });
       expect(skillEvent.receipt?.fields[0]?.value).toBe("alex@example.com");
     }
 

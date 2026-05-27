@@ -39,6 +39,7 @@ import { llmProvidersApi, type KnownModelsByProvider, type LlmProviderName } fro
 import type { DocumentSummary } from '@/lib/api-types'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { useSkillCatalog } from '@/lib/skill-catalog'
 
 type AnyStatus = EvalCaseStatus | EvalRunStatus | AssertionVerdictStatus
 
@@ -252,6 +253,7 @@ const decodeModelValue = (value: string): EvalRunModelOverride | null => {
 
 function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   const router = useRouter()
+  const skillCatalog = useSkillCatalog(caseId)
   const [caseWithRuns, setCaseWithRuns] = useState<EvalCaseWithRuns | null>(null)
   const [snapshot, setSnapshot] = useState<EvalSnapshot | null>(null)
   const [docTitlesById, setDocTitlesById] = useState<Map<string, string>>(new Map())
@@ -543,6 +545,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
               messages={toThreadMessages(conversationMessages)}
               onOpenDocument={noopOpenDocument}
               showCitations={false}
+              skillCatalog={skillCatalog}
             />
           </CardContent>
         </Card>

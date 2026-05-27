@@ -123,6 +123,7 @@ describe("skills catalog contract", () => {
     expect(spec).toContain("/api/v1/skills:");
     expect(spec).toContain("/api/v1/skills/{skillName}:");
     expect(spec).toContain("SkillCatalogEntry:");
+    expect(spec).toContain("SkillDisplayMetadata:");
     expect(spec).toContain("SkillDiagnosticDefinition:");
     expect(spec).toContain("schemaReferences:");
     expect(spec).toContain("intake:");

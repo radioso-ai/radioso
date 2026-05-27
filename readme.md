@@ -237,7 +237,7 @@ curl -sS \
 ```
 
 The catalog describes product-facing work and points to stable contracts. It does not add a generic skill execution endpoint.
-Skill entries may also declare their own outcome names. History and diagnostics expose those names with a normalized status so clients can filter by skill behavior without depending on retrieval-specific enums.
+Skill entries may also declare UI display hints and their own outcome names. History and diagnostics expose those names with a normalized status so clients can filter by skill behavior without depending on retrieval-specific enums.
 
 ### Website crawler provider
 

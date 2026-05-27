@@ -1,5 +1,6 @@
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import type { ActivitySummary, ActivityTrace } from "../../retrieval/public.js";
+import type { SkillDisplayMetadata } from "../../skills/public.js";
 
 export type ChatSuggestionKind = string;
 
@@ -10,6 +11,7 @@ export type ChatSuggestionAction =
       intent: {
         skillName: string;
         intentName?: string;
+        display?: SkillDisplayMetadata;
       };
     };
 

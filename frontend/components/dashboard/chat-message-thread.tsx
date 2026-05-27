@@ -8,7 +8,7 @@ import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
-import { getSkillDisplay } from '@/lib/skill-display'
+import { getSkillDisplay, type SkillCatalogDisplayEntry, type SkillDisplaySource } from '@/lib/skill-display'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
 import { SendToEvalAction } from './send-to-eval-action'
 import type {
@@ -19,6 +19,7 @@ import type {
   ChatSuggestion,
   ChatUserInputMetadata,
   Citation,
+  SkillDisplayMetadata,
   SkillStreamPayload,
 } from '@/lib/api'
 
@@ -55,14 +56,28 @@ const SKILL_ACCENT_FALLBACK = '#0f172a'
 const accentTint = (accent: string | undefined, percent: number): string =>
   `color-mix(in srgb, ${accent ?? SKILL_ACCENT_FALLBACK} ${percent}%, transparent)`
 
+const skillDisplaySource = (
+  skillName: string,
+  display: SkillDisplayMetadata | undefined,
+  skillCatalogByName: Map<string, SkillCatalogDisplayEntry>,
+): SkillDisplaySource => {
+  const catalogEntry = skillCatalogByName.get(skillName)
+  return {
+    displayName: catalogEntry?.displayName,
+    display: display ?? catalogEntry?.display,
+  }
+}
+
 function SkillChip({
   skill,
+  displaySource,
   theme,
 }: {
   skill: SkillStreamPayload
+  displaySource: SkillDisplaySource
   theme?: WebsiteEmbedTheme | null
 }) {
-  const display = getSkillDisplay(skill.skillName)
+  const display = getSkillDisplay(displaySource)
   const Icon = display.icon
   const title = skill.localizedTitle?.trim() || display.fallbackTitle
   const accent = theme?.accent ?? SKILL_ACCENT_FALLBACK
@@ -209,6 +224,7 @@ export function ChatMessageThread({
   copy = DEFAULT_WEBSITE_EMBED_COPY,
   showCitations = true,
   conversationId,
+  skillCatalog = [],
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
@@ -229,8 +245,13 @@ export function ChatMessageThread({
   // Authenticated dashboard surfaces (chat + activity) pass this; the public
   // embed and website chat omit it so end users never see the action.
   conversationId?: string
+  skillCatalog?: SkillCatalogDisplayEntry[]
 }) {
   const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
+  const skillCatalogByName = useMemo(
+    () => new Map(skillCatalog.map((skill) => [skill.name, skill])),
+    [skillCatalog],
+  )
   const threadRef = useRef<HTMLDivElement | null>(null)
   // Scroll the selected message into view when the selection is set programmatically
   // (e.g. via a deep link from the Quality dashboard). Re-runs only when the target
@@ -466,7 +487,15 @@ export function ChatMessageThread({
                   <div className="flex w-full items-start">
                     <div className="min-w-0 flex-1 flex flex-col gap-1.5">
                       {groupInfo?.isGroupStart && groupInfo.skill ? (
-                        <SkillChip skill={groupInfo.skill} theme={theme} />
+                        <SkillChip
+                          skill={groupInfo.skill}
+                          displaySource={skillDisplaySource(
+                            groupInfo.skill.skillName,
+                            groupInfo.skill.display,
+                            skillCatalogByName,
+                          )}
+                          theme={theme}
+                        />
                       ) : null}
                       <div
                         {...getSelectableMessageProps(message.id)}
@@ -511,7 +540,16 @@ export function ChatMessageThread({
                               const actionSkillName = suggestion.action?.kind === 'start_intent'
                                 ? suggestion.action.intent.skillName
                                 : null
-                              const ActionIcon = actionSkillName ? getSkillDisplay(actionSkillName).icon : null
+                              const actionDisplay = suggestion.action?.kind === 'start_intent'
+                                ? suggestion.action.intent.display
+                                : undefined
+                              const ActionIcon = actionSkillName
+                                ? getSkillDisplay(skillDisplaySource(
+                                  actionSkillName,
+                                  actionDisplay,
+                                  skillCatalogByName,
+                                )).icon
+                                : null
                               return onSuggestionSelect ? (
                                 <Button
                                   key={`${message.id}-suggestion-${suggestionIndex}`}

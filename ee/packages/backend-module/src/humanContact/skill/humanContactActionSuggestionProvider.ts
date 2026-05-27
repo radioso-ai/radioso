@@ -5,6 +5,7 @@ import type {
 } from "../../radiosoModuleTypes.js";
 import { HUMAN_CONTACT_SKILL_NAME } from "../humanContactTypes.js";
 import type { HumanContactSettingsService } from "../contactSettingsService.js";
+import { humanContactRequestSkillDefinition } from "./definition.js";
 import type { DefinitionBackedIntakePrompts } from "./definitionBackedIntakePrompts.js";
 import { resolveLanguageContext } from "./humanContactIntakeProvider.js";
 
@@ -45,6 +46,7 @@ export class HumanContactActionSuggestionProvider implements ChatActionSuggestio
         intent: {
           skillName: HUMAN_CONTACT_SKILL_NAME,
           intentName: "no_context_refusal",
+          display: humanContactRequestSkillDefinition.display,
         },
       },
     };

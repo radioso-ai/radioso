@@ -2246,6 +2246,10 @@ export interface components {
             intakeActions?: {
                 skillName: string;
                 intentName: string;
+                display?: {
+                    icon?: string;
+                    title?: string;
+                };
             }[];
             /** Format: date-time */
             expiresAt: string;
@@ -2804,6 +2808,10 @@ export interface components {
             strategyAware: boolean;
             supportedFields?: string[];
         };
+        SkillDisplayMetadata: {
+            icon?: string;
+            title?: string;
+        };
         SkillOutcomeDefinition: {
             name: string;
             displayName: string;
@@ -2886,6 +2894,10 @@ export interface components {
             name: string;
             displayName: string;
             description: string;
+            display?: {
+                icon?: string;
+                title?: string;
+            };
             /** @enum {string} */
             owner: "assistant" | "retrieval" | "documents" | "mcp" | "platform" | "auth" | "contact";
             /** @enum {string} */
@@ -2972,6 +2984,7 @@ export interface components {
             intent: {
                 skillName: string;
                 intentName?: string;
+                display?: components["schemas"]["SkillDisplayMetadata"];
             };
         };
         ChatSuggestion: {
@@ -3133,6 +3146,7 @@ export interface components {
             intakeActions?: {
                 skillName: string;
                 intentName: string;
+                display?: components["schemas"]["SkillDisplayMetadata"];
             }[];
             total: number;
             nextCursor: string | null;

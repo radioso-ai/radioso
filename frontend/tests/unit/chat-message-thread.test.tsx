@@ -334,7 +334,7 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('Связаться')
   })
 
-  it('falls back to the registry title when the localized title is missing', () => {
+  it('uses backend-provided display title when the localized title is missing', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread
         messages={[
@@ -346,6 +346,42 @@ describe('ChatMessageThread', () => {
             skill: {
               skillName: 'human_contact.request',
               phase: 'active',
+              display: {
+                icon: 'handshake',
+                title: 'Contact us',
+              },
+            },
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('Contact us')
+  })
+
+  it('uses catalog display metadata when stream payload display is absent', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Please share your email.',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            skill: {
+              skillName: 'human_contact.request',
+              phase: 'active',
+            },
+          },
+        ]}
+        skillCatalog={[
+          {
+            name: 'human_contact.request',
+            displayName: 'Contact handoff request',
+            display: {
+              icon: 'handshake',
+              title: 'Contact us',
             },
           },
         ]}

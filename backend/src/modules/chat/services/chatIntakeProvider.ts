@@ -1,5 +1,6 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ActivitySummary, ActivityTrace } from "../../retrieval/public.js";
+import type { SkillDisplayMetadata } from "../../skills/public.js";
 import type { SkillTurnStatus } from "./assistantTurnOutcomeTypes.js";
 
 export type ChatIntakeStatus = SkillTurnStatus;
@@ -19,6 +20,7 @@ export interface ChatIntakeResult {
   skillName: string;
   status: ChatIntakeStatus;
   skillOutcome?: string;
+  display?: SkillDisplayMetadata;
   stateId?: string;
   answer: string;
   activitySummary: ActivitySummary;
@@ -29,6 +31,7 @@ export interface ChatIntakeResult {
 export interface PublicChatIntakeAction {
   skillName: string;
   intentName: string;
+  display?: SkillDisplayMetadata;
 }
 
 export interface ChatIntakeProviderPort {

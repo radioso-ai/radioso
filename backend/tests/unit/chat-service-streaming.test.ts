@@ -6,6 +6,7 @@ import {
   type ChatGateway,
   type ChatStreamEvent,
 } from "../../src/modules/chat/services/chatService.js";
+import type { SkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { ChatIntakeProviderPort } from "../../src/modules/chat/services/chatIntakeProvider.js";
 import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
 import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
@@ -18,6 +19,10 @@ import {
 
 const envelope = (answer: string, suggestions: unknown[]): string =>
   `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(suggestions)}`;
+
+const groundedSkillCapabilities: SkillOutcomeCapabilityProvider = {
+  supportsGroundedAnswer: () => true,
+};
 
 const groundedMissResponseComposer: GroundedMissResponseComposer = {
   async composeNoContext() {
@@ -2164,6 +2169,14 @@ describe("chat service streaming", () => {
       asChatActivityPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      groundedSkillCapabilities,
     );
 
     const response = await service.answer({
@@ -2692,6 +2705,13 @@ describe("chat service streaming", () => {
       chatGateway,
       auditService,
       groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      groundedSkillCapabilities,
     );
 
     const response = await service.answer({
@@ -2797,6 +2817,13 @@ describe("chat service streaming", () => {
       chatGateway,
       auditService,
       groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      groundedSkillCapabilities,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -2979,6 +3006,13 @@ describe("chat service streaming", () => {
       chatGateway,
       auditService,
       groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      groundedSkillCapabilities,
     );
 
     const response = await service.answer({
@@ -3072,6 +3106,13 @@ describe("chat service streaming", () => {
       chatGateway,
       auditService,
       groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      groundedSkillCapabilities,
     );
 
     const response = await service.answer({
@@ -3163,6 +3204,13 @@ describe("chat service streaming", () => {
       chatGateway,
       auditService,
       groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      groundedSkillCapabilities,
     );
 
     const first = await service.answer({
@@ -3315,6 +3363,13 @@ describe("chat service streaming", () => {
       chatGateway,
       auditService,
       groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      groundedSkillCapabilities,
     );
 
     const first = await service.answer({
@@ -3414,6 +3469,13 @@ describe("chat service streaming", () => {
       chatGateway,
       auditService,
       groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      groundedSkillCapabilities,
     );
 
     const response = await service.answer({
@@ -3510,6 +3572,13 @@ describe("chat service streaming", () => {
       chatGateway,
       auditService,
       groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      groundedSkillCapabilities,
     );
 
     const response = await service.answer({
@@ -3613,6 +3682,13 @@ describe("chat service streaming", () => {
       chatGateway,
       auditService,
       groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      groundedSkillCapabilities,
     );
 
     const response = await service.answer({

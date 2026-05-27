@@ -6,7 +6,11 @@ import {
   InMemorySkillIntakeStateStore,
   type ConfiguredSkillIntakeAdapter,
 } from "../../src/modules/chat/services/configuredSkillIntakeProvider.js";
-import type { SkillDefinition } from "../../src/modules/skills/public.js";
+import {
+  SkillExecutorRegistry,
+  type SkillDefinition,
+  type SkillExecutorPort,
+} from "../../src/modules/skills/public.js";
 
 const profileSkill: SkillDefinition = {
   name: "test.profile_collect",
@@ -65,7 +69,7 @@ const createChatInput = (message: string, conversationId = "conversation-1") => 
   history: [],
 });
 
-const createProfileAdapter = (executions: Array<Record<string, unknown>> = []): ConfiguredSkillIntakeAdapter => ({
+const createProfileAdapter = (): ConfiguredSkillIntakeAdapter => ({
   skill: profileSkill,
   async shouldStart(input) {
     return input.query.includes("Start profile setup");
@@ -89,6 +93,9 @@ const createProfileAdapter = (executions: Array<Record<string, unknown>> = []): 
     }
     return `Please provide ${input.missing.map((field) => field.displayName).join(" and ")}.`;
   },
+});
+
+const createProfileExecutor = (executions: Array<Record<string, unknown>> = []): SkillExecutorPort => ({
   async execute(input) {
     executions.push(input.collected);
     return {
@@ -97,6 +104,16 @@ const createProfileAdapter = (executions: Array<Record<string, unknown>> = []): 
     };
   },
 });
+
+const createProfileExecutorRegistry = (executions: Array<Record<string, unknown>> = []): SkillExecutorRegistry => {
+  const registry = new SkillExecutorRegistry();
+  registry.register({
+    kind: "internal",
+    adapter: "test_profile_collect",
+    executor: createProfileExecutor(executions),
+  });
+  return registry;
+};
 
 class FakeSkillIntakeDatabase {
   readonly now = new Date("2026-05-04T10:00:00.000Z");
@@ -183,7 +200,9 @@ class FakeSkillIntakeDatabase {
 describe("configured skill intake provider", () => {
   it("collects multiple required fields across turns before executing a configured skill", async () => {
     const executions: Array<Record<string, unknown>> = [];
-    const provider = new ConfiguredSkillIntakeProvider([createProfileAdapter(executions)]);
+    const provider = new ConfiguredSkillIntakeProvider([createProfileAdapter()], {
+      executorRegistry: createProfileExecutorRegistry(executions),
+    });
 
     const first = await provider.handle(createChatInput("Start profile setup"));
     expect(first).toMatchObject({
@@ -232,13 +251,14 @@ describe("configured skill intake provider", () => {
   it("resumes paused flows, validates likely single-field attempts, and keeps state outside the provider instance", async () => {
     const store = new InMemorySkillIntakeStateStore();
     const adapter = createProfileAdapter();
+    const executorRegistry = createProfileExecutorRegistry();
 
-    const firstProvider = new ConfiguredSkillIntakeProvider([adapter], { stateStore: store });
+    const firstProvider = new ConfiguredSkillIntakeProvider([adapter], { stateStore: store, executorRegistry });
     await firstProvider.handle(createChatInput("Start profile setup"));
     await firstProvider.handle(createChatInput("alex@example.com"));
     expect(await firstProvider.handle(createChatInput("Tell me something else."))).toBeNull();
 
-    const resumedProvider = new ConfiguredSkillIntakeProvider([adapter], { stateStore: store });
+    const resumedProvider = new ConfiguredSkillIntakeProvider([adapter], { stateStore: store, executorRegistry });
     const resumed = await resumedProvider.handle(createChatInput("Okay, Start profile setup again."));
     expect(resumed).toMatchObject({
       status: "active",
@@ -277,6 +297,7 @@ describe("configured skill intake provider", () => {
     });
     const provider = new ConfiguredSkillIntakeProvider([createProfileAdapter()], {
       stateStore: new DatabaseSkillIntakeStateStore(database),
+      executorRegistry: createProfileExecutorRegistry(),
     });
 
     const result = await provider.handle(createChatInput("Start profile setup"));
@@ -297,8 +318,9 @@ describe("configured skill intake provider", () => {
   it("scrubs sensitive collected fields when database-backed intake completes", async () => {
     const database = new FakeSkillIntakeDatabase();
     const executions: Array<Record<string, unknown>> = [];
-    const provider = new ConfiguredSkillIntakeProvider([createProfileAdapter(executions)], {
+    const provider = new ConfiguredSkillIntakeProvider([createProfileAdapter()], {
       stateStore: new DatabaseSkillIntakeStateStore(database),
+      executorRegistry: createProfileExecutorRegistry(executions),
     });
 
     await provider.handle(createChatInput("Start profile setup"));
@@ -324,5 +346,71 @@ describe("configured skill intake provider", () => {
       missing: [],
     });
     expect(JSON.stringify(state?.collected)).not.toContain("alex@example.com");
+  });
+
+  it("dispatches execution through the registry and ignores adapter.execute when skill.execution is declared", async () => {
+    const adapterCalls: Array<Record<string, unknown>> = [];
+    const registryCalls: Array<Record<string, unknown>> = [];
+    const adapter: ConfiguredSkillIntakeAdapter = {
+      ...createProfileAdapter(),
+      async execute(input) {
+        adapterCalls.push(input.collected);
+        return { answer: "from adapter" };
+      },
+    };
+    const registry = new SkillExecutorRegistry();
+    registry.register({
+      kind: "internal",
+      adapter: "test_profile_collect",
+      executor: {
+        async execute(input) {
+          registryCalls.push(input.collected);
+          return { answer: "from registry" };
+        },
+      },
+    });
+    const provider = new ConfiguredSkillIntakeProvider([adapter], { executorRegistry: registry });
+
+    await provider.handle(createChatInput("Start profile setup"));
+    await provider.handle(createChatInput("alex@example.com"));
+    const completed = await provider.handle(createChatInput("12345"));
+
+    expect(completed).toMatchObject({ status: "completed", answer: "from registry" });
+    expect(registryCalls).toHaveLength(1);
+    expect(adapterCalls).toEqual([]);
+  });
+
+  it("throws when skill.execution is declared but no executor is registered", async () => {
+    const provider = new ConfiguredSkillIntakeProvider([createProfileAdapter()], {
+      executorRegistry: new SkillExecutorRegistry(),
+    });
+
+    await provider.handle(createChatInput("Start profile setup"));
+    await provider.handle(createChatInput("alex@example.com"));
+
+    await expect(provider.handle(createChatInput("12345"))).rejects.toThrow(
+      /No skill executor registered for internal \(adapter=test_profile_collect\)/,
+    );
+  });
+
+  it("falls back to adapter.execute when the skill declares no execution metadata", async () => {
+    const skillWithoutExecution: SkillDefinition = { ...profileSkill, execution: undefined };
+    const adapterCalls: Array<Record<string, unknown>> = [];
+    const adapter: ConfiguredSkillIntakeAdapter = {
+      ...createProfileAdapter(),
+      skill: skillWithoutExecution,
+      async execute(input) {
+        adapterCalls.push(input.collected);
+        return { answer: "from adapter only" };
+      },
+    };
+    const provider = new ConfiguredSkillIntakeProvider([adapter]);
+
+    await provider.handle(createChatInput("Start profile setup"));
+    await provider.handle(createChatInput("alex@example.com"));
+    const completed = await provider.handle(createChatInput("12345"));
+
+    expect(completed).toMatchObject({ status: "completed", answer: "from adapter only" });
+    expect(adapterCalls).toHaveLength(1);
   });
 });

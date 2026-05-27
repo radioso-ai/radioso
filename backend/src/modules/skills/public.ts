@@ -46,3 +46,11 @@ export { builtInSkillCatalogEntries, createDefaultSkillCatalogRegistry } from ".
 export { SkillRunResolver } from "./skillRunResolver.js";
 export { SkillCatalogRegistry } from "./skillCatalogRegistry.js";
 export { SkillCatalogService, type SkillCatalogContext } from "./skillCatalogService.js";
+export {
+  SkillExecutorRegistry,
+  type SkillExecutorDescriptor,
+  type SkillExecutorInput,
+  type SkillExecutorPort,
+  type SkillExecutorRegistration,
+  type SkillExecutorResult,
+} from "./skillExecutorRegistry.js";

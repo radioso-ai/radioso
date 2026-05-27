@@ -588,36 +588,33 @@ export const buildChatServices = (input: {
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway();
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database));
-  const registeredChatIntakeProvider = !input.composition.chatIntakeProviderRegistration
-    ? null
-    : typeof input.composition.chatIntakeProviderRegistration === "function"
-      ? input.composition.chatIntakeProviderRegistration({
-          database: input.database,
-          chatGateway,
-          logger: input.logger,
-          conversationRepository: input.conversationRepository,
-          messageRepository: input.messageRepository,
-          workspaceContactInfoRepository: {
-            async findById(workspaceId) {
-              const workspace = await input.workspaceRepository.findById(workspaceId);
-              return workspace
-                ? {
-                    id: workspace.id,
-                    name: workspace.name,
-                    publicRouteKey: workspace.publicRouteKey,
-                  }
-                : null;
-            },
-          },
-          auditService: input.auditService,
-          abuseControlService,
-          mailService: input.mailService,
-          dashboardBaseUrl: input.env.APP_BASE_URL ?? null,
-        })
-      : input.composition.chatIntakeProviderRegistration;
-  const chatIntakeProviders = [
-    ...(registeredChatIntakeProvider ? [registeredChatIntakeProvider] : []),
-  ];
+  const intakeProviderContext = {
+    database: input.database,
+    chatGateway,
+    logger: input.logger,
+    conversationRepository: input.conversationRepository,
+    messageRepository: input.messageRepository,
+    workspaceContactInfoRepository: {
+      async findById(workspaceId: string) {
+        const workspace = await input.workspaceRepository.findById(workspaceId);
+        return workspace
+          ? {
+              id: workspace.id,
+              name: workspace.name,
+              publicRouteKey: workspace.publicRouteKey,
+            }
+          : null;
+      },
+    },
+    auditService: input.auditService,
+    abuseControlService,
+    mailService: input.mailService,
+    dashboardBaseUrl: input.env.APP_BASE_URL ?? null,
+    skillExecutorRegistry: input.composition.skillExecutorRegistry,
+  };
+  const chatIntakeProviders = input.composition.chatIntakeProviderRegistrations.map((registration) =>
+    typeof registration === "function" ? registration(intakeProviderContext) : registration,
+  );
   const chatIntakeProvider = chatIntakeProviders.length === 0
     ? new NoopChatIntakeProvider()
     : chatIntakeProviders.length === 1

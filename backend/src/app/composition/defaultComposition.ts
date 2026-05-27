@@ -44,6 +44,7 @@ import { createAgentWizardApplicationModule } from "./builtIn/agentWizardModule.
 import { createQualityApplicationModule } from "./builtIn/qualityModule.js";
 import {
   createDefaultSkillCatalogRegistry,
+  SkillExecutorRegistry,
   type SkillCatalogRegistry,
 } from "../../modules/skills/public.js";
 import {
@@ -72,11 +73,12 @@ export interface ApplicationComposition {
   websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
   usageEventRecorderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageEventRecorderRegistration"];
-  chatIntakeProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["chatIntakeProviderRegistration"];
+  chatIntakeProviderRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["chatIntakeProviderRegistrations"];
   contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
   answerFeedbackHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["answerFeedbackHistoryProviderRegistration"];
   agentSurfaceExtensions: ReturnType<typeof createApplicationExtensionRegistry>["agentSurfaceExtensions"];
   skillCatalogRegistry: SkillCatalogRegistry;
+  skillExecutorRegistry: SkillExecutorRegistry;
   chatActionSuggestionProviders: ReturnType<typeof createApplicationExtensionRegistry>["chatActionSuggestionProviders"];
   lifecycle: ApplicationModuleCoordinator;
   modules: ApplicationModule[];
@@ -118,7 +120,7 @@ export const createDefaultApplicationComposition = (options: {
     websiteEmbedIntegration: registry.websiteEmbedIntegration,
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
     usageEventRecorderRegistration: registry.usageEventRecorderRegistration,
-    chatIntakeProviderRegistration: registry.chatIntakeProviderRegistration,
+    chatIntakeProviderRegistrations: registry.chatIntakeProviderRegistrations,
     contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
     answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,
     agentSurfaceExtensions: registry.agentSurfaceExtensions,
@@ -126,6 +128,7 @@ export const createDefaultApplicationComposition = (options: {
       ...registry.skillCatalogEntries,
       ...registry.skillDefinitions,
     ]),
+    skillExecutorRegistry: new SkillExecutorRegistry(registry.skillExecutors),
     chatActionSuggestionProviders: registry.chatActionSuggestionProviders,
     lifecycle: coordinator,
     modules: coordinator.registeredModules,

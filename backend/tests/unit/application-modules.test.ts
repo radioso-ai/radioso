@@ -79,6 +79,68 @@ describe("application modules", () => {
     );
   });
 
+  it("collects multiple chat intake provider registrations into a list", () => {
+    const logger = createLogger();
+    const registry = createApplicationExtensionRegistry();
+    const coordinator = new ApplicationModuleCoordinator({ logger, registry });
+
+    const firstProvider = { handle: async () => null };
+    const secondProvider = { handle: async () => null };
+
+    coordinator.apply([
+      {
+        id: "first-module",
+        register(context) {
+          context.registerChatIntakeProvider(firstProvider);
+        },
+      },
+      {
+        id: "second-module",
+        register(context) {
+          context.registerChatIntakeProvider(secondProvider);
+        },
+      },
+    ]);
+
+    expect(registry.chatIntakeProviderRegistrations).toEqual([firstProvider, secondProvider]);
+  });
+
+  it("collects multiple skill executor registrations keyed by kind and adapter", () => {
+    const logger = createLogger();
+    const registry = createApplicationExtensionRegistry();
+    const coordinator = new ApplicationModuleCoordinator({ logger, registry });
+
+    const internalExecutor = { execute: async () => ({ answer: "ok" }) };
+    const pipelineExecutor = { execute: async () => ({ answer: "delivered" }) };
+
+    coordinator.apply([
+      {
+        id: "internal-executor-module",
+        register(context) {
+          context.registerSkillExecutor({
+            kind: "internal",
+            adapter: "echo",
+            executor: internalExecutor,
+          });
+        },
+      },
+      {
+        id: "pipeline-executor-module",
+        register(context) {
+          context.registerSkillExecutor({
+            kind: "delivery_pipeline",
+            adapter: "human_contact",
+            executor: pipelineExecutor,
+          });
+        },
+      },
+    ]);
+
+    expect(registry.skillExecutors).toHaveLength(2);
+    expect(registry.skillExecutors[0]).toMatchObject({ kind: "internal", adapter: "echo" });
+    expect(registry.skillExecutors[1]).toMatchObject({ kind: "delivery_pipeline", adapter: "human_contact" });
+  });
+
   it("continues shutting down remaining modules when one shutdown hook fails", async () => {
     const logger = createLogger();
     const registry = createApplicationExtensionRegistry();

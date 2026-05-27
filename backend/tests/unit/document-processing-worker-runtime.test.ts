@@ -117,6 +117,67 @@ describe("document processing worker runtime signals", () => {
     );
   });
 
+  it("releases stale processing jobs during bounded recovery", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const process = vi.fn().mockResolvedValue("completed");
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Stale processing",
+      sourceContent: "Stale processing",
+      markdownContent: "Stale processing",
+      status: "queued",
+      sourceKind: "inline_text",
+      sourceFilename: null,
+      sourceMimeType: null,
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      sourceSizeBytes: null,
+    });
+    const job = await jobRepository.enqueue({
+      documentId: document.id,
+      workspaceId: document.workspaceId,
+      documentRevision: document.revision,
+    });
+    const now = new Date(Date.now() + 360_000);
+    const claimedAt = new Date(now.getTime() - 360_000);
+    await jobRepository.claimById(job.id, claimedAt);
+
+    const worker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      {
+        process,
+      } as any,
+      createAuditService(),
+      logger as any,
+      10_000,
+      undefined,
+      300_000,
+    );
+
+    await expect(worker.runOnce(now)).resolves.toBe(true);
+
+    expect(process).toHaveBeenCalledOnce();
+    expect(jobRepository.items.get(job.id)).toEqual(expect.objectContaining({
+      status: "completed",
+    }));
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "worker",
+        releasedCount: 1,
+      }),
+      "Released stale processing document jobs back to queue",
+    );
+  });
+
   it("emits worker telemetry for processing failures and retries", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
@@ -271,7 +332,7 @@ describe("document processing worker runtime signals", () => {
     expect(workerStopSpy).toHaveBeenCalledOnce();
   });
 
-  it("starts and stops the optional document job consumer with the worker task runtime", async () => {
+  it("does not start the optional document job consumer with the worker task runtime", async () => {
     const { dependencies } = createTestDependencies();
     const documentJobConsumer = {
       start: vi.fn().mockResolvedValue(undefined),
@@ -295,11 +356,11 @@ describe("document processing worker runtime signals", () => {
       },
     });
 
-    expect(documentJobConsumer.start).toHaveBeenCalledOnce();
+    expect(documentJobConsumer.start).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
 
-    expect(documentJobConsumer.stop).toHaveBeenCalledOnce();
+    expect(documentJobConsumer.stop).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledOnce();
   });
 });

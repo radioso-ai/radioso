@@ -19,6 +19,12 @@ resource "google_project_iam_member" "github_actions_artifact_registry_writer" {
   member  = "serviceAccount:${google_service_account.github_actions_deployer.email}"
 }
 
+resource "google_project_iam_member" "github_actions_cloud_scheduler_admin" {
+  project = var.project_id
+  role    = "roles/cloudscheduler.admin"
+  member  = "serviceAccount:${google_service_account.github_actions_deployer.email}"
+}
+
 resource "google_service_account_iam_member" "github_actions_backend_act_as" {
   service_account_id = google_service_account.backend.name
   role               = "roles/iam.serviceAccountUser"
@@ -33,6 +39,12 @@ resource "google_service_account_iam_member" "github_actions_frontend_act_as" {
 
 resource "google_service_account_iam_member" "github_actions_worker_act_as" {
   service_account_id = google_service_account.worker.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.github_actions_deployer.email}"
+}
+
+resource "google_service_account_iam_member" "github_actions_worker_task_invoker_act_as" {
+  service_account_id = google_service_account.worker_task_invoker.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.github_actions_deployer.email}"
 }

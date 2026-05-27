@@ -330,6 +330,8 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('template[0].containers[0].image,');
     expect(githubActionsTf).toContain('roles/run.admin');
     expect(githubActionsTf).toContain('roles/artifactregistry.writer');
+    expect(githubActionsTf).toContain('roles/cloudscheduler.admin');
+    expect(githubActionsTf).toContain('resource "google_service_account_iam_member" "github_actions_worker_task_invoker_act_as"');
     expect(githubActionsTf).toContain('https://token.actions.githubusercontent.com');
     expect(terraformMain).toContain('worker_tasks_service_url = coalesce(var.worker_tasks_service_url_override, "https://example.invalid")');
     expect(terraformMain).toContain('resource_name_prefix         = "${local.service_name}-${var.environment}"');

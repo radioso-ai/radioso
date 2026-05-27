@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import { Fraunces } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
 import { DevBuildBadge } from '@/components/dev-build-badge'
 import { FrontendErrorBoundary } from '@/components/frontend-error-boundary'
@@ -8,6 +9,12 @@ import { AuthProvider } from '@/lib/auth-context'
 import { WorkspaceProvider } from '@/lib/workspace-context'
 import { ChatProvider } from '@/lib/chat-context'
 import './globals.css'
+
+const fraunces = Fraunces({
+  subsets: ['latin'],
+  variable: '--font-fraunces',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'radioso - Knowledge Agents Platform',
@@ -24,7 +31,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={fraunces.variable} suppressHydrationWarning>
       <body className="font-sans antialiased">
         <ThemeProvider
           attribute="class"

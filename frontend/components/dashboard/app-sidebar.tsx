@@ -305,7 +305,7 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
               height={32}
               className="h-8 w-8 flex-shrink-0"
             />
-            <span className="truncate font-semibold text-foreground">
+            <span className="truncate font-display text-lg font-semibold text-foreground">
               {organizationName}
             </span>
           </div>

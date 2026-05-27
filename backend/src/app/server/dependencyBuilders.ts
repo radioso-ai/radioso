@@ -5,7 +5,6 @@ import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import type { AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
-import { ChunkRepository } from "../../db/repositories/chunkRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
 import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
 import { DocumentRepository } from "../../db/repositories/documentRepository.js";
@@ -55,6 +54,7 @@ import {
   type ApplicationComposition,
 } from "../composition/index.js";
 import {
+  ChunkRepository,
   type DocumentJobDispatcherPort,
   DocumentDeletionService,
   DocumentImportService,

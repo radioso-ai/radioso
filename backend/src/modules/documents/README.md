@@ -15,6 +15,10 @@ processing state, job dispatch, parsing inputs, and worker recovery.
 Documents should not own retrieval ranking policy, assistant persona, chat
 session behavior, or frontend presentation rules.
 
+Chunk persistence belongs to Documents because chunks are canonical document
+records. Vector-specific write details are delegated through the retrieval-owned
+chunk vector storage adapter so Documents does not own vector index behavior.
+
 ## Public Surfaces
 
 - `contracts/`: document records, repository ports, storage ports, queue ports,
@@ -32,6 +36,7 @@ imports from `services/` or `infra/`.
 - `services/documentImportService.ts`: import flows and source metadata.
 - `services/documentProcessingService.ts`: processing orchestration.
 - `services/documentProcessingWorker.ts`: worker runtime behavior.
+- `infra/chunkRepository.ts`: canonical chunk persistence adapter.
 - `services/documentJobMessage.ts`: durable job message shape.
 - `services/documentJobDispatcher.ts` and `services/documentJobConsumer.ts`:
   dispatch and consume ports.

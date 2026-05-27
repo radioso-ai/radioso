@@ -1,6 +1,11 @@
 import { presentChatPayload } from "./chatPresenter.js";
 import type { ChatConversationDetail } from "../../../modules/chat/services/chatHistoryService.js";
-import type { AnswerSegment, ChatStreamEvent, ChatSuggestion } from "../../../modules/chat/contracts/index.js";
+import {
+  CitationAnchorSanitizer,
+  type AnswerSegment,
+  type ChatStreamEvent,
+  type ChatSuggestion,
+} from "../../../modules/chat/contracts/index.js";
 import type { AuditEventInput } from "../../../modules/audit/contracts/index.js";
 import {
   isAgentBootstrapActive,
@@ -160,8 +165,19 @@ export const stripPublicConversationCitationArtifacts = (
 export async function* stripPublicStreamCitationArtifacts(
   events: AsyncIterable<ChatStreamEvent>,
 ): AsyncIterable<ChatStreamEvent> {
+  const chunkSanitizer = new CitationAnchorSanitizer();
+
   for await (const event of events) {
+    if (event.type === "chunk") {
+      yield {
+        ...event,
+        text: chunkSanitizer.push(event.text),
+      };
+      continue;
+    }
+
     if (event.type === "done") {
+      chunkSanitizer.flush();
       yield stripPublicChatCitationArtifacts(presentChatPayload(event)) as ChatStreamEvent;
       continue;
     }

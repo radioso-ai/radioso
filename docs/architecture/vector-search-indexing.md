@@ -20,6 +20,11 @@ The current retrieval read side has a `VectorSearchPort` implemented by
 details through `ChunkVectorStoragePort`, implemented by
 `PgVectorChunkStorage`.
 
+Canonical chunk persistence is owned by the Documents module in
+`backend/src/modules/documents/infra/chunkRepository.ts`. That repository writes
+the canonical chunk row and delegates vector storage details through the
+retrieval-owned adapter.
+
 Chunk filtering for PostgreSQL retrieval is shared through `compilePgChunkFilter`
 so vector and lexical search use the same source and metadata filter semantics.
 
@@ -65,9 +70,9 @@ semantics as pgvector:
 
 ## Adapter Roles
 
-`ChunkVectorStoragePort` owns pgvector write details for canonical chunk
+`ChunkVectorStoragePort` owns pgvector write details used during canonical chunk
 publication. It handles current storage choices such as bounded and unbounded
-vector columns, vector serialization, and embedding dimension projection.
+vector columns and vector serialization.
 
 `VectorSearchPort` owns vector candidate retrieval. `PgVectorSearch` remains the
 default implementation.

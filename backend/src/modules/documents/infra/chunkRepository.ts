@@ -1,11 +1,11 @@
+import type { ChunkVectorStoragePort } from "../../retrieval/public.js";
+import type { Database } from "../../../shared/infra/database.js";
 import type {
   ChunkDetail,
   ChunkRecord,
   ChunkRepositoryPort,
   ChunkSummary,
-} from "../../modules/documents/contracts/index.js";
-import type { ChunkVectorStoragePort } from "../../modules/retrieval/infra/chunkVectorStorage.js";
-import type { Database } from "../../shared/infra/database.js";
+} from "../contracts/index.js";
 
 const CHUNK_CONTENT_PREVIEW_MAX_CHARS = 240;
 

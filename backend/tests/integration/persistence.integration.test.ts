@@ -7,13 +7,13 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
-import { ChunkRepository } from "../../src/db/repositories/chunkRepository.js";
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import { IngestionSettingsRepository } from "../../src/db/repositories/ingestionSettingsRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
+import { ChunkRepository } from "../../src/modules/documents/infra/chunkRepository.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";

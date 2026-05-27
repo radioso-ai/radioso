@@ -2,6 +2,7 @@ export {
   AmqpDocumentJobConsumer,
   AmqpDocumentJobDispatcher,
 } from "./infra/amqpDocumentJobQueue.js";
+export { ChunkRepository } from "./infra/chunkRepository.js";
 export { CloudTasksDocumentJobDispatcher } from "./infra/cloudTasksDocumentJobDispatcher.js";
 export {
   type DocumentJobConsumerPort,

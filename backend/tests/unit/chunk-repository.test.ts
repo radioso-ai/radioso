@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ChunkRepository } from "../../src/db/repositories/chunkRepository.js";
+import { ChunkRepository } from "../../src/modules/documents/infra/chunkRepository.js";
 import {
   PgVectorChunkStorage,
   type ChunkVectorStoragePort,

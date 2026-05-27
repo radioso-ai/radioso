@@ -39,7 +39,7 @@ module.exports = {
       name: "no-external-skills-nonpublic",
       severity: "error",
       comment:
-        "Production code outside skills must import skill-owned symbols through skills public.ts.",
+        "Production code outside skills must import skill-owned symbols through skills public.ts or app composition.",
       from: {
         path: "^src/",
         pathNot: [
@@ -49,8 +49,24 @@ module.exports = {
       to: {
         path: "^src/modules/skills/",
         pathNot: [
-          "^src/modules/skills/public\\.ts$",
+          "^src/modules/skills/(public|composition)\\.ts$",
         ],
+      },
+    },
+    {
+      name: "no-skills-composition-outside-app-wiring",
+      severity: "error",
+      comment:
+        "The skills composition entrypoint is for application wiring only; other modules should use skills public.ts.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/modules/skills/",
+          "^src/app/composition/defaultComposition\\.ts$",
+        ],
+      },
+      to: {
+        path: "^src/modules/skills/composition\\.ts$",
       },
     },
     {

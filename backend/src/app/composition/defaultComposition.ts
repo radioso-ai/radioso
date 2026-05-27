@@ -46,7 +46,7 @@ import {
   createDefaultSkillCatalogRegistry,
   SkillExecutorRegistry,
   type SkillCatalogRegistry,
-} from "../../modules/skills/public.js";
+} from "../../modules/skills/composition.js";
 import {
   AmqpWebsiteCrawlJobConsumer,
   AmqpWebsiteCrawlJobDispatcher,

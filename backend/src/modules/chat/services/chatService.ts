@@ -33,9 +33,7 @@ import {
   ChatAnswerPresenter,
   type ChatPresentedAnswer,
   type SkillOutcomeCapabilityProvider,
-  createSkillOutcomeCapabilityProvider,
 } from "./chatAnswerPresenter.js";
-import { createDefaultSkillCatalogRegistry } from "../../skills/public.js";
 import { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
 import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
@@ -229,9 +227,9 @@ export class ChatService {
     agentService?: Pick<AgentService, "resolve">,
     private readonly chatIntakeProvider: ChatIntakeProviderPort = new NoopChatIntakeProvider(),
     private readonly chatActionSuggestionService?: ChatActionSuggestionService,
-    skillOutcomeCapabilities: SkillOutcomeCapabilityProvider = createSkillOutcomeCapabilityProvider(
-      createDefaultSkillCatalogRegistry(),
-    ),
+    skillOutcomeCapabilities: SkillOutcomeCapabilityProvider = {
+      supportsGroundedAnswer: () => false,
+    },
   ) {
     this.chatTurnLifecycle = new ChatTurnLifecycle(
       conversationRepository,

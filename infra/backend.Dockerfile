@@ -11,6 +11,8 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY ee/package.json ./ee/package.json
 COPY ee/packages/backend-module/package.json ./ee/packages/backend-module/package.json
+COPY packages/skill-contract/package.json ./packages/skill-contract/package.json
+COPY packages/skill-contract/*.d.ts ./packages/skill-contract/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --filter @radioso/enterprise-backend-module...
 
@@ -26,6 +28,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY backend/package.json ./backend/package.json
 COPY packages/connector-api/package.json ./packages/connector-api/package.json
 COPY packages/connector-api/*.d.ts ./packages/connector-api/
+COPY packages/skill-contract/package.json ./packages/skill-contract/package.json
+COPY packages/skill-contract/*.d.ts ./packages/skill-contract/
 COPY packages/crawler/package.json ./packages/crawler/package.json
 COPY packages/document-parser/package.json ./packages/document-parser/package.json
 COPY packages/document-parser/*.d.ts ./packages/document-parser/
@@ -49,6 +53,7 @@ COPY backend/prompts ./backend/prompts
 COPY backend/scripts ./backend/scripts
 COPY backend/src ./backend/src
 COPY packages/connector-api ./packages/connector-api
+COPY packages/skill-contract ./packages/skill-contract
 COPY packages/crawler ./packages/crawler
 COPY packages/document-parser ./packages/document-parser
 COPY packages/radioso-mcp-server ./packages/radioso-mcp-server
@@ -71,6 +76,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY backend/package.json ./backend/package.json
 COPY packages/connector-api/package.json ./packages/connector-api/package.json
 COPY packages/connector-api/*.d.ts ./packages/connector-api/
+COPY packages/skill-contract/package.json ./packages/skill-contract/package.json
+COPY packages/skill-contract/*.d.ts ./packages/skill-contract/
 COPY packages/crawler/package.json ./packages/crawler/package.json
 COPY packages/document-parser/package.json ./packages/document-parser/package.json
 COPY packages/document-parser/*.d.ts ./packages/document-parser/

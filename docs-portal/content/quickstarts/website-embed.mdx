@@ -67,6 +67,61 @@ In production, the Enterprise launcher is a normal script include with the embed
 
 The exact snippet can be generated from workspace settings. The important detail is that the script origin and the allowed website origin are different concerns. The script can be hosted in one place while only approved customer-facing origins are allowed to bootstrap sessions.
 
+## Analytics tracking
+
+The embed sends sanitized activity events to the host page with `window.postMessage`. Radioso does not load PostHog, Google Analytics, Segment, or any other analytics SDK on the site owner’s behalf.
+
+If your site already runs PostHog, add a listener that forwards Radioso events into your existing project:
+
+```html
+<script>
+  const radiosoScript = document.querySelector('script[data-radioso-token]')
+  const radiosoAppOrigin = radiosoScript ? new URL(radiosoScript.src).origin : null
+
+  window.addEventListener('message', (event) => {
+    if (event.data?.type !== 'radioso:analytics') return
+    if (radiosoAppOrigin && event.origin !== radiosoAppOrigin) return
+    if (!window.posthog) return
+
+    window.posthog.capture(event.data.event, {
+      ...event.data.properties,
+      radiosoSubjectType: event.data.subjectType,
+      radiosoSubjectId: event.data.subjectId,
+      source: 'radioso_embed',
+    })
+  })
+</script>
+```
+
+The origin check is a safety guard for production pages with multiple embedded frames. The example derives it from the installed Radioso script, so you do not need to hard-code the widget host.
+
+Current embed analytics events:
+
+| Event | When it fires |
+| --- | --- |
+| `website_embed.loaded` | The widget receives a verified embed session and can render chat |
+| `chat.started` | A visitor submits a chat message |
+| `chat.completed` | Radioso completes an answer for that visitor message |
+| `chat.failed` | Radioso cannot complete the visitor message |
+
+Each message has this shape:
+
+```ts
+type RadiosoAnalyticsMessage = {
+  type: 'radioso:analytics'
+  event: 'website_embed.loaded' | 'chat.started' | 'chat.completed' | 'chat.failed'
+  timestamp: string
+  source: 'embed'
+  subjectType?: 'embed_session' | 'conversation'
+  subjectId?: string
+  properties?: Record<string, string | number | boolean | null>
+}
+```
+
+Radioso does not include visitor message text, assistant answer text, retrieved document text, prompt text, cookies, session tokens, or connector secrets in these events.
+
+For chat events, `properties.embedSessionId` can be used to group activity from the same embedded session. `chat.completed` also includes answer counters such as `citationCount` and `suggestionCount` when available.
+
 ## Recommended launch sequence
 
 <Steps>

@@ -1,5 +1,13 @@
 import type { Router } from "express";
 
+import type {
+  SkillDefinition,
+  SkillDisplayMetadata,
+  SkillTurnStatus,
+} from "@radioso/skill-contract";
+
+export type { SkillDefinition, SkillDisplayMetadata, SkillTurnStatus };
+
 export interface ApplicationModuleRegistrationContext {
   registerProductAnalyticsSink?(sink: ProductAnalyticsSink): void;
   registerErrorSink?(sink: ErrorSink): void;
@@ -91,100 +99,9 @@ export interface ErrorSink {
   record(event: ErrorEvent): Promise<void>;
 }
 
-export interface SkillDisplayMetadata {
-  icon?: string;
-  title?: string;
-}
-
-/**
- * Mirrors OSS's public `SkillDefinition` (in `backend/src/modules/skills/public.ts`).
- * Kept structurally compatible so EE modules can register skill definitions
- * without importing OSS runtime code directly.
- */
-export interface SkillDefinition {
-  name: string;
-  displayName: string;
-  description: string;
-  display?: SkillDisplayMetadata;
-  owner: "assistant" | "retrieval" | "documents" | "mcp" | "platform" | "auth" | "contact";
-  executionClass: "interactive" | "deferred" | "administrative";
-  supportedCallers: Array<"assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed">;
-  requiredCapabilities: string[];
-  contractReferences: Array<{
-    kind: "http" | "sdk" | "mcp_tool" | "documentation";
-    label: string;
-    method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-    path: string;
-  }>;
-  intake?: {
-    enabled: boolean;
-    supportedCallers: Array<"assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed">;
-    intent: {
-      description: string;
-      examples: string[];
-    };
-    fields: Array<{
-      name: string;
-      displayName: string;
-      type: "string" | "email" | "phone" | "number" | "date" | "enum";
-      required: boolean;
-      sensitive?: boolean;
-      ttlSeconds?: number;
-      pattern?: string;
-      enumValues?: string[];
-      maxLength?: number;
-      extractionHint?: string;
-    }>;
-    subjectIdentityField?: string;
-    confirmation: "none" | "before_execute" | "always";
-    interruptionPolicy: "pause_and_resume" | "cancel_on_topic_change";
-  };
-  execution?:
-    | {
-        kind: "internal";
-        adapter: string;
-        enqueue?: boolean;
-      }
-    | {
-        kind: "webhook";
-        provider: "make" | "zapier" | "custom";
-        endpointId: string;
-        enqueue: boolean;
-        timeoutMs?: number;
-      }
-    | {
-        kind: "delivery_pipeline";
-        adapter: string;
-        destinations: Array<"email" | "webhook">;
-        enqueue: boolean;
-      };
-  diagnostics: {
-    defined: boolean;
-    shapeAware: boolean;
-    strategyAware: boolean;
-    supportedFields?: string[];
-  };
-  steps: Array<{
-    name: string;
-    kind: string;
-    displayName?: string;
-    clauses: Record<string, unknown>;
-  }>;
-  shapes?: Array<{
-    name: string;
-    displayName?: string;
-    description?: string;
-    stepOverrides: Record<string, Record<string, unknown>>;
-  }>;
-  outcomes?: Array<{
-    name: string;
-    displayName: string;
-    description?: string;
-    status: SkillTurnStatus;
-    groundedAnswer?: boolean;
-    tone?: "positive" | "neutral" | "info" | "warning" | "muted";
-  }>;
-}
+// SkillDefinition, SkillDisplayMetadata, and SkillTurnStatus are imported
+// from @radioso/skill-contract at the top of this file. The contract package
+// owns the canonical shape so EE and OSS cannot drift.
 
 export interface UsageLimitReservation {
   commit(): Promise<void>;
@@ -538,16 +455,6 @@ export interface ChatIntakeReceipt {
   fields: ChatIntakeReceiptField[];
   statusLabel?: string;
 }
-
-export type SkillTurnStatus =
-  | "active"
-  | "paused"
-  | "awaiting_confirmation"
-  | "awaiting_tool"
-  | "completed"
-  | "cancelled"
-  | "expired"
-  | "failed";
 
 export interface ChatIntakeResult {
   skillName: string;

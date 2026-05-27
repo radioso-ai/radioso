@@ -1,59 +1,29 @@
-import type { PoolClient } from "pg";
-
 import type {
   ChunkDetail,
   ChunkRecord,
   ChunkRepositoryPort,
   ChunkSummary,
 } from "../../modules/documents/contracts/index.js";
+import type { ChunkVectorStoragePort } from "../../modules/retrieval/infra/chunkVectorStorage.js";
 import type { Database } from "../../shared/infra/database.js";
 
 const CHUNK_CONTENT_PREVIEW_MAX_CHARS = 240;
 
-export const insertChunks = async (client: PoolClient, chunks: ChunkRecord[]): Promise<void> => {
-  if (chunks.length === 0) {
-    return;
-  }
-
-  const values: unknown[] = [];
-  const placeholders = chunks.map((chunk, index) => {
-    const offset = index * 12;
-    const serializedEmbedding = `[${chunk.embedding.join(",")}]`;
-    const boundedEmbedding = chunk.embedding.length === 1536 ? serializedEmbedding : null;
-    const unboundedEmbedding = chunk.embedding.length === 1536 ? null : serializedEmbedding;
-    values.push(
-      chunk.id,
-      chunk.documentId,
-      chunk.workspaceId,
-      chunk.chunkIndex,
-      chunk.content,
-      chunk.searchText ?? chunk.content,
-      boundedEmbedding,
-      unboundedEmbedding,
-      chunk.embeddingModel ?? "text-embedding-3-small",
-      chunk.startOffset,
-      chunk.endOffset,
-      JSON.stringify(chunk.metadata ?? {}),
-    );
-
-    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}::vector, $${offset + 8}::vector, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}::jsonb)`;
-  });
-
-  await client.query(
-    `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, embedding, embedding_unbounded, embedding_model, start_offset, end_offset, metadata)
-     VALUES ${placeholders.join(", ")}`,
-    values,
-  );
-};
+interface QueryClient {
+  query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
+}
 
 export class ChunkRepository implements ChunkRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(
+    private readonly database: Database,
+    private readonly vectorStorage: ChunkVectorStoragePort,
+  ) {}
 
   async replaceForDocument(documentId: string, chunks: ChunkRecord[]): Promise<void> {
     await this.database.withTransaction(async (client) => {
       const workspaceId = chunks[0]?.workspaceId ?? (await lookupWorkspaceIdForDocument(client, documentId));
       await client.query("DELETE FROM chunks WHERE document_id = $1 AND workspace_id = $2", [documentId, workspaceId]);
-      await insertChunks(client, chunks);
+      await this.vectorStorage.insertChunks(client, chunks);
     });
   }
 
@@ -82,7 +52,7 @@ export class ChunkRepository implements ChunkRepositoryPort {
         input.documentId,
         input.workspaceId,
       ]);
-      await insertChunks(client, input.chunks);
+      await this.vectorStorage.insertChunks(client, input.chunks);
       await client.query(
         `UPDATE documents
          SET status = 'ready',
@@ -185,7 +155,7 @@ export class ChunkRepository implements ChunkRepositoryPort {
   }
 }
 
-const lookupWorkspaceIdForDocument = async (client: PoolClient, documentId: string): Promise<string> => {
+const lookupWorkspaceIdForDocument = async (client: QueryClient, documentId: string): Promise<string> => {
   const result = await client.query<{ workspace_id: string }>(
     `SELECT workspace_id
      FROM documents

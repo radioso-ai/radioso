@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { AlertCircle } from 'lucide-react'
 
@@ -22,6 +22,7 @@ import {
   storeEmbedBootstrapSession,
   type WebsiteEmbedPageContext,
 } from '@/lib/api'
+import { postWebsiteEmbedAnalyticsEvent, type WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 
 function EmbeddedChatUnavailable({
   localeOverride,
@@ -119,6 +120,20 @@ export function EmbeddedChatFrame({
   // Reading here causes a server/client text mismatch on the bootstrapping screen.
   const [state, setState] = useState<BootstrapState>({ status: 'bootstrapping', workspaceName: null })
   const isBootstrappedRef = useRef(false)
+  const publicSessionId = state.status === 'ready' ? state.publicSessionId : null
+  const handleAnalyticsEvent = useCallback((event: WebsiteEmbedAnalyticsInput) => {
+    if (!publicSessionId) {
+      return
+    }
+
+    postWebsiteEmbedAnalyticsEvent({
+      ...event,
+      properties: {
+        ...event.properties,
+        embedSessionId: publicSessionId,
+      },
+    })
+  }, [publicSessionId])
 
   useEffect(() => {
     if (window.parent === window) {
@@ -173,6 +188,10 @@ export function EmbeddedChatFrame({
       }
 
       if (event.data.type === SESSION_MESSAGE) {
+        if (isBootstrappedRef.current) {
+          return
+        }
+
         const session =
           event.data.session &&
           typeof event.data.session === 'object' &&
@@ -197,6 +216,7 @@ export function EmbeddedChatFrame({
           expiresAt: typeof session.expiresAt === 'string' ? session.expiresAt : new Date(Date.now() + 60_000).toISOString(),
         })
         const expiresAt = typeof session.expiresAt === 'string' ? session.expiresAt : new Date(Date.now() + 60_000).toISOString()
+        const pageContext = sanitizePageContext(event.data.pageContext)
         setState({
           status: 'ready',
           publicChatToken: session.publicChatToken,
@@ -204,7 +224,16 @@ export function EmbeddedChatFrame({
           publicSessionToken: session.publicSessionToken,
           expiresAt,
           workspaceName: session.workspaceName,
-          pageContext: sanitizePageContext(event.data.pageContext),
+          pageContext,
+        })
+        postWebsiteEmbedAnalyticsEvent({
+          event: 'website_embed.loaded',
+          subjectType: 'embed_session',
+          subjectId: session.publicSessionId,
+          properties: {
+            resumed: Boolean(resumeAnonymousSessionId),
+            pageContextProvided: Boolean(pageContext),
+          },
         })
         return
       }
@@ -339,6 +368,7 @@ export function EmbeddedChatFrame({
       themeOverrides={themeOverrides}
       surface="embed"
       pageContext={state.pageContext}
+      onAnalyticsEvent={handleAnalyticsEvent}
     />
   )
 }

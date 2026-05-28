@@ -103,6 +103,12 @@ export {
   OpenAIQueryRewriteGateway,
 } from "./services/queryRewriteService.js";
 export type { RerankGateway, RerankGatewayInput } from "./services/rerankService.js";
+export type {
+  QueryRewritePort,
+  QueryRewritePortRequest,
+  QueryRewritePortResult,
+} from "./domain/queryRewritePort.js";
+export { GatewayQueryRewritePortAdapter } from "./services/gatewayQueryRewritePortAdapter.js";
 export {
   ModelRerankGateway,
   OpenAISemanticRerankGateway,

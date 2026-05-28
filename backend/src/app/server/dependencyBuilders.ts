@@ -67,12 +67,20 @@ import {
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
 import {
+  AgenticRetrievalPipelineService,
+  AgenticRetrievalRunner,
   EmbeddingService,
-  createDefaultRetrievalServices,
+  GatewayQueryRewritePortAdapter,
+  PgLexicalSearch,
   PgVectorChunkStorage,
+  PgVectorSearch,
+  PromptBuilder,
   RetrievalAnswerService,
+  createDefaultRetrievalServices,
   type RetrievalPipelineService,
 } from "../../modules/retrieval/composition.js";
+import { DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
+import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { AbuseControlRepository } from "../../db/repositories/abuseControlRepository.js";
 import { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import {
@@ -536,14 +544,56 @@ export const buildRetrievalServices = (input: {
   telemetryService: TelemetryService;
 }) => {
   const retrieval = createDefaultRetrievalServices(input);
+  const retrievalPipeline = maybeWrapWithAgentic(retrieval.retrievalPipeline, input);
   return {
     ...retrieval,
+    retrievalPipeline,
     documentSearchService: new DocumentSearchService(
       input.documentRepository,
-      retrieval.retrievalPipeline,
+      retrievalPipeline,
       input.auditService,
     ),
   };
+};
+
+// TEMPORARY: env-var override that routes the chat pipeline through agentic
+// retrieval. Set RADIOSO_AGENTIC_RETRIEVAL=1 to enable. This is a development
+// affordance — the operator-visible path lives in spec 065 (workspace
+// `pipelineMode` setting, DB persistence, composition switch). Remove this
+// block once the per-workspace setting is wired through the repository.
+const maybeWrapWithAgentic = (
+  deterministic: RetrievalPipelineService,
+  input: {
+    embeddingService: EmbeddingService;
+    database: Database;
+    llmRegistry: LlmProviderRegistry;
+    logger: AppLogger;
+    ingestionSettingsService?: IngestionSettingsService;
+  },
+): RetrievalPipelineService => {
+  if (process.env.RADIOSO_AGENTIC_RETRIEVAL !== "1") {
+    return deterministic;
+  }
+  input.logger.warn(
+    {},
+    "RADIOSO_AGENTIC_RETRIEVAL=1 — routing the chat pipeline through agentic retrieval. This is a temporary development override.",
+  );
+  const systemPrompt = loadPromptTemplate("agentic-retrieval/system.md");
+  const runner = new AgenticRetrievalRunner({
+    runtime: new DefaultAgentRuntime({ gateway: input.llmRegistry.createToolCallingGateway() }),
+    embeddings: input.embeddingService,
+    vectorSearch: new PgVectorSearch(input.database),
+    lexicalSearch: new PgLexicalSearch(input.database),
+    queryRewrite: new GatewayQueryRewritePortAdapter(input.llmRegistry.createRewriteGateway()),
+    rerankGateway: input.llmRegistry.createRerankGateway(),
+  });
+  return new AgenticRetrievalPipelineService({
+    deterministic,
+    runner,
+    promptBuilder: new PromptBuilder(),
+    systemPrompt,
+    ingestionSettingsService: input.ingestionSettingsService,
+  }) as unknown as RetrievalPipelineService;
 };
 
 export const buildWorkspaceServices = (input: {

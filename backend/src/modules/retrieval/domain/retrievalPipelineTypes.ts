@@ -202,6 +202,20 @@ export interface RetrievalAnswerShapeSelection {
   resolvedRun: ResolvedSkillRun;
 }
 
+export interface AgenticTraceSummary {
+  terminatedReason: string;
+  stepsTaken: number;
+  toolResultTokensUsed: number;
+  wallTimeMs: number;
+  resolvedBudgets: {
+    maxSteps: number;
+    maxToolResultTokens: number;
+    maxWallTimeMs: number;
+  };
+  finalRationale: string | null;
+  selectedChunkIds: string[];
+}
+
 export interface ActivitySummary {
   traceId?: string;
   skillName?: string;
@@ -213,6 +227,7 @@ export interface ActivitySummary {
   assistant?: Record<string, unknown>;
   contact?: Record<string, unknown>;
   execution?: RetrievalExecutionMetadata;
+  agentic?: AgenticTraceSummary;
   parsedQuery?: {
     originalQuery: string;
     semanticQuery: string;

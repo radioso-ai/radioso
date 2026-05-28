@@ -81,6 +81,39 @@ Related docs:
 
 - [Architecture Extension Points](../architecture-extension-points.md)
 
+## Shared Agent Runtime
+
+Owns the reusable in-repo substrate for tool-calling LLM agents: the typed tool
+contract, model gateway port, run loop, budget enforcement, cancellation, and
+trace events.
+
+Should not own product behavior. Retrieval, documents, chat, assistants,
+persona, and response policy belong in the domain module that supplies the
+tools and consumes the trace.
+
+Public surfaces and contracts:
+
+- `backend/src/shared/agent-runtime/README.md`
+- `backend/src/shared/agent-runtime/index.ts`
+- `backend/src/shared/agent-runtime/types.ts`
+- `backend/src/shared/agent-runtime/defaultAgentRuntime.ts`
+- `backend/src/shared/agent-runtime/textRoutedGateway.ts`
+
+Useful searches:
+
+- `rg "AgentRuntime|AgentTool|AgentTraceEvent" backend/src backend/tests`
+- `rg "ModelToolCallingGateway|TextRoutedToolCallingGateway" backend/src backend/tests`
+- `rg "createToolCallingGateway|agent-runtime" backend/src`
+
+Focused checks:
+
+- `cd backend && pnpm test -- tests/unit/agent-runtime.test.ts tests/unit/text-routed-tool-calling-gateway.test.ts`
+- `cd backend && pnpm run lint:boundaries`
+
+Related docs and specs:
+
+- `specs/065-agent-runtime-and-agentic-retrieval/`
+
 ## Documents And Ingestion
 
 Owns document records, source content, upload/import orchestration, storage
@@ -144,6 +177,9 @@ Primary internals:
 
 - `backend/src/modules/retrieval/services/retrievalPipelineService.ts`
 - `backend/src/modules/retrieval/services/retrievalPipelineStages.ts`
+- `backend/src/modules/retrieval/services/agenticRetrievalPipelineService.ts`
+- `backend/src/modules/retrieval/services/agenticRetrievalRunner.ts`
+- `backend/src/modules/retrieval/services/agenticTools/`
 - `backend/src/modules/retrieval/services/retrievalSearchService.ts`
 - `backend/src/modules/retrieval/services/retrievalAnswerService.ts`
 - `backend/src/modules/retrieval/infra/vectorSearch.ts`
@@ -152,12 +188,14 @@ Primary internals:
 Useful searches:
 
 - `rg "RetrievalPipeline|retrievalPipeline|RetrievalStage" backend/src backend/tests`
+- `rg "AgenticRetrieval|agentic|pipelineMode" backend/src/modules/retrieval backend/src/modules/settings backend/tests`
 - `rg "queryRewrite|rerank|metadataRule|lexical" backend/src/modules/retrieval`
 - `rg "from ['\\\"]\\.\\./retrieval|modules/retrieval" backend/src`
 
 Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/retrieval-pipeline-stages.test.ts tests/unit/retrieval-shape-resolver.test.ts tests/unit/hybrid-retrieval-search.test.ts`
+- `cd backend && pnpm test -- tests/unit/agentic-retrieval-runner.test.ts tests/unit/agentic-retrieval-pipeline-service.test.ts tests/unit/agentic-tools.test.ts tests/unit/agentic-activity-trace-builder.test.ts tests/unit/query-rewrite-port.test.ts tests/unit/retrieval-settings-pipeline-mode.test.ts`
 - `cd backend && pnpm run test:integration`
 
 Related docs and specs:
@@ -169,6 +207,7 @@ Related docs and specs:
 - `specs/060-retrieval-strategy-diagnostics/`
 - `specs/009-hybrid-retrieval/`
 - `specs/032-split-rewrite-queries/`
+- `specs/065-agent-runtime-and-agentic-retrieval/`
 
 ## Chat And Assistant
 

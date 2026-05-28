@@ -86,6 +86,12 @@ export {
   type RetrievalPipelineResult,
 } from "./services/retrievalPipelineService.js";
 export { RetrievalSearchService } from "./services/retrievalSearchService.js";
+export { AgenticRetrievalRunner } from "./services/agenticRetrievalRunner.js";
+export {
+  AgenticRetrievalPipelineService,
+  type AgenticRetrievalPipelineServiceDeps,
+} from "./services/agenticRetrievalPipelineService.js";
+export { GatewayQueryRewritePortAdapter } from "./services/gatewayQueryRewritePortAdapter.js";
 
 export const createDefaultRetrievalServices = (input: {
   database: Database;

@@ -1,4 +1,5 @@
 import type {
+  PipelineMode,
   RetrievalMetadataRule,
   RetrievalSettingsRecord,
 } from "./retrievalSettings.js";
@@ -27,6 +28,7 @@ export interface RetrievalSettingsSnapshot {
   citationDisplayEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
+  pipelineMode?: PipelineMode;
 }
 
 export const freezeRetrievalSettings = (
@@ -44,4 +46,5 @@ export const freezeRetrievalSettings = (
   citationDisplayEnabled: record.citationDisplayEnabled,
   metadataRules: record.metadataRules,
   customInstruction: record.customInstruction,
+  pipelineMode: record.pipelineMode,
 });

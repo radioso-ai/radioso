@@ -58,6 +58,7 @@ describe('frontend product analytics', () => {
   it('normalizes page-view paths without preserving secret route segments', () => {
     expect(sanitizePageViewPathname('/invite/super-secret-token')).toBe('/invite/[token]')
     expect(sanitizePageViewPathname('/chat/public-launch-token')).toBe('/chat/[token]')
+    expect(sanitizePageViewPathname('/embed-frame')).toBe('/embed-frame')
     expect(sanitizePageViewPathname('/embed/embed-token')).toBe('/embed/[token]')
     expect(sanitizePageViewPathname('/account/account-id/settings')).toBe('/account/[accountId]/settings')
     expect(sanitizePageViewPathname('/w/customer-key/chat')).toBe('/w/[workspaceKey]/chat')

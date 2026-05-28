@@ -199,7 +199,7 @@ describe('radioso embed launcher', () => {
 
     const iframeUrl = new URL(iframes[0].src)
     expect(iframeUrl.origin).toBe('https://app.example.com')
-    expect(iframeUrl.pathname).toBe('/embed/embed-token')
+    expect(iframeUrl.pathname).toBe('/embed-frame')
     expect(iframeUrl.searchParams.get('displayMode')).toBe('panel')
     expect(JSON.parse(iframeUrl.searchParams.get('copy') ?? '{}')).toMatchObject({
       publicChatEmptyTitle: 'Bonjour',

@@ -23,9 +23,11 @@ GET  /api/v1/public/chat/{token}/assistant-logo
 1. Enable public chat or website embed in general settings.
 2. Create a public chat session from the launch token.
 3. Send the returned `publicSessionToken` as `x-radioso-public-session` on chat and history requests.
-4. Preserve the server-set anonymous session cookie across requests when available.
+4. Store the returned `resumeToken` if the visitor should resume the same history after the public session expires.
+5. Preserve the server-set anonymous session cookie across requests when available.
 
 The key point is that the launch token identifies the public surface. The public session identifies the visitor.
+The resume token is the only supported way to request the same visitor session in a later session exchange.
 
 ## Create a public chat session
 
@@ -47,12 +49,22 @@ For an Enterprise website embed, call the route from an approved origin:
 
 ```json
 {
-  "channel": "website_embed",
-  "anonymousSessionId": "optional-existing-session-id"
+  "channel": "website_embed"
 }
 ```
 
-The response includes `publicChatToken`, `publicSessionId`, `publicSessionToken`, `workspaceName`, `assistantBootstrapActive`, and `expiresAt`.
+To resume an existing visitor session, include the previous response's `resumeToken`:
+
+```json
+{
+  "channel": "website_embed",
+  "resumeToken": "previous-resume-token"
+}
+```
+
+The response includes `publicChatToken`, `publicSessionId`, `publicSessionToken`, `resumeToken`, `workspaceName`, `assistantBootstrapActive`, `expiresAt`, and `resumeExpiresAt`.
+
+`anonymousSessionId` is accepted for older clients but is not trusted as a resume credential. New clients should not send it.
 
 ## Send a public chat message
 

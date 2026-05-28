@@ -32,13 +32,13 @@ describe("public chat contract", () => {
   const createPublicSession = async (
     app: any,
     chatToken: string,
-    anonymousSessionId?: string,
+    resumeToken?: string,
   ): Promise<{ publicSessionToken: string; publicSessionId: string }> => {
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}/sessions`)
       .send({
         channel: "anonymous_link",
-        ...(anonymousSessionId ? { anonymousSessionId } : {}),
+        ...(resumeToken ? { resumeToken } : {}),
       });
 
     expect(response.status).toBe(200);
@@ -241,6 +241,7 @@ describe("public chat contract", () => {
   });
 
   it("GET /api/v1/public/chat/:token/history/:conversationId returns messages", async () => {
+    let expectedAnonymousSessionId = "";
     const { app } = createTestApp({
       answerFeedbackHistoryProvider: {
         async listByAssistantMessageIds(_workspaceId, assistantMessageIds) {
@@ -252,10 +253,10 @@ describe("public chat contract", () => {
                 value: "down" as const,
                 comment: "Needs more detail.",
                 actorType: "anonymous_user" as const,
-                actorId: "44444444-4444-4444-4444-444444444444",
+                actorId: expectedAnonymousSessionId,
                 accountId: null,
                 userId: null,
-                anonymousSessionId: "44444444-4444-4444-4444-444444444444",
+                anonymousSessionId: expectedAnonymousSessionId,
                 createdAt: "2026-05-08T10:00:00.000Z",
                 updatedAt: "2026-05-08T10:00:00.000Z",
               },
@@ -295,7 +296,8 @@ describe("public chat contract", () => {
       .send({ title: "Intro", content: "This page parses content and answers questions." });
 
     const chatToken = await enableAnonymousChat(app, session);
-    const publicSession = await createPublicSession(app, chatToken, "44444444-4444-4444-4444-444444444444");
+    const publicSession = await createPublicSession(app, chatToken);
+    expectedAnonymousSessionId = publicSession.publicSessionId;
 
     const chat = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
@@ -357,7 +359,7 @@ describe("public chat contract", () => {
         value: "down",
         comment: "Needs more detail.",
         actorType: "anonymous_user",
-        anonymousSessionId: "44444444-4444-4444-4444-444444444444",
+        anonymousSessionId: publicSession.publicSessionId,
       }),
     ]);
     expect(assistantTurn?.answerFeedbackEntries).toEqual(

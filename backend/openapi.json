@@ -3549,6 +3549,9 @@
           "publicSessionToken": {
             "type": "string"
           },
+          "resumeToken": {
+            "type": "string"
+          },
           "assistantBootstrapActive": {
             "type": "boolean"
           },
@@ -3633,6 +3636,10 @@
           "expiresAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "resumeExpiresAt": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -3640,8 +3647,10 @@
           "publicChatToken",
           "publicSessionId",
           "publicSessionToken",
+          "resumeToken",
           "assistantBootstrapActive",
-          "expiresAt"
+          "expiresAt",
+          "resumeExpiresAt"
         ]
       },
       "PublicChatSessionRequest": {
@@ -3657,6 +3666,10 @@
           "agentId": {
             "type": "string",
             "format": "uuid"
+          },
+          "resumeToken": {
+            "type": "string",
+            "minLength": 1
           },
           "anonymousSessionId": {
             "type": "string",

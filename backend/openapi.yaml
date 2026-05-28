@@ -2321,6 +2321,8 @@ components:
           format: uuid
         publicSessionToken:
           type: string
+        resumeToken:
+          type: string
         assistantBootstrapActive:
           type: boolean
         assistantAvatarUrl:
@@ -2379,13 +2381,18 @@ components:
         expiresAt:
           type: string
           format: date-time
+        resumeExpiresAt:
+          type: string
+          format: date-time
       required:
         - workspaceName
         - publicChatToken
         - publicSessionId
         - publicSessionToken
+        - resumeToken
         - assistantBootstrapActive
         - expiresAt
+        - resumeExpiresAt
     PublicChatSessionRequest:
       type: object
       properties:
@@ -2397,6 +2404,9 @@ components:
         agentId:
           type: string
           format: uuid
+        resumeToken:
+          type: string
+          minLength: 1
         anonymousSessionId:
           type: string
           format: uuid

@@ -10,6 +10,7 @@
   const ERROR_MESSAGE = 'radioso:embed:error'
   const COLLAPSE_MESSAGE = 'radioso:embed:collapse'
   const FULLSCREEN_MESSAGE = 'radioso:embed:fullscreen'
+  const RESET_SESSION_MESSAGE = 'radioso:embed:reset-session'
   const TYPING_MESSAGE = 'radioso:embed:typing'
   const STYLE_ELEMENT_ID = 'radioso-embed-style'
   const ATTENTION_PRESETS = new Set(['none', 'breathe', 'pulse', 'nudge', 'bounce-in'])
@@ -155,6 +156,13 @@
     set(key, value) {
       try {
         window.sessionStorage.setItem(key, value)
+      } catch {
+        /* storage may be blocked (privacy mode, sandboxed iframe) — fail silently */
+      }
+    },
+    remove(key) {
+      try {
+        window.sessionStorage.removeItem(key)
       } catch {
         /* storage may be blocked (privacy mode, sandboxed iframe) — fail silently */
       }
@@ -613,7 +621,7 @@
     iframe.style.height = '100%'
     iframe.style.background = options.theme.panelBackground
 
-    const iframeUrl = new URL(`/embed/${encodeURIComponent(token)}`, scriptUrl)
+    const iframeUrl = new URL('/embed-frame', scriptUrl)
     if (options.displayMode && options.displayMode !== DEFAULT_DISPLAY_MODE) {
       iframeUrl.searchParams.set('displayMode', options.displayMode)
     }
@@ -630,8 +638,8 @@
 
   const bootstrapEmbeddedSession = async (scriptUrl, token, options) => {
     const body =
-      options && typeof options.resumeAnonymousSessionId === 'string'
-        ? JSON.stringify({ anonymousSessionId: options.resumeAnonymousSessionId })
+      options && typeof options.resumeToken === 'string'
+        ? JSON.stringify({ resumeToken: options.resumeToken })
         : undefined
     const response = await fetch(new URL(`/api/embed/session/${encodeURIComponent(token)}`, scriptUrl).toString(), {
       method: 'POST',
@@ -642,11 +650,73 @@
     })
 
     const payload = await response.json().catch(() => null)
-    if (!response.ok || !payload?.publicChatToken || !payload?.publicSessionToken || !payload?.publicSessionId) {
-      throw new Error(payload?.error?.message || 'Embedded chat could not be started from this website.')
+    if (!response.ok || !payload?.publicChatToken || !payload?.publicSessionToken || !payload?.publicSessionId || !payload?.resumeToken) {
+      const error = new Error(payload?.error?.message || 'Embedded chat could not be started from this website.')
+      error.status = response.status
+      error.code = payload?.error?.code
+      throw error
     }
 
     return payload
+  }
+
+  const isInvalidResumeSessionError = (error) =>
+    error &&
+    error.status === 400 &&
+    error.code === 'bad_request' &&
+    error.message === 'Invalid public chat session request'
+
+  const bootstrapEmbeddedSessionWithResumeFallback = async (scriptUrl, token, storageKey) => {
+    const resumeToken = readStoredResumeToken(storageKey)
+    try {
+      const session = await bootstrapEmbeddedSession(scriptUrl, token, { resumeToken })
+      return { session, resumed: Boolean(resumeToken) }
+    } catch (error) {
+      if (!resumeToken || !isInvalidResumeSessionError(error)) {
+        throw error
+      }
+
+      safeStorage.remove(storageKey)
+      const session = await bootstrapEmbeddedSession(scriptUrl, token, {})
+      return { session, resumed: false }
+    }
+  }
+
+  const readStoredResumeToken = (storageKey) => {
+    const rawValue = safeStorage.get(storageKey)
+    if (!rawValue) {
+      return null
+    }
+
+    try {
+      const parsed = JSON.parse(rawValue)
+      if (!parsed || typeof parsed.resumeToken !== 'string' || typeof parsed.resumeExpiresAt !== 'string') {
+        safeStorage.remove(storageKey)
+        return null
+      }
+
+      if (Date.parse(parsed.resumeExpiresAt) <= Date.now()) {
+        safeStorage.remove(storageKey)
+        return null
+      }
+
+      return parsed.resumeToken
+    } catch {
+      safeStorage.remove(storageKey)
+      return null
+    }
+  }
+
+  const storeResumeToken = (storageKey, session) => {
+    if (!session || typeof session.resumeToken !== 'string' || typeof session.resumeExpiresAt !== 'string') {
+      safeStorage.remove(storageKey)
+      return
+    }
+
+    safeStorage.set(storageKey, JSON.stringify({
+      resumeToken: session.resumeToken,
+      resumeExpiresAt: session.resumeExpiresAt,
+    }))
   }
 
   const createButton = (label, icon, avatarUrl, theme) => {
@@ -797,6 +867,7 @@
     const reducedMotion = prefersReducedMotion()
     const openedStorageKey = `radioso:embed:opened:${token}`
     const teaserStorageKey = `radioso:embed:teaserDismissed:${token}`
+    const resumeStorageKey = `radioso:embed:resume:${token}`
     const hasBeenOpened = safeStorage.get(openedStorageKey) === '1'
     const teaserPreviouslyDismissed = safeStorage.get(teaserStorageKey) === '1'
     ensureStylesInjected()
@@ -1032,6 +1103,12 @@
         return
       }
 
+      if (event.data.type === RESET_SESSION_MESSAGE) {
+        safeStorage.remove(resumeStorageKey)
+        bootstrapPromise = null
+        return
+      }
+
       if (event.data.type === COLLAPSE_MESSAGE) {
         isOpen = false
         isManualFullscreenOpen = false
@@ -1052,25 +1129,23 @@
         return
       }
 
-      const resumeAnonymousSessionId =
-        typeof event.data.resumeAnonymousSessionId === 'string' ? event.data.resumeAnonymousSessionId : null
-
       if (!bootstrapPromise) {
         const activeIframe = iframe
         const activeContentWindow = activeIframe && activeIframe.contentWindow
 
-        bootstrapPromise = bootstrapEmbeddedSession(scriptUrl, token, { resumeAnonymousSessionId })
-          .then((session) => {
+        bootstrapPromise = bootstrapEmbeddedSessionWithResumeFallback(scriptUrl, token, resumeStorageKey)
+          .then(({ session, resumed }) => {
             if (!activeContentWindow || iframe !== activeIframe) {
               return
             }
 
+            storeResumeToken(resumeStorageKey, session)
             const sessionAvatarUrl = resolveAvatarUrl(session.assistantAvatarUrl, scriptUrl)
             const iconContainer = button.querySelector('[data-radioso-launcher-avatar="true"]')
             if (sessionAvatarUrl && iconContainer) {
               setLauncherAvatarMarkup(iconContainer, icon, sessionAvatarUrl)
             }
-            activeContentWindow.postMessage({ type: SESSION_MESSAGE, session, pageContext }, scriptUrl.origin)
+            activeContentWindow.postMessage({ type: SESSION_MESSAGE, session, pageContext, resumed }, scriptUrl.origin)
           })
           .catch((error) => {
             if (!activeContentWindow || iframe !== activeIframe) {

@@ -17,7 +17,6 @@ import { buildPublicChatSessionHandoffHash } from '@/lib/public-chat-session-han
 import {
   clearStoredAnonymousSession,
   clearStoredEmbedBootstrapSession,
-  readStoredAnonymousSessionId,
   readStoredEmbedBootstrapSession,
   storeEmbedBootstrapSession,
   type WebsiteEmbedPageContext,
@@ -70,6 +69,7 @@ const SESSION_MESSAGE = 'radioso:embed:session'
 const ERROR_MESSAGE = 'radioso:embed:error'
 const HANDSHAKE_TIMEOUT_MS = 30_000
 const FULLSCREEN_MESSAGE = 'radioso:embed:fullscreen'
+const RESET_SESSION_MESSAGE = 'radioso:embed:reset-session'
 
 const sanitizePageContext = (value: unknown): WebsiteEmbedPageContext | null => {
   if (!value || typeof value !== 'object') {
@@ -105,7 +105,7 @@ export function EmbeddedChatFrame({
   copyOverrides,
   themeOverrides,
 }: {
-  token: string
+  token?: string | null
   localeOverride?: string | null
   displayMode?: string | null
   avatarUrl?: string | null
@@ -147,9 +147,7 @@ export function EmbeddedChatFrame({
     let handshakeInterval: number | null = null
     let handshakeTimeout: number | null = null
     let storedWorkspaceNameTimer: number | null = null
-    const storedSession = readStoredEmbedBootstrapSession(token)
-    const resumeAnonymousSessionId =
-      storedSession ? readStoredAnonymousSessionId(storedSession.publicChatToken) : null
+    const storedSession = token ? readStoredEmbedBootstrapSession(token) : null
 
     if (storedSession?.workspaceName) {
       storedWorkspaceNameTimer = window.setTimeout(() => {
@@ -198,7 +196,8 @@ export function EmbeddedChatFrame({
           typeof event.data.session.workspaceName === 'string' &&
           typeof event.data.session.publicChatToken === 'string' &&
           typeof event.data.session.publicSessionId === 'string' &&
-          typeof event.data.session.publicSessionToken === 'string'
+          typeof event.data.session.publicSessionToken === 'string' &&
+          typeof event.data.session.resumeToken === 'string'
             ? event.data.session
             : null
 
@@ -208,14 +207,19 @@ export function EmbeddedChatFrame({
 
         isBootstrappedRef.current = true
         stopHandshake()
-        storeEmbedBootstrapSession(token, {
+        const expiresAt = typeof session.expiresAt === 'string' ? session.expiresAt : new Date(Date.now() + 60_000).toISOString()
+        const resumeExpiresAt =
+          typeof session.resumeExpiresAt === 'string' ? session.resumeExpiresAt : new Date(Date.now() + 60_000).toISOString()
+        const storageToken = token ?? session.publicChatToken
+        storeEmbedBootstrapSession(storageToken, {
           workspaceName: session.workspaceName,
           publicChatToken: session.publicChatToken,
           publicSessionId: session.publicSessionId,
           publicSessionToken: session.publicSessionToken,
-          expiresAt: typeof session.expiresAt === 'string' ? session.expiresAt : new Date(Date.now() + 60_000).toISOString(),
+          expiresAt,
+          resumeToken: session.resumeToken,
+          resumeExpiresAt,
         })
-        const expiresAt = typeof session.expiresAt === 'string' ? session.expiresAt : new Date(Date.now() + 60_000).toISOString()
         const pageContext = sanitizePageContext(event.data.pageContext)
         setState({
           status: 'ready',
@@ -231,7 +235,7 @@ export function EmbeddedChatFrame({
           subjectType: 'embed_session',
           subjectId: session.publicSessionId,
           properties: {
-            resumed: Boolean(resumeAnonymousSessionId),
+            resumed: event.data.resumed === true || Boolean(storedSession?.resumeToken),
             pageContextProvided: Boolean(pageContext),
           },
         })
@@ -255,13 +259,13 @@ export function EmbeddedChatFrame({
 
     handshakeInterval = window.setInterval(() => {
       window.parent.postMessage(
-        { type: READY_MESSAGE, resumeAnonymousSessionId },
+        { type: READY_MESSAGE },
         '*',
       )
     }, 500)
 
     window.parent.postMessage(
-      { type: READY_MESSAGE, resumeAnonymousSessionId },
+      { type: READY_MESSAGE },
       '*',
     )
 
@@ -311,7 +315,12 @@ export function EmbeddedChatFrame({
 
   const handleStartNewChat = async () => {
     clearStoredAnonymousSession(state.publicChatToken)
-    clearStoredEmbedBootstrapSession(token)
+    if (token) {
+      clearStoredEmbedBootstrapSession(token)
+    }
+    if (typeof window !== 'undefined' && window.parent !== window) {
+      window.parent.postMessage({ type: RESET_SESSION_MESSAGE }, '*')
+    }
     isBootstrappedRef.current = false
     setState({ status: 'bootstrapping', workspaceName: state.workspaceName ?? null })
     setResetNonce((current) => current + 1)

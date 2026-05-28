@@ -22,6 +22,10 @@ interface PublicChatSessionPresentationInput {
     token: string;
     expiresAt: string;
   };
+  resume: {
+    token: string;
+    expiresAt: string;
+  };
   assistantAvatarUrl: string | null;
   intakeActions?: unknown;
 }
@@ -31,6 +35,7 @@ export const presentPublicChatSession = ({
   workspaceName,
   publicChatToken,
   session,
+  resume,
   assistantAvatarUrl,
   intakeActions,
 }: PublicChatSessionPresentationInput) => ({
@@ -43,12 +48,14 @@ export const presentPublicChatSession = ({
   publicChatToken,
   publicSessionId: session.publicSessionId,
   publicSessionToken: session.token,
+  resumeToken: resume.token,
   assistantBootstrapActive: isAgentBootstrapActive(agent),
   assistantAvatarUrl,
   theme: agent.theme,
   branding: agent.branding,
   intakeActions,
   expiresAt: session.expiresAt,
+  resumeExpiresAt: resume.expiresAt,
 });
 
 export const websiteEmbedLaunchAllowedAuditEvent = (input: {

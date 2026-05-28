@@ -18,6 +18,7 @@ export {
   readStoredAnonymousSessionId,
   readStoredEmbedBootstrapSession,
   readStoredEffectivePublicChatToken,
+  readStoredPublicSessionResumeToken,
   readStoredPublicSessionToken,
   removeWorkspaceToken,
   seedWorkspaceSession,
@@ -25,10 +26,12 @@ export {
   storeAnonymousSessionId,
   storeEmbedBootstrapSession,
   storeEffectivePublicChatToken,
+  storePublicSessionResumeToken,
   storePublicSessionToken,
   storeWorkspaceToken,
   type StoredEmbedBootstrapSession,
   type StoredPublicSessionToken,
+  type StoredPublicSessionResumeToken,
 } from './api-storage'
 
 export const API_BASE = `${process.env.NEXT_PUBLIC_API_BASE_PATH ?? "/backend/api/v1"}`;

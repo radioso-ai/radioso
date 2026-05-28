@@ -62,6 +62,7 @@ describe('frontend error reporting', () => {
 
   it('sanitizes paths and serializes non-error throwables', () => {
     expect(sanitizeFrontendErrorPath('/invite/super-secret-token?token=secret')).toBe('/invite/[token]')
+    expect(sanitizeFrontendErrorPath('https://app.example/embed-frame')).toBe('/embed-frame')
     expect(sanitizeFrontendErrorPath('https://app.example/embed/embed-token#secret')).toBe('/embed/[token]')
     expect(serializeFrontendThrowable('plain failure')).toEqual({
       errorClass: 'string',

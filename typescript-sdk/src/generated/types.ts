@@ -2231,6 +2231,7 @@ export interface components {
             /** Format: uuid */
             publicSessionId: string;
             publicSessionToken: string;
+            resumeToken: string;
             assistantBootstrapActive: boolean;
             assistantAvatarUrl?: string | null;
             theme?: {
@@ -2253,12 +2254,15 @@ export interface components {
             }[];
             /** Format: date-time */
             expiresAt: string;
+            /** Format: date-time */
+            resumeExpiresAt: string;
         };
         PublicChatSessionRequest: {
             /** @enum {string} */
             channel: "anonymous_link" | "website_embed";
             /** Format: uuid */
             agentId?: string;
+            resumeToken?: string;
             /** Format: uuid */
             anonymousSessionId?: string;
             pageContext?: {

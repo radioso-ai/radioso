@@ -44,7 +44,9 @@ const currentPath = (): string | undefined => {
 }
 
 const currentSource = (): 'frontend' | 'embed' => (
-  typeof window !== 'undefined' && window.location.pathname.startsWith('/embed/') ? 'embed' : 'frontend'
+  typeof window !== 'undefined' && (
+    window.location.pathname === '/embed-frame' || window.location.pathname.startsWith('/embed/')
+  ) ? 'embed' : 'frontend'
 )
 
 export class FrontendErrorBoundaryInner extends Component<FrontendErrorBoundaryInnerProps, FrontendErrorBoundaryState> {

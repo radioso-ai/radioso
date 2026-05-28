@@ -400,6 +400,8 @@ describe('embedded chat analytics lifecycle', () => {
           publicSessionId: 'embed-session-5',
           publicSessionToken: 'session-token',
           expiresAt: '2026-05-27T11:00:00.000Z',
+          resumeToken: 'resume-token',
+          resumeExpiresAt: '2026-06-27T11:00:00.000Z',
         },
       },
     })

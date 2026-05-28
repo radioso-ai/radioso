@@ -13,7 +13,7 @@ import { API_BASE } from '@/lib/api-client'
 type FrontendProductAnalyticsEmitter = ReturnType<typeof createFrontendProductAnalyticsEmitter>
 
 const pageViewSource = (pathname: string) => (
-  pathname.startsWith('/embed/') ? 'embed' : 'frontend'
+  (pathname === '/embed-frame' || pathname.startsWith('/embed/')) ? 'embed' : 'frontend'
 )
 
 export function ProductAnalyticsProvider() {

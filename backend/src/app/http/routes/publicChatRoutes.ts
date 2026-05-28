@@ -11,7 +11,12 @@ import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../shared/domain/websiteEmbed.js";
 import { getWebsiteEmbedSurfaceSettings } from "../../../modules/agents/public.js";
-import { issuePublicChatSession } from "../../../modules/settings/contracts/publicChatSession.js";
+import {
+  issuePublicChatResumeToken,
+  issuePublicChatSession,
+  type PublicChatResumePayload,
+  verifyPublicChatResumeToken,
+} from "../../../modules/settings/contracts/publicChatSession.js";
 import { buildPublicAssistantLogoUrl } from "../shared/assistantLogoUrl.js";
 import { resolvePublicChatSessionSecret } from "../shared/publicChatSessionSecret.js";
 import {
@@ -101,6 +106,28 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       return undefined;
     }
   };
+  const resolveResumedSessionId = (input: {
+    resume: PublicChatResumePayload | null;
+    workspaceId: string;
+    agentId: string;
+    sourceChannel: "anonymous" | "website_embed";
+    sourceOrigin: string | null;
+  }) => {
+    if (!input.resume) {
+      return randomUUID();
+    }
+
+    if (
+      input.resume.workspaceId !== input.workspaceId ||
+      input.resume.agentId !== input.agentId ||
+      input.resume.sourceChannel !== input.sourceChannel ||
+      input.resume.sourceOrigin !== input.sourceOrigin
+    ) {
+      throw badRequest("Invalid public chat session request");
+    }
+
+    return input.resume.publicSessionId;
+  };
 
   router.get("/:token/embed-config", requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"), async (req, res, next) => {
     try {
@@ -174,7 +201,13 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
 
       const launchToken = String(req.params.token);
       const origin = resolveOrigin(req.header("origin"));
-      const requestedSessionId = req.body.anonymousSessionId ?? randomUUID();
+      const resumeToken = req.body.resumeToken;
+      const resume = resumeToken
+        ? verifyPublicChatResumeToken(resumeToken, sessionSecret, launchToken)
+        : null;
+      if (resumeToken && !resume) {
+        throw badRequest("Invalid public chat session request");
+      }
 
       if (req.body.channel === "anonymous_link") {
         const agentByToken = await dependencies.agentRepository.findByAnonymousChatToken(launchToken);
@@ -202,11 +235,26 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           return;
         }
 
+        const publicSessionId = resolveResumedSessionId({
+          resume,
+          workspaceId: workspace.id,
+          agentId: agent.id,
+          sourceChannel: "anonymous",
+          sourceOrigin: null,
+        });
         const session = issuePublicChatSession(sessionSecret, {
           workspaceId: workspace.id,
           agentId: agent.id,
           publicChatToken,
-          publicSessionId: requestedSessionId,
+          publicSessionId,
+          sourceChannel: "anonymous",
+          sourceOrigin: null,
+        });
+        const resumeSession = issuePublicChatResumeToken(sessionSecret, {
+          workspaceId: workspace.id,
+          agentId: agent.id,
+          publicChatToken,
+          publicSessionId,
           sourceChannel: "anonymous",
           sourceOrigin: null,
         });
@@ -216,6 +264,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           workspaceName: workspace.name,
           publicChatToken,
           session,
+          resume: resumeSession,
           assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
           intakeActions: await resolvePublicIntakeActions({
             workspaceId: workspace.id,
@@ -329,11 +378,26 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         return;
       }
 
+      const publicSessionId = resolveResumedSessionId({
+        resume,
+        workspaceId: workspace.id,
+        agentId: agent.id,
+        sourceChannel: "website_embed",
+        sourceOrigin: origin,
+      });
       const session = issuePublicChatSession(sessionSecret, {
         workspaceId: workspace.id,
         agentId: agent.id,
         publicChatToken,
-        publicSessionId: requestedSessionId,
+        publicSessionId,
+        sourceChannel: "website_embed",
+        sourceOrigin: origin,
+      });
+      const resumeSession = issuePublicChatResumeToken(sessionSecret, {
+        workspaceId: workspace.id,
+        agentId: agent.id,
+        publicChatToken,
+        publicSessionId,
         sourceChannel: "website_embed",
         sourceOrigin: origin,
       });
@@ -343,6 +407,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         workspaceName: workspace.name,
         publicChatToken,
         session,
+        resume: resumeSession,
         assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
         intakeActions: await resolvePublicIntakeActions({
           workspaceId: workspace.id,

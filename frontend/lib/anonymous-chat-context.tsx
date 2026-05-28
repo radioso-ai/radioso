@@ -24,6 +24,7 @@ import {
   publicChatApi,
   readStoredAnonymousSessionId,
   readStoredEffectivePublicChatToken,
+  readStoredPublicSessionResumeToken,
   readStoredPublicSessionToken,
   type AgentBrandingSettings,
   type AnswerFeedbackEntry,
@@ -333,7 +334,7 @@ export function AnonymousChatProvider({
       const activeToken = publicChatTokenRef.current
       const session = await publicChatApi.createSession(activeToken, {
         channel: sessionChannel,
-        anonymousSessionId: input?.resetSession ? null : readStoredAnonymousSessionId(activeToken),
+        resumeToken: input?.resetSession ? null : readStoredPublicSessionResumeToken(activeToken),
         pageContext,
       })
       publicChatTokenRef.current = session.publicChatToken

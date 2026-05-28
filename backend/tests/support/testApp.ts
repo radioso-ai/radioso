@@ -53,7 +53,7 @@ import { RetrievalSearchService } from "../../src/modules/retrieval/services/ret
 import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
-import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/infra/vectorSearch.js";
+import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/public.js";
 import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";

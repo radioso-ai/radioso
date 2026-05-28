@@ -1,4 +1,4 @@
-import type { RetrievedChunk } from "../infra/vectorSearch.js";
+import type { RetrievedChunk } from "../domain/vectorSearch.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { buildRetrievalText } from "./embeddingService.js";
 import type { RetrievedCandidate, RetrievalSource } from "../domain/retrievalPipelineTypes.js";

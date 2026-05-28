@@ -1,31 +1,6 @@
 import type { Database } from "../../../shared/infra/database.js";
-import type { RetrievalSourceFilter } from "../domain/retrievalPipelineTypes.js";
+import type { RetrievedChunk, VectorSearchInput, VectorSearchPort } from "../domain/vectorSearch.js";
 import { compilePgChunkFilter } from "./pgChunkFilter.js";
-
-export interface RetrievedChunk {
-  chunkId: string;
-  documentId: string;
-  title: string;
-  content: string;
-  searchText?: string | null;
-  similarity: number;
-  chunkIndex?: number;
-  startOffset?: number | null;
-  endOffset?: number | null;
-  metadata?: Record<string, unknown>;
-}
-
-export interface VectorSearchPort {
-  search(input: {
-    workspaceId: string;
-    queryEmbedding: number[];
-    topK: number;
-    similarityThreshold: number;
-    embeddingModel?: string;
-    metadataFilter?: Record<string, unknown>;
-    sourceFilter?: RetrievalSourceFilter;
-  }): Promise<RetrievedChunk[]>;
-}
 
 interface VectorSearchRow {
   chunk_id: string;
@@ -43,15 +18,7 @@ interface VectorSearchRow {
 export class PgVectorSearch implements VectorSearchPort {
   constructor(private readonly database: Database) {}
 
-  async search(input: {
-    workspaceId: string;
-    queryEmbedding: number[];
-    topK: number;
-    similarityThreshold: number;
-    embeddingModel?: string;
-    metadataFilter?: Record<string, unknown>;
-    sourceFilter?: RetrievalSourceFilter;
-  }): Promise<RetrievedChunk[]> {
+  async search(input: VectorSearchInput): Promise<RetrievedChunk[]> {
     const maxDistance = 1 - input.similarityThreshold;
     const queryEmbeddingDimensions = input.queryEmbedding.length;
     const embeddingExpression = queryEmbeddingDimensions === 1536

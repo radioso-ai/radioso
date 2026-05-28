@@ -1,4 +1,4 @@
-import type { RetrievalSourceFilter } from "../domain/retrievalPipelineTypes.js";
+import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 
 export interface ChunkFilter {
   metadataFilter?: Record<string, unknown>;

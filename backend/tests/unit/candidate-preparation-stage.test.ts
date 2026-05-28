@@ -6,7 +6,7 @@ import { MetadataRuleScoringService } from "../../src/modules/retrieval/services
 import { selectRetrievalAnswerShape } from "../../src/modules/retrieval/services/retrievalShapeResolver.js";
 import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import type { CandidateRetrievalStageResult } from "../../src/modules/retrieval/services/retrievalPipelineStages.js";
-import type { RetrievedChunk } from "../../src/modules/retrieval/infra/vectorSearch.js";
+import type { RetrievedChunk } from "../../src/modules/retrieval/public.js";
 
 const semanticChunk = (index: number, overrides: Partial<RetrievedChunk> = {}): RetrievedChunk => ({
   chunkId: `chunk-${index}`,

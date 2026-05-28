@@ -6,9 +6,9 @@ import type {
   ResponseIntent,
   ResponseLanguagePolicy,
   RetrievalExecutionDiagnostics,
-  RetrievalSourceScope,
   ActivityTrace,
 } from "./domain/retrievalPipelineTypes.js";
+import type { RetrievalSourceScope } from "./domain/retrievalSourceFilter.js";
 
 export {
   chunkingStrategyIds,
@@ -39,8 +39,6 @@ export type {
   RetrievalExecutionPath,
   RetrievalExecutionSurface,
   RetrievalSource,
-  RetrievalSourceFilter,
-  RetrievalSourceScope,
   RetrievalSubquery,
   ActivityTrace,
   ActivityLink,
@@ -59,6 +57,10 @@ export type {
   TriggerBackoffDecision,
   TriggerRuleDecision,
 } from "./domain/retrievalPipelineTypes.js";
+export type {
+  RetrievalSourceFilter,
+  RetrievalSourceScope,
+} from "./domain/retrievalSourceFilter.js";
 export {
   RESPONSE_INTENT,
   REWRITE_STATUS,
@@ -77,8 +79,9 @@ export type { LexicalSearchPort } from "./infra/lexicalSearch.js";
 export type { ChunkVectorStoragePort } from "./infra/chunkVectorStorage.js";
 export type {
   RetrievedChunk,
+  VectorSearchInput,
   VectorSearchPort,
-} from "./infra/vectorSearch.js";
+} from "./domain/vectorSearch.js";
 export {
   ModelEmbeddingGateway,
   OpenAIEmbeddingGateway,

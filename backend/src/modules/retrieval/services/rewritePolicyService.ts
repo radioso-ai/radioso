@@ -1,6 +1,6 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ContinuityDecision, StructuredRewriteResult } from "../domain/retrievalPipelineTypes.js";
-import type { RetrievedChunk } from "../infra/vectorSearch.js";
+import type { RetrievedChunk } from "../domain/vectorSearch.js";
 
 export interface RewriteValidationResult {
   materialDisagreement: boolean;

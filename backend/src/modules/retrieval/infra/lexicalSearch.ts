@@ -1,8 +1,9 @@
 import type { Database } from "../../../shared/infra/database.js";
 import { buildPlainLexicalQueryPlan } from "../domain/lexicalQueryPlan.js";
-import type { LexicalQueryPlan, RetrievalSourceFilter } from "../domain/retrievalPipelineTypes.js";
+import type { LexicalQueryPlan } from "../domain/retrievalPipelineTypes.js";
+import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
+import type { RetrievedChunk } from "../domain/vectorSearch.js";
 import { compilePgChunkFilter } from "./pgChunkFilter.js";
-import type { RetrievedChunk } from "./vectorSearch.js";
 
 export interface LexicalSearchPort {
   search(input: {

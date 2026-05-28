@@ -266,4 +266,90 @@ describe("query rewrite subqueries", () => {
       '"magic link"',
     ]);
   });
+
+  it("adds an exact lexical branch for the resolved subject without relying on request wording", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "definition of Arya Cheng",
+          semanticQuery: "definition of Arya Cheng",
+          lexicalQuery: "who is Arya Cheng?",
+          responseLanguagePolicy: "match_user_question",
+          turnKind: "fresh_subject",
+          queryShape: "definition_lookup",
+          proposedActiveSubject: "Arya Cheng",
+          relatedEntities: ["Arya Cheng"],
+          unresolved: true,
+          confidence: 0,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "who is Arya Cheng?",
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+      enabled: true,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.retrievalSubqueries?.map((subquery) => subquery.lexicalQuery)).toEqual([
+      "who is Arya Cheng?",
+      "Arya Cheng",
+    ]);
+    expect(result.retrievalSubqueries?.[1]?.lexicalPlan).toEqual({
+      options: [
+        {
+          label: "Arya Cheng",
+          lexicalQuery: "Arya Cheng",
+          phrases: ["Arya Cheng"],
+          requiredTerms: [],
+          excludedTerms: [],
+        },
+      ],
+    });
+    expect(result.structuredResult?.retrievalSubqueries?.map((subquery) => subquery.lexicalQuery)).toEqual([
+      "who is Arya Cheng?",
+      "Arya Cheng",
+    ]);
+    expect(result.structuredResult?.retrievalSubqueries?.[1]).not.toHaveProperty("lexicalPlan");
+  });
+
+  it("does not use a resolved subject branch to accept an otherwise unusable rewrite", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "What does OR mean?",
+          semanticQuery: "What does OR mean?",
+          lexicalQuery: "What does OR mean?",
+          responseLanguagePolicy: "match_user_question",
+          turnKind: "fresh_subject",
+          proposedActiveSubject: "OR",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.91,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "What does OR mean?",
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+      enabled: true,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
+    });
+
+    expect(result.status).toBe("fallback");
+    expect(result.retrievalSubqueries).toBeUndefined();
+  });
 });

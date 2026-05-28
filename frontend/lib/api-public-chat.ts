@@ -5,6 +5,7 @@ import {
   buildError,
   persistAnonymousSessionHeader,
   storeEffectivePublicChatToken,
+  storePublicSessionResumeToken,
   storePublicSessionToken,
 } from './api-client'
 import { streamChatEvents } from './api-chat-stream'
@@ -19,36 +20,68 @@ import type {
   WebsiteEmbedPageContext,
 } from './api-types'
 
+const isInvalidResumeSessionError = (error: unknown) => (
+  Boolean(
+    error &&
+    typeof error === 'object' &&
+    'error' in error &&
+    error.error &&
+    typeof error.error === 'object' &&
+    'code' in error.error &&
+    error.error.code === 'bad_request' &&
+    'message' in error.error &&
+    error.error.message === 'Invalid public chat session request',
+  )
+)
+
 export const publicChatApi = {
   async createSession(
     token: string,
     data: {
       channel: 'anonymous_link' | 'website_embed'
       anonymousSessionId?: string | null
+      resumeToken?: string | null
       pageContext?: WebsiteEmbedPageContext | null
     },
   ): Promise<PublicChatSessionResponse> {
-    const response = await fetch(`${API_BASE}/public/chat/${token}/sessions`, {
-      method: 'POST',
-      cache: 'no-store',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Forwarded-Prefix': '/backend',
-      },
-      body: JSON.stringify({
-        channel: data.channel,
-        anonymousSessionId: data.anonymousSessionId ?? undefined,
-        pageContext: data.pageContext,
-      }),
-    })
+    const exchange = async (resumeToken?: string | null) => {
+      const response = await fetch(`${API_BASE}/public/chat/${token}/sessions`, {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Forwarded-Prefix': '/backend',
+        },
+        body: JSON.stringify({
+          channel: data.channel,
+          resumeToken: resumeToken ?? undefined,
+          anonymousSessionId: data.anonymousSessionId ?? undefined,
+          pageContext: data.pageContext,
+        }),
+      })
 
-    if (!response.ok) {
-      throw await buildError(response)
+      if (!response.ok) {
+        throw await buildError(response)
+      }
+
+      return response.json() as Promise<PublicChatSessionResponse>
     }
 
-    const session = await response.json() as PublicChatSessionResponse
+    let session: PublicChatSessionResponse
+    try {
+      session = await exchange(data.resumeToken)
+    } catch (error) {
+      if (!data.resumeToken || !isInvalidResumeSessionError(error)) {
+        throw error
+      }
+
+      storePublicSessionResumeToken(token, null)
+      session = await exchange(null)
+    }
+
     storePublicSessionToken(session.publicChatToken, session.publicSessionToken, session.expiresAt)
+    storePublicSessionResumeToken(session.publicChatToken, session.resumeToken, session.resumeExpiresAt)
     storeEffectivePublicChatToken(token, session.publicChatToken)
     return session
   },

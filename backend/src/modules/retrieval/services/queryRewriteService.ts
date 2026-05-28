@@ -127,7 +127,7 @@ export class QueryRewriteService {
       const compatibilityRewrite = semanticQuery;
       const responseLanguagePolicy = normalizedStructuredResult.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY;
       const lexicalRewriteAccepted = lexicalQuery !== input.query;
-      const retrievalSubqueries =
+      const modelRetrievalSubqueries =
         normalizedStructuredResult.retrievalSubqueries ??
         (lexicalRewriteAccepted
           ? buildLexicalAlternativeSubqueries({
@@ -140,7 +140,7 @@ export class QueryRewriteService {
         responseIntent !== RESPONSE_INTENT.RETRIEVAL
         || semanticQuery !== input.query
         || lexicalQuery !== input.query
-        || Boolean(retrievalSubqueries && retrievalSubqueries.length > 1);
+        || Boolean(modelRetrievalSubqueries && modelRetrievalSubqueries.length > 1);
 
       if (!applied) {
         return {
@@ -155,6 +155,13 @@ export class QueryRewriteService {
         };
       }
 
+      const retrievalSubqueries = this.withResolvedSubjectLexicalSubquery({
+        existingSubqueries: modelRetrievalSubqueries,
+        semanticQuery,
+        lexicalQuery,
+        responseLanguagePolicy,
+        proposedActiveSubject: normalizedStructuredResult.proposedActiveSubject,
+      });
       const structuredResult = {
         ...normalizedStructuredResult,
         rewrittenQuery: compatibilityRewrite,
@@ -584,6 +591,61 @@ export class QueryRewriteService {
     return normalized.length > 0 ? normalized : undefined;
   }
 
+  private withResolvedSubjectLexicalSubquery(input: {
+    existingSubqueries?: RetrievalSubquery[];
+    semanticQuery: string;
+    lexicalQuery: string;
+    responseLanguagePolicy: ResponseLanguagePolicy;
+    proposedActiveSubject?: string;
+  }): RetrievalSubquery[] | undefined {
+    const subject = input.proposedActiveSubject?.trim();
+    if (!subject || input.existingSubqueries) {
+      return input.existingSubqueries;
+    }
+
+    const existingSubqueries = [
+      {
+        id: "primary",
+        label: input.semanticQuery,
+        semanticQuery: input.semanticQuery,
+        lexicalQuery: input.lexicalQuery,
+        responseLanguagePolicy: input.responseLanguagePolicy,
+      },
+    ];
+    const subjectKey = normalizeLexicalSubjectKey(subject);
+    const alreadyCovered = existingSubqueries.some(
+      (subquery) =>
+        normalizeLexicalSubjectKey(subquery.lexicalQuery) === subjectKey ||
+        normalizeLexicalSubjectKey(subquery.label) === subjectKey,
+    );
+
+    if (alreadyCovered) {
+      return input.existingSubqueries;
+    }
+
+    return [
+      ...existingSubqueries,
+      {
+        id: "resolved_subject",
+        label: subject,
+        semanticQuery: input.semanticQuery,
+        lexicalQuery: subject,
+        responseLanguagePolicy: input.responseLanguagePolicy,
+        lexicalPlan: {
+          options: [
+            {
+              label: subject,
+              lexicalQuery: subject,
+              phrases: [subject],
+              requiredTerms: [],
+              excludedTerms: [],
+            },
+          ],
+        },
+      },
+    ].slice(0, 4);
+  }
+
   private isUsableRewrite(originalQuery: string, rewrittenQuery: string): boolean {
     if (!rewrittenQuery || rewrittenQuery === originalQuery) {
       return false;
@@ -668,6 +730,12 @@ const stripSingleWrappingQuotePair = (value: string): string => {
   const quoteCount = [...value].filter((char) => char === first).length;
   return quoteCount === 2 ? value.slice(1, -1).trim() : value;
 };
+
+const normalizeLexicalSubjectKey = (value: string): string =>
+  stripSingleWrappingQuotePair(value)
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase();
 
 const stripLexicalPlans = (subqueries?: RetrievalSubquery[]): RetrievalSubquery[] | undefined =>
   subqueries?.map(({ lexicalPlan: _lexicalPlan, ...subquery }) => subquery);

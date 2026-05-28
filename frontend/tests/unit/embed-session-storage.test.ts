@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   readStoredEmbedBootstrapSession,
+  readStoredPublicSessionResumeToken,
   readStoredPublicSessionToken,
   storeEmbedBootstrapSession,
 } from '@/lib/api'
@@ -40,6 +41,8 @@ describe('embed session storage helpers', () => {
       publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
       publicSessionToken: 'grant-token',
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      resumeToken: 'resume-token',
+      resumeExpiresAt: new Date(Date.now() + 120_000).toISOString(),
     })
 
     expect(readStoredEmbedBootstrapSession('embed-token')).toEqual({
@@ -48,8 +51,11 @@ describe('embed session storage helpers', () => {
       publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
       publicSessionToken: 'grant-token',
       expiresAt: expect.any(String),
+      resumeToken: 'resume-token',
+      resumeExpiresAt: expect.any(String),
     })
     expect(readStoredPublicSessionToken('public-token')).toBe('grant-token')
+    expect(readStoredPublicSessionResumeToken('public-token')).toBe('resume-token')
 
     expect(readStoredEmbedBootstrapSession('other-embed-token')).toBeNull()
   })
@@ -64,6 +70,8 @@ describe('embed session storage helpers', () => {
       publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
       publicSessionToken: 'grant-token',
       expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      resumeToken: 'resume-token',
+      resumeExpiresAt: new Date(Date.now() + 120_000).toISOString(),
     })
 
     expect(readStoredEmbedBootstrapSession('embed-token')).toBeNull()
@@ -80,6 +88,8 @@ describe('embed session storage helpers', () => {
       publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
       publicSessionToken: 'grant-token',
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      resumeToken: 'resume-token',
+      resumeExpiresAt: new Date(Date.now() + 120_000).toISOString(),
     })
 
     expect(readStoredEmbedBootstrapSession('embed-token')).toMatchObject({

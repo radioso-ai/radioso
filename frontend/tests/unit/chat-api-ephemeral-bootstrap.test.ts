@@ -5,13 +5,15 @@ vi.mock('@/lib/api-client', () => ({
   PUBLIC_CHAT_STREAMING_API_PATH: '/backend/api/v1/public/chat',
   STREAMING_API_PATH: '/backend/api/v1/assistant/chat',
   attachAnonymousSessionHeader: (_token: string, headers: Record<string, string>) => headers,
-  buildError: async () => ({ error: { code: 'HTTP_ERROR', message: 'Request failed.' } }),
+  buildError: async (response: Response) => response.json(),
   canRetryWithFreshWorkspaceToken: () => false,
   persistAnonymousSessionHeader: vi.fn(),
   refreshWorkspaceApiToken: vi.fn(),
   request: vi.fn(),
   requestLongRunning: vi.fn(),
   requireWorkspaceApiToken: async () => 'workspace-token',
+  storeEffectivePublicChatToken: vi.fn(),
+  storePublicSessionResumeToken: vi.fn(),
   storePublicSessionToken: vi.fn(),
   storeWorkspaceToken: vi.fn(),
 }))
@@ -94,5 +96,45 @@ describe('chat API ephemeral bootstrap handling', () => {
 
     const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
     expect(requestBody).not.toHaveProperty('conversationId')
+  })
+
+  it('retries public session creation once without a stale resume token', async () => {
+    const { publicChatApi } = await import('@/lib/api')
+    const sessionPayload = {
+      workspaceName: 'Acme',
+      publicChatToken: 'public-token',
+      publicSessionId: '11111111-1111-4111-8111-111111111111',
+      publicSessionToken: 'session-token',
+      resumeToken: 'fresh-resume-token',
+      assistantBootstrapActive: false,
+      expiresAt: '2026-05-27T11:00:00.000Z',
+      resumeExpiresAt: '2026-06-27T11:00:00.000Z',
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: {
+          code: 'bad_request',
+          message: 'Invalid public chat session request',
+        },
+      }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(jsonResponse(sessionPayload))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(publicChatApi.createSession('public-token', {
+      channel: 'anonymous_link',
+      resumeToken: 'stale-resume-token',
+    })).resolves.toEqual(sessionPayload)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      channel: 'anonymous_link',
+      resumeToken: 'stale-resume-token',
+    })
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      channel: 'anonymous_link',
+    })
   })
 })

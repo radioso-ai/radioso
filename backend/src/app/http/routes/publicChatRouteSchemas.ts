@@ -64,6 +64,8 @@ export const publicConversationParamsSchema = z.object({
 export const publicChatSessionSchema = z.object({
   channel: z.enum(["anonymous_link", "website_embed"]),
   agentId: z.string().uuid().optional(),
+  resumeToken: z.string().min(1).optional(),
+  // Accepted for older clients but no longer trusted as a resume credential.
   anonymousSessionId: z.string().uuid().optional(),
   pageContext: pageContextSchema,
 });

@@ -170,6 +170,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       publicChatToken: z.string(),
       publicSessionId: z.string().uuid(),
       publicSessionToken: z.string(),
+      resumeToken: z.string(),
       assistantBootstrapActive: z.boolean(),
       assistantAvatarUrl: z.string().nullable().optional(),
       theme: z.object({
@@ -188,6 +189,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         display: skillDisplayMetadataSchema.optional(),
       })).optional(),
       expiresAt: z.string().datetime(),
+      resumeExpiresAt: z.string().datetime(),
     }),
   );
 

@@ -61,6 +61,13 @@ export const MAX_SUGGESTED_QUESTIONS_COUNT = 4;
 export const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
 export const DEFAULT_SUGGESTED_QUESTIONS_COUNT = 3;
 
+export const pipelineModes = ["deterministic", "agentic"] as const;
+export type PipelineMode = (typeof pipelineModes)[number];
+export const DEFAULT_PIPELINE_MODE: PipelineMode = "deterministic";
+
+export const resolvePipelineMode = (value: PipelineMode | undefined | null): PipelineMode =>
+  value && pipelineModes.includes(value) ? value : DEFAULT_PIPELINE_MODE;
+
 interface RetrievalSettingsPayload {
   metadataRules?: unknown;
   semanticRewriteInstructions?: unknown;
@@ -97,6 +104,7 @@ export interface RetrievalSettingsRecord {
   citationDisplayEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
+  pipelineMode?: PipelineMode;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -114,6 +122,12 @@ export interface RetrievalSettingsInput {
   citationDisplayEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
+  // NOTE: `pipelineMode` is intentionally NOT a writable input field. The
+  // record/default/snapshot carry it as an internal substrate (see issue for
+  // Layer 1 persistence), but until a DB column persists it and composition
+  // reads it per-workspace, accepting it here would be a contract that
+  // silently does nothing. Agentic mode is currently gated by the
+  // RADIOSO_AGENTIC_RETRIEVAL env var only.
 }
 
 // Kept for internal retrieval tests that still exercise query-derived attribute logic.
@@ -139,6 +153,7 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   citationDisplayEnabled: true,
   metadataRules: [],
   customInstruction: "",
+  pipelineMode: DEFAULT_PIPELINE_MODE,
   createdAt: new Date(),
   updatedAt: new Date(),
 });

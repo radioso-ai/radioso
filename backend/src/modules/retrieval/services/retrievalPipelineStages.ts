@@ -6,8 +6,6 @@ import type {
   ConversationContextWindow,
   ResponseIntent,
   RetrievalSubquery,
-  RetrievalSourceFilter,
-  RetrievalSourceScope,
   ResponseLanguagePolicy,
   RewrittenRetrievalQuery,
   RetrievalAnswerShapeSelection,
@@ -16,6 +14,7 @@ import type {
   TriggerBackoffDecision,
 } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
+import type { RetrievalSourceFilter, RetrievalSourceScope } from "../domain/retrievalSourceFilter.js";
 import type { RetrievedChunk } from "../domain/vectorSearch.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 

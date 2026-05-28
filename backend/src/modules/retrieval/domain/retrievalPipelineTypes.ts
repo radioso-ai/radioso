@@ -3,7 +3,11 @@ import type { ResolvedSkillRun, SkillDiagnostic } from "../../skills/public.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "./queryConstraintTypes.js";
 import type { RetrievedChunk } from "./vectorSearch.js";
 
-import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";
+export {
+  resolveRetrievalSourceFilter,
+  type RetrievalSourceFilter,
+  type RetrievalSourceScope,
+} from "./retrievalSourceFilter.js";
 
 export interface ConversationContextWindow {
   selectedMessages: MessageRecord[];
@@ -182,28 +186,6 @@ export type RetrievalExecutionPath =
   | "retrieval_search"
   | "retrieval_answer"
   | "mcp_grounded_answer";
-
-export type RetrievalSourceScope =
-  | { mode: "all" }
-  | { mode: "selected"; sourceIds: string[] };
-
-export type RetrievalSourceFilter =
-  | { constrained: false }
-  | { constrained: true; sourceIds: string[]; includeUnassignedDocuments: boolean };
-
-export const resolveRetrievalSourceFilter = (scope?: RetrievalSourceScope): RetrievalSourceFilter => {
-  if (!scope || scope.mode === "all") {
-    return { constrained: false };
-  }
-  const hasManualSourceSelection = scope.sourceIds.includes(MANUALLY_ADDED_DOCUMENTS_SOURCE_ID);
-  const sourceIds = scope.sourceIds.filter((sourceId) => sourceId !== MANUALLY_ADDED_DOCUMENTS_SOURCE_ID);
-
-  return {
-    constrained: true,
-    sourceIds,
-    includeUnassignedDocuments: hasManualSourceSelection,
-  };
-};
 
 export interface RetrievalExecutionMetadata {
   surface: RetrievalExecutionSurface;

@@ -1,4 +1,4 @@
-import type { RetrievalSourceFilter } from "./retrievalPipelineTypes.js";
+import type { RetrievalSourceFilter } from "./retrievalSourceFilter.js";
 
 export interface RetrievedChunk {
   chunkId: string;

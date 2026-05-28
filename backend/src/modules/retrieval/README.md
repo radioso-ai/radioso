@@ -34,6 +34,8 @@ imports from `services/` or `infra/`.
 - `services/retrievalAnswerService.ts`: retrieval answer assembly.
 - `domain/vectorSearch.ts`: backend-neutral vector search contract consumed by
   retrieval services.
+- `domain/retrievalSourceFilter.ts`: shared source scoping values used by
+  retrieval contracts and filter compilers.
 - `infra/vectorSearch.ts` and `infra/lexicalSearch.ts`: concrete search
   adapters.
 

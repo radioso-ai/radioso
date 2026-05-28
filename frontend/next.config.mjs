@@ -158,6 +158,10 @@ const nextConfig = {
         source: "/embed/:path*",
         headers: embedSecurityHeaders,
       },
+      {
+        source: "/embed-frame",
+        headers: embedSecurityHeaders,
+      },
     ];
   },
   webpack(config) {

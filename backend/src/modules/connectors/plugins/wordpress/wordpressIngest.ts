@@ -70,7 +70,7 @@ export const mapWebhookPostToIngestInput = (
       wp_post_type: post.type,
       wp_status: post.status,
       wp_slug: post.slug,
-      url: post.link,
+      sourceUrl: post.link,
       modified_at: post.modified_gmt,
       ...(post.author?.name ? { author: post.author.name } : {}),
     },
@@ -93,7 +93,7 @@ export const mapRestPostToIngestInput = (
       wp_post_type: post.type,
       wp_status: post.status,
       wp_slug: post.slug,
-      url: post.link,
+      sourceUrl: post.link,
       modified_at: post.modified_gmt,
     },
   };

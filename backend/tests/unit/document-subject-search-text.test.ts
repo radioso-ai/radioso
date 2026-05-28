@@ -128,7 +128,7 @@ describe("document subject search text", () => {
       metadata: {
         dateFrom: "2026-05-01",
         dateTo: "2026-05-03",
-        url: "https://courses.valmora.example/edizione/example",
+        sourceUrl: "https://courses.valmora.example/edizione/example",
       },
     });
     const service = new DocumentProcessingService(

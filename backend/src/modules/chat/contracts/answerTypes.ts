@@ -2,11 +2,11 @@ export interface ChatCitation {
   documentId: string;
   chunkId: string;
   title: string;
+  sourceUrl?: string;
 }
 
 export interface CitationEvidence extends ChatCitation {
   content: string;
-  sourceUrl?: string;
 }
 
 export interface AnswerSegment {

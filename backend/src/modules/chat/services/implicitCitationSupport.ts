@@ -126,11 +126,17 @@ export const resolveImplicitCitationIndices = (
   return [best.index];
 };
 
-const toChatCitation = (citation: CitationEvidence): ChatCitation => ({
-  documentId: citation.documentId,
-  chunkId: citation.chunkId,
-  title: citation.title,
-});
+const toChatCitation = (citation: CitationEvidence): ChatCitation => {
+  const chatCitation: ChatCitation = {
+    documentId: citation.documentId,
+    chunkId: citation.chunkId,
+    title: citation.title,
+  };
+  if (citation.sourceUrl) {
+    chatCitation.sourceUrl = citation.sourceUrl;
+  }
+  return chatCitation;
+};
 
 const sameCitationIndices = (left?: number[], right?: number[]): boolean => {
   if (!left || !right || left.length !== right.length) {

@@ -267,7 +267,7 @@ describe("query rewrite subqueries", () => {
     ]);
   });
 
-  it("adds an exact lexical branch for the resolved subject without relying on request wording", async () => {
+  it("uses the resolved definition subject as the lexical query without adding a second subquery", async () => {
     const service = new QueryRewriteService({
       async rewrite() {
         return {
@@ -298,39 +298,24 @@ describe("query rewrite subqueries", () => {
     });
 
     expect(result.status).toBe("applied");
-    expect(result.retrievalSubqueries?.map((subquery) => subquery.lexicalQuery)).toEqual([
-      "who is Arya Cheng?",
-      "Arya Cheng",
-    ]);
-    expect(result.retrievalSubqueries?.[1]?.lexicalPlan).toEqual({
-      options: [
-        {
-          label: "Arya Cheng",
-          lexicalQuery: "Arya Cheng",
-          phrases: ["Arya Cheng"],
-          requiredTerms: [],
-          excludedTerms: [],
-        },
-      ],
-    });
-    expect(result.structuredResult?.retrievalSubqueries?.map((subquery) => subquery.lexicalQuery)).toEqual([
-      "who is Arya Cheng?",
-      "Arya Cheng",
-    ]);
-    expect(result.structuredResult?.retrievalSubqueries?.[1]).not.toHaveProperty("lexicalPlan");
+    expect(result.lexicalQuery).toBe("Arya Cheng");
+    expect(result.retrievalSubqueries).toBeUndefined();
+    expect(result.structuredResult?.lexicalQuery).toBe("Arya Cheng");
+    expect(result.structuredResult?.retrievalSubqueries).toBeUndefined();
   });
 
-  it("does not use a resolved subject branch to accept an otherwise unusable rewrite", async () => {
+  it("uses the resolved definition subject even when the model leaves top-level queries unchanged", async () => {
     const service = new QueryRewriteService({
       async rewrite() {
         return {
-          rewrittenQuery: "What does OR mean?",
-          semanticQuery: "What does OR mean?",
-          lexicalQuery: "What does OR mean?",
+          rewrittenQuery: "Who is Arya Cheng?",
+          semanticQuery: "Who is Arya Cheng?",
+          lexicalQuery: "Who is Arya Cheng?",
           responseLanguagePolicy: "match_user_question",
           turnKind: "fresh_subject",
-          proposedActiveSubject: "OR",
-          relatedEntities: [],
+          queryShape: "definition_lookup",
+          proposedActiveSubject: "Arya Cheng",
+          relatedEntities: ["Arya Cheng"],
           unresolved: false,
           confidence: 0.91,
         };
@@ -338,7 +323,7 @@ describe("query rewrite subqueries", () => {
     });
 
     const result = await service.rewrite({
-      query: "What does OR mean?",
+      query: "Who is Arya Cheng?",
       contextWindow: {
         selectedMessages: [],
         truncated: false,
@@ -349,7 +334,9 @@ describe("query rewrite subqueries", () => {
       lexicalRewriteInstructions: "",
     });
 
-    expect(result.status).toBe("fallback");
+    expect(result.status).toBe("applied");
+    expect(result.semanticQuery).toBe("Who is Arya Cheng?");
+    expect(result.lexicalQuery).toBe("Arya Cheng");
     expect(result.retrievalSubqueries).toBeUndefined();
   });
 });

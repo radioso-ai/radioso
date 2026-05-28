@@ -60,10 +60,11 @@ describe("mapWebhookPostToIngestInput", () => {
       wp_post_type: "page",
       wp_status: "publish",
       wp_slug: "about",
-      url: "https://example.com/about",
+      sourceUrl: "https://example.com/about",
       modified_at: "2026-05-16T12:00:00",
       author: "Alice",
     });
+    expect(metadata).not.toHaveProperty("url");
   });
 
   it("omits author metadata when not provided", () => {
@@ -90,7 +91,12 @@ describe("mapRestPostToIngestInput", () => {
     expect(result.title).toBe("Hello World");
     expect(result.content).toBe("<p>From REST</p>");
     expect(result.contentFormat).toBe("html");
-    expect(result.metadata).toMatchObject({ wp_post_id: 7, wp_post_type: "post" });
+    expect(result.metadata).toMatchObject({
+      wp_post_id: 7,
+      wp_post_type: "post",
+      sourceUrl: "https://example.com/hello-world",
+    });
+    expect(result.metadata).not.toHaveProperty("url");
   });
 
   it("falls back to content.raw when rendered is absent", () => {

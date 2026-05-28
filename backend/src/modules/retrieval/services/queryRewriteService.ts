@@ -136,11 +136,17 @@ export class QueryRewriteService {
               responseLanguagePolicy,
             })
           : undefined);
+      const resolvedLexicalQuery = this.selectResolvedSubjectLexicalQuery({
+        queryShape: normalizedStructuredResult.queryShape,
+        lexicalQuery,
+        proposedActiveSubject: normalizedStructuredResult.proposedActiveSubject,
+      });
+      const retrievalSubqueries = modelRetrievalSubqueries;
       const applied =
         responseIntent !== RESPONSE_INTENT.RETRIEVAL
         || semanticQuery !== input.query
-        || lexicalQuery !== input.query
-        || Boolean(modelRetrievalSubqueries && modelRetrievalSubqueries.length > 1);
+        || resolvedLexicalQuery !== input.query
+        || Boolean(retrievalSubqueries && retrievalSubqueries.length > 1);
 
       if (!applied) {
         return {
@@ -150,23 +156,16 @@ export class QueryRewriteService {
             ...normalizedStructuredResult,
             rewrittenQuery: compatibilityRewrite,
             semanticQuery,
-            lexicalQuery,
+            lexicalQuery: resolvedLexicalQuery,
           },
         };
       }
 
-      const retrievalSubqueries = this.withResolvedSubjectLexicalSubquery({
-        existingSubqueries: modelRetrievalSubqueries,
-        semanticQuery,
-        lexicalQuery,
-        responseLanguagePolicy,
-        proposedActiveSubject: normalizedStructuredResult.proposedActiveSubject,
-      });
       const structuredResult = {
         ...normalizedStructuredResult,
         rewrittenQuery: compatibilityRewrite,
         semanticQuery,
-        lexicalQuery,
+        lexicalQuery: resolvedLexicalQuery,
         retrievalSubqueries: stripLexicalPlans(retrievalSubqueries),
       };
       const eligibility = this.eligibilityService.evaluate({
@@ -182,7 +181,7 @@ export class QueryRewriteService {
         rewrittenQuery: compatibilityRewrite,
         effectiveQuery: retrievalEligible ? semanticQuery : input.query,
         semanticQuery: retrievalEligible ? semanticQuery : input.query,
-        lexicalQuery: retrievalEligible ? lexicalQuery : input.query,
+        lexicalQuery: retrievalEligible ? resolvedLexicalQuery : input.query,
         responseIntent,
         responseLanguagePolicy,
         retrievalSubqueries: retrievalEligible ? retrievalSubqueries : undefined,
@@ -591,59 +590,17 @@ export class QueryRewriteService {
     return normalized.length > 0 ? normalized : undefined;
   }
 
-  private withResolvedSubjectLexicalSubquery(input: {
-    existingSubqueries?: RetrievalSubquery[];
-    semanticQuery: string;
+  private selectResolvedSubjectLexicalQuery(input: {
+    queryShape?: RetrievalQueryShape;
     lexicalQuery: string;
-    responseLanguagePolicy: ResponseLanguagePolicy;
     proposedActiveSubject?: string;
-  }): RetrievalSubquery[] | undefined {
+  }): string {
     const subject = input.proposedActiveSubject?.trim();
-    if (!subject || input.existingSubqueries) {
-      return input.existingSubqueries;
+    if (!subject || input.queryShape !== "definition_lookup") {
+      return input.lexicalQuery;
     }
 
-    const existingSubqueries = [
-      {
-        id: "primary",
-        label: input.semanticQuery,
-        semanticQuery: input.semanticQuery,
-        lexicalQuery: input.lexicalQuery,
-        responseLanguagePolicy: input.responseLanguagePolicy,
-      },
-    ];
-    const subjectKey = normalizeLexicalSubjectKey(subject);
-    const alreadyCovered = existingSubqueries.some(
-      (subquery) =>
-        normalizeLexicalSubjectKey(subquery.lexicalQuery) === subjectKey ||
-        normalizeLexicalSubjectKey(subquery.label) === subjectKey,
-    );
-
-    if (alreadyCovered) {
-      return input.existingSubqueries;
-    }
-
-    return [
-      ...existingSubqueries,
-      {
-        id: "resolved_subject",
-        label: subject,
-        semanticQuery: input.semanticQuery,
-        lexicalQuery: subject,
-        responseLanguagePolicy: input.responseLanguagePolicy,
-        lexicalPlan: {
-          options: [
-            {
-              label: subject,
-              lexicalQuery: subject,
-              phrases: [subject],
-              requiredTerms: [],
-              excludedTerms: [],
-            },
-          ],
-        },
-      },
-    ].slice(0, 4);
+    return subject;
   }
 
   private isUsableRewrite(originalQuery: string, rewrittenQuery: string): boolean {
@@ -730,12 +687,6 @@ const stripSingleWrappingQuotePair = (value: string): string => {
   const quoteCount = [...value].filter((char) => char === first).length;
   return quoteCount === 2 ? value.slice(1, -1).trim() : value;
 };
-
-const normalizeLexicalSubjectKey = (value: string): string =>
-  stripSingleWrappingQuotePair(value)
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLocaleLowerCase();
 
 const stripLexicalPlans = (subqueries?: RetrievalSubquery[]): RetrievalSubquery[] | undefined =>
   subqueries?.map(({ lexicalPlan: _lexicalPlan, ...subquery }) => subquery);

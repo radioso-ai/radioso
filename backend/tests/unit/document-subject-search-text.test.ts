@@ -128,7 +128,7 @@ describe("document subject search text", () => {
       metadata: {
         dateFrom: "2026-05-01",
         dateTo: "2026-05-03",
-        url: "https://corsi.ananda.it/edizione/example",
+        sourceUrl: "https://corsi.ananda.it/edizione/example",
       },
     });
     const service = new DocumentProcessingService(

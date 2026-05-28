@@ -176,6 +176,14 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         next(notFound("Not found"));
         return;
       }
+      const origin = resolveOrigin(req.header("origin"));
+      if (origin) {
+        res.vary("Origin");
+        const websiteEmbed = getWebsiteEmbedSurfaceSettings(agent);
+        if (websiteEmbed.enabled && isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, origin)) {
+          res.setHeader("Access-Control-Allow-Origin", origin);
+        }
+      }
       const buffer = await dependencies.documentStorage.read({
         bucket: logo.bucket,
         objectPath: logo.objectPath,

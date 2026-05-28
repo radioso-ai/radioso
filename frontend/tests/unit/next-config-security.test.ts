@@ -25,9 +25,14 @@ describe('next security headers', () => {
 
     const routes = await nextConfig.headers()
     const embedHeaders = routes.find((route) => route.source === '/embed/:path*')?.headers ?? []
+    const embedFrameHeaders = routes.find((route) => route.source === '/embed-frame')?.headers ?? []
     const headerValues = new Map(embedHeaders.map((header) => [header.key, header.value]))
+    const frameHeaderValues = new Map(embedFrameHeaders.map((header) => [header.key, header.value]))
 
     expect(routes.findIndex((route) => route.source === '/embed/:path*')).toBeGreaterThan(
+      routes.findIndex((route) => route.source === '/:path*'),
+    )
+    expect(routes.findIndex((route) => route.source === '/embed-frame')).toBeGreaterThan(
       routes.findIndex((route) => route.source === '/:path*'),
     )
     expect(headerValues.get('Content-Security-Policy')).toContain("default-src 'self'")
@@ -36,5 +41,11 @@ describe('next security headers', () => {
     expect(headerValues.get('X-Content-Type-Options')).toBe('nosniff')
     expect(headerValues.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin')
     expect(headerValues.get('Permissions-Policy')).toContain('camera=()')
+    expect(frameHeaderValues.get('Content-Security-Policy')).toContain("default-src 'self'")
+    expect(frameHeaderValues.get('Content-Security-Policy')).toContain("object-src 'none'")
+    expect(frameHeaderValues.get('Content-Security-Policy')).not.toContain('frame-ancestors')
+    expect(frameHeaderValues.get('X-Content-Type-Options')).toBe('nosniff')
+    expect(frameHeaderValues.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin')
+    expect(frameHeaderValues.get('Permissions-Policy')).toContain('camera=()')
   })
 })

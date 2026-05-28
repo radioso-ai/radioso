@@ -299,6 +299,38 @@ describe("public chat session contract", () => {
     expect(Buffer.from(logo.body).toString("utf8")).toBe("fake-logo");
   });
 
+  it("allows approved website embed origins to load the assistant logo with CORS", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-embed-logo-cors@example.com");
+
+    await request(app)
+      .post("/api/v1/settings/general/assistant-logo")
+      .set(adminSessionHeaders(session))
+      .attach("logo", Buffer.from("embed-logo"), {
+        filename: "assistant.png",
+        contentType: "image/png",
+      })
+      .expect(200);
+
+    const token = await enableWebsiteEmbed(app, session);
+
+    const allowedLogo = await request(app)
+      .get(`/api/v1/public/chat/${token}/assistant-logo`)
+      .set("Origin", "https://example.com");
+
+    expect(allowedLogo.status).toBe(200);
+    expect(allowedLogo.headers["access-control-allow-origin"]).toBe("https://example.com");
+    expect(allowedLogo.headers.vary).toContain("Origin");
+    expect(Buffer.from(allowedLogo.body).toString("utf8")).toBe("embed-logo");
+
+    const deniedLogo = await request(app)
+      .get(`/api/v1/public/chat/${token}/assistant-logo`)
+      .set("Origin", "https://not-approved.example.com");
+
+    expect(deniedLogo.status).toBe(200);
+    expect(deniedLogo.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
   it("returns the current agent token when a legacy workspace public token resolves the launch", async () => {
     const { app, dependencies, repositories } = createTestApp();
     const session = await issueTestSession(app, "public-chat-legacy-token@example.com");

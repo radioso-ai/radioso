@@ -384,4 +384,54 @@ describe("answer presentation service", () => {
       },
     ]);
   });
+
+  it("present() preserves sourceUrl on emitted citations", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer: "Radioso is self-hosted[[1]].",
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Radioso overview",
+          content: "Radioso is self-hosted.",
+          sourceUrl: "https://example.com/overview",
+        },
+      ],
+    });
+
+    expect(result.citations).toEqual([
+      {
+        documentId: "doc-1",
+        chunkId: "chunk-1",
+        title: "Radioso overview",
+        sourceUrl: "https://example.com/overview",
+      },
+    ]);
+  });
+
+  it("present() omits sourceUrl when the evidence has none", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer: "Radioso is self-hosted[[1]].",
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Radioso overview",
+          content: "Radioso is self-hosted.",
+        },
+      ],
+    });
+
+    expect(result.citations).toEqual([
+      {
+        documentId: "doc-1",
+        chunkId: "chunk-1",
+        title: "Radioso overview",
+      },
+    ]);
+  });
 });

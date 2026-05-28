@@ -4728,6 +4728,10 @@
           },
           "title": {
             "type": "string"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri"
           }
         },
         "required": [

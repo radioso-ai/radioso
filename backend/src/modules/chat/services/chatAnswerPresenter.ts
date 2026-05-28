@@ -145,20 +145,32 @@ const hasGroundedSuggestionSupport = (input: {
 };
 
 const toCitationEvidence = (session: PreparedSession): CitationEvidence[] =>
-  session.retrieval.contexts.map((context) => ({
-    documentId: context.documentId,
-    chunkId: context.chunkId,
-    title: context.title,
-    content: context.content,
-    sourceUrl: resolveContextSourceUrl(context.metadata),
-  }));
+  session.retrieval.contexts.map((context) => {
+    const sourceUrl = resolveContextSourceUrl(context.metadata);
+    const evidence: CitationEvidence = {
+      documentId: context.documentId,
+      chunkId: context.chunkId,
+      title: context.title,
+      content: context.content,
+    };
+    if (sourceUrl) {
+      evidence.sourceUrl = sourceUrl;
+    }
+    return evidence;
+  });
 
 const toPlanningCitations = (citationEvidence: CitationEvidence[]): ChatCitation[] =>
-  citationEvidence.map((citation) => ({
-    documentId: citation.documentId,
-    chunkId: citation.chunkId,
-    title: citation.title,
-  }));
+  citationEvidence.map((citation) => {
+    const planning: ChatCitation = {
+      documentId: citation.documentId,
+      chunkId: citation.chunkId,
+      title: citation.title,
+    };
+    if (citation.sourceUrl) {
+      planning.sourceUrl = citation.sourceUrl;
+    }
+    return planning;
+  });
 
 const withLegacyAnswerOutcome = <T extends Omit<ChatPresentedAnswer, "answerOutcome">>(
   presentation: T,

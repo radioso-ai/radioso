@@ -270,6 +270,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       documentId: z.string().uuid(),
       chunkId: z.string().uuid(),
       title: z.string(),
+      sourceUrl: z.string().url().optional(),
     }),
   );
 

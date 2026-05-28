@@ -2513,6 +2513,8 @@ export interface components {
             /** Format: uuid */
             chunkId: string;
             title: string;
+            /** Format: uri */
+            sourceUrl?: string;
         };
         AnswerSegment: {
             text: string;

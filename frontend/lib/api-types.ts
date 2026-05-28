@@ -1,4 +1,5 @@
 import type { components } from '../../typescript-sdk/src/generated/types'
+import { API_BASE } from './api-client'
 
 type ApiSchemas = components['schemas']
 type RelaxedAssistantChatResponse<T> = T extends unknown
@@ -458,6 +459,25 @@ export type AgentListResponse = ApiSchemas['AgentListResponse']
 export type AgentSettingsUpdate = ApiSchemas['ConversationAgentRequest']
 export type WorkspaceTokenResponse = ApiSchemas['WorkspaceTokenResponse']
 
+const buildAgentAssistantLogoUrl = (agent: AgentSettings): string | null => {
+  if (!agent.logo || typeof window === 'undefined') {
+    return null
+  }
+
+  const publicChatToken = agent.surfaceSettings.anonymousChat.enabled
+    ? agent.surfaceSettings.anonymousChat.token
+    : agent.surfaceSettings.websiteEmbed.enabled
+      ? agent.surfaceSettings.websiteEmbed.token
+      : null
+
+  if (!publicChatToken) {
+    return null
+  }
+
+  const apiBaseUrl = new URL(API_BASE.endsWith('/') ? API_BASE : `${API_BASE}/`, window.location.origin)
+  return new URL(`public/chat/${encodeURIComponent(publicChatToken)}/assistant-logo`, apiBaseUrl).toString()
+}
+
 export const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings => ({
   anonymousChatEnabled: agent.surfaceSettings.anonymousChat.enabled,
   anonymousChatUrl: agent.surfaceSettings.anonymousChat.enabled && agent.surfaceSettings.anonymousChat.token && typeof window !== 'undefined'
@@ -468,12 +488,7 @@ export const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings =>
   assistantDefaultLocale: agent.assistantDefaultLocale,
   proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
   assistantBootstrapActive: agent.assistantBootstrapActive,
-  assistantLogoUrl: (() => {
-    const token = agent.surfaceSettings.anonymousChat.token ?? agent.surfaceSettings.websiteEmbed.token
-    return agent.logo && token && typeof window !== 'undefined'
-      ? `${window.location.origin}/backend/api/v1/public/chat/${token}/assistant-logo`
-      : null
-  })(),
+  assistantLogoUrl: buildAgentAssistantLogoUrl(agent),
   websiteEmbedEnabled: agent.surfaceSettings.websiteEmbed.enabled,
   websiteEmbedToken: agent.surfaceSettings.websiteEmbed.token,
   websiteEmbedScriptUrl: typeof window !== 'undefined' ? `${window.location.origin}/radioso-embed.js` : null,

@@ -266,4 +266,77 @@ describe("query rewrite subqueries", () => {
       '"magic link"',
     ]);
   });
+
+  it("uses the resolved definition subject as the lexical query without adding a second subquery", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "definition of Arya Cheng",
+          semanticQuery: "definition of Arya Cheng",
+          lexicalQuery: "who is Arya Cheng?",
+          responseLanguagePolicy: "match_user_question",
+          turnKind: "fresh_subject",
+          queryShape: "definition_lookup",
+          proposedActiveSubject: "Arya Cheng",
+          relatedEntities: ["Arya Cheng"],
+          unresolved: true,
+          confidence: 0,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "who is Arya Cheng?",
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+      enabled: true,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.lexicalQuery).toBe("Arya Cheng");
+    expect(result.retrievalSubqueries).toBeUndefined();
+    expect(result.structuredResult?.lexicalQuery).toBe("Arya Cheng");
+    expect(result.structuredResult?.retrievalSubqueries).toBeUndefined();
+  });
+
+  it("uses the resolved definition subject even when the model leaves top-level queries unchanged", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "Who is Arya Cheng?",
+          semanticQuery: "Who is Arya Cheng?",
+          lexicalQuery: "Who is Arya Cheng?",
+          responseLanguagePolicy: "match_user_question",
+          turnKind: "fresh_subject",
+          queryShape: "definition_lookup",
+          proposedActiveSubject: "Arya Cheng",
+          relatedEntities: ["Arya Cheng"],
+          unresolved: false,
+          confidence: 0.91,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "Who is Arya Cheng?",
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+      enabled: true,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.semanticQuery).toBe("Who is Arya Cheng?");
+    expect(result.lexicalQuery).toBe("Arya Cheng");
+    expect(result.retrievalSubqueries).toBeUndefined();
+  });
 });

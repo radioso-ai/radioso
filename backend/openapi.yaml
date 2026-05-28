@@ -3134,6 +3134,9 @@ components:
           format: uuid
         title:
           type: string
+        sourceUrl:
+          type: string
+          format: uri
       required:
         - documentId
         - chunkId

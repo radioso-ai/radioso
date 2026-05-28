@@ -54,11 +54,17 @@ const sameCitationIndices = (left?: number[], right?: number[]): boolean => {
   return left.every((value, index) => value === right[index]);
 };
 
-const toChatCitation = (citation: CitationEvidence): ChatCitation => ({
-  documentId: citation.documentId,
-  chunkId: citation.chunkId,
-  title: citation.title,
-});
+const toChatCitation = (citation: CitationEvidence): ChatCitation => {
+  const chatCitation: ChatCitation = {
+    documentId: citation.documentId,
+    chunkId: citation.chunkId,
+    title: citation.title,
+  };
+  if (citation.sourceUrl) {
+    chatCitation.sourceUrl = citation.sourceUrl;
+  }
+  return chatCitation;
+};
 
 const addMissingPunctuationAfterTerminalMarkdownLinks = (text: string): string => {
   const lines = text.split(/\n/);

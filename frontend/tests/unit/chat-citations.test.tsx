@@ -25,7 +25,7 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    expect(html).toContain('[1]')
+    expect(html).toContain('data-citation-index="1"')
   })
 
   it('suppresses citation markers when citation display is disabled', async () => {
@@ -50,7 +50,7 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    expect(html).not.toContain('[1]')
+    expect(html).not.toContain('data-citation-index')
     expect(html).toContain('This is important evidence.')
   })
 
@@ -140,6 +140,228 @@ describe('AssistantMessageContent', () => {
     expect(html).toContain('<p')
     expect(html).toContain('href="https://example.com"')
     expect(html).toContain('Second paragraph')
+  })
+
+  it('renders a Sources footer rail listing each cited document once', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Retrieval guide' },
+          { documentId: 'doc-2', chunkId: 'chunk-2', title: 'Architecture' },
+          { documentId: 'doc-1', chunkId: 'chunk-3', title: 'Retrieval guide' },
+        ]}
+        answerSegments={[
+          { text: 'Alpha', citationIndices: [0] },
+          { text: ' and beta', citationIndices: [1] },
+          { text: '.', citationIndices: [2] },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('Sources')
+    expect(html).toContain('Architecture')
+    // doc-1 appears twice in citations but should produce only one footer chip
+    expect(html.match(/title="Retrieval guide"/g)?.length).toBe(1)
+    expect(html.match(/title="Architecture"/g)?.length).toBe(1)
+  })
+
+  it('renders an external-link affordance for sources that carry a sourceUrl', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          {
+            documentId: 'doc-1',
+            chunkId: 'chunk-1',
+            title: 'Radioso overview',
+            sourceUrl: 'https://example.com/overview',
+          },
+        ]}
+        answerSegments={[
+          { text: 'Radioso is self-hosted', citationIndices: [0] },
+          { text: '.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('href="https://example.com/overview"')
+  })
+
+  it('omits the external-link affordance for sources without a sourceUrl', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Local file' },
+        ]}
+        answerSegments={[
+          { text: 'Documented in the manual', citationIndices: [0] },
+          { text: '.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).not.toContain('target="_blank"')
+    expect(html).toContain('Local file')
+  })
+
+  it('absorbs a leading period of a multi-paragraph segment into the prior marker line', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+        ]}
+        answerSegments={[
+          { text: 'Arya is the author of the post', citationIndices: [0] },
+          { text: '.\n\nHer story traces a path from Hong Kong', citationIndices: [0] },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    // The leading "." on the second segment should not render as <p>.</p>
+    expect(html).not.toMatch(/<p[^>]*>\s*\.\s*<\/p>/)
+    expect(html).toContain('Her story')
+  })
+
+  it('absorbs a punctuation+paragraph-break segment between cited segments', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+        ]}
+        answerSegments={[
+          { text: 'First paragraph', citationIndices: [0] },
+          { text: '.\n\n' },
+          { text: 'Second paragraph' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).not.toMatch(/<p[^>]*>\s*\.\s*<\/p>/)
+    expect(html).toContain('Second paragraph')
+  })
+
+  it('absorbs a leading punctuation run that begins with whitespace', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+        ]}
+        answerSegments={[
+          { text: 'First grounded line', citationIndices: [0] },
+          { text: ' .\n\nNext content begins here' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).not.toMatch(/<p[^>]*>\s*\.\s*Next content/)
+    expect(html).toContain('Next content begins here')
+  })
+
+  it('keeps trailing punctuation segments inline with their citation marker', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+        ]}
+        answerSegments={[
+          { text: 'You can also visit the centennial page', citationIndices: [0] },
+          { text: '.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    // The lone "." should not produce its own paragraph block beneath the marker.
+    expect(html).not.toMatch(/<p[^>]*>\s*\.\s*<\/p>/)
+  })
+
+  it('does not strip leading markdown from the segment after a citation', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+        ]}
+        answerSegments={[
+          { text: 'See the overview', citationIndices: [0] },
+          { text: ' **Important** detail follows.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    // The bold marker must survive and render as <strong>, not be pulled onto the marker line.
+    expect(html).toContain('<strong')
+    expect(html).toContain('Important')
+    expect(html).not.toContain('**Important')
+  })
+
+  it('does not strip a leading markdown link from the next segment', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+        ]}
+        answerSegments={[
+          { text: 'More context here', citationIndices: [0] },
+          { text: ' [link](https://example.com) closes it.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('href="https://example.com"')
+  })
+
+  it('does not crash on out-of-range numeric entities in titles', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Bad &#9999999999; entity' },
+        ]}
+        answerSegments={[
+          { text: 'See bad title', citationIndices: [0] },
+          { text: '.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    // Undecodable entity is left as text rather than throwing during render.
+    expect(html).toContain('&amp;#9999999999;')
+  })
+
+  it('decodes HTML entities in source titles', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Aryavan McSweeney &mdash; Ananda &amp; Co.' },
+        ]}
+        answerSegments={[
+          { text: 'See bio', citationIndices: [0] },
+          { text: '.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('Aryavan McSweeney — Ananda &amp; Co.')
+    expect(html).not.toContain('&mdash;')
   })
 
   it('preserves ordered lists when citations are attached per item', async () => {

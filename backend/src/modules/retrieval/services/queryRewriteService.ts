@@ -127,7 +127,7 @@ export class QueryRewriteService {
       const compatibilityRewrite = semanticQuery;
       const responseLanguagePolicy = normalizedStructuredResult.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY;
       const lexicalRewriteAccepted = lexicalQuery !== input.query;
-      const retrievalSubqueries =
+      const modelRetrievalSubqueries =
         normalizedStructuredResult.retrievalSubqueries ??
         (lexicalRewriteAccepted
           ? buildLexicalAlternativeSubqueries({
@@ -136,10 +136,16 @@ export class QueryRewriteService {
               responseLanguagePolicy,
             })
           : undefined);
+      const resolvedLexicalQuery = this.selectResolvedSubjectLexicalQuery({
+        queryShape: normalizedStructuredResult.queryShape,
+        lexicalQuery,
+        proposedActiveSubject: normalizedStructuredResult.proposedActiveSubject,
+      });
+      const retrievalSubqueries = modelRetrievalSubqueries;
       const applied =
         responseIntent !== RESPONSE_INTENT.RETRIEVAL
         || semanticQuery !== input.query
-        || lexicalQuery !== input.query
+        || resolvedLexicalQuery !== input.query
         || Boolean(retrievalSubqueries && retrievalSubqueries.length > 1);
 
       if (!applied) {
@@ -150,7 +156,7 @@ export class QueryRewriteService {
             ...normalizedStructuredResult,
             rewrittenQuery: compatibilityRewrite,
             semanticQuery,
-            lexicalQuery,
+            lexicalQuery: resolvedLexicalQuery,
           },
         };
       }
@@ -159,7 +165,7 @@ export class QueryRewriteService {
         ...normalizedStructuredResult,
         rewrittenQuery: compatibilityRewrite,
         semanticQuery,
-        lexicalQuery,
+        lexicalQuery: resolvedLexicalQuery,
         retrievalSubqueries: stripLexicalPlans(retrievalSubqueries),
       };
       const eligibility = this.eligibilityService.evaluate({
@@ -175,7 +181,7 @@ export class QueryRewriteService {
         rewrittenQuery: compatibilityRewrite,
         effectiveQuery: retrievalEligible ? semanticQuery : input.query,
         semanticQuery: retrievalEligible ? semanticQuery : input.query,
-        lexicalQuery: retrievalEligible ? lexicalQuery : input.query,
+        lexicalQuery: retrievalEligible ? resolvedLexicalQuery : input.query,
         responseIntent,
         responseLanguagePolicy,
         retrievalSubqueries: retrievalEligible ? retrievalSubqueries : undefined,
@@ -582,6 +588,19 @@ export class QueryRewriteService {
     }
 
     return normalized.length > 0 ? normalized : undefined;
+  }
+
+  private selectResolvedSubjectLexicalQuery(input: {
+    queryShape?: RetrievalQueryShape;
+    lexicalQuery: string;
+    proposedActiveSubject?: string;
+  }): string {
+    const subject = input.proposedActiveSubject?.trim();
+    if (!subject || input.queryShape !== "definition_lookup") {
+      return input.lexicalQuery;
+    }
+
+    return subject;
   }
 
   private isUsableRewrite(originalQuery: string, rewrittenQuery: string): boolean {

@@ -1,4 +1,5 @@
 import type { AgentSnapshot } from "../../agents/public.js";
+import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
 import type {
   RetrievalSettingsRecord,
   RetrievalSettingsSnapshot,
@@ -11,6 +12,8 @@ export interface EvalSnapshotMessage {
   role: "user" | "assistant" | "system";
   content: string;
   createdAt: string;
+  citations?: ChatCitation[];
+  answerSegments?: AnswerSegment[];
 }
 
 export interface EvalSnapshotOriginalRetrievalChunk {
@@ -128,6 +131,8 @@ export interface EvalRunRetrievedChunk {
 export interface EvalRunObservedOutput {
   retrievedChunks: EvalRunRetrievedChunk[];
   answer?: string;
+  citations?: ChatCitation[];
+  answerSegments?: AnswerSegment[];
   error?: { message: string; code?: string };
 }
 

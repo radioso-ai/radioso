@@ -40,6 +40,7 @@ const resolveOrigin = (value: string | null) => {
 }
 
 const embedBootstrapRequestSchema = z.object({
+  resumeToken: z.string().min(1).optional(),
   anonymousSessionId: z.string().uuid().optional(),
 })
 
@@ -96,6 +97,7 @@ export async function POST(
       },
       body: JSON.stringify({
         channel: 'website_embed',
+        resumeToken: parsedBody.data.resumeToken,
         anonymousSessionId: parsedBody.data.anonymousSessionId,
       }),
     })

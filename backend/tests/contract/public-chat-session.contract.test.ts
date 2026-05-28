@@ -49,9 +49,11 @@ describe("public chat session contract", () => {
       publicChatToken: token,
       publicSessionId: expect.any(String),
       publicSessionToken: expect.any(String),
+      resumeToken: expect.any(String),
       assistantBootstrapActive: false,
     });
     expect(response.body.expiresAt).toEqual(expect.any(String));
+    expect(response.body.resumeExpiresAt).toEqual(expect.any(String));
   });
 
   it("exposes configured public intake actions on website embed sessions and conversation lists", async () => {
@@ -407,7 +409,7 @@ describe("public chat session contract", () => {
     expect(chatResponse.status).toBe(200);
   });
 
-  it("reuses a requested anonymous session id on a later approved bootstrap", async () => {
+  it("resumes website embed history with a signed resume token", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-embed-resume@example.com");
 
@@ -427,7 +429,7 @@ describe("public chat session contract", () => {
     expect(firstChat.status).toBe(200);
 
     const resumedPublicSession = await createWebsiteEmbedPublicSession(app, token, origin, {
-      anonymousSessionId: firstChat.headers["x-radioso-anonymous-session"],
+      resumeToken: firstPublicSession.body.resumeToken,
     });
 
     expect(resumedPublicSession.status).toBe(200);
@@ -444,6 +446,61 @@ describe("public chat session contract", () => {
         }),
       ]),
     );
+  });
+
+  it("does not resume website embed history from a raw anonymous session id", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-embed-raw-session-resume@example.com");
+
+    const token = await enableWebsiteEmbed(app, session);
+    const origin = "https://example.com";
+
+    const firstPublicSession = await createWebsiteEmbedPublicSession(app, token, origin);
+    const firstChat = await request(app)
+      .post(`/api/v1/public/chat/${firstPublicSession.body.publicChatToken}`)
+      .set("x-radioso-public-session", firstPublicSession.body.publicSessionToken)
+      .send({
+        message: "What can you do?",
+        stream: false,
+      });
+
+    expect(firstChat.status).toBe(200);
+
+    const nextPublicSession = await createWebsiteEmbedPublicSession(app, token, origin, {
+      anonymousSessionId: firstChat.headers["x-radioso-anonymous-session"],
+    });
+
+    expect(nextPublicSession.status).toBe(200);
+    expect(nextPublicSession.body.publicSessionId).not.toBe(firstChat.headers["x-radioso-anonymous-session"]);
+
+    const historyResponse = await request(app)
+      .get(`/api/v1/public/chat/${nextPublicSession.body.publicChatToken}`)
+      .set("x-radioso-public-session", nextPublicSession.body.publicSessionToken);
+
+    expect(historyResponse.status).toBe(200);
+    expect(historyResponse.body.conversations).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: firstChat.body.conversationId,
+        }),
+      ]),
+    );
+  });
+
+  it("rejects a malformed public session resume token", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-embed-invalid-resume@example.com");
+
+    const token = await enableWebsiteEmbed(app, session);
+    const response = await createWebsiteEmbedPublicSession(app, token, "https://example.com", {
+      resumeToken: "not-a-valid-resume-token",
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: "bad_request",
+      message: "Invalid public chat session request",
+    });
   });
 
   it("scopes public history to the resolved agent for shared anonymous session ids", async () => {

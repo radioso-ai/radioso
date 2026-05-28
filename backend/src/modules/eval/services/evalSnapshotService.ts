@@ -3,6 +3,7 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import type { MessageRepositoryPort, MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { freezeAgent } from "../../agents/public.js";
+import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
 import { freezeRetrievalSettings } from "../../settings/contracts/retrieval.js";
 import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
 import type { EvalRepositoryPort } from "./evalRepository.js";
@@ -34,11 +35,65 @@ const truncateMessages = (
   return messages.slice(0, idx + 1);
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const extractCitations = (metadata: Record<string, unknown> | undefined): ChatCitation[] | undefined => {
+  const raw = metadata?.citations;
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+
+  const citations = raw.flatMap((value): ChatCitation[] => {
+    if (!isRecord(value)) {
+      return [];
+    }
+    const { documentId, chunkId, title, sourceUrl } = value;
+    if (typeof documentId !== "string" || typeof chunkId !== "string" || typeof title !== "string") {
+      return [];
+    }
+    return [{
+      documentId,
+      chunkId,
+      title,
+      ...(typeof sourceUrl === "string" && sourceUrl.length > 0 ? { sourceUrl } : {}),
+    }];
+  });
+
+  return citations.length > 0 ? citations : undefined;
+};
+
+const extractAnswerSegments = (metadata: Record<string, unknown> | undefined): AnswerSegment[] | undefined => {
+  const raw = metadata?.answerSegments;
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+
+  const segments = raw.flatMap((value): AnswerSegment[] => {
+    if (!isRecord(value) || typeof value.text !== "string") {
+      return [];
+    }
+    const citationIndices = Array.isArray(value.citationIndices)
+      ? value.citationIndices.filter((index): index is number => Number.isInteger(index) && index >= 0)
+      : undefined;
+    return [{
+      text: value.text,
+      ...(citationIndices && citationIndices.length > 0 ? { citationIndices } : {}),
+    }];
+  });
+
+  return segments.length > 0 ? segments : undefined;
+};
+
 const toSnapshotMessage = (record: MessageRecord): EvalSnapshotMessage => ({
   id: record.id,
   role: record.role,
   content: record.content,
   createdAt: record.createdAt.toISOString(),
+  ...(record.role === "assistant" ? {
+    citations: extractCitations(record.metadata),
+    answerSegments: extractAnswerSegments(record.metadata),
+  } : {}),
 });
 
 const extractStringField = (metadata: Record<string, unknown> | undefined, key: string): string | null => {

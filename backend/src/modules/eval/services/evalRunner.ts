@@ -1,5 +1,6 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { AgentSnapshot } from "../../agents/public.js";
+import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
 import type { RetrievalSettingsRecord, RetrievalSettingsSnapshot } from "../../settings/contracts/retrieval.js";
 import type { EvalRunModelOverride, EvalRunRetrievedChunk, EvalSnapshot, EvalSnapshotMessage } from "../domain/types.js";
 
@@ -46,6 +47,8 @@ export interface EvalRetrievalRunnerPort {
   }): Promise<{
     chunks: EvalRunRetrievedChunk[];
     answer: string;
+    citations?: ChatCitation[];
+    answerSegments?: AnswerSegment[];
     composedInstructions?: string;
     resolvedSettings?: RetrievalSettingsSnapshot;
     resolvedModel?: { provider: string; model: string };

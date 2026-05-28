@@ -1,4 +1,9 @@
 import { request } from './api-client'
+import type { AnswerSegment, Citation } from './api-types'
+
+// Eval is currently a dashboard-only API surface and is not registered in the
+// public OpenAPI/SDK contract. Keep these local request/response types in sync
+// with backend/src/modules/eval/domain/types.ts when changing eval payloads.
 
 export type EvalSnapshotFidelity = 'full' | 'messages_only'
 
@@ -7,6 +12,8 @@ export interface EvalSnapshotMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   createdAt: string
+  citations?: Citation[]
+  answerSegments?: AnswerSegment[]
 }
 
 export interface EvalSnapshotOriginalRetrievalChunk {
@@ -94,6 +101,8 @@ export interface EvalRunRetrievedChunk {
 export interface EvalRunObservedOutput {
   retrievedChunks: EvalRunRetrievedChunk[]
   answer?: string
+  citations?: Citation[]
+  answerSegments?: AnswerSegment[]
   error?: { message: string; code?: string }
 }
 

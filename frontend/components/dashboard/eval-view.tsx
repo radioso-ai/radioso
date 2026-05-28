@@ -18,8 +18,7 @@ import {
   DashboardTableRow,
 } from '@/components/dashboard/shared/dashboard-table'
 import { ChatMessageThread, type ChatThreadMessage } from './chat-message-thread'
-import type { CitationOpenResult } from './chat-citations'
-import { MarkdownContent } from '@/components/markdown/markdown-content'
+import { AssistantMessageContent, type CitationOpenResult } from './chat-citations'
 import { AssertionEditor } from './eval/assertion-editor'
 import { evalsApi, documentsApi } from '@/lib/api'
 import type {
@@ -83,13 +82,10 @@ const assertionSummary = (a: EvalAssertion, titleFor: (id: string) => string | u
   }
 }
 
-const noopOpenDocument = async (): Promise<CitationOpenResult> => 'unavailable'
-
 // Map a frozen snapshot message to the shape ChatMessageThread expects so the
 // eval detail page can reuse the same bubble + markdown renderer the dashboard
-// chat uses. Snapshots don't carry citations / suggestions / feedback per
-// message yet, so those slots stay empty and ChatMessageThread degrades to
-// plain bubbles + markdown — which is exactly what we want here.
+// chat uses. Newer snapshots also preserve assistant citation artifacts so
+// eval citations render with the same inline markers and sources rail as chat.
 const toThreadMessages = (
   messages: EvalSnapshot['messages'],
 ): ChatThreadMessage[] => messages.map((m) => ({
@@ -97,6 +93,8 @@ const toThreadMessages = (
   role: m.role,
   content: m.content,
   createdAt: m.createdAt,
+  citations: m.citations,
+  answerSegments: m.answerSegments,
 }))
 
 const formatRunModel = (run: { resolvedConfig: Record<string, unknown> }): string | null => {
@@ -442,7 +440,35 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   }
 
   const latestRun = caseWithRuns.runs[0] ?? null
-  const originalAnswer = [...snapshot.messages].reverse().find((m) => m.role === 'assistant')?.content ?? null
+  const originalAssistantMessage = [...snapshot.messages].reverse().find((m) => m.role === 'assistant') ?? null
+  const originalAnswer = originalAssistantMessage?.content ?? null
+
+  const handleOpenCitation = async (documentId: string): Promise<CitationOpenResult> => {
+    try {
+      await documentsApi.getDocument(documentId)
+      router.push(buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'knowledge',
+        knowledgeTab: 'documents',
+        documentId,
+      }))
+      return 'opened'
+    } catch (err) {
+      if (
+        err &&
+        typeof err === 'object' &&
+        'error' in err &&
+        err.error &&
+        typeof err.error === 'object' &&
+        'code' in err.error &&
+        err.error.code === 'not_found'
+      ) {
+        return 'unavailable'
+      }
+
+      return 'error'
+    }
+  }
 
   // When a run exists with an answer, the original assistant answer is the
   // left-hand side of the Latest run diff — no need to repeat it in the
@@ -543,8 +569,8 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
           <CardContent>
             <ChatMessageThread
               messages={toThreadMessages(conversationMessages)}
-              onOpenDocument={noopOpenDocument}
-              showCitations={false}
+              onOpenDocument={handleOpenCitation}
+              showCitations
               skillCatalog={skillCatalog}
             />
           </CardContent>
@@ -555,6 +581,9 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
           run={latestRun}
           assertions={caseWithRuns.assertions}
           originalAnswer={originalAnswer}
+          originalCitations={originalAssistantMessage?.citations}
+          originalAnswerSegments={originalAssistantMessage?.answerSegments}
+          onOpenDocument={handleOpenCitation}
           titleFor={titleFor}
         />
 
@@ -584,6 +613,9 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
           <RunHistoryCard
             runs={caseWithRuns.runs.slice(1)}
             originalAnswer={originalAnswer}
+            originalCitations={originalAssistantMessage?.citations}
+            originalAnswerSegments={originalAssistantMessage?.answerSegments}
+            onOpenDocument={handleOpenCitation}
             titleFor={titleFor}
           />
         ) : null}
@@ -596,10 +628,21 @@ interface LatestRunCardProps {
   run: EvalRun | null
   assertions: EvalAssertion[]
   originalAnswer: string | null
+  originalCitations?: EvalSnapshot['messages'][number]['citations']
+  originalAnswerSegments?: EvalSnapshot['messages'][number]['answerSegments']
+  onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
   titleFor: (id: string) => string | undefined
 }
 
-function LatestRunCard({ run, assertions, originalAnswer, titleFor }: LatestRunCardProps) {
+function LatestRunCard({
+  run,
+  assertions,
+  originalAnswer,
+  originalCitations,
+  originalAnswerSegments,
+  onOpenDocument,
+  titleFor,
+}: LatestRunCardProps) {
   if (!run) {
     return (
       <Card>
@@ -624,7 +667,14 @@ function LatestRunCard({ run, assertions, originalAnswer, titleFor }: LatestRunC
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <RunOutputDetail run={run} originalAnswer={originalAnswer} titleFor={titleFor} />
+        <RunOutputDetail
+          run={run}
+          originalAnswer={originalAnswer}
+          originalCitations={originalCitations}
+          originalAnswerSegments={originalAnswerSegments}
+          onOpenDocument={onOpenDocument}
+          titleFor={titleFor}
+        />
       </CardContent>
     </Card>
   )
@@ -633,12 +683,50 @@ function LatestRunCard({ run, assertions, originalAnswer, titleFor }: LatestRunC
 interface RunOutputDetailProps {
   run: EvalRun
   originalAnswer: string | null
+  originalCitations?: EvalSnapshot['messages'][number]['citations']
+  originalAnswerSegments?: EvalSnapshot['messages'][number]['answerSegments']
+  onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
   titleFor: (id: string) => string | undefined
   /** When true, omits the top status row (caller renders its own). */
   hideStatus?: boolean
 }
 
-function RunOutputDetail({ run, originalAnswer, titleFor, hideStatus = false }: RunOutputDetailProps) {
+function EvalAnswerContent({
+  answer,
+  citations,
+  answerSegments,
+  onOpenDocument,
+  emptyLabel,
+}: {
+  answer?: string | null
+  citations?: EvalRun['observedOutput']['citations']
+  answerSegments?: EvalRun['observedOutput']['answerSegments']
+  onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
+  emptyLabel: string
+}) {
+  if (!answer) {
+    return <span className="text-muted-foreground">{emptyLabel}</span>
+  }
+
+  return (
+    <AssistantMessageContent
+      content={answer}
+      citations={citations ?? []}
+      answerSegments={answerSegments}
+      onOpenDocument={onOpenDocument}
+    />
+  )
+}
+
+function RunOutputDetail({
+  run,
+  originalAnswer,
+  originalCitations,
+  originalAnswerSegments,
+  onOpenDocument,
+  titleFor,
+  hideStatus = false,
+}: RunOutputDetailProps) {
   const newAnswer = run.observedOutput.answer
   return (
     <div className="space-y-5">
@@ -658,11 +746,13 @@ function RunOutputDetail({ run, originalAnswer, titleFor, hideStatus = false }: 
               Original answer
             </h4>
             <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
-              {originalAnswer ? (
-                <MarkdownContent content={originalAnswer} variant="chat" />
-              ) : (
-                <span className="text-muted-foreground">(not captured)</span>
-              )}
+              <EvalAnswerContent
+                answer={originalAnswer}
+                citations={originalCitations}
+                answerSegments={originalAnswerSegments}
+                onOpenDocument={onOpenDocument}
+                emptyLabel="(not captured)"
+              />
             </div>
           </div>
           <div className="space-y-1.5">
@@ -670,11 +760,13 @@ function RunOutputDetail({ run, originalAnswer, titleFor, hideStatus = false }: 
               New answer
             </h4>
             <div className="rounded-md border border-border bg-background p-3 text-sm">
-              {newAnswer ? (
-                <MarkdownContent content={newAnswer} variant="chat" />
-              ) : (
-                <span className="text-muted-foreground">(empty)</span>
-              )}
+              <EvalAnswerContent
+                answer={newAnswer}
+                citations={run.observedOutput.citations}
+                answerSegments={run.observedOutput.answerSegments}
+                onOpenDocument={onOpenDocument}
+                emptyLabel="(empty)"
+              />
             </div>
           </div>
         </div>
@@ -706,10 +798,20 @@ function RunOutputDetail({ run, originalAnswer, titleFor, hideStatus = false }: 
 interface RunHistoryCardProps {
   runs: EvalRun[]
   originalAnswer: string | null
+  originalCitations?: EvalSnapshot['messages'][number]['citations']
+  originalAnswerSegments?: EvalSnapshot['messages'][number]['answerSegments']
+  onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
   titleFor: (id: string) => string | undefined
 }
 
-function RunHistoryCard({ runs, originalAnswer, titleFor }: RunHistoryCardProps) {
+function RunHistoryCard({
+  runs,
+  originalAnswer,
+  originalCitations,
+  originalAnswerSegments,
+  onOpenDocument,
+  titleFor,
+}: RunHistoryCardProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   return (
@@ -750,6 +852,9 @@ function RunHistoryCard({ runs, originalAnswer, titleFor }: RunHistoryCardProps)
                     <RunOutputDetail
                       run={r}
                       originalAnswer={originalAnswer}
+                      originalCitations={originalCitations}
+                      originalAnswerSegments={originalAnswerSegments}
+                      onOpenDocument={onOpenDocument}
                       titleFor={titleFor}
                       hideStatus
                     />

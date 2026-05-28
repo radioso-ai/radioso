@@ -105,6 +105,64 @@ describe("eval LLM-call usage recording end-to-end", () => {
     expect(result.resolvedModel).toEqual({ provider: "openai", model: "gpt-4o-mini" });
   });
 
+  it("normalizes generated citation anchors into eval answer artifacts", async () => {
+    const { recorder } = buildRecorder();
+    const meter = new EvalUsageMeter(recorder, buildResolver());
+    const context = {
+      chunkId: "chunk-1",
+      documentId: "doc-1",
+      title: "Source guide",
+      content: "Refunds are available within 30 days.",
+      similarity: 0.9,
+      metadata: { sourceUrl: "https://example.com/refunds" },
+      retrievalSources: ["semantic_original"],
+      retrievalText: "Refunds are available within 30 days.",
+      semanticScore: 0.9,
+      lexicalScore: 0,
+      relevanceScore: 0.9,
+      rerankPosition: 0,
+      promptPosition: 0,
+      estimatedTokenCost: 12,
+    };
+    const pipelineResult = {
+      ...fixedPipelineResult,
+      contexts: [context],
+    };
+    const runner = new RetrievalPipelineEvalRunner(
+      {
+        async run() { return pipelineResult as never; },
+        async interpret() { return { request: {} as never, interpretation: { result: {} } }; },
+        async runInterpreted() { return pipelineResult as never; },
+        async runWithoutRetrieval() { return pipelineResult as never; },
+      },
+      buildChatGateway("Refunds are available within 30 days[[1]]."),
+      meter,
+      buildResolver(),
+      buildSettingsService(),
+    );
+
+    const result = await runner.answer({
+      workspaceId: "ws-1",
+      runId: "run-1",
+      query: "refunds?",
+      history: [],
+    });
+
+    expect(result.answer).toBe("Refunds are available within 30 days.");
+    expect(result.citations).toEqual([
+      {
+        documentId: "doc-1",
+        chunkId: "chunk-1",
+        title: "Source guide",
+        sourceUrl: "https://example.com/refunds",
+      },
+    ]);
+    expect(result.answerSegments).toEqual([
+      { text: "Refunds are available within 30 days", citationIndices: [0] },
+      { text: "." },
+    ]);
+  });
+
   it("still records usage when the chat gateway throws", async () => {
     const { recorder, events } = buildRecorder();
     const meter = new EvalUsageMeter(recorder, buildResolver());

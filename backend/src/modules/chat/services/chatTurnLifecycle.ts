@@ -134,6 +134,8 @@ export class ChatTurnLifecycle {
         // actual model resolved at run time.
         modelProvider: input.session.agent.chatModelOverride?.provider,
         modelId: input.session.agent.chatModelOverride?.model,
+        citations: input.presentation.citations ?? [],
+        answerSegments: input.presentation.answerSegments,
       },
     });
     await this.finalizeAssistantTurn({

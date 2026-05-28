@@ -99,7 +99,12 @@ export class EvalRunService {
           modelOverride: overrides.modelOverride,
           retrievalSettingsOverride: overrides.retrievalSettingsOverride,
         });
-        observed = { retrievedChunks: result.chunks, answer: result.answer };
+        observed = {
+          retrievedChunks: result.chunks,
+          answer: result.answer,
+          citations: result.citations,
+          answerSegments: result.answerSegments,
+        };
         resolvedConfig.retrievalSettings = result.resolvedSettings;
         resolvedConfig.composedInstructions = result.composedInstructions;
         if (result.resolvedModel) {

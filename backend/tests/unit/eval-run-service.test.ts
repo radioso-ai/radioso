@@ -15,6 +15,7 @@ import type {
   EvalRunRetrievedChunk,
   EvalSnapshot,
 } from "../../src/modules/eval/domain/types.js";
+import type { AnswerSegment, ChatCitation } from "../../src/modules/chat/contracts/answerTypes.js";
 import type { EvalRetrievalRunnerPort } from "../../src/modules/eval/services/evalRunner.js";
 import type { EvalLlmJudgePort } from "../../src/modules/eval/services/evalJudge.js";
 
@@ -170,6 +171,8 @@ class StubRunner implements EvalRetrievalRunnerPort {
     private readonly chunks: EvalRunRetrievedChunk[],
     private readonly error?: Error,
     private readonly answerText?: string,
+    private readonly citations?: ChatCitation[],
+    private readonly answerSegments?: AnswerSegment[],
   ) {}
 
   private capture(input: {
@@ -201,7 +204,12 @@ class StubRunner implements EvalRetrievalRunnerPort {
   async answer(input: any) {
     this.lastAnswerCall = this.capture(input);
     if (this.error) throw this.error;
-    return { chunks: this.chunks, answer: this.answerText ?? "" };
+    return {
+      chunks: this.chunks,
+      answer: this.answerText ?? "",
+      citations: this.citations,
+      answerSegments: this.answerSegments,
+    };
   }
 }
 
@@ -541,6 +549,8 @@ describe("EvalRunService.execute (retrieval_only)", () => {
       ],
       undefined,
       "Our refund window is 30 days from purchase.",
+      [{ documentId: "doc-refund", chunkId: "c1", title: "Refund Policy" }],
+      [{ text: "Our refund window is 30 days from purchase.", citationIndices: [0] }],
     );
     const service = new EvalRunService(repo, runner, passJudge());
 
@@ -553,6 +563,12 @@ describe("EvalRunService.execute (retrieval_only)", () => {
 
     expect(run.mode).toBe("full_assistant");
     expect(run.observedOutput.answer).toBe("Our refund window is 30 days from purchase.");
+    expect(run.observedOutput.citations).toEqual([
+      { documentId: "doc-refund", chunkId: "c1", title: "Refund Policy" },
+    ]);
+    expect(run.observedOutput.answerSegments).toEqual([
+      { text: "Our refund window is 30 days from purchase.", citationIndices: [0] },
+    ]);
     expect(run.status).toBe("pass");
   });
 

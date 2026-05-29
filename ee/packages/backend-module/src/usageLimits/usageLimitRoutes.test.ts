@@ -71,6 +71,7 @@ const createDependencies = (database: UsageLimitDatabasePort): RouteDependencies
   },
   accountAccessService: {
     async requireActiveMembership() {},
+    async requirePermission() {},
   },
   workspaceSessionService: {
     async resolve() {

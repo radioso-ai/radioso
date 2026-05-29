@@ -106,6 +106,7 @@ export type ApplicationChatIntakeProviderRegistration =
       abuseControlService: AbuseControlService;
       mailService: MailTransportPort;
       dashboardBaseUrl: string | null;
+      assertPublicWebsiteUrl: (url: string) => Promise<void>;
       skillExecutorRegistry: SkillExecutorRegistry;
     }) => ChatIntakeProviderPort);
 

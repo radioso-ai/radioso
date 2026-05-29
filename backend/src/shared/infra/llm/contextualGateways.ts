@@ -25,6 +25,7 @@ import {
 } from "../../../modules/retrieval/public.js";
 import { createOpenAIClient } from "./openaiProvider.js";
 import type { AppLogger } from "../../observability/logger.js";
+import type { UsageEventRecorder } from "../../domain/usageEventRecorder.js";
 
 interface ContextualGatewayDependencies {
   resolver: LlmCapabilityResolver;
@@ -50,6 +51,7 @@ export class ContextualChatGateway implements ChatGateway {
   constructor(
     private readonly deps: ContextualGatewayDependencies,
     private readonly fallback: ChatGateway,
+    private readonly usageEventRecorder?: UsageEventRecorder,
   ) {
     this.cache = deps.clientCache ?? new TextGenerationClientCache();
   }
@@ -60,7 +62,7 @@ export class ContextualChatGateway implements ChatGateway {
       return this.fallback.answer(input);
     }
     const client = await resolveClient(this.cache, this.deps.resolver, "chat", ctx);
-    return new ModelChatGateway(client).answer(input);
+    return new ModelChatGateway(client, this.usageEventRecorder).answer(input);
   }
 
   async *streamAnswer(input: ChatGatewayInput): AsyncIterable<string> {
@@ -70,7 +72,7 @@ export class ContextualChatGateway implements ChatGateway {
       return;
     }
     const client = await resolveClient(this.cache, this.deps.resolver, "chat", ctx);
-    yield* new ModelChatGateway(client).streamAnswer(input);
+    yield* new ModelChatGateway(client, this.usageEventRecorder).streamAnswer(input);
   }
 }
 
@@ -80,6 +82,7 @@ export class ContextualGroundedMissResponseComposer implements GroundedMissRespo
   constructor(
     private readonly deps: ContextualGatewayDependencies,
     private readonly fallback: GroundedMissResponseComposer,
+    private readonly usageEventRecorder?: UsageEventRecorder,
   ) {
     this.cache = deps.clientCache ?? new TextGenerationClientCache();
   }
@@ -90,7 +93,7 @@ export class ContextualGroundedMissResponseComposer implements GroundedMissRespo
       return this.fallback.composeNoContext(input);
     }
     const client = await resolveClient(this.cache, this.deps.resolver, "chat", ctx);
-    return new ModelGroundedMissResponseComposer(client).composeNoContext(input);
+    return new ModelGroundedMissResponseComposer(client, this.usageEventRecorder).composeNoContext(input);
   }
 }
 

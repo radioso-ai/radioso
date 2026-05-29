@@ -19,6 +19,7 @@ import { ClaudeTextGenerationClient } from "./claudeProvider.js";
 import { GeminiEmbeddingClient, GeminiTextGenerationClient } from "./geminiProvider.js";
 import { createOpenAIClient, OpenAIEmbeddingClient, OpenAITextGenerationClient } from "./openaiProvider.js";
 import type { AppLogger } from "../../observability/logger.js";
+import type { UsageEventRecorder } from "../../domain/usageEventRecorder.js";
 import {
   type EmbeddingClient,
   type EmbeddingResult,
@@ -139,26 +140,31 @@ export class LlmProviderRegistry {
     };
   }
 
-  createChatGateway() {
-    const fallback = new ModelChatGateway(this.createTextClient(this.config.chat));
+  createChatGateway(usageEventRecorder?: UsageEventRecorder) {
+    const fallback = new ModelChatGateway(this.createTextClient(this.config.chat), usageEventRecorder);
     if (!this.resolver) {
       return fallback;
     }
-    return new ContextualChatGateway({ resolver: this.resolver, clientCache: this.clientCache }, fallback);
+    return new ContextualChatGateway(
+      { resolver: this.resolver, clientCache: this.clientCache },
+      fallback,
+      usageEventRecorder,
+    );
   }
 
   createChatTextClient(): TextGenerationClient {
     return this.createTextClient(this.config.chat);
   }
 
-  createGroundedMissResponseComposer() {
-    const fallback = new ModelGroundedMissResponseComposer(this.createTextClient(this.config.chat));
+  createGroundedMissResponseComposer(usageEventRecorder?: UsageEventRecorder) {
+    const fallback = new ModelGroundedMissResponseComposer(this.createTextClient(this.config.chat), usageEventRecorder);
     if (!this.resolver) {
       return fallback;
     }
     return new ContextualGroundedMissResponseComposer(
       { resolver: this.resolver, clientCache: this.clientCache },
       fallback,
+      usageEventRecorder,
     );
   }
 

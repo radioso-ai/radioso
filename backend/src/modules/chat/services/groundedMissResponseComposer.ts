@@ -1,8 +1,14 @@
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
-import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import type { ProviderUsage, TextGenerationClient, TextGenerationResult } from "../../../shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
+import {
+  NoopUsageEventRecorder,
+  type UsageEventRecorder,
+  type UsageEventStatus,
+} from "../../../shared/domain/usageEventRecorder.js";
+import type { ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import { resolveChatLocale } from "./chatLocale.js";
 
 export interface GroundedMissNoContextInput {
@@ -10,6 +16,7 @@ export interface GroundedMissNoContextInput {
   userExpectedLocale?: string | null;
   answerInstructionBlock?: string;
   workspaceContext?: LlmCapabilityResolveInput;
+  usageContext?: ChatGatewayUsageContext;
 }
 
 export interface GroundedMissResponseComposer {
@@ -96,24 +103,27 @@ const buildAnswerInstructionBlock = (answerInstructionBlock?: string): string =>
 const buildNoContextFallback = (): string => renderGroundedMissSection("fallback_no_context", {});
 
 export class ModelGroundedMissResponseComposer implements GroundedMissResponseComposer {
-  constructor(private readonly client: TextGenerationClient) {}
+  constructor(
+    private readonly client: TextGenerationClient,
+    private readonly usageEventRecorder: UsageEventRecorder = new NoopUsageEventRecorder(),
+  ) {}
 
   private async completeWithRetry(request: {
     prompt: string;
     systemPrompt?: string;
     temperature: number;
     maxOutputTokens: number;
-  }): Promise<string | undefined> {
+  }): Promise<TextGenerationResult | undefined> {
     try {
-      return (await this.client.complete(request)).text;
+      return await this.client.complete(request);
     } catch {
-      return (await this.client.complete(request)).text;
+      return await this.client.complete(request);
     }
   }
 
   async composeNoContext(input: GroundedMissNoContextInput): Promise<string> {
     try {
-      const raw = await this.completeWithRetry({
+      const request = {
         prompt: renderGroundedMissSection("prompt", {
           locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
           query: input.query,
@@ -121,15 +131,18 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
         }),
         temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
         maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.noContextMaxOutputTokens,
-      });
+      };
+      const result = await this.completeWithRetry(request);
+      await this.recordUsage(input, request, result?.text ?? "", "succeeded", result?.usage);
 
-      const normalized = normalizeModelResponse(raw);
+      const normalized = normalizeModelResponse(result?.text);
       if (normalized) {
         return normalized;
       }
 
       return buildNoContextFallback();
     } catch (error) {
+      await this.recordUsage(input, null, "", "failed", undefined, error);
       if (isProviderCredentialError(error)) {
         throw error;
       }
@@ -137,4 +150,68 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
       return buildNoContextFallback();
     }
   }
+
+  private async recordUsage(
+    input: GroundedMissNoContextInput,
+    request: { prompt: string; systemPrompt?: string } | null,
+    outputText: string,
+    status: UsageEventStatus,
+    providerUsage?: ProviderUsage,
+    error?: unknown,
+  ): Promise<void> {
+    if (!input.usageContext) {
+      return;
+    }
+    const inputBytes = Buffer.byteLength(`${request?.systemPrompt ?? ""}\n${request?.prompt ?? input.query}`, "utf8");
+    const outputBytes = Buffer.byteLength(outputText, "utf8");
+    const inputTokens = providerUsage?.inputTokens ?? estimateTokens(inputBytes);
+    const outputTokens = providerUsage?.outputTokens ?? (outputBytes > 0 ? estimateTokens(outputBytes) : 0);
+    const provider = this.client.metadata.provider;
+    const model = this.client.metadata.model;
+
+    await this.usageEventRecorder.recordModelCall({
+      idempotencyKey: [
+        "chat",
+        input.usageContext.surface,
+        input.usageContext.operation,
+        input.usageContext.conversationId,
+        input.usageContext.messageId,
+        input.usageContext.attemptKey,
+        provider,
+        model,
+        status,
+      ].join(":"),
+      accountId: input.usageContext.accountId ?? null,
+      workspaceId: input.usageContext.workspaceId,
+      conversationId: input.usageContext.conversationId,
+      messageId: input.usageContext.messageId,
+      surface: input.usageContext.surface,
+      operation: input.usageContext.operation,
+      provider,
+      model,
+      inputTokens,
+      outputTokens,
+      totalTokens: providerUsage?.totalTokens ?? inputTokens + outputTokens,
+      inputBytes,
+      outputBytes,
+      status,
+      usageQuality: providerUsage?.quality ?? "estimated",
+      providerRequestId: providerUsage?.providerRequestId ?? null,
+      errorCode: error ? groundedMissUsageErrorCode(error) : null,
+    }).catch(() => {
+      // Usage accounting must not change fallback answer delivery.
+    });
+  }
 }
+
+const estimateTokens = (bytes: number): number => Math.max(1, Math.ceil(bytes / 4));
+
+const groundedMissUsageErrorCode = (error: unknown): string => {
+  if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
+    return error.code;
+  }
+  if (error instanceof Error && error.message) {
+    return error.message.slice(0, 120);
+  }
+  return "grounded_miss_model_call_failed";
+};

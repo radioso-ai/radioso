@@ -3,7 +3,19 @@ import { describe, expect, it } from "vitest";
 import {
   ModelGroundedMissResponseComposer,
 } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
+import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
+
+const recordingUsageRecorder = () => {
+  const events: ModelUsageEvent[] = [];
+  const recorder: UsageEventRecorder = {
+    async recordEmbedding() {},
+    async recordModelCall(event) {
+      events.push(event);
+    },
+  };
+  return { recorder, events };
+};
 
 describe("grounded miss response composer", () => {
   it("lets the model compose the full no-context response", async () => {
@@ -102,6 +114,61 @@ describe("grounded miss response composer", () => {
         userExpectedLocale: "it-IT",
       }),
     ).resolves.toBe("MODEL_LOCALE_SPECIFIC");
+  });
+
+  it("records no-context assistant usage when usage context is present", async () => {
+    const { recorder, events } = recordingUsageRecorder();
+    const composer = new ModelGroundedMissResponseComposer({
+      metadata: {
+        capability: "chat",
+        provider: "openai",
+        model: "test-model",
+      },
+      async complete() {
+        return textResult("MODEL_NO_CONTEXT", {
+          inputTokens: 18,
+          outputTokens: 4,
+          totalTokens: 22,
+          providerRequestId: "req-grounded-miss",
+          quality: "actual",
+        });
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }, recorder);
+
+    await composer.composeNoContext({
+      query: "What does the pricing page say?",
+      usageContext: {
+        accountId: "account-1",
+        workspaceId: "workspace-1",
+        conversationId: "conversation-1",
+        messageId: "message-1",
+        surface: "assistant",
+        operation: "answer",
+        attemptKey: "grounded_miss",
+      },
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      surface: "assistant",
+      operation: "answer",
+      provider: "openai",
+      model: "test-model",
+      inputTokens: 18,
+      outputTokens: 4,
+      totalTokens: 22,
+      status: "succeeded",
+      usageQuality: "actual",
+      providerRequestId: "req-grounded-miss",
+    });
+    expect(events[0]!.idempotencyKey).toContain("grounded_miss");
   });
 
   it("falls back when the no-context model output is empty", async () => {

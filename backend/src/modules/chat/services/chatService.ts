@@ -1,5 +1,10 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
-import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import type { ProviderUsage, TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import {
+  NoopUsageEventRecorder,
+  type UsageEventRecorder,
+  type UsageEventStatus,
+} from "../../../shared/domain/usageEventRecorder.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -7,7 +12,7 @@ import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspace
 import type { AgentService } from "../../agents/public.js";
 import type { RetrievalPipelineService } from "../../retrieval/public.js";
 import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
-import type { ChatGateway, ChatGatewayInput } from "../contracts/chatGateway.js";
+import type { ChatGateway, ChatGatewayInput, ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ChatStreamEvent, SkillStreamPayload, SkillStreamPhase } from "../contracts/streamEvents.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
@@ -61,31 +66,89 @@ const hasCitedAnswerSegment = (presentation: ChatPresentedAnswer): boolean =>
   presentation.answerSegments?.some((segment) => (segment.citationIndices?.length ?? 0) > 0) ?? false;
 
 export class ModelChatGateway implements ChatGateway {
-  constructor(private readonly client: TextGenerationClient) {}
+  constructor(
+    private readonly client: TextGenerationClient,
+    private readonly usageEventRecorder: UsageEventRecorder = new NoopUsageEventRecorder(),
+  ) {}
 
   async answer(input: ChatGatewayInput): Promise<string> {
-    const { text } = await this.client.complete({
-      prompt: input.prompt,
-      systemPrompt: input.systemPrompt,
-    });
+    let result: Awaited<ReturnType<TextGenerationClient["complete"]>>;
+    try {
+      result = await this.client.complete({
+        prompt: input.prompt,
+        systemPrompt: input.systemPrompt,
+      });
+    } catch (error) {
+      await this.recordUsage(input, "", "failed", undefined, error);
+      throw error;
+    }
+    const { text } = result;
 
     if (!text?.trim()) {
+      await this.recordUsage(input, text ?? "", "failed", result.usage, new BlankChatAnswerError());
       throw new BlankChatAnswerError();
     }
 
+    await this.recordUsage(input, text, "succeeded", result.usage);
     return text;
   }
 
   async *streamAnswer(input: ChatGatewayInput): AsyncIterable<string> {
-    const { textStream } = this.client.stream({
+    const { textStream, usage } = this.client.stream({
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
     });
-    for await (const chunk of textStream) {
-      if (chunk.length > 0) {
-        yield chunk;
+    let output = "";
+    try {
+      for await (const chunk of textStream) {
+        if (chunk.length > 0) {
+          output += chunk;
+          yield chunk;
+        }
       }
+    } catch (error) {
+      await this.recordUsage(input, output, "failed", await usage, error);
+      throw error;
     }
+    await this.recordUsage(input, output, "succeeded", await usage);
+  }
+
+  private async recordUsage(
+    input: ChatGatewayInput,
+    outputText: string,
+    status: UsageEventStatus,
+    providerUsage?: ProviderUsage,
+    error?: unknown,
+  ): Promise<void> {
+    if (!input.usageContext) {
+      return;
+    }
+    const usage = providerUsage ?? estimateProviderUsage(input, outputText);
+    const provider = this.client.metadata.provider;
+    const model = this.client.metadata.model;
+
+    await this.usageEventRecorder.recordModelCall({
+      idempotencyKey: buildChatUsageIdempotencyKey(input.usageContext, provider, model, status),
+      accountId: input.usageContext.accountId ?? null,
+      workspaceId: input.usageContext.workspaceId,
+      conversationId: input.usageContext.conversationId,
+      messageId: input.usageContext.messageId,
+      surface: input.usageContext.surface,
+      operation: input.usageContext.operation,
+      provider,
+      model,
+      inputTokens: usage.inputTokens ?? null,
+      outputTokens: usage.outputTokens ?? null,
+      totalTokens: usage.totalTokens ?? ((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0)),
+      inputBytes: Buffer.byteLength(`${input.systemPrompt ?? ""}\n${input.prompt}`, "utf8"),
+      outputBytes: Buffer.byteLength(outputText, "utf8"),
+      status,
+      usageQuality: providerUsage?.quality ?? "estimated",
+      providerRequestId: providerUsage?.providerRequestId ?? null,
+      errorCode: error ? chatUsageErrorCode(error) : null,
+    }).catch(() => {
+      // Usage accounting is observational; chat delivery remains authoritative.
+    });
   }
 }
 
@@ -93,6 +156,51 @@ export class OpenAIChatGateway extends ModelChatGateway {}
 
 const SKILL_CHIP_TAG_PATTERN = /<skill_chip>([\s\S]*?)<\/skill_chip>\s*/i;
 const SKILL_RECEIPT_TAG_PATTERN = /<skill_receipt>([\s\S]*?)<\/skill_receipt>\s*/i;
+
+const estimateTokens = (bytes: number): number => Math.max(1, Math.ceil(bytes / 4));
+
+const estimateProviderUsage = (input: ChatGatewayInput, outputText: string): ProviderUsage => {
+  const inputBytes = Buffer.byteLength(`${input.systemPrompt ?? ""}\n${input.prompt}`, "utf8");
+  const outputBytes = Buffer.byteLength(outputText, "utf8");
+  const inputTokens = estimateTokens(inputBytes);
+  const outputTokens = outputBytes > 0 ? estimateTokens(outputBytes) : 0;
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens: inputTokens + outputTokens,
+    quality: "estimated",
+  };
+};
+
+const buildChatUsageIdempotencyKey = (
+  context: ChatGatewayUsageContext,
+  provider: string,
+  model: string,
+  status: UsageEventStatus,
+): string => [
+  "chat",
+  context.surface,
+  context.operation,
+  context.conversationId,
+  context.messageId,
+  context.attemptKey,
+  provider,
+  model,
+  status,
+].join(":");
+
+const chatUsageErrorCode = (error: unknown): string => {
+  if (error instanceof BlankChatAnswerError) {
+    return error.name;
+  }
+  if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
+    return error.code;
+  }
+  if (error instanceof Error && error.message) {
+    return error.message.slice(0, 120);
+  }
+  return "chat_model_call_failed";
+};
 
 export interface ExtractedSkillReceiptOverrides {
   statusLabel?: string;
@@ -260,6 +368,22 @@ export class ChatService {
     };
   }
 
+  private buildChatUsageContext(
+    session: PreparedSession,
+    accountId: string | undefined,
+    attemptKey: string,
+  ): ChatGatewayUsageContext {
+    return {
+      accountId: accountId ?? null,
+      workspaceId: session.agent.workspaceId,
+      conversationId: session.conversation.id,
+      messageId: session.userMessage.id,
+      surface: "assistant",
+      operation: "answer",
+      attemptKey,
+    };
+  }
+
   private buildAnswerInstructionBlock(session: PreparedSession): string {
     const responseSettings = session.retrieval.responseSettings;
     return this.assistantInstructionBuilder.buildCombinedBlock({
@@ -323,6 +447,8 @@ export class ChatService {
     session: PreparedSession,
     query: string,
     prompt: string,
+    accountId: string | undefined,
+    attemptKey: string,
   ): Promise<GroundedAnswerEnvelope> {
     const raw = await this.chatGateway.answer({
       query,
@@ -330,6 +456,7 @@ export class ChatService {
       systemPrompt: this.composeGroundedSystemPrompt(session),
       prompt,
       workspaceContext: this.buildChatWorkspaceContext(session),
+      usageContext: this.buildChatUsageContext(session, accountId, attemptKey),
     });
     const envelope = parseGroundedAnswerEnvelope(raw);
     if (!envelope.answer.trim()) {
@@ -344,6 +471,7 @@ export class ChatService {
   private async generateAnswerWithPageContext(
     session: PreparedSession,
     query: string,
+    accountId: string | undefined,
   ): Promise<GroundedAnswerEnvelope | null> {
     const prompt = this.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext);
     if (prompt === session.retrieval.prompt) {
@@ -351,7 +479,7 @@ export class ChatService {
     }
 
     try {
-      const envelope = await this.generateGroundedAnswerEnvelope(session, query, prompt);
+      const envelope = await this.generateGroundedAnswerEnvelope(session, query, prompt, accountId, "page_context");
       return { ...envelope, answer: envelope.answer.trim() };
     } catch (error) {
       // Page-context fallback is best-effort — let blank envelopes drop through
@@ -366,6 +494,7 @@ export class ChatService {
   private async generateNonRetrievalAnswer(
     session: PreparedSession,
     query: string,
+    accountId: string | undefined,
   ): Promise<ChatPresentedAnswer | null> {
     if (session.turnRoute === CHAT_TURN_ROUTE.RETRIEVAL) {
       return null;
@@ -388,6 +517,7 @@ export class ChatService {
           pageContextBlock: this.buildPageContextBlock(session.pageContext),
         }),
         workspaceContext: this.buildChatWorkspaceContext(session),
+        usageContext: this.buildChatUsageContext(session, accountId, "non_retrieval"),
       })).trim();
     } catch (error) {
       if (isBlankChatAnswerError(error)) {
@@ -447,7 +577,12 @@ export class ChatService {
       }
       session = await this.chatSessionPreparer.prepareRetrieval(input, session);
       const answerStartedAt = Date.now();
-      const presentation = await this.generateAnswerPresentation(session, input.query, input.userExpectedLocale);
+      const presentation = await this.generateAnswerPresentation(
+        session,
+        input.query,
+        input.userExpectedLocale,
+        input.accountId,
+      );
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
@@ -565,26 +700,28 @@ export class ChatService {
       const answerStartedAt = Date.now();
 
       if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
-        noContextPresentation = await this.generateNonRetrievalAnswer(session, input.query);
+        noContextPresentation = await this.generateNonRetrievalAnswer(session, input.query, input.accountId);
         rawAnswer = noContextPresentation?.answer
           ?? await this.groundedMissResponseComposer.composeNoContext({
             query: input.query,
             userExpectedLocale: input.userExpectedLocale,
             answerInstructionBlock: this.buildAnswerInstructionBlock(session),
             workspaceContext: this.buildChatWorkspaceContext(session),
+            usageContext: this.buildChatUsageContext(session, input.accountId, "stream_non_retrieval_miss"),
           });
         yield {
           type: "chunk",
           text: rawAnswer,
         };
       } else if (session.retrieval.contexts.length === 0) {
-        const fallbackEnvelope = await this.generateAnswerWithPageContext(session, input.query);
+        const fallbackEnvelope = await this.generateAnswerWithPageContext(session, input.query, input.accountId);
         rawAnswer = fallbackEnvelope?.answer
           ?? await this.groundedMissResponseComposer.composeNoContext({
             query: input.query,
             userExpectedLocale: input.userExpectedLocale,
             answerInstructionBlock: this.buildAnswerInstructionBlock(session),
             workspaceContext: this.buildChatWorkspaceContext(session),
+            usageContext: this.buildChatUsageContext(session, input.accountId, "stream_grounded_miss"),
           });
         yield {
           type: "chunk",
@@ -600,6 +737,7 @@ export class ChatService {
           systemPrompt: this.composeGroundedSystemPrompt(session),
           prompt: this.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext),
           workspaceContext: this.buildChatWorkspaceContext(session),
+          usageContext: this.buildChatUsageContext(session, input.accountId, "stream_grounded"),
         })) {
           if (!text) {
             continue;
@@ -656,6 +794,7 @@ export class ChatService {
           userExpectedLocale: input.userExpectedLocale,
           answerInstructionBlock: this.buildAnswerInstructionBlock(session),
           workspaceContext: this.buildChatWorkspaceContext(session),
+          usageContext: this.buildChatUsageContext(session, input.accountId, "stream_grounded_unsupported"),
         });
         presentationWithoutSuggestions = this.chatAnswerPresenter.presentGroundedMissAnswer(groundedMiss);
       }
@@ -758,9 +897,10 @@ export class ChatService {
     session: PreparedSession,
     query: string,
     userExpectedLocale?: string | null,
+    accountId?: string,
   ): Promise<ChatPresentedAnswer> {
     if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
-      const nonRetrievalAnswer = await this.generateNonRetrievalAnswer(session, query);
+      const nonRetrievalAnswer = await this.generateNonRetrievalAnswer(session, query, accountId);
       if (nonRetrievalAnswer) {
         return nonRetrievalAnswer;
       }
@@ -770,7 +910,7 @@ export class ChatService {
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
 
     if (session.retrieval.contexts.length === 0) {
-      const fallback = await this.generateAnswerWithPageContext(session, query);
+      const fallback = await this.generateAnswerWithPageContext(session, query, accountId);
       if (fallback) {
         answer = fallback.answer;
         plannedSuggestions = fallback.suggestions;
@@ -780,6 +920,7 @@ export class ChatService {
           userExpectedLocale,
           answerInstructionBlock: this.buildAnswerInstructionBlock(session),
           workspaceContext: this.buildChatWorkspaceContext(session),
+          usageContext: this.buildChatUsageContext(session, accountId, "grounded_miss"),
         });
       }
     } else {
@@ -787,6 +928,8 @@ export class ChatService {
         session,
         query,
         this.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext),
+        accountId,
+        "grounded",
       );
       answer = envelope.answer;
       plannedSuggestions = envelope.suggestions;
@@ -805,6 +948,7 @@ export class ChatService {
         userExpectedLocale,
         answerInstructionBlock: this.buildAnswerInstructionBlock(session),
         workspaceContext: this.buildChatWorkspaceContext(session),
+        usageContext: this.buildChatUsageContext(session, accountId, "grounded_unsupported"),
       });
       return this.chatAnswerPresenter.presentGroundedMissAnswer(groundedMiss);
     }

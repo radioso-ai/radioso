@@ -589,10 +589,11 @@ export const buildChatServices = (input: {
   productAnalyticsService: ProductAnalyticsService;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
   retrievalPipeline: RetrievalPipelineService;
+  usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   workspaceRepository: WorkspaceRepository;
 }) => {
-  const chatGateway = input.llmRegistry.createChatGateway();
+  const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database));
   const intakeProviderContext = {
     database: input.database,
@@ -673,7 +674,7 @@ export const buildChatServices = (input: {
     input.retrievalPipeline,
     chatGateway,
     input.auditService,
-    input.llmRegistry.createGroundedMissResponseComposer(),
+    input.llmRegistry.createGroundedMissResponseComposer(input.usageEventRecorder),
     input.productAnalyticsService,
     input.workspaceRepository,
     input.usageLimitPolicy,

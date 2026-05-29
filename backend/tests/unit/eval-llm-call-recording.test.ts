@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { ChatGatewayLlmJudge } from "../../src/modules/eval/services/evalJudge.js";
 import { RetrievalPipelineEvalRunner } from "../../src/modules/eval/services/retrievalPipelineEvalRunner.js";
+import { AnswerPresentationService } from "../../src/modules/chat/services/answerPresentationService.js";
+import { resolveCitationArtifacts } from "../../src/modules/chat/services/implicitCitationSupport.js";
 import type { LlmCapabilityResolver } from "../../src/shared/infra/llm/capabilityResolver.js";
 import type { ChatGateway } from "../../src/modules/chat/contracts/index.js";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
@@ -76,6 +78,15 @@ const buildSettingsService = () => ({
   async updateForWorkspace() { throw new Error("not implemented in test"); },
 }) as any;
 
+const buildAnswerPresentation = () => {
+  const answerPresentationService = new AnswerPresentationService();
+  return {
+    normalize: answerPresentationService.normalize.bind(answerPresentationService),
+    present: answerPresentationService.present.bind(answerPresentationService),
+    resolveCitationArtifacts,
+  };
+};
+
 describe("eval LLM-call usage recording end-to-end", () => {
   it("threads eval usage context through the full_assistant answer gateway call", async () => {
     const chat = buildChatGateway("the answer");
@@ -84,6 +95,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       chat.gateway,
       buildResolver(),
       buildSettingsService(),
+      buildAnswerPresentation(),
     );
 
     const result = await runner.answer({
@@ -137,6 +149,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       chat.gateway,
       buildResolver(),
       buildSettingsService(),
+      buildAnswerPresentation(),
     );
 
     const result = await runner.answer({
@@ -175,6 +188,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       failingGateway,
       buildResolver(),
       buildSettingsService(),
+      buildAnswerPresentation(),
     );
 
     await expect(

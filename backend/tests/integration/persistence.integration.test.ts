@@ -1,8 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { readdir } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 
@@ -32,6 +28,7 @@ import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retri
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
+import { runAllTestMigrations } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -91,27 +88,13 @@ const noopAuditRepository = {
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
 describeIfDatabase("persistence integration", () => {
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const migrationsPath = path.resolve(__dirname, "../../src/db/migrations");
-
-  const runAllMigrations = async (database: Database) => {
-    const migrationFiles = (await readdir(migrationsPath))
-      .filter((file) => file.endsWith(".sql"))
-      .sort();
-
-    for (const migrationFile of migrationFiles) {
-      const migrationSql = await readFile(path.join(migrationsPath, migrationFile), "utf8");
-      await database.pool.query(migrationSql);
-    }
-  };
-
   let database: Database;
   let workspaceRepository: WorkspaceRepository;
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
     workspaceRepository = new WorkspaceRepository(database);
-    await runAllMigrations(database);
+    await runAllTestMigrations(database);
   });
 
   afterAll(async () => {
@@ -272,8 +255,8 @@ describeIfDatabase("persistence integration", () => {
       passwordHash: "hash-default",
     });
 
-    await runAllMigrations(database);
-    await runAllMigrations(database);
+    await runAllTestMigrations(database);
+    await runAllTestMigrations(database);
 
     const workspaces = await workspaceRepository.listByAccountId(account.id);
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { documentsApi, workspaceApi, type DocumentSummary } from '@/lib/api'
 import {
@@ -107,6 +107,7 @@ export const useWorkspaceOnboarding = (
   const [isOnboardingActive, setIsOnboardingActive] = useState(false)
   const [isOnboardingCompleted, setIsOnboardingCompleted] = useState(false)
   const [isImportingSampleDocs, setIsImportingSampleDocs] = useState(false)
+  const loadedWorkspaceIdRef = useRef<string | null>(null)
 
   const refresh = useCallback(async () => {
     if (!workspaceId) {
@@ -118,11 +119,16 @@ export const useWorkspaceOnboarding = (
       setHasCompletedChat(false)
       setIsOnboardingActive(false)
       setIsOnboardingCompleted(false)
+      loadedWorkspaceIdRef.current = null
       setIsLoading(false)
       return
     }
 
-    setIsLoading(true)
+    const isInitialWorkspaceLoad = loadedWorkspaceIdRef.current !== workspaceId
+    if (isInitialWorkspaceLoad) {
+      loadedWorkspaceIdRef.current = workspaceId
+      setIsLoading(true)
+    }
 
     try {
       const summary = await workspaceApi.getSummary()

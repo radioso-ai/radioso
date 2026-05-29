@@ -117,7 +117,9 @@ test("expanding a source reveals actions; View documents deep-links to the filte
   // (Documents is the default knowledge tab, so the URL keeps `?source=…` without an explicit tab param.)
   await page.getByRole("button", { name: "View documents" }).click();
   await expect(page).toHaveURL(/\?(?:.*&)?source=/);
-  await expect(page.getByLabel(`Remove source filter: ${websiteSourceName}`)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Remove filter: Source" }).filter({ hasText: websiteSourceName }),
+  ).toBeVisible();
 
   // The documents list is rendered through the filtered endpoint.
   await page.getByRole("button", { name: /Course Guide/ }).first().click();

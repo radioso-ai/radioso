@@ -1,5 +1,6 @@
 export {
   directiveToSteeringRule,
+  resolveDirectiveRelationships,
   type Directive,
   type DirectiveCondition,
   type DirectiveMatch,

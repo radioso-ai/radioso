@@ -51,6 +51,20 @@ A `SteeringRule` carries the action, an optional condition, and optional
 priority and criticality used for ordering. The turn assigns its source
 (`directive` or `skill`) and lifespan when it merges the two sources.
 
+## Relationships
+
+Directives can relate to each other to keep the matched set small as the set
+grows:
+
+- `excludes` — when this directive applies, drop the named directives. A mutual
+  exclusion resolves by priority; the higher-priority directive wins.
+- `dependsOn` — this directive applies only if all named directives also apply
+  this turn. Dropping a dependency cascades to its dependents.
+
+The key point: relationships are resolved after the capability filter, so a
+directive the agent is not authorized for can neither exclude nor satisfy
+another. Each drop is recorded in the turn trace with its reason.
+
 ## Adding a directive
 
 A directive is added in two places:

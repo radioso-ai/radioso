@@ -178,7 +178,17 @@ Either way the compose path consumes one ordered `SteeringRule[]` (sort by `prio
 
 Behavior is unchanged by default: the standing directive set is empty, so steering is empty, the system prompt is identical, and the trace is untouched. The path is fully live — registering one always-match Directive at composition makes it steer with zero changes to the chat loop or the retrieval/skills modules (SC-001).
 
-Slice 5 (relationships) also stands alone on today's composer. Slices 3–4 (skill-guidance convergence, skill-selection biasing) ride on the `066` loop once it consumes skill outcomes — additively, on the same sink.
+Slices 3–4 (skill-guidance convergence, skill-selection biasing) ride on the `066` loop once it consumes skill outcomes — additively, on the same sink.
+
+## What slice 5 changed (delivered)
+
+Directive relationships — the context-narrowing lever that lets many directives coexist:
+
+- `Directive` gains `dependsOn?: string[]` and `excludes?: string[]`.
+- `resolveDirectiveRelationships(matches)` (pure, in `domain.ts`) resolves the matched set in two ordered phases: **excludes** (an applying directive drops its excluded targets; processed in priority order so a mutual exclusion resolves deterministically — higher priority wins) then **dependsOn** (a directive applies only if all dependencies survive, resolved to a fixpoint so a dropped dependency cascades). It returns the kept matches plus an omission per drop (`excluded_by:<name>` / `unmet_dependency:<name>`).
+- `DirectiveSteeringService.steer` applies it **after** the capability filter — a denied directive never applied, so it can neither exclude nor satisfy others — and merges the relationship omissions into the trace omissions.
+
+Standalone on today's composer; no `066` dependency.
 
 ## What slice 2 changed (delivered)
 

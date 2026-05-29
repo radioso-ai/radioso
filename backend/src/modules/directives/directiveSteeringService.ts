@@ -3,7 +3,12 @@ import { orderSteeringRules, type SteeringRule } from "../../shared/domain/steer
 
 import type { DirectiveCatalogRegistry } from "./directiveCatalogRegistry.js";
 import type { DirectiveMatcherPort } from "./directiveMatcher.js";
-import { directiveToSteeringRule, type DirectiveMatch, type DirectiveOmission } from "./domain.js";
+import {
+  directiveToSteeringRule,
+  resolveDirectiveRelationships,
+  type DirectiveMatch,
+  type DirectiveOmission,
+} from "./domain.js";
 
 export interface DirectiveSteerInput {
   workspaceId: string;
@@ -60,21 +65,25 @@ export class DirectiveSteeringService implements DirectiveSteeringPort {
       directives,
     });
 
-    const matches: DirectiveMatch[] = [];
+    const allowed: DirectiveMatch[] = [];
     const omissions: DirectiveOmission[] = [];
     for (const candidate of candidates) {
       const denialReason = await this.firstDeniedCapability(candidate.directive.requiredCapabilities ?? [], input);
       if (denialReason) {
         omissions.push({ directiveName: candidate.directive.name, reason: denialReason });
       } else {
-        matches.push(candidate);
+        allowed.push(candidate);
       }
     }
 
+    // Resolve excludes/dependsOn over the capability-allowed set: a denied
+    // directive never applied, so it can neither exclude nor satisfy others.
+    const { kept, omissions: relationshipOmissions } = resolveDirectiveRelationships(allowed);
+
     return {
-      rules: orderSteeringRules(matches.map(directiveToSteeringRule)),
-      matches,
-      omissions,
+      rules: orderSteeringRules(kept.map(directiveToSteeringRule)),
+      matches: kept,
+      omissions: [...omissions, ...relationshipOmissions],
     };
   }
 

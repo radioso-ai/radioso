@@ -187,3 +187,14 @@ export interface RetrievalPipelineService {
   runInterpreted(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult>;
   runWithoutRetrieval(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult>;
 }
+
+export {
+  RETRIEVAL_ANSWER_ADAPTER,
+  RetrievalAnswerSkillExecutor,
+  readRetrievalResult,
+} from "./services/retrievalAnswerSkillExecutor.js";
+
+// `RetrievalPipelinePort` is the internal name for the structural surface
+// `RetrievalPipelineService` describes here; re-exported so consumers wiring the
+// retrieval.answer executor have one import for the controller type.
+export type { RetrievalPipelinePort } from "./services/retrievalPipelineService.js";

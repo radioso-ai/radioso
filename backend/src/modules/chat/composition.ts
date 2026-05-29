@@ -4,6 +4,13 @@ export { ChatBootstrapService } from "./services/chatBootstrapService.js";
 export {
   ChatService,
 } from "./services/chatService.js";
+export {
+  SkillRetrievalTurnDispatch,
+  DirectRetrievalTurnDispatch,
+  RetrievalTurnController,
+  type RetrievalTurnDispatchPort,
+  type RetrievalTurnPort,
+} from "./services/retrievalTurnDispatch.js";
 export { AnswerPresentationService } from "./services/answerPresentationService.js";
 export { createSkillOutcomeCapabilityProvider } from "./services/chatAnswerPresenter.js";
 export type { ChatGateway, ChatStreamEvent } from "./contracts/index.js";

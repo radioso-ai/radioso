@@ -10,7 +10,6 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AgentService } from "../../agents/public.js";
-import type { RetrievalPipelineService } from "../../retrieval/public.js";
 import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
 import type { ChatGateway, ChatGatewayInput, ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
@@ -33,6 +32,7 @@ import {
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
+import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import {
   ChatAnswerPresenter,
   type ChatPresentedAnswer,
@@ -326,7 +326,7 @@ export class ChatService {
   constructor(
     conversationRepository: ConversationRepositoryPort,
     messageRepository: MessageRepositoryPort,
-    retrievalPipeline: RetrievalPipelineService,
+    retrievalTurn: RetrievalTurnPort,
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
@@ -349,7 +349,7 @@ export class ChatService {
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
       messageRepository,
-      retrievalPipeline,
+      retrievalTurn,
       auditService,
       workspaceRepository,
       agentService,

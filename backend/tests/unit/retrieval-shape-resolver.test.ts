@@ -207,8 +207,26 @@ describe("retrieval shape resolver", () => {
       evidence: {
         queryShape: "definition_lookup",
         retrievalShape: "definition_lookup",
-        retrievalStrategy: "definition_lookup",
+        retrievalStrategy: "fixed",
       },
     });
+  });
+
+  it("reports the execution strategy (not the shape) in strategy and evidence.retrievalStrategy", () => {
+    const selection = selectRetrievalAnswerShape({ query: "What is BM25?" });
+
+    const diagnostic = buildRetrievalAnswerSkillDiagnostic(selection, {
+      callerSurface: "retrieval_api",
+      strategy: "reasoning",
+      rerankStatus: "skipped",
+      candidateCounts: { semantic: 1, lexical: 0, merged: 1, final: 1 },
+      fallbackApplied: false,
+      supportStatus: "not_checked",
+    });
+
+    expect(diagnostic.strategy).toBe("reasoning");
+    expect(diagnostic.evidence?.retrievalStrategy).toBe("reasoning");
+    // Shape stays the shape; the two axes are distinct.
+    expect(diagnostic.evidence?.retrievalShape).toBe(selection.shapeName);
   });
 });

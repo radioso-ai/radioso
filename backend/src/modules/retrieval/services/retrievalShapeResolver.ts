@@ -137,7 +137,7 @@ export const buildRetrievalAnswerSkillDiagnostic = (
   evidence: {
     queryShape: selection.queryShape,
     retrievalShape: selection.shapeName,
-    retrievalStrategy: selection.shapeName,
+    retrievalStrategy: input.strategy ?? "fixed",
     candidateSourceSummary: input.candidateCounts,
     ranking: {
       rerankStatus: input.rerankStatus,

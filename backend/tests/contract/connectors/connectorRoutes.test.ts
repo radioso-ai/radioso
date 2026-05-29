@@ -3,6 +3,36 @@ import { describe, expect, it } from "vitest";
 
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../../support/testApp.js";
 
+const acceptInvite = async (
+  app: ReturnType<typeof createTestApp>["app"],
+  ownerCookie: string,
+  email: string,
+  role: "admin" | "member",
+) => {
+  const invite = await request(app)
+    .post("/api/v1/account/invitations")
+    .set("Cookie", ownerCookie)
+    .send({ email, role });
+  expect(invite.status).toBe(201);
+
+  const token = String(invite.body.acceptanceUrl).split("/").at(-1)!;
+  const password = "verysecurepassword";
+  const accepted = await request(app)
+    .post(`/api/v1/auth/invitations/${token}/accept`)
+    .send({ email, password });
+  expect(accepted.status).toBe(200);
+
+  const login = await request(app)
+    .post("/api/v1/auth/login")
+    .send({ email, password, preferredAccountId: accepted.body.accountId });
+  expect(login.status).toBe(200);
+
+  return {
+    cookie: login.headers["set-cookie"][0] as string,
+    workspaceId: accepted.body.workspaceId as string,
+  };
+};
+
 describe("connector management contract", () => {
   it("returns an empty registry when no connector capabilities are registered", async () => {
     const { app } = createTestApp();
@@ -100,4 +130,49 @@ describe("connector management contract", () => {
     expect(sync.status).toBe(202);
     expect(sync.body).toEqual({ accepted: true });
   });
+
+  it("requires credential-management permission for connector secrets and mutations", async () => {
+    const { app, dependencies } = createTestApp();
+    const owner = await issueTestSession(app, `connector-owner-${Date.now()}@example.com`);
+    const member = await acceptInvite(app, owner.cookie, `connector-member-${Date.now()}@example.com`, "member");
+    const memberHeaders = { Cookie: member.cookie, "X-Workspace-Id": member.workspaceId };
+
+    dependencies.connectorRegistry.register({
+      id: "sensitive",
+      name: "Sensitive",
+      description: "Connector with generated delivery credentials",
+      configSchema: () => [
+        { key: "channel", label: "Channel", type: "text", required: true },
+        { key: "webhookSecret", label: "Webhook Secret", type: "generated_secret", required: true },
+      ],
+      migrate: async () => {},
+      initialize: async () => {},
+      shutdown: async () => {},
+      getWebhookPath: () => "/api/connectors/sensitive/:workspaceId/webhook",
+      uniqueChannelField: () => null,
+      validateConfig: () => [],
+      syncNow: async () => ({ accepted: true }),
+    });
+
+    const list = await request(app)
+      .get("/api/v1/connectors")
+      .set(memberHeaders);
+    expect(list.status).toBe(200);
+
+    const detail = await request(app)
+      .get("/api/v1/connectors/sensitive")
+      .set(memberHeaders);
+    expect(detail.status).toBe(403);
+
+    const save = await request(app)
+      .put("/api/v1/connectors/sensitive")
+      .set(memberHeaders)
+      .send({ config: { channel: "alpha" } });
+    expect(save.status).toBe(403);
+
+    const sync = await request(app)
+      .post("/api/v1/connectors/sensitive/sync")
+      .set(memberHeaders);
+    expect(sync.status).toBe(403);
+  }, 20_000);
 });

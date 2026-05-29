@@ -136,6 +136,9 @@ export class ChatTurnLifecycle {
         modelId: input.session.agent.chatModelOverride?.model,
         citations: input.presentation.citations ?? [],
         answerSegments: input.presentation.answerSegments,
+        // Raw model grounding verdict, retained for observability even when the
+        // grounded-miss path reclassifies the skill outcome.
+        groundingVerdict: input.presentation.grounding,
       },
     });
     await this.finalizeAssistantTurn({

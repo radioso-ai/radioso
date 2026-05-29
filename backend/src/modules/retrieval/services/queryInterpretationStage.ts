@@ -1,9 +1,16 @@
 import { RESPONSE_INTENT } from "../domain/retrievalPipelineTypes.js";
 import type { ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
+import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { QueryRewriteService } from "./queryRewriteService.js";
 import { SharedAnswerInstructionBuilder } from "./sharedAnswerInstructionBuilder.js";
 import type { QueryInterpretationStage as QueryInterpretationStageContract, RetrievalContextStageResult } from "./retrievalPipelineStages.js";
+
+const fallbackUsageContext = (workspaceId: string): Omit<ModelCallUsageContext, "operation"> => ({
+  workspaceId,
+  surface: "retrieval",
+  attemptKey: "query_interpretation",
+});
 
 export class QueryInterpretationStageService implements QueryInterpretationStageContract {
   private readonly answerInstructionBuilder = new SharedAnswerInstructionBuilder();
@@ -32,6 +39,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       originalParsedQuery.lexicalQuery,
     );
     const workspaceContext = { workspaceId: input.request.workspaceId };
+    const usageContext = input.request.usageContext ?? fallbackUsageContext(input.request.workspaceId);
     const rewrittenQuery = await this.queryRewriteService.rewrite({
       query: input.request.query,
       contextWindow: input.contextWindow,
@@ -40,6 +48,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       lexicalRewriteInstructions: input.settings.lexicalRewriteInstructions,
       answerScopeReference: this.buildAnswerScopeReference(input),
       workspaceContext,
+      usageContext: { ...usageContext, operation: "query_interpretation", attemptKey: "rewrite" },
     });
     const responseIntent = rewrittenQuery.responseIntent;
     const parsedQueryBase = originalParsedQuery;
@@ -91,6 +100,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
           contextMessages: [],
           metadataRules: input.settings.metadataRules ?? [],
           workspaceContext,
+          usageContext: { ...usageContext, operation: "trigger_analysis", attemptKey: "trigger_analysis" },
         })
       : {
           status: "skipped_non_retrieval" as const,

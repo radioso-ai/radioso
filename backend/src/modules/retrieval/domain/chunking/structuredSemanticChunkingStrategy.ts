@@ -25,6 +25,13 @@ export class StructuredSemanticChunkingStrategy implements ChunkingStrategy {
       chunkSize: request.config.structuredMaxChunkSize,
       minCharactersPerChunk: request.config.structuredMinChunkSize,
       embeddingModel: request.config.embeddingModel,
+      embeddingUsageContext: request.config.embeddingUsageContext
+        ? {
+            ...request.config.embeddingUsageContext,
+            operation: "semantic_chunking_embedding",
+            attemptKey: `${request.config.embeddingUsageContext.attemptKey}:semantic_chunking`,
+          }
+        : undefined,
     });
 
     return normalizeProviderChunks(normalized, chunks);
@@ -36,6 +43,7 @@ export class StructuredSemanticChunkingStrategy implements ChunkingStrategy {
     chunkSize: number;
     minCharactersPerChunk: number;
     embeddingModel?: string;
+    embeddingUsageContext?: import("../../../../shared/domain/modelCallUsageContext.js").ModelCallUsageContext;
   }) {
     try {
       return await this.provider.chunkText({

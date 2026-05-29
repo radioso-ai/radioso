@@ -1,5 +1,6 @@
 import type { LlmCapabilityResolver, LlmCapabilityResolveInput } from "./capabilityResolver.js";
 import type { LlmCapabilityConfig, TextGenerationClient } from "./providerTypes.js";
+import { ModelInferencePipelineService, type ModelInferencePipeline } from "./modelInferencePipeline.js";
 import { TextGenerationClientCache, createTextGenerationClient } from "./textClientFactory.js";
 import {
   ModelChatGateway,
@@ -45,6 +46,12 @@ const resolveClient = async (
   return cache.getOrCreate(config);
 };
 
+const toInferencePipeline = (
+  client: TextGenerationClient,
+  recorder?: UsageEventRecorder,
+): ModelInferencePipeline =>
+  new ModelInferencePipelineService(client, recorder);
+
 export class ContextualChatGateway implements ChatGateway {
   private readonly cache: TextGenerationClientCache;
 
@@ -62,7 +69,7 @@ export class ContextualChatGateway implements ChatGateway {
       return this.fallback.answer(input);
     }
     const client = await resolveClient(this.cache, this.deps.resolver, "chat", ctx);
-    return new ModelChatGateway(client, this.usageEventRecorder).answer(input);
+    return new ModelChatGateway(toInferencePipeline(client, this.usageEventRecorder)).answer(input);
   }
 
   async *streamAnswer(input: ChatGatewayInput): AsyncIterable<string> {
@@ -72,7 +79,7 @@ export class ContextualChatGateway implements ChatGateway {
       return;
     }
     const client = await resolveClient(this.cache, this.deps.resolver, "chat", ctx);
-    yield* new ModelChatGateway(client, this.usageEventRecorder).streamAnswer(input);
+    yield* new ModelChatGateway(toInferencePipeline(client, this.usageEventRecorder)).streamAnswer(input);
   }
 }
 
@@ -93,7 +100,7 @@ export class ContextualGroundedMissResponseComposer implements GroundedMissRespo
       return this.fallback.composeNoContext(input);
     }
     const client = await resolveClient(this.cache, this.deps.resolver, "chat", ctx);
-    return new ModelGroundedMissResponseComposer(client, this.usageEventRecorder).composeNoContext(input);
+    return new ModelGroundedMissResponseComposer(toInferencePipeline(client, this.usageEventRecorder)).composeNoContext(input);
   }
 }
 
@@ -103,6 +110,7 @@ export class ContextualQueryRewriteGateway implements QueryRewriteGateway {
   constructor(
     private readonly deps: ContextualGatewayDependencies,
     private readonly fallback: QueryRewriteGateway,
+    private readonly usageEventRecorder?: UsageEventRecorder,
   ) {
     this.cache = deps.clientCache ?? new TextGenerationClientCache();
   }
@@ -113,7 +121,7 @@ export class ContextualQueryRewriteGateway implements QueryRewriteGateway {
       return this.fallback.rewrite(input);
     }
     const client = await resolveClient(this.cache, this.deps.resolver, "rewrite", ctx);
-    return new ModelQueryRewriteGateway(client).rewrite(input);
+    return new ModelQueryRewriteGateway(toInferencePipeline(client, this.usageEventRecorder)).rewrite(input);
   }
 }
 
@@ -123,6 +131,7 @@ export class ContextualTriggerAnalysisGateway implements TriggerAnalysisGateway 
   constructor(
     private readonly deps: ContextualGatewayDependencies,
     private readonly fallback: TriggerAnalysisGateway,
+    private readonly usageEventRecorder?: UsageEventRecorder,
   ) {
     this.cache = deps.clientCache ?? new TextGenerationClientCache();
   }
@@ -133,7 +142,7 @@ export class ContextualTriggerAnalysisGateway implements TriggerAnalysisGateway 
       return this.fallback.analyze(input);
     }
     const client = await resolveClient(this.cache, this.deps.resolver, "rewrite", ctx);
-    return new ModelTriggerAnalysisGateway(client).analyze(input);
+    return new ModelTriggerAnalysisGateway(toInferencePipeline(client, this.usageEventRecorder)).analyze(input);
   }
 }
 
@@ -144,6 +153,7 @@ export class ContextualRerankGateway implements RerankGateway {
     private readonly deps: ContextualGatewayDependencies,
     private readonly fallback: RerankGateway,
     private readonly logger?: AppLogger,
+    private readonly usageEventRecorder?: UsageEventRecorder,
   ) {
     this.cache = deps.clientCache ?? new TextGenerationClientCache();
   }
@@ -162,10 +172,15 @@ export class ContextualRerankGateway implements RerankGateway {
     input: RerankGatewayInput,
   ): Promise<Array<{ chunkId: string; relevanceScore: number }>> {
     if (config.provider === "openai") {
-      return new OpenAISemanticRerankGateway(createOpenAIClient(config), config.model, this.logger).rerank(input);
+      return new OpenAISemanticRerankGateway(
+        createOpenAIClient(config),
+        config.model,
+        this.logger,
+        this.usageEventRecorder,
+      ).rerank(input);
     }
     const client = this.cache.getOrCreate(config);
-    return new ModelRerankGateway(client, this.logger).rerank(input);
+    return new ModelRerankGateway(toInferencePipeline(client, this.usageEventRecorder), this.logger).rerank(input);
   }
 }
 

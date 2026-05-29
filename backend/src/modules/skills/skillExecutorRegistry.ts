@@ -1,3 +1,5 @@
+import type { SteeringRule } from "../../shared/domain/steeringRule.js";
+
 import type { SkillDefinition, SkillExecution, SkillOutcomeStatus } from "./domain.js";
 
 /**
@@ -40,14 +42,24 @@ export interface SkillOutcomeControl {
   lifespan?: "response" | "session";
 }
 
-/** Transient, single-turn steering a skill can inject (condition/action pair). */
-export interface SkillTransientGuidance {
-  action: string;
-  condition?: string;
-  priority?: number;
-  criticality?: "low" | "medium" | "high";
-  description?: string;
-}
+/**
+ * Transient, single-turn steering a skill can inject (condition/action pair).
+ * This is a {@link SteeringRule} without the loop-assigned provenance fields:
+ * the executor emits the bare rule and the turn loop tags `source`/`lifespan`
+ * when it merges skill-emitted guidance with authored Directives into one set.
+ */
+export type SkillTransientGuidance = Omit<SteeringRule, "source" | "lifespan">;
+
+// Compile-time guard: fails the build if the skill-emitted guidance shape ever
+// drifts from SteeringRule's authored fields. Authored Directives and skill
+// guidance MUST stay one shape.
+type _GuidanceMatchesSteering = SkillTransientGuidance extends Omit<SteeringRule, "source" | "lifespan">
+  ? Omit<SteeringRule, "source" | "lifespan"> extends SkillTransientGuidance
+    ? true
+    : never
+  : never;
+const _guidanceMatchesSteering: _GuidanceMatchesSteering = true;
+void _guidanceMatchesSteering;
 
 /**
  * The outcome of a skill dispatch: a steering envelope, not a bare answer.

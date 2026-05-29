@@ -17,6 +17,11 @@ import type { AssistantPageContext } from "../types/assistantApi.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
+import {
+  noopDirectiveSteering,
+  type DirectiveSteeringPort,
+  type DirectiveSteeringResult,
+} from "../../directives/public.js";
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -31,6 +36,8 @@ export interface PreparedSession {
   userMessage: MessageRecord;
   pageContext?: AssistantPageContext | null;
   priorRewriteContinuityState?: RewriteContinuityState;
+  /** Behavioral steering matched for this turn; consumed by the answer composer and the trace. */
+  directiveSteering?: DirectiveSteeringResult;
 }
 
 export interface PrepareChatSessionInput {
@@ -60,6 +67,7 @@ export class ChatSessionPreparer {
     private readonly auditService: AuditService,
     private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly agentService?: Pick<AgentService, "resolve">,
+    private readonly directiveSteering: DirectiveSteeringPort = noopDirectiveSteering,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -111,6 +119,11 @@ export class ChatSessionPreparer {
           priorRewriteContinuityState: rewriteContinuityState,
         });
 
+    const directiveSteering = await this.directiveSteering.steer({
+      workspaceId: input.workspaceId,
+      turnContext: { query: input.query },
+    });
+
     return {
       agent,
       conversation: persistedConversation,
@@ -120,6 +133,7 @@ export class ChatSessionPreparer {
       userMessage,
       pageContext: input.pageContext ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
+      directiveSteering,
     };
   }
 

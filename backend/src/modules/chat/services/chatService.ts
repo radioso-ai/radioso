@@ -33,6 +33,7 @@ import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/dom
 import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
+import { noopDirectiveSteering, type DirectiveSteeringPort } from "../../directives/public.js";
 import {
   ChatAnswerPresenter,
   type ChatPresentedAnswer,
@@ -339,6 +340,7 @@ export class ChatService {
     skillOutcomeCapabilities: SkillOutcomeCapabilityProvider = {
       supportsGroundedAnswer: () => false,
     },
+    directiveSteering: DirectiveSteeringPort = noopDirectiveSteering,
   ) {
     this.chatTurnLifecycle = new ChatTurnLifecycle(
       conversationRepository,
@@ -353,6 +355,7 @@ export class ChatService {
       auditService,
       workspaceRepository,
       agentService,
+      directiveSteering,
     );
     this.chatAnswerPresenter = new ChatAnswerPresenter(
       new AssistantSuggestionExpansionService(),
@@ -440,6 +443,7 @@ export class ChatService {
         session.retrieval.responseSettings?.suggestedQuestionsCount ?? DEFAULT_SUGGESTED_QUESTIONS_COUNT,
       hasRetrievedContexts: session.retrieval.contexts.length > 0,
       conversationIntentSnapshot,
+      steering: session.directiveSteering?.rules ?? [],
     }).systemPrompt;
   }
 

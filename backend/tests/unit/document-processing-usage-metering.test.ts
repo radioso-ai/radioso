@@ -4,8 +4,9 @@ import { DocumentIngestionService } from "../../src/modules/documents/services/d
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import type { ChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/chunkingStrategy.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
-import { EmbeddingService } from "../../src/modules/retrieval/services/embeddingService.js";
+import { EmbeddingService, ModelEmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
+import { EmbeddingInferencePipelineService } from "../../src/shared/infra/llm/embeddingInferencePipeline.js";
 import type { ProviderUsage } from "../../src/shared/infra/llm/providerTypes.js";
 import type { EmbeddingUsageEvent, ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import {
@@ -50,15 +51,23 @@ const createProcessingService = (input: {
   new DocumentProcessingService(
     input.documentRepository,
     input.chunkRepository,
-    new EmbeddingService({
-      embedTexts: input.embedTexts,
-      async embedTextsWithUsage(texts) {
-        return {
-          vectors: await input.embedTexts(texts),
-          usage: input.providerUsage,
-        };
-      },
-    }),
+    new EmbeddingService(
+      new ModelEmbeddingGateway(
+        new EmbeddingInferencePipelineService(
+          {
+            metadata: { capability: "embeddings", provider: "openai", model: "text-embedding-3-small" },
+            async embedTexts(texts) {
+              return {
+                vectors: await input.embedTexts(texts),
+                usage: input.providerUsage,
+              };
+            },
+          },
+          input.recorder,
+          (model) => ({ capability: "embeddings", provider: "openai", model }),
+        ),
+      ),
+    ),
     input.auditService,
     {
       async getForWorkspace(workspaceId: string) {
@@ -66,14 +75,6 @@ const createProcessingService = (input: {
       },
     },
     new ChunkingStrategyRegistry([fixedWindowStrategy]),
-    undefined,
-    undefined,
-    input.recorder,
-    {
-      identifyForModel(model: string) {
-        return { provider: "openai", model };
-      },
-    },
   );
 
 describe("document processing usage metering", () => {
@@ -182,8 +183,31 @@ describe("document processing usage metering", () => {
     expect(recorder.embeddings).toHaveLength(1);
     expect(recorder.embeddings[0]).toEqual(expect.objectContaining({
       status: "failed",
-      errorCode: "Error",
+      errorCode: "provider down",
     }));
     expect(recorder.embeddings[0]?.idempotencyKey).toContain(":failed");
+  });
+
+  it("assigns distinct idempotency keys to unattributed embedding batches", async () => {
+    const recorder = new RecordingUsageEventRecorder();
+    const gateway = new ModelEmbeddingGateway(
+      new EmbeddingInferencePipelineService(
+        {
+          metadata: { capability: "embeddings", provider: "openai", model: "text-embedding-3-small" },
+          async embedTexts(texts) {
+            return { vectors: texts.map(() => [1, 2, 3]) };
+          },
+        },
+        recorder,
+      ),
+    );
+
+    await gateway.embedTexts(["first"]);
+    await gateway.embedTexts(["second"]);
+
+    expect(recorder.embeddings).toHaveLength(2);
+    expect(new Set(recorder.embeddings.map((event) => event.idempotencyKey)).size).toBe(2);
+    expect(recorder.embeddings[0]?.idempotencyKey).toContain("request:");
+    expect(recorder.embeddings[0]?.idempotencyKey).toContain(":unattributed:");
   });
 });

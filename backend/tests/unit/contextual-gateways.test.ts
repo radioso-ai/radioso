@@ -23,6 +23,13 @@ import type {
 } from "../../src/shared/infra/llm/providerTypes.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
 
+const usageContext = {
+  workspaceId: "ws-1",
+  surface: "test",
+  operation: "test_operation",
+  attemptKey: "test",
+};
+
 const buildResolver = (
   configs: Partial<Record<LlmCapabilityName, LlmCapabilityConfig>>,
 ): LlmCapabilityResolver => ({
@@ -75,6 +82,7 @@ describe("ContextualChatGateway", () => {
       query: "q",
       history: [],
       prompt: "p",
+      usageContext,
     });
 
     expect(answer).toBe("fallback-answer");
@@ -113,6 +121,7 @@ describe("ContextualChatGateway", () => {
       history: [],
       prompt: "p",
       workspaceContext: { workspaceId: "ws-1" },
+      usageContext,
     });
 
     expect(answer).toBe("workspace-answer");
@@ -128,7 +137,7 @@ describe("ContextualQueryRewriteGateway", () => {
       fallback,
     );
 
-    await gateway.rewrite({ query: "q", contextMessages: [] });
+    await gateway.rewrite({ query: "q", contextMessages: [], usageContext });
 
     expect(fallback.calls).toBe(1);
   });

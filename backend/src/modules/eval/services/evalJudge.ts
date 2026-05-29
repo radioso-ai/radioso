@@ -1,6 +1,5 @@
 import type { ChatGateway } from "../../chat/contracts/index.js";
 import type { AssertionVerdict, EvalAssertion } from "../domain/types.js";
-import type { EvalUsageMeter } from "./evalUsageMeter.js";
 
 /**
  * Port for the LLM-as-judge primitive. Given a judge assertion + the
@@ -97,10 +96,7 @@ const parseJudgeResponse = (raw: string): JudgeVerdict | { error: string } => {
 };
 
 export class ChatGatewayLlmJudge implements EvalLlmJudgePort {
-  constructor(
-    private readonly chatGateway: ChatGateway,
-    private readonly usageMeter: EvalUsageMeter,
-  ) {}
+  constructor(private readonly chatGateway: ChatGateway) {}
 
   async judge(input: {
     workspaceId: string;
@@ -119,8 +115,6 @@ export class ChatGatewayLlmJudge implements EvalLlmJudgePort {
     );
 
     let raw = "";
-    let status: "succeeded" | "failed" = "succeeded";
-    let errorCode: string | null = null;
     let callError: unknown = null;
     try {
       raw = await this.chatGateway.answer({
@@ -129,30 +123,18 @@ export class ChatGatewayLlmJudge implements EvalLlmJudgePort {
         prompt,
         systemPrompt: JUDGE_SYSTEM_PROMPT,
         workspaceContext: { workspaceId: input.workspaceId },
+        usageContext: {
+          accountId: input.accountId ?? null,
+          workspaceId: input.workspaceId,
+          requestId: input.runId,
+          surface: "eval",
+          operation: "llm_judge",
+          attemptKey: `assertion-${input.assertionIndex}`,
+        },
       });
     } catch (err) {
       callError = err;
-      status = "failed";
-      errorCode = err instanceof Error ? err.message.slice(0, 200) : "unknown";
     }
-
-    // Record usage for every judge call — provider was hit regardless of
-    // whether the response parsed cleanly.
-    await this.usageMeter.record(
-      {
-        workspaceId: input.workspaceId,
-        accountId: input.accountId ?? null,
-        runId: input.runId,
-        operation: "llm_judge",
-        attemptKey: `assertion-${input.assertionIndex}`,
-      },
-      {
-        promptText: `${JUDGE_SYSTEM_PROMPT}\n\n${prompt}`,
-        responseText: raw,
-        status,
-        errorCode,
-      },
-    );
 
     if (callError) {
       return {

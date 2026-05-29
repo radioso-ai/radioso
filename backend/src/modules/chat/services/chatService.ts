@@ -1,21 +1,14 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
-import type { ProviderUsage, TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
-import {
-  NoopUsageEventRecorder,
-  type UsageEventRecorder,
-  type UsageEventStatus,
-} from "../../../shared/domain/usageEventRecorder.js";
+import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AgentService } from "../../agents/public.js";
-import type { RetrievalPipelineService } from "../../retrieval/public.js";
 import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
 import type { ChatGateway, ChatGatewayInput, ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ChatStreamEvent, SkillStreamPayload, SkillStreamPhase } from "../contracts/streamEvents.js";
-import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import {
   MissingGroundedMissResponseComposer,
   type GroundedMissResponseComposer,
@@ -34,6 +27,7 @@ import {
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
+import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import {
   ChatAnswerPresenter,
   type ChatPresentedAnswer,
@@ -47,6 +41,7 @@ import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retr
 import {
   GroundedAnswerEnvelopeReader,
   parseGroundedAnswerEnvelope,
+  type AnswerGroundingVerdict,
   type GroundedAnswerEnvelope,
   type PlannedEnvelopeSuggestion,
 } from "./groundedAnswerEnvelope.js";
@@ -66,89 +61,33 @@ const hasCitedAnswerSegment = (presentation: ChatPresentedAnswer): boolean =>
   presentation.answerSegments?.some((segment) => (segment.citationIndices?.length ?? 0) > 0) ?? false;
 
 export class ModelChatGateway implements ChatGateway {
-  constructor(
-    private readonly client: TextGenerationClient,
-    private readonly usageEventRecorder: UsageEventRecorder = new NoopUsageEventRecorder(),
-  ) {}
+  constructor(private readonly inference: ModelInferencePipeline) {}
 
   async answer(input: ChatGatewayInput): Promise<string> {
-    let result: Awaited<ReturnType<TextGenerationClient["complete"]>>;
-    try {
-      result = await this.client.complete({
-        prompt: input.prompt,
-        systemPrompt: input.systemPrompt,
-      });
-    } catch (error) {
-      await this.recordUsage(input, "", "failed", undefined, error);
-      throw error;
-    }
-    const { text } = result;
-
-    if (!text?.trim()) {
-      await this.recordUsage(input, text ?? "", "failed", result.usage, new BlankChatAnswerError());
-      throw new BlankChatAnswerError();
-    }
-
-    await this.recordUsage(input, text, "succeeded", result.usage);
-    return text;
+    const result = await this.inference.complete({
+      operation: input.usageContext,
+      prompt: input.prompt,
+      systemPrompt: input.systemPrompt,
+      validateResult(result) {
+        if (!result.text?.trim()) {
+          throw new BlankChatAnswerError();
+        }
+      },
+    });
+    return result.text;
   }
 
   async *streamAnswer(input: ChatGatewayInput): AsyncIterable<string> {
-    const { textStream, usage } = this.client.stream({
+    const { textStream } = this.inference.stream({
+      operation: input.usageContext,
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
     });
-    let output = "";
-    try {
-      for await (const chunk of textStream) {
-        if (chunk.length > 0) {
-          output += chunk;
-          yield chunk;
-        }
+    for await (const chunk of textStream) {
+      if (chunk.length > 0) {
+        yield chunk;
       }
-    } catch (error) {
-      await this.recordUsage(input, output, "failed", await usage, error);
-      throw error;
     }
-    await this.recordUsage(input, output, "succeeded", await usage);
-  }
-
-  private async recordUsage(
-    input: ChatGatewayInput,
-    outputText: string,
-    status: UsageEventStatus,
-    providerUsage?: ProviderUsage,
-    error?: unknown,
-  ): Promise<void> {
-    if (!input.usageContext) {
-      return;
-    }
-    const usage = providerUsage ?? estimateProviderUsage(input, outputText);
-    const provider = this.client.metadata.provider;
-    const model = this.client.metadata.model;
-
-    await this.usageEventRecorder.recordModelCall({
-      idempotencyKey: buildChatUsageIdempotencyKey(input.usageContext, provider, model, status),
-      accountId: input.usageContext.accountId ?? null,
-      workspaceId: input.usageContext.workspaceId,
-      conversationId: input.usageContext.conversationId,
-      messageId: input.usageContext.messageId,
-      surface: input.usageContext.surface,
-      operation: input.usageContext.operation,
-      provider,
-      model,
-      inputTokens: usage.inputTokens ?? null,
-      outputTokens: usage.outputTokens ?? null,
-      totalTokens: usage.totalTokens ?? ((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0)),
-      inputBytes: Buffer.byteLength(`${input.systemPrompt ?? ""}\n${input.prompt}`, "utf8"),
-      outputBytes: Buffer.byteLength(outputText, "utf8"),
-      status,
-      usageQuality: providerUsage?.quality ?? "estimated",
-      providerRequestId: providerUsage?.providerRequestId ?? null,
-      errorCode: error ? chatUsageErrorCode(error) : null,
-    }).catch(() => {
-      // Usage accounting is observational; chat delivery remains authoritative.
-    });
   }
 }
 
@@ -156,51 +95,6 @@ export class OpenAIChatGateway extends ModelChatGateway {}
 
 const SKILL_CHIP_TAG_PATTERN = /<skill_chip>([\s\S]*?)<\/skill_chip>\s*/i;
 const SKILL_RECEIPT_TAG_PATTERN = /<skill_receipt>([\s\S]*?)<\/skill_receipt>\s*/i;
-
-const estimateTokens = (bytes: number): number => Math.max(1, Math.ceil(bytes / 4));
-
-const estimateProviderUsage = (input: ChatGatewayInput, outputText: string): ProviderUsage => {
-  const inputBytes = Buffer.byteLength(`${input.systemPrompt ?? ""}\n${input.prompt}`, "utf8");
-  const outputBytes = Buffer.byteLength(outputText, "utf8");
-  const inputTokens = estimateTokens(inputBytes);
-  const outputTokens = outputBytes > 0 ? estimateTokens(outputBytes) : 0;
-  return {
-    inputTokens,
-    outputTokens,
-    totalTokens: inputTokens + outputTokens,
-    quality: "estimated",
-  };
-};
-
-const buildChatUsageIdempotencyKey = (
-  context: ChatGatewayUsageContext,
-  provider: string,
-  model: string,
-  status: UsageEventStatus,
-): string => [
-  "chat",
-  context.surface,
-  context.operation,
-  context.conversationId,
-  context.messageId,
-  context.attemptKey,
-  provider,
-  model,
-  status,
-].join(":");
-
-const chatUsageErrorCode = (error: unknown): string => {
-  if (error instanceof BlankChatAnswerError) {
-    return error.name;
-  }
-  if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
-    return error.code;
-  }
-  if (error instanceof Error && error.message) {
-    return error.message.slice(0, 120);
-  }
-  return "chat_model_call_failed";
-};
 
 export interface ExtractedSkillReceiptOverrides {
   statusLabel?: string;
@@ -326,7 +220,7 @@ export class ChatService {
   constructor(
     conversationRepository: ConversationRepositoryPort,
     messageRepository: MessageRepositoryPort,
-    retrievalPipeline: RetrievalPipelineService,
+    retrievalTurn: RetrievalTurnPort,
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
@@ -349,7 +243,7 @@ export class ChatService {
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
       messageRepository,
-      retrievalPipeline,
+      retrievalTurn,
       auditService,
       workspaceRepository,
       agentService,
@@ -696,7 +590,9 @@ export class ChatService {
       session = await this.chatSessionPreparer.prepareRetrieval(input, session);
       let rawAnswer = "";
       let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
+      let answerGrounding: AnswerGroundingVerdict = "grounded";
       let noContextPresentation: ChatPresentedAnswer | null = null;
+      let hasStreamedAnswer = false;
       const answerStartedAt = Date.now();
 
       if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
@@ -713,6 +609,7 @@ export class ChatService {
           type: "chunk",
           text: rawAnswer,
         };
+        hasStreamedAnswer = true;
       } else if (session.retrieval.contexts.length === 0) {
         const fallbackEnvelope = await this.generateAnswerWithPageContext(session, input.query, input.accountId);
         rawAnswer = fallbackEnvelope?.answer
@@ -727,10 +624,9 @@ export class ChatService {
           type: "chunk",
           text: rawAnswer,
         };
+        hasStreamedAnswer = true;
       } else {
         const reader = new GroundedAnswerEnvelopeReader();
-        const sanitizer = new CitationAnchorSanitizer();
-        let hasEmittedAnyChunk = false;
         for await (const text of this.chatGateway.streamAnswer({
           query: input.query,
           history: session.history,
@@ -742,36 +638,12 @@ export class ChatService {
           if (!text) {
             continue;
           }
-          const answerChunk = reader.push(text);
-          if (!answerChunk) {
-            continue;
-          }
-          const safe = sanitizer.push(answerChunk);
-          if (!safe) {
-            continue;
-          }
-          if (safe.trim().length === 0 && !hasEmittedAnyChunk) {
-            continue;
-          }
-          hasEmittedAnyChunk = true;
-          yield {
-            type: "chunk",
-            text: safe,
-          };
+          reader.push(text);
         }
 
         const finalized = reader.finalize();
         plannedSuggestions = finalized.suggestions;
-        const trailingSafe = sanitizer.push(finalized.trailingAnswer);
-        const trailingFlush = sanitizer.flush();
-        const tail = `${trailingSafe ?? ""}${trailingFlush ?? ""}`;
-        if (tail) {
-          yield {
-            type: "chunk",
-            text: tail,
-          };
-        }
-
+        answerGrounding = finalized.grounding;
         rawAnswer = finalized.fullAnswer;
         if (!rawAnswer.trim()) {
           throw new BlankChatAnswerError();
@@ -783,6 +655,7 @@ export class ChatService {
         rawAnswer,
         input.query,
         input.userExpectedLocale,
+        answerGrounding,
       );
       if (
         !noContextPresentation
@@ -797,6 +670,13 @@ export class ChatService {
           usageContext: this.buildChatUsageContext(session, input.accountId, "stream_grounded_unsupported"),
         });
         presentationWithoutSuggestions = this.chatAnswerPresenter.presentGroundedMissAnswer(groundedMiss);
+      }
+      if (!hasStreamedAnswer && presentationWithoutSuggestions.answer) {
+        yield {
+          type: "chunk",
+          text: presentationWithoutSuggestions.answer,
+        };
+        hasStreamedAnswer = true;
       }
       // The lazy promise can call chatActionSuggestionService.evaluate (which may
       // hit an LLM). If completeAssistantTurn below throws, we rethrow but the
@@ -908,6 +788,7 @@ export class ChatService {
 
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
+    let answerGrounding: AnswerGroundingVerdict = "grounded";
 
     if (session.retrieval.contexts.length === 0) {
       const fallback = await this.generateAnswerWithPageContext(session, query, accountId);
@@ -933,6 +814,7 @@ export class ChatService {
       );
       answer = envelope.answer;
       plannedSuggestions = envelope.suggestions;
+      answerGrounding = envelope.grounding;
     }
 
     const presentation = await this.chatAnswerPresenter.presentWithSuggestions(
@@ -941,6 +823,7 @@ export class ChatService {
       query,
       plannedSuggestions,
       userExpectedLocale,
+      answerGrounding,
     );
     if (session.retrieval.contexts.length > 0 && !hasCitedAnswerSegment(presentation)) {
       const groundedMiss = await this.groundedMissResponseComposer.composeNoContext({

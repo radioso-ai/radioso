@@ -8,8 +8,12 @@ export const CHAT_BEHAVIOR = {
   },
   groundedMiss: {
     temperature: 0,
-    noContextMaxOutputTokens: 80,
-    maxResponseLength: 320,
+    // Reasoning models (e.g. gpt-5 family) spend output tokens on hidden reasoning
+    // before any visible text; the composer requests minimal reasoning effort, but
+    // the cap still needs headroom for the reasoning pass plus the short decline,
+    // or the call returns empty and we fall back to canned copy.
+    noContextMaxOutputTokens: 512,
+    maxResponseLength: 800,
   },
   carryForward: {
     maxLiterals: 6,

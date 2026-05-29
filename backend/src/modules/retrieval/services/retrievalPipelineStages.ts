@@ -1,6 +1,7 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { RetrievalSettingsRecord } from "../../settings/contracts/retrieval.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
+import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { RetrievalResponseBehavior } from "../public.js";
 import type {
   ConversationContextWindow,
@@ -30,6 +31,7 @@ export interface RetrievalPipelineRequest {
   sourceScope?: RetrievalSourceScope;
   sourceFilter?: RetrievalSourceFilter;
   execution?: RetrievalExecutionMetadata;
+  usageContext?: Omit<ModelCallUsageContext, "operation">;
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
 }
 

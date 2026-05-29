@@ -1,8 +1,21 @@
-import type { EmbeddingClient, ProviderUsage } from "../../../shared/infra/llm/providerTypes.js";
+import { randomUUID } from "node:crypto";
+
+import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
+import type {
+  EmbeddingInferencePipeline,
+  EmbeddingUsageItem,
+} from "../../../shared/infra/llm/embeddingInferencePipeline.js";
+import type { ProviderUsage } from "../../../shared/infra/llm/providerTypes.js";
 import { renderSearchText } from "./searchTextRenderer.js";
 
 export interface EmbeddingRequestOptions {
   model?: string;
+  usageContext?: ModelCallUsageContext;
+  sourceId?: string | null;
+  documentId?: string | null;
+  documentRevision?: number | null;
+  jobId?: string | null;
+  usageItems?: EmbeddingUsageItem[];
 }
 
 export interface EmbeddingBatchResult {
@@ -22,7 +35,7 @@ export const buildRetrievalText = (input: { title: string; content: string }): s
   });
 
 export class ModelEmbeddingGateway implements EmbeddingGateway {
-  constructor(private readonly client: EmbeddingClient) {}
+  constructor(private readonly pipeline: EmbeddingInferencePipeline) {}
 
   async embedTexts(texts: string[], options?: EmbeddingRequestOptions): Promise<number[][]> {
     const { vectors } = await this.embedTextsWithUsage(texts, options);
@@ -30,7 +43,30 @@ export class ModelEmbeddingGateway implements EmbeddingGateway {
   }
 
   async embedTextsWithUsage(texts: string[], options?: EmbeddingRequestOptions): Promise<EmbeddingBatchResult> {
-    return this.client.embedTexts(texts, options);
+    if (!options?.usageContext) {
+      const result = await this.pipeline.embedTexts({
+        texts,
+        model: options?.model,
+        operation: {
+          workspaceId: "unknown",
+          requestId: randomUUID(),
+          surface: "embedding",
+          operation: "embedding",
+          attemptKey: "unattributed",
+        },
+      });
+      return result;
+    }
+    return this.pipeline.embedTexts({
+      texts,
+      model: options.model,
+      operation: options.usageContext,
+      sourceId: options.sourceId,
+      documentId: options.documentId,
+      documentRevision: options.documentRevision,
+      jobId: options.jobId,
+      items: options.usageItems,
+    });
   }
 }
 

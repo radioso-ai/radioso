@@ -376,7 +376,11 @@ const createSemanticChunker = async (
   const { SemanticChunker } = await import("@chonkiejs/core");
 
   return SemanticChunker.create({
-    embeddings: (texts: string[]) => embeddings.embedTexts(texts, { model: request.embeddingModel }),
+    embeddings: (texts: string[]) =>
+      embeddings.embedTexts(texts, {
+        model: request.embeddingModel,
+        usageContext: request.embeddingUsageContext,
+      }),
     chunkSize: request.chunkSize,
     minCharactersPerSentence: request.minCharactersPerChunk,
   });

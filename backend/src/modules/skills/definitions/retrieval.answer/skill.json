@@ -4,7 +4,7 @@
   "description": "Generate a grounded answer from workspace evidence without assistant persona.",
   "owner": "retrieval",
   "executionClass": "interactive",
-  "supportedCallers": ["retrieval_api", "sdk", "mcp"],
+  "supportedCallers": ["assistant", "retrieval_api", "sdk", "mcp"],
   "requiredCapabilities": ["retrieval.answer"],
   "contractReferences": [
     {
@@ -28,7 +28,7 @@
   },
   "intake": {
     "enabled": true,
-    "supportedCallers": ["retrieval_api", "sdk", "mcp"],
+    "supportedCallers": ["assistant", "retrieval_api", "sdk", "mcp"],
     "intent": {
       "description": "Answer a user query from workspace evidence.",
       "examples": [
@@ -83,6 +83,14 @@
       "status": "completed",
       "groundedAnswer": true,
       "tone": "positive"
+    },
+    {
+      "name": "grounded_degraded",
+      "displayName": "Grounded (degraded)",
+      "description": "The retrieval skill answered from workspace evidence but flagged the answer as incomplete or low-confidence.",
+      "status": "completed",
+      "groundedAnswer": true,
+      "tone": "warning"
     },
     {
       "name": "no_context",

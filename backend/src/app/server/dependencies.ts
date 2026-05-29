@@ -41,7 +41,6 @@ import {
   EvalRepository,
   EvalRunService,
   EvalSnapshotService,
-  EvalUsageMeter,
   RetrievalPipelineEvalRunner,
 } from "../../modules/eval/composition.js";
 
@@ -75,7 +74,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // Build the registry first (no resolver yet) so we can compute supported embedding
   // models; embedding stays env-default and doesn't need the workspace-aware resolver.
   const llmRegistry = buildLlmRegistry(env, logger);
-  const embeddingService = new EmbeddingService(llmRegistry.createEmbeddingGateway());
+  const embeddingService = new EmbeddingService(llmRegistry.createEmbeddingGateway(infrastructure.usageEventRecorder));
   const documentJobDispatcher = composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
   const workspaceIngestionReprocessService = buildWorkspaceIngestionReprocessService({
     auditService: infrastructure.auditService,
@@ -137,6 +136,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     retrievalSettingsService: settings.retrievalSettingsService,
     telemetryService: infrastructure.telemetryService,
+    usageEventRecorder: infrastructure.usageEventRecorder,
   });
   const workspace = buildWorkspaceServices({
     accountMembershipRepository: repositories.accountMembershipRepository,
@@ -228,7 +228,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
   });
 
-  const chatTextGenerationClient = llmRegistry.createChatTextClient();
+  const chatInferencePipeline = llmRegistry.createChatInferencePipeline(infrastructure.usageEventRecorder);
 
   const evalRepository = new EvalRepository(infrastructure.database);
   const evalSnapshotService = new EvalSnapshotService(
@@ -239,21 +239,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalRepository,
   );
   const evalCaseService = new EvalCaseService(evalRepository);
-  // Both the full-assistant runner and the LLM judge make billable chat
-  // gateway calls. Route them through a shared usage meter so EE-side
-  // metering can ledger eval LLM spend distinctly from production traffic.
-  const evalUsageMeter = new EvalUsageMeter(infrastructure.usageEventRecorder, llmCapabilityResolver);
   const evalRunService = new EvalRunService(
     evalRepository,
     new RetrievalPipelineEvalRunner(
       retrieval.retrievalPipeline,
       chat.chatGateway,
-      evalUsageMeter,
       llmCapabilityResolver,
       settings.retrievalSettingsService,
       chat.answerPresentation,
     ),
-    new ChatGatewayLlmJudge(chat.chatGateway, evalUsageMeter),
+    new ChatGatewayLlmJudge(chat.chatGateway),
   );
 
   return {
@@ -323,7 +318,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     connectorRegistry,
     connectorIngestionPort,
     connectorDb: infrastructure.database,
-    chatTextGenerationClient,
+    chatInferencePipeline,
     crawlerProvider,
     assertPublicWebsiteUrl,
     websiteCrawlerLimits: (() => {

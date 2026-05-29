@@ -91,6 +91,59 @@ const buildProvider = (suggestion: ChatSuggestion): ChatActionSuggestionProvider
   evaluate: vi.fn(async () => suggestion),
 });
 
+describe("ChatAnswerPresenter.presentWithoutSuggestions", () => {
+  it("preserves uncited model prose alongside cited segments", async () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+    const answer =
+      "Widgets are great[[1]].\n\nFor center stays, share your arrival and departure dates and preferred accommodation.";
+
+    const result = await presenter.presentWithoutSuggestions(buildSession(), answer, "What is X?");
+
+    expect(result.answer).toContain("For center stays, share your arrival and departure dates");
+    expect(result.answerSegments?.map((segment) => segment.text).join("")).toContain(
+      "For center stays, share your arrival and departure dates and preferred accommodation.",
+    );
+  });
+
+  it("preserves uncited contact details verbatim", async () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+    const answer =
+      "Widgets are great[[1]].\n\nReach us by phone +39 0742 813620 or email info@ananda.it.";
+
+    const result = await presenter.presentWithoutSuggestions(buildSession(), answer, "What is X?");
+
+    expect(result.answer).toContain("+39 0742 813620");
+    expect(result.answer).toContain("info@ananda.it");
+  });
+
+  it("reports a grounded outcome by default", async () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+
+    const result = await presenter.presentWithoutSuggestions(buildSession(), "Grounded answer[[1]].", "What is X?");
+
+    expect(result.skillName).toBe("retrieval.answer");
+    expect(result.skillOutcome).toBe("grounded");
+    expect(result.answerOutcome).toBe("grounded_success");
+  });
+
+  it("reports a degraded outcome when the model flags weak grounding", async () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+
+    const result = await presenter.presentWithoutSuggestions(
+      buildSession(),
+      "Grounded answer[[1]].",
+      "What is X?",
+      undefined,
+      "degraded",
+    );
+
+    expect(result.skillName).toBe("retrieval.answer");
+    expect(result.skillOutcome).toBe("grounded_degraded");
+    // The legacy answer_outcome enum has no degraded value; it collapses to success.
+    expect(result.answerOutcome).toBe("grounded_success");
+  });
+});
+
 describe("ChatAnswerPresenter.applyActionSuggestions", () => {
   it("returns the presentation unchanged when no action service is wired", async () => {
     const presenter = new ChatAnswerPresenter(stubExpansionService);

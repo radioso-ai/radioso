@@ -5,15 +5,18 @@ import type { MessageRecord, MessageRepositoryPort, UserMessageInputMetadata } f
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
-import type { RetrievalPipelineService, RewriteContinuityState } from "../../retrieval/public.js";
+import type {
+  RetrievalPipelineRequest,
+  RetrievalPipelineService,
+  RewriteContinuityState,
+} from "../../retrieval/public.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { defaultAgentBrandingSettings, isAgentRetrievalEnabled } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
-
-type ChatIntentCapableRetrievalPipeline = Pick<RetrievalPipelineService, "run" | "interpret" | "runInterpreted" | "runWithoutRetrieval">;
+import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -53,7 +56,7 @@ export class ChatSessionPreparer {
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
-    private readonly retrievalPipeline: RetrievalPipelineService,
+    private readonly retrievalTurn: RetrievalTurnPort,
     private readonly auditService: AuditService,
     private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly agentService?: Pick<AgentService, "resolve">,
@@ -96,12 +99,15 @@ export class ChatSessionPreparer {
       inputMetadata: input.inputMetadata,
     });
     const { retrieval, turnRoute } = options.skipRetrieval
-      ? this.prepareDirectOnlyTurn(this.buildPipelineInput(input, agent, history), agent)
+      ? this.prepareDirectOnlyTurn(this.buildPipelineInput(input, agent, history, persistedConversation, userMessage), agent)
       : await this.prepareRetrieval(input, {
           agent,
           conversation: persistedConversation,
           history,
-          retrieval: this.prepareDirectOnlyTurn(this.buildPipelineInput(input, agent, history), agent).retrieval,
+          retrieval: this.prepareDirectOnlyTurn(
+            this.buildPipelineInput(input, agent, history, persistedConversation, userMessage),
+            agent,
+          ).retrieval,
           turnRoute: CHAT_TURN_ROUTE.SOCIAL_ONLY,
           userMessage,
           pageContext: input.pageContext ?? null,
@@ -121,10 +127,9 @@ export class ChatSessionPreparer {
   }
 
   async prepareRetrieval(input: PrepareChatSessionInput, session: PreparedSession): Promise<PreparedSession> {
-    const pipelineInput = this.buildPipelineInput(input, session.agent, session.history);
-    const retrievalPipeline = this.retrievalPipeline as ChatIntentCapableRetrievalPipeline;
+    const pipelineInput = this.buildPipelineInput(input, session.agent, session.history, session.conversation, session.userMessage);
     const { retrieval, turnRoute } = isAgentRetrievalEnabled(session.agent)
-      ? await this.prepareRetrievalEnabledTurn(retrievalPipeline, pipelineInput)
+      ? await this.prepareRetrievalEnabledTurn(pipelineInput)
       : this.prepareDirectOnlyTurn(pipelineInput, session.agent);
 
     return {
@@ -134,7 +139,13 @@ export class ChatSessionPreparer {
     };
   }
 
-  private buildPipelineInput(input: PrepareChatSessionInput, agent: AgentRecord, history: MessageRecord[]) {
+  private buildPipelineInput(
+    input: PrepareChatSessionInput,
+    agent: AgentRecord,
+    history: MessageRecord[],
+    conversation?: ConversationRecord,
+    userMessage?: MessageRecord,
+  ): RetrievalPipelineRequest {
     return {
       workspaceId: input.workspaceId,
       query: input.query,
@@ -148,14 +159,18 @@ export class ChatSessionPreparer {
       responseBehaviorEnabled: true,
       metadataFilter: input.metadataFilter,
       sourceScope: agent.sourceScope,
+      usageContext: {
+        workspaceId: input.workspaceId,
+        conversationId: conversation?.id ?? null,
+        messageId: userMessage?.id ?? null,
+        surface: "assistant",
+        attemptKey: userMessage?.id ?? conversation?.id ?? "chat_turn",
+      },
     };
   }
 
-  private async prepareRetrievalEnabledTurn(
-    retrievalPipeline: ChatIntentCapableRetrievalPipeline,
-    pipelineInput: Parameters<ChatIntentCapableRetrievalPipeline["interpret"]>[0],
-  ) {
-    const interpretation = await retrievalPipeline.interpret(pipelineInput);
+  private async prepareRetrievalEnabledTurn(pipelineInput: RetrievalPipelineRequest) {
+    const interpretation = await this.retrievalTurn.interpret(pipelineInput);
     const turnRoute = this.chatTurnIntentService.resolve({
       responseIntent: interpretation.interpretation.result.responseIntent,
     });
@@ -170,15 +185,16 @@ export class ChatSessionPreparer {
         },
       },
     };
-    const retrieval = turnRoute === CHAT_TURN_ROUTE.RETRIEVAL
-      ? await retrievalPipeline.runInterpreted(interpretedWithExecution)
-      : await retrievalPipeline.runWithoutRetrieval(interpretedWithExecution);
+    const retrieval = await this.retrievalTurn.dispatch({
+      interpreted: interpretedWithExecution,
+      withRetrieval: turnRoute === CHAT_TURN_ROUTE.RETRIEVAL,
+    });
 
     return { retrieval, turnRoute };
   }
 
   private prepareDirectOnlyTurn(
-    input: Parameters<ChatIntentCapableRetrievalPipeline["interpret"]>[0],
+    input: RetrievalPipelineRequest,
     agent: AgentRecord,
   ) {
     const now = new Date().toISOString();

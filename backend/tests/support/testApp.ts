@@ -14,6 +14,7 @@ import { PasswordResetService } from "../../src/modules/auth/services/passwordRe
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
+import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../src/modules/agents/public.js";
@@ -656,7 +657,7 @@ export const createTestDependencies = (overrides: {
   const chatService = new ChatService(
     conversationRepository,
     messageRepository,
-    retrievalPipeline,
+    new RetrievalTurnController(retrievalPipeline),
     chatGateway,
     auditService,
     overrides.groundedMissResponseComposer ?? new TestGroundedMissResponseComposer(),
@@ -827,7 +828,7 @@ export const createTestDependencies = (overrides: {
       async ensureSource() { return { id: "test-source" }; },
     },
     connectorDb: connectorDb as any,
-    chatTextGenerationClient: {
+    chatInferencePipeline: {
       metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
       async complete() { return textResult(""); },
       stream() { return streamResult([""]); },

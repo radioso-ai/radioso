@@ -1,8 +1,10 @@
+import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 
 export interface QueryRewritePortRequest {
   readonly query: string;
   readonly workspaceContext?: LlmCapabilityResolveInput;
+  readonly usageContext?: Omit<ModelCallUsageContext, "operation">;
 }
 
 export interface QueryRewritePortResult {

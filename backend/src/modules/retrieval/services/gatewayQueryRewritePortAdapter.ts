@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+
+import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type {
   QueryRewritePort,
   QueryRewritePortRequest,
@@ -23,6 +26,14 @@ const pickLexical = (result: QueryRewriteGatewayResult, originalQuery: string): 
   return fromGateway.length > 0 ? fromGateway : originalQuery;
 };
 
+const resolveUsageContext = (input: QueryRewritePortRequest): Omit<ModelCallUsageContext, "operation"> =>
+  input.usageContext ?? {
+    workspaceId: input.workspaceContext?.workspaceId ?? "unknown",
+    requestId: randomUUID(),
+    surface: "retrieval",
+    attemptKey: "rewrite_tool",
+  };
+
 export class GatewayQueryRewritePortAdapter implements QueryRewritePort {
   constructor(private readonly gateway: QueryRewriteGateway) {}
 
@@ -33,6 +44,7 @@ export class GatewayQueryRewritePortAdapter implements QueryRewritePort {
         query: original,
         contextMessages: [],
         workspaceContext: input.workspaceContext,
+        usageContext: { ...resolveUsageContext(input), operation: "query_interpretation" },
       });
       return {
         semantic: pickSemantic(result, original),

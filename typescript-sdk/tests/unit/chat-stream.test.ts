@@ -21,7 +21,7 @@ describe("chat stream", () => {
             'event: conversation\ndata: {"conversationId":"c1"}\n\n',
             'event: chunk\ndata: {"text":"hello"}\n\n',
             'event: suggestions\ndata: {"conversationId":"c1","suggestions":[{"text":"What next?"}]}\n\n',
-            'event: done\ndata: {"conversationId":"c1","route":{"type":"retrieval","reason":"evidence_required"},"answer":"hello","suggestions":[{"text":"What next?"}],"activitySummary":{},"activityTrace":{}}\n\n',
+            'event: done\ndata: {"conversationId":"c1","assistantMessageId":"m1","answer":"hello","suggestions":[{"text":"What next?"}],"debug":{"route":{"type":"retrieval","reason":"evidence_required"},"activitySummary":{},"activityTrace":{}}}\n\n',
           ].join(""),
         ),
         {
@@ -53,11 +53,14 @@ describe("chat stream", () => {
       {
         type: "done",
         conversationId: "c1",
-        route: { type: "retrieval", reason: "evidence_required" },
+        assistantMessageId: "m1",
         answer: "hello",
         suggestions: [{ text: "What next?" }],
-        activitySummary: {},
-        activityTrace: {},
+        debug: {
+          route: { type: "retrieval", reason: "evidence_required" },
+          activitySummary: {},
+          activityTrace: {},
+        },
       },
     ]);
   });

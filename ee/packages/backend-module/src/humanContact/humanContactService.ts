@@ -41,6 +41,7 @@ export class EnterpriseHumanContactService {
       workspaceContactInfoRepository: input.workspaceContactInfoRepository,
       dashboardBaseUrl: input.dashboardBaseUrl ?? null,
       webhookFetch: input.webhookFetch,
+      assertWebhookUrlAllowed: input.assertPublicWebsiteUrl,
     });
     this.requestExecutor = new HumanContactRequestExecutor({
       database: input.database,

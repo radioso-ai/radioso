@@ -185,10 +185,21 @@ export interface ApplicationRouteMount {
     };
     authService: {
       authenticateSession(token: string): Promise<{ accountId: string; userId: string; sessionId: string }>;
-      authenticateApiToken(token: string): Promise<{ accountId: string; workspaceId: string }>;
+      authenticateApiToken(token: string): Promise<{
+        accountId: string;
+        workspaceId: string;
+        principal?: AuthenticatedPrincipal;
+      }>;
     };
     accountAccessService: {
       requireActiveMembership(accountId: string, userId: string): Promise<void>;
+      requirePermission(input: {
+        accountId: string;
+        userId?: string;
+        principal?: AuthenticatedPrincipal;
+        permission: WorkspaceRoutePermission;
+        workspaceId?: string;
+      }): Promise<void>;
     };
     workspaceSessionService: {
       resolve(input: { accountId: string; workspaceId?: string }): Promise<{ accountId: string; workspaceId: string }>;
@@ -229,6 +240,21 @@ export interface ApplicationRouteMount {
     mailService: MailTransport;
   }): Router;
 }
+
+export type WorkspaceRoutePermission =
+  | "workspace.settings.read"
+  | "workspace.credentials.manage";
+
+export type AuthenticatedPrincipal =
+  | {
+    type: "session_user";
+    userId: string;
+  }
+  | {
+    type: "workspace_api_token";
+    role: "admin" | "member";
+    tokenId?: string | null;
+  };
 
 export type AgentWizardUrlPolicy = (url: string) => Promise<void>;
 
@@ -607,6 +633,7 @@ export type ApplicationChatIntakeProviderRegistration =
       };
       mailService: MailTransport;
       dashboardBaseUrl: string | null;
+      assertPublicWebsiteUrl: AgentWizardUrlPolicy;
     }) => ChatIntakeProvider);
 
 export interface MailTransport {

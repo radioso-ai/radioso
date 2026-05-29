@@ -317,6 +317,7 @@ const createService = (input: {
   chatGateway?: { answer(input: { prompt: string; query: string; history: Array<{ role: string; content: string }> }): Promise<string> };
   abuseControlService?: { enforce(input: { scope: string; subjectKey: string; limit: number; windowMs: number; blockMs?: number }): Promise<void> };
   mailService?: MailService;
+  assertPublicWebsiteUrl?: (url: string) => Promise<void>;
 } = {}) => {
   const database = input.database ?? new FakeSkillSubmissionDatabase();
   const auditEvents: unknown[] = [];
@@ -377,6 +378,7 @@ const createService = (input: {
       },
     },
     webhookFetch: input.webhookFetch,
+    assertPublicWebsiteUrl: input.assertPublicWebsiteUrl,
     startPoller: false,
   });
 
@@ -2417,6 +2419,60 @@ describe("enterprise human contact service", () => {
     });
     expect(deliveredPayload).not.toHaveProperty("summary");
     expect(database.submissions.get(requestId)?.status).toBe("delivered");
+  });
+
+  it("validates stored webhook URLs before delivery", async () => {
+    const database = new FakeSkillSubmissionDatabase();
+    let fetchCalled = false;
+    const { service } = createService({
+      database,
+      assertPublicWebsiteUrl: async () => {
+        throw new Error("private webhook URL is not allowed");
+      },
+      webhookFetch: (async () => {
+        fetchCalled = true;
+        return new Response(null, { status: 204 });
+      }) as typeof fetch,
+    });
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      webhookEnabled: true,
+      webhookUrl: "https://hooks.example.com/radioso",
+      signingSecret: "secret-value-for-tests",
+    });
+
+    database.submissions.set("request-1", {
+      id: "request-1",
+      account_id: "account-1",
+      workspace_id: "workspace-1",
+      conversation_id: "conversation-1",
+      assistant_message_id: null,
+      skill_name: "human_contact.request",
+      source_channel: "authenticated_chat",
+      source_origin: null,
+      trigger_source: "manual",
+      trigger_reason: null,
+      idempotency_key: null,
+      fields: { email: "user@example.com", message: "Please contact me." },
+      subject_identity: "user@example.com",
+      attempts: 0,
+      status: "pending",
+      next_retry_at: new Date("2026-05-04T10:00:00.000Z"),
+      final_delivery_error: null,
+      activity_trace: null,
+      created_at: new Date("2026-05-04T10:00:00.000Z"),
+      updated_at: new Date("2026-05-04T10:00:00.000Z"),
+    });
+
+    await service.processDueDeliveries(1);
+
+    expect(fetchCalled).toBe(false);
+    expect(database.submissions.get("request-1")).toMatchObject({
+      status: "pending",
+      attempts: 1,
+      final_delivery_error: "Webhook: private webhook URL is not allowed",
+    });
   });
 
   it("marks webhook deliveries failed after the terminal retry attempt", async () => {

@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../../app/server/types.js";
@@ -6,6 +6,7 @@ import {
   requireWorkspaceSession,
   type WorkspaceSessionDependencies,
 } from "../../../app/http/middleware/requireWorkspaceSession.js";
+import { requireWorkspacePermission } from "../../../app/http/middleware/requirePermission.js";
 import type { ConnectorDetail, ConnectorSummary, ConnectorValidationIssue } from "@radioso/connector-api";
 
 const configUpdateSchema = z.object({
@@ -58,21 +59,29 @@ const validationError = (issues: ConnectorValidationIssue[]) => ({
   fields: issues,
 });
 
+const connectorIdFromParams = (req: Request): string => {
+  const value = req.params.connectorId;
+  return Array.isArray(value) ? (value[0] ?? "") : value;
+};
+
 /**
  * REST endpoints for connector management (admin-facing, auth required).
  * Mounted at /api/v1/connectors.
  */
-type ConnectorRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "connectorDb" | "connectorRegistry" | "env">;
+type ConnectorRouteDependencies = WorkspaceSessionDependencies &
+  Pick<AppDependencies, "accountAccessService" | "connectorDb" | "connectorRegistry" | "env">;
 
 export const createConnectorRoutes = (dependencies: ConnectorRouteDependencies): Router => {
   const router = Router();
   const registry = dependencies.connectorRegistry;
   const db = dependencies.connectorDb;
+  const connectorRead = requireWorkspacePermission(dependencies, "workspace.settings.read");
+  const connectorManage = requireWorkspacePermission(dependencies, "workspace.credentials.manage");
 
   router.use(requireWorkspaceSession(dependencies));
 
   // GET /api/v1/connectors — List all available connectors with per-workspace status
-  router.get("/", async (req, res, next) => {
+  router.get("/", connectorRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const connectors = await registry.listConnectors(db, workspaceId);
@@ -83,10 +92,11 @@ export const createConnectorRoutes = (dependencies: ConnectorRouteDependencies):
   });
 
   // GET /api/v1/connectors/:connectorId — Get detail including schema + config
-  router.get("/:connectorId", async (req, res, next) => {
+  router.get("/:connectorId", connectorManage, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const detail = await registry.getConnectorDetail(db, workspaceId, req.params.connectorId);
+      const connectorId = connectorIdFromParams(req);
+      const detail = await registry.getConnectorDetail(db, workspaceId, connectorId);
       if (!detail) {
         res.status(404).json({ error: "Connector not found" });
         return;
@@ -98,10 +108,11 @@ export const createConnectorRoutes = (dependencies: ConnectorRouteDependencies):
   });
 
   // PUT /api/v1/connectors/:connectorId — Save connector config
-  router.put("/:connectorId", async (req, res, next) => {
+  router.put("/:connectorId", connectorManage, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      if (!registry.getPlugin(req.params.connectorId)) {
+      const connectorId = connectorIdFromParams(req);
+      if (!registry.getPlugin(connectorId)) {
         res.status(404).json({ error: "Connector not found" });
         return;
       }
@@ -112,7 +123,7 @@ export const createConnectorRoutes = (dependencies: ConnectorRouteDependencies):
         return;
       }
 
-      const result = await registry.saveConfig(db, workspaceId, req.params.connectorId, parsed.data.config);
+      const result = await registry.saveConfig(db, workspaceId, connectorId, parsed.data.config);
       if (result.kind === "validation_error") {
         res.status(400).json(validationError(result.issues));
         return;
@@ -121,7 +132,7 @@ export const createConnectorRoutes = (dependencies: ConnectorRouteDependencies):
         res.status(409).json({ error: "Channel identity conflict", detail: result.detail });
         return;
       }
-      const detail = await registry.getConnectorDetail(db, workspaceId, req.params.connectorId);
+      const detail = await registry.getConnectorDetail(db, workspaceId, connectorId);
       res.status(200).json(presentDetail(req, workspaceId, detail!, dependencies.env.CONNECTOR_PUBLIC_BASE_URL));
     } catch (error) {
       next(error);
@@ -129,14 +140,15 @@ export const createConnectorRoutes = (dependencies: ConnectorRouteDependencies):
   });
 
   // POST /api/v1/connectors/:connectorId/enable
-  router.post("/:connectorId/enable", async (req, res, next) => {
+  router.post("/:connectorId/enable", connectorManage, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      if (!registry.getPlugin(req.params.connectorId)) {
+      const connectorId = connectorIdFromParams(req);
+      if (!registry.getPlugin(connectorId)) {
         res.status(404).json({ error: "Connector not found" });
         return;
       }
-      const result = await registry.enableConnector(db, workspaceId, req.params.connectorId);
+      const result = await registry.enableConnector(db, workspaceId, connectorId);
       if (result.kind === "validation_error") {
         res.status(400).json(validationError(result.issues));
         return;
@@ -145,7 +157,7 @@ export const createConnectorRoutes = (dependencies: ConnectorRouteDependencies):
         res.status(409).json({ error: "Channel identity conflict", detail: result.detail });
         return;
       }
-      const detail = await registry.getConnectorDetail(db, workspaceId, req.params.connectorId);
+      const detail = await registry.getConnectorDetail(db, workspaceId, connectorId);
       res.status(200).json(presentDetail(req, workspaceId, detail!, dependencies.env.CONNECTOR_PUBLIC_BASE_URL));
     } catch (error) {
       next(error);
@@ -153,15 +165,16 @@ export const createConnectorRoutes = (dependencies: ConnectorRouteDependencies):
   });
 
   // POST /api/v1/connectors/:connectorId/disable
-  router.post("/:connectorId/disable", async (req, res, next) => {
+  router.post("/:connectorId/disable", connectorManage, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      if (!registry.getPlugin(req.params.connectorId)) {
+      const connectorId = connectorIdFromParams(req);
+      if (!registry.getPlugin(connectorId)) {
         res.status(404).json({ error: "Connector not found" });
         return;
       }
-      await registry.disableConnector(db, workspaceId, req.params.connectorId);
-      const detail = await registry.getConnectorDetail(db, workspaceId, req.params.connectorId);
+      await registry.disableConnector(db, workspaceId, connectorId);
+      const detail = await registry.getConnectorDetail(db, workspaceId, connectorId);
       res.status(200).json(presentDetail(req, workspaceId, detail!, dependencies.env.CONNECTOR_PUBLIC_BASE_URL));
     } catch (error) {
       next(error);
@@ -169,14 +182,15 @@ export const createConnectorRoutes = (dependencies: ConnectorRouteDependencies):
   });
 
   // POST /api/v1/connectors/:connectorId/sync
-  router.post("/:connectorId/sync", async (req, res, next) => {
+  router.post("/:connectorId/sync", connectorManage, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      if (!registry.getPlugin(req.params.connectorId)) {
+      const connectorId = connectorIdFromParams(req);
+      if (!registry.getPlugin(connectorId)) {
         res.status(404).json({ error: "Connector not found" });
         return;
       }
-      const result = await registry.syncConnector(db, workspaceId, req.params.connectorId);
+      const result = await registry.syncConnector(db, workspaceId, connectorId);
       if (result.kind === "unsupported") {
         res.status(409).json({ error: "Manual sync unsupported" });
         return;

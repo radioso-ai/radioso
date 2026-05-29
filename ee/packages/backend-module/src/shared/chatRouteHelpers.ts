@@ -4,6 +4,7 @@ import type { RequestHandler } from "express";
 import { z } from "zod";
 
 import type { ApplicationRouteMount } from "../radiosoModuleTypes.js";
+import type { WorkspaceRoutePermission } from "../radiosoModuleTypes.js";
 
 type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
 
@@ -67,6 +68,10 @@ export const requireWorkspaceSession = (dependencies: RouteDependencies): Reques
         res.locals.accountId = resolved.accountId;
         res.locals.workspaceId = resolved.workspaceId;
         res.locals.userId = session.userId;
+        res.locals.authPrincipal = {
+          type: "session_user",
+          userId: session.userId,
+        };
         res.locals.authType = "authenticated_user";
         next();
         return;
@@ -86,7 +91,34 @@ export const requireWorkspaceSession = (dependencies: RouteDependencies): Reques
     const auth = await dependencies.authService.authenticateApiToken(bearerToken);
     res.locals.accountId = auth.accountId;
     res.locals.workspaceId = auth.workspaceId;
+    if (auth.principal) {
+      res.locals.authPrincipal = auth.principal;
+    }
     res.locals.authType = "api_token";
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const requireWorkspacePermission = (
+  dependencies: RouteDependencies,
+  permission: WorkspaceRoutePermission,
+): RequestHandler => async (_req, res, next) => {
+  try {
+    const { accountId, userId, workspaceId, authPrincipal } = res.locals as {
+      accountId: string;
+      userId?: string;
+      workspaceId?: string;
+      authPrincipal?: Parameters<RouteDependencies["accountAccessService"]["requirePermission"]>[0]["principal"];
+    };
+    await dependencies.accountAccessService.requirePermission({
+      accountId,
+      userId,
+      principal: authPrincipal,
+      permission,
+      workspaceId,
+    });
     next();
   } catch (error) {
     next(error);

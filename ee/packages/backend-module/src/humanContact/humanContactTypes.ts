@@ -225,5 +225,6 @@ export type HumanContactDependencies = {
   dashboardBaseUrl?: string | null;
   pollIntervalMs?: number;
   webhookFetch?: typeof fetch;
+  assertPublicWebsiteUrl?: (url: string) => Promise<void>;
   startPoller?: boolean;
 };

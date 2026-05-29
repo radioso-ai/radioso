@@ -33,6 +33,7 @@ export class HumanContactDeliveryDispatcher {
     workspaceContactInfoRepository?: WorkspaceContactInfoRepository;
     dashboardBaseUrl?: string | null;
     webhookFetch?: typeof fetch;
+    assertWebhookUrlAllowed?: (url: string) => Promise<void>;
   }) {}
 
   async processDueDeliveries(limit = 25): Promise<number> {
@@ -161,6 +162,7 @@ export class HumanContactDeliveryDispatcher {
       const body = JSON.stringify(payload);
       const signature = createHmac("sha256", settings.signing_secret).update(body).digest("hex");
       try {
+        await this.input.assertWebhookUrlAllowed?.(settings.webhook_url);
         const response = await (this.input.webhookFetch ?? fetch)(settings.webhook_url, {
           method: "POST",
           headers: {

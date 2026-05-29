@@ -12,6 +12,10 @@ import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmb
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
+import {
+  DirectRetrievalTurnDispatch,
+  type RetrievalTurnDispatchPort,
+} from "./retrievalTurnDispatch.js";
 
 type ChatIntentCapableRetrievalPipeline = Pick<RetrievalPipelineService, "run" | "interpret" | "runInterpreted" | "runWithoutRetrieval">;
 
@@ -57,7 +61,17 @@ export class ChatSessionPreparer {
     private readonly auditService: AuditService,
     private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly agentService?: Pick<AgentService, "resolve">,
-  ) {}
+    retrievalTurnDispatch?: RetrievalTurnDispatchPort,
+  ) {
+    // Default to dispatching retrieval directly against the controller, so
+    // existing construction is behavior-preserving. Composition injects the
+    // skill-dispatching port (066): the chat turn reaches retrieval through the
+    // skill-invocation port rather than calling the controller directly.
+    this.retrievalTurnDispatch =
+      retrievalTurnDispatch ?? new DirectRetrievalTurnDispatch(this.retrievalPipeline);
+  }
+
+  private readonly retrievalTurnDispatch: RetrievalTurnDispatchPort;
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
     const conversation = input.conversationId
@@ -170,9 +184,10 @@ export class ChatSessionPreparer {
         },
       },
     };
-    const retrieval = turnRoute === CHAT_TURN_ROUTE.RETRIEVAL
-      ? await retrievalPipeline.runInterpreted(interpretedWithExecution)
-      : await retrievalPipeline.runWithoutRetrieval(interpretedWithExecution);
+    const retrieval = await this.retrievalTurnDispatch.dispatch({
+      interpreted: interpretedWithExecution,
+      withRetrieval: turnRoute === CHAT_TURN_ROUTE.RETRIEVAL,
+    });
 
     return { retrieval, turnRoute };
   }

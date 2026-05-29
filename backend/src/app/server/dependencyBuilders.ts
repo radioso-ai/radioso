@@ -42,6 +42,7 @@ import {
   NoopAnswerFeedbackHistoryProvider,
   NoopChatIntakeProvider,
   NoopContactHistoryProvider,
+  SkillRetrievalTurnDispatch,
 } from "../../modules/chat/composition.js";
 import {
   createDefaultConnectorRegistry,
@@ -101,7 +102,7 @@ import {
   RetrievalSettingsService,
 } from "../../modules/settings/composition.js";
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
-import { SkillCatalogService } from "../../modules/skills/public.js";
+import { SkillCatalogService, retrievalAnswerSkillDefinition } from "../../modules/skills/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../modules/retrieval/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
@@ -754,6 +755,9 @@ export const buildChatServices = (input: {
     chatIntakeProvider,
     chatActionSuggestionService,
     createSkillOutcomeCapabilityProvider(input.composition.skillCatalogRegistry),
+    // 066 slice 2: the chat turn reaches retrieval through the skill-invocation
+    // port (dispatching retrieval.answer) rather than calling the controller.
+    new SkillRetrievalTurnDispatch(input.composition.skillExecutorRegistry, retrievalAnswerSkillDefinition),
   );
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,

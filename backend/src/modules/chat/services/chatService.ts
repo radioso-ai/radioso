@@ -34,6 +34,7 @@ import {
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
+import type { RetrievalTurnDispatchPort } from "./retrievalTurnDispatch.js";
 import {
   ChatAnswerPresenter,
   type ChatPresentedAnswer,
@@ -339,6 +340,7 @@ export class ChatService {
     skillOutcomeCapabilities: SkillOutcomeCapabilityProvider = {
       supportsGroundedAnswer: () => false,
     },
+    retrievalTurnDispatch?: RetrievalTurnDispatchPort,
   ) {
     this.chatTurnLifecycle = new ChatTurnLifecycle(
       conversationRepository,
@@ -353,6 +355,7 @@ export class ChatService {
       auditService,
       workspaceRepository,
       agentService,
+      retrievalTurnDispatch,
     );
     this.chatAnswerPresenter = new ChatAnswerPresenter(
       new AssistantSuggestionExpansionService(),

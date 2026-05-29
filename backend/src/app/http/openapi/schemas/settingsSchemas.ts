@@ -21,6 +21,7 @@ import {
   metadataRuleOperators,
   metadataRuleTriggerModes,
   metadataValueTypes,
+  retrievalStrategyPreferences,
 } from "../../../../modules/settings/contracts/retrieval.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
@@ -39,6 +40,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
       similarityThreshold: z.number().min(0).max(1),
       rerankTopK: z.number().int().min(1),
       citationDisplayEnabled: z.boolean(),
+      retrievalStrategy: z.enum(retrievalStrategyPreferences),
       metadataFieldSuggestions: z.array(
         z.object({
           field: z.string(),
@@ -262,6 +264,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
           inferredType: z.enum(metadataValueTypes),
         }),
       ).default([]),
+      retrievalStrategy: z.enum(retrievalStrategyPreferences),
     }),
   );
 

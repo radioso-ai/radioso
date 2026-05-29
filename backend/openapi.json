@@ -958,6 +958,14 @@
           "citationDisplayEnabled": {
             "type": "boolean"
           },
+          "retrievalStrategy": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "reasoning",
+              "auto"
+            ]
+          },
           "metadataFieldSuggestions": {
             "type": "array",
             "items": {
@@ -1132,6 +1140,7 @@
           "similarityThreshold",
           "rerankTopK",
           "citationDisplayEnabled",
+          "retrievalStrategy",
           "customInstruction",
           "createdAt",
           "updatedAt"
@@ -1170,6 +1179,14 @@
           },
           "citationDisplayEnabled": {
             "type": "boolean"
+          },
+          "retrievalStrategy": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "reasoning",
+              "auto"
+            ]
           },
           "metadataRules": {
             "type": "array",
@@ -1340,6 +1357,14 @@
           },
           "citationDisplayEnabled": {
             "type": "boolean"
+          },
+          "retrievalStrategy": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "reasoning",
+              "auto"
+            ]
           },
           "metadataRules": {
             "type": "array",
@@ -2291,6 +2316,14 @@
               ]
             },
             "default": []
+          },
+          "retrievalStrategy": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "reasoning",
+              "auto"
+            ]
           }
         },
         "required": [
@@ -2301,7 +2334,8 @@
           "vectorTopK",
           "similarityThreshold",
           "rerankTopK",
-          "citationDisplayEnabled"
+          "citationDisplayEnabled",
+          "retrievalStrategy"
         ]
       },
       "PlatformChannelsSettingsSection": {
@@ -2487,6 +2521,14 @@
               },
               "citationDisplayEnabled": {
                 "type": "boolean"
+              },
+              "retrievalStrategy": {
+                "type": "string",
+                "enum": [
+                  "fixed",
+                  "reasoning",
+                  "auto"
+                ]
               },
               "metadataRules": {
                 "type": "array",

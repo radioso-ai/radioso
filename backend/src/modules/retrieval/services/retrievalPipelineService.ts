@@ -68,7 +68,20 @@ export interface RetrievalPipelineInterpretationResult {
   interpretation: MeasuredStage<QueryInterpretationStageResult>;
 }
 
-export class RetrievalPipelineService {
+/**
+ * The retrieval pipeline surface consumers depend on. Defined as an interface
+ * so the deterministic pipeline, the agentic (reasoning) pipeline, and the
+ * strategy-selecting executor are interchangeable without `as unknown as`
+ * casts. `RetrievalPipelineService` is the deterministic (fixed) implementation.
+ */
+export interface RetrievalPipelinePort {
+  run(input: RetrievalPipelineRequest): Promise<RetrievalPipelineResult>;
+  interpret(input: RetrievalPipelineRequest): Promise<RetrievalPipelineInterpretationResult>;
+  runInterpreted(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult>;
+  runWithoutRetrieval(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult>;
+}
+
+export class RetrievalPipelineService implements RetrievalPipelinePort {
   private readonly retrievalContextStage: RetrievalContextStage;
   private readonly queryInterpretationStage: QueryInterpretationStage;
   private readonly candidateRetrievalStage: CandidateRetrievalStage;

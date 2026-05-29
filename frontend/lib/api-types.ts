@@ -42,6 +42,7 @@ export type AssistantBehaviorSettings = Pick<
   RetrievalSettings,
   'suggestedQuestionsEnabled' | 'customInstruction'
 > & {
+  assistantLinkUtmEnabled: boolean
   theme: WebsiteEmbedThemeSettings
   branding?: AgentBrandingSettings
   sourceScope?: AgentSourceScope
@@ -139,6 +140,7 @@ export interface PublicChatIntakeAction {
   display?: SkillDisplayMetadata
 }
 export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse'] & {
+  assistantLinkUtmEnabled?: boolean
   intakeActions?: PublicChatIntakeAction[]
 }
 
@@ -345,6 +347,7 @@ export interface ContactHistoryDetailResponse {
 export type ChatHistoryListResponse = ApiSchemas['ChatHistoryListResponse'] & {
   workspaceName?: string
   assistantBootstrapActive?: boolean
+  assistantLinkUtmEnabled?: boolean
   intakeActions?: PublicChatIntakeAction[]
 }
 
@@ -454,9 +457,13 @@ export type InvitationDetailsResponse = ApiSchemas['InvitationDetailsResponse']
 export type WorkspaceRouteResolutionResponse = ApiSchemas['WorkspaceRouteResolutionResponse']
 export type WorkspaceSummaryResponse = ApiSchemas['WorkspaceSummaryResponse']
 
-export type AgentSettings = ApiSchemas['ConversationAgent']
+export type AgentSettings = ApiSchemas['ConversationAgent'] & {
+  assistantLinkUtmEnabled: boolean
+}
 export type AgentListResponse = ApiSchemas['AgentListResponse']
-export type AgentSettingsUpdate = ApiSchemas['ConversationAgentRequest']
+export type AgentSettingsUpdate = ApiSchemas['ConversationAgentRequest'] & {
+  assistantLinkUtmEnabled?: boolean
+}
 export type WorkspaceTokenResponse = ApiSchemas['WorkspaceTokenResponse']
 
 const buildAgentAssistantLogoUrl = (agent: AgentSettings): string | null => {
@@ -504,6 +511,7 @@ export const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings =>
 export const agentToAssistantBehaviorSettings = (agent: AgentSettings): AssistantBehaviorSettings => ({
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
   customInstruction: agent.customInstruction,
+  assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
   theme: agent.theme,
   branding: agent.branding,
   sourceScope: agent.sourceScope,
@@ -513,6 +521,7 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
 export const retrievalSettingsToAssistantBehaviorSettings = (settings: RetrievalSettings): AssistantBehaviorSettings => ({
   suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
   customInstruction: settings.customInstruction,
+  assistantLinkUtmEnabled: true,
   theme: {
     brand: '#0f172a',
     brandText: '#f8fafc',

@@ -45,6 +45,7 @@ export const presentPublicChatSession = ({
   }),
   agentId: agent.id,
   agentName: agent.name,
+  assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
   publicChatToken,
   publicSessionId: session.publicSessionId,
   publicSessionToken: session.token,

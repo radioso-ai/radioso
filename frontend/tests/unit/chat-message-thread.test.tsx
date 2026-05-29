@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
+import { appendAssistantLinkUtm, ChatMessageThread } from '@/components/dashboard/chat-message-thread'
 
 const UTILITY_BUTTON_LABELS = /aria-label="(Copy message|Copied|Thumbs up|Thumbs down)"/
 
@@ -125,6 +125,56 @@ describe('ChatMessageThread', () => {
 
     expect(html.match(/<li/g)?.length).toBe(1)
     expect(html).toContain('Ananda Yoga in silenzio - 3 Giorni')
+  })
+
+  it('adds Radioso UTM attribution to assistant-authored answer links', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '[Read more](https://example.com/docs?existing=1#intro)',
+            createdAt: '2026-04-02T10:00:00.000Z',
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+        assistantAvatarLabel="Support Bot"
+      />,
+    )
+
+    expect(html).toContain('utm_source=radioso')
+    expect(html).toContain('utm_medium=support_bot_agent')
+    expect(html).toContain('existing=1')
+    expect(html).toContain('#intro')
+  })
+
+  it('preserves non-Latin assistant names in UTM medium attribution', () => {
+    const url = new URL(appendAssistantLinkUtm('https://example.com/docs', '東京 サポート'))
+
+    expect(url.searchParams.get('utm_source')).toBe('radioso')
+    expect(url.searchParams.get('utm_medium')).toBe('東京_サポート_agent')
+  })
+
+  it('leaves assistant-authored answer links unchanged when UTM attribution is disabled', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '[Read more](https://example.com/docs?existing=1#intro)',
+            createdAt: '2026-04-02T10:00:00.000Z',
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+        assistantAvatarLabel="Support Bot"
+        assistantLinkUtmEnabled={false}
+      />,
+    )
+
+    expect(html).toContain('href="https://example.com/docs?existing=1#intro"')
+    expect(html).not.toContain('utm_source=radioso')
   })
 
   it('renders text suggestions as buttons when selection is enabled', () => {

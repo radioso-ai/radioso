@@ -398,6 +398,8 @@ export function AgentView({
             key={selectedAgentId}
             accountId={accountId}
             agentId={selectedAgentId}
+            assistantName={selectedAgent?.name}
+            assistantLinkUtmEnabled={selectedAgent?.assistantLinkUtmEnabled}
             onOpenDocument={onOpenDocument}
             onboarding={onboarding}
             navigation={tabNavigation}

@@ -35,6 +35,18 @@ describe('MarkdownContent link rendering', () => {
     expect(html).toContain('rel="noopener"')
   })
 
+  it('supports a safe link href transform', () => {
+    const html = renderToStaticMarkup(
+      <MarkdownContent
+        variant="chat"
+        content="[docs](https://example.com/docs)"
+        transformLinkHref={(href) => `${href}?utm_source=radioso`}
+      />,
+    )
+
+    expect(html).toContain('href="https://example.com/docs?utm_source=radioso"')
+  })
+
   it('strips unsafe links and falls back to plain text', () => {
     const html = renderToStaticMarkup(
       <MarkdownContent variant="chat" content="[evil](javascript:alert(1))" />,

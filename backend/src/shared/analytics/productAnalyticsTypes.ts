@@ -8,6 +8,7 @@ export const productAnalyticsEventNames = [
   "chat.started",
   "chat.completed",
   "chat.citation_clicked",
+  "chat.link_clicked",
   "frontend.page_view",
   "retrieval_settings.updated",
   "website_embed.loaded",

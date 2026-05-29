@@ -25,7 +25,7 @@ const anonymousTokenParamsSchema = z.object({
   token: z.string().min(1),
 });
 
-type PublicSessionAgent = Pick<AgentRecord, "id" | "workspaceId" | "name" | "logo" | "theme" | "branding" | "proactiveGreetingEnabled" | "surfaceSettings">;
+type PublicSessionAgent = Pick<AgentRecord, "id" | "workspaceId" | "name" | "logo" | "theme" | "branding" | "assistantLinkUtmEnabled" | "proactiveGreetingEnabled" | "surfaceSettings">;
 
 const isLoopbackHost = (host: string | undefined) => {
   if (!host) {
@@ -120,6 +120,7 @@ const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionA
     // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
     theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
     branding: defaultAgentBrandingSettings(),
+    assistantLinkUtmEnabled: true,
     proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
     surfaceSettings: {
       authenticatedChat: {
@@ -251,6 +252,7 @@ export const resolveAnonymousSession = (
       res.locals.assistantLogoAvailable = Boolean(agent.logo);
       res.locals.assistantTheme = agent.theme;
       res.locals.assistantBranding = agent.branding;
+      res.locals.assistantLinkUtmEnabled = agent.assistantLinkUtmEnabled;
       next();
     } catch (error) {
       next(error);

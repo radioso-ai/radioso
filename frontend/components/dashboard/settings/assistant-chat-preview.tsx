@@ -130,6 +130,7 @@ export function ChatPreview({
   logoUrl,
   showSuggestedQuestions,
   showProactiveGreeting,
+  assistantLinkUtmEnabled,
   branding,
 }: {
   themeSettings: WebsiteEmbedThemeSettings
@@ -137,6 +138,7 @@ export function ChatPreview({
   logoUrl: string | null
   showSuggestedQuestions: boolean
   showProactiveGreeting: boolean
+  assistantLinkUtmEnabled: boolean
   branding?: AgentBrandingSettings | null
 }) {
   const displayName = assistantName.trim() || 'Assistant'
@@ -225,6 +227,8 @@ export function ChatPreview({
           onAnswerFeedback={noopAnswerFeedback}
           assistantAvatarUrl={resolvedLogo}
           assistantAvatarLabel={displayName}
+          assistantLinkUtmEnabled={assistantLinkUtmEnabled}
+          analyticsEnabled={false}
           theme={embedTheme}
           themedSuggestionButtons
           skillCatalog={skillCatalog}

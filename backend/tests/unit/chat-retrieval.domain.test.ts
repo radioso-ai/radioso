@@ -1121,14 +1121,30 @@ describe("chat retrieval domain", () => {
       "social_only — only turns where the user does not want an answer or action",
     );
     expect(createInput?.messages[0]?.content).toContain(
+      "Greetings addressed to the assistant",
+    );
+    expect(createInput?.messages[0]?.content).toContain(
       "Put answerable requested work in inScopeRequest",
     );
     expect(createInput?.messages[0]?.content).toContain(
       "inspect the immediately preceding assistant message",
     );
     expect(createInput?.messages[0]?.content).toContain(
-      "Short confirmations after an assistant message with an offered next topic",
+      "Bare gratitude or acknowledgement",
     );
+    expect(createInput?.messages[0]?.content).toContain(
+      "Do not convert gratitude into retrieval just because the assistant's previous message included links",
+    );
+    expect(createInput?.messages[0]?.content).toContain(
+      "Short confirmations are acceptance requests only when they explicitly accept or choose",
+    );
+    expect(createInput?.messages[0]?.content).toContain(
+      "If the latest user wording is only gratitude or acknowledgement, use social_only",
+    );
+    expect(createInput?.messages[0]?.content).toContain(
+      "For obvious greetings, gratitude, acknowledgements, cancellations, or conversation-ending turns, use high confidence",
+    );
+    expect(createInput?.messages[0]?.content).toContain('"confidence":0.95');
     expect(createInput?.messages[0]?.content).toContain(
       "If the user accepts without choosing among multiple offered options",
     );

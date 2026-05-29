@@ -4,7 +4,7 @@
   "description": "Generate a grounded answer from workspace evidence without assistant persona.",
   "owner": "retrieval",
   "executionClass": "interactive",
-  "supportedCallers": ["retrieval_api", "sdk", "mcp"],
+  "supportedCallers": ["assistant", "retrieval_api", "sdk", "mcp"],
   "requiredCapabilities": ["retrieval.answer"],
   "contractReferences": [
     {
@@ -28,7 +28,7 @@
   },
   "intake": {
     "enabled": true,
-    "supportedCallers": ["retrieval_api", "sdk", "mcp"],
+    "supportedCallers": ["assistant", "retrieval_api", "sdk", "mcp"],
     "intent": {
       "description": "Answer a user query from workspace evidence.",
       "examples": [

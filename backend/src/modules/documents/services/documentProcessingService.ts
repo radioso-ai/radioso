@@ -23,6 +23,7 @@ import type {
   ChunkRepositoryPort,
   DocumentRepositoryPort,
 } from "./documentIngestionService.js";
+import type { ProviderUsage } from "../../../shared/infra/llm/providerTypes.js";
 import type { MaterializedDocumentContent } from "./documentSourceContentService.js";
 
 export interface IngestionSettingsReaderPort {
@@ -159,11 +160,14 @@ export class DocumentProcessingService {
       : null;
     const embeddingStartedAt = Date.now();
     let embeddings: number[][];
+    let providerUsage: ProviderUsage | undefined;
     try {
-      embeddings = await this.embeddingService.embedChunks(
+      const embeddingResult = await this.embeddingService.embedChunksWithUsage(
         enrichedChunks.map((chunk) => chunk.searchText),
         { model: embeddingModel },
       );
+      embeddings = embeddingResult.vectors;
+      providerUsage = embeddingResult.usage;
     } catch (error) {
       // Failed embedding events keep attempted estimates for internal diagnosis;
       // customer-facing billable usage should derive from successful rollups.
@@ -185,7 +189,7 @@ export class DocumentProcessingService {
     }
     const storageEmbeddingDurationMs = Math.max(0, Date.now() - embeddingStartedAt);
     if (embeddingUsage) {
-      await this.recordEmbeddingUsage(embeddingUsage, "succeeded").catch((error: unknown) => {
+      await this.recordEmbeddingUsage(embeddingUsage, "succeeded", undefined, providerUsage).catch((error: unknown) => {
         this.logger?.warn(
           {
             role: "worker",
@@ -318,6 +322,7 @@ export class DocumentProcessingService {
     usage: ReturnType<DocumentProcessingService["buildEmbeddingUsage"]>,
     status: "succeeded" | "failed",
     error?: unknown,
+    providerUsage?: ProviderUsage,
   ): Promise<void> {
     if (usage.vectorCount === 0) {
       return;
@@ -331,11 +336,13 @@ export class DocumentProcessingService {
       jobId: usage.jobId,
       provider: usage.provider,
       model: usage.model,
-      inputTokens: usage.inputTokens,
+      inputTokens: providerUsage?.inputTokens ?? providerUsage?.totalTokens ?? usage.inputTokens,
+      outputTokens: providerUsage?.outputTokens ?? null,
       inputBytes: usage.inputBytes,
       vectorCount: usage.vectorCount,
       status,
-      usageQuality: "estimated",
+      usageQuality: providerUsage?.quality ?? "estimated",
+      providerRequestId: providerUsage?.providerRequestId ?? null,
       errorCode: status === "failed" ? embeddingUsageErrorCode(error) : null,
       chunks: usage.chunks,
     });

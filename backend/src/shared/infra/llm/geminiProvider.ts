@@ -1,9 +1,14 @@
 import {
   type EmbeddingClient,
+  type EmbeddingResult,
   type LlmCapabilityConfig,
+  type ProviderUsage,
   type TextGenerationClient,
+  type TextGenerationResult,
+  type TextGenerationStreamResult,
 } from "./providerTypes.js";
 import { readProviderErrorBody } from "./providerErrors.js";
+import { streamWithUsage } from "./providerStreaming.js";
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
 import { parseSseEvents } from "./sse.js";
 
@@ -40,6 +45,27 @@ const extractGeminiText = (payload: unknown): string => {
   return candidate?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
 };
 
+interface GeminiUsageMetadata {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+  cachedContentTokenCount?: number;
+}
+
+const extractGeminiUsage = (payload: unknown): ProviderUsage | undefined => {
+  const usage = (payload as { usageMetadata?: GeminiUsageMetadata })?.usageMetadata;
+  if (!usage) {
+    return undefined;
+  }
+  return {
+    inputTokens: usage.promptTokenCount,
+    outputTokens: usage.candidatesTokenCount,
+    totalTokens: usage.totalTokenCount,
+    cachedInputTokens: usage.cachedContentTokenCount,
+    quality: "actual",
+  };
+};
+
 export class GeminiTextGenerationClient implements TextGenerationClient {
   readonly metadata;
 
@@ -56,7 +82,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
     systemPrompt?: string;
     temperature?: number;
     maxOutputTokens?: number;
-  }): Promise<string> {
+  }): Promise<TextGenerationResult> {
     const response = await fetch(
       `${GEMINI_BASE_URL}/${this.config.model}:generateContent?key=${encodeURIComponent(this.config.apiKey)}`,
       {
@@ -73,44 +99,54 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
     }
 
     const payload = await response.json();
-    return extractGeminiText(payload);
+    return {
+      text: extractGeminiText(payload),
+      usage: extractGeminiUsage(payload),
+    };
   }
 
-  async *stream(input: {
+  stream(input: {
     prompt: string;
     systemPrompt?: string;
     temperature?: number;
     maxOutputTokens?: number;
-  }): AsyncIterable<string> {
-    const response = await fetch(
-      `${GEMINI_BASE_URL}/${this.config.model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(this.config.apiKey)}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+  }): TextGenerationStreamResult {
+    const config = this.config;
+    return streamWithUsage(async function* () {
+      const response = await fetch(
+        `${GEMINI_BASE_URL}/${config.model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(config.apiKey)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(buildGenerateBody(input)),
         },
-        body: JSON.stringify(buildGenerateBody(input)),
-      },
-    );
+      );
 
-    if (!response.ok) {
-      throw await readProviderErrorBody("Gemini", "stream", response);
-    }
-    if (!response.body) {
-      throw new Error(`Gemini stream failed: ${response.status} (no response body)`);
-    }
-
-    for await (const data of parseSseEvents(response.body)) {
-      if (data === "[DONE]") {
-        continue;
+      if (!response.ok) {
+        throw await readProviderErrorBody("Gemini", "stream", response);
+      }
+      if (!response.body) {
+        throw new Error(`Gemini stream failed: ${response.status} (no response body)`);
       }
 
-      const payload = JSON.parse(data) as unknown;
-      const text = extractGeminiText(payload);
-      if (text) {
-        yield text;
+      // Gemini reports cumulative usageMetadata on streamed chunks; keep the latest.
+      let usage: ProviderUsage | undefined;
+      for await (const data of parseSseEvents(response.body)) {
+        if (data === "[DONE]") {
+          continue;
+        }
+
+        const payload = JSON.parse(data) as unknown;
+        const text = extractGeminiText(payload);
+        if (text) {
+          yield text;
+        }
+        usage = extractGeminiUsage(payload) ?? usage;
       }
-    }
+      return usage;
+    });
   }
 }
 
@@ -125,9 +161,10 @@ export class GeminiEmbeddingClient implements EmbeddingClient {
     };
   }
 
-  async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
+  async embedTexts(texts: string[], options?: { model?: string }): Promise<EmbeddingResult> {
     const embeddings: number[][] = [];
     const model = options?.model ?? this.config.model;
+    let promptTokens: number | undefined;
 
     for (const text of texts) {
       const response = await runProviderRequestWithTimeout(
@@ -159,10 +196,21 @@ export class GeminiEmbeddingClient implements EmbeddingClient {
 
       const payload = (await response.json()) as {
         embedding?: { values?: number[] };
+        usageMetadata?: GeminiUsageMetadata;
       };
       embeddings.push(payload.embedding?.values ?? []);
+      const tokens = payload.usageMetadata?.promptTokenCount ?? payload.usageMetadata?.totalTokenCount;
+      if (typeof tokens === "number") {
+        promptTokens = (promptTokens ?? 0) + tokens;
+      }
     }
 
-    return embeddings;
+    return {
+      vectors: embeddings,
+      usage:
+        promptTokens === undefined
+          ? undefined
+          : { inputTokens: promptTokens, totalTokens: promptTokens, quality: "actual" },
+    };
   }
 }

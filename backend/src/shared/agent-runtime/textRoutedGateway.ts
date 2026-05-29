@@ -43,13 +43,13 @@ export class TextRoutedToolCallingGateway implements ModelToolCallingGateway {
   async request(input: ModelToolCallRequest): Promise<ModelToolCallResponse> {
     const systemPrompt = buildSystemPrompt(input);
     const prompt = buildPrompt(input);
-    const raw = await this.client.complete({
+    const result = await this.client.complete({
       prompt,
       systemPrompt,
       temperature: this.options.temperature,
       maxOutputTokens: this.options.maxOutputTokens,
     });
-    return parseModelResponse(raw);
+    return parseModelResponse(result.text);
   }
 }
 

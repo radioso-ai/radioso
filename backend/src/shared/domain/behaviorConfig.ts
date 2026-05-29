@@ -13,7 +13,7 @@ export const CHAT_BEHAVIOR = {
     // the cap still needs headroom for the reasoning pass plus the short decline,
     // or the call returns empty and we fall back to canned copy.
     noContextMaxOutputTokens: 512,
-    maxResponseLength: 320,
+    maxResponseLength: 800,
   },
   carryForward: {
     maxLiterals: 6,

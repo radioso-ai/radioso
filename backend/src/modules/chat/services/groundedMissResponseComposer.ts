@@ -35,6 +35,13 @@ export class MissingGroundedMissResponseComposer implements GroundedMissResponse
 }
 
 const MAX_RESPONSE_LENGTH = CHAT_BEHAVIOR.groundedMiss.maxResponseLength;
+const GROUNDED_MISS_SYSTEM_PROMPT = [
+  "You write scoped fallback replies for a document-grounded assistant.",
+  "Write in first person as the assistant. Do not refer to yourself as 'the assistant' or 'this assistant'.",
+  "When the user's exact question is outside the assistant's configured scope or unsupported by available context, do not answer it from general knowledge.",
+  "If the user asks about an out-of-scope person, company, place, product, event, concept, or other named entity, do not identify, describe, summarize, compare, or explain that entity.",
+  "Instead, say the topic is outside your focus, then bridge to what you can help with.",
+].join(" ");
 
 const normalizeWhitespace = (value: string | undefined): string =>
   (value ?? "")
@@ -135,6 +142,7 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
   async composeNoContext(input: GroundedMissNoContextInput): Promise<string> {
     try {
       const request = {
+        systemPrompt: GROUNDED_MISS_SYSTEM_PROMPT,
         prompt: renderGroundedMissSection("prompt", {
           locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
           query: input.query,

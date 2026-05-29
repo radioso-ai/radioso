@@ -15,7 +15,6 @@ import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
 import type { ChatGateway, ChatGatewayInput, ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ChatStreamEvent, SkillStreamPayload, SkillStreamPhase } from "../contracts/streamEvents.js";
-import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import {
   MissingGroundedMissResponseComposer,
   type GroundedMissResponseComposer,
@@ -699,6 +698,7 @@ export class ChatService {
       let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
       let answerGrounding: AnswerGroundingVerdict = "grounded";
       let noContextPresentation: ChatPresentedAnswer | null = null;
+      let hasStreamedAnswer = false;
       const answerStartedAt = Date.now();
 
       if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
@@ -715,6 +715,7 @@ export class ChatService {
           type: "chunk",
           text: rawAnswer,
         };
+        hasStreamedAnswer = true;
       } else if (session.retrieval.contexts.length === 0) {
         const fallbackEnvelope = await this.generateAnswerWithPageContext(session, input.query, input.accountId);
         rawAnswer = fallbackEnvelope?.answer
@@ -729,10 +730,9 @@ export class ChatService {
           type: "chunk",
           text: rawAnswer,
         };
+        hasStreamedAnswer = true;
       } else {
         const reader = new GroundedAnswerEnvelopeReader();
-        const sanitizer = new CitationAnchorSanitizer();
-        let hasEmittedAnyChunk = false;
         for await (const text of this.chatGateway.streamAnswer({
           query: input.query,
           history: session.history,
@@ -744,37 +744,12 @@ export class ChatService {
           if (!text) {
             continue;
           }
-          const answerChunk = reader.push(text);
-          if (!answerChunk) {
-            continue;
-          }
-          const safe = sanitizer.push(answerChunk);
-          if (!safe) {
-            continue;
-          }
-          if (safe.trim().length === 0 && !hasEmittedAnyChunk) {
-            continue;
-          }
-          hasEmittedAnyChunk = true;
-          yield {
-            type: "chunk",
-            text: safe,
-          };
+          reader.push(text);
         }
 
         const finalized = reader.finalize();
         plannedSuggestions = finalized.suggestions;
         answerGrounding = finalized.grounding;
-        const trailingSafe = sanitizer.push(finalized.trailingAnswer);
-        const trailingFlush = sanitizer.flush();
-        const tail = `${trailingSafe ?? ""}${trailingFlush ?? ""}`;
-        if (tail) {
-          yield {
-            type: "chunk",
-            text: tail,
-          };
-        }
-
         rawAnswer = finalized.fullAnswer;
         if (!rawAnswer.trim()) {
           throw new BlankChatAnswerError();
@@ -801,6 +776,13 @@ export class ChatService {
           usageContext: this.buildChatUsageContext(session, input.accountId, "stream_grounded_unsupported"),
         });
         presentationWithoutSuggestions = this.chatAnswerPresenter.presentGroundedMissAnswer(groundedMiss);
+      }
+      if (!hasStreamedAnswer && presentationWithoutSuggestions.answer) {
+        yield {
+          type: "chunk",
+          text: presentationWithoutSuggestions.answer,
+        };
+        hasStreamedAnswer = true;
       }
       // The lazy promise can call chatActionSuggestionService.evaluate (which may
       // hit an LLM). If completeAssistantTurn below throws, we rethrow but the

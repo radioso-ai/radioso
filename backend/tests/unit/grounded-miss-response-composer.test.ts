@@ -41,7 +41,7 @@ describe("grounded miss response composer", () => {
   });
 
   it("requests minimal reasoning effort with budget for the decline so reasoning models don't return empty", async () => {
-    let observedRequest: { maxOutputTokens?: number; reasoningEffort?: string } = {};
+    let observedRequest: { maxOutputTokens?: number; reasoningEffort?: string; systemPrompt?: string } = {};
     const composer = new ModelGroundedMissResponseComposer({
       metadata: { capability: "chat", provider: "openai", model: "gpt-5-nano" },
       async complete(request) {
@@ -57,6 +57,9 @@ describe("grounded miss response composer", () => {
 
     expect(observedRequest.reasoningEffort).toBe("minimal");
     expect(observedRequest.maxOutputTokens ?? 0).toBeGreaterThanOrEqual(256);
+    expect(observedRequest.systemPrompt).toContain("do not answer it from general knowledge");
+    expect(observedRequest.systemPrompt).toContain("Write in first person as the assistant");
+    expect(observedRequest.systemPrompt).toContain("Do not refer to yourself as 'the assistant' or 'this assistant'");
   });
 
   it("passes assistant scope instructions into no-context generation", async () => {
@@ -82,8 +85,11 @@ describe("grounded miss response composer", () => {
     });
 
     expect(observedPrompt).toContain("Answer Instructions:");
+    expect(observedPrompt).toContain('Do not refer to yourself as "the assistant" or "this assistant"');
     expect(observedPrompt).toContain("Help visitors choose and book Ananda courses.");
     expect(observedPrompt).toContain("Redirect back to the Answer Instructions scope");
+    expect(observedPrompt).toContain("Do not tell the user only to ask a narrower question");
+    expect(observedPrompt).toContain("do not identify, describe, summarize, compare, or explain that entity");
     expect(observedPrompt).toContain("Do not offer to help with unrelated topics from the user query");
     expect(observedPrompt).toContain("Do not mention internal labels");
   });
@@ -255,6 +261,38 @@ describe("grounded miss response composer", () => {
     const fallback = await composer.composeNoContext({ query: "What is the capital of France?" });
     expect(fallback).toEqual(expect.any(String));
     expect(fallback.length).toBeGreaterThan(0);
+    expect(fallback).toContain("my current focus");
+    expect(fallback).not.toContain("narrower question");
+    expect(fallback).not.toContain("this assistant");
+    expect(fallback).not.toContain("the assistant");
+  });
+
+  it("keeps a scoped no-context response instead of discarding it as boilerplate-worthy", async () => {
+    const scopedResponse = [
+      "That is outside what I can help with here.",
+      "I can help with Ananda Europe, meditation, Kriya Yoga, retreats, satsangs, events, books, videos, news, and the Ananda Assisi retreat center.",
+      "If you are exploring spiritual practice, ask about a course, retreat, or upcoming online event.",
+      "For example, I can help you find a beginner-friendly meditation option or point you toward the official calendar.",
+    ].join(" ");
+    expect(scopedResponse.length).toBeGreaterThan(320);
+
+    const composer = new ModelGroundedMissResponseComposer({
+      metadata: {
+        capability: "chat",
+        provider: "openai",
+        model: "test-model",
+      },
+      async complete() {
+        return textResult(scopedResponse);
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    });
+
+    await expect(
+      composer.composeNoContext({ query: "Who is Tesla?" }),
+    ).resolves.toBe(scopedResponse);
   });
 
   it("falls back when no-context generation returns empty output for another locale", async () => {

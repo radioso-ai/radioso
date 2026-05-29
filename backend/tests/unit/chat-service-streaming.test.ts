@@ -934,6 +934,86 @@ describe("chat service streaming", () => {
     }));
   });
 
+  it("does not stream unsupported grounded drafts when the final answer is a grounded miss", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Guide",
+              content: "The page explains testing and parsing content for users.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+          },
+        };
+      },
+    } as const;
+    const unsupportedDraft = "It also offers 24/7 phone support and a discount code.";
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return unsupportedDraft;
+      },
+      async *streamAnswer() {
+        yield "It also offers 24/7 phone ";
+        yield "support and a discount code.";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      asChatActivityPipeline(retrievalPipeline) as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "What does the page explain?",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    const streamedText = events
+      .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
+      .map((event) => event.text)
+      .join("");
+    const done = events.find((event): event is Extract<ChatStreamEvent, { type: "done" }> => event.type === "done");
+
+    expect(streamedText).not.toContain("discount code");
+    expect(streamedText).toBe(done?.answer);
+    expect(done?.answer).not.toContain("discount code");
+  });
+
   it("fails blank grounded streams instead of persisting an empty assistant turn", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
@@ -1703,7 +1783,7 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts.join("")).toBe("full answer ");
+    expect(chunkTexts.join("")).toBe("full answer  marker");
     expect(doneEvent).toEqual(expect.objectContaining({
       type: "done",
       conversationId: expect.any(String),
@@ -2507,7 +2587,7 @@ describe("chat service streaming", () => {
     expect(persisted.at(-1)?.content).toBe(response.answer);
   });
 
-  it("streams provisional strict-mode chunks and keeps uncited content in the final answer", async () => {
+  it("streams the validated strict-mode answer and keeps uncited content in the final answer", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2602,7 +2682,7 @@ describe("chat service streaming", () => {
     );
   });
 
-  it("continues incremental streaming under warn mode even when the final outcome is degraded", async () => {
+  it("does not stream an uncited warn-mode draft when the final outcome is a grounded miss", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2674,11 +2754,11 @@ describe("chat service streaming", () => {
       .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
       .map((event) => event.text);
 
-    expect(chunkTexts.join("")).toBe("Narayani is a teacher and author.");
+    expect(chunkTexts.join("")).toBe("I can't answer that from my current focus. Try asking about the topics I can help with.");
     expect(events.at(-1)).toEqual(
       expect.objectContaining({
         type: "done",
-        answer: expect.any(String),
+        answer: "I can't answer that from my current focus. Try asking about the topics I can help with.",
         activityTrace: expect.objectContaining({
           stages: expect.arrayContaining([
             expect.objectContaining({
@@ -3938,7 +4018,7 @@ describe("chat service streaming", () => {
     expect(response.answer).toEqual(expect.any(String));
     expect(response.answer).toContain("Guide");
     expect(response.citations).toEqual([
-      { documentId: "doc-1", chunkId: "chunk-1", title: "Guide" },
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Guide", sourceUrl: "https://example.com/guide" },
     ]);
     expect(response.answerSegments).toEqual([
       {

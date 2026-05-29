@@ -39,6 +39,16 @@ export const validateImportRecords = (
       );
     }
 
+    const conversationContractError = validateConversationContractImport(record);
+    if (conversationContractError) {
+      errors.push(conversationContractError);
+    }
+
+    const conversationEngineError = validateConversationEngineImport(record);
+    if (conversationEngineError) {
+      errors.push(conversationEngineError);
+    }
+
     if (options.checkPrivateCrossModuleImports !== false) {
       const crossModuleError = validateCrossModuleImport(record);
       if (crossModuleError) {
@@ -75,6 +85,76 @@ const validateCrossModuleImport = (record) => {
   if (privateModuleSegments.test(resolved)) {
     return `Backend modules must use public contracts for cross-module imports: ${record.filePath} -> ${record.specifier}`;
   }
+  return null;
+};
+
+const validateConversationContractImport = (record) => {
+  const filePath = normalizePath(record.filePath);
+  if (!filePath.startsWith("packages/conversation-contract/")) {
+    return null;
+  }
+
+  if (record.specifier.startsWith("@radioso/")) {
+    return `Conversation contract must not import Radioso product implementation code: ${record.filePath} -> ${record.specifier}`;
+  }
+
+  const resolved = resolveImportPath(record.filePath, record.specifier);
+  if (!resolved) {
+    return null;
+  }
+
+  if (resolved.startsWith("packages/conversation-contract/")) {
+    return null;
+  }
+
+  if (
+    resolved.startsWith("backend/") ||
+    resolved.startsWith("frontend/") ||
+    resolved.startsWith("docs-portal/") ||
+    resolved.startsWith("typescript-sdk/") ||
+    resolved.startsWith("ee/") ||
+    resolved.startsWith("packages/")
+  ) {
+    return `Conversation contract must not import Radioso product implementation code: ${record.filePath} -> ${record.specifier}`;
+  }
+
+  return null;
+};
+
+const validateConversationEngineImport = (record) => {
+  const filePath = normalizePath(record.filePath);
+  if (!filePath.startsWith("packages/conversation-engine/")) {
+    return null;
+  }
+
+  if (record.specifier === "@radioso/conversation-contract") {
+    return null;
+  }
+
+  if (record.specifier.startsWith("@radioso/")) {
+    return `Conversation engine must not import Radioso product implementation code: ${record.filePath} -> ${record.specifier}`;
+  }
+
+  const resolved = resolveImportPath(record.filePath, record.specifier);
+  if (!resolved) {
+    return null;
+  }
+
+  if (resolved.startsWith("packages/conversation-engine/")) {
+    return null;
+  }
+
+  if (
+    resolved.startsWith("backend/") ||
+    resolved.startsWith("frontend/") ||
+    resolved.startsWith("docs-portal/") ||
+    resolved.startsWith("typescript-sdk/") ||
+    resolved.startsWith("ee/") ||
+    resolved.startsWith("packages/")
+  ) {
+    return `Conversation engine must not import Radioso product implementation code: ${record.filePath} -> ${record.specifier}`;
+  }
+
   return null;
 };
 

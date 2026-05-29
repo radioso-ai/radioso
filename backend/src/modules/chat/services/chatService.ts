@@ -1,4 +1,5 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
+import type { ConversationEngine } from "@radioso/conversation-contract";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
@@ -27,6 +28,8 @@ import {
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
+import { toConversationTrace, toRetrievalStagedContext } from "./conversationContractMappers.js";
+import { runPreparedChatTurnWithConversationEngine } from "./conversationEngineChatTurn.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import { noopDirectiveSteering, type DirectiveSteeringPort } from "../../directives/public.js";
 import {
@@ -252,6 +255,7 @@ export class ChatService {
     },
     directiveSteering: DirectiveSteeringPort = noopDirectiveSteering,
     private readonly selectionStrategy: TurnSelectionStrategy = new DefaultTurnSelectionStrategy(),
+    private readonly conversationEngine?: ConversationEngine,
   ) {
     this.chatTurnLifecycle = new ChatTurnLifecycle(
       conversationRepository,
@@ -294,7 +298,9 @@ export class ChatService {
       kind: RETRIEVAL_OUTCOME_KIND,
       skillName: RETRIEVAL_TURN_SKILL,
       outcome: { status: "completed" },
+      stagedContext: [toRetrievalStagedContext(session.retrieval)],
       steering: session.directiveSteering?.rules ?? [],
+      trace: toConversationTrace(session.retrieval.trace),
     };
   }
 
@@ -532,12 +538,22 @@ export class ChatService {
         : await this.chatSessionPreparer.prepareDirect(input, session);
       const answerStartedAt = Date.now();
       const turnOutcome = this.buildRetrievalTurnOutcome(session);
-      const presentation = await this.turnRenderers.resolve(turnOutcome).render(turnOutcome, {
-        session,
-        query: input.query,
-        userExpectedLocale: input.userExpectedLocale,
-        accountId: input.accountId,
-      });
+      const presentation = this.conversationEngine
+        ? await runPreparedChatTurnWithConversationEngine({
+            engine: this.conversationEngine,
+            session,
+            turnOutcome,
+            turnRenderers: this.turnRenderers,
+            query: input.query,
+            userExpectedLocale: input.userExpectedLocale,
+            accountId: input.accountId,
+          })
+        : await this.turnRenderers.resolve(turnOutcome).render(turnOutcome, {
+            session,
+            query: input.query,
+            userExpectedLocale: input.userExpectedLocale,
+            accountId: input.accountId,
+          });
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,

@@ -28,17 +28,19 @@ If the user accepts or chooses a concrete option proposed by the assistant, reso
 If the user accepts without choosing among multiple offered options, keep options separate in retrievalSubqueries.
 Do not guess one branch and do not collapse several branches into one bag-of-terms rewrite.
 Format/language-only follow-ups that ask for an answer transformation are requests; resolve them from the immediately preceding assistant answer and use responseIntent: retrieval.
-Short confirmations after an assistant message with an offered next topic, action, question, or list of options are acceptance requests. Use responseIntent: retrieval and build the query/subqueries from the offered material.
+Bare gratitude or acknowledgement ("thanks", "thank you", "ok", "got it", "sounds good") is social_only when it does not explicitly ask for a next step, choose an option, or accept an offered action. Do not convert gratitude into retrieval just because the assistant's previous message included links, options, or a follow-up question.
+Short confirmations are acceptance requests only when they explicitly accept or choose an offered next topic, action, or option (for example: "yes please", "go ahead", "show me the first one", "tell me about the retreat"). Use responseIntent: retrieval and build the query/subqueries from the accepted offered material.
 Self-correction turns ("wait, I meant X, not Y", "actually I'm asking about X", "no, the X side, not the Y side") replace the prior subject with X. The rewritten query, semanticQuery, lexicalQuery, proposedActiveSubject, and retrievalSubqueries must contain only X. Do not carry Y, Y's modifiers, or Y-specific terms forward — even when prior turns established Y.
 
 Intent & Scope
 responseIntent: retrieval — any turn where the user wants information, an explanation, advice, comparison, calculation, drafting, transformation, troubleshooting, instructions, a continuation, or any other answer/action. Use retrieval even when the request may be outside the assistant answer scope; scope is decided after retrieval evidence.
 social_only — only turns where the user does not want an answer or action, such as appreciation, acknowledgement, cancellation, or ending the conversation.
+Greetings addressed to the assistant ("hi", "hello", "hey", including the assistant's configured name) are social_only unless they also ask for information or an action.
 assistant_identity — questions about the assistant's name, role, or purpose
 For every answer/action request, compare it with the assistant answer scope reference. Put answerable requested work in inScopeRequest. Put requested work outside that scope in outsideScopeRequest. Use null for the side that has no requested work.
 Mixed turns (in-scope + out-of-scope): use retrieval; put the out-of-scope task in outsideScopeRequest.
 Vague in-scope context + a request for an answer/action: use retrieval.
-For short acknowledgements or confirmations, inspect the immediately preceding assistant message. If it offered any next topic, action, continuation, question, or option list, treat the user message as accepting that offer and use retrieval. Use social_only only when the acknowledgement closes the exchange or does not accept any offered action.
+For short acknowledgements or confirmations, inspect the immediately preceding assistant message and the latest user wording together. If the latest user wording is only gratitude or acknowledgement, use social_only even when the assistant offered options. If the latest user wording explicitly accepts or chooses an offered action, use retrieval. Use social_only when the acknowledgement closes the exchange or does not accept any offered action.
 
 Queries
 Do not broaden into extra subtopics the user didn't ask for.
@@ -55,8 +57,9 @@ responseLanguage: an explicit user instruction in conversation context to use a 
 responseLanguagePolicy: always "match_user_question".
 queryShape: use enum values only; use "general_grounding" when no specialized shape is clear.
 confidence: certainty in subject resolution and turn interpretation, not answer confidence.
+For obvious greetings, gratitude, acknowledgements, cancellations, or conversation-ending turns, use high confidence (0.95 or higher) with responseIntent social_only. Do not use 0 confidence for clear social_only turns.
 
 Return strict JSON matching this blueprint exactly:
-{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","responseIntent":"retrieval|social_only|assistant_identity","intentTopic":"string|null","inScopeRequest":"string|null","outsideScopeRequest":"string|null","responseLanguagePolicy":"match_user_question","responseLanguage":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null","responseLanguagePolicy":"match_user_question"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":true,"confidence":0.0}
+{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","responseIntent":"retrieval|social_only|assistant_identity","intentTopic":"string|null","inScopeRequest":"string|null","outsideScopeRequest":"string|null","responseLanguagePolicy":"match_user_question","responseLanguage":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null","responseLanguagePolicy":"match_user_question"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":false,"confidence":0.95}
 
 Return strict JSON matching the blueprint. Do not wrap in markdown fences.

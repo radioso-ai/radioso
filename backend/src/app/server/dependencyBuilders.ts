@@ -67,12 +67,21 @@ import {
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
 import {
+  AgenticRetrievalPipelineService,
+  AgenticRetrievalRunner,
   EmbeddingService,
-  createDefaultRetrievalServices,
+  GatewayQueryRewritePortAdapter,
+  PgLexicalSearch,
   PgVectorChunkStorage,
+  PgVectorSearch,
+  PromptBuilder,
+  RetrievalAnswerExecutor,
   RetrievalAnswerService,
-  type RetrievalPipelineService,
+  createDefaultRetrievalServices,
+  type RetrievalPipelinePort,
 } from "../../modules/retrieval/composition.js";
+import { DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
+import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { AbuseControlRepository } from "../../db/repositories/abuseControlRepository.js";
 import { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import {
@@ -541,15 +550,67 @@ export const buildRetrievalServices = (input: {
   telemetryService: TelemetryService;
 }) => {
   const retrieval = createDefaultRetrievalServices(input);
+  const retrievalPipeline = buildRetrievalAnswerExecutor(retrieval.retrievalPipeline, input);
   return {
     ...retrieval,
+    retrievalPipeline,
     documentSearchService: new DocumentSearchService(
       input.documentRepository,
-      retrieval.retrievalPipeline,
+      retrievalPipeline,
       input.auditService,
     ),
   };
 };
+
+// The retrieval controller: it selects fixed vs reasoning per turn from the
+// workspace's `retrievalStrategy` preference and dispatches. The reasoning
+// strategy (the agent runtime) is constructed lazily so it costs nothing for
+// workspaces that never select it.
+const buildRetrievalAnswerExecutor = (
+  deterministic: RetrievalPipelinePort,
+  input: {
+    embeddingService: EmbeddingService;
+    database: Database;
+    llmRegistry: LlmProviderRegistry;
+    logger: AppLogger;
+    telemetryService: TelemetryService;
+    ingestionSettingsService?: IngestionSettingsService;
+  },
+): RetrievalPipelinePort =>
+  new RetrievalAnswerExecutor({
+    fixed: deterministic,
+    reasoning: () => {
+      const systemPrompt = loadPromptTemplate("agentic-retrieval/system.md");
+      const runner = new AgenticRetrievalRunner({
+        runtime: new DefaultAgentRuntime({ gateway: input.llmRegistry.createToolCallingGateway() }),
+        embeddings: input.embeddingService,
+        vectorSearch: new PgVectorSearch(input.database),
+        lexicalSearch: new PgLexicalSearch(input.database),
+        queryRewrite: new GatewayQueryRewritePortAdapter(input.llmRegistry.createRewriteGateway()),
+        rerankGateway: input.llmRegistry.createRerankGateway(),
+      });
+      return new AgenticRetrievalPipelineService({
+        deterministic,
+        runner,
+        promptBuilder: new PromptBuilder(),
+        systemPrompt,
+        ingestionSettingsService: input.ingestionSettingsService,
+      });
+    },
+    onStrategySelected: (selection, { workspaceId }) => {
+      void input.telemetryService.emit({
+        eventType: "retrieval.strategy.selected",
+        correlation: { workspaceId },
+        metadata: {
+          workspaceId,
+          strategy: selection.strategy,
+          selectionMode: selection.selectionMode,
+          selectionReason: selection.selectionReason,
+        },
+        tags: { strategy: selection.strategy },
+      });
+    },
+  });
 
 export const buildWorkspaceServices = (input: {
   accountMembershipRepository: AccountMembershipRepository;
@@ -588,8 +649,8 @@ export const buildChatServices = (input: {
   messageRepository: MessageRepository;
   productAnalyticsService: ProductAnalyticsService;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
-  retrievalPipeline: RetrievalPipelineService;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
+  retrievalPipeline: RetrievalPipelinePort;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   workspaceRepository: WorkspaceRepository;
 }) => {

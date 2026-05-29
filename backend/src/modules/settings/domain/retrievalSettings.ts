@@ -61,6 +61,24 @@ export const MAX_SUGGESTED_QUESTIONS_COUNT = 4;
 export const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
 export const DEFAULT_SUGGESTED_QUESTIONS_COUNT = 3;
 
+// Retrieval execution strategy *preference* — which strategy a workspace wants
+// the `retrieval.answer` skill executed under. This is the open strategy axis,
+// owned here in settings because retrieval depends on settings, never the
+// reverse. The resolved execution model (`RetrievalStrategy`, without `auto`)
+// lives in the retrieval module. `auto` defers the choice to a router (a future
+// agent), and resolves to the safe default until that ships.
+export const retrievalStrategyPreferences = ["fixed", "reasoning", "auto"] as const;
+export type RetrievalStrategyPreference = (typeof retrievalStrategyPreferences)[number];
+export const DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE: RetrievalStrategyPreference = "fixed";
+
+export const resolveRetrievalStrategyPreference = (
+  value: unknown,
+): RetrievalStrategyPreference | undefined =>
+  typeof value === "string" &&
+  retrievalStrategyPreferences.includes(value as RetrievalStrategyPreference)
+    ? (value as RetrievalStrategyPreference)
+    : undefined;
+
 interface RetrievalSettingsPayload {
   metadataRules?: unknown;
   semanticRewriteInstructions?: unknown;
@@ -97,6 +115,7 @@ export interface RetrievalSettingsRecord {
   citationDisplayEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
+  retrievalStrategy?: RetrievalStrategyPreference;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -114,6 +133,10 @@ export interface RetrievalSettingsInput {
   citationDisplayEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
+  // The workspace's retrieval execution strategy. Optional on input; omitted
+  // means "leave unchanged / use the default". Persisted in the settings JSONB
+  // and read by the retrieval executor to select fixed vs reasoning per turn.
+  retrievalStrategy?: RetrievalStrategyPreference;
 }
 
 // Kept for internal retrieval tests that still exercise query-derived attribute logic.
@@ -139,6 +162,7 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   citationDisplayEnabled: true,
   metadataRules: [],
   customInstruction: "",
+  retrievalStrategy: DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -311,6 +335,12 @@ export const normalizeMetadataRules = (value: unknown): RetrievalMetadataRule[] 
 };
 
 export const validateRetrievalSettings = (input: RetrievalSettingsInput): RetrievalSettingsInput => {
+  if (
+    typeof input.retrievalStrategy !== "undefined" &&
+    !resolveRetrievalStrategyPreference(input.retrievalStrategy)
+  ) {
+    throw badRequest("retrievalStrategy must be one of fixed, reasoning, auto");
+  }
   if (typeof input.semanticRewriteInstructions !== "string") {
     throw badRequest("semanticRewriteInstructions must be a string");
   }
@@ -441,6 +471,9 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
 
   return {
     ...input,
+    retrievalStrategy:
+      resolveRetrievalStrategyPreference(input.retrievalStrategy) ??
+      DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,
     semanticRewriteInstructions: normalizeRewriteInstruction(
       input.semanticRewriteInstructions,
       DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS,

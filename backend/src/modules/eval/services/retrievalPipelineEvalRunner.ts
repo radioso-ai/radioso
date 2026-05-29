@@ -1,6 +1,14 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import { AnswerPresentationService } from "../../chat/composition.js";
 import type { ChatGateway } from "../../chat/contracts/index.js";
-import type { RetrievalPipelineRequest, RetrievalPipelineService } from "../../retrieval/public.js";
+import type { CitationEvidence } from "../../chat/contracts/answerTypes.js";
+import { resolveCitationArtifacts } from "../../chat/retrievalSupport.js";
+import {
+  resolveContextSourceUrl,
+  type FinalPromptContext,
+  type RetrievalPipelineRequest,
+  type RetrievalPipelineService,
+} from "../../retrieval/public.js";
 import type {
   RetrievalSettingsRecord,
   RetrievalSettingsSnapshot,
@@ -13,6 +21,21 @@ import type { EvalReplayContext, EvalRetrievalRunnerPort } from "./evalRunner.js
 import type { EvalUsageMeter } from "./evalUsageMeter.js";
 
 const UNKNOWN_MODEL = { provider: "unknown", model: "unknown" } as const;
+
+const toCitationEvidence = (contexts: FinalPromptContext[]): CitationEvidence[] =>
+  contexts.map((context) => {
+    const evidence: CitationEvidence = {
+      documentId: context.documentId,
+      chunkId: context.chunkId,
+      title: context.title,
+      content: context.content,
+    };
+    const sourceUrl = resolveContextSourceUrl(context.metadata);
+    if (sourceUrl) {
+      evidence.sourceUrl = sourceUrl;
+    }
+    return evidence;
+  });
 
 /**
  * Wraps the existing retrieval pipeline and chat gateway so the eval module
@@ -39,6 +62,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     private readonly usageMeter: EvalUsageMeter,
     private readonly capabilityResolver: LlmCapabilityResolver,
     private readonly retrievalSettings: RetrievalSettingsService,
+    private readonly answerPresenter = new AnswerPresentationService(),
   ) {}
 
   async retrieve(input: {
@@ -152,6 +176,17 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       throw callError;
     }
 
+    const citationEvidence = toCitationEvidence(pipelineResult.contexts);
+    const normalized = this.answerPresenter.normalize({
+      answer: generated,
+      citations: citationEvidence,
+    });
+    const presented = this.answerPresenter.present({
+      answer: generated,
+      citations: citationEvidence,
+    });
+    const citationArtifacts = resolveCitationArtifacts(presented, normalized, citationEvidence);
+
     return {
       chunks: pipelineResult.contexts.map((ctx, index) => ({
         chunkId: ctx.chunkId,
@@ -160,7 +195,9 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
         rank: typeof ctx.promptPosition === "number" ? ctx.promptPosition : index,
         similarity: typeof ctx.similarity === "number" ? ctx.similarity : undefined,
       })),
-      answer: generated,
+      answer: presented.answer,
+      citations: citationArtifacts.citations,
+      answerSegments: citationArtifacts.answerSegments,
       composedInstructions: pipelineResult.systemPrompt,
       resolvedSettings: await this.resolveSettingsSnapshot(
         input.workspaceId,

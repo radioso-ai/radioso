@@ -394,6 +394,46 @@ export function RetrievalSettingsPanel({
         </SettingsCard>
 
         <SettingsCard
+          id="retrieval-strategy"
+          icon={<SlidersHorizontal className="h-5 w-5 text-primary" />}
+          eyebrow="How Answers Are Produced"
+          title="Answering strategy"
+          description="Choose how this workspace produces grounded answers."
+        >
+          <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="retrievalStrategy" className="text-foreground">
+                  {retrievalSettingDocs.retrievalStrategy.label}
+                </Label>
+                <SettingTooltip
+                  label={retrievalSettingDocs.retrievalStrategy.label}
+                  content={retrievalSettingDocs.retrievalStrategy.details}
+                />
+              </div>
+              <div className="mt-0.5 text-sm text-muted-foreground">
+                <AssistantMarkdownContent content={retrievalSettingDocs.retrievalStrategy.summary} inline />
+              </div>
+            </div>
+            <Select
+              value={settings.retrievalStrategy}
+              onValueChange={(value) =>
+                updateSetting('retrievalStrategy', value as RetrievalSettings['retrievalStrategy'])
+              }
+            >
+              <SelectTrigger id="retrievalStrategy" className="w-full sm:w-[240px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fixed">Standard</SelectItem>
+                <SelectItem value="reasoning">Reasoning (experimental)</SelectItem>
+                <SelectItem value="auto">Automatic</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </SettingsCard>
+
+        <SettingsCard
           id="metadata-rules"
           eyebrow="Find The Right Evidence"
           icon={<SlidersHorizontal className="h-5 w-5 text-primary" />}

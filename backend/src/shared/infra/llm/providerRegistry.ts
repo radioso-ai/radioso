@@ -1,5 +1,9 @@
 import { ModelChatGateway, ModelGroundedMissResponseComposer } from "../../../modules/chat/llmAdapters.js";
 import {
+  TextRoutedToolCallingGateway,
+  type ModelToolCallingGateway,
+} from "../../agent-runtime/index.js";
+import {
   ModelEmbeddingGateway,
   ModelQueryRewriteGateway,
   ModelRerankGateway,
@@ -154,6 +158,21 @@ export class LlmProviderRegistry {
 
   createChatTextClient(): TextGenerationClient {
     return this.createTextClient(this.config.chat);
+  }
+
+  /**
+   * Returns a provider-agnostic tool-calling gateway for the agentic retrieval
+   * runner. Wraps whichever provider is configured for the `chat` capability
+   * — the same provider the assistant already uses for its final answer.
+   *
+   * Workspace-aware resolution is intentionally not threaded through here in
+   * v1: agentic mode is a per-workspace setting, and the workspace's resolved
+   * chat client is constructed at composition time. If per-call resolution is
+   * needed later, wrap this gateway in a contextual variant the same way
+   * `createChatGateway` does.
+   */
+  createToolCallingGateway(): ModelToolCallingGateway {
+    return new TextRoutedToolCallingGateway(this.createTextClient(this.config.chat));
   }
 
   createGroundedMissResponseComposer(usageEventRecorder?: UsageEventRecorder) {

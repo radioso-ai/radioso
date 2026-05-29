@@ -117,6 +117,14 @@
         "citationDisplayEnabled": {
           "type": "boolean"
         },
+        "retrievalStrategy": {
+          "type": "string",
+          "enum": [
+            "fixed",
+            "reasoning",
+            "auto"
+          ]
+        },
         "metadataRules": {
           "type": "array",
           "items": {

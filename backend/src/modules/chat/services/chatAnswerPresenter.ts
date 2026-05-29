@@ -13,82 +13,8 @@ import type { ChatSuggestion } from "../types/chatResponses.js";
 import type { AssistantSuggestionExpansionService } from "./assistantSuggestionExpansionService.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
-import type { PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
+import type { AnswerGroundingVerdict, PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
 import { resolveCitationArtifacts } from "./implicitCitationSupport.js";
-
-const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
-
-const hasWordLikeContent = (value: string): boolean => {
-  for (const segment of wordSegmenter.segment(value)) {
-    if (segment.isWordLike) {
-      return true;
-    }
-  }
-
-  return false;
-};
-
-const leadingNonWordText = (value: string): string => {
-  for (const segment of wordSegmenter.segment(value)) {
-    if (segment.isWordLike) {
-      return value.slice(0, segment.index).trimEnd();
-    }
-  }
-
-  return value;
-};
-
-const includesIdentityName = (segment: AnswerSegment, identityName?: string): boolean =>
-  Boolean(identityName && segment.text.toLocaleLowerCase().includes(identityName.toLocaleLowerCase()));
-
-const hasMarkdownLink = (segment: AnswerSegment): boolean => /\[[^\]\n]+]\([^)]+\)/.test(segment.text);
-
-const filterUnsupportedGroundedSegments = (
-  answerSegments: AnswerSegment[] | undefined,
-  identityName?: string,
-): AnswerSegment[] | undefined => {
-  if (!answerSegments) {
-    return undefined;
-  }
-
-  const filtered: AnswerSegment[] = [];
-
-  for (const segment of answerSegments) {
-    if (
-      (segment.citationIndices?.length ?? 0) > 0
-      || !hasWordLikeContent(segment.text)
-      || includesIdentityName(segment, identityName)
-      || hasMarkdownLink(segment)
-    ) {
-      filtered.push(segment);
-      continue;
-    }
-
-    const prefix = leadingNonWordText(segment.text);
-    if (prefix && filtered.some((candidate) => (candidate.citationIndices?.length ?? 0) > 0)) {
-      filtered.push({ text: prefix });
-    }
-  }
-
-  return filtered;
-};
-
-const hasCitedSegment = (answerSegments: AnswerSegment[] | undefined): boolean =>
-  answerSegments?.some((segment) => (segment.citationIndices?.length ?? 0) > 0) ?? false;
-
-const hasUnsupportedSubstantiveSegment = (
-  answerSegments: AnswerSegment[] | undefined,
-  identityName?: string,
-): boolean =>
-  answerSegments?.some((segment) =>
-    (segment.citationIndices?.length ?? 0) === 0
-    && hasWordLikeContent(segment.text)
-    && !includesIdentityName(segment, identityName)
-    && !hasMarkdownLink(segment),
-  ) ?? false;
-
-const rebuildAnswerFromSegments = (answerSegments: AnswerSegment[]): string =>
-  answerSegments.map((segment) => segment.text).join("").trim();
 
 export interface ChatPresentedAnswer {
   answer: string;
@@ -100,6 +26,10 @@ export interface ChatPresentedAnswer {
   skillOutcome: string;
   skillStatus: SkillTurnOutcome["status"];
   answerOutcome?: AssistantTurnOutcome;
+  // The model's raw self-reported grounding verdict for this turn, retained for
+  // observability/eval even when the grounded-miss safety net later reclassifies
+  // the turn (e.g. a degraded draft with no citations becomes no_context).
+  grounding?: AnswerGroundingVerdict;
 }
 
 export interface SkillOutcomeCapabilityProvider {
@@ -216,8 +146,9 @@ export class ChatAnswerPresenter {
     query: string,
     plannedSuggestions: PlannedEnvelopeSuggestion[],
     userExpectedLocale?: string | null,
+    grounding: AnswerGroundingVerdict = "grounded",
   ): Promise<ChatPresentedAnswer> {
-    const presentation = await this.presentWithoutSuggestions(session, answer, query, userExpectedLocale);
+    const presentation = await this.presentWithoutSuggestions(session, answer, query, userExpectedLocale, grounding);
     const withQuestionSuggestions = this.applyAssistantSuggestions(session, presentation, plannedSuggestions);
     return await this.applyActionSuggestions(session, withQuestionSuggestions, userExpectedLocale);
   }
@@ -227,6 +158,7 @@ export class ChatAnswerPresenter {
     answer: string,
     query: string,
     userExpectedLocale?: string | null,
+    grounding: AnswerGroundingVerdict = "grounded",
   ): Promise<ChatPresentedAnswer> {
     const citationEvidence = toCitationEvidence(session);
 
@@ -243,23 +175,18 @@ export class ChatAnswerPresenter {
       citations: citationEvidence,
     });
     const citationArtifacts = resolveCitationArtifacts(presented, normalized, citationEvidence);
-    const identityName = session.retrieval.responseIdentity?.name;
-    const answerSegments = hasUnsupportedSubstantiveSegment(citationArtifacts.answerSegments, identityName)
-      ? filterUnsupportedGroundedSegments(citationArtifacts.answerSegments, identityName)
-      : citationArtifacts.answerSegments;
-    const filteredAnswer = answerSegments && hasCitedSegment(answerSegments)
-      ? rebuildAnswerFromSegments(answerSegments)
-      : presented.answer;
+    const groundedOutcome = grounding === "degraded"
+      ? SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED_DEGRADED
+      : SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED;
 
     return withLegacyAnswerOutcome({
       ...presented,
       ...citationArtifacts,
-      answer: filteredAnswer,
-      answerSegments,
+      grounding,
       planningCitations: toPlanningCitations(normalized.citationEvidence),
-      skillName: SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.skillName,
-      skillOutcome: SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.outcome,
-      skillStatus: SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.status,
+      skillName: groundedOutcome.skillName,
+      skillOutcome: groundedOutcome.outcome,
+      skillStatus: groundedOutcome.status,
     });
   }
 

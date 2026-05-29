@@ -745,7 +745,7 @@ describe("chat integration", () => {
     });
   });
 
-  it("omits unsupported substantive content from mixed-support answers before delivery", async () => {
+  it("delivers mixed-support answers intact without dropping uncited sentences", async () => {
     const mixedGateway: ChatGateway = {
       async answer() {
         return "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support.";
@@ -771,11 +771,10 @@ describe("chat integration", () => {
       .send({ message: "What does the page explain?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toEqual(expect.any(String));
-    expect(response.body.answer).not.toContain("24/7 phone support");
+    expect(response.body.answer).toContain("24/7 phone support");
     expect(response.body.answerSegments).toEqual([
       { text: "The page explains testing and parsing content for users", citationIndices: [0] },
-      { text: "." },
+      { text: ". It also offers 24/7 phone support." },
     ]);
   });
 

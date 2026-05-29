@@ -4,8 +4,11 @@ import {
   type EmbeddingClient,
   type EmbeddingResult,
   type LlmCapabilityConfig,
+  type LlmProviderName,
   type ProviderUsage,
+  type ReasoningEffort,
   type TextGenerationClient,
+  type TextGenerationRequest,
   type TextGenerationResult,
   type TextGenerationStreamResult,
 } from "./providerTypes.js";
@@ -56,6 +59,32 @@ const buildTokenLimit = (
     ? { max_tokens: maxOutputTokens }
     : { max_completion_tokens: maxOutputTokens };
 
+export interface ChatSamplingParams {
+  temperature?: number;
+  max_completion_tokens?: number;
+  max_tokens?: number;
+  reasoning_effort?: ReasoningEffort;
+}
+
+/**
+ * Shapes the sampling/limit params for a chat.completions call. For the first-party
+ * OpenAI provider (gpt-5 family reasoning models), a requested reasoning effort is
+ * forwarded as reasoning_effort and temperature is dropped — those models reject a
+ * non-default temperature and otherwise consume the whole token budget on hidden
+ * reasoning, returning empty visible text. openai-compatible endpoints serve
+ * arbitrary models, so we never assume reasoning support there.
+ */
+export const buildChatSamplingParams = (
+  provider: LlmProviderName,
+  input: { temperature?: number; maxOutputTokens?: number; reasoningEffort?: ReasoningEffort },
+): ChatSamplingParams => {
+  const tokenLimit = buildTokenLimit(provider, input.maxOutputTokens);
+  if (provider === "openai" && input.reasoningEffort) {
+    return { ...tokenLimit, reasoning_effort: input.reasoningEffort };
+  }
+  return { ...tokenLimit, temperature: input.temperature };
+};
+
 const buildStreamUsageOptions = (
   provider: LlmCapabilityConfig["provider"],
 ): { stream_options?: { include_usage: true } } =>
@@ -82,16 +111,10 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
     };
   }
 
-  async complete(input: {
-    prompt: string;
-    systemPrompt?: string;
-    temperature?: number;
-    maxOutputTokens?: number;
-  }): Promise<TextGenerationResult> {
+  async complete(input: TextGenerationRequest): Promise<TextGenerationResult> {
     const response = await this.client.chat.completions.create({
       model: this.config.model,
-      temperature: input.temperature,
-      ...buildTokenLimit(this.config.provider, input.maxOutputTokens),
+      ...buildChatSamplingParams(this.config.provider, input),
       messages: buildMessages(input),
     });
 
@@ -101,12 +124,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
     };
   }
 
-  stream(input: {
-    prompt: string;
-    systemPrompt?: string;
-    temperature?: number;
-    maxOutputTokens?: number;
-  }): TextGenerationStreamResult {
+  stream(input: TextGenerationRequest): TextGenerationStreamResult {
     const client = this.client;
     const config = this.config;
     return streamWithUsage(async function* () {
@@ -115,8 +133,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
         stream: true,
         // Ask OpenAI to append a final usage-only chunk after the content chunks.
         ...buildStreamUsageOptions(config.provider),
-        temperature: input.temperature,
-        ...buildTokenLimit(config.provider, input.maxOutputTokens),
+        ...buildChatSamplingParams(config.provider, input),
         messages: buildMessages(input),
       });
 

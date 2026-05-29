@@ -390,7 +390,7 @@ describe("public chat contract", () => {
       },
       async *streamAnswer() {
         yield "Streaming ";
-        yield "works.";
+        yield "works[[1]].";
       },
     };
     const { app } = createTestApp({ chatGateway: streamingGateway });
@@ -399,7 +399,7 @@ describe("public chat contract", () => {
     await request(app)
       .post("/api/v1/document/")
       .set(adminSessionHeaders(session))
-      .send({ title: "Doc", content: "Hello. Streaming response coverage." });
+      .send({ title: "Doc", content: "Hello. Streaming works." });
 
     const chatToken = await enableAnonymousChat(app, session);
     const publicSession = await createPublicSession(app, chatToken);

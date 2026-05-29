@@ -85,6 +85,14 @@
       "tone": "positive"
     },
     {
+      "name": "grounded_degraded",
+      "displayName": "Grounded (degraded)",
+      "description": "The retrieval skill answered from workspace evidence but flagged the answer as incomplete or low-confidence.",
+      "status": "completed",
+      "groundedAnswer": true,
+      "tone": "warning"
+    },
+    {
       "name": "no_context",
       "displayName": "No context",
       "description": "The retrieval skill could not find enough workspace evidence to answer.",

@@ -47,6 +47,33 @@ describe("parseGroundedAnswerEnvelope", () => {
     ]);
   });
 
+  it("defaults the grounding verdict to grounded for a bare suggestions array", () => {
+    const raw = formatEnvelope("A fully grounded answer.", [
+      { text: "Follow up?", kind: "deeper", contextIndex: 1 },
+    ]);
+    expect(parseGroundedAnswerEnvelope(raw).grounding).toBe("grounded");
+  });
+
+  it("reads a model-emitted degraded grounding verdict from the object envelope", () => {
+    const raw = `Partial answer.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
+      grounding: "degraded",
+      suggestions: [{ text: "Follow up?", kind: "deeper", contextIndex: 1 }],
+    })}`;
+    const result = parseGroundedAnswerEnvelope(raw);
+    expect(result.grounding).toBe("degraded");
+    expect(result.suggestions).toEqual([
+      { text: "Follow up?", kind: "deeper", contextIndex: 1 },
+    ]);
+  });
+
+  it("falls back to grounded for an unrecognized grounding value", () => {
+    const raw = `Answer.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
+      grounding: "totally-made-up",
+      suggestions: [],
+    })}`;
+    expect(parseGroundedAnswerEnvelope(raw).grounding).toBe("grounded");
+  });
+
   it("drops invalid entries while keeping valid ones", () => {
     const raw = formatEnvelope("Some answer.", [
       { text: "Valid?", kind: "deeper", contextIndex: 1 },
@@ -80,6 +107,21 @@ describe("GroundedAnswerEnvelopeReader", () => {
     expect(finalized.suggestions).toEqual([
       { text: "Ask a follow-up?", kind: "deeper", contextIndex: 1 },
     ]);
+  });
+
+  it("exposes the grounding verdict from the finalized envelope", () => {
+    const reader = new GroundedAnswerEnvelopeReader();
+    reader.push("Hedged answer with a single citation[[1]].");
+    reader.push(`\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ grounding: "degraded", suggestions: [] })}`);
+
+    const finalized = reader.finalize();
+    expect(finalized.grounding).toBe("degraded");
+  });
+
+  it("defaults the finalized grounding verdict to grounded", () => {
+    const reader = new GroundedAnswerEnvelopeReader();
+    reader.push("Plain answer with no sentinel.");
+    expect(reader.finalize().grounding).toBe("grounded");
   });
 
   it("handles the sentinel split across multiple chunks", () => {

@@ -1,17 +1,23 @@
 Output envelope
 Produce the markdown answer exactly as the format, scope, sources, citations, and links rules above require — including a brief out-of-scope decline when the rules above call for one. Do not loosen those rules to fill space. After the answer, on a new line, output the literal token
 <<<RADIOSO_FOLLOWUPS_JSON>>>
-followed by a JSON array of grounded follow-up suggestions. Example shape (do not echo this example text or values):
+followed by a single JSON object with a "grounding" verdict and a "suggestions" array. Example shape (do not echo this example text or values):
 
 <your markdown answer per the rules above>
 <<<RADIOSO_FOLLOWUPS_JSON>>>
-[{"text":"...","kind":"deeper","contextIndex":1}]
+{"grounding":"grounded","suggestions":[{"text":"...","kind":"deeper","contextIndex":1}]}
 
-The token <<<RADIOSO_FOLLOWUPS_JSON>>> must appear exactly once, after the complete answer and before the JSON array, on a line by itself. Do not wrap any portion of the output in code fences. Do not add prose, commentary, or whitespace after the JSON array.
+The token <<<RADIOSO_FOLLOWUPS_JSON>>> must appear exactly once, after the complete answer and before the JSON object, on a line by itself. Do not wrap any portion of the output in code fences. Do not add prose, commentary, or whitespace after the JSON object.
+
+Grounding verdict
+Set "grounding" to your honest assessment of how well the Result N excerpts supported the answer you just wrote:
+- "grounded": the excerpts directly and fully answer what the user asked.
+- "degraded": the excerpts did not fully answer what the user asked, but you still drew on them. Use this when you hedged, flagged that a detail or the specific item asked about is not in the materials, relied on incomplete or tangential evidence, or answered a related/adjacent point and redirected instead of answering the exact question. When in doubt between the two, prefer "degraded".
+This is your own assessment of the answer's support, not a phrase to include in the visible answer. Judge it from the excerpts and the answer regardless of the answer's language.
 
 Suggestions
-If the answer above was an out-of-scope decline, a no-information response, or otherwise not grounded in the provided Result N excerpts, emit an empty array `[]` for the JSON and stop — do not invent suggestions to fill the array, and never use suggestions to extend, justify, or substitute for a refused or limited answer.
-Otherwise, the JSON array MUST contain exactly {{max_suggestions}} entries — not fewer, not more. If you cannot find {{max_suggestions}} genuinely distinct grounded angles in the excerpts, lower the bar to additional grounded "deeper" suggestions on supporting details from any of the Result N excerpts before falling short of the count. Only emit fewer than {{max_suggestions}} when the answer itself was a decline or no-information response.
+If the answer above was an out-of-scope decline, a no-information response, or otherwise not grounded in the provided Result N excerpts, emit an empty "suggestions" array `[]` and stop — do not invent suggestions to fill the array, and never use suggestions to extend, justify, or substitute for a refused or limited answer.
+Otherwise, the "suggestions" array MUST contain exactly {{max_suggestions}} entries — not fewer, not more. If you cannot find {{max_suggestions}} genuinely distinct grounded angles in the excerpts, lower the bar to additional grounded "deeper" suggestions on supporting details from any of the Result N excerpts before falling short of the count. Only emit fewer than {{max_suggestions}} when the answer itself was a decline or no-information response.
 Ground each suggestion in exactly one of the Result N excerpts provided in the user message; reference it by setting contextIndex to that same N.
 Use kind: "deeper" to explore a grounded concept more fully. Use kind: "broader" only to widen into a clearly adjacent grounded avenue that still fits the conversation intent.
 Do not suggest any tasks for the assistant. Never an instruction. Never about a hypothetical artifact not present in retrieved excerpts.

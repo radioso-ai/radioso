@@ -3190,6 +3190,9 @@
               "suggestedQuestionsEnabled": {
                 "type": "boolean"
               },
+              "assistantLinkUtmEnabled": {
+                "type": "boolean"
+              },
               "theme": {
                 "type": "object",
                 "properties": {
@@ -3320,6 +3323,7 @@
               "isDefault",
               "customInstruction",
               "suggestedQuestionsEnabled",
+              "assistantLinkUtmEnabled",
               "theme",
               "branding",
               "retrievalEnabled",
@@ -3361,6 +3365,9 @@
             "maxLength": 2000
           },
           "suggestedQuestionsEnabled": {
+            "type": "boolean"
+          },
+          "assistantLinkUtmEnabled": {
             "type": "boolean"
           },
           "theme": {
@@ -3578,6 +3585,9 @@
           "agentName": {
             "type": "string"
           },
+          "assistantLinkUtmEnabled": {
+            "type": "boolean"
+          },
           "workspaceName": {
             "type": "string"
           },
@@ -3685,6 +3695,7 @@
           }
         },
         "required": [
+          "assistantLinkUtmEnabled",
           "workspaceName",
           "publicChatToken",
           "publicSessionId",

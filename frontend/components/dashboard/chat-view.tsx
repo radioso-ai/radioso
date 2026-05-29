@@ -37,12 +37,14 @@ import { ChatMessageThread } from './chat-message-thread'
 interface ChatViewProps {
   accountId: string
   agentId?: string
+  assistantName?: string | null
+  assistantLinkUtmEnabled?: boolean
   onOpenDocument: (documentId: string) => void
   onboarding: WorkspaceOnboardingState
   navigation?: ReactNode
 }
 
-export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navigation }: ChatViewProps) {
+export function ChatView({ accountId, agentId, assistantName, assistantLinkUtmEnabled, onOpenDocument, onboarding, navigation }: ChatViewProps) {
   const router = useRouter()
   const [input, setInput] = useState('')
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
@@ -299,6 +301,8 @@ export function ChatView({ accountId, agentId, onOpenDocument, onboarding, navig
               onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
               showCitations={showCitations}
               conversationId={conversationId}
+              assistantAvatarLabel={assistantName}
+              assistantLinkUtmEnabled={assistantLinkUtmEnabled}
               skillCatalog={skillCatalog}
             />
             <div ref={messagesEndRef} />

@@ -46,11 +46,23 @@ const expandInlineUnorderedLists = (content: string) =>
 export function AssistantMarkdownContent({
   content,
   inline = false,
+  onLinkClick,
+  transformLinkHref,
 }: {
   content: string
   inline?: boolean
+  onLinkClick?: (href: string) => void
+  transformLinkHref?: (href: string) => string
 }) {
   const normalizedContent = expandInlineUnorderedLists(content)
 
-  return <MarkdownContent content={normalizedContent} variant="chat" inline={inline} />
+  return (
+    <MarkdownContent
+      content={normalizedContent}
+      variant="chat"
+      inline={inline}
+      onLinkClick={onLinkClick}
+      transformLinkHref={transformLinkHref}
+    />
+  )
 }

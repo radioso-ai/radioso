@@ -5,6 +5,8 @@ export const websiteEmbedAnalyticsEventNames = [
   'chat.started',
   'chat.completed',
   'chat.failed',
+  'chat.citation_clicked',
+  'chat.link_clicked',
 ] as const
 
 export type WebsiteEmbedAnalyticsEventName = (typeof websiteEmbedAnalyticsEventNames)[number]

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("agent chat model override contract", () => {
-  it("returns chatModelOverride: null for a freshly-created agent", async () => {
+  it("returns behavior defaults for a freshly-created agent", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "agent-chat-default@example.com");
 
@@ -13,7 +13,33 @@ describe("agent chat model override contract", () => {
       .set(adminSessionHeaders(session));
 
     expect(list.status).toBe(200);
-    expect(list.body.agents[0]).toMatchObject({ chatModelOverride: null });
+    expect(list.body.agents[0]).toMatchObject({
+      chatModelOverride: null,
+      assistantLinkUtmEnabled: true,
+    });
+  });
+
+  it("accepts assistant link UTM behavior on agent update and round-trips it", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "agent-link-utm@example.com");
+
+    const list = await request(app)
+      .get("/api/v1/agents")
+      .set(adminSessionHeaders(session));
+    const agentId = list.body.agents[0].id;
+
+    const updated = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set(adminSessionHeaders(session))
+      .send({ assistantLinkUtmEnabled: false });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.assistantLinkUtmEnabled).toBe(false);
+
+    const refetched = await request(app)
+      .get(`/api/v1/agents/${agentId}`)
+      .set(adminSessionHeaders(session));
+    expect(refetched.body.assistantLinkUtmEnabled).toBe(false);
   });
 
   it("accepts chatModelOverride on agent update and round-trips it", async () => {

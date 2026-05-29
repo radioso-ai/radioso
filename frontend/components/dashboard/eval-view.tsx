@@ -571,6 +571,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
               messages={toThreadMessages(conversationMessages)}
               onOpenDocument={handleOpenCitation}
               showCitations
+              analyticsSurface="eval"
               skillCatalog={skillCatalog}
             />
           </CardContent>

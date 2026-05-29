@@ -424,6 +424,7 @@ export function ConversationDrawer({
                     onMessageSelect={handleSelectThreadMessage}
                     selectedMessageId={selectedThreadMessageId ?? undefined}
                     conversationId={selectedItem?.kind === 'chat' ? selectedItem.id : undefined}
+                    analyticsSurface="history"
                     skillCatalog={skillCatalog}
                   />
                 </div>

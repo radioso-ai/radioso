@@ -64,6 +64,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       isDefault: z.boolean(),
       customInstruction: z.string(),
       suggestedQuestionsEnabled: z.boolean(),
+      assistantLinkUtmEnabled: z.boolean(),
       theme: z.object({
         brand: z.string(),
         brandText: z.string(),
@@ -102,6 +103,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       name: z.string().max(200).optional(),
       customInstruction: z.string().max(2000).optional(),
       suggestedQuestionsEnabled: z.boolean().optional(),
+      assistantLinkUtmEnabled: z.boolean().optional(),
       theme: z.object({
         brand: z.string().optional(),
         brandText: z.string().optional(),
@@ -166,6 +168,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     z.object({
       agentId: z.string().uuid().optional(),
       agentName: z.string().optional(),
+      assistantLinkUtmEnabled: z.boolean(),
       workspaceName: z.string(),
       publicChatToken: z.string(),
       publicSessionId: z.string().uuid(),

@@ -83,16 +83,29 @@ const MarkdownLink = ({
   href,
   children,
   className,
-}: ComponentPropsWithoutRef<'a'>) => {
+  onLinkClick,
+  transformLinkHref,
+}: ComponentPropsWithoutRef<'a'> & {
+  onLinkClick?: (href: string) => void
+  transformLinkHref?: (href: string) => string
+}) => {
   if (!isSafeHref(href)) {
+    return <span className="text-foreground">{children}</span>
+  }
+
+  const outboundHref = transformLinkHref?.(href) ?? href
+  if (!isSafeHref(outboundHref)) {
     return <span className="text-foreground">{children}</span>
   }
 
   return (
     <a
-      href={href}
+      href={outboundHref}
       target="_blank"
       rel="noopener"
+      onClick={() => {
+        onLinkClick?.(outboundHref)
+      }}
       className={cn(
         'text-[var(--message-link-fg,var(--color-primary))] underline underline-offset-4 hover:text-[var(--message-link-hover-fg,var(--color-primary))]',
         className,
@@ -137,11 +150,25 @@ const buildHeading = (
   return Component
 }
 
-const createComponents = (variant: MarkdownVariant, inline: boolean): Components => {
+const createComponents = (
+  variant: MarkdownVariant,
+  inline: boolean,
+  onLinkClick?: (href: string) => void,
+  transformLinkHref?: (href: string) => string,
+): Components => {
   const headingClasses = variant === 'chat' ? chatHeadingClasses : documentHeadingClasses
 
   return {
-    a: MarkdownLink,
+    a: ({ href, children, className }) => (
+      <MarkdownLink
+        href={href}
+        className={className}
+        onLinkClick={onLinkClick}
+        transformLinkHref={transformLinkHref}
+      >
+        {children}
+      </MarkdownLink>
+    ),
     blockquote: ({ children, className }) => (
       <blockquote
         className={cn(
@@ -291,12 +318,19 @@ export function MarkdownContent({
   content,
   variant = 'chat',
   inline = false,
+  onLinkClick,
+  transformLinkHref,
 }: {
   content: string
   variant?: MarkdownVariant
   inline?: boolean
+  onLinkClick?: (href: string) => void
+  transformLinkHref?: (href: string) => string
 }) {
-  const components = useMemo(() => createComponents(variant, inline), [variant, inline])
+  const components = useMemo(
+    () => createComponents(variant, inline, onLinkClick, transformLinkHref),
+    [variant, inline, onLinkClick, transformLinkHref],
+  )
   return (
     <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
       {content}

@@ -53,4 +53,48 @@ describe('website embed analytics bridge', () => {
     expect(message?.event).toBe('website_embed.loaded')
     expect(postMessage).toHaveBeenCalledWith(message, '*')
   })
+
+  it('allows embed hosts to receive citation click analytics', () => {
+    const message = buildWebsiteEmbedAnalyticsMessage({
+      event: 'chat.citation_clicked',
+      timestamp: '2026-05-27T10:00:00.000Z',
+      subjectType: 'conversation',
+      subjectId: 'conversation-1',
+      properties: {
+        linkType: 'citation_source_url',
+        citationIndex: 0,
+        destinationOrigin: 'https://docs.example.com',
+        destinationPath: '/guide',
+      },
+    })
+
+    expect(message.event).toBe('chat.citation_clicked')
+    expect(message.properties).toEqual({
+      linkType: 'citation_source_url',
+      citationIndex: 0,
+      destinationOrigin: 'https://docs.example.com',
+      destinationPath: '/guide',
+    })
+  })
+
+  it('allows embed hosts to receive assistant link click analytics', () => {
+    const message = buildWebsiteEmbedAnalyticsMessage({
+      event: 'chat.link_clicked',
+      timestamp: '2026-05-27T10:00:00.000Z',
+      subjectType: 'conversation',
+      subjectId: 'conversation-1',
+      properties: {
+        linkType: 'assistant_url',
+        destinationOrigin: 'https://docs.example.com',
+        destinationPath: '/guide',
+      },
+    })
+
+    expect(message.event).toBe('chat.link_clicked')
+    expect(message.properties).toEqual({
+      linkType: 'assistant_url',
+      destinationOrigin: 'https://docs.example.com',
+      destinationPath: '/guide',
+    })
+  })
 })

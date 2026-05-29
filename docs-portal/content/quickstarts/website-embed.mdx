@@ -103,13 +103,15 @@ Current embed analytics events:
 | `chat.started` | A visitor submits a chat message |
 | `chat.completed` | Radioso completes an answer for that visitor message |
 | `chat.failed` | Radioso cannot complete the visitor message |
+| `chat.citation_clicked` | A visitor opens a citation marker or source control |
+| `chat.link_clicked` | A visitor opens a URL from an assistant answer |
 
 Each message has this shape:
 
 ```ts
 type RadiosoAnalyticsMessage = {
   type: 'radioso:analytics'
-  event: 'website_embed.loaded' | 'chat.started' | 'chat.completed' | 'chat.failed'
+  event: 'website_embed.loaded' | 'chat.started' | 'chat.completed' | 'chat.failed' | 'chat.citation_clicked' | 'chat.link_clicked'
   timestamp: string
   source: 'embed'
   subjectType?: 'embed_session' | 'conversation'
@@ -121,6 +123,8 @@ type RadiosoAnalyticsMessage = {
 Radioso does not include visitor message text, assistant answer text, retrieved document text, prompt text, cookies, session tokens, or connector secrets in these events.
 
 For chat events, `properties.embedSessionId` can be used to group activity from the same embedded session. `chat.completed` also includes answer counters such as `citationCount` and `suggestionCount` when available.
+
+For `chat.citation_clicked` and `chat.link_clicked`, Radioso sends link metadata such as `linkType`, `citationIndex`, `documentId`, `chunkId`, `destinationOrigin`, and `destinationPath` when available. Query strings and URL fragments are not included in analytics events.
 
 ## Recommended launch sequence
 

@@ -2137,6 +2137,7 @@ export interface components {
             isDefault: boolean;
             customInstruction: string;
             suggestedQuestionsEnabled: boolean;
+            assistantLinkUtmEnabled: boolean;
             theme: {
                 brand: string;
                 brandText: string;
@@ -2175,6 +2176,7 @@ export interface components {
             name?: string;
             customInstruction?: string;
             suggestedQuestionsEnabled?: boolean;
+            assistantLinkUtmEnabled?: boolean;
             theme?: {
                 brand?: string;
                 brandText?: string;
@@ -2236,6 +2238,7 @@ export interface components {
             /** Format: uuid */
             agentId?: string;
             agentName?: string;
+            assistantLinkUtmEnabled: boolean;
             workspaceName: string;
             publicChatToken: string;
             /** Format: uuid */

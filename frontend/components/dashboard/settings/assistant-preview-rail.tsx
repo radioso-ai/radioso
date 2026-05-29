@@ -34,6 +34,7 @@ export function AssistantPreviewRail({
           logoUrl={anonSettings.assistantLogoUrl ?? null}
           showSuggestedQuestions={assistantBehaviorSettings.suggestedQuestionsEnabled}
           showProactiveGreeting={anonSettings.proactiveGreetingEnabled}
+          assistantLinkUtmEnabled={assistantBehaviorSettings.assistantLinkUtmEnabled}
           branding={assistantBehaviorSettings.branding ?? null}
         />
         <div className="space-y-2">

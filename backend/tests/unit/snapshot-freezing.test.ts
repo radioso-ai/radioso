@@ -71,6 +71,7 @@ describe("freezeAgent", () => {
       updatedAt: new Date(),
       customInstruction: "Be helpful.",
       suggestedQuestionsEnabled: true,
+      assistantLinkUtmEnabled: true,
       retrievalEnabled: true,
       logo: null,
       theme: {} as never,

@@ -110,6 +110,7 @@ interface AnonymousChatContextValue {
   conversationId?: string
   workspaceName: string | null
   assistantAvatarUrl: string | null
+  assistantLinkUtmEnabled: boolean
   assistantTheme: WebsiteEmbedThemeOverrides | null
   branding: AgentBrandingSettings | null
   intakeActions: PublicChatIntakeAction[]
@@ -123,6 +124,7 @@ interface AnonymousChatContextValue {
   loadOlderMessages: () => Promise<void>
   sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata) => Promise<void>
   startNewChat: () => Promise<void>
+  trackAnalyticsEvent: (event: WebsiteEmbedAnalyticsInput) => void
 }
 
 const AnonymousChatContext = createContext<AnonymousChatContextValue | null>(null)
@@ -312,6 +314,7 @@ export function AnonymousChatProvider({
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [workspaceName, setWorkspaceName] = useState<string | null>(null)
   const [assistantAvatarUrl, setAssistantAvatarUrl] = useState<string | null>(null)
+  const [assistantLinkUtmEnabled, setAssistantLinkUtmEnabled] = useState(true)
   const [assistantTheme, setAssistantTheme] = useState<WebsiteEmbedThemeOverrides | null>(null)
   const [branding, setBranding] = useState<AgentBrandingSettings | null>(null)
   const [intakeActions, setIntakeActions] = useState<PublicChatIntakeAction[]>([])
@@ -340,6 +343,7 @@ export function AnonymousChatProvider({
       publicChatTokenRef.current = session.publicChatToken
       setEffectivePublicChatToken(session.publicChatToken)
       setAssistantAvatarUrl(session.assistantAvatarUrl ?? null)
+      setAssistantLinkUtmEnabled(session.assistantLinkUtmEnabled ?? true)
       setAssistantTheme(deriveThemeOverridesFromModel(session.theme))
       setBranding(session.branding ?? null)
       setIntakeActions(session.intakeActions ?? [])
@@ -383,6 +387,7 @@ export function AnonymousChatProvider({
     setMessages([])
     setWorkspaceName(null)
     setAssistantAvatarUrl(null)
+    setAssistantLinkUtmEnabled(true)
     setAssistantTheme(null)
     setBranding(null)
     setIntakeActions([])
@@ -396,6 +401,7 @@ export function AnonymousChatProvider({
       const response = await withPublicSessionRetry((activeToken) => publicChatApi.listConversations(activeToken, { limit: 1 }))
       setWorkspaceName(response.workspaceName ?? null)
       setAssistantAvatarUrl(response.assistantAvatarUrl ?? null)
+      setAssistantLinkUtmEnabled(response.assistantLinkUtmEnabled ?? true)
       setAssistantTheme(deriveThemeOverridesFromModel(response.theme))
       setBranding(response.branding ?? null)
       setIntakeActions(response.intakeActions ?? [])
@@ -841,6 +847,10 @@ export function AnonymousChatProvider({
     await hydrateConversation()
   }, [hydrateConversation, isHydrating, isLoading, isLoadingOlderMessages])
 
+  const trackAnalyticsEvent = useCallback((event: WebsiteEmbedAnalyticsInput) => {
+    onAnalyticsEvent?.(event)
+  }, [onAnalyticsEvent])
+
   const value = useMemo<AnonymousChatContextValue>(
     () => ({
       publicChatToken: effectivePublicChatToken,
@@ -848,6 +858,7 @@ export function AnonymousChatProvider({
       conversationId,
       workspaceName,
       assistantAvatarUrl,
+      assistantLinkUtmEnabled,
       assistantTheme,
       branding,
       intakeActions,
@@ -861,6 +872,7 @@ export function AnonymousChatProvider({
       loadOlderMessages,
       sendMessage,
       startNewChat,
+      trackAnalyticsEvent,
     }),
     [
       effectivePublicChatToken,
@@ -868,6 +880,7 @@ export function AnonymousChatProvider({
       conversationId,
       workspaceName,
       assistantAvatarUrl,
+      assistantLinkUtmEnabled,
       assistantTheme,
       branding,
       intakeActions,
@@ -881,6 +894,7 @@ export function AnonymousChatProvider({
       loadOlderMessages,
       sendMessage,
       startNewChat,
+      trackAnalyticsEvent,
     ],
   )
 

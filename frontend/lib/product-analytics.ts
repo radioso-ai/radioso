@@ -1,5 +1,6 @@
 export const frontendProductAnalyticsEventNames = [
   'chat.citation_clicked',
+  'chat.link_clicked',
   'frontend.page_view',
   'website_embed.loaded',
 ] as const

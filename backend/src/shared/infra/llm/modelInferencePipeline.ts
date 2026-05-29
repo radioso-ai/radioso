@@ -15,6 +15,7 @@ import type {
 
 export interface ModelInferenceRequest extends TextGenerationRequest {
   operation: ModelCallUsageContext;
+  validateResult?: (result: TextGenerationResult) => void;
 }
 
 export interface ModelInferencePipeline {
@@ -74,16 +75,9 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
 
   async complete(input: ModelInferenceRequest): Promise<TextGenerationResult> {
     const request = stripOperation(input);
+    let result: TextGenerationResult;
     try {
-      const result = await this.delegate.complete(request);
-      await this.recordUsage({
-        operation: input.operation,
-        request,
-        outputText: result.text,
-        status: "succeeded",
-        providerUsage: result.usage,
-      });
-      return result;
+      result = await this.delegate.complete(request);
     } catch (error) {
       await this.recordUsage({
         operation: input.operation,
@@ -94,6 +88,29 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       });
       throw error;
     }
+
+    try {
+      input.validateResult?.(result);
+    } catch (error) {
+      await this.recordUsage({
+        operation: input.operation,
+        request,
+        outputText: result.text,
+        status: "failed",
+        providerUsage: result.usage,
+        error,
+      });
+      throw error;
+    }
+
+    await this.recordUsage({
+      operation: input.operation,
+      request,
+      outputText: result.text,
+      status: "succeeded",
+      providerUsage: result.usage,
+    });
+    return result;
   }
 
   stream(input: ModelInferenceRequest): TextGenerationStreamResult {

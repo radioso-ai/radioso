@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ModelChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { BlankChatAnswerError, ModelChatGateway } from "../../src/modules/chat/services/chatService.js";
 import type {
   TextGenerationClient,
   TextGenerationRequest,
@@ -91,6 +91,30 @@ describe("ModelChatGateway", () => {
     ]);
   });
 
+  it("filters zero-length chunks from streaming generation", async () => {
+    const gateway = new ModelChatGateway(new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },
+      async complete() {
+        return textResult("Answer");
+      },
+      stream() {
+        return streamResult(["A", "", "B", ""]);
+      },
+    } satisfies TextGenerationClient));
+
+    const chunks: string[] = [];
+    for await (const chunk of gateway.streamAnswer({
+      query: "Question",
+      history: [],
+      prompt: "User prompt",
+      usageContext,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(["A", "B"]);
+  });
+
   it("records non-streaming assistant usage when usage context is present", async () => {
     const { recorder, events } = recordingUsageRecorder();
     const gateway = new ModelChatGateway(new ModelInferencePipelineService({
@@ -143,6 +167,45 @@ describe("ModelChatGateway", () => {
       providerRequestId: "req-1",
     });
     expect(events[0]!.idempotencyKey).toContain("non_retrieval");
+  });
+
+  it("records blank non-streaming assistant answers as failed usage", async () => {
+    const { recorder, events } = recordingUsageRecorder();
+    const gateway = new ModelChatGateway(new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-blank" },
+      async complete() {
+        return textResult("   ", {
+          inputTokens: 10,
+          outputTokens: 1,
+          totalTokens: 11,
+          providerRequestId: "req-blank",
+          quality: "actual",
+        });
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    } satisfies TextGenerationClient, recorder));
+
+    await expect(gateway.answer({
+      query: "Question",
+      history: [],
+      prompt: "User prompt",
+      usageContext,
+    })).rejects.toBeInstanceOf(BlankChatAnswerError);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      provider: "openai",
+      model: "gpt-blank",
+      status: "failed",
+      errorCode: "chat_answer_generation_failed",
+      inputTokens: 10,
+      outputTokens: 1,
+      totalTokens: 11,
+      usageQuality: "actual",
+      providerRequestId: "req-blank",
+    });
   });
 
   it("records streaming assistant usage after the stream completes", async () => {

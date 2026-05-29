@@ -68,14 +68,13 @@ export class ModelChatGateway implements ChatGateway {
       operation: input.usageContext,
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
+      validateResult(result) {
+        if (!result.text?.trim()) {
+          throw new BlankChatAnswerError();
+        }
+      },
     });
-    const { text } = result;
-
-    if (!text?.trim()) {
-      throw new BlankChatAnswerError();
-    }
-
-    return text;
+    return result.text;
   }
 
   async *streamAnswer(input: ChatGatewayInput): AsyncIterable<string> {
@@ -84,7 +83,11 @@ export class ModelChatGateway implements ChatGateway {
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
     });
-    yield* textStream;
+    for await (const chunk of textStream) {
+      if (chunk.length > 0) {
+        yield chunk;
+      }
+    }
   }
 }
 

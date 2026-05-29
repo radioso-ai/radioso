@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type {
   EmbeddingInferencePipeline,
@@ -47,6 +49,7 @@ export class ModelEmbeddingGateway implements EmbeddingGateway {
         model: options?.model,
         operation: {
           workspaceId: "unknown",
+          requestId: randomUUID(),
           surface: "embedding",
           operation: "embedding",
           attemptKey: "unattributed",

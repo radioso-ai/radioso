@@ -187,4 +187,27 @@ describe("document processing usage metering", () => {
     }));
     expect(recorder.embeddings[0]?.idempotencyKey).toContain(":failed");
   });
+
+  it("assigns distinct idempotency keys to unattributed embedding batches", async () => {
+    const recorder = new RecordingUsageEventRecorder();
+    const gateway = new ModelEmbeddingGateway(
+      new EmbeddingInferencePipelineService(
+        {
+          metadata: { capability: "embeddings", provider: "openai", model: "text-embedding-3-small" },
+          async embedTexts(texts) {
+            return { vectors: texts.map(() => [1, 2, 3]) };
+          },
+        },
+        recorder,
+      ),
+    );
+
+    await gateway.embedTexts(["first"]);
+    await gateway.embedTexts(["second"]);
+
+    expect(recorder.embeddings).toHaveLength(2);
+    expect(new Set(recorder.embeddings.map((event) => event.idempotencyKey)).size).toBe(2);
+    expect(recorder.embeddings[0]?.idempotencyKey).toContain("request:");
+    expect(recorder.embeddings[0]?.idempotencyKey).toContain(":unattributed:");
+  });
 });

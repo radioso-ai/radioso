@@ -2,11 +2,42 @@ import OpenAI from "openai";
 
 import {
   type EmbeddingClient,
+  type EmbeddingResult,
   type LlmCapabilityConfig,
+  type ProviderUsage,
   type TextGenerationClient,
+  type TextGenerationResult,
+  type TextGenerationStreamResult,
 } from "./providerTypes.js";
+import { streamWithUsage } from "./providerStreaming.js";
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
 import type { AppLogger } from "../../observability/logger.js";
+
+interface OpenAIUsagePayload {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number } | null;
+  completion_tokens_details?: { reasoning_tokens?: number } | null;
+}
+
+const toProviderUsage = (
+  usage: OpenAIUsagePayload | null | undefined,
+  requestId: string | undefined,
+): ProviderUsage | undefined => {
+  if (!usage) {
+    return undefined;
+  }
+  return {
+    inputTokens: usage.prompt_tokens,
+    outputTokens: usage.completion_tokens,
+    totalTokens: usage.total_tokens,
+    cachedInputTokens: usage.prompt_tokens_details?.cached_tokens ?? undefined,
+    reasoningTokens: usage.completion_tokens_details?.reasoning_tokens ?? undefined,
+    providerRequestId: requestId,
+    quality: "actual",
+  };
+};
 
 const buildMessages = (input: { systemPrompt?: string; prompt: string }) => {
   const messages: Array<{ role: "system" | "user"; content: string }> = [];
@@ -49,7 +80,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
     systemPrompt?: string;
     temperature?: number;
     maxOutputTokens?: number;
-  }): Promise<string> {
+  }): Promise<TextGenerationResult> {
     const response = await this.client.chat.completions.create({
       model: this.config.model,
       temperature: input.temperature,
@@ -57,29 +88,45 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
       messages: buildMessages(input),
     });
 
-    return response.choices[0]?.message?.content ?? "";
+    return {
+      text: response.choices[0]?.message?.content ?? "",
+      usage: toProviderUsage(response.usage, response.id),
+    };
   }
 
-  async *stream(input: {
+  stream(input: {
     prompt: string;
     systemPrompt?: string;
     temperature?: number;
     maxOutputTokens?: number;
-  }): AsyncIterable<string> {
-    const stream = await this.client.chat.completions.create({
-      model: this.config.model,
-      stream: true,
-      temperature: input.temperature,
-      ...buildTokenLimit(this.config.provider, input.maxOutputTokens),
-      messages: buildMessages(input),
-    });
+  }): TextGenerationStreamResult {
+    const client = this.client;
+    const config = this.config;
+    return streamWithUsage(async function* () {
+      const stream = await client.chat.completions.create({
+        model: config.model,
+        stream: true,
+        // Ask OpenAI to append a final usage-only chunk after the content chunks.
+        stream_options: { include_usage: true },
+        temperature: input.temperature,
+        ...buildTokenLimit(config.provider, input.maxOutputTokens),
+        messages: buildMessages(input),
+      });
 
-    for await (const chunk of stream) {
-      const text = chunk.choices[0]?.delta?.content ?? "";
-      if (text) {
-        yield text;
+      let usage: ProviderUsage | undefined;
+      let requestId: string | undefined;
+      for await (const chunk of stream) {
+        requestId ??= chunk.id;
+        const text = chunk.choices[0]?.delta?.content ?? "";
+        if (text) {
+          yield text;
+        }
+        if (chunk.usage) {
+          usage = toProviderUsage(chunk.usage, requestId);
+        }
       }
-    }
+      return usage;
+    });
   }
 }
 
@@ -99,7 +146,7 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
     };
   }
 
-  async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
+  async embedTexts(texts: string[], options?: { model?: string }): Promise<EmbeddingResult> {
     const startedAt = Date.now();
     const model = options?.model ?? this.config.model;
     try {
@@ -128,7 +175,10 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
         "OpenAI embeddings request completed",
       );
 
-      return response.data.map((item) => item.embedding);
+      return {
+        vectors: response.data.map((item) => item.embedding),
+        usage: toProviderUsage(response.usage, undefined),
+      };
     } catch (error) {
       const durationMs = Math.max(0, Date.now() - startedAt);
       const apiError = error as { status?: number; code?: string; type?: string };

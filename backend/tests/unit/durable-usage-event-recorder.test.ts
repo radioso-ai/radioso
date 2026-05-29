@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { UsageLimitDatabaseClient, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
-import { EnterpriseUsageEventRecorder } from "./usageEventRecorder.js";
+import {
+  DurableUsageEventRecorder,
+  type TransactionalUsageEventDatabase,
+  type UsageEventDatabaseClient,
+} from "../../src/shared/infra/usage/durableUsageEventRecorder.js";
 
 interface UsageEventRow {
   id: string;
@@ -57,7 +60,7 @@ interface RollupRow extends RollupKey {
   vector_count: number;
 }
 
-class FakeRecorderDatabase implements UsageLimitDatabasePort {
+class FakeRecorderDatabase implements TransactionalUsageEventDatabase {
   readonly workspaceAccounts = new Map<string, string>();
   readonly events = new Map<string, UsageEventRow>();
   readonly idempotencyKeys = new Map<string, string>();
@@ -70,11 +73,11 @@ class FakeRecorderDatabase implements UsageLimitDatabasePort {
       const accountId = this.workspaceAccounts.get(String(params[0]));
       return (accountId ? [{ account_id: accountId }] : []) as T[];
     }
-    if (text.includes("INSERT INTO ee_usage_events") && text.includes("ON CONFLICT (idempotency_key) DO NOTHING")) {
+    if (text.includes("INSERT INTO usage_events") && text.includes("ON CONFLICT (idempotency_key) DO NOTHING")) {
       const isEmbedding = text.includes("'embedding', 'embedding'");
       return this.insertEvent(params, isEmbedding) as T[];
     }
-    if (text.includes("INSERT INTO ee_embedding_usage_items")) {
+    if (text.includes("INSERT INTO embedding_usage_items")) {
       for (let index = 0; index < params.length; index += 7) {
         this.embeddingItems.push({
           usage_event_id: String(params[index]),
@@ -88,7 +91,7 @@ class FakeRecorderDatabase implements UsageLimitDatabasePort {
       }
       return [] as T[];
     }
-    if (text.includes("INSERT INTO ee_usage_daily_rollups")) {
+    if (text.includes("INSERT INTO usage_daily_rollups")) {
       if (this.throwOnRollup) {
         throw new Error("rollup unavailable");
       }
@@ -126,7 +129,7 @@ class FakeRecorderDatabase implements UsageLimitDatabasePort {
     return [] as T[];
   }
 
-  async withTransaction<T>(callback: (client: UsageLimitDatabaseClient) => Promise<T>): Promise<T> {
+  async withTransaction<T>(callback: (client: UsageEventDatabaseClient) => Promise<T>): Promise<T> {
     const events = new Map(this.events);
     const idempotencyKeys = new Map(this.idempotencyKeys);
     const embeddingItems = [...this.embeddingItems];
@@ -215,11 +218,11 @@ class FakeRecorderDatabase implements UsageLimitDatabasePort {
   }
 }
 
-describe("enterprise usage event recorder", () => {
+describe("durable usage event recorder", () => {
   it("inserts an embedding event with lineage and updates the daily rollup", async () => {
     const database = new FakeRecorderDatabase();
     database.workspaceAccounts.set("workspace-1", "account-1");
-    const recorder = new EnterpriseUsageEventRecorder(database);
+    const recorder = new DurableUsageEventRecorder(database);
 
     await recorder.recordEmbedding({
       idempotencyKey: "embed:workspace-1:doc-1:3:0:openai:text-embedding-3-small",
@@ -254,7 +257,7 @@ describe("enterprise usage event recorder", () => {
   it("does not double-count when the same idempotency key is recorded twice", async () => {
     const database = new FakeRecorderDatabase();
     database.workspaceAccounts.set("workspace-1", "account-1");
-    const recorder = new EnterpriseUsageEventRecorder(database);
+    const recorder = new DurableUsageEventRecorder(database);
     const event = {
       idempotencyKey: "embed:workspace-1:doc-1:1:0:openai:text-embedding-3-small",
       workspaceId: "workspace-1",
@@ -280,7 +283,7 @@ describe("enterprise usage event recorder", () => {
   it("keeps failed embedding events diagnostic-only and out of daily rollups", async () => {
     const database = new FakeRecorderDatabase();
     database.workspaceAccounts.set("workspace-1", "account-1");
-    const recorder = new EnterpriseUsageEventRecorder(database);
+    const recorder = new DurableUsageEventRecorder(database);
 
     await recorder.recordEmbedding({
       idempotencyKey: "embed:workspace-1:doc-1:1:job-1:chunks:a:openai:text-embedding-3-small:failed",
@@ -309,7 +312,7 @@ describe("enterprise usage event recorder", () => {
     const database = new FakeRecorderDatabase();
     database.workspaceAccounts.set("workspace-1", "account-1");
     database.throwOnRollup = true;
-    const recorder = new EnterpriseUsageEventRecorder(database);
+    const recorder = new DurableUsageEventRecorder(database);
 
     await expect(recorder.recordEmbedding({
       idempotencyKey: "embed:workspace-1:doc-1:1:job-1:chunks:a:openai:text-embedding-3-small:succeeded",
@@ -333,7 +336,7 @@ describe("enterprise usage event recorder", () => {
   it("records model usage events with conversation lineage", async () => {
     const database = new FakeRecorderDatabase();
     database.workspaceAccounts.set("workspace-1", "account-1");
-    const recorder = new EnterpriseUsageEventRecorder(database);
+    const recorder = new DurableUsageEventRecorder(database);
 
     await recorder.recordModelCall({
       idempotencyKey: "answer:conv-1:msg-1:openai:gpt-5.2:attempt-1",

@@ -64,23 +64,24 @@ export class ModelChatGateway implements ChatGateway {
   constructor(private readonly client: TextGenerationClient) {}
 
   async answer(input: ChatGatewayInput): Promise<string> {
-    const response = await this.client.complete({
+    const { text } = await this.client.complete({
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
     });
 
-    if (!response?.trim()) {
+    if (!text?.trim()) {
       throw new BlankChatAnswerError();
     }
 
-    return response;
+    return text;
   }
 
   async *streamAnswer(input: ChatGatewayInput): AsyncIterable<string> {
-    for await (const chunk of this.client.stream({
+    const { textStream } = this.client.stream({
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
-    })) {
+    });
+    for await (const chunk of textStream) {
       if (chunk.length > 0) {
         yield chunk;
       }

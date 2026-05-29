@@ -5,6 +5,7 @@ import type {
   TextGenerationClient,
   TextGenerationRequest,
 } from "../../src/shared/infra/llm/providerTypes.js";
+import { streamResult, textResult } from "../support/llmStubs.js";
 
 describe("ModelChatGateway", () => {
   it("passes system prompts through to non-streaming generation", async () => {
@@ -13,10 +14,10 @@ describe("ModelChatGateway", () => {
       metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },
       async complete(input) {
         requests.push(input);
-        return "Answer";
+        return textResult("Answer");
       },
-      async *stream() {
-        yield "";
+      stream() {
+        return streamResult([""]);
       },
     } satisfies TextGenerationClient);
 
@@ -40,12 +41,11 @@ describe("ModelChatGateway", () => {
     const gateway = new ModelChatGateway({
       metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },
       async complete() {
-        return "Answer";
+        return textResult("Answer");
       },
-      async *stream(input) {
+      stream(input) {
         requests.push(input);
-        yield "A";
-        yield "B";
+        return streamResult(["A", "B"]);
       },
     } satisfies TextGenerationClient);
 

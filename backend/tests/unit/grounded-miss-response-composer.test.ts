@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ModelGroundedMissResponseComposer,
 } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
+import { streamResult, textResult } from "../support/llmStubs.js";
 
 describe("grounded miss response composer", () => {
   it("lets the model compose the full no-context response", async () => {
@@ -13,10 +14,10 @@ describe("grounded miss response composer", () => {
         model: "test-model",
       },
       async complete() {
-        return "MODEL_NO_CONTEXT";
+        return textResult("MODEL_NO_CONTEXT");
       },
-      async *stream() {
-        yield "";
+      stream() {
+        return streamResult([""]);
       },
     });
 
@@ -37,10 +38,10 @@ describe("grounded miss response composer", () => {
       },
       async complete({ prompt }) {
         observedPrompt = prompt;
-        return "MODEL_NO_CONTEXT";
+        return textResult("MODEL_NO_CONTEXT");
       },
-      async *stream() {
-        yield "";
+      stream() {
+        return streamResult([""]);
       },
     });
 
@@ -66,10 +67,10 @@ describe("grounded miss response composer", () => {
       },
       async complete({ prompt }) {
         observedPrompt = prompt;
-        return "MODEL_NO_CONTEXT";
+        return textResult("MODEL_NO_CONTEXT");
       },
-      async *stream() {
-        yield "";
+      stream() {
+        return streamResult([""]);
       },
     });
 
@@ -88,10 +89,10 @@ describe("grounded miss response composer", () => {
         model: "test-model",
       },
       async complete() {
-        return "MODEL_LOCALE_SPECIFIC";
+        return textResult("MODEL_LOCALE_SPECIFIC");
       },
-      async *stream() {
-        yield "";
+      stream() {
+        return streamResult([""]);
       },
     });
 
@@ -111,10 +112,10 @@ describe("grounded miss response composer", () => {
         model: "test-model",
       },
       async complete() {
-        return "   ";
+        return textResult("   ");
       },
-      async *stream() {
-        yield "";
+      stream() {
+        return streamResult([""]);
       },
     });
 
@@ -131,10 +132,10 @@ describe("grounded miss response composer", () => {
         model: "test-model",
       },
       async complete() {
-        return "   ";
+        return textResult("   ");
       },
-      async *stream() {
-        yield "";
+      stream() {
+        return streamResult([""]);
       },
     });
 
@@ -151,10 +152,10 @@ describe("grounded miss response composer", () => {
         model: "test-model",
       },
       async complete() {
-        return "   ";
+        return textResult("   ");
       },
-      async *stream() {
-        yield "";
+      stream() {
+        return streamResult([""]);
       },
     });
 
@@ -180,8 +181,8 @@ describe("grounded miss response composer", () => {
           },
         };
       },
-      async *stream() {
-        yield "";
+      stream() {
+        return streamResult([""]);
       },
     });
 

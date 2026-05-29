@@ -52,6 +52,9 @@ importers:
       '@radioso/skill-contract':
         specifier: workspace:*
         version: link:../packages/skill-contract
+      '@radioso/usage-contract':
+        specifier: workspace:*
+        version: link:../packages/usage-contract
       '@types/swagger-ui-express':
         specifier: ^4.1.8
         version: 4.1.8
@@ -270,6 +273,9 @@ importers:
       '@radioso/skill-contract':
         specifier: workspace:*
         version: link:../../../packages/skill-contract
+      '@radioso/usage-contract':
+        specifier: workspace:*
+        version: link:../../../packages/usage-contract
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
@@ -524,6 +530,8 @@ importers:
       '@types/react':
         specifier: 19.2.14
         version: 19.2.14
+
+  packages/usage-contract: {}
 
   typescript-sdk:
     devDependencies:

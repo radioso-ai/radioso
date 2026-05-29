@@ -105,9 +105,9 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     maxOutputTokens: number;
   }): Promise<string | undefined> {
     try {
-      return await this.client.complete(request);
+      return (await this.client.complete(request)).text;
     } catch {
-      return this.client.complete(request);
+      return (await this.client.complete(request)).text;
     }
   }
 

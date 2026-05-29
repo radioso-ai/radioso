@@ -19,7 +19,8 @@ export class ModelEmbeddingGateway implements EmbeddingGateway {
   constructor(private readonly client: EmbeddingClient) {}
 
   async embedTexts(texts: string[], options?: EmbeddingRequestOptions): Promise<number[][]> {
-    return this.client.embedTexts(texts, options);
+    const { vectors } = await this.client.embedTexts(texts, options);
+    return vectors;
   }
 }
 

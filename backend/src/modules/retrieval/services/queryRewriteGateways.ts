@@ -52,7 +52,7 @@ export class ModelTriggerAnalysisGateway implements TriggerAnalysisGateway {
   constructor(private readonly client: TextGenerationClient) {}
 
   async analyze(input: TriggerAnalysisGatewayInput): Promise<TriggerAnalysisResult> {
-    const raw = await this.client.complete({
+    const { text } = await this.client.complete({
       systemPrompt: getTriggerAnalysisSystemPrompt(),
       prompt: buildTriggerAnalysisPrompt({
         query: input.query,
@@ -62,7 +62,7 @@ export class ModelTriggerAnalysisGateway implements TriggerAnalysisGateway {
       }),
     });
 
-    return parseStructuredTriggerAnalysis(raw, input.rules);
+    return parseStructuredTriggerAnalysis(text, input.rules);
   }
 }
 
@@ -70,7 +70,7 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
   constructor(private readonly client: TextGenerationClient) {}
 
   async rewrite(input: QueryRewriteGatewayInput): Promise<StructuredRewriteResult> {
-    const raw = await this.client.complete({
+    const { text } = await this.client.complete({
       prompt: buildQueryRewritePrompt({
         context: formatConversationContext(input.contextMessages),
         semanticRewriteInstructions: input.semanticRewriteInstructions,
@@ -80,7 +80,7 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
       }),
     });
 
-    return parseStructuredRewrite(raw);
+    return parseStructuredRewrite(text);
   }
 }
 

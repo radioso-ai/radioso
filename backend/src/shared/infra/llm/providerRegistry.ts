@@ -21,6 +21,7 @@ import { createOpenAIClient, OpenAIEmbeddingClient, OpenAITextGenerationClient }
 import type { AppLogger } from "../../observability/logger.js";
 import {
   type EmbeddingClient,
+  type EmbeddingResult,
   type LlmCapabilityConfig,
   type LlmCapabilityName,
   type LlmProviderName,
@@ -69,7 +70,7 @@ class RoutedEmbeddingClient implements EmbeddingClient {
     };
   }
 
-  async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
+  async embedTexts(texts: string[], options?: { model?: string }): Promise<EmbeddingResult> {
     return this.clientForModel(options?.model ?? this.primaryConfig.model).embedTexts(texts, options);
   }
 

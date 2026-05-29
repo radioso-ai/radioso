@@ -1,77 +1,32 @@
 import { randomUUID } from "node:crypto";
 
+import type { QueryResultRow } from "pg";
+
 import type {
-  UsageLimitDatabaseClient,
-  UsageLimitDatabasePort,
-} from "../radiosoModuleTypes.js";
+  EmbeddingUsageEvent,
+  ModelUsageEvent,
+  UsageEventRecorder,
+} from "../../domain/usageEventRecorder.js";
 
-export interface TransactionalUsageEventDatabasePort extends UsageLimitDatabasePort {
-  withTransaction<T>(callback: (client: UsageLimitDatabaseClient) => Promise<T>): Promise<T>;
+/**
+ * Minimal transactional database surface the durable recorder needs. The OSS
+ * `Database` satisfies this (its `query` returns rows directly; transaction
+ * clients return `{ rows }`), so both shapes are tolerated. The generic mirrors
+ * pg's `QueryResultRow` constraint so the concrete `Database` is assignable.
+ */
+export interface UsageEventDatabaseClient {
+  query<T extends QueryResultRow = QueryResultRow>(
+    text: string,
+    params?: unknown[],
+  ): Promise<T[] | { rows: T[] }>;
 }
 
-export const requireTransactionalUsageEventDatabase = (
-  database: UsageLimitDatabasePort,
-): TransactionalUsageEventDatabasePort => {
-  if (!database.withTransaction) {
-    throw new Error("Usage event recording requires transactional database support");
-  }
-  return database as TransactionalUsageEventDatabasePort;
-};
-
-export type UsageEventStatus = "succeeded" | "failed";
-export type UsageEventQuality = "actual" | "estimated";
-
-export interface EmbeddingUsageEvent {
-  idempotencyKey: string;
-  accountId?: string | null;
-  workspaceId: string;
-  sourceId?: string | null;
-  documentId: string;
-  documentRevision: number;
-  jobId?: string | null;
-  provider: string;
-  model: string;
-  inputTokens?: number | null;
-  outputTokens?: number | null;
-  inputBytes: number;
-  vectorCount: number;
-  status: UsageEventStatus;
-  usageQuality: UsageEventQuality;
-  providerRequestId?: string | null;
-  errorCode?: string | null;
-  occurredAt?: Date;
-  chunks?: Array<{
-    chunkIndex: number;
-    chunkId?: string | null;
-    contentBytes: number;
-    estimatedTokens?: number | null;
-  }>;
+export interface TransactionalUsageEventDatabase extends UsageEventDatabaseClient {
+  withTransaction<T>(callback: (client: UsageEventDatabaseClient) => Promise<T>): Promise<T>;
 }
 
-export interface ModelUsageEvent {
-  idempotencyKey: string;
-  accountId?: string | null;
-  workspaceId: string;
-  conversationId?: string | null;
-  messageId?: string | null;
-  surface: string;
-  operation: string;
-  provider: string;
-  model: string;
-  inputTokens?: number | null;
-  outputTokens?: number | null;
-  totalTokens?: number | null;
-  inputBytes?: number | null;
-  outputBytes?: number | null;
-  status: UsageEventStatus;
-  usageQuality: UsageEventQuality;
-  providerRequestId?: string | null;
-  errorCode?: string | null;
-  occurredAt?: Date;
-}
-
-const queryRows = async <T = Record<string, unknown>>(
-  client: UsageLimitDatabaseClient,
+const queryRows = async <T extends QueryResultRow = QueryResultRow>(
+  client: UsageEventDatabaseClient,
   text: string,
   params: unknown[] = [],
 ): Promise<T[]> => {
@@ -83,7 +38,7 @@ const toIsoDate = (date: Date): string =>
   `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 
 const resolveAccountId = async (
-  database: UsageLimitDatabasePort,
+  database: UsageEventDatabaseClient,
   input: { accountId?: string | null; workspaceId: string },
 ): Promise<string | null> => {
   if (input.accountId) {
@@ -97,8 +52,18 @@ const resolveAccountId = async (
   return workspace?.account_id ?? null;
 };
 
-export class EnterpriseUsageEventRecorder {
-  constructor(private readonly database: TransactionalUsageEventDatabasePort) {}
+/**
+ * OSS durable usage-event recorder. Writes immutable events to `usage_events`
+ * (plus `embedding_usage_items`) and maintains the derived `usage_daily_rollups`
+ * cache inside the same transaction. Idempotent on `idempotency_key`: a repeated
+ * attempt inserts nothing and skips the rollup, so replays never inflate totals.
+ *
+ * Ledger insertion is authoritative. The daily rollup is a rebuildable cache
+ * derived from these events (see migration `067_usage_ledger_oss.sql`); a future
+ * delivery phase owns the rebuild/recovery job and richer summary read-models.
+ */
+export class DurableUsageEventRecorder implements UsageEventRecorder {
+  constructor(private readonly database: TransactionalUsageEventDatabase) {}
 
   async recordEmbedding(event: EmbeddingUsageEvent): Promise<void> {
     const accountId = await resolveAccountId(this.database, {
@@ -106,14 +71,13 @@ export class EnterpriseUsageEventRecorder {
       workspaceId: event.workspaceId,
     });
     const occurredAt = event.occurredAt ?? new Date();
-    const totalTokens =
-      (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
+    const totalTokens = (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
     const eventId = randomUUID();
 
-    await this.withTransaction(async (client) => {
+    await this.database.withTransaction(async (client) => {
       const inserted = await queryRows<{ id: string }>(
         client,
-        `INSERT INTO ee_usage_events (
+        `INSERT INTO usage_events (
          id,
          idempotency_key,
          account_id,
@@ -196,7 +160,7 @@ export class EnterpriseUsageEventRecorder {
   }
 
   private async insertEmbeddingItems(
-    client: UsageLimitDatabaseClient,
+    client: UsageEventDatabaseClient,
     input: {
       usageEventId: string;
       documentId: string;
@@ -224,7 +188,7 @@ export class EnterpriseUsageEventRecorder {
 
     await queryRows(
       client,
-      `INSERT INTO ee_embedding_usage_items (
+      `INSERT INTO embedding_usage_items (
              usage_event_id,
              document_id,
              document_revision,
@@ -248,10 +212,10 @@ export class EnterpriseUsageEventRecorder {
     const totalTokens = event.totalTokens ?? ((event.inputTokens ?? 0) + (event.outputTokens ?? 0));
     const eventId = randomUUID();
 
-    await this.withTransaction(async (client) => {
+    await this.database.withTransaction(async (client) => {
       const inserted = await queryRows<{ id: string }>(
         client,
-        `INSERT INTO ee_usage_events (
+        `INSERT INTO usage_events (
          id,
          idempotency_key,
          account_id,
@@ -322,7 +286,7 @@ export class EnterpriseUsageEventRecorder {
   }
 
   private async upsertDailyRollup(
-    client: UsageLimitDatabaseClient,
+    client: UsageEventDatabaseClient,
     accountId: string,
     occurredAt: Date,
     deltas: {
@@ -339,7 +303,7 @@ export class EnterpriseUsageEventRecorder {
   ): Promise<void> {
     await queryRows(
       client,
-      `INSERT INTO ee_usage_daily_rollups (
+      `INSERT INTO usage_daily_rollups (
          account_id,
          usage_date,
          operation,
@@ -355,12 +319,12 @@ export class EnterpriseUsageEventRecorder {
        VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        ON CONFLICT (account_id, usage_date, operation, provider, model)
        DO UPDATE SET
-         input_tokens = ee_usage_daily_rollups.input_tokens + EXCLUDED.input_tokens,
-         output_tokens = ee_usage_daily_rollups.output_tokens + EXCLUDED.output_tokens,
-         total_tokens = ee_usage_daily_rollups.total_tokens + EXCLUDED.total_tokens,
-         input_bytes = ee_usage_daily_rollups.input_bytes + EXCLUDED.input_bytes,
-         output_bytes = ee_usage_daily_rollups.output_bytes + EXCLUDED.output_bytes,
-         vector_count = ee_usage_daily_rollups.vector_count + EXCLUDED.vector_count`,
+         input_tokens = usage_daily_rollups.input_tokens + EXCLUDED.input_tokens,
+         output_tokens = usage_daily_rollups.output_tokens + EXCLUDED.output_tokens,
+         total_tokens = usage_daily_rollups.total_tokens + EXCLUDED.total_tokens,
+         input_bytes = usage_daily_rollups.input_bytes + EXCLUDED.input_bytes,
+         output_bytes = usage_daily_rollups.output_bytes + EXCLUDED.output_bytes,
+         vector_count = usage_daily_rollups.vector_count + EXCLUDED.vector_count`,
       [
         accountId,
         toIsoDate(occurredAt),
@@ -376,8 +340,13 @@ export class EnterpriseUsageEventRecorder {
       ],
     );
   }
-
-  private async withTransaction<T>(callback: (client: UsageLimitDatabaseClient) => Promise<T>): Promise<T> {
-    return this.database.withTransaction(callback);
-  }
 }
+
+export const requireTransactionalUsageEventDatabase = (
+  database: UsageEventDatabaseClient & { withTransaction?: TransactionalUsageEventDatabase["withTransaction"] },
+): TransactionalUsageEventDatabase => {
+  if (!database.withTransaction) {
+    throw new Error("Durable usage event recording requires transactional database support");
+  }
+  return database as TransactionalUsageEventDatabase;
+};

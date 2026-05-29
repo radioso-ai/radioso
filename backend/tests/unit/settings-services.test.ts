@@ -34,6 +34,7 @@ describe("settings services", () => {
     assistantDefaultLocale: workspace.assistantDefaultLocale,
     proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
     suggestedQuestionsEnabled: true,
+    assistantLinkUtmEnabled: true,
     customInstruction: "",
     retrievalEnabled: true,
     sourceScope: { mode: "all" },

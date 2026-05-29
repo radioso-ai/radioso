@@ -34,6 +34,7 @@ export const agentSurfacePositions = ["bottom-right", "bottom-left"] as const;
 export type AgentSurfacePosition = (typeof agentSurfacePositions)[number];
 
 const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
+const DEFAULT_ASSISTANT_LINK_UTM_ENABLED = true;
 const DEFAULT_AGENT_SURFACE_POSITION: AgentSurfacePosition = "bottom-right";
 const MAX_EMBED_COPY_LOCALES = 10;
 
@@ -45,6 +46,7 @@ export interface AgentBrandingSettings {
 export interface AgentBehaviorSettings {
   customInstruction: string;
   suggestedQuestionsEnabled: boolean;
+  assistantLinkUtmEnabled: boolean;
   retrievalEnabled: boolean;
   logo: AgentLogo | null;
   theme: AgentEmbedTheme;
@@ -561,6 +563,7 @@ export const validateAgentInput = (
     name: normalizeText(input.name ?? "Agent", "name", 200),
     customInstruction: normalizeLongText(input.customInstruction, "customInstruction", 2000),
     suggestedQuestionsEnabled: input.suggestedQuestionsEnabled ?? DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
+    assistantLinkUtmEnabled: input.assistantLinkUtmEnabled ?? DEFAULT_ASSISTANT_LINK_UTM_ENABLED,
     retrievalEnabled: input.retrievalEnabled ?? true,
     sourceScope: normalizeSourceScope(input.sourceScope),
     logo: normalizeAgentLogo(input.logo),

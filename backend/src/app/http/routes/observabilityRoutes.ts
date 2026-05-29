@@ -13,7 +13,7 @@ const FRONTEND_ERROR_PATH_MAX_LENGTH = 2048;
 
 const truncate = (value: string, maxLength: number): string => value.slice(0, maxLength);
 
-const frontendProductAnalyticsSchema = z.object({
+const frontendPageViewAnalyticsSchema = z.object({
   eventName: z.literal("frontend.page_view"),
   timestamp: z.string().datetime().optional(),
   properties: z.object({
@@ -21,6 +21,29 @@ const frontendProductAnalyticsSchema = z.object({
   }).strict(),
   source: z.enum(["frontend", "embed"]).default("frontend"),
 }).strict();
+
+const frontendCitationClickAnalyticsSchema = z.object({
+  eventName: z.enum(["chat.citation_clicked", "chat.link_clicked"]),
+  timestamp: z.string().datetime().optional(),
+  subjectType: z.literal("conversation").optional(),
+  subjectId: z.string().min(1).max(128).optional(),
+  properties: z.object({
+    surface: z.enum(["dashboard", "history", "eval", "public_chat", "embed"]),
+    assistantMessageId: z.string().min(1).max(128).optional(),
+    citationIndex: z.number().int().min(0).max(999).optional(),
+    linkType: z.enum(["citation_marker", "source_chip", "citation_source_url", "assistant_url"]),
+    documentId: z.string().min(1).max(128).optional(),
+    chunkId: z.string().min(1).max(128).optional(),
+    destinationOrigin: z.string().min(1).max(255).optional(),
+    destinationPath: z.string().max(512).optional(),
+  }).strict(),
+  source: z.enum(["frontend", "embed"]).default("frontend"),
+}).strict();
+
+const frontendProductAnalyticsSchema = z.discriminatedUnion("eventName", [
+  frontendPageViewAnalyticsSchema,
+  frontendCitationClickAnalyticsSchema,
+]);
 
 const frontendErrorSchema = z.object({
   errorType: z.enum([
@@ -53,6 +76,43 @@ const sanitizeFrontendPageViewPath = (rawPath: string): string => {
     .replace(/^\/account\/[^/]+/u, "/account/[accountId]")
     .replace(/^\/w\/[^/]+/u, "/w/[workspaceKey]")
     .slice(0, 256);
+};
+
+const removeUndefinedProperties = (record: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
+
+const sanitizeDestinationParts = (input: {
+  destinationOrigin?: string;
+  destinationPath?: string;
+}): {
+  destinationOrigin?: string;
+  destinationPath?: string;
+} => {
+  if (!input.destinationOrigin) {
+    return {};
+  }
+
+  try {
+    const originUrl = input.destinationOrigin === "mailto:"
+      ? null
+      : new URL(input.destinationOrigin);
+    const destinationOrigin = originUrl
+      ? originUrl.origin.slice(0, 255)
+      : "mailto:";
+    const destinationPath = input.destinationPath
+      ? input.destinationPath.split(/[?#]/u)[0]?.slice(0, 512) ?? ""
+      : undefined;
+
+    return removeUndefinedProperties({
+      destinationOrigin,
+      destinationPath,
+    }) as {
+      destinationOrigin?: string;
+      destinationPath?: string;
+    };
+  } catch {
+    return {};
+  }
 };
 
 const sanitizeFrontendErrorStack = (stack: string | undefined): string | undefined => {
@@ -95,6 +155,29 @@ export const createObservabilityRoutes = (
     validateBody(frontendProductAnalyticsSchema),
     async (req, res, next) => {
       try {
+        if (req.body.eventName === "chat.citation_clicked" || req.body.eventName === "chat.link_clicked") {
+          const event = await dependencies.productAnalyticsService.track({
+            eventName: req.body.eventName,
+            subjectType: req.body.subjectType,
+            subjectId: req.body.subjectId,
+            properties: removeUndefinedProperties({
+              surface: req.body.properties.surface,
+              assistantMessageId: req.body.properties.assistantMessageId,
+              citationIndex: req.body.properties.citationIndex,
+              linkType: req.body.properties.linkType,
+              documentId: req.body.properties.documentId,
+              chunkId: req.body.properties.chunkId,
+              ...sanitizeDestinationParts({
+                destinationOrigin: req.body.properties.destinationOrigin,
+                destinationPath: req.body.properties.destinationPath,
+              }),
+            }),
+            source: req.body.source,
+          });
+          res.status(202).json({ accepted: Boolean(event) });
+          return;
+        }
+
         const event = await dependencies.productAnalyticsService.track({
           eventName: req.body.eventName,
           properties: {

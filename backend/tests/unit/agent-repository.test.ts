@@ -41,6 +41,20 @@ const repositoryWithRow = (row: ReturnType<typeof agentRow>, registry: AgentSurf
   } as never, registry);
 
 describe("AgentRepository", () => {
+  it("defaults assistant link UTM attribution on when stored behavior predates the setting", async () => {
+    const repository = new AgentRepository({
+      queryOptional: async () => agentRow({
+        authenticatedChat: { enabled: true },
+        anonymousChat: { enabled: false, token: null },
+        websiteEmbed: websiteEmbedDefaults(),
+      }),
+    } as never);
+
+    const agent = await repository.findByIdAndWorkspaceId("agent-1", "workspace-1");
+
+    expect(agent?.assistantLinkUtmEnabled).toBe(true);
+  });
+
   it("parses registered surface extension data on read before mapping website embed settings", async () => {
     const parsedWebsiteEmbed: WebsiteEmbedSurfaceSettings = {
       ...websiteEmbedDefaults(),

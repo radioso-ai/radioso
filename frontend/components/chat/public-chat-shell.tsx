@@ -422,8 +422,10 @@ function PublicChatContent({
   const {
     publicChatToken,
     messages,
+    conversationId,
     workspaceName,
     assistantAvatarUrl,
+    assistantLinkUtmEnabled,
     assistantTheme,
     branding,
     intakeActions,
@@ -437,6 +439,7 @@ function PublicChatContent({
     loadOlderMessages,
     sendMessage,
     startNewChat,
+    trackAnalyticsEvent,
   } = useAnonymousChat()
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
@@ -845,11 +848,15 @@ function PublicChatContent({
                   onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
                   assistantAvatarUrl={resolvedAvatarUrl}
                   assistantAvatarLabel={resolvedWorkspaceName}
+                  assistantLinkUtmEnabled={assistantLinkUtmEnabled}
                   hideAssistantAvatar={surface === 'embed' && isNarrowLayout}
                   hideFeedbackEntries
                   theme={theme}
                   themedSuggestionButtons
                   showCitations={false}
+                  conversationId={conversationId}
+                  analyticsSurface={surface === 'embed' ? 'embed' : 'public_chat'}
+                  onEmbedAnalyticsEvent={surface === 'embed' ? trackAnalyticsEvent : undefined}
                   skillCatalog={skillCatalog}
                 />
                 <div ref={messagesEndRef} />

@@ -421,6 +421,26 @@ export function AssistantBehaviorSection({
         <div className="divide-y divide-border rounded-lg border border-border">
           <div className="flex items-start justify-between gap-4 p-3">
             <div className="min-w-0">
+              <Label htmlFor="assistantLinkUtmEnabled" className="text-foreground">
+                Assistant link attribution
+              </Label>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Add Radioso UTM parameters to URLs the assistant includes in answers.
+              </p>
+            </div>
+            <Switch
+              id="assistantLinkUtmEnabled"
+              checked={assistantBehaviorSettings.assistantLinkUtmEnabled}
+              onCheckedChange={(checked) =>
+                onAssistantBehaviorDraft((current) => ({
+                  ...current,
+                  assistantLinkUtmEnabled: checked,
+                }))
+              }
+            />
+          </div>
+          <div className="flex items-start justify-between gap-4 p-3">
+            <div className="min-w-0">
               <Label htmlFor="assistantSuggestedQuestionsEnabled" className="text-foreground">
                 Suggested follow-up questions
               </Label>

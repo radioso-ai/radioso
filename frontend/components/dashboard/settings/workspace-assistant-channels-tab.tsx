@@ -639,6 +639,7 @@ export function WorkspaceAssistantChannelsTab({
       ? (
           assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction ||
           assistantBehaviorSettings.suggestedQuestionsEnabled !== savedAssistantBehaviorSettings.suggestedQuestionsEnabled ||
+          assistantBehaviorSettings.assistantLinkUtmEnabled !== savedAssistantBehaviorSettings.assistantLinkUtmEnabled ||
           getAssistantBehaviorSourceScopeKey(assistantBehaviorSettings) !==
             getAssistantBehaviorSourceScopeKey(savedAssistantBehaviorSettings) ||
           JSON.stringify(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) !==

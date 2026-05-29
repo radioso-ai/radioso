@@ -1,6 +1,6 @@
 # Research & Design Notes: Capability-Neutral Turn Spine
 
-This note records why `068` is shaped the way it is, the Parlant validation behind it, and a worked design of the keystone seam (the generic turn outcome + renderer registry) against the current chat turn.
+This note records why `068` is shaped the way it is, the design principle behind it, and a worked design of the keystone seam (the generic turn outcome + renderer registry) against the current chat turn.
 
 ## The problem 066 left
 
@@ -13,7 +13,7 @@ So a capability that is neither "an intake skill" nor "retrieval" has no first-c
 
 ## Why the fix is "generalize", not "replace (b)"
 
-Verified against Parlant (`~/code/parlant`). Its `engines/alpha/prompt_builder.py` builds message generation from **one** unified context — `add_staged_tool_events` (tool *results*), `add_guidelines_for_message_generation` (matched condition→action rules), `add_context_variables`, `add_glossary`, `add_interaction_history`. There is no tool-specific or retrieval-specific composer; a single generator renders from all of it, and tools contribute staged **data**, not pre-composed answers.
+The proven shape for a conversational turn is a **single message generator over one unified context** — assembled from capability *results* (the data tools/skills staged), matched behavioral rules, conversation history, and any domain memory — with no per-capability composer. Capabilities contribute staged **data**, not pre-composed answers; the generator writes the reply from all of it.
 
 That is exactly Radioso's **resolution (b)** (capabilities stage context; the loop composes) plus a **generic** staged context. So (b) was right. What makes our turn retrieval-shaped is not (b) — it is that the staged context is *typed* to `RetrievalPipelineResult`. The fix is to generalize that context and route rendering by outcome kind, keeping (b).
 
@@ -63,7 +63,7 @@ The grounded path is the richest and most-tested behavior (citations, streaming,
 
 ## Decisions captured
 
-- **Keep resolution (b).** Capabilities stage data; the loop composes. Parlant-validated.
+- **Keep resolution (b).** Capabilities stage data; the loop composes.
 - **Generalize the staged context**, do not move composition into skills. The retrieval result rides on the `SkillOutcome` (as 066 already does via `metadata`).
 - **Render by outcome kind via a registry**, never by skill-name branches. Retrieval renderer = extraction of today's grounded compose.
 - **Selection is a per-agent strategy**, not loop branches; Directives bias it as soft signals (067 slice 4).
@@ -73,4 +73,4 @@ The grounded path is the richest and most-tested behavior (citations, streaming,
 
 - Depends on `066` (merged: retrieval dispatched as a skill, `RetrievalTurnPort`) and `067` slices 1–2/5 (directives + the `SteeringRule` set).
 - Unblocks `067` slices 3–4 (guidance convergence + selection biasing), which land on slice 4 here.
-- Still unbuilt vs. Parlant after this (deferred): Glossary, Context Variables, canned/strict output mode, Journeys (our "Routine"), and the richer relationship kinds (`DEPENDENCY_ANY`, `ENTAILMENT`, `DISAMBIGUATION`, `REEVALUATION`).
+- Still unbuilt after this (deferred): domain glossary, customer/context variables, canned/strict output mode, Routines (multi-turn processes), and the richer directive relationship kinds (OR-group dependency, forced co-activation, disambiguation, re-evaluation after a skill runs).

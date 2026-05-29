@@ -9,8 +9,6 @@
 
 This spec keeps **resolution (b)** from 066 — capabilities produce *staged context/data*, the loop composes — and does **not** move answer composition into skills, build an async/deferred engine, add new persistence, or change the headless `retrieval.*` surfaces. Those are anti-goals.
 
-**Validated against Parlant** (`~/code/parlant`): its `engines/alpha/prompt_builder.py` composes message generation from one unified context assembled from heterogeneous sections — tool *results* (`add_staged_tool_events`), matched guidelines, context variables, glossary, history — with a single generator and no per-capability composer. Parlant's tools produce staged *data*, not pre-composed answers. That is exactly resolution (b) plus a generic compose; this spec adopts that shape.
-
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Add A Non-Retrieval Skill With No Retrieval-Shaped Path (Priority: P1)

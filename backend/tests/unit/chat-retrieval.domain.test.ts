@@ -15,6 +15,7 @@ import { RetrievalAnswerService } from "../../src/modules/retrieval/services/ret
 import { selectRetrievalAnswerShape } from "../../src/modules/retrieval/services/retrievalShapeResolver.js";
 import { defaultRetrievalSettings } from "../../src/modules/settings/contracts/retrieval.js";
 import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
+import { streamResult, textResult } from "../support/llmStubs.js";
 
 const message = (content: string, role: MessageRecord["role"] = "user"): MessageRecord => ({
   id: content,
@@ -953,15 +954,15 @@ describe("chat retrieval domain", () => {
     const gateway = new ModelRerankGateway({
       metadata: { capability: "rerank", provider: "openai-compatible", model: "rerank-test" },
       async complete() {
-        return JSON.stringify({
+        return textResult(JSON.stringify({
           scores: [
             { candidateIndex: 2, relevanceScore: 0.85 },
             { candidateIndex: 1, relevanceScore: 0.15 },
           ],
-        });
+        }));
       },
-      async *stream() {
-        yield "";
+      stream() {
+        return streamResult([""]);
       },
     });
 

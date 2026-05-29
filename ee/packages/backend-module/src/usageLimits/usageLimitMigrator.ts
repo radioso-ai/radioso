@@ -1,5 +1,11 @@
 import type { ApplicationDatabaseMigrator } from "../radiosoModuleTypes.js";
 
+// NOTE: the durable usage-event ledger (usage_events / embedding_usage_items /
+// usage_daily_rollups) is now owned by OSS (backend migration
+// 067_usage_ledger_oss.sql) and written by the OSS DurableUsageEventRecorder.
+// This EE migrator owns only the usage-LIMIT tables (profiles, assignments,
+// counters, reservations). It must not create the event tables — OSS migrations
+// run first at boot and rename the legacy ee_usage_* tables in place.
 export const usageLimitMigrator: ApplicationDatabaseMigrator = {
   id: "ee-usage-limits",
   async migrate(database) {
@@ -108,156 +114,6 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY (account_id, period_start)
       )
-    `);
-
-    await database.query(`
-      CREATE TABLE IF NOT EXISTS ee_usage_events (
-        id UUID PRIMARY KEY,
-        idempotency_key TEXT UNIQUE NOT NULL,
-        account_id UUID,
-        workspace_id UUID,
-        source_id UUID,
-        document_id UUID,
-        document_revision INTEGER,
-        conversation_id UUID,
-        message_id UUID,
-        job_id UUID,
-        surface TEXT NOT NULL,
-        operation TEXT NOT NULL,
-        provider TEXT NOT NULL,
-        model TEXT NOT NULL,
-        input_tokens BIGINT NOT NULL DEFAULT 0,
-        output_tokens BIGINT NOT NULL DEFAULT 0,
-        total_tokens BIGINT NOT NULL DEFAULT 0,
-        input_bytes BIGINT NOT NULL DEFAULT 0,
-        output_bytes BIGINT NOT NULL DEFAULT 0,
-        vector_count INTEGER NOT NULL DEFAULT 0,
-        status TEXT NOT NULL,
-        usage_quality TEXT NOT NULL,
-        provider_request_id TEXT,
-        error_code TEXT,
-        occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await database.query(`
-      CREATE INDEX IF NOT EXISTS idx_ee_usage_events_account_occurred_at
-        ON ee_usage_events (account_id, occurred_at)
-    `);
-
-    await database.query(`
-      CREATE INDEX IF NOT EXISTS idx_ee_usage_events_account_operation_day
-        ON ee_usage_events (account_id, operation, occurred_at)
-    `);
-
-    await database.query(`
-      CREATE INDEX IF NOT EXISTS idx_ee_usage_events_workspace_occurred_at
-        ON ee_usage_events (workspace_id, occurred_at)
-    `);
-
-    await database.query(`
-      CREATE INDEX IF NOT EXISTS idx_ee_usage_events_conversation_id
-        ON ee_usage_events (conversation_id)
-        WHERE conversation_id IS NOT NULL
-    `);
-
-    await database.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_events_account_id_fkey'
-        ) THEN
-          ALTER TABLE ee_usage_events
-          ADD CONSTRAINT ee_usage_events_account_id_fkey
-          FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
-          NOT VALID;
-        END IF;
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_events_workspace_id_fkey'
-        ) THEN
-          ALTER TABLE ee_usage_events
-          ADD CONSTRAINT ee_usage_events_workspace_id_fkey
-          FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
-          NOT VALID;
-        END IF;
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_events_source_id_fkey'
-        ) THEN
-          ALTER TABLE ee_usage_events
-          ADD CONSTRAINT ee_usage_events_source_id_fkey
-          FOREIGN KEY (source_id) REFERENCES document_sources(id) ON DELETE SET NULL
-          NOT VALID;
-        END IF;
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_events_document_id_fkey'
-        ) THEN
-          ALTER TABLE ee_usage_events
-          ADD CONSTRAINT ee_usage_events_document_id_fkey
-          FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE SET NULL
-          NOT VALID;
-        END IF;
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_events_conversation_id_fkey'
-        ) THEN
-          ALTER TABLE ee_usage_events
-          ADD CONSTRAINT ee_usage_events_conversation_id_fkey
-          FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
-          NOT VALID;
-        END IF;
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_events_message_id_fkey'
-        ) THEN
-          ALTER TABLE ee_usage_events
-          ADD CONSTRAINT ee_usage_events_message_id_fkey
-          FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE SET NULL
-          NOT VALID;
-        END IF;
-      END $$;
-    `);
-
-    await database.query(`
-      CREATE TABLE IF NOT EXISTS ee_embedding_usage_items (
-        usage_event_id UUID NOT NULL REFERENCES ee_usage_events(id) ON DELETE CASCADE,
-        document_id UUID NOT NULL,
-        document_revision INTEGER NOT NULL,
-        chunk_id UUID,
-        chunk_index INTEGER NOT NULL,
-        content_bytes BIGINT NOT NULL,
-        estimated_tokens BIGINT,
-        PRIMARY KEY (usage_event_id, document_id, document_revision, chunk_index)
-      )
-    `);
-
-    await database.query(`
-      CREATE TABLE IF NOT EXISTS ee_usage_daily_rollups (
-        account_id UUID NOT NULL,
-        usage_date DATE NOT NULL,
-        operation TEXT NOT NULL,
-        provider TEXT NOT NULL,
-        model TEXT NOT NULL,
-        input_tokens BIGINT NOT NULL DEFAULT 0,
-        output_tokens BIGINT NOT NULL DEFAULT 0,
-        total_tokens BIGINT NOT NULL DEFAULT 0,
-        input_bytes BIGINT NOT NULL DEFAULT 0,
-        output_bytes BIGINT NOT NULL DEFAULT 0,
-        vector_count BIGINT NOT NULL DEFAULT 0,
-        PRIMARY KEY (account_id, usage_date, operation, provider, model)
-      )
-    `);
-
-    await database.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_constraint WHERE conname = 'ee_usage_daily_rollups_account_id_fkey'
-        ) THEN
-          ALTER TABLE ee_usage_daily_rollups
-          ADD CONSTRAINT ee_usage_daily_rollups_account_id_fkey
-          FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
-          NOT VALID;
-        END IF;
-      END $$;
     `);
 
     await database.query(`

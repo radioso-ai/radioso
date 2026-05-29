@@ -168,6 +168,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     messageRepository: repositories.messageRepository,
     productAnalyticsService: infrastructure.productAnalyticsService,
     retrievalPipeline: retrieval.retrievalPipeline,
+    usageEventRecorder: infrastructure.usageEventRecorder,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     workspaceRepository: repositories.workspaceRepository,
   });

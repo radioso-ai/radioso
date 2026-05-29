@@ -21,6 +21,7 @@ import type {
   LlmCapabilityConfig,
   LlmCapabilityName,
 } from "../../src/shared/infra/llm/providerTypes.js";
+import { streamResult, textResult } from "../support/llmStubs.js";
 
 const buildResolver = (
   configs: Partial<Record<LlmCapabilityName, LlmCapabilityConfig>>,
@@ -94,11 +95,11 @@ describe("ContextualChatGateway", () => {
       metadata: { capability: cfg.capability, provider: cfg.provider, model: cfg.model },
       async complete(req) {
         completeCalls.push({ apiKey: cfg.apiKey, prompt: req.prompt });
-        return "workspace-answer";
+        return textResult("workspace-answer");
       },
-      async *stream(req) {
+      stream(req) {
         completeCalls.push({ apiKey: cfg.apiKey, prompt: req.prompt });
-        yield "workspace";
+        return streamResult(["workspace"]);
       },
     })) as TextGenerationClientCache["getOrCreate"];
 

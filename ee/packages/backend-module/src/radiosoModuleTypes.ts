@@ -5,6 +5,11 @@ import type {
   SkillDisplayMetadata,
   SkillTurnStatus,
 } from "@radioso/skill-contract";
+import type {
+  EmbeddingUsageEvent,
+  ModelUsageEvent,
+  UsageEventRecorder,
+} from "@radioso/usage-contract";
 
 export type { SkillDefinition, SkillDisplayMetadata, SkillTurnStatus };
 
@@ -338,59 +343,12 @@ export type ApplicationUsageLimitPolicyRegistration =
       };
     }) => UsageLimitPolicy);
 
-export interface RecordedEmbeddingEvent {
-  idempotencyKey: string;
-  accountId?: string | null;
-  workspaceId: string;
-  sourceId?: string | null;
-  documentId: string;
-  documentRevision: number;
-  jobId?: string | null;
-  provider: string;
-  model: string;
-  inputTokens?: number | null;
-  outputTokens?: number | null;
-  inputBytes: number;
-  vectorCount: number;
-  status: "succeeded" | "failed";
-  usageQuality: "actual" | "estimated";
-  providerRequestId?: string | null;
-  errorCode?: string | null;
-  occurredAt?: Date;
-  chunks?: Array<{
-    chunkIndex: number;
-    chunkId?: string | null;
-    contentBytes: number;
-    estimatedTokens?: number | null;
-  }>;
-}
-
-export interface RecordedModelCallEvent {
-  idempotencyKey: string;
-  accountId?: string | null;
-  workspaceId: string;
-  conversationId?: string | null;
-  messageId?: string | null;
-  surface: string;
-  operation: string;
-  provider: string;
-  model: string;
-  inputTokens?: number | null;
-  outputTokens?: number | null;
-  totalTokens?: number | null;
-  inputBytes?: number | null;
-  outputBytes?: number | null;
-  status: "succeeded" | "failed";
-  usageQuality: "actual" | "estimated";
-  providerRequestId?: string | null;
-  errorCode?: string | null;
-  occurredAt?: Date;
-}
-
-export interface UsageEventRecorderPort {
-  recordEmbedding(event: RecordedEmbeddingEvent): Promise<void>;
-  recordModelCall(event: RecordedModelCallEvent): Promise<void>;
-}
+// The recorder contract is owned by @radioso/usage-contract (shared by OSS and
+// EE). These aliases keep EE's local names stable while sourcing the canonical
+// shapes from the contract so the two cannot drift.
+export type RecordedEmbeddingEvent = EmbeddingUsageEvent;
+export type RecordedModelCallEvent = ModelUsageEvent;
+export type UsageEventRecorderPort = UsageEventRecorder;
 
 export type ApplicationUsageEventRecorderRegistration =
   | UsageEventRecorderPort

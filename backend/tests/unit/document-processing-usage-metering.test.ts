@@ -6,6 +6,7 @@ import type { ChunkingStrategy } from "../../src/modules/retrieval/domain/chunki
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { EmbeddingService } from "../../src/modules/retrieval/services/embeddingService.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
+import type { ProviderUsage } from "../../src/shared/infra/llm/providerTypes.js";
 import type { EmbeddingUsageEvent, ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import {
   createAuditService,
@@ -44,11 +45,20 @@ const createProcessingService = (input: {
   auditService: ReturnType<typeof createAuditService>;
   recorder: RecordingUsageEventRecorder;
   embedTexts: (texts: string[]) => Promise<number[][]>;
+  providerUsage?: ProviderUsage;
 }) =>
   new DocumentProcessingService(
     input.documentRepository,
     input.chunkRepository,
-    new EmbeddingService({ embedTexts: input.embedTexts }),
+    new EmbeddingService({
+      embedTexts: input.embedTexts,
+      async embedTextsWithUsage(texts) {
+        return {
+          vectors: await input.embedTexts(texts),
+          usage: input.providerUsage,
+        };
+      },
+    }),
     input.auditService,
     {
       async getForWorkspace(workspaceId: string) {
@@ -101,6 +111,46 @@ describe("document processing usage metering", () => {
     }));
     expect(recorder.embeddings[0]?.idempotencyKey).toContain(`:${job!.id}:chunks:`);
     expect(recorder.embeddings[0]?.idempotencyKey).not.toContain(":batch:");
+  });
+
+  it("records actual provider embedding usage when the adapter reports it", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const auditService = createAuditService();
+    const recorder = new RecordingUsageEventRecorder();
+    const ingestion = new DocumentIngestionService(documentRepository, auditService);
+
+    await ingestion.ingest({
+      workspaceId: "workspace-1",
+      title: "Doc",
+      content: "Content",
+    });
+
+    const job = await jobRepository.claimNext();
+    const service = createProcessingService({
+      documentRepository,
+      chunkRepository,
+      auditService,
+      recorder,
+      embedTexts: async (texts) => texts.map(() => [1, 2, 3]),
+      providerUsage: {
+        inputTokens: 7,
+        totalTokens: 7,
+        quality: "actual",
+        providerRequestId: "embed-req-1",
+      },
+    });
+
+    await service.process(job!);
+
+    expect(recorder.embeddings).toHaveLength(1);
+    expect(recorder.embeddings[0]).toEqual(expect.objectContaining({
+      inputTokens: 7,
+      providerRequestId: "embed-req-1",
+      usageQuality: "actual",
+    }));
   });
 
   it("records failed embedding usage before surfacing provider errors", async () => {

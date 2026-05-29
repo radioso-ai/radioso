@@ -3,7 +3,7 @@
 **Feature Branch**: `066-assistant-turn-loop-spine`
 **Created**: 2026-05-29
 **Status**: Draft
-**Input**: GitHub issue #465 — "Lift the assistant turn loop into a skill-dispatching spine (conversational agent platform)." 
+**Input**: GitHub issue #465 — "Lift the assistant turn loop into a skill-dispatching spine (conversational agent platform)."
 
 **Scope Note**: This spec covers one re-seam: making `assistantChatService` (via `ChatService`) a **turn loop that dispatches capabilities through the skills catalog**, with `retrieval.answer` dispatched as one registered skill rather than `RetrievalPipelineService` being a privileged constructor dependency of the chat path. It redefines the **skill-invocation port** so that it admits deferred/asynchronous results in its type and lets a skill emit interim events into the session while it works — even though every skill resolves synchronously today.
 

@@ -34,6 +34,10 @@ import {
   TurnOutcomeRendererRegistry,
   type TurnOutcome,
 } from "./turnOutcome.js";
+import {
+  DefaultTurnSelectionStrategy,
+  type TurnSelectionStrategy,
+} from "./turnSelectionStrategy.js";
 
 // The skill name a grounded (retrieval) turn dispatches; the retrieval renderer
 // claims outcomes under it. A non-retrieval skill's outcome falls through to the
@@ -246,6 +250,7 @@ export class ChatService {
       supportsGroundedAnswer: () => false,
     },
     directiveSteering: DirectiveSteeringPort = noopDirectiveSteering,
+    private readonly selectionStrategy: TurnSelectionStrategy = new DefaultTurnSelectionStrategy(),
   ) {
     this.chatTurnLifecycle = new ChatTurnLifecycle(
       conversationRepository,
@@ -489,22 +494,34 @@ export class ChatService {
 
     try {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
-      const intakeResult = await this.handleSkillIntake(input, session);
-      if (intakeResult) {
-        const { cleanedAnswer, receiptOverrides } = extractSkillTags(intakeResult.answer);
-        const response = await this.persistSkillIntakeTurn({
-          input,
-          session,
-          intakeResult: {
-            ...intakeResult,
-            answer: cleanedAnswer,
-            receipt: applyReceiptOverrides(intakeResult.receipt, receiptOverrides),
-          },
-          stream: input.stream,
-        });
-        assistantMessageId = response.assistantMessageId;
-        await usageReservation.commit();
-        return response;
+      // Capability-neutral selection: attempt the strategy's candidates in
+      // order. `skill_intake` runs the intake skills (used if one matches);
+      // `retrieval` is terminal below. Default order reproduces today's behavior.
+      const candidates = this.selectionStrategy.select({
+        session,
+        directives: session.directiveSteering?.matches ?? [],
+      });
+      for (const candidate of candidates) {
+        if (candidate !== "skill_intake") {
+          break;
+        }
+        const intakeResult = await this.handleSkillIntake(input, session);
+        if (intakeResult) {
+          const { cleanedAnswer, receiptOverrides } = extractSkillTags(intakeResult.answer);
+          const response = await this.persistSkillIntakeTurn({
+            input,
+            session,
+            intakeResult: {
+              ...intakeResult,
+              answer: cleanedAnswer,
+              receipt: applyReceiptOverrides(intakeResult.receipt, receiptOverrides),
+            },
+            stream: input.stream,
+          });
+          assistantMessageId = response.assistantMessageId;
+          await usageReservation.commit();
+          return response;
+        }
       }
       session = await this.chatSessionPreparer.prepareRetrieval(input, session);
       const answerStartedAt = Date.now();
@@ -579,8 +596,18 @@ export class ChatService {
         conversationId: session.conversation.id,
       };
 
-      const intakeResult = await this.handleSkillIntake(input, session);
-      if (intakeResult) {
+      const candidates = this.selectionStrategy.select({
+        session,
+        directives: session.directiveSteering?.matches ?? [],
+      });
+      for (const candidate of candidates) {
+        if (candidate !== "skill_intake") {
+          break;
+        }
+        const intakeResult = await this.handleSkillIntake(input, session);
+        if (!intakeResult) {
+          continue;
+        }
         const { localizedTitle, receiptOverrides, cleanedAnswer } = extractSkillTags(intakeResult.answer);
         const cleanedIntakeResult: ChatIntakeResult = {
           ...intakeResult,

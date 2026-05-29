@@ -1,10 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/contracts/index.js";
-import {
-  NoopUsageEventRecorder,
-  type UsageEventRecorder,
-} from "../../../shared/domain/usageEventRecorder.js";
 import type { DocumentProcessingJobRecord } from "../../../db/repositories/documentProcessingJobRepository.js";
 import {
   deriveChunkSection,
@@ -23,7 +19,6 @@ import type {
   ChunkRepositoryPort,
   DocumentRepositoryPort,
 } from "./documentIngestionService.js";
-import type { ProviderUsage } from "../../../shared/infra/llm/providerTypes.js";
 import type { MaterializedDocumentContent } from "./documentSourceContentService.js";
 
 export interface IngestionSettingsReaderPort {
@@ -68,16 +63,6 @@ const inlineDocumentSourceContentService: DocumentSourceContentServicePort = {
   },
 };
 
-export interface EmbeddingProviderIdentityPort {
-  identifyForModel(model: string): { provider: string; model: string };
-}
-
-const defaultEmbeddingProviderIdentity: EmbeddingProviderIdentityPort = {
-  identifyForModel(_model: string) {
-    throw new Error("Embedding provider identity must be configured when usage event recording is enabled");
-  },
-};
-
 export class DocumentProcessingService {
   constructor(
     private readonly documentRepository: DocumentRepositoryPort,
@@ -88,8 +73,6 @@ export class DocumentProcessingService {
     private readonly chunkingStrategyRegistry: ChunkingStrategyRegistryPort,
     private readonly documentSourceContentService: DocumentSourceContentServicePort = inlineDocumentSourceContentService,
     private readonly logger?: AppLogger,
-    private readonly usageEventRecorder: UsageEventRecorder = new NoopUsageEventRecorder(),
-    private readonly embeddingProviderIdentity: EmbeddingProviderIdentityPort = defaultEmbeddingProviderIdentity,
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
@@ -141,6 +124,12 @@ export class DocumentProcessingService {
         structuredMinChunkSize: settings.structuredMinChunkSize,
         structuredMaxChunkSize: settings.structuredMaxChunkSize,
         embeddingModel,
+        embeddingUsageContext: {
+          workspaceId: job.workspaceId,
+          requestId: job.id,
+          surface: "documents",
+          attemptKey: `document:${job.documentId}:${job.documentRevision}:${job.id}`,
+        },
       },
     });
     const chunkingDurationMs = Math.max(0, Date.now() - chunkingStartedAt);
@@ -155,53 +144,32 @@ export class DocumentProcessingService {
         content: chunk.content,
       }),
     }));
-    const embeddingUsage = this.shouldRecordUsage()
-      ? this.buildEmbeddingUsage(job, enrichedChunks, embeddingModel)
-      : null;
+    const embeddingUsage = this.buildEmbeddingUsage(job, enrichedChunks);
     const embeddingStartedAt = Date.now();
     let embeddings: number[][];
-    let providerUsage: ProviderUsage | undefined;
     try {
       const embeddingResult = await this.embeddingService.embedChunksWithUsage(
         enrichedChunks.map((chunk) => chunk.searchText),
-        { model: embeddingModel },
+        {
+          model: embeddingModel,
+          usageContext: {
+            workspaceId: job.workspaceId,
+            requestId: job.id,
+            surface: "documents",
+            operation: "embedding",
+            attemptKey: embeddingUsage.attemptKey,
+          },
+          documentId: job.documentId,
+          documentRevision: job.documentRevision,
+          jobId: job.id,
+          usageItems: embeddingUsage.chunks,
+        },
       );
       embeddings = embeddingResult.vectors;
-      providerUsage = embeddingResult.usage;
     } catch (error) {
-      // Failed embedding events keep attempted estimates for internal diagnosis;
-      // customer-facing billable usage should derive from successful rollups.
-      if (embeddingUsage) {
-        await this.recordEmbeddingUsage(embeddingUsage, "failed", error).catch((recordError: unknown) => {
-          this.logger?.warn(
-            {
-              role: "worker",
-              workspaceId: job.workspaceId,
-              documentId: job.documentId,
-              revision: job.documentRevision,
-              error: recordError instanceof Error ? recordError.message : String(recordError),
-            },
-            "Failed to record failed embedding usage event",
-          );
-        });
-      }
       throw error;
     }
     const storageEmbeddingDurationMs = Math.max(0, Date.now() - embeddingStartedAt);
-    if (embeddingUsage) {
-      await this.recordEmbeddingUsage(embeddingUsage, "succeeded", undefined, providerUsage).catch((error: unknown) => {
-        this.logger?.warn(
-          {
-            role: "worker",
-            workspaceId: job.workspaceId,
-            documentId: job.documentId,
-            revision: job.documentRevision,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          "Failed to record embedding usage event",
-        );
-      });
-    }
     this.logger?.info(
       {
         role: "worker",
@@ -260,107 +228,28 @@ export class DocumentProcessingService {
   private buildEmbeddingUsage(
     job: DocumentProcessingJobRecord,
     enrichedChunks: Array<{ chunkIndex: number; searchText: string }>,
-    embeddingModel: string,
   ): {
-    idempotencyPrefix: string;
-    workspaceId: string;
-    documentId: string;
-    documentRevision: number;
-    jobId: string;
-    provider: string;
-    model: string;
-    inputTokens: number;
-    inputBytes: number;
-    vectorCount: number;
+    attemptKey: string;
     chunks: Array<{ chunkIndex: number; contentBytes: number; estimatedTokens: number }>;
   } {
-    const identity = this.embeddingProviderIdentity.identifyForModel(embeddingModel);
-    let totalInputBytes = 0;
     const chunkDetails = enrichedChunks.map((chunk) => {
       const contentBytes = Buffer.byteLength(chunk.searchText, "utf8");
-      totalInputBytes += contentBytes;
       return {
         chunkIndex: chunk.chunkIndex,
         contentBytes,
         estimatedTokens: estimateTokensFromBytes(contentBytes),
       };
     });
-    const estimatedTotalTokens = chunkDetails.reduce(
-      (acc, chunk) => acc + (chunk.estimatedTokens ?? 0),
-      0,
-    );
     const chunkIdentity = createHash("sha256")
       .update(chunkDetails.map((chunk) => `${chunk.chunkIndex}:${chunk.contentBytes}`).join("|"))
       .digest("hex")
       .slice(0, 16);
 
     return {
-      idempotencyPrefix: [
-        "embed",
-        job.workspaceId,
-        job.documentId,
-        String(job.documentRevision),
-        job.id,
-        `chunks:${chunkIdentity}`,
-        identity.provider,
-        identity.model,
-      ].join(":"),
-      workspaceId: job.workspaceId,
-      documentId: job.documentId,
-      documentRevision: job.documentRevision,
-      jobId: job.id,
-      provider: identity.provider,
-      model: identity.model,
-      inputTokens: estimatedTotalTokens,
-      inputBytes: totalInputBytes,
-      vectorCount: enrichedChunks.length,
+      attemptKey: `document:${job.documentId}:${job.documentRevision}:${job.id}:chunks:${chunkIdentity}`,
       chunks: chunkDetails,
     };
-  }
-
-  private async recordEmbeddingUsage(
-    usage: ReturnType<DocumentProcessingService["buildEmbeddingUsage"]>,
-    status: "succeeded" | "failed",
-    error?: unknown,
-    providerUsage?: ProviderUsage,
-  ): Promise<void> {
-    if (usage.vectorCount === 0) {
-      return;
-    }
-
-    await this.usageEventRecorder.recordEmbedding({
-      idempotencyKey: `${usage.idempotencyPrefix}:${status}`,
-      workspaceId: usage.workspaceId,
-      documentId: usage.documentId,
-      documentRevision: usage.documentRevision,
-      jobId: usage.jobId,
-      provider: usage.provider,
-      model: usage.model,
-      inputTokens: providerUsage?.inputTokens ?? providerUsage?.totalTokens ?? usage.inputTokens,
-      outputTokens: providerUsage?.outputTokens ?? null,
-      inputBytes: usage.inputBytes,
-      vectorCount: usage.vectorCount,
-      status,
-      usageQuality: providerUsage?.quality ?? "estimated",
-      providerRequestId: providerUsage?.providerRequestId ?? null,
-      errorCode: status === "failed" ? embeddingUsageErrorCode(error) : null,
-      chunks: usage.chunks,
-    });
-  }
-
-  private shouldRecordUsage(): boolean {
-    return !(this.usageEventRecorder instanceof NoopUsageEventRecorder);
   }
 }
 
 const estimateTokensFromBytes = (bytes: number): number => Math.max(1, Math.ceil(bytes / 4));
-
-const embeddingUsageErrorCode = (error: unknown): string => {
-  if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
-    return error.code;
-  }
-  if (error instanceof Error && error.name) {
-    return error.name;
-  }
-  return "embedding_failed";
-};

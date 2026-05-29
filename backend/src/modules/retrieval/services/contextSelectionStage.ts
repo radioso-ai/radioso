@@ -33,6 +33,7 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
           enabled: rerankEnabled,
           topK: rerankCandidateCount,
           workspaceContext: { workspaceId: input.request.workspaceId },
+          usageContext: input.request.usageContext,
         });
     const contexts = this.promptContextSelectorService.select({
       contexts: reranked.contexts,

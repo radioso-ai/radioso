@@ -4,6 +4,8 @@ import {
   ModelGroundedMissResponseComposer,
 } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
+import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
 
 const recordingUsageRecorder = () => {
@@ -17,9 +19,20 @@ const recordingUsageRecorder = () => {
   return { recorder, events };
 };
 
+const pipeline = (client: TextGenerationClient, recorder?: UsageEventRecorder) =>
+  new ModelInferencePipelineService(client, recorder);
+
+const usageContext = {
+  workspaceId: "workspace-1",
+  requestId: "request-1",
+  surface: "assistant",
+  operation: "answer",
+  attemptKey: "grounded_miss",
+} as const;
+
 describe("grounded miss response composer", () => {
   it("lets the model compose the full no-context response", async () => {
-    const composer = new ModelGroundedMissResponseComposer({
+    const composer = new ModelGroundedMissResponseComposer(pipeline({
       metadata: {
         capability: "chat",
         provider: "openai",
@@ -31,18 +44,19 @@ describe("grounded miss response composer", () => {
       stream() {
         return streamResult([""]);
       },
-    });
+    }));
 
     await expect(
       composer.composeNoContext({
         query: "What is the capital of France?",
+        usageContext,
       }),
     ).resolves.toBe("MODEL_NO_CONTEXT");
   });
 
   it("requests minimal reasoning effort with budget for the decline so reasoning models don't return empty", async () => {
     let observedRequest: { maxOutputTokens?: number; reasoningEffort?: string; systemPrompt?: string } = {};
-    const composer = new ModelGroundedMissResponseComposer({
+    const composer = new ModelGroundedMissResponseComposer(pipeline({
       metadata: { capability: "chat", provider: "openai", model: "gpt-5-nano" },
       async complete(request) {
         observedRequest = request;
@@ -51,9 +65,9 @@ describe("grounded miss response composer", () => {
       stream() {
         return streamResult([""]);
       },
-    });
+    }));
 
-    await composer.composeNoContext({ query: "What is the capital of France?" });
+    await composer.composeNoContext({ query: "What is the capital of France?", usageContext });
 
     expect(observedRequest.reasoningEffort).toBe("minimal");
     expect(observedRequest.maxOutputTokens ?? 0).toBeGreaterThanOrEqual(256);
@@ -64,7 +78,7 @@ describe("grounded miss response composer", () => {
 
   it("passes assistant scope instructions into no-context generation", async () => {
     let observedPrompt = "";
-    const composer = new ModelGroundedMissResponseComposer({
+    const composer = new ModelGroundedMissResponseComposer(pipeline({
       metadata: {
         capability: "chat",
         provider: "openai",
@@ -77,10 +91,11 @@ describe("grounded miss response composer", () => {
       stream() {
         return streamResult([""]);
       },
-    });
+    }));
 
     await composer.composeNoContext({
       query: "I like potato chips",
+      usageContext,
       answerInstructionBlock: "Configured response instructions:\nHelp visitors choose and book Ananda courses.",
     });
 
@@ -96,7 +111,7 @@ describe("grounded miss response composer", () => {
 
   it("forbids librarian phrasing in the grounded-miss prompt rules", async () => {
     let observedPrompt = "";
-    const composer = new ModelGroundedMissResponseComposer({
+    const composer = new ModelGroundedMissResponseComposer(pipeline({
       metadata: {
         capability: "chat",
         provider: "openai",
@@ -109,9 +124,9 @@ describe("grounded miss response composer", () => {
       stream() {
         return streamResult([""]);
       },
-    });
+    }));
 
-    await composer.composeNoContext({ query: "Draft a follow-up" });
+    await composer.composeNoContext({ query: "Draft a follow-up", usageContext });
 
     expect(observedPrompt).toContain("Decline directly in the team's voice");
     expect(observedPrompt).toContain('Do not say "I don\'t have that information,"');
@@ -119,7 +134,7 @@ describe("grounded miss response composer", () => {
   });
 
   it("passes explicit locale guidance into grounded-miss generation", async () => {
-    const composer = new ModelGroundedMissResponseComposer({
+    const composer = new ModelGroundedMissResponseComposer(pipeline({
       metadata: {
         capability: "chat",
         provider: "openai",
@@ -131,11 +146,12 @@ describe("grounded miss response composer", () => {
       stream() {
         return streamResult([""]);
       },
-    });
+    }));
 
     await expect(
       composer.composeNoContext({
         query: "Qual e il prezzo del corso?",
+        usageContext,
         userExpectedLocale: "it-IT",
       }),
     ).resolves.toBe("MODEL_LOCALE_SPECIFIC");
@@ -143,7 +159,7 @@ describe("grounded miss response composer", () => {
 
   it("records no-context assistant usage when usage context is present", async () => {
     const { recorder, events } = recordingUsageRecorder();
-    const composer = new ModelGroundedMissResponseComposer({
+    const composer = new ModelGroundedMissResponseComposer(pipeline({
       metadata: {
         capability: "chat",
         provider: "openai",
@@ -161,7 +177,7 @@ describe("grounded miss response composer", () => {
       stream() {
         return streamResult([""]);
       },
-    }, recorder);
+    }, recorder));
 
     await composer.composeNoContext({
       query: "What does the pricing page say?",
@@ -199,7 +215,7 @@ describe("grounded miss response composer", () => {
   it("records each retried no-context provider attempt separately", async () => {
     const { recorder, events } = recordingUsageRecorder();
     let attempts = 0;
-    const composer = new ModelGroundedMissResponseComposer({
+    const composer = new ModelGroundedMissResponseComposer(pipeline({
       metadata: {
         capability: "chat",
         provider: "openai",
@@ -220,7 +236,7 @@ describe("grounded miss response composer", () => {
       stream() {
         return streamResult([""]);
       },
-    }, recorder);
+    }, recorder));
 
     await composer.composeNoContext({
       query: "What does the pricing page say?",
@@ -244,7 +260,7 @@ describe("grounded miss response composer", () => {
   });
 
   it("falls back when the no-context model output is empty", async () => {
-    const composer = new ModelGroundedMissResponseComposer({
+    const composer = new ModelGroundedMissResponseComposer(pipeline({
       metadata: {
         capability: "chat",
         provider: "openai",
@@ -256,9 +272,9 @@ describe("grounded miss response composer", () => {
       stream() {
         return streamResult([""]);
       },
-    });
+    }));
 
-    const fallback = await composer.composeNoContext({ query: "What is the capital of France?" });
+    const fallback = await composer.composeNoContext({ query: "What is the capital of France?", usageContext });
     expect(fallback).toEqual(expect.any(String));
     expect(fallback.length).toBeGreaterThan(0);
     expect(fallback).toContain("my current focus");
@@ -276,7 +292,7 @@ describe("grounded miss response composer", () => {
     ].join(" ");
     expect(scopedResponse.length).toBeGreaterThan(320);
 
-    const composer = new ModelGroundedMissResponseComposer({
+    const composer = new ModelGroundedMissResponseComposer(pipeline({
       metadata: {
         capability: "chat",
         provider: "openai",
@@ -288,15 +304,15 @@ describe("grounded miss response composer", () => {
       stream() {
         return streamResult([""]);
       },
-    });
+    }));
 
     await expect(
-      composer.composeNoContext({ query: "Who is Tesla?" }),
+      composer.composeNoContext({ query: "Who is Tesla?", usageContext }),
     ).resolves.toBe(scopedResponse);
   });
 
   it("falls back when no-context generation returns empty output for another locale", async () => {
-    const composer = new ModelGroundedMissResponseComposer({
+    const composer = new ModelGroundedMissResponseComposer(pipeline({
       metadata: {
         capability: "chat",
         provider: "openai",
@@ -308,15 +324,15 @@ describe("grounded miss response composer", () => {
       stream() {
         return streamResult([""]);
       },
-    });
+    }));
 
-    const fallback = await composer.composeNoContext({ query: "Qual è la capitale della Francia?" });
+    const fallback = await composer.composeNoContext({ query: "Qual è la capitale della Francia?", usageContext });
     expect(fallback).toEqual(expect.any(String));
     expect(fallback.length).toBeGreaterThan(0);
   });
 
   it("falls back without trying to infer locale from ambiguous English tokens", async () => {
-    const composer = new ModelGroundedMissResponseComposer({
+    const composer = new ModelGroundedMissResponseComposer(pipeline({
       metadata: {
         capability: "chat",
         provider: "openai",
@@ -328,15 +344,15 @@ describe("grounded miss response composer", () => {
       stream() {
         return streamResult([""]);
       },
-    });
+    }));
 
-    const fallback = await composer.composeNoContext({ query: "Was changed in the pricing docs?" });
+    const fallback = await composer.composeNoContext({ query: "Was changed in the pricing docs?", usageContext });
     expect(fallback).toEqual(expect.any(String));
     expect(fallback.length).toBeGreaterThan(0);
   });
 
   it("propagates provider credential errors instead of masking them with fallback copy", async () => {
-    const composer = new ModelGroundedMissResponseComposer({
+    const composer = new ModelGroundedMissResponseComposer(pipeline({
       metadata: {
         capability: "chat",
         provider: "openai",
@@ -355,10 +371,10 @@ describe("grounded miss response composer", () => {
       stream() {
         return streamResult([""]);
       },
-    });
+    }));
 
     await expect(
-      composer.composeNoContext({ query: "What is the capital of France?" }),
+      composer.composeNoContext({ query: "What is the capital of France?", usageContext }),
     ).rejects.toMatchObject({
       status: 401,
       code: "invalid_api_key",

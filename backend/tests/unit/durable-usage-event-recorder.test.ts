@@ -74,7 +74,7 @@ class FakeRecorderDatabase implements TransactionalUsageEventDatabase {
       return (accountId ? [{ account_id: accountId }] : []) as T[];
     }
     if (text.includes("INSERT INTO usage_events") && text.includes("ON CONFLICT (idempotency_key) DO NOTHING")) {
-      const isEmbedding = text.includes("'embedding', 'embedding'");
+      const isEmbedding = text.includes("source_id");
       return this.insertEvent(params, isEmbedding) as T[];
     }
     if (text.includes("INSERT INTO embedding_usage_items")) {
@@ -164,24 +164,24 @@ class FakeRecorderDatabase implements TransactionalUsageEventDatabase {
         source_id: (params[4] as string | null) ?? null,
         document_id: (params[5] as string | null) ?? null,
         document_revision: params[6] === null ? null : Number(params[6]),
-        conversation_id: null,
-        message_id: null,
-        job_id: (params[7] as string | null) ?? null,
-        surface: "embedding",
-        operation: "embedding",
-        provider: String(params[8]),
-        model: String(params[9]),
-        input_tokens: Number(params[10]),
-        output_tokens: Number(params[11]),
-        total_tokens: Number(params[12]),
-        input_bytes: Number(params[13]),
+        conversation_id: (params[7] as string | null) ?? null,
+        message_id: (params[8] as string | null) ?? null,
+        job_id: (params[9] as string | null) ?? null,
+        surface: String(params[10]),
+        operation: String(params[11]),
+        provider: String(params[12]),
+        model: String(params[13]),
+        input_tokens: Number(params[14]),
+        output_tokens: Number(params[15]),
+        total_tokens: Number(params[16]),
+        input_bytes: Number(params[17]),
         output_bytes: 0,
-        vector_count: Number(params[14]),
-        status: String(params[15]),
-        usage_quality: String(params[16]),
-        provider_request_id: (params[17] as string | null) ?? null,
-        error_code: (params[18] as string | null) ?? null,
-        occurred_at: String(params[19]),
+        vector_count: Number(params[18]),
+        status: String(params[19]),
+        usage_quality: String(params[20]),
+        provider_request_id: (params[21] as string | null) ?? null,
+        error_code: (params[22] as string | null) ?? null,
+        occurred_at: String(params[23]),
       };
       this.events.set(id, row);
     } else {
@@ -278,6 +278,37 @@ describe("durable usage event recorder", () => {
     expect(database.events.size).toBe(1);
     const [row] = [...database.rollups.values()];
     expect(row.input_tokens).toBe(100);
+  });
+
+  it("inserts non-document embedding events with conversation lineage", async () => {
+    const database = new FakeRecorderDatabase();
+    database.workspaceAccounts.set("workspace-1", "account-1");
+    const recorder = new DurableUsageEventRecorder(database);
+
+    await recorder.recordEmbedding({
+      idempotencyKey: "embedding:retrieval:query_embedding:conv-1:msg-1:semantic_search_tool:openai:text-embedding-3-small:succeeded",
+      workspaceId: "workspace-1",
+      conversationId: "conv-1",
+      messageId: "msg-1",
+      surface: "retrieval",
+      operation: "query_embedding",
+      provider: "openai",
+      model: "text-embedding-3-small",
+      inputTokens: 12,
+      inputBytes: 48,
+      vectorCount: 1,
+      status: "succeeded",
+      usageQuality: "actual",
+    });
+
+    const [event] = [...database.events.values()];
+    expect(event.document_id).toBeNull();
+    expect(event.conversation_id).toBe("conv-1");
+    expect(event.message_id).toBe("msg-1");
+    expect(event.surface).toBe("retrieval");
+    expect(event.operation).toBe("query_embedding");
+    const [rollup] = [...database.rollups.values()];
+    expect(rollup.operation).toBe("query_embedding");
   });
 
   it("keeps failed embedding events diagnostic-only and out of daily rollups", async () => {

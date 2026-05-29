@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+
+import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
 import { renderPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 
 export interface AgentWizardAgentServicePort {
@@ -31,6 +34,7 @@ export interface AgentWizardWebsiteCrawlerPort {
 
 export interface AgentWizardTextGenerationPort {
   complete(input: {
+    operation: ModelCallUsageContext;
     prompt: string;
     systemPrompt?: string;
     temperature?: number;
@@ -339,6 +343,7 @@ export class AgentWizardService {
 
     const crawler = this.dependencies.crawlerProvider;
     const analysisSignal = createAnalysisSignal(input.signal, input.timeoutMs ?? 90_000);
+    const analysisRunId = randomUUID();
 
     const throwIfAborted = () => {
       if (!analysisSignal.signal.aborted) return;
@@ -476,10 +481,24 @@ export class AgentWizardService {
       input.onProgress?.({ type: "progress", step: "analyzing" });
       const prompt = buildAnalysisPrompt(input.url, allPages.length, combinedContent.trim());
       input.onProgress?.({ type: "progress", step: "generating" });
-      let analysis = await this.callLlm(prompt, analysisSignal.signal);
+      let analysis = await this.callLlm(prompt, analysisSignal.signal, {
+        accountId: input.accountId ?? null,
+        workspaceId: input.workspaceId,
+        requestId: analysisRunId,
+        surface: "agent_wizard",
+        operation: "analyze_website",
+        attemptKey: "primary",
+      });
       throwIfAborted();
       if (!analysis) {
-        analysis = await this.callLlm(prompt + "\n\nIMPORTANT: You must return valid JSON only.", analysisSignal.signal);
+        analysis = await this.callLlm(prompt + "\n\nIMPORTANT: You must return valid JSON only.", analysisSignal.signal, {
+          accountId: input.accountId ?? null,
+          workspaceId: input.workspaceId,
+          requestId: analysisRunId,
+          surface: "agent_wizard",
+          operation: "analyze_website",
+          attemptKey: "json_retry",
+        });
         throwIfAborted();
       }
       if (!analysis) {
@@ -649,9 +668,14 @@ export class AgentWizardService {
     }
   }
 
-  private async callLlm(prompt: string, signal: AbortSignal): Promise<LlmAnalysisResponse | null> {
+  private async callLlm(
+    prompt: string,
+    signal: AbortSignal,
+    operation: ModelCallUsageContext,
+  ): Promise<LlmAnalysisResponse | null> {
     try {
       const raw = await this.dependencies.textGenerationClient.complete({
+        operation,
         prompt,
         temperature: 0,
         maxOutputTokens: 1024,

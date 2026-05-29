@@ -24,6 +24,8 @@ import { GeminiEmbeddingClient, GeminiTextGenerationClient } from "./geminiProvi
 import { createOpenAIClient, OpenAIEmbeddingClient, OpenAITextGenerationClient } from "./openaiProvider.js";
 import type { AppLogger } from "../../observability/logger.js";
 import type { UsageEventRecorder } from "../../domain/usageEventRecorder.js";
+import { EmbeddingInferencePipelineService } from "./embeddingInferencePipeline.js";
+import { ModelInferencePipelineService, type ModelInferencePipeline } from "./modelInferencePipeline.js";
 import {
   type EmbeddingClient,
   type EmbeddingResult,
@@ -145,7 +147,7 @@ export class LlmProviderRegistry {
   }
 
   createChatGateway(usageEventRecorder?: UsageEventRecorder) {
-    const fallback = new ModelChatGateway(this.createTextClient(this.config.chat), usageEventRecorder);
+    const fallback = new ModelChatGateway(this.createInferencePipeline(this.config.chat, usageEventRecorder));
     if (!this.resolver) {
       return fallback;
     }
@@ -156,8 +158,8 @@ export class LlmProviderRegistry {
     );
   }
 
-  createChatTextClient(): TextGenerationClient {
-    return this.createTextClient(this.config.chat);
+  createChatInferencePipeline(usageEventRecorder?: UsageEventRecorder): ModelInferencePipeline {
+    return this.createInferencePipeline(this.config.chat, usageEventRecorder);
   }
 
   /**
@@ -171,12 +173,12 @@ export class LlmProviderRegistry {
    * needed later, wrap this gateway in a contextual variant the same way
    * `createChatGateway` does.
    */
-  createToolCallingGateway(): ModelToolCallingGateway {
-    return new TextRoutedToolCallingGateway(this.createTextClient(this.config.chat));
+  createToolCallingGateway(usageEventRecorder?: UsageEventRecorder): ModelToolCallingGateway {
+    return new TextRoutedToolCallingGateway(this.createInferencePipeline(this.config.chat, usageEventRecorder));
   }
 
   createGroundedMissResponseComposer(usageEventRecorder?: UsageEventRecorder) {
-    const fallback = new ModelGroundedMissResponseComposer(this.createTextClient(this.config.chat), usageEventRecorder);
+    const fallback = new ModelGroundedMissResponseComposer(this.createInferencePipeline(this.config.chat, usageEventRecorder));
     if (!this.resolver) {
       return fallback;
     }
@@ -187,36 +189,39 @@ export class LlmProviderRegistry {
     );
   }
 
-  createRewriteGateway() {
-    const fallback = new ModelQueryRewriteGateway(this.createTextClient(this.config.rewrite));
+  createRewriteGateway(usageEventRecorder?: UsageEventRecorder) {
+    const fallback = new ModelQueryRewriteGateway(this.createInferencePipeline(this.config.rewrite, usageEventRecorder));
     if (!this.resolver) {
       return fallback;
     }
     return new ContextualQueryRewriteGateway(
       { resolver: this.resolver, clientCache: this.clientCache },
       fallback,
+      usageEventRecorder,
     );
   }
 
-  createTriggerAnalysisGateway() {
-    const fallback = new ModelTriggerAnalysisGateway(this.createTextClient(this.config.rewrite));
+  createTriggerAnalysisGateway(usageEventRecorder?: UsageEventRecorder) {
+    const fallback = new ModelTriggerAnalysisGateway(this.createInferencePipeline(this.config.rewrite, usageEventRecorder));
     if (!this.resolver) {
       return fallback;
     }
     return new ContextualTriggerAnalysisGateway(
       { resolver: this.resolver, clientCache: this.clientCache },
       fallback,
+      usageEventRecorder,
     );
   }
 
-  createRerankGateway() {
+  createRerankGateway(usageEventRecorder?: UsageEventRecorder) {
     const defaultFallback = this.config.rerank.provider === "openai"
       ? new OpenAISemanticRerankGateway(
           createOpenAIClient(this.config.rerank),
           this.config.rerank.model,
           this.logger,
+          usageEventRecorder,
         )
-      : new ModelRerankGateway(this.createTextClient(this.config.rerank), this.logger);
+      : new ModelRerankGateway(this.createInferencePipeline(this.config.rerank, usageEventRecorder), this.logger);
 
     if (!this.resolver) {
       return defaultFallback;
@@ -225,15 +230,20 @@ export class LlmProviderRegistry {
       { resolver: this.resolver, clientCache: this.clientCache },
       defaultFallback,
       this.logger,
+      usageEventRecorder,
     );
   }
 
-  createEmbeddingGateway() {
+  createEmbeddingGateway(usageEventRecorder?: UsageEventRecorder) {
     return new ModelEmbeddingGateway(
-      new RoutedEmbeddingClient(
-        this.config.embeddings,
-        this.config.embeddingProviderConfigs,
-        (config) => this.createEmbeddingClient(config),
+      new EmbeddingInferencePipelineService(
+        new RoutedEmbeddingClient(
+          this.config.embeddings,
+          this.config.embeddingProviderConfigs,
+          (config) => this.createEmbeddingClient(config),
+        ),
+        usageEventRecorder,
+        (model) => this.identifyEmbeddingModel(model),
       ),
     );
   }
@@ -275,16 +285,23 @@ export class LlmProviderRegistry {
     };
   }
 
+  private createInferencePipeline(config: LlmCapabilityConfig, usageEventRecorder?: UsageEventRecorder): ModelInferencePipeline {
+    return new ModelInferencePipelineService(this.createTextClient(config), usageEventRecorder);
+  }
+
   private createTextClient(config: LlmCapabilityConfig): TextGenerationClient {
-    switch (config.provider) {
-      case "openai":
-      case "openai-compatible":
-        return new OpenAITextGenerationClient(config);
-      case "gemini":
-        return new GeminiTextGenerationClient(config);
-      case "claude":
-        return new ClaudeTextGenerationClient(config);
-    }
+    const client = (() => {
+      switch (config.provider) {
+        case "openai":
+        case "openai-compatible":
+          return new OpenAITextGenerationClient(config);
+        case "gemini":
+          return new GeminiTextGenerationClient(config);
+        case "claude":
+          return new ClaudeTextGenerationClient(config);
+      }
+    })();
+    return client;
   }
 
   private createEmbeddingClient(config: LlmCapabilityConfig): EmbeddingClient {

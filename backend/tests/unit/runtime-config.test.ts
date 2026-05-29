@@ -175,6 +175,23 @@ describe("runtime configuration", () => {
     expect(env.RADIOSO_MCP_MERGED_CORS_ORIGINS).toBe("*");
   });
 
+  it("keeps the reusable conversation engine disabled by default", () => {
+    const env = getEnv({
+      ...baseEnv,
+    });
+
+    expect(env.RADIOSO_CONVERSATION_ENGINE_ENABLED).toBe(false);
+  });
+
+  it("accepts the reusable conversation engine feature flag", () => {
+    const env = getEnv({
+      ...baseEnv,
+      RADIOSO_CONVERSATION_ENGINE_ENABLED: "true",
+    });
+
+    expect(env.RADIOSO_CONVERSATION_ENGINE_ENABLED).toBe(true);
+  });
+
   it("accepts merged MCP deployment settings", () => {
     const env = getEnv({
       ...baseEnv,

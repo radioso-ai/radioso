@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { ConversationEngine } from "@radioso/conversation-contract";
 import {
   BlankChatAnswerError,
   ChatService,
@@ -613,6 +614,91 @@ describe("chat service streaming", () => {
         }),
       }),
     );
+  });
+
+  it("can render a non-streaming answer through an injected conversation engine", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Normal answer.";
+      },
+      async *streamAnswer() {
+        yield "Normal answer.";
+      },
+    };
+    let processedSessionId: string | null = null;
+    const conversationEngine: ConversationEngine = {
+      async processTurn(input) {
+        processedSessionId = input.sessionId;
+        const history = await input.stores.loadHistory({ sessionId: input.sessionId });
+        const turn = {
+          agent: input.agent,
+          sessionId: input.sessionId,
+          inputEvent: input.inputEvent,
+          history,
+          stagedContext: [],
+          steering: [],
+        };
+        const decision = await input.selector.select({
+          turn,
+          skills: input.skills,
+          directives: await input.directiveMatcher.match({ turn, directives: input.directives }),
+        });
+        const selected = decision.selected[0];
+        const skill = input.skills.find((candidate) => candidate.name === selected?.skillName);
+        if (!selected || !skill) {
+          throw new Error("expected a selected skill");
+        }
+        const outcome = await input.dispatcher.dispatch({ skill, turn, selected });
+        const response = await input.composer.compose({ turn, outcomes: [outcome], decision });
+        return {
+          sessionId: input.sessionId,
+          events: [],
+          decision,
+          outcomes: [outcome],
+          response,
+          trace: {
+            traceId: "test-engine",
+            startedAt: new Date().toISOString(),
+            stages: [],
+          },
+        };
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
+        query: "I need help",
+        responseIntent: "social_only",
+      })) as never),
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      conversationEngine,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "I need help",
+      stream: false,
+    });
+
+    expect(processedSessionId).toBe(response.conversationId);
+    expect(response.answer).toBe("Normal answer.");
+    const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
   });
 
   it("persists the normalized assistant answer only after the stream completes", async () => {

@@ -72,6 +72,48 @@ describe("architecture boundary validation", () => {
     ]);
   });
 
+  it("rejects conversation contract imports from Radioso product implementation paths", () => {
+    const result = validateImportRecords([
+      {
+        filePath: "packages/conversation-contract/index.d.ts",
+        specifier: "../../backend/src/modules/retrieval/public.js",
+      },
+      {
+        filePath: "packages/conversation-contract/index.d.ts",
+        specifier: "@radioso/mcp-server",
+      },
+    ]);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual([
+      expect.stringContaining("Conversation contract must not import Radioso product implementation code"),
+      expect.stringContaining("Conversation contract must not import Radioso product implementation code"),
+    ]);
+  });
+
+  it("rejects conversation engine imports from Radioso product implementation paths", () => {
+    const result = validateImportRecords([
+      {
+        filePath: "packages/conversation-engine/src/index.ts",
+        specifier: "../../../backend/src/modules/retrieval/public.js",
+      },
+      {
+        filePath: "packages/conversation-engine/src/index.ts",
+        specifier: "@radioso/mcp-server",
+      },
+      {
+        filePath: "packages/conversation-engine/src/index.ts",
+        specifier: "@radioso/conversation-contract",
+      },
+    ]);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual([
+      expect.stringContaining("Conversation engine must not import Radioso product implementation code"),
+      expect.stringContaining("Conversation engine must not import Radioso product implementation code"),
+    ]);
+  });
+
   it("validates the current repository without forbidden boundary imports", async () => {
     const result = await validateRepositoryBoundaries(new URL("../../..", import.meta.url).pathname);
 

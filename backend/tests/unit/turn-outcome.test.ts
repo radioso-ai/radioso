@@ -13,7 +13,13 @@ const outcome = (over: Partial<SkillOutcome> = {}): TurnOutcome => ({
   kind: "generic",
   skillName: "order.status",
   outcome: { status: "completed", answer: "Your order ships tomorrow.", ...over },
+  stagedContext: [],
   steering: [],
+  trace: {
+    traceId: "test-trace",
+    startedAt: new Date(0).toISOString(),
+    stages: [],
+  },
 });
 
 const ctx = {} as TurnRenderContext;

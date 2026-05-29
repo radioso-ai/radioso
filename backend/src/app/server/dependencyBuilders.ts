@@ -2,6 +2,8 @@ import { AccountInvitationRepository } from "../../db/repositories/accountInvita
 import { AccountMembershipRepository } from "../../db/repositories/accountMembershipRepository.js";
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
+import { createConversationEngine } from "@radioso/conversation-engine";
+import type { ConversationEngine } from "@radioso/conversation-contract";
 import type { AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
@@ -635,6 +637,13 @@ export const buildWorkspaceServices = (input: {
   };
 };
 
+export const createDefaultConversationEngine = (
+  env: Pick<Env, "RADIOSO_CONVERSATION_ENGINE_ENABLED">,
+): ConversationEngine | undefined =>
+  env.RADIOSO_CONVERSATION_ENGINE_ENABLED
+    ? createConversationEngine()
+    : undefined;
+
 export const buildChatServices = (input: {
   agentService: AgentService;
   auditEventRepository: AuditEventRepository;
@@ -780,6 +789,8 @@ export const buildChatServices = (input: {
     createDirectiveSteering({
       capabilityPolicy: input.composition.capabilityPolicy,
     }),
+    undefined,
+    createDefaultConversationEngine(input.env),
   );
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,

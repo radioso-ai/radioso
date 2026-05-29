@@ -16,6 +16,36 @@ A turn moves through four phases:
 The key point: the loop holds the mechanism, skills hold the behavior. Adding a
 capability means registering a skill, not editing the loop.
 
+## Reusable contract boundary
+
+The product-independent turn vocabulary lives in
+`packages/conversation-contract/`. It defines the reusable shapes for agents,
+input events, directives, steering, skills, staged context, selection decisions,
+turn outcomes, traces, renderer outputs, and the `ConversationEngine` port.
+
+The pure runtime loop lives in `packages/conversation-engine/`. Its default
+engine loads history, matches directives, selects skills, dispatches selected
+skills, merges directive and skill steering, composes the response, appends
+events, and returns a trace. It works only through contract ports.
+
+Radioso backend adapts its product records into those contracts. Workspace
+auth, billing, document retrieval, dashboard settings, persistence, HTTP, and
+streaming stay in Radioso-owned adapters. The contract package must not import
+backend modules, retrieval internals, frontend code, or other product
+implementation packages. The engine package follows the same rule, except it may
+depend on `@radioso/conversation-contract`.
+
+The current chat adapter entry points are
+`backend/src/modules/chat/services/conversationContractMappers.ts` and
+`backend/src/modules/chat/services/conversationProcessTurnInput.ts`. They project
+a prepared chat session into reusable contract values without moving persistence,
+billing, or rendering into the pure engine.
+
+Backend application composition can inject the default engine into chat when
+`RADIOSO_CONVERSATION_ENGINE_ENABLED=true`. The flag is disabled by default so
+operators can validate the adapter path before routing production chat through
+the reusable engine.
+
 ## Skills are dispatched, not called
 
 A skill is reached through one port, `SkillExecutorPort.dispatch`. A dispatch

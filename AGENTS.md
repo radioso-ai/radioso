@@ -189,6 +189,8 @@ radioso/
 |   `-- tests/
 |-- frontend/                    # Next.js application
 |-- packages/
+|   |-- conversation-contract/  # reusable conversation engine contracts
+|   |-- conversation-engine/    # pure conversation engine runtime loop
 |   |-- radioso-mcp-server/      # standalone MCP server package
 |   |-- document-parser/         # local parser package
 |   |-- connector-api/           # connector contract package

@@ -114,6 +114,66 @@ Related docs and specs:
 
 - `specs/065-agent-runtime-and-agentic-retrieval/`
 
+## Conversation Engine Contracts
+
+Owns product-independent conversation runtime contracts: agents, input events,
+directives, steering, skills, staged context, selection decisions, turn outcomes,
+trace events, renderer outputs, and the `ConversationEngine` port.
+
+Should not own Radioso product behavior. It must not import backend modules,
+database repositories, HTTP types, retrieval internals, workspace/auth modules,
+or frontend presenters. Radioso-specific chat, retrieval, persistence, billing,
+and dashboard settings adapt into these contracts at composition time.
+
+Public surfaces and contracts:
+
+- `packages/conversation-contract/index.d.ts`
+
+Useful searches:
+
+- `rg "ConversationEngine|ProcessTurnInput|TurnOutcome|SelectionDecision" packages/conversation-contract backend/src`
+- `rg "@radioso/conversation-contract" .`
+
+Focused checks:
+
+- `pnpm --filter @radioso/conversation-contract run typecheck`
+
+Related docs and specs:
+
+- `specs/068-capability-neutral-turn-spine/`
+- Issue `#482`
+
+## Conversation Engine Runtime
+
+Owns the product-independent turn loop implementation over the conversation
+contracts: load history, match directives, select skills, dispatch skills, merge
+steering, compose the response, append events, and return a unified trace.
+
+Should not own Radioso product behavior. It may depend on
+`@radioso/conversation-contract`, but it must not import backend modules,
+retrieval internals, database repositories, HTTP types, workspace/auth modules,
+frontend presenters, or other Radioso implementation packages.
+
+Public surfaces and contracts:
+
+- `packages/conversation-engine/src/index.ts`
+
+Useful searches:
+
+- `rg "DefaultConversationEngine|createConversationEngine|processTurn" packages/conversation-engine backend/src`
+- `rg "@radioso/conversation-engine" .`
+
+Focused checks:
+
+- `pnpm --filter @radioso/conversation-engine run typecheck`
+- `pnpm --filter @radioso/conversation-engine run test`
+- `cd backend && pnpm test -- tests/unit/runtime-startup.test.ts tests/unit/runtime-config.test.ts`
+
+Related docs and specs:
+
+- `specs/068-capability-neutral-turn-spine/`
+- Issue `#482`
+
 ## Documents And Ingestion
 
 Owns document records, source content, upload/import orchestration, storage

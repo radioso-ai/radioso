@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../../src/app/config/env.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import { buildDependencies } from "../../src/app/server/dependencies.js";
+import { createDefaultConversationEngine } from "../../src/app/server/dependencyBuilders.js";
 import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { startApiRuntime } from "../../src/runtime/startApiRuntime.js";
 import { startWorkerTaskRuntime } from "../../src/runtime/startWorkerTaskRuntime.js";
@@ -70,6 +71,7 @@ const createEnv = (): Env => ({
   WEBSITE_CRAWL_JOB_LEASE_MS: 900_000,
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
   WEBSITE_CRAWLER_ENABLED: true,
+  RADIOSO_CONVERSATION_ENGINE_ENABLED: false,
   APP_BASE_URL: undefined,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
   RADIOSO_BASE_URL: undefined,
@@ -138,6 +140,19 @@ const createDependencies = () =>
   } as unknown as AppDependencies);
 
 describe("runtime startup", () => {
+  it("leaves the reusable conversation engine out of composition by default", () => {
+    expect(createDefaultConversationEngine(createEnv())).toBeUndefined();
+  });
+
+  it("creates the reusable conversation engine when explicitly enabled", () => {
+    const engine = createDefaultConversationEngine({
+      ...createEnv(),
+      RADIOSO_CONVERSATION_ENGINE_ENABLED: true,
+    });
+
+    expect(engine?.processTurn).toBeTypeOf("function");
+  });
+
   it("starts the API runtime with SQL migrations and connector bootstrapping, but without the worker loop", async () => {
     const env = createEnv();
     const dependencies = createDependencies();

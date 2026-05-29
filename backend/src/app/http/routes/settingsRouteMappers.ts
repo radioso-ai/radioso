@@ -26,6 +26,7 @@ export const toRetrievalSettingsPatch = (
     rerankTopK: body.rerankTopK,
     citationDisplayEnabled: body.citationDisplayEnabled,
     metadataRules: body.metadataRules as RetrievalSettingsPatch["metadataRules"],
+    retrievalStrategy: body.retrievalStrategy,
   },
 });
 

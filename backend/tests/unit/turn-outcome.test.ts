@@ -10,6 +10,7 @@ import {
 import type { SkillOutcome } from "../../src/modules/skills/public.js";
 
 const outcome = (over: Partial<SkillOutcome> = {}): TurnOutcome => ({
+  kind: "generic",
   skillName: "order.status",
   outcome: { status: "completed", answer: "Your order ships tomorrow.", ...over },
   steering: [],

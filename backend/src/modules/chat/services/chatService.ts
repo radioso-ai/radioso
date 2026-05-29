@@ -31,6 +31,7 @@ import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import { noopDirectiveSteering, type DirectiveSteeringPort } from "../../directives/public.js";
 import {
   GenericTurnOutcomeRenderer,
+  RETRIEVAL_OUTCOME_KIND,
   TurnOutcomeRendererRegistry,
   type TurnOutcome,
 } from "./turnOutcome.js";
@@ -277,7 +278,7 @@ export class ChatService {
     // through this registry, never branching on a specific skill.
     this.turnRenderers = new TurnOutcomeRendererRegistry([
       {
-        supports: (outcome) => outcome.skillName === RETRIEVAL_TURN_SKILL,
+        supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
         render: (_outcome, ctx) =>
           this.generateAnswerPresentation(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId),
       },
@@ -287,9 +288,10 @@ export class ChatService {
 
   private buildRetrievalTurnOutcome(session: PreparedSession): TurnOutcome {
     // The rich retrieval result rides on session.retrieval (read by the
-    // retrieval renderer); the outcome carries the steering set for the
-    // composer and identifies the dispatched skill.
+    // retrieval renderer); the outcome carries the steering set for the composer
+    // and declares its rendering kind so renderers match by kind, not skill name.
     return {
+      kind: RETRIEVAL_OUTCOME_KIND,
       skillName: RETRIEVAL_TURN_SKILL,
       outcome: { status: "completed" },
       steering: session.directiveSteering?.rules ?? [],
@@ -523,7 +525,11 @@ export class ChatService {
           return response;
         }
       }
-      session = await this.chatSessionPreparer.prepareRetrieval(input, session);
+      // Selection is authoritative: ground only if the strategy selected
+      // retrieval; otherwise answer directly (no forced fallthrough to retrieval).
+      session = candidates.includes("retrieval")
+        ? await this.chatSessionPreparer.prepareRetrieval(input, session)
+        : await this.chatSessionPreparer.prepareDirect(input, session);
       const answerStartedAt = Date.now();
       const turnOutcome = this.buildRetrievalTurnOutcome(session);
       const presentation = await this.turnRenderers.resolve(turnOutcome).render(turnOutcome, {
@@ -652,7 +658,11 @@ export class ChatService {
         return;
       }
 
-      session = await this.chatSessionPreparer.prepareRetrieval(input, session);
+      // Selection is authoritative: ground only if the strategy selected
+      // retrieval; otherwise answer directly (no forced fallthrough to retrieval).
+      session = candidates.includes("retrieval")
+        ? await this.chatSessionPreparer.prepareRetrieval(input, session)
+        : await this.chatSessionPreparer.prepareDirect(input, session);
       let rawAnswer = "";
       let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
       let answerGrounding: AnswerGroundingVerdict = "grounded";

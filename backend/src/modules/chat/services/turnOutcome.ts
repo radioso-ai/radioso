@@ -16,10 +16,20 @@ import type { PreparedSession } from "./chatSessionPreparer.js";
  * read by the generic renderer. The loop never branches on a specific skill.
  */
 export interface TurnOutcome {
+  /**
+   * The rendering category a renderer selects on — NOT a skill identity. A skill
+   * declares the kind of outcome it produces (e.g. "retrieval" for grounded
+   * context, "generic" for a plain answer); renderers match on the kind, so the
+   * loop never branches on a specific skill name.
+   */
+  kind: string;
   skillName: string;
   outcome: SkillOutcome;
   steering: SteeringRule[];
 }
+
+/** The outcome kind a grounded/retrieval turn produces. */
+export const RETRIEVAL_OUTCOME_KIND = "retrieval";
 
 /** Turn-scoped inputs a renderer needs beyond the outcome itself. */
 export interface TurnRenderContext {

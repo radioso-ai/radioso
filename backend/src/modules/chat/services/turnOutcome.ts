@@ -1,5 +1,4 @@
-import type { SteeringRule } from "../../../shared/domain/steeringRule.js";
-import type { SkillOutcome } from "../../skills/public.js";
+import type { TurnOutcome } from "@radioso/conversation-contract";
 
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
@@ -15,18 +14,7 @@ import type { PreparedSession } from "./chatSessionPreparer.js";
  * read by the retrieval renderer; a non-retrieval skill's `answer`/`outputs` are
  * read by the generic renderer. The loop never branches on a specific skill.
  */
-export interface TurnOutcome {
-  /**
-   * The rendering category a renderer selects on — NOT a skill identity. A skill
-   * declares the kind of outcome it produces (e.g. "retrieval" for grounded
-   * context, "generic" for a plain answer); renderers match on the kind, so the
-   * loop never branches on a specific skill name.
-   */
-  kind: string;
-  skillName: string;
-  outcome: SkillOutcome;
-  steering: SteeringRule[];
-}
+export type { TurnOutcome } from "@radioso/conversation-contract";
 
 /** The outcome kind a grounded/retrieval turn produces. */
 export const RETRIEVAL_OUTCOME_KIND = "retrieval";

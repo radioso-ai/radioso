@@ -34,6 +34,9 @@ imports from `services/`.
 - `services/chatService.ts`: core chat service behavior.
 - `services/chatSessionPreparer.ts`: session setup for chat turns.
 - `services/chatTurnLifecycle.ts`: turn lifecycle and persistence flow.
+- `services/conversationContractMappers.ts` and
+  `services/conversationProcessTurnInput.ts`: adapters from prepared chat turns
+  into the reusable conversation-engine contracts.
 - `services/groundedAnswerPromptComposer.ts`: grounded answer prompt assembly.
 
 ## Common Change Paths
@@ -48,6 +51,9 @@ imports from `services/`.
   `historyItemPresenter.ts`.
 - Bootstrap and public chat: `chatBootstrapService.ts`,
   public chat routes and presenters.
+- Reusable turn engine: `conversationContractMappers.ts`,
+  `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`, and
+  application composition in `src/app/server/dependencyBuilders.ts`.
 
 ## Tests
 

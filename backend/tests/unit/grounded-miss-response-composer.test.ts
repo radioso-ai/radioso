@@ -27,6 +27,25 @@ describe("grounded miss response composer", () => {
     ).resolves.toBe("MODEL_NO_CONTEXT");
   });
 
+  it("requests minimal reasoning effort with budget for the decline so reasoning models don't return empty", async () => {
+    let observedRequest: { maxOutputTokens?: number; reasoningEffort?: string } = {};
+    const composer = new ModelGroundedMissResponseComposer({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-5-nano" },
+      async complete(request) {
+        observedRequest = request;
+        return "MODEL_NO_CONTEXT";
+      },
+      async *stream() {
+        yield "";
+      },
+    });
+
+    await composer.composeNoContext({ query: "What is the capital of France?" });
+
+    expect(observedRequest.reasoningEffort).toBe("minimal");
+    expect(observedRequest.maxOutputTokens ?? 0).toBeGreaterThanOrEqual(256);
+  });
+
   it("passes assistant scope instructions into no-context generation", async () => {
     let observedPrompt = "";
     const composer = new ModelGroundedMissResponseComposer({

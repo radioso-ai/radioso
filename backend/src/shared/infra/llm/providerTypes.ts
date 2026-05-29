@@ -7,11 +7,19 @@ export interface LlmProviderMetadata {
   model: string;
 }
 
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
+
 export interface TextGenerationRequest {
   prompt: string;
   systemPrompt?: string;
   temperature?: number;
   maxOutputTokens?: number;
+  // Provider-neutral hint for reasoning models. Currently honored only by the
+  // OpenAI provider (gpt-5 family); other providers ignore it. When set, the
+  // OpenAI provider forwards reasoning_effort and omits the (unsupported)
+  // temperature so reasoning models don't spend the whole output budget on
+  // hidden reasoning and return empty visible text.
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface TextGenerationClient {

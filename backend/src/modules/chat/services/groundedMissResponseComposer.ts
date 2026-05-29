@@ -1,5 +1,5 @@
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
-import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import type { TextGenerationClient, TextGenerationRequest } from "../../../shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
@@ -98,12 +98,7 @@ const buildNoContextFallback = (): string => renderGroundedMissSection("fallback
 export class ModelGroundedMissResponseComposer implements GroundedMissResponseComposer {
   constructor(private readonly client: TextGenerationClient) {}
 
-  private async completeWithRetry(request: {
-    prompt: string;
-    systemPrompt?: string;
-    temperature: number;
-    maxOutputTokens: number;
-  }): Promise<string | undefined> {
+  private async completeWithRetry(request: TextGenerationRequest): Promise<string | undefined> {
     try {
       return await this.client.complete(request);
     } catch {
@@ -121,6 +116,9 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
         }),
         temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
         maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.noContextMaxOutputTokens,
+        // Short utility decline: keep reasoning spend minimal so the token budget
+        // leaves room for visible text on reasoning models.
+        reasoningEffort: "minimal",
       });
 
       const normalized = normalizeModelResponse(raw);

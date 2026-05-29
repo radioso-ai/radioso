@@ -3,7 +3,10 @@ import OpenAI from "openai";
 import {
   type EmbeddingClient,
   type LlmCapabilityConfig,
+  type LlmProviderName,
+  type ReasoningEffort,
   type TextGenerationClient,
+  type TextGenerationRequest,
 } from "./providerTypes.js";
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
 import type { AppLogger } from "../../observability/logger.js";
@@ -25,6 +28,32 @@ const buildTokenLimit = (
     ? { max_tokens: maxOutputTokens }
     : { max_completion_tokens: maxOutputTokens };
 
+export interface ChatSamplingParams {
+  temperature?: number;
+  max_completion_tokens?: number;
+  max_tokens?: number;
+  reasoning_effort?: ReasoningEffort;
+}
+
+/**
+ * Shapes the sampling/limit params for a chat.completions call. For the first-party
+ * OpenAI provider (gpt-5 family reasoning models), a requested reasoning effort is
+ * forwarded as reasoning_effort and temperature is dropped — those models reject a
+ * non-default temperature and otherwise consume the whole token budget on hidden
+ * reasoning, returning empty visible text. openai-compatible endpoints serve
+ * arbitrary models, so we never assume reasoning support there.
+ */
+export const buildChatSamplingParams = (
+  provider: LlmProviderName,
+  input: { temperature?: number; maxOutputTokens?: number; reasoningEffort?: ReasoningEffort },
+): ChatSamplingParams => {
+  const tokenLimit = buildTokenLimit(provider, input.maxOutputTokens);
+  if (provider === "openai" && input.reasoningEffort) {
+    return { ...tokenLimit, reasoning_effort: input.reasoningEffort };
+  }
+  return { ...tokenLimit, temperature: input.temperature };
+};
+
 export const createOpenAIClient = (config: LlmCapabilityConfig): OpenAI =>
   new OpenAI({
     apiKey: config.apiKey,
@@ -44,33 +73,21 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
     };
   }
 
-  async complete(input: {
-    prompt: string;
-    systemPrompt?: string;
-    temperature?: number;
-    maxOutputTokens?: number;
-  }): Promise<string> {
+  async complete(input: TextGenerationRequest): Promise<string> {
     const response = await this.client.chat.completions.create({
       model: this.config.model,
-      temperature: input.temperature,
-      ...buildTokenLimit(this.config.provider, input.maxOutputTokens),
+      ...buildChatSamplingParams(this.config.provider, input),
       messages: buildMessages(input),
     });
 
     return response.choices[0]?.message?.content ?? "";
   }
 
-  async *stream(input: {
-    prompt: string;
-    systemPrompt?: string;
-    temperature?: number;
-    maxOutputTokens?: number;
-  }): AsyncIterable<string> {
+  async *stream(input: TextGenerationRequest): AsyncIterable<string> {
     const stream = await this.client.chat.completions.create({
       model: this.config.model,
       stream: true,
-      temperature: input.temperature,
-      ...buildTokenLimit(this.config.provider, input.maxOutputTokens),
+      ...buildChatSamplingParams(this.config.provider, input),
       messages: buildMessages(input),
     });
 

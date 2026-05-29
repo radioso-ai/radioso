@@ -54,6 +54,7 @@ describe("ModelChatGateway", () => {
       {
         systemPrompt: "System instructions",
         prompt: "User prompt",
+        reasoningEffort: "minimal",
       },
     ]);
   });
@@ -87,6 +88,7 @@ describe("ModelChatGateway", () => {
       {
         systemPrompt: "System instructions",
         prompt: "User prompt",
+        reasoningEffort: "minimal",
       },
     ]);
   });

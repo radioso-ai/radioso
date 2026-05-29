@@ -30,6 +30,16 @@ import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import { noopDirectiveSteering, type DirectiveSteeringPort } from "../../directives/public.js";
 import {
+  GenericTurnOutcomeRenderer,
+  TurnOutcomeRendererRegistry,
+  type TurnOutcome,
+} from "./turnOutcome.js";
+
+// The skill name a grounded (retrieval) turn dispatches; the retrieval renderer
+// claims outcomes under it. A non-retrieval skill's outcome falls through to the
+// generic renderer.
+const RETRIEVAL_TURN_SKILL = "retrieval.answer";
+import {
   ChatAnswerPresenter,
   type ChatPresentedAnswer,
   type SkillOutcomeCapabilityProvider,
@@ -218,6 +228,7 @@ export class ChatService {
   private readonly chatAnswerPresenter: ChatAnswerPresenter;
   private readonly chatSessionPreparer: ChatSessionPreparer;
   private readonly chatTurnLifecycle: ChatTurnLifecycle;
+  private readonly turnRenderers: TurnOutcomeRendererRegistry;
   constructor(
     conversationRepository: ConversationRepositoryPort,
     messageRepository: MessageRepositoryPort,
@@ -256,6 +267,28 @@ export class ChatService {
       chatActionSuggestionService,
       skillOutcomeCapabilities,
     );
+    // The retrieval renderer wraps today's grounded composition unchanged; the
+    // generic renderer handles any other skill's outcome. The loop composes
+    // through this registry, never branching on a specific skill.
+    this.turnRenderers = new TurnOutcomeRendererRegistry([
+      {
+        supports: (outcome) => outcome.skillName === RETRIEVAL_TURN_SKILL,
+        render: (_outcome, ctx) =>
+          this.generateAnswerPresentation(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId),
+      },
+      new GenericTurnOutcomeRenderer(),
+    ]);
+  }
+
+  private buildRetrievalTurnOutcome(session: PreparedSession): TurnOutcome {
+    // The rich retrieval result rides on session.retrieval (read by the
+    // retrieval renderer); the outcome carries the steering set for the
+    // composer and identifies the dispatched skill.
+    return {
+      skillName: RETRIEVAL_TURN_SKILL,
+      outcome: { status: "completed" },
+      steering: session.directiveSteering?.rules ?? [],
+    };
   }
 
   private buildChatWorkspaceContext(session: PreparedSession): LlmCapabilityResolveInput {
@@ -475,12 +508,13 @@ export class ChatService {
       }
       session = await this.chatSessionPreparer.prepareRetrieval(input, session);
       const answerStartedAt = Date.now();
-      const presentation = await this.generateAnswerPresentation(
+      const turnOutcome = this.buildRetrievalTurnOutcome(session);
+      const presentation = await this.turnRenderers.resolve(turnOutcome).render(turnOutcome, {
         session,
-        input.query,
-        input.userExpectedLocale,
-        input.accountId,
-      );
+        query: input.query,
+        userExpectedLocale: input.userExpectedLocale,
+        accountId: input.accountId,
+      });
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,

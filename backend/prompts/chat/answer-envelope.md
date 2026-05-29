@@ -11,8 +11,8 @@ The token <<<RADIOSO_FOLLOWUPS_JSON>>> must appear exactly once, after the compl
 
 Grounding verdict
 Set "grounding" to your honest assessment of how well the Result N excerpts supported the answer you just wrote:
-- "grounded": the excerpts directly and fully support the answer.
-- "degraded": you answered, but the excerpts only partially cover the question — you had to hedge, note missing details, or rely on incomplete evidence. Use this whenever the answer signals uncertainty or that the materials do not fully address what was asked.
+- "grounded": the excerpts directly and fully answer what the user asked.
+- "degraded": the excerpts did not fully answer what the user asked, but you still drew on them. Use this when you hedged, flagged that a detail or the specific item asked about is not in the materials, relied on incomplete or tangential evidence, or answered a related/adjacent point and redirected instead of answering the exact question. When in doubt between the two, prefer "degraded".
 This is your own assessment of the answer's support, not a phrase to include in the visible answer. Judge it from the excerpts and the answer regardless of the answer's language.
 
 Suggestions

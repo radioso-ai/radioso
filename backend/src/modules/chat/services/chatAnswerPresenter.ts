@@ -26,6 +26,10 @@ export interface ChatPresentedAnswer {
   skillOutcome: string;
   skillStatus: SkillTurnOutcome["status"];
   answerOutcome?: AssistantTurnOutcome;
+  // The model's raw self-reported grounding verdict for this turn, retained for
+  // observability/eval even when the grounded-miss safety net later reclassifies
+  // the turn (e.g. a degraded draft with no citations becomes no_context).
+  grounding?: AnswerGroundingVerdict;
 }
 
 export interface SkillOutcomeCapabilityProvider {
@@ -178,6 +182,7 @@ export class ChatAnswerPresenter {
     return withLegacyAnswerOutcome({
       ...presented,
       ...citationArtifacts,
+      grounding,
       planningCitations: toPlanningCitations(normalized.citationEvidence),
       skillName: groundedOutcome.skillName,
       skillOutcome: groundedOutcome.outcome,

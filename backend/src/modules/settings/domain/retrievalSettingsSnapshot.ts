@@ -1,7 +1,7 @@
 import type {
-  PipelineMode,
   RetrievalMetadataRule,
   RetrievalSettingsRecord,
+  RetrievalStrategyPreference,
 } from "./retrievalSettings.js";
 
 /**
@@ -28,7 +28,7 @@ export interface RetrievalSettingsSnapshot {
   citationDisplayEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
-  pipelineMode?: PipelineMode;
+  retrievalStrategy?: RetrievalStrategyPreference;
 }
 
 export const freezeRetrievalSettings = (
@@ -46,5 +46,5 @@ export const freezeRetrievalSettings = (
   citationDisplayEnabled: record.citationDisplayEnabled,
   metadataRules: record.metadataRules,
   customInstruction: record.customInstruction,
-  pipelineMode: record.pipelineMode,
+  retrievalStrategy: record.retrievalStrategy,
 });

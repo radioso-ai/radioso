@@ -200,7 +200,7 @@ describe("retrieval shape resolver", () => {
     expect(parsed.success ? parsed.data : undefined).toMatchObject({
       skillName: "retrieval.answer",
       shapeName: "definition_lookup",
-      strategy: "definition_lookup",
+      strategy: "fixed",
       selectionMode: "probabilistic",
       callerSurface: "retrieval_api",
       outcome: "success",

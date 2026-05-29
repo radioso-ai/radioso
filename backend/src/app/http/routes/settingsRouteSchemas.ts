@@ -8,6 +8,7 @@ import {
   metadataRuleOperators,
   metadataRuleTriggerModes,
   metadataValueTypes,
+  retrievalStrategyPreferences,
 } from "../../../modules/settings/contracts/retrieval.js";
 import { websiteEmbedLauncherPositions } from "../../../shared/domain/websiteEmbed.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
@@ -23,6 +24,7 @@ export const updateSettingsSchema = z.object({
   similarityThreshold: z.number(),
   rerankTopK: z.number().int().max(RETRIEVAL_BEHAVIOR.rerank.candidateLimit),
   citationDisplayEnabled: z.boolean(),
+  retrievalStrategy: z.enum(retrievalStrategyPreferences).optional(),
   metadataRules: z
     .array(
       z.object({
@@ -84,6 +86,7 @@ export const updatePlatformSettingsSchema = z.object({
     similarityThreshold: z.number().optional(),
     rerankTopK: z.number().int().optional(),
     citationDisplayEnabled: z.boolean().optional(),
+    retrievalStrategy: z.enum(retrievalStrategyPreferences).optional(),
     metadataRules: updateSettingsSchema.shape.metadataRules,
   }).optional(),
   channels: z.object({

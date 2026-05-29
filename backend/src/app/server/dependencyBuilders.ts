@@ -770,12 +770,15 @@ export const buildChatServices = (input: {
     chatIntakeProvider,
     chatActionSuggestionService,
     createSkillOutcomeCapabilityProvider(input.composition.skillCatalogRegistry),
-    // 067: behavioral steering. Empty standing set by default (behavior-preserving);
-    // the probabilistic matcher is assembled from the chat text client but makes
-    // no model call while the standing set has no contextual directives.
+    // 067: behavioral steering. Empty standing set by default, so only the
+    // deterministic always-match matcher is wired and no model call happens.
+    // The probabilistic (contextual) matcher is intentionally not wired here: the
+    // LLM registry moved from a raw TextGenerationClient to usage-accounted
+    // ModelInferencePipelines (#473), so wiring it requires refactoring
+    // ModelDirectiveMatchGateway onto ModelInferencePipeline with a usage
+    // context — a follow-up to land before any contextual directive ships.
     createDirectiveSteering({
       capabilityPolicy: input.composition.capabilityPolicy,
-      textGenerationClient: input.llmRegistry.createChatTextClient(),
     }),
   );
   const chatBootstrapService = new ChatBootstrapService(

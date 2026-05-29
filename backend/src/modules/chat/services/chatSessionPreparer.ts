@@ -153,6 +153,35 @@ export class ChatSessionPreparer {
     };
   }
 
+  /**
+   * Prepares a non-grounded (direct) answer turn: interpret the query, then run
+   * the answer path with retrieval forced off. Used when the turn-selection
+   * strategy does not select retrieval — the agent answers conversationally
+   * without grounding, rather than being forced through retrieval. Unlike the
+   * skip-retrieval stub, this still produces a real prompt via the answer path.
+   */
+  async prepareDirect(input: PrepareChatSessionInput, session: PreparedSession): Promise<PreparedSession> {
+    const pipelineInput = this.buildPipelineInput(input, session.agent, session.history, session.conversation, session.userMessage);
+    if (!isAgentRetrievalEnabled(session.agent)) {
+      const { retrieval, turnRoute } = this.prepareDirectOnlyTurn(pipelineInput, session.agent);
+      return { ...session, retrieval, turnRoute };
+    }
+    const interpretation = await this.retrievalTurn.interpret(pipelineInput);
+    const interpretedWithExecution = {
+      ...interpretation,
+      request: {
+        ...interpretation.request,
+        execution: {
+          surface: "assistant" as const,
+          path: "assistant_direct" as const,
+          retrievalInvoked: false,
+        },
+      },
+    };
+    const retrieval = await this.retrievalTurn.dispatch({ interpreted: interpretedWithExecution, withRetrieval: false });
+    return { ...session, retrieval, turnRoute: CHAT_TURN_ROUTE.SOCIAL_ONLY };
+  }
+
   private buildPipelineInput(
     input: PrepareChatSessionInput,
     agent: AgentRecord,

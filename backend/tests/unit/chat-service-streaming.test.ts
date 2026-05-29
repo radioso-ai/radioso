@@ -844,6 +844,105 @@ describe("chat service streaming", () => {
     }));
   });
 
+  it("emits grounded answer chunks before the provider stream finishes", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const releaseTail = (() => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((complete) => {
+        resolve = complete;
+      });
+      return { promise, resolve };
+    })();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "how should i start meditating",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Meditation Tips",
+              content: "Keep meditation practice short and simple. Begin with a few minutes each day.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Meditation Tips" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "start meditating",
+              lexicalQuery: "start meditating",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Keep meditation practice short and simple. Begin with a few minutes each day[[1]]. This cited sentence has arrived and can stream now.";
+      },
+      async *streamAnswer() {
+        yield "Keep meditation practice short and simple. Begin with a few minutes each day[[1]]. This cited sentence has arrived and can stream now.";
+        await releaseTail.promise;
+        yield `\n${SUGGESTIONS_SENTINEL}\n[]`;
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const iterator = service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "How should I start meditating?",
+      stream: true,
+    })[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: "conversation", conversationId: expect.any(String) },
+    });
+
+    const nextEvent = iterator.next();
+    const firstAnswerEvent = await Promise.race([
+      nextEvent,
+      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 20)),
+    ]);
+
+    try {
+      expect(firstAnswerEvent).not.toBe("timeout");
+      expect(firstAnswerEvent).toEqual({
+        done: false,
+        value: expect.objectContaining({
+          type: "chunk",
+          text: expect.stringContaining("Keep meditation practice short"),
+        }),
+      });
+    } finally {
+      releaseTail.resolve();
+      await nextEvent.catch(() => undefined);
+      await iterator.return?.();
+    }
+  });
+
   it("streams clean prose and attaches final citations", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

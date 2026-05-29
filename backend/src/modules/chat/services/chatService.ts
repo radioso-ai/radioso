@@ -61,6 +61,7 @@ import {
   type GroundedAnswerEnvelope,
   type PlannedEnvelopeSuggestion,
 } from "./groundedAnswerEnvelope.js";
+import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -75,6 +76,18 @@ export class BlankChatAnswerError extends Error {
 const isBlankChatAnswerError = (error: unknown): error is BlankChatAnswerError => error instanceof BlankChatAnswerError;
 const hasCitedAnswerSegment = (presentation: ChatPresentedAnswer): boolean =>
   presentation.answerSegments?.some((segment) => (segment.citationIndices?.length ?? 0) > 0) ?? false;
+const CITED_ANSWER_PREFIX_PATTERN = /\[\[\d+\]\](?:[ \t]*[.,;:!?)]?)?[ \t]*/g;
+
+const splitCitedAnswerPrefix = (buffer: string): { streamable: string; remaining: string } => {
+  let releaseEnd = 0;
+  for (const match of buffer.matchAll(CITED_ANSWER_PREFIX_PATTERN)) {
+    releaseEnd = match.index + match[0].length;
+  }
+  return {
+    streamable: buffer.slice(0, releaseEnd),
+    remaining: buffer.slice(releaseEnd),
+  };
+};
 
 export class ModelChatGateway implements ChatGateway {
   constructor(private readonly inference: ModelInferencePipeline) {}
@@ -668,6 +681,7 @@ export class ChatService {
       let answerGrounding: AnswerGroundingVerdict = "grounded";
       let noContextPresentation: ChatPresentedAnswer | null = null;
       let hasStreamedAnswer = false;
+      let streamedAnswer = "";
       const answerStartedAt = Date.now();
 
       if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
@@ -685,6 +699,7 @@ export class ChatService {
           text: rawAnswer,
         };
         hasStreamedAnswer = true;
+        streamedAnswer += rawAnswer;
       } else if (session.retrieval.contexts.length === 0) {
         const fallbackEnvelope = await this.generateAnswerWithPageContext(session, input.query, input.accountId);
         rawAnswer = fallbackEnvelope?.answer
@@ -700,8 +715,11 @@ export class ChatService {
           text: rawAnswer,
         };
         hasStreamedAnswer = true;
+        streamedAnswer += rawAnswer;
       } else {
         const reader = new GroundedAnswerEnvelopeReader();
+        const citationSanitizer = new CitationAnchorSanitizer();
+        let pendingStreamText = "";
         for await (const text of this.chatGateway.streamAnswer({
           query: input.query,
           history: session.history,
@@ -713,7 +731,18 @@ export class ChatService {
           if (!text) {
             continue;
           }
-          reader.push(text);
+          pendingStreamText += reader.push(text);
+          const { streamable, remaining } = splitCitedAnswerPrefix(pendingStreamText);
+          pendingStreamText = remaining;
+          const cleanChunk = citationSanitizer.push(streamable);
+          if (cleanChunk) {
+            streamedAnswer += cleanChunk;
+            yield {
+              type: "chunk",
+              text: cleanChunk,
+            };
+            hasStreamedAnswer = true;
+          }
         }
 
         const finalized = reader.finalize();
@@ -752,6 +781,19 @@ export class ChatService {
           text: presentationWithoutSuggestions.answer,
         };
         hasStreamedAnswer = true;
+        streamedAnswer += presentationWithoutSuggestions.answer;
+      } else if (
+        hasStreamedAnswer
+        && presentationWithoutSuggestions.answer
+        && presentationWithoutSuggestions.answer.startsWith(streamedAnswer)
+      ) {
+        const remainingAnswer = presentationWithoutSuggestions.answer.slice(streamedAnswer.length);
+        if (remainingAnswer) {
+          yield {
+            type: "chunk",
+            text: remainingAnswer,
+          };
+        }
       }
       // The lazy promise can call chatActionSuggestionService.evaluate (which may
       // hit an LLM). If completeAssistantTurn below throws, we rethrow but the

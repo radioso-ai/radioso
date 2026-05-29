@@ -669,6 +669,12 @@ components:
           minimum: 1
         citationDisplayEnabled:
           type: boolean
+        retrievalStrategy:
+          type: string
+          enum: &a3
+            - fixed
+            - reasoning
+            - auto
         metadataFieldSuggestions:
           type: array
           items:
@@ -744,14 +750,14 @@ components:
                 default: []
               effect:
                 type: string
-                enum: &a3
+                enum: &a4
                   - boost
                   - filter
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: &a4
+                enum: &a5
                   - always_on
                   - match_turn
               triggerInstruction:
@@ -786,6 +792,7 @@ components:
         - similarityThreshold
         - rerankTopK
         - citationDisplayEnabled
+        - retrievalStrategy
         - customInstruction
         - createdAt
         - updatedAt
@@ -814,6 +821,9 @@ components:
           maximum: 50
         citationDisplayEnabled:
           type: boolean
+        retrievalStrategy:
+          type: string
+          enum: *a3
         metadataRules:
           type: array
           items:
@@ -835,7 +845,7 @@ components:
                 type: string
               combinator:
                 type: string
-                enum: &a5
+                enum: &a6
                   - and
                   - or
               conditions:
@@ -865,12 +875,12 @@ components:
                     - value
               effect:
                 type: string
-                enum: *a3
+                enum: *a4
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: *a4
+                enum: *a5
               triggerInstruction:
                 type: string
                 maxLength: 500
@@ -913,6 +923,9 @@ components:
           maximum: 50
         citationDisplayEnabled:
           type: boolean
+        retrievalStrategy:
+          type: string
+          enum: *a3
         metadataRules:
           type: array
           items:
@@ -934,7 +947,7 @@ components:
                 type: string
               combinator:
                 type: string
-                enum: *a5
+                enum: *a6
               conditions:
                 type: array
                 items:
@@ -962,12 +975,12 @@ components:
                     - value
               effect:
                 type: string
-                enum: *a3
+                enum: *a4
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: *a4
+                enum: *a5
               triggerInstruction:
                 type: string
                 maxLength: 500
@@ -986,13 +999,13 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a7
+          enum: &a8
             - fixed_window
             - structured_semantic
             - recursive_text
         embeddingModel:
           type: string
-          enum: &a6
+          enum: &a7
             - text-embedding-3-small
             - text-embedding-3-large
             - text-embedding-ada-002
@@ -1001,12 +1014,12 @@ components:
           type:
             - string
             - "null"
-          enum: *a6
+          enum: *a7
         supportedEmbeddingModels:
           type: array
           items:
             type: string
-            enum: *a6
+            enum: *a7
         fixedWindowChunkSize:
           type: integer
         fixedWindowChunkOverlap:
@@ -1038,7 +1051,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a7
+          enum: *a8
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -1057,7 +1070,7 @@ components:
           maximum: 2000
         embeddingModel:
           type: string
-          enum: *a6
+          enum: *a7
       required:
         - chunkingStrategy
         - fixedWindowChunkSize
@@ -1111,12 +1124,12 @@ components:
           default: []
         effect:
           type: string
-          enum: *a3
+          enum: *a4
         enabled:
           type: boolean
         triggerMode:
           type: string
-          enum: *a4
+          enum: *a5
         triggerInstruction:
           type: string
       required:
@@ -1236,7 +1249,7 @@ components:
           maxLength: 80
         websiteEmbedLauncherPosition:
           type: string
-          enum: &a8
+          enum: &a9
             - bottom-right
             - bottom-left
         websiteEmbedTheme:
@@ -1313,7 +1326,7 @@ components:
           type: string
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a8
+          enum: *a9
         websiteEmbedTheme:
           type: object
           properties:
@@ -1476,12 +1489,12 @@ components:
                 default: []
               effect:
                 type: string
-                enum: *a3
+                enum: *a4
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: *a4
+                enum: *a5
               triggerInstruction:
                 type: string
             required:
@@ -1508,6 +1521,9 @@ components:
               - field
               - inferredType
           default: []
+        retrievalStrategy:
+          type: string
+          enum: *a3
       required:
         - queryRewriteEnabled
         - semanticRewriteInstructions
@@ -1517,6 +1533,7 @@ components:
         - similarityThreshold
         - rerankTopK
         - citationDisplayEnabled
+        - retrievalStrategy
     PlatformChannelsSettingsSection:
       type: object
       properties:
@@ -1540,7 +1557,7 @@ components:
           type: string
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a8
+          enum: *a9
         websiteEmbedScriptUrl:
           type:
             - string
@@ -1646,6 +1663,9 @@ components:
               type: integer
             citationDisplayEnabled:
               type: boolean
+            retrievalStrategy:
+              type: string
+              enum: *a3
             metadataRules:
               type: array
               items:
@@ -1667,7 +1687,7 @@ components:
                     type: string
                   combinator:
                     type: string
-                    enum: *a5
+                    enum: *a6
                   conditions:
                     type: array
                     items:
@@ -1695,12 +1715,12 @@ components:
                         - value
                   effect:
                     type: string
-                    enum: *a3
+                    enum: *a4
                   enabled:
                     type: boolean
                   triggerMode:
                     type: string
-                    enum: *a4
+                    enum: *a5
                   triggerInstruction:
                     type: string
                     maxLength: 500
@@ -1726,7 +1746,7 @@ components:
               maxLength: 80
             websiteEmbedLauncherPosition:
               type: string
-              enum: *a8
+              enum: *a9
             websiteEmbedTheme:
               type: object
               properties:
@@ -1759,7 +1779,7 @@ components:
       properties:
         provider:
           type: string
-          enum: &a18
+          enum: &a19
             - openai
             - openai-compatible
             - gemini
@@ -1815,7 +1835,7 @@ components:
       properties:
         provider:
           type: string
-          enum: &a9
+          enum: &a10
             - openai
             - openai-compatible
             - gemini
@@ -1872,7 +1892,7 @@ components:
               properties:
                 provider:
                   type: string
-                  enum: *a9
+                  enum: *a10
                 model:
                   type: string
                   minLength: 1
@@ -1888,7 +1908,7 @@ components:
               properties:
                 provider:
                   type: string
-                  enum: *a9
+                  enum: *a10
                 model:
                   type: string
                   minLength: 1
@@ -1904,7 +1924,7 @@ components:
               properties:
                 provider:
                   type: string
-                  enum: *a9
+                  enum: *a10
                 model:
                   type: string
                   minLength: 1
@@ -1976,7 +1996,7 @@ components:
               type: string
             launcherPosition:
               type: string
-              enum: &a10
+              enum: &a11
                 - bottom-right
                 - bottom-left
             theme:
@@ -2282,7 +2302,7 @@ components:
                   maxLength: 80
                 launcherPosition:
                   type: string
-                  enum: *a10
+                  enum: *a11
                 theme:
                   type: object
                   properties:
@@ -3392,7 +3412,7 @@ components:
               type: string
             selectionMode:
               type: string
-              enum: &a13
+              enum: &a14
                 - deterministic
                 - probabilistic
             selectionReason:
@@ -3403,7 +3423,7 @@ components:
               maximum: 1
             callerSurface:
               type: string
-              enum: &a14
+              enum: &a15
                 - assistant
                 - retrieval_api
                 - sdk
@@ -3440,7 +3460,7 @@ components:
                 - used
             outcome:
               type: string
-              enum: &a15
+              enum: &a16
                 - success
                 - unsupported
                 - forbidden
@@ -3477,14 +3497,14 @@ components:
                     additionalProperties: {}
                 evidenceStatus:
                   type: string
-                  enum: &a11
+                  enum: &a12
                     - found
                     - missing
                     - partial
                     - not_applicable
                 supportStatus:
                   type: string
-                  enum: &a12
+                  enum: &a13
                     - supported
                     - unsupported
                     - not_checked
@@ -3942,10 +3962,10 @@ components:
             additionalProperties: {}
         evidenceStatus:
           type: string
-          enum: *a11
+          enum: *a12
         supportStatus:
           type: string
-          enum: *a12
+          enum: *a13
         groundingOutcome:
           type: string
     SkillDiagnosticDefinition:
@@ -3959,7 +3979,7 @@ components:
           type: string
         selectionMode:
           type: string
-          enum: *a13
+          enum: *a14
         selectionReason:
           type: string
         selectionConfidence:
@@ -3968,7 +3988,7 @@ components:
           maximum: 1
         callerSurface:
           type: string
-          enum: *a14
+          enum: *a15
         capabilityChecks:
           type: array
           items:
@@ -3999,7 +4019,7 @@ components:
             - used
         outcome:
           type: string
-          enum: *a15
+          enum: *a16
         error:
           type: object
           properties:
@@ -4031,10 +4051,10 @@ components:
                 additionalProperties: {}
             evidenceStatus:
               type: string
-              enum: *a11
+              enum: *a12
             supportStatus:
               type: string
-              enum: *a12
+              enum: *a13
             groundingOutcome:
               type: string
       required:
@@ -4083,7 +4103,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a14
+            enum: *a15
         requiredCapabilities:
           type: array
           items:
@@ -4110,7 +4130,7 @@ components:
               type: array
               items:
                 type: string
-                enum: *a14
+                enum: *a15
             intent:
               type: object
               properties:
@@ -4869,7 +4889,7 @@ components:
           format: uuid
         value:
           type: string
-          enum: &a16
+          enum: &a17
             - up
             - down
         comment:
@@ -4878,7 +4898,7 @@ components:
             - "null"
         actorType:
           type: string
-          enum: &a17
+          enum: &a18
             - authenticated_user
             - api_token
             - anonymous_user
@@ -4938,14 +4958,14 @@ components:
           format: uuid
         value:
           type: string
-          enum: *a16
+          enum: *a17
         comment:
           type:
             - string
             - "null"
         actorType:
           type: string
-          enum: *a17
+          enum: *a18
         actorId:
           type: string
         accountId:
@@ -6795,7 +6815,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a18
+            enum: *a19
           required: true
           name: provider
           in: path
@@ -6836,7 +6856,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a18
+            enum: *a19
           required: true
           name: provider
           in: path
@@ -7194,7 +7214,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - &a19
+        - &a20
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -7218,7 +7238,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a19
+        - *a20
       parameters:
         - schema:
             type: string

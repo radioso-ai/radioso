@@ -5,6 +5,7 @@ import type {
 import type {
   MetadataFieldSuggestion,
   RetrievalMetadataRule,
+  RetrievalStrategyPreference,
 } from "./retrievalSettings.js";
 import type {
   WebsiteEmbedLauncherPosition,
@@ -24,6 +25,7 @@ export interface PlatformRetrievalSettingsSection {
   citationDisplayEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   metadataFieldSuggestions: MetadataFieldSuggestion[];
+  retrievalStrategy: RetrievalStrategyPreference;
 }
 
 export interface PlatformChannelsSettingsSection {
@@ -57,6 +59,7 @@ export interface PlatformRetrievalSettingsPatch {
   rerankTopK?: number;
   citationDisplayEnabled?: boolean;
   metadataRules?: RetrievalMetadataRule[];
+  retrievalStrategy?: RetrievalStrategyPreference;
 }
 
 export interface PlatformChannelsSettingsPatch {

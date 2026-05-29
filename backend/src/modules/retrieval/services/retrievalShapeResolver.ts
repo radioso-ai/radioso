@@ -13,6 +13,7 @@ import type {
   RerankStatus,
   RewrittenRetrievalQuery,
 } from "../domain/retrievalPipelineTypes.js";
+import type { RetrievalStrategy } from "../domain/retrievalStrategySelection.js";
 
 export type { RetrievalAnswerShapeSelection } from "../domain/retrievalPipelineTypes.js";
 
@@ -23,6 +24,10 @@ export interface RetrievalShapeResolverInput {
 
 export interface RetrievalAnswerSkillDiagnosticInput {
   callerSurface: SkillCallerSurface;
+  // The execution strategy the controller selected. `shapeName` (query kind)
+  // and `strategy` (execution model) are distinct axes; defaults to the fixed
+  // strategy because the deterministic pipeline is the fixed strategy.
+  strategy?: RetrievalStrategy;
   rerankStatus: RerankStatus;
   candidateCounts: {
     semantic: number;
@@ -105,7 +110,7 @@ export const buildRetrievalAnswerSkillDiagnostic = (
 ): SkillDiagnostic => ({
   skillName: capabilityNames.retrieval.answer,
   shapeName: selection.shapeName,
-  strategy: selection.shapeName,
+  strategy: input.strategy ?? "fixed",
   selectionMode: selection.selectionMode,
   selectionReason: selection.selectionReason,
   selectionConfidence: selection.selectionConfidence,
@@ -132,7 +137,7 @@ export const buildRetrievalAnswerSkillDiagnostic = (
   evidence: {
     queryShape: selection.queryShape,
     retrievalShape: selection.shapeName,
-    retrievalStrategy: selection.shapeName,
+    retrievalStrategy: input.strategy ?? "fixed",
     candidateSourceSummary: input.candidateCounts,
     ranking: {
       rerankStatus: input.rerankStatus,

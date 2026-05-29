@@ -4,9 +4,11 @@ import type {
   RetrievalSettingsRecord,
 } from "../../modules/settings/contracts/retrieval.js";
 import {
+  DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,
   DEFAULT_SUGGESTED_QUESTIONS_COUNT,
   DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
   normalizeMetadataRules,
+  resolveRetrievalStrategyPreference,
 } from "../../modules/settings/contracts/retrieval.js";
 import type {
   RetrievalSettingsRepositoryPort,
@@ -63,6 +65,7 @@ interface RetrievalSettingsPayload {
   lexicalRewriteInstructions?: unknown;
   suggestedQuestionsEnabled?: unknown;
   suggestedQuestionsCount?: unknown;
+  retrievalStrategy?: unknown;
 }
 
 interface RetrievalSettingsRow {
@@ -107,6 +110,9 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => {
     citationDisplayEnabled: row.citation_display_enabled,
     metadataRules: normalizeMetadataRules(payload.metadataRules),
     customInstruction: row.custom_instruction,
+    retrievalStrategy:
+      resolveRetrievalStrategyPreference(payload.retrievalStrategy) ??
+      DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
@@ -204,6 +210,7 @@ export class RetrievalSettingsRepository
           lexicalRewriteInstructions: input.lexicalRewriteInstructions,
           suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
           suggestedQuestionsCount: input.suggestedQuestionsCount,
+          retrievalStrategy: input.retrievalStrategy ?? DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,
         }),
         input.customInstruction,
       ],

@@ -48,6 +48,22 @@ For most teams:
 
 This is a safe default: look for a good set of matches, then reorder them before answer generation.
 
+## Answering strategy
+
+`retrievalStrategy` selects how grounded answers are produced for the workspace:
+
+- `"fixed"` (default) runs the standard pipeline in a set order — fast and predictable.
+- `"reasoning"` runs an agent that decides its own retrieval steps — better for multi-step questions, but slower and more costly.
+- `"auto"` is reserved for a future router and currently behaves like `"fixed"`.
+
+```ts
+await client.settings.updateRetrieval({
+  retrievalStrategy: 'reasoning',
+})
+```
+
+Leave this on `"fixed"` for most workspaces. The choice applies to chat, the retrieval API, the SDK, and MCP.
+
 ## Practical tuning advice
 
 - Change one setting family at a time.

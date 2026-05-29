@@ -1600,6 +1600,8 @@ export interface components {
             similarityThreshold: number;
             rerankTopK: number;
             citationDisplayEnabled: boolean;
+            /** @enum {string} */
+            retrievalStrategy: "fixed" | "reasoning" | "auto";
             /** @default [] */
             metadataFieldSuggestions: {
                 field: string;
@@ -1653,6 +1655,8 @@ export interface components {
             similarityThreshold: number;
             rerankTopK: number;
             citationDisplayEnabled: boolean;
+            /** @enum {string} */
+            retrievalStrategy?: "fixed" | "reasoning" | "auto";
             metadataRules?: {
                 id: string;
                 field?: string;
@@ -1691,6 +1695,8 @@ export interface components {
             similarityThreshold?: number;
             rerankTopK?: number;
             citationDisplayEnabled?: boolean;
+            /** @enum {string} */
+            retrievalStrategy?: "fixed" | "reasoning" | "auto";
             metadataRules?: {
                 id: string;
                 field?: string;
@@ -1921,6 +1927,8 @@ export interface components {
                 /** @enum {string} */
                 inferredType: "string" | "number" | "date" | "boolean";
             }[];
+            /** @enum {string} */
+            retrievalStrategy: "fixed" | "reasoning" | "auto";
         };
         PlatformChannelsSettingsSection: {
             anonymousChatEnabled: boolean;
@@ -1971,6 +1979,8 @@ export interface components {
                 similarityThreshold?: number;
                 rerankTopK?: number;
                 citationDisplayEnabled?: boolean;
+                /** @enum {string} */
+                retrievalStrategy?: "fixed" | "reasoning" | "auto";
                 metadataRules?: {
                     id: string;
                     field?: string;

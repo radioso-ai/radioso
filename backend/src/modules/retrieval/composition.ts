@@ -83,6 +83,7 @@ export { RetrievalExecutionTelemetryService } from "./services/retrievalExecutio
 export {
   RetrievalPipelineService,
   type RetrievalPipelineInterpretationResult,
+  type RetrievalPipelinePort,
   type RetrievalPipelineResult,
 } from "./services/retrievalPipelineService.js";
 export { RetrievalSearchService } from "./services/retrievalSearchService.js";
@@ -91,6 +92,11 @@ export {
   AgenticRetrievalPipelineService,
   type AgenticRetrievalPipelineServiceDeps,
 } from "./services/agenticRetrievalPipelineService.js";
+export {
+  RetrievalAnswerExecutor,
+  type RetrievalAnswerExecutorDeps,
+  type RetrievalStrategyPipeline,
+} from "./services/retrievalAnswerExecutor.js";
 export { GatewayQueryRewritePortAdapter } from "./services/gatewayQueryRewritePortAdapter.js";
 
 export const createDefaultRetrievalServices = (input: {

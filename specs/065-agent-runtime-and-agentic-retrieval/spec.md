@@ -3,6 +3,15 @@
 **Feature Branch**: `065-agent-runtime-and-agentic-retrieval`
 **Created**: 2026-05-28
 **Status**: Draft
+
+> **As-built amendment (2026-05-29) — strategy framing supersedes `pipelineMode`.**
+> The operator-visible surface below was reframed during delivery (see issue #460, branch `feat/retrieval-as-skill`). The agent is the locus of control and retrieval is a capability it runs under a chosen *strategy*; it is **not** a mode of retrieval. Concretely:
+> - The setting `pipelineMode: "deterministic" | "agentic"` is replaced by `retrievalStrategy: "fixed" | "reasoning" | "auto"` — an open strategy axis, not a binary mode. `fixed` is the deterministic pipeline; `reasoning` is the agent loop; `auto` defers to a future router and resolves to `fixed` until it ships.
+> - Strategy selection and dispatch are owned by a `RetrievalAnswerExecutor` (the retrieval controller). It fills the existing skill-diagnostic slots `strategy` / `selectionMode` / `selectionReason` / `selectionConfidence`. The previously vestigial `strategy` field (aliased to `shapeName`) now carries the real execution model.
+> - `RetrievalPipelineService`, `AgenticRetrievalPipelineService`, and the executor all implement a shared `RetrievalPipelinePort` interface — no `as unknown as` casts. The deterministic and reasoning strategies are siblings over one output contract, not a base class.
+> - The `RADIOSO_AGENTIC_RETRIEVAL` env gate is removed; selection is per-workspace via `retrievalStrategy`.
+> - The automatic router (Layer 3) and the skill-dispatching assistant spine (issue #465) remain deferred.
+> Wherever the body below says `pipelineMode`/`deterministic`/`agentic` as a settings value, read `retrievalStrategy`/`fixed`/`reasoning`.
 **Input**: User direction: "Build an alternative retrieval which is agent-orchestrated rather than deterministic. The agent chooses among tools — query rewrite, lexical search, semantic search, rerank, metadata filter, fetch chunk, fetch document, list by source, get neighbors — and runs additional steps when needed. Define a shared agent runtime in-repo (not a framework like LangGraph) so this agent and the agent wizard can share the same runtime, tool, and budget primitives."
 
 **Scope Note**: This spec covers two coupled deliveries:

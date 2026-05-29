@@ -30,6 +30,7 @@ export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] =
     similarityThreshold: 0.2,
     rerankTopK: 5,
     citationDisplayEnabled: true,
+    retrievalStrategy: "fixed",
     metadataFieldSuggestions: [],
     metadataRules: [],
   },

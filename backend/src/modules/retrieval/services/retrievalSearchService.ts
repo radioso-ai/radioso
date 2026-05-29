@@ -1,13 +1,13 @@
 import { ActivitySummaryPresenter } from "./activitySummaryPresenter.js";
 import { ActivityTracePresenter } from "./activityTracePresenter.js";
-import type { RetrievalPipelineService } from "./retrievalPipelineService.js";
+import type { RetrievalPipelinePort } from "./retrievalPipelineService.js";
 import type { RetrievalSearchRequest, RetrievalSearchResult } from "../domain/retrievalCapabilityTypes.js";
 
 export class RetrievalSearchService {
   private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
   private readonly activityTracePresenter = new ActivityTracePresenter();
 
-  constructor(private readonly retrievalPipeline: RetrievalPipelineService) {}
+  constructor(private readonly retrievalPipeline: RetrievalPipelinePort) {}
 
   async search(input: RetrievalSearchRequest): Promise<RetrievalSearchResult> {
     const result = await this.retrievalPipeline.run({

@@ -64,3 +64,28 @@ test("shared settings saves assistant, retrieval, and channel sections without c
   });
   expect(agentUpdates.at(-1)).not.toHaveProperty("retrieval");
 });
+
+test("retrieval settings can switch the answering strategy to reasoning", async ({ page }) => {
+  const settingsUpdates: unknown[] = [];
+  const agentUpdates: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    agentUpdates,
+    settingsUpdates,
+  });
+
+  await page.goto(`/w/${workspaceKey}/knowledge?tab=retrieval`);
+  await expect(page.getByRole("heading", { name: "Answering strategy", exact: true })).toBeVisible();
+
+  await page.locator("#retrievalStrategy").click();
+  await page.getByRole("option", { name: "Reasoning (experimental)" }).click();
+
+  await expect.poll(() => settingsUpdates.length).toBeGreaterThanOrEqual(1);
+  expect(settingsUpdates.at(-1)).toMatchObject({
+    retrieval: {
+      retrievalStrategy: "reasoning",
+    },
+  });
+});

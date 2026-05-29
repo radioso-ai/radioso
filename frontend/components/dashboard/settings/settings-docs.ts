@@ -18,6 +18,7 @@ import metadataTriggerModeSource from '../../../docs/settings-docs/retrieval/met
 import metadataValueSource from '../../../docs/settings-docs/retrieval/metadata-value.md'
 import metadataValueTypeSource from '../../../docs/settings-docs/retrieval/metadata-value-type.md'
 import queryRewriteEnabledSource from '../../../docs/settings-docs/retrieval/query-rewrite-enabled.md'
+import retrievalStrategySource from '../../../docs/settings-docs/retrieval/retrieval-strategy.md'
 import rerankEnabledSource from '../../../docs/settings-docs/retrieval/rerank-enabled.md'
 import rerankTopKSource from '../../../docs/settings-docs/retrieval/rerank-top-k.md'
 import semanticRewriteInstructionsSource from '../../../docs/settings-docs/retrieval/semantic-rewrite-instructions.md'
@@ -79,6 +80,7 @@ export const ingestionSettingDocs = {
 
 export const retrievalSettingDocs = {
   queryRewriteEnabled: parseSettingDoc(queryRewriteEnabledSource),
+  retrievalStrategy: parseSettingDoc(retrievalStrategySource),
   semanticRewriteInstructions: parseSettingDoc(semanticRewriteInstructionsSource),
   lexicalRewriteInstructions: parseSettingDoc(lexicalRewriteInstructionsSource),
   vectorTopK: parseSettingDoc(vectorTopKSource),

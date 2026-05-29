@@ -125,6 +125,7 @@ describe("settings contract", () => {
       "queryRewriteEnabled",
       "rerankEnabled",
       "rerankTopK",
+      "retrievalStrategy",
       "semanticRewriteInstructions",
       "similarityThreshold",
       "suggestedQuestionsEnabled",

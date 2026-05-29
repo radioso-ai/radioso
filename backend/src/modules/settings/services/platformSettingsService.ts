@@ -5,7 +5,10 @@ import { buildPublicAssistantLogoUrl } from "../../../app/http/shared/assistantL
 import type { AuditService } from "../../audit/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { RetrievalSettingsRecord } from "../domain/retrievalSettings.js";
-import { validateRetrievalSettings } from "../domain/retrievalSettings.js";
+import {
+  DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,
+  validateRetrievalSettings,
+} from "../domain/retrievalSettings.js";
 import { validateWebsiteEmbedSettings } from "../domain/websiteEmbedSettings.js";
 import {
   DefaultWebsiteEmbedIntegrationProvider,
@@ -258,6 +261,7 @@ export class PlatformSettingsService {
       citationDisplayEnabled: retrieval.citationDisplayEnabled ?? existing.citationDisplayEnabled,
       metadataRules: retrieval.metadataRules ?? existing.metadataRules,
       customInstruction: existing.customInstruction,
+      retrievalStrategy: retrieval.retrievalStrategy ?? existing.retrievalStrategy,
     });
 
     return (await this.dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, next)) ?? {
@@ -298,6 +302,7 @@ export class PlatformSettingsService {
       citationDisplayEnabled: settings.citationDisplayEnabled,
       metadataRules: settings.metadataRules,
       metadataFieldSuggestions,
+      retrievalStrategy: settings.retrievalStrategy ?? DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,
     };
   }
 

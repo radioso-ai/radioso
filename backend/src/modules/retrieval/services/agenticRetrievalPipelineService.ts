@@ -10,8 +10,8 @@ import type { IngestionSettingsReaderPort } from "./candidateRetrievalStage.js";
 import type { PromptBuilder } from "./promptBuilder.js";
 import type {
   RetrievalPipelineInterpretationResult,
+  RetrievalPipelinePort,
   RetrievalPipelineResult,
-  RetrievalPipelineService as DeterministicRetrievalPipelineService,
 } from "./retrievalPipelineService.js";
 import type { RetrievalPipelineRequest } from "./retrievalPipelineStages.js";
 
@@ -19,7 +19,7 @@ const APPROX_TOKEN_BYTES = 4;
 const AGENT_RETRIEVAL_SOURCE: RetrievalSource = "semantic_rewritten";
 
 export interface AgenticRetrievalPipelineServiceDeps {
-  readonly deterministic: DeterministicRetrievalPipelineService;
+  readonly deterministic: RetrievalPipelinePort;
   readonly runner: AgenticRetrievalRunner;
   readonly promptBuilder: PromptBuilder;
   readonly systemPrompt: string;
@@ -51,7 +51,7 @@ export interface AgenticRetrievalPipelineServiceDeps {
  * not part of this slice — the rationale is already accessible to the
  * assistant layer through the trace.
  */
-export class AgenticRetrievalPipelineService {
+export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
   constructor(private readonly deps: AgenticRetrievalPipelineServiceDeps) {}
 
   async run(input: RetrievalPipelineRequest): Promise<RetrievalPipelineResult> {

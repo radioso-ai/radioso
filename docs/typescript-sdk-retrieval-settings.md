@@ -127,6 +127,18 @@ Recommendation:
 - Keep this brief and specific.
 - Do not use it to compensate for poor document quality or weak search settings.
 
+### `retrievalStrategy`
+
+Selects how grounded answers are produced for the workspace:
+
+- `"fixed"` runs the standard pipeline in a set order. Fast and predictable. This is the default.
+- `"reasoning"` runs an agent that decides its own retrieval steps. Better for multi-step questions, but slower and more costly.
+- `"auto"` is reserved for a future router and currently behaves like `"fixed"`.
+
+Recommendation:
+- Leave on `"fixed"` for most workspaces.
+- Use `"reasoning"` when questions need multiple lookups and you accept higher latency and cost.
+
 ## Practical Tuning Advice
 
 - Change one setting family at a time.

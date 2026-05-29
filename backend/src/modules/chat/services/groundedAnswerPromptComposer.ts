@@ -1,4 +1,5 @@
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { orderSteeringRules, type SteeringRule } from "../../../shared/domain/steeringRule.js";
 import {
   formatConversationIntentSnapshot,
   type ConversationIntentSnapshot,
@@ -10,12 +11,26 @@ export interface GroundedAnswerSystemPromptInput {
   suggestedQuestionsCount: number;
   hasRetrievedContexts: boolean;
   conversationIntentSnapshot: ConversationIntentSnapshot;
+  /** Behavioral steering matched for this turn (authored Directives + skill guidance). */
+  steering?: SteeringRule[];
 }
 
 export interface GroundedAnswerSystemPromptResult {
   systemPrompt: string;
   envelopeExpected: boolean;
 }
+
+const joinBlocks = (head: string, block: string): string => (head ? `${head}\n\n${block}` : block);
+
+const renderSteeringBlock = (steering: SteeringRule[]): string => {
+  if (steering.length === 0) {
+    return "";
+  }
+  const lines = orderSteeringRules(steering)
+    .map((rule) => (rule.condition ? `- ${rule.action} (when: ${rule.condition})` : `- ${rule.action}`))
+    .join("\n");
+  return renderPromptTemplate("chat/steering.md", { steering_rules: lines });
+};
 
 export const composeGroundedAnswerSystemPrompt = (
   input: GroundedAnswerSystemPromptInput,
@@ -26,8 +41,11 @@ export const composeGroundedAnswerSystemPrompt = (
     input.hasRetrievedContexts;
 
   const base = input.baseSystemPrompt ?? "";
+  const steeringBlock = renderSteeringBlock(input.steering ?? []);
+  const grounded = steeringBlock ? joinBlocks(base, steeringBlock) : base;
+
   if (!envelopeExpected) {
-    return { systemPrompt: base, envelopeExpected: false };
+    return { systemPrompt: grounded, envelopeExpected: false };
   }
 
   const envelopeBlock = renderPromptTemplate("chat/answer-envelope.md", {
@@ -38,7 +56,7 @@ export const composeGroundedAnswerSystemPrompt = (
   });
 
   return {
-    systemPrompt: base ? `${base}\n\n${envelopeBlock}` : envelopeBlock,
+    systemPrompt: joinBlocks(grounded, envelopeBlock),
     envelopeExpected: true,
   };
 };

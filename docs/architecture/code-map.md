@@ -257,6 +257,41 @@ Related docs and specs:
 - `specs/040-website-embed-widget/`
 - `specs/050-social-turn-intent/`
 
+## Directives
+
+Owns authored, standing behavioral steering: `condition → action` rules the
+assistant matches per turn and injects into answer composition. Directives steer,
+they never act — no executor, no dispatch, no outputs. Distinct from Skills,
+which act.
+
+Should not depend on any other domain module (not chat, skills, or retrieval).
+Chat consumes it through `DirectiveSteeringPort`, receiving a `SteeringRule[]`
+plus trace diagnostics, never Directives.
+
+Public surfaces and contracts:
+
+- `backend/src/modules/directives/README.md`
+- `backend/src/modules/directives/public.ts`
+- `backend/src/shared/domain/steeringRule.ts` (shared steering value type, also used by skills)
+
+Primary internals:
+
+- `backend/src/modules/directives/directiveMatcher.ts` (deterministic always-match)
+- `backend/src/modules/directives/probabilisticDirectiveMatcher.ts` (LLM contextual match)
+- `backend/src/modules/directives/directiveSteeringService.ts`
+- `backend/src/modules/chat/services/directiveTracePresenter.ts`
+- `backend/prompts/chat/steering.md`, `backend/prompts/chat/directive-match.md`
+
+Focused checks:
+
+- `cd backend && pnpm test -- tests/unit/directives.test.ts tests/unit/steering-rule.test.ts tests/unit/grounded-answer-steering.test.ts tests/unit/directive-trace.test.ts tests/unit/directive-probabilistic-matcher.test.ts`
+
+Related docs and specs:
+
+- [Conversational Directives](conversational-directives.md)
+- `specs/067-conversational-directives/`
+- `specs/066-assistant-turn-loop-spine/`
+
 ## Settings
 
 Owns settings validation, settings DTOs, provider ports, retrieval and ingestion

@@ -107,6 +107,7 @@ import {
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
 import { SkillCatalogService, retrievalAnswerSkillDefinition } from "../../modules/skills/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../modules/retrieval/public.js";
+import { createDirectiveSteering } from "../../modules/directives/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
@@ -769,6 +770,13 @@ export const buildChatServices = (input: {
     chatIntakeProvider,
     chatActionSuggestionService,
     createSkillOutcomeCapabilityProvider(input.composition.skillCatalogRegistry),
+    // 067: behavioral steering. Empty standing set by default (behavior-preserving);
+    // the probabilistic matcher is assembled from the chat text client but makes
+    // no model call while the standing set has no contextual directives.
+    createDirectiveSteering({
+      capabilityPolicy: input.composition.capabilityPolicy,
+      textGenerationClient: input.llmRegistry.createChatTextClient(),
+    }),
   );
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,

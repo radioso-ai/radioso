@@ -2,6 +2,12 @@ export const LLM_DEFAULTS = {
   textGenerationMaxOutputTokens: 1536,
 } as const;
 
+export const DIRECTIVES_BEHAVIOR = {
+  // A contextual directive is injected only when the matcher's confidence is at
+  // or above this threshold. Composition-owned default; never tuned per phrase.
+  contextualMatchConfidenceThreshold: 0.5,
+} as const;
+
 export const CHAT_BEHAVIOR = {
   intentRouting: {
     nonRetrievalConfidenceThreshold: 0.85,

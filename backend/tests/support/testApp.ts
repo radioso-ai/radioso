@@ -51,6 +51,7 @@ import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/
 import { RetrievalAnswerService } from "../../src/modules/retrieval/services/retrievalAnswerService.js";
 import { RetrievalSearchService } from "../../src/modules/retrieval/services/retrievalSearchService.js";
 import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
+import { streamResult, textResult } from "./llmStubs.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/public.js";
@@ -824,8 +825,8 @@ export const createTestDependencies = (overrides: {
     connectorDb: connectorDb as any,
     chatTextGenerationClient: {
       metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
-      async complete() { return ""; },
-      async *stream() { yield ""; },
+      async complete() { return textResult(""); },
+      stream() { return streamResult([""]); },
     },
     crawlerProvider: {
       async fetchPageWithScreenshot() { return { url: "", title: null, text: "", links: [], screenshot: null, faviconUrl: null }; },

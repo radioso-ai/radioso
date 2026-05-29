@@ -27,7 +27,7 @@ export class ModelRerankGateway implements RerankGateway {
   async rerank(input: RerankGatewayInput): Promise<Array<{ chunkId: string; relevanceScore: number }>> {
     const candidates = buildRerankCandidateList(input.contexts);
 
-    const content = await this.client.complete({
+    const { text: content } = await this.client.complete({
       prompt: buildRerankPrompt({ query: input.query, candidates }),
       temperature: RETRIEVAL_BEHAVIOR.rerank.temperature,
       maxOutputTokens: RETRIEVAL_BEHAVIOR.rerank.modelMaxCompletionTokens,

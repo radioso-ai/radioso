@@ -10,6 +10,7 @@ import {
   type ModelTranscriptEntry,
 } from "../../src/shared/agent-runtime/index.js";
 import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
+import { streamResult, textResult } from "../support/llmStubs.js";
 
 const stubTextClient = (
   responder: (input: { prompt: string; systemPrompt?: string }) => string | Promise<string>,
@@ -19,10 +20,10 @@ const stubTextClient = (
     metadata: { capability: "chat", provider: "openai", model: "test-model" },
     async complete(input) {
       calls.push({ prompt: input.prompt, systemPrompt: input.systemPrompt });
-      return responder(input);
+      return textResult(await responder(input));
     },
-    async *stream() {
-      // not used
+    stream() {
+      return streamResult([]);
     },
     calls,
   } as TextGenerationClient & { calls: Array<{ prompt: string; systemPrompt?: string }> };

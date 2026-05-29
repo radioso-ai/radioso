@@ -3,7 +3,6 @@ import type { ApplicationModule } from "../radiosoModuleTypes.js";
 import { usageLimitMigrator } from "./usageLimitMigrator.js";
 import { createUsageLimitRoutes } from "./usageLimitRoutes.js";
 import { EnterpriseUsageLimitService } from "./usageLimitService.js";
-import { EnterpriseUsageEventRecorder, requireTransactionalUsageEventDatabase } from "./usageEventRecorder.js";
 
 const STARTER_PROFILE_KEY = "starter_100";
 
@@ -15,9 +14,9 @@ export const createUsageLimitsApplicationModule = (): ApplicationModule => ({
     context.registerUsageLimitPolicy(({ database }) => {
       return new EnterpriseUsageLimitService(database);
     });
-    context.registerUsageEventRecorder?.(({ database }) => {
-      return new EnterpriseUsageEventRecorder(requireTransactionalUsageEventDatabase(database));
-    });
+    // The durable usage-event recorder is now an OSS default (registered in
+    // backend composition). EE no longer registers its own to avoid a second
+    // ledger path; it continues to own usage-LIMIT enforcement above.
     context.registerAccountCreatedHandler(async ({ accountId, database }) => {
       const resolvedService = new EnterpriseUsageLimitService(database);
       await resolvedService.assignProfile(accountId, STARTER_PROFILE_KEY);

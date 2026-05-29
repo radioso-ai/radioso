@@ -22,15 +22,58 @@ export interface TextGenerationRequest {
   reasoningEffort?: ReasoningEffort;
 }
 
+export type UsageQuality = "actual" | "estimated";
+
+/**
+ * Provider-reported resource usage for a single call, normalized across SDKs.
+ * Carries raw counts only — no monetary cost and no pricing. `quality` is
+ * `"actual"` when these counts came from the provider; the recording layer
+ * (a later delivery phase) owns producing `"estimated"` usage when a provider
+ * returns none. Absent provider usage is represented by omitting the usage
+ * object entirely, not by an estimated stub here.
+ */
+export interface ProviderUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cachedInputTokens?: number;
+  reasoningTokens?: number;
+  providerRequestId?: string;
+  quality: UsageQuality;
+}
+
+export interface TextGenerationResult {
+  text: string;
+  usage?: ProviderUsage;
+}
+
+/**
+ * Streaming result. `textStream` keeps the homogeneous text-chunk semantics of
+ * the previous contract; `usage` resolves once the stream completes (or errors)
+ * with the provider's final usage when available, otherwise `undefined`. The
+ * `usage` promise never rejects: a mid-stream failure surfaces through
+ * `textStream` so it cannot be masked by the usage channel. `usage` only
+ * settles after `textStream` has been consumed to completion.
+ */
+export interface TextGenerationStreamResult {
+  textStream: AsyncIterable<string>;
+  usage: Promise<ProviderUsage | undefined>;
+}
+
+export interface EmbeddingResult {
+  vectors: number[][];
+  usage?: ProviderUsage;
+}
+
 export interface TextGenerationClient {
   readonly metadata: LlmProviderMetadata;
-  complete(input: TextGenerationRequest): Promise<string>;
-  stream(input: TextGenerationRequest): AsyncIterable<string>;
+  complete(input: TextGenerationRequest): Promise<TextGenerationResult>;
+  stream(input: TextGenerationRequest): TextGenerationStreamResult;
 }
 
 export interface EmbeddingClient {
   readonly metadata: LlmProviderMetadata;
-  embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]>;
+  embedTexts(texts: string[], options?: { model?: string }): Promise<EmbeddingResult>;
 }
 
 export interface LlmCapabilityConfig extends LlmProviderMetadata {

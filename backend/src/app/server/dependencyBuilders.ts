@@ -108,7 +108,10 @@ import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 import { WorkspaceService, WorkspaceSummaryService } from "../../modules/workspace/public.js";
 import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
-import { NoopUsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
+import {
+  DurableUsageEventRecorder,
+  requireTransactionalUsageEventDatabase,
+} from "../../shared/infra/usage/durableUsageEventRecorder.js";
 import { ErrorReportingService } from "../../shared/errors/errorReportingService.js";
 import { Database } from "../../shared/infra/database.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
@@ -180,8 +183,10 @@ export const buildInfrastructure = (input: {
     : typeof composition.usageLimitPolicyRegistration === "function"
       ? composition.usageLimitPolicyRegistration({ database, logger })
       : composition.usageLimitPolicyRegistration;
+  // OSS default: durable usage accounting out of the box (FR-027). A module may
+  // still override the recorder by registering its own.
   const usageEventRecorder = !composition.usageEventRecorderRegistration
-    ? new NoopUsageEventRecorder()
+    ? new DurableUsageEventRecorder(requireTransactionalUsageEventDatabase(database), logger)
     : typeof composition.usageEventRecorderRegistration === "function"
       ? composition.usageEventRecorderRegistration({ database, logger })
       : composition.usageEventRecorderRegistration;
@@ -644,11 +649,12 @@ export const buildChatServices = (input: {
   messageRepository: MessageRepository;
   productAnalyticsService: ProductAnalyticsService;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
+  usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   retrievalPipeline: RetrievalPipelinePort;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   workspaceRepository: WorkspaceRepository;
 }) => {
-  const chatGateway = input.llmRegistry.createChatGateway();
+  const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database));
   const intakeProviderContext = {
     database: input.database,
@@ -729,7 +735,7 @@ export const buildChatServices = (input: {
     input.retrievalPipeline,
     chatGateway,
     input.auditService,
-    input.llmRegistry.createGroundedMissResponseComposer(),
+    input.llmRegistry.createGroundedMissResponseComposer(input.usageEventRecorder),
     input.productAnalyticsService,
     input.workspaceRepository,
     input.usageLimitPolicy,

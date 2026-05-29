@@ -166,7 +166,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
 
     if (inserted && accountId && event.status === "succeeded") {
       await this.upsertDailyRollupBestEffort(accountId, occurredAt, {
-        operation: "embedding",
+        operation: event.operation ?? "embedding",
         provider: event.provider,
         model: event.model,
         inputTokens: event.inputTokens ?? 0,

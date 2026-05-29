@@ -307,6 +307,8 @@ describe("durable usage event recorder", () => {
     expect(event.message_id).toBe("msg-1");
     expect(event.surface).toBe("retrieval");
     expect(event.operation).toBe("query_embedding");
+    const [rollup] = [...database.rollups.values()];
+    expect(rollup.operation).toBe("query_embedding");
   });
 
   it("keeps failed embedding events diagnostic-only and out of daily rollups", async () => {

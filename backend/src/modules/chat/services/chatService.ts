@@ -10,7 +10,6 @@ import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
 import type { ChatGateway, ChatGatewayInput, ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ChatStreamEvent, SkillStreamPayload, SkillStreamPhase } from "../contracts/streamEvents.js";
-import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import {
   MissingGroundedMissResponseComposer,
   type GroundedMissResponseComposer,
@@ -42,6 +41,7 @@ import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retr
 import {
   GroundedAnswerEnvelopeReader,
   parseGroundedAnswerEnvelope,
+  type AnswerGroundingVerdict,
   type GroundedAnswerEnvelope,
   type PlannedEnvelopeSuggestion,
 } from "./groundedAnswerEnvelope.js";
@@ -587,7 +587,9 @@ export class ChatService {
       session = await this.chatSessionPreparer.prepareRetrieval(input, session);
       let rawAnswer = "";
       let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
+      let answerGrounding: AnswerGroundingVerdict = "grounded";
       let noContextPresentation: ChatPresentedAnswer | null = null;
+      let hasStreamedAnswer = false;
       const answerStartedAt = Date.now();
 
       if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
@@ -604,6 +606,7 @@ export class ChatService {
           type: "chunk",
           text: rawAnswer,
         };
+        hasStreamedAnswer = true;
       } else if (session.retrieval.contexts.length === 0) {
         const fallbackEnvelope = await this.generateAnswerWithPageContext(session, input.query, input.accountId);
         rawAnswer = fallbackEnvelope?.answer
@@ -618,10 +621,9 @@ export class ChatService {
           type: "chunk",
           text: rawAnswer,
         };
+        hasStreamedAnswer = true;
       } else {
         const reader = new GroundedAnswerEnvelopeReader();
-        const sanitizer = new CitationAnchorSanitizer();
-        let hasEmittedAnyChunk = false;
         for await (const text of this.chatGateway.streamAnswer({
           query: input.query,
           history: session.history,
@@ -633,36 +635,12 @@ export class ChatService {
           if (!text) {
             continue;
           }
-          const answerChunk = reader.push(text);
-          if (!answerChunk) {
-            continue;
-          }
-          const safe = sanitizer.push(answerChunk);
-          if (!safe) {
-            continue;
-          }
-          if (safe.trim().length === 0 && !hasEmittedAnyChunk) {
-            continue;
-          }
-          hasEmittedAnyChunk = true;
-          yield {
-            type: "chunk",
-            text: safe,
-          };
+          reader.push(text);
         }
 
         const finalized = reader.finalize();
         plannedSuggestions = finalized.suggestions;
-        const trailingSafe = sanitizer.push(finalized.trailingAnswer);
-        const trailingFlush = sanitizer.flush();
-        const tail = `${trailingSafe ?? ""}${trailingFlush ?? ""}`;
-        if (tail) {
-          yield {
-            type: "chunk",
-            text: tail,
-          };
-        }
-
+        answerGrounding = finalized.grounding;
         rawAnswer = finalized.fullAnswer;
         if (!rawAnswer.trim()) {
           throw new BlankChatAnswerError();
@@ -674,6 +652,7 @@ export class ChatService {
         rawAnswer,
         input.query,
         input.userExpectedLocale,
+        answerGrounding,
       );
       if (
         !noContextPresentation
@@ -688,6 +667,13 @@ export class ChatService {
           usageContext: this.buildChatUsageContext(session, input.accountId, "stream_grounded_unsupported"),
         });
         presentationWithoutSuggestions = this.chatAnswerPresenter.presentGroundedMissAnswer(groundedMiss);
+      }
+      if (!hasStreamedAnswer && presentationWithoutSuggestions.answer) {
+        yield {
+          type: "chunk",
+          text: presentationWithoutSuggestions.answer,
+        };
+        hasStreamedAnswer = true;
       }
       // The lazy promise can call chatActionSuggestionService.evaluate (which may
       // hit an LLM). If completeAssistantTurn below throws, we rethrow but the
@@ -799,6 +785,7 @@ export class ChatService {
 
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
+    let answerGrounding: AnswerGroundingVerdict = "grounded";
 
     if (session.retrieval.contexts.length === 0) {
       const fallback = await this.generateAnswerWithPageContext(session, query, accountId);
@@ -824,6 +811,7 @@ export class ChatService {
       );
       answer = envelope.answer;
       plannedSuggestions = envelope.suggestions;
+      answerGrounding = envelope.grounding;
     }
 
     const presentation = await this.chatAnswerPresenter.presentWithSuggestions(
@@ -832,6 +820,7 @@ export class ChatService {
       query,
       plannedSuggestions,
       userExpectedLocale,
+      answerGrounding,
     );
     if (session.retrieval.contexts.length > 0 && !hasCitedAnswerSegment(presentation)) {
       const groundedMiss = await this.groundedMissResponseComposer.composeNoContext({

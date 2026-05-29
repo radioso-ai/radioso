@@ -1,6 +1,9 @@
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
-import type { TextGenerationResult } from "../../../shared/infra/llm/providerTypes.js";
+import type {
+  TextGenerationRequest,
+  TextGenerationResult,
+} from "../../../shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
@@ -26,6 +29,13 @@ export class MissingGroundedMissResponseComposer implements GroundedMissResponse
 }
 
 const MAX_RESPONSE_LENGTH = CHAT_BEHAVIOR.groundedMiss.maxResponseLength;
+const GROUNDED_MISS_SYSTEM_PROMPT = [
+  "You write scoped fallback replies for a document-grounded assistant.",
+  "Write in first person as the assistant. Do not refer to yourself as 'the assistant' or 'this assistant'.",
+  "When the user's exact question is outside the assistant's configured scope or unsupported by available context, do not answer it from general knowledge.",
+  "If the user asks about an out-of-scope person, company, place, product, event, concept, or other named entity, do not identify, describe, summarize, compare, or explain that entity.",
+  "Instead, say the topic is outside your focus, then bridge to what you can help with.",
+].join(" ");
 
 const normalizeWhitespace = (value: string | undefined): string =>
   (value ?? "")
@@ -101,12 +111,10 @@ const buildNoContextFallback = (): string => renderGroundedMissSection("fallback
 export class ModelGroundedMissResponseComposer implements GroundedMissResponseComposer {
   constructor(private readonly inference: ModelInferencePipeline) {}
 
-  private async completeWithRetry(request: {
-    prompt: string;
-    systemPrompt?: string;
-    temperature: number;
-    maxOutputTokens: number;
-  }, input: GroundedMissNoContextInput): Promise<{ result: TextGenerationResult; attemptIndex: number }> {
+  private async completeWithRetry(
+    request: TextGenerationRequest,
+    input: GroundedMissNoContextInput,
+  ): Promise<{ result: TextGenerationResult; attemptIndex: number }> {
     let lastError: unknown;
     for (let attemptIndex = 1; attemptIndex <= 2; attemptIndex += 1) {
       try {
@@ -130,6 +138,7 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
   async composeNoContext(input: GroundedMissNoContextInput): Promise<string> {
     try {
       const request = {
+        systemPrompt: GROUNDED_MISS_SYSTEM_PROMPT,
         prompt: renderGroundedMissSection("prompt", {
           locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
           query: input.query,
@@ -137,6 +146,9 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
         }),
         temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
         maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.noContextMaxOutputTokens,
+        // Short utility decline: keep reasoning spend minimal so the token budget
+        // leaves room for visible text on reasoning models.
+        reasoningEffort: "minimal" as const,
       };
       const { result } = await this.completeWithRetry(request, input);
 

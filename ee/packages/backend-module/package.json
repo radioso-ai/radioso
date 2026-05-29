@@ -24,6 +24,7 @@
   ],
   "dependencies": {
     "@radioso/skill-contract": "workspace:*",
+    "@radioso/usage-contract": "workspace:*",
     "bcryptjs": "^2.4.3",
     "express": "^4.22.1",
     "zod": "^3.25.76"

@@ -5,6 +5,19 @@ import type {
   TextGenerationClient,
   TextGenerationRequest,
 } from "../../src/shared/infra/llm/providerTypes.js";
+import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
+import { streamResult, textResult } from "../support/llmStubs.js";
+
+const recordingUsageRecorder = () => {
+  const events: ModelUsageEvent[] = [];
+  const recorder: UsageEventRecorder = {
+    async recordEmbedding() {},
+    async recordModelCall(event) {
+      events.push(event);
+    },
+  };
+  return { recorder, events };
+};
 
 describe("ModelChatGateway", () => {
   it("passes system prompts through to non-streaming generation", async () => {
@@ -13,10 +26,10 @@ describe("ModelChatGateway", () => {
       metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },
       async complete(input) {
         requests.push(input);
-        return "Answer";
+        return textResult("Answer");
       },
-      async *stream() {
-        yield "";
+      stream() {
+        return streamResult([""]);
       },
     } satisfies TextGenerationClient);
 
@@ -40,12 +53,11 @@ describe("ModelChatGateway", () => {
     const gateway = new ModelChatGateway({
       metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },
       async complete() {
-        return "Answer";
+        return textResult("Answer");
       },
-      async *stream(input) {
+      stream(input) {
         requests.push(input);
-        yield "A";
-        yield "B";
+        return streamResult(["A", "B"]);
       },
     } satisfies TextGenerationClient);
 
@@ -66,5 +78,107 @@ describe("ModelChatGateway", () => {
         prompt: "User prompt",
       },
     ]);
+  });
+
+  it("records non-streaming assistant usage when usage context is present", async () => {
+    const { recorder, events } = recordingUsageRecorder();
+    const gateway = new ModelChatGateway({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      async complete(input) {
+        return textResult("Answer", {
+          inputTokens: 12,
+          outputTokens: 3,
+          totalTokens: 15,
+          providerRequestId: "req-1",
+          quality: "actual",
+        });
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    } satisfies TextGenerationClient, recorder);
+
+    await gateway.answer({
+      query: "Question",
+      history: [],
+      systemPrompt: "System instructions",
+      prompt: "User prompt",
+      usageContext: {
+        accountId: "account-1",
+        workspaceId: "workspace-1",
+        conversationId: "conversation-1",
+        messageId: "message-1",
+        surface: "assistant",
+        operation: "answer",
+        attemptKey: "non_retrieval",
+      },
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      surface: "assistant",
+      operation: "answer",
+      provider: "openai",
+      model: "gpt-test",
+      inputTokens: 12,
+      outputTokens: 3,
+      totalTokens: 15,
+      status: "succeeded",
+      usageQuality: "actual",
+      providerRequestId: "req-1",
+    });
+    expect(events[0]!.idempotencyKey).toContain("non_retrieval");
+  });
+
+  it("records streaming assistant usage after the stream completes", async () => {
+    const { recorder, events } = recordingUsageRecorder();
+    const gateway = new ModelChatGateway({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-stream" },
+      async complete() {
+        return textResult("Answer");
+      },
+      stream() {
+        return streamResult(["A", "B"], {
+          inputTokens: 5,
+          outputTokens: 2,
+          totalTokens: 7,
+          quality: "actual",
+        });
+      },
+    } satisfies TextGenerationClient, recorder);
+
+    const chunks: string[] = [];
+    for await (const chunk of gateway.streamAnswer({
+      query: "Question",
+      history: [],
+      prompt: "User prompt",
+      usageContext: {
+        workspaceId: "workspace-1",
+        conversationId: "conversation-1",
+        messageId: "message-1",
+        surface: "assistant",
+        operation: "answer",
+        attemptKey: "stream_grounded",
+      },
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(["A", "B"]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      workspaceId: "workspace-1",
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      provider: "openai",
+      model: "gpt-stream",
+      outputTokens: 2,
+      status: "succeeded",
+      usageQuality: "actual",
+    });
   });
 });

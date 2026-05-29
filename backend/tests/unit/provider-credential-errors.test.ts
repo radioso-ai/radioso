@@ -71,7 +71,7 @@ describe("Claude provider auth failures", () => {
     const stream = client.stream({ prompt: "hi" });
     const failure = await (async () => {
       try {
-        for await (const _chunk of stream) {
+        for await (const _chunk of stream.textStream) {
           void _chunk;
         }
         return null;
@@ -128,7 +128,7 @@ describe("Gemini provider auth failures", () => {
     const stream = client.stream({ prompt: "hi" });
     const failure = await (async () => {
       try {
-        for await (const _chunk of stream) {
+        for await (const _chunk of stream.textStream) {
           void _chunk;
         }
         return null;

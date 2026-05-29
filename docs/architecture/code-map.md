@@ -250,6 +250,8 @@ Focused checks:
 Related docs and specs:
 
 - [Assistant Execution Model](../assistant-execution-model.md)
+- [Assistant Turn Spine](assistant-turn-spine.md)
+- `specs/066-assistant-turn-loop-spine/`
 - `specs/051-assistant-retrieval-boundary/`
 - `specs/044-async-chat-jobs/`
 - `specs/040-website-embed-widget/`

@@ -13,6 +13,7 @@ import { EmailVerificationService } from "../../src/modules/auth/services/emailV
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../src/modules/agents/public.js";
@@ -654,7 +655,7 @@ export const createTestDependencies = (overrides: {
   const chatService = new ChatService(
     conversationRepository,
     messageRepository,
-    retrievalPipeline,
+    new RetrievalTurnController(retrievalPipeline),
     chatGateway,
     auditService,
     overrides.groundedMissResponseComposer ?? new TestGroundedMissResponseComposer(),

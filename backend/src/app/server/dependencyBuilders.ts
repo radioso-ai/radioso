@@ -42,6 +42,8 @@ import {
   NoopAnswerFeedbackHistoryProvider,
   NoopChatIntakeProvider,
   NoopContactHistoryProvider,
+  RetrievalTurnController,
+  SkillRetrievalTurnDispatch,
 } from "../../modules/chat/composition.js";
 import {
   createDefaultConnectorRegistry,
@@ -101,7 +103,8 @@ import {
   RetrievalSettingsService,
 } from "../../modules/settings/composition.js";
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
-import { SkillCatalogService } from "../../modules/skills/public.js";
+import { SkillCatalogService, retrievalAnswerSkillDefinition } from "../../modules/skills/public.js";
+import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../modules/retrieval/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
@@ -680,6 +683,16 @@ export const buildChatServices = (input: {
     dashboardBaseUrl: input.env.APP_BASE_URL ?? null,
     skillExecutorRegistry: input.composition.skillExecutorRegistry,
   };
+  // Register retrieval.answer as a dispatchable skill (spec 066 slice 1). The
+  // chat path does not consume it yet; the loop re-seam (slice 2) routes through
+  // it. Guarded so repeated dependency builds (tests) do not double-register.
+  if (!input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: RETRIEVAL_ANSWER_ADAPTER })) {
+    input.composition.skillExecutorRegistry.register({
+      kind: "internal",
+      adapter: RETRIEVAL_ANSWER_ADAPTER,
+      executor: new RetrievalAnswerSkillExecutor(input.retrievalPipeline),
+    });
+  }
   const chatIntakeProviders = input.composition.chatIntakeProviderRegistrations.map((registration) =>
     typeof registration === "function" ? registration(intakeProviderContext) : registration,
   );
@@ -732,7 +745,17 @@ export const buildChatServices = (input: {
   const chatService = new ChatService(
     input.conversationRepository,
     input.messageRepository,
-    input.retrievalPipeline,
+    // 066 slice 3: chat reaches retrieval only through a narrow turn port —
+    // interpret via the controller, execute via the dispatched retrieval.answer
+    // skill. ChatService carries no RetrievalPipelineService reference.
+    new RetrievalTurnController(
+      input.retrievalPipeline,
+      new SkillRetrievalTurnDispatch(
+        input.composition.skillExecutorRegistry,
+        retrievalAnswerSkillDefinition,
+        input.composition.capabilityPolicy,
+      ),
+    ),
     chatGateway,
     input.auditService,
     input.llmRegistry.createGroundedMissResponseComposer(input.usageEventRecorder),

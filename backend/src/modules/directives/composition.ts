@@ -1,0 +1,50 @@
+import { DIRECTIVES_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
+import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import type { TextGenerationClient } from "../../shared/infra/llm/providerTypes.js";
+
+import { CompositeDirectiveMatcher } from "./compositeDirectiveMatcher.js";
+import { DirectiveCatalogRegistry } from "./directiveCatalogRegistry.js";
+import { AlwaysMatchDirectiveMatcher, type DirectiveMatcherPort } from "./directiveMatcher.js";
+import { DirectiveSteeringService, type DirectiveSteeringPort } from "./directiveSteeringService.js";
+import type { Directive } from "./domain.js";
+import { ModelDirectiveMatchGateway, ProbabilisticDirectiveMatcher } from "./probabilisticDirectiveMatcher.js";
+
+/**
+ * Builds the directive matcher. Always includes the deterministic always-match
+ * matcher; adds the probabilistic contextual matcher when a text-generation
+ * client is supplied. With an empty standing set (v1 default) no contextual
+ * directives exist, so the probabilistic matcher makes no model call.
+ */
+export const createDirectiveMatcher = (input: {
+  textGenerationClient?: TextGenerationClient;
+  confidenceThreshold?: number;
+}): DirectiveMatcherPort => {
+  const alwaysMatch = new AlwaysMatchDirectiveMatcher();
+  if (!input.textGenerationClient) {
+    return alwaysMatch;
+  }
+  return new CompositeDirectiveMatcher([
+    alwaysMatch,
+    new ProbabilisticDirectiveMatcher({
+      gateway: new ModelDirectiveMatchGateway(input.textGenerationClient),
+      confidenceThreshold: input.confidenceThreshold ?? DIRECTIVES_BEHAVIOR.contextualMatchConfidenceThreshold,
+    }),
+  ]);
+};
+
+/**
+ * Builds the default directive steering port for an agent. v1 ships an empty
+ * standing set (behavior-preserving); the per-agent set is wired here as it
+ * arrives, never inside the chat turn loop.
+ */
+export const createDirectiveSteering = (input: {
+  capabilityPolicy: CapabilityPolicy;
+  directives?: Directive[];
+  matcher?: DirectiveMatcherPort;
+  textGenerationClient?: TextGenerationClient;
+}): DirectiveSteeringPort =>
+  new DirectiveSteeringService({
+    registry: new DirectiveCatalogRegistry(input.directives ?? []),
+    matcher: input.matcher ?? createDirectiveMatcher({ textGenerationClient: input.textGenerationClient }),
+    capabilityPolicy: input.capabilityPolicy,
+  });

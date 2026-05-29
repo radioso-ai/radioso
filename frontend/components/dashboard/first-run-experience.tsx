@@ -23,6 +23,56 @@ interface FirstRunExperienceProps {
   onboarding: WorkspaceOnboardingState
 }
 
+const DEVELOPER_INSTRUCTIONS_OPEN_STORAGE_KEY = 'radioso.firstRunDeveloperInstructionsOpen'
+
+const readDeveloperInstructionsOpen = (workspaceId: string | null | undefined): boolean => {
+  if (!workspaceId || typeof window === 'undefined') {
+    return false
+  }
+
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(DEVELOPER_INSTRUCTIONS_OPEN_STORAGE_KEY) ?? '{}') as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return false
+    }
+
+    return (parsed as Record<string, unknown>)[workspaceId] === true
+  } catch {
+    window.sessionStorage.removeItem(DEVELOPER_INSTRUCTIONS_OPEN_STORAGE_KEY)
+    return false
+  }
+}
+
+const storeDeveloperInstructionsOpen = (workspaceId: string | null | undefined, isOpen: boolean) => {
+  if (!workspaceId || typeof window === 'undefined') {
+    return
+  }
+
+  let current: Record<string, boolean> = {}
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(DEVELOPER_INSTRUCTIONS_OPEN_STORAGE_KEY) ?? '{}') as unknown
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      current = Object.fromEntries(
+        Object.entries(parsed).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'),
+      )
+    }
+  } catch {
+    current = {}
+  }
+
+  if (isOpen) {
+    current[workspaceId] = true
+  } else {
+    delete current[workspaceId]
+  }
+
+  if (Object.keys(current).length === 0) {
+    window.sessionStorage.removeItem(DEVELOPER_INSTRUCTIONS_OPEN_STORAGE_KEY)
+  } else {
+    window.sessionStorage.setItem(DEVELOPER_INSTRUCTIONS_OPEN_STORAGE_KEY, JSON.stringify(current))
+  }
+}
+
 function StepRow({
   number,
   title,
@@ -235,10 +285,18 @@ function DeveloperChatInstructions({
   )
 }
 
-export function FirstRunExperience({ accountId, onboarding }: FirstRunExperienceProps) {
+export function FirstRunExperience(props: FirstRunExperienceProps) {
+  const { activeWorkspaceId } = useWorkspace()
+
+  return <FirstRunExperienceContent key={activeWorkspaceId ?? 'no-workspace'} {...props} />
+}
+
+function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperienceProps) {
   const router = useRouter()
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
-  const [areDeveloperInstructionsOpen, setAreDeveloperInstructionsOpen] = useState(false)
+  const [areDeveloperInstructionsOpen, setAreDeveloperInstructionsOpen] = useState(() =>
+    readDeveloperInstructionsOpen(activeWorkspaceId),
+  )
   const [developerExampleLanguage, setDeveloperExampleLanguage] = useState<ExampleLanguage>('curl')
   const { apiToken, apiTokenError, isApiTokenLoading } = useInlineWorkspaceToken(activeWorkspaceId)
   const isProcessing = onboarding.isImportingSampleDocs || onboarding.hasPendingDocuments
@@ -270,7 +328,11 @@ export function FirstRunExperience({ accountId, onboarding }: FirstRunExperience
     : 'Available once a document finishes processing.'
 
   const toggleDeveloperInstructions = () => {
-    setAreDeveloperInstructionsOpen((value) => !value)
+    setAreDeveloperInstructionsOpen((value) => {
+      const nextValue = !value
+      storeDeveloperInstructionsOpen(activeWorkspaceId, nextValue)
+      return nextValue
+    })
   }
 
   return (

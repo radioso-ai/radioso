@@ -32,6 +32,7 @@ import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSe
 import {
   AssistantChatService,
   AssistantHistoryService,
+  AnswerPresentationService,
   ChatActionSuggestionRegistry,
   ChatActionSuggestionService,
   ChatBootstrapService,
@@ -42,6 +43,7 @@ import {
   NoopAnswerFeedbackHistoryProvider,
   NoopChatIntakeProvider,
   NoopContactHistoryProvider,
+  resolveCitationArtifacts,
   RetrievalTurnController,
   SkillRetrievalTurnDispatch,
 } from "../../modules/chat/composition.js";
@@ -653,6 +655,12 @@ export const buildChatServices = (input: {
   workspaceRepository: WorkspaceRepository;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
+  const answerPresentationService = new AnswerPresentationService();
+  const answerPresentation = {
+    normalize: answerPresentationService.normalize.bind(answerPresentationService),
+    present: answerPresentationService.present.bind(answerPresentationService),
+    resolveCitationArtifacts,
+  };
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database));
   const intakeProviderContext = {
     database: input.database,
@@ -788,6 +796,7 @@ export const buildChatServices = (input: {
 
   return {
     abuseControlService,
+    answerPresentation,
     assistantChatService: new AssistantChatService(chatService, chatBootstrapService),
     assistantHistoryService: new AssistantHistoryService(chatHistoryService),
     chatIntakeProvider,

@@ -13,6 +13,7 @@ import { EmailVerificationService } from "../../src/modules/auth/services/emailV
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
@@ -652,6 +653,7 @@ export const createTestDependencies = (overrides: {
     : chatIntakeProviders.length === 1
       ? chatIntakeProviders[0]!
       : new ChainedChatIntakeProvider(chatIntakeProviders);
+  const skillCatalogRegistry = createDefaultSkillCatalogRegistry();
   const chatService = new ChatService(
     conversationRepository,
     messageRepository,
@@ -664,6 +666,8 @@ export const createTestDependencies = (overrides: {
     usageLimitPolicy,
     agentService,
     chatIntakeProvider,
+    undefined,
+    createSkillOutcomeCapabilityProvider(skillCatalogRegistry),
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -686,7 +690,7 @@ export const createTestDependencies = (overrides: {
   const capabilityPolicy = new DefaultAllowCapabilityPolicy();
   const skillCatalogService = new SkillCatalogService({
     capabilityPolicy,
-    registry: createDefaultSkillCatalogRegistry(),
+    registry: skillCatalogRegistry,
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
@@ -916,32 +920,31 @@ export const issueTestSession = async (
   email = `test-${randomUUID()}@example.com`,
 ): Promise<{ cookie: string; workspaceId: string; userId: string; accountId: string }> => {
   const password = "verysecurepassword";
-  const register = await request(app).post("/api/v1/auth/register").send({
-    email,
-    password,
-  });
-  if (register.status !== 201) {
-    throw new Error(`Registration failed with status ${register.status}`);
+  const dependencies = appDependencyMap.get(app);
+  if (!dependencies) {
+    throw new Error("Test app dependencies were not registered for session issuance");
   }
   const repositories = appRepositoryMap.get(app);
   if (!repositories) {
     throw new Error("Test app repositories were not registered for session issuance");
   }
-  await repositories.userRepository.markEmailVerified(register.body.userId as string, new Date());
 
-  const login = await request(app).post("/api/v1/auth/login").send({
+  const register = await dependencies.authService.register({
     email,
     password,
   });
-  if (login.status !== 200) {
-    throw new Error(`Login failed with status ${login.status}`);
-  }
+  await repositories.userRepository.markEmailVerified(register.userId, new Date());
+
+  const login = await dependencies.authService.login({
+    email,
+    password,
+  });
 
   return {
-    cookie: login.headers["set-cookie"][0] as string,
-    workspaceId: register.body.workspaceId as string,
-    userId: register.body.userId as string,
-    accountId: register.body.accountId as string,
+    cookie: login.sessionCookie,
+    workspaceId: login.workspaceId,
+    userId: login.userId,
+    accountId: login.accountId,
   };
 };
 

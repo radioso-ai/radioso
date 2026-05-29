@@ -22,7 +22,7 @@ describe("skills catalog contract", () => {
         owner: "retrieval",
         executionClass: "interactive",
         availability: { state: "available" },
-        supportedCallers: ["retrieval_api", "sdk", "mcp"],
+        supportedCallers: ["assistant", "retrieval_api", "sdk", "mcp"],
         requiredCapabilities: ["retrieval.answer"],
         contractReferences: [
           expect.objectContaining({

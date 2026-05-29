@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -9,6 +8,7 @@ import { AccountRepository } from "../../src/db/repositories/accountRepository.j
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { DurableUsageEventRecorder } from "../../src/shared/infra/usage/durableUsageEventRecorder.js";
+import { runAllTestMigrations, testMigrationsPath } from "../support/databaseMigrations.js";
 
 // Phase 2 OSS ledger migration. Proves the durable recorder works end-to-end
 // against real Postgres on the renamed `usage_events` schema, that recording is
@@ -36,17 +36,7 @@ const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integr
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
 describeIfDatabase("usage ledger OSS migration", () => {
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const migrationsPath = path.resolve(__dirname, "../../src/db/migrations");
   const ledgerMigrationFile = "067_usage_ledger_oss.sql";
-
-  const runAllMigrations = async (database: Database) => {
-    const migrationFiles = (await readdir(migrationsPath)).filter((file) => file.endsWith(".sql")).sort();
-    for (const migrationFile of migrationFiles) {
-      const migrationSql = await readFile(path.join(migrationsPath, migrationFile), "utf8");
-      await database.pool.query(migrationSql);
-    }
-  };
 
   let database: Database;
   let accountRepository: AccountRepository;
@@ -56,7 +46,7 @@ describeIfDatabase("usage ledger OSS migration", () => {
     database = new Database(integrationDatabaseUrl!);
     accountRepository = new AccountRepository(database);
     workspaceRepository = new WorkspaceRepository(database);
-    await runAllMigrations(database);
+    await runAllTestMigrations(database);
   });
 
   afterAll(async () => {
@@ -159,7 +149,7 @@ describeIfDatabase("usage ledger OSS migration", () => {
 
     // Re-apply the real migration; its IF EXISTS renames restore the OSS names
     // and the IF NOT EXISTS creates are no-ops, so the seeded row must survive.
-    const ledgerSql = await readFile(path.join(migrationsPath, ledgerMigrationFile), "utf8");
+    const ledgerSql = await readFile(path.join(testMigrationsPath, ledgerMigrationFile), "utf8");
     await database.pool.query(ledgerSql);
 
     const rows = await database.query<{ total_tokens: string }>(

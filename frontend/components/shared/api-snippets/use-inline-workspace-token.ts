@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 
 import { accountApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { readStoredWorkspaceToken, storeWorkspaceToken } from '@/lib/api-storage'
 
 export function useInlineWorkspaceToken(workspaceId: string | null | undefined) {
   const [apiTokenState, setApiTokenState] = useState<{ workspaceId: string; token: string } | null>(null)
@@ -18,6 +19,7 @@ export function useInlineWorkspaceToken(workspaceId: string | null | undefined) 
 
     void accountApi.getWorkspaceToken(workspaceId)
       .then((response) => {
+        storeWorkspaceToken(workspaceId, response.token)
         if (isCurrent) {
           setApiTokenState({ workspaceId, token: response.token })
         }
@@ -33,7 +35,8 @@ export function useInlineWorkspaceToken(workspaceId: string | null | undefined) 
     }
   }, [workspaceId])
 
-  const apiToken = workspaceId && apiTokenState?.workspaceId === workspaceId ? apiTokenState.token : null
+  const cachedToken = workspaceId ? readStoredWorkspaceToken(workspaceId) : null
+  const apiToken = workspaceId && apiTokenState?.workspaceId === workspaceId ? apiTokenState.token : cachedToken
   const apiTokenError = workspaceId && apiTokenErrorState?.workspaceId === workspaceId ? apiTokenErrorState.error : null
   const isApiTokenLoading = Boolean(workspaceId) && !apiToken && !apiTokenError
 

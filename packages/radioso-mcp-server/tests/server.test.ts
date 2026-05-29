@@ -67,7 +67,7 @@ describe("createRadiosoMcpServer", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8080/api/v1/retrieval/answer",
       expect.objectContaining({
-        body: JSON.stringify({ query: "hello" }),
+        body: JSON.stringify({ query: "hello", includeDebug: true }),
         method: "POST",
         headers: expect.objectContaining({
           authorization: "Bearer radioso_stdio",

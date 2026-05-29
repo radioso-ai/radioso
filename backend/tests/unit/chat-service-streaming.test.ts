@@ -4019,7 +4019,12 @@ describe("chat service streaming", () => {
     expect(response.answer).toEqual(expect.any(String));
     expect(response.answer).toContain("Guide");
     expect(response.citations).toEqual([
-      { documentId: "doc-1", chunkId: "chunk-1", title: "Guide", sourceUrl: "https://example.com/guide" },
+      {
+        documentId: "doc-1",
+        chunkId: "chunk-1",
+        title: "Guide",
+        sourceUrl: "https://example.com/guide",
+      },
     ]);
     expect(response.answerSegments).toEqual([
       {

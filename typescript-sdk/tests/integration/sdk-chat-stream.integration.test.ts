@@ -14,7 +14,7 @@ describe("sdk stream integration", () => {
             controller.enqueue(encoder.encode('event: chunk\ndata: {"text":"hel"}\n\n'));
             controller.enqueue(encoder.encode('event: chunk\ndata: {"text":"lo"}\n\n'));
             controller.enqueue(encoder.encode('event: suggestions\ndata: {"conversationId":"c1","suggestions":[{"text":"Ask about sources"}]}\n\n'));
-            controller.enqueue(encoder.encode('event: done\ndata: {"conversationId":"c1","route":{"type":"retrieval","reason":"evidence_required"},"answer":"hello","suggestions":[{"text":"Ask about sources"}],"activitySummary":{},"activityTrace":{}}\n\n'));
+            controller.enqueue(encoder.encode('event: done\ndata: {"conversationId":"c1","assistantMessageId":"m1","answer":"hello","suggestions":[{"text":"Ask about sources"}],"debug":{"route":{"type":"retrieval","reason":"evidence_required"},"activitySummary":{},"activityTrace":{}}}\n\n'));
             controller.close();
           },
         }),
@@ -45,9 +45,12 @@ describe("sdk stream integration", () => {
     expect(events[4]).toMatchObject({
       type: "done",
       conversationId: "c1",
-      route: { type: "retrieval", reason: "evidence_required" },
+      assistantMessageId: "m1",
       answer: "hello",
       suggestions: [{ text: "Ask about sources" }],
+      debug: {
+        route: { type: "retrieval", reason: "evidence_required" },
+      },
     });
   });
 });

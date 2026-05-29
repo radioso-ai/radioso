@@ -246,6 +246,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       chat.chatGateway,
       llmCapabilityResolver,
       settings.retrievalSettingsService,
+      chat.answerPresentation,
     ),
     new ChatGatewayLlmJudge(chat.chatGateway),
   );

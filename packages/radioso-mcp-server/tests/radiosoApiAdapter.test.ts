@@ -29,7 +29,7 @@ describe("createRadiosoApiAdapter", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8080/api/v1/document/search",
       expect.objectContaining({
-        body: JSON.stringify({ query: "faq" }),
+        body: JSON.stringify({ query: "faq", includeDebug: true }),
         headers: expect.objectContaining({
           authorization: "Bearer radioso_test",
           "content-type": "application/json",
@@ -192,7 +192,7 @@ describe("createRadiosoApiAdapter", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8080/api/v1/retrieval/answer",
       expect.objectContaining({
-        body: JSON.stringify({ query: "hello" }),
+        body: JSON.stringify({ query: "hello", includeDebug: true }),
         method: "POST",
         headers: expect.objectContaining({
           authorization: "Bearer radioso_test",

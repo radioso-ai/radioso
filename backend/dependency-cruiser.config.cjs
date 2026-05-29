@@ -70,6 +70,24 @@ module.exports = {
       },
     },
     {
+      name: "no-external-directives-nonpublic",
+      severity: "error",
+      comment:
+        "Production code outside directives must import directive-owned symbols through directives public.ts.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/modules/directives/",
+        ],
+      },
+      to: {
+        path: "^src/modules/directives/",
+        pathNot: [
+          "^src/modules/directives/public\\.ts$",
+        ],
+      },
+    },
+    {
       name: "no-external-retrieval-nonpublic",
       severity: "error",
       comment:

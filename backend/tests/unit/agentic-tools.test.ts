@@ -19,7 +19,13 @@ import type { EmbeddingGateway } from "../../src/modules/retrieval/services/embe
 import type { QueryRewritePort } from "../../src/modules/retrieval/domain/queryRewritePort.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 
-const toolCtx = { signal: new AbortController().signal, stepIndex: 0 };
+const toolCtx = { signal: new AbortController().signal, stepIndex: 0, callId: "tool-call-1" };
+const usageContext = {
+  workspaceId: "ws-1",
+  requestId: "req-1",
+  surface: "retrieval",
+  attemptKey: "agentic",
+};
 
 const chunk = (overrides: Partial<RetrievedChunk> = {}): RetrievedChunk => ({
   chunkId: overrides.chunkId ?? "chunk-1",
@@ -123,6 +129,31 @@ describe("semantic_search tool", () => {
     expect(registry.has("s2")).toBe(true);
   });
 
+  it("scopes embedding usage idempotency to the tool call", async () => {
+    const embeddingOptions: Array<Parameters<EmbeddingGateway["embedTexts"]>[1]> = [];
+    const embeddings: EmbeddingGateway = {
+      async embedTexts(_texts, options) {
+        embeddingOptions.push(options);
+        return [[0.1]];
+      },
+    };
+    const vectorSearch: VectorSearchPort = { async search() { return []; } };
+    const tool = createSemanticSearchTool({
+      workspaceId: "ws-1",
+      embeddings,
+      vectorSearch,
+      registry: new InMemoryChunkRegistry(),
+      usageContext,
+    });
+
+    await tool.invoke({ query: "anything" }, { ...toolCtx, stepIndex: 2, callId: "call-semantic-a" });
+
+    expect(embeddingOptions[0]?.usageContext).toMatchObject({
+      operation: "query_embedding",
+      attemptKey: "semantic_search:2:call-semantic-a",
+    });
+  });
+
   it("returns no results when the embedding gateway returns nothing", async () => {
     const embeddings: EmbeddingGateway = { async embedTexts() { return []; } };
     const vectorSearch: VectorSearchPort = { async search() { throw new Error("should not be called"); } };
@@ -219,6 +250,23 @@ describe("rewrite_query tool", () => {
     const result = await tool.invoke({ query: "gandhi and kasturbai" }, toolCtx);
     expect(result).toEqual({ semantic: "Mahatma Gandhi Kasturbai", lexical: "Gandhi OR Kasturbai" });
   });
+
+  it("scopes rewrite usage idempotency to the tool call", async () => {
+    const calls: Array<Parameters<QueryRewritePort["rewrite"]>[0]> = [];
+    const port: QueryRewritePort = {
+      async rewrite(input) {
+        calls.push(input);
+        return { semantic: input.query, lexical: input.query };
+      },
+    };
+    const tool = createRewriteQueryTool({ queryRewrite: port, usageContext });
+
+    await tool.invoke({ query: "gandhi" }, { ...toolCtx, stepIndex: 3, callId: "call-rewrite-a" });
+
+    expect(calls[0].usageContext).toMatchObject({
+      attemptKey: "rewrite_tool:3:call-rewrite-a",
+    });
+  });
 });
 
 describe("rerank tool", () => {
@@ -240,6 +288,26 @@ describe("rerank tool", () => {
     expect(result.ranked.map((r) => r.chunkId)).toEqual(["b", "a"]);
     expect(result.ranked[0].relevanceScore).toBeCloseTo(0.9);
     expect(result.unknownChunkIds).toEqual(["missing"]);
+  });
+
+  it("scopes rerank usage idempotency to the tool call", async () => {
+    const registry = new InMemoryChunkRegistry();
+    registry.record([fromRetrievedChunk(chunk({ chunkId: "a", similarity: 0.5 }))]);
+    const calls: Array<Parameters<RerankGateway["rerank"]>[0]> = [];
+    const gateway: RerankGateway = {
+      async rerank(input) {
+        calls.push(input);
+        return [];
+      },
+    };
+    const tool = createRerankTool({ rerankGateway: gateway, registry, usageContext });
+
+    await tool.invoke({ query: "policy", chunkIds: ["a"] }, { ...toolCtx, stepIndex: 4, callId: "call-rerank-a" });
+
+    expect(calls[0].usageContext).toMatchObject({
+      operation: "rerank",
+      attemptKey: "rerank_tool:4:call-rerank-a",
+    });
   });
 
   it("falls back to registered similarity when the gateway omits a chunkId", async () => {

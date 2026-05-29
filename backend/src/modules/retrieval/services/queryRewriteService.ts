@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
+
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import {
@@ -43,6 +46,17 @@ export {
 const TRIGGER_MATCH_ENACTMENT_THRESHOLD = RETRIEVAL_BEHAVIOR.hybrid.triggerMatchEnactmentThreshold;
 const NON_RETRIEVAL_INTENT_CONFIDENCE_THRESHOLD = CHAT_BEHAVIOR.intentRouting.nonRetrievalConfidenceThreshold;
 
+const resolveFallbackUsageContext = (
+  input: { workspaceContext?: LlmCapabilityResolveInput; usageContext?: ModelCallUsageContext },
+  operation: string,
+): ModelCallUsageContext => input.usageContext ?? {
+  workspaceId: input.workspaceContext?.workspaceId ?? "unknown",
+  requestId: randomUUID(),
+  surface: "retrieval",
+  operation,
+  attemptKey: "direct",
+};
+
 export class QueryRewriteService {
   private readonly eligibilityService = new RewriteEligibilityService();
   private readonly routingPolicy = new QueryRewriteRoutingPolicy();
@@ -61,6 +75,7 @@ export class QueryRewriteService {
     lexicalRewriteInstructions?: string;
     answerScopeReference?: string;
     workspaceContext?: LlmCapabilityResolveInput;
+    usageContext?: ModelCallUsageContext;
   }): Promise<RewrittenRetrievalQuery> {
     const shouldInterpret = input.enabled || input.intentRoutingEnabled !== false;
 
@@ -81,6 +96,7 @@ export class QueryRewriteService {
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
         answerScopeReference: input.answerScopeReference,
         workspaceContext: input.workspaceContext,
+        usageContext: resolveFallbackUsageContext(input, "query_interpretation"),
       });
       const result = this.normalizeStructuredResult(input.query, rawResult);
       const rawResponseIntent = this.normalizeResponseIntent(result.responseIntent);
@@ -203,6 +219,7 @@ export class QueryRewriteService {
     contextMessages?: MessageRecord[];
     metadataRules: RetrievalMetadataRule[];
     workspaceContext?: LlmCapabilityResolveInput;
+    usageContext?: ModelCallUsageContext;
   }): Promise<TriggerAnalysisResult> {
     const triggerableRules = input.metadataRules.filter(
       (rule) => rule.enabled && rule.triggerMode === "match_turn" && typeof rule.triggerInstruction === "string",
@@ -244,6 +261,7 @@ export class QueryRewriteService {
         contextMessages: input.contextMessages ?? [],
         rules: triggerableRules,
         workspaceContext: input.workspaceContext,
+        usageContext: resolveFallbackUsageContext(input, "trigger_analysis"),
       });
       const normalizedConsideredRules = result.consideredRules.map((rule) => {
         const thresholdMet = rule.matchStrength >= TRIGGER_MATCH_ENACTMENT_THRESHOLD;

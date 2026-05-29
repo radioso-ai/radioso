@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { ActivitySummaryPresenter } from "./activitySummaryPresenter.js";
 import { ActivityTracePresenter } from "./activityTracePresenter.js";
 import type { RetrievalPipelinePort } from "./retrievalPipelineService.js";
@@ -10,16 +12,25 @@ export class RetrievalSearchService {
   constructor(private readonly retrievalPipeline: RetrievalPipelinePort) {}
 
   async search(input: RetrievalSearchRequest): Promise<RetrievalSearchResult> {
+    const executionSurface = input.executionSurface ?? "retrieval";
+    const requestId = input.requestId ?? randomUUID();
     const result = await this.retrievalPipeline.run({
       workspaceId: input.workspaceId,
       query: input.query,
       history: [],
       responseIdentity: null,
       metadataFilter: input.metadataFilter,
+      usageContext: {
+        accountId: input.accountId ?? null,
+        workspaceId: input.workspaceId,
+        requestId,
+        surface: executionSurface === "mcp_capability" ? "mcp_capability" : "retrieval",
+        attemptKey: requestId,
+      },
     });
     const activitySummary = this.activitySummaryPresenter.present(result.diagnostics, {
       execution: {
-        surface: input.executionSurface ?? "retrieval",
+        surface: executionSurface,
         path: "retrieval_search",
         retrievalInvoked: true,
       },

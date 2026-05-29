@@ -63,11 +63,18 @@ export class DocumentSearchService {
     metadataFilter?: Record<string, unknown>;
     executionSurface?: DocumentSearchExecutionSurface;
   }): Promise<DocumentSearchResponse> {
+    const searchId = randomUUID();
     const retrieval = await this.retrievalPipeline.run({
       workspaceId: input.workspaceId,
       query: input.query,
       history: [],
       metadataFilter: input.metadataFilter,
+      usageContext: {
+        workspaceId: input.workspaceId,
+        requestId: searchId,
+        surface: input.executionSurface ?? "documents",
+        attemptKey: "document_search",
+      },
     });
 
     const matchedDocumentIds = [...new Set(retrieval.contexts.map((context) => context.documentId))];
@@ -98,7 +105,7 @@ export class DocumentSearchService {
       .map((entry, index) => this.toResult(entry.document, entry.score, entry.evidence, index + 1));
 
     const response: DocumentSearchResponse = {
-      searchId: randomUUID(),
+      searchId,
       mode: "live",
       query: input.query,
       resultCount: results.length,

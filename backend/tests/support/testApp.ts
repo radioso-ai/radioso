@@ -823,7 +823,7 @@ export const createTestDependencies = (overrides: {
       async ensureSource() { return { id: "test-source" }; },
     },
     connectorDb: connectorDb as any,
-    chatTextGenerationClient: {
+    chatInferencePipeline: {
       metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
       async complete() { return textResult(""); },
       stream() { return streamResult([""]); },

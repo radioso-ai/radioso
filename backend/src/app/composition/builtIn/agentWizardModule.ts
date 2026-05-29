@@ -8,11 +8,11 @@ export const createAgentWizardApplicationModule = (): ApplicationModule => ({
   register(context) {
     const createRouter: ApplicationRouteMount["createRouter"] = (dependencies) => {
       const service = new AgentWizardService({
-        // The wizard port only needs generated text; adapt the provider result
-        // object to its narrow string contract. (Usage accounting for wizard
-        // calls is a later delivery phase.)
+        // The wizard port only needs generated text; adapt the inference
+        // pipeline result object to its narrow string contract.
         textGenerationClient: {
-          complete: async (input) => (await dependencies.chatTextGenerationClient.complete(input)).text,
+          complete: async ({ signal: _signal, ...input }) =>
+            (await dependencies.chatInferencePipeline.complete(input)).text,
         },
         agentService: dependencies.agentService,
         documentStorage: dependencies.documentStorage,

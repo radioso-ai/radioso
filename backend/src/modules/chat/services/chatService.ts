@@ -1,10 +1,5 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
-import type { ProviderUsage, TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
-import {
-  NoopUsageEventRecorder,
-  type UsageEventRecorder,
-  type UsageEventStatus,
-} from "../../../shared/domain/usageEventRecorder.js";
+import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -66,89 +61,30 @@ const hasCitedAnswerSegment = (presentation: ChatPresentedAnswer): boolean =>
   presentation.answerSegments?.some((segment) => (segment.citationIndices?.length ?? 0) > 0) ?? false;
 
 export class ModelChatGateway implements ChatGateway {
-  constructor(
-    private readonly client: TextGenerationClient,
-    private readonly usageEventRecorder: UsageEventRecorder = new NoopUsageEventRecorder(),
-  ) {}
+  constructor(private readonly inference: ModelInferencePipeline) {}
 
   async answer(input: ChatGatewayInput): Promise<string> {
-    let result: Awaited<ReturnType<TextGenerationClient["complete"]>>;
-    try {
-      result = await this.client.complete({
-        prompt: input.prompt,
-        systemPrompt: input.systemPrompt,
-      });
-    } catch (error) {
-      await this.recordUsage(input, "", "failed", undefined, error);
-      throw error;
-    }
+    const result = await this.inference.complete({
+      operation: input.usageContext,
+      prompt: input.prompt,
+      systemPrompt: input.systemPrompt,
+    });
     const { text } = result;
 
     if (!text?.trim()) {
-      await this.recordUsage(input, text ?? "", "failed", result.usage, new BlankChatAnswerError());
       throw new BlankChatAnswerError();
     }
 
-    await this.recordUsage(input, text, "succeeded", result.usage);
     return text;
   }
 
   async *streamAnswer(input: ChatGatewayInput): AsyncIterable<string> {
-    const { textStream, usage } = this.client.stream({
+    const { textStream } = this.inference.stream({
+      operation: input.usageContext,
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
     });
-    let output = "";
-    try {
-      for await (const chunk of textStream) {
-        if (chunk.length > 0) {
-          output += chunk;
-          yield chunk;
-        }
-      }
-    } catch (error) {
-      await this.recordUsage(input, output, "failed", await usage, error);
-      throw error;
-    }
-    await this.recordUsage(input, output, "succeeded", await usage);
-  }
-
-  private async recordUsage(
-    input: ChatGatewayInput,
-    outputText: string,
-    status: UsageEventStatus,
-    providerUsage?: ProviderUsage,
-    error?: unknown,
-  ): Promise<void> {
-    if (!input.usageContext) {
-      return;
-    }
-    const usage = providerUsage ?? estimateProviderUsage(input, outputText);
-    const provider = this.client.metadata.provider;
-    const model = this.client.metadata.model;
-
-    await this.usageEventRecorder.recordModelCall({
-      idempotencyKey: buildChatUsageIdempotencyKey(input.usageContext, provider, model, status),
-      accountId: input.usageContext.accountId ?? null,
-      workspaceId: input.usageContext.workspaceId,
-      conversationId: input.usageContext.conversationId,
-      messageId: input.usageContext.messageId,
-      surface: input.usageContext.surface,
-      operation: input.usageContext.operation,
-      provider,
-      model,
-      inputTokens: usage.inputTokens ?? null,
-      outputTokens: usage.outputTokens ?? null,
-      totalTokens: usage.totalTokens ?? ((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0)),
-      inputBytes: Buffer.byteLength(`${input.systemPrompt ?? ""}\n${input.prompt}`, "utf8"),
-      outputBytes: Buffer.byteLength(outputText, "utf8"),
-      status,
-      usageQuality: providerUsage?.quality ?? "estimated",
-      providerRequestId: providerUsage?.providerRequestId ?? null,
-      errorCode: error ? chatUsageErrorCode(error) : null,
-    }).catch(() => {
-      // Usage accounting is observational; chat delivery remains authoritative.
-    });
+    yield* textStream;
   }
 }
 
@@ -156,51 +92,6 @@ export class OpenAIChatGateway extends ModelChatGateway {}
 
 const SKILL_CHIP_TAG_PATTERN = /<skill_chip>([\s\S]*?)<\/skill_chip>\s*/i;
 const SKILL_RECEIPT_TAG_PATTERN = /<skill_receipt>([\s\S]*?)<\/skill_receipt>\s*/i;
-
-const estimateTokens = (bytes: number): number => Math.max(1, Math.ceil(bytes / 4));
-
-const estimateProviderUsage = (input: ChatGatewayInput, outputText: string): ProviderUsage => {
-  const inputBytes = Buffer.byteLength(`${input.systemPrompt ?? ""}\n${input.prompt}`, "utf8");
-  const outputBytes = Buffer.byteLength(outputText, "utf8");
-  const inputTokens = estimateTokens(inputBytes);
-  const outputTokens = outputBytes > 0 ? estimateTokens(outputBytes) : 0;
-  return {
-    inputTokens,
-    outputTokens,
-    totalTokens: inputTokens + outputTokens,
-    quality: "estimated",
-  };
-};
-
-const buildChatUsageIdempotencyKey = (
-  context: ChatGatewayUsageContext,
-  provider: string,
-  model: string,
-  status: UsageEventStatus,
-): string => [
-  "chat",
-  context.surface,
-  context.operation,
-  context.conversationId,
-  context.messageId,
-  context.attemptKey,
-  provider,
-  model,
-  status,
-].join(":");
-
-const chatUsageErrorCode = (error: unknown): string => {
-  if (error instanceof BlankChatAnswerError) {
-    return error.name;
-  }
-  if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
-    return error.code;
-  }
-  if (error instanceof Error && error.message) {
-    return error.message.slice(0, 120);
-  }
-  return "chat_model_call_failed";
-};
 
 export interface ExtractedSkillReceiptOverrides {
   statusLabel?: string;

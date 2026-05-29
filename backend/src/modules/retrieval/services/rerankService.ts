@@ -1,5 +1,9 @@
+import { randomUUID } from "node:crypto";
+
+import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
+import type { UsageEventRecorder, UsageEventStatus } from "../../../shared/domain/usageEventRecorder.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
-import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
@@ -9,6 +13,7 @@ export interface RerankGatewayInput {
   query: string;
   contexts: RetrievedCandidate[];
   workspaceContext?: LlmCapabilityResolveInput;
+  usageContext?: ModelCallUsageContext;
 }
 
 export interface RerankGateway {
@@ -20,7 +25,7 @@ const buildRerankPrompt = (input: { query: string; candidates: string }): string
 
 export class ModelRerankGateway implements RerankGateway {
   constructor(
-    private readonly client: TextGenerationClient,
+    private readonly client: ModelInferencePipeline,
     private readonly logger?: AppLogger,
   ) {}
 
@@ -28,6 +33,7 @@ export class ModelRerankGateway implements RerankGateway {
     const candidates = buildRerankCandidateList(input.contexts);
 
     const { text: content } = await this.client.complete({
+      operation: input.usageContext ?? fallbackRerankOperation(input.workspaceContext?.workspaceId),
       prompt: buildRerankPrompt({ query: input.query, candidates }),
       temperature: RETRIEVAL_BEHAVIOR.rerank.temperature,
       maxOutputTokens: RETRIEVAL_BEHAVIOR.rerank.modelMaxCompletionTokens,
@@ -95,11 +101,20 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
               schema: Record<string, unknown>;
             };
           };
-        }): Promise<{ output_text?: string; status?: string | null }>;
+        }): Promise<{
+          output_text?: string;
+          status?: string | null;
+          usage?: {
+            input_tokens?: number | null;
+            output_tokens?: number | null;
+            total_tokens?: number | null;
+          } | null;
+        }>;
       };
     },
     private readonly model: string,
     private readonly logger?: AppLogger,
+    private readonly usageEventRecorder?: UsageEventRecorder,
   ) {}
 
   async rerank(input: RerankGatewayInput): Promise<Array<{ chunkId: string; relevanceScore: number }>> {
@@ -112,17 +127,39 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
       ),
     );
 
-    const response = await this.client.responses.create({
-      model: this.model,
-      temperature: RETRIEVAL_BEHAVIOR.rerank.temperature,
-      max_output_tokens: maxOutputTokens,
-      input: buildRerankPrompt({ query: input.query, candidates }),
-      text: {
-        format: OpenAISemanticRerankGateway.RESPONSE_FORMAT,
-      },
-    });
+    const prompt = buildRerankPrompt({ query: input.query, candidates });
+    const operation = input.usageContext ?? fallbackRerankOperation(input.workspaceContext?.workspaceId);
+    let response: Awaited<ReturnType<typeof this.client.responses.create>> | undefined;
+    try {
+      response = await this.client.responses.create({
+        model: this.model,
+        temperature: RETRIEVAL_BEHAVIOR.rerank.temperature,
+        max_output_tokens: maxOutputTokens,
+        input: prompt,
+        text: {
+          format: OpenAISemanticRerankGateway.RESPONSE_FORMAT,
+        },
+      });
+    } catch (error) {
+      await this.recordUsage({
+        operation,
+        prompt,
+        outputText: "",
+        status: "failed",
+        error,
+      });
+      throw error;
+    }
 
     const content = response.output_text?.trim() ?? "";
+    await this.recordUsage({
+      operation,
+      prompt,
+      outputText: content,
+      status: "succeeded",
+      providerUsage: response.usage ?? undefined,
+    });
+
     if (!content) {
       this.logger?.warn(
         {
@@ -138,6 +175,48 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
 
     return mapIndexedRerankScores(input.contexts, parseIndexedRerankScores(content || '{"scores":[]}'));
   }
+
+  private async recordUsage(input: {
+    operation: ModelCallUsageContext;
+    prompt: string;
+    outputText: string;
+    status: UsageEventStatus;
+    providerUsage?: {
+      input_tokens?: number | null;
+      output_tokens?: number | null;
+      total_tokens?: number | null;
+    };
+    error?: unknown;
+  }): Promise<void> {
+    if (!this.usageEventRecorder) {
+      return;
+    }
+    const inputBytes = Buffer.byteLength(input.prompt, "utf8");
+    const outputBytes = Buffer.byteLength(input.outputText, "utf8");
+    const inputTokens = input.providerUsage?.input_tokens ?? estimateTokens(inputBytes);
+    const outputTokens = input.providerUsage?.output_tokens ?? (outputBytes > 0 ? estimateTokens(outputBytes) : 0);
+
+    await this.usageEventRecorder.recordModelCall({
+      idempotencyKey: buildUsageIdempotencyKey(input.operation, "openai", this.model, input.status),
+      accountId: input.operation.accountId ?? null,
+      workspaceId: input.operation.workspaceId,
+      conversationId: input.operation.conversationId ?? null,
+      messageId: input.operation.messageId ?? null,
+      surface: input.operation.surface,
+      operation: input.operation.operation,
+      provider: "openai",
+      model: this.model,
+      inputTokens,
+      outputTokens,
+      totalTokens: input.providerUsage?.total_tokens ?? inputTokens + outputTokens,
+      inputBytes,
+      outputBytes,
+      status: input.status,
+      usageQuality: input.providerUsage ? "actual" : "estimated",
+      providerRequestId: null,
+      errorCode: input.error instanceof Error ? input.error.message.slice(0, 120) : input.error ? "model_call_failed" : null,
+    }).catch(() => {});
+  }
 }
 
 export class RerankService {
@@ -152,6 +231,7 @@ export class RerankService {
     enabled: boolean;
     topK: number;
     workspaceContext?: LlmCapabilityResolveInput;
+    usageContext?: Omit<ModelCallUsageContext, "operation">;
   }): Promise<{ contexts: RerankedCandidate[]; status: RerankStatus }> {
     if (!input.enabled) {
       return {
@@ -163,11 +243,16 @@ export class RerankService {
     try {
       const rerankBatches = chunkContexts(input.contexts, RETRIEVAL_BEHAVIOR.rerank.maxBatchSize);
       const batchScores = await Promise.all(
-        rerankBatches.map((contexts) =>
+        rerankBatches.map((contexts, batchIndex) =>
           this.gateway?.rerank({
             query: input.query,
             contexts,
             workspaceContext: input.workspaceContext,
+            usageContext: {
+              ...(input.usageContext ?? fallbackUsageContext(input.workspaceContext?.workspaceId)),
+              operation: "rerank",
+              attemptKey: `rerank:${batchIndex}`,
+            },
           }),
         ),
       );
@@ -286,6 +371,37 @@ const toLoggableError = (error: unknown): Record<string, unknown> => {
     cause: candidate.cause,
   };
 };
+
+const estimateTokens = (bytes: number): number => Math.max(1, Math.ceil(bytes / 4));
+
+const fallbackUsageContext = (workspaceId?: string): Omit<ModelCallUsageContext, "operation"> => ({
+  workspaceId: workspaceId ?? "unknown",
+  requestId: randomUUID(),
+  surface: "retrieval",
+  attemptKey: "rerank",
+});
+
+const fallbackRerankOperation = (workspaceId?: string): ModelCallUsageContext => ({
+  ...fallbackUsageContext(workspaceId),
+  operation: "rerank",
+});
+
+const buildUsageIdempotencyKey = (
+  context: ModelCallUsageContext,
+  provider: string,
+  model: string,
+  status: UsageEventStatus,
+): string => [
+  "model",
+  context.surface,
+  context.operation,
+  context.conversationId ?? `request:${context.requestId ?? "none"}`,
+  context.messageId ?? "none",
+  context.attemptKey,
+  provider,
+  model,
+  status,
+].join(":");
 
 const parseIndexedRerankScores = (content: string): Array<{ candidateIndex: number; relevanceScore: number }> => {
   const normalized = content

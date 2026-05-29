@@ -18,7 +18,6 @@ import type { RetrievalSettingsService } from "../../settings/contracts/services
 import type { LlmCapabilityResolver } from "../../../shared/infra/llm/capabilityResolver.js";
 import type { EvalRunModelOverride } from "../domain/types.js";
 import type { EvalReplayContext, EvalRetrievalRunnerPort } from "./evalRunner.js";
-import type { EvalUsageMeter } from "./evalUsageMeter.js";
 
 const UNKNOWN_MODEL = { provider: "unknown", model: "unknown" } as const;
 
@@ -59,7 +58,6 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
   constructor(
     private readonly pipeline: RetrievalPipelineService,
     private readonly chatGateway: ChatGateway,
-    private readonly usageMeter: EvalUsageMeter,
     private readonly capabilityResolver: LlmCapabilityResolver,
     private readonly retrievalSettings: RetrievalSettingsService,
     private readonly answerPresenter = new AnswerPresentationService(),
@@ -131,12 +129,17 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
         history: input.history,
         context: input.context,
         retrievalSettingsOverride: input.retrievalSettingsOverride,
+        usageContext: {
+          accountId: input.accountId ?? null,
+          workspaceId: input.workspaceId,
+          requestId: input.runId,
+          surface: "eval",
+          attemptKey: "retrieval_pipeline",
+        },
       }),
     );
 
     let generated = "";
-    let status: "succeeded" | "failed" = "succeeded";
-    let errorCode: string | null = null;
     let callError: unknown = null;
     try {
       generated = await this.chatGateway.answer({
@@ -148,28 +151,17 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
           workspaceId: input.workspaceId,
           capabilityOverride: (input.modelOverride ?? null) as never,
         },
+        usageContext: {
+          accountId: input.accountId ?? null,
+          workspaceId: input.workspaceId,
+          requestId: input.runId,
+          surface: "eval",
+          operation: "full_assistant",
+          attemptKey: "answer",
+        },
       });
     } catch (err) {
       callError = err;
-      status = "failed";
-      errorCode = err instanceof Error ? err.message.slice(0, 200) : "unknown";
-    } finally {
-      await this.usageMeter.record(
-        {
-          workspaceId: input.workspaceId,
-          accountId: input.accountId ?? null,
-          runId: input.runId,
-          operation: "full_assistant_answer",
-          attemptKey: "answer",
-        },
-        {
-          promptText: `${pipelineResult.systemPrompt ?? ""}\n\n${pipelineResult.prompt}`,
-          responseText: generated,
-          status,
-          errorCode,
-        },
-        { provider: resolvedProvider, model: resolvedModel },
-      );
     }
 
     if (callError) {
@@ -213,6 +205,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     history: MessageRecord[];
     context?: EvalReplayContext;
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
+    usageContext?: RetrievalPipelineRequest["usageContext"];
   }): RetrievalPipelineRequest {
     const agent = input.context?.agent ?? null;
     const customInstruction =
@@ -238,6 +231,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       responseBehaviorEnabled: Boolean(responseBehavior),
       sourceScope: agent?.sourceScope,
       retrievalSettingsOverride: input.retrievalSettingsOverride,
+      usageContext: input.usageContext,
     };
   }
 

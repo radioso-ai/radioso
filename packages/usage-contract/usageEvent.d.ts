@@ -17,9 +17,13 @@ export interface EmbeddingUsageEvent {
   idempotencyKey: string;
   accountId?: string | null;
   workspaceId: string;
+  conversationId?: string | null;
+  messageId?: string | null;
+  surface?: string;
+  operation?: string;
   sourceId?: string | null;
-  documentId: string;
-  documentRevision: number;
+  documentId?: string | null;
+  documentRevision?: number | null;
   jobId?: string | null;
   provider: string;
   model: string;

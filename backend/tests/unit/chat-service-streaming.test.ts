@@ -6,6 +6,7 @@ import {
   type ChatGateway,
   type ChatStreamEvent,
 } from "../../src/modules/chat/services/chatService.js";
+import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { SkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { ChatIntakeProviderPort } from "../../src/modules/chat/services/chatIntakeProvider.js";
 import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
@@ -268,7 +269,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       {
         async answer() {
           return "Normal answer.";
@@ -332,7 +333,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       {
         async answer() { return "Normal."; },
         async *streamAnswer() { yield "Normal."; },
@@ -403,7 +404,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       {
         async answer() { return "Normal."; },
         async *streamAnswer() { yield "Normal."; },
@@ -492,7 +493,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       {
         async answer() {
           return "Normal answer.";
@@ -573,10 +574,10 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(createIntentRoutedNoContextPipeline({
+      new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
         query: "I need help",
         responseIntent: "social_only",
-      })) as never,
+      })) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -660,7 +661,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -798,7 +799,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -889,7 +890,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -981,7 +982,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1070,7 +1071,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1113,7 +1114,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1153,7 +1154,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1191,7 +1192,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1238,7 +1239,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1285,7 +1286,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1359,7 +1360,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1434,7 +1435,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       fallbackComposer,
@@ -1518,7 +1519,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1605,7 +1606,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1674,7 +1675,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1779,7 +1780,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1891,7 +1892,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1934,7 +1935,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
     );
@@ -2004,7 +2005,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
     );
@@ -2079,7 +2080,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
     );
@@ -2166,7 +2167,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       undefined,
@@ -2263,7 +2264,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
     );
@@ -2333,7 +2334,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2413,7 +2414,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
     );
@@ -2508,7 +2509,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
     );
@@ -2608,7 +2609,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2701,7 +2702,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2813,7 +2814,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2914,7 +2915,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3002,7 +3003,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3102,7 +3103,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3200,7 +3201,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3359,7 +3360,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3465,7 +3466,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3568,7 +3569,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3678,7 +3679,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3777,7 +3778,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3953,7 +3954,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       fallbackComposer,
@@ -4147,7 +4148,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -4194,7 +4195,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      asChatActivityPipeline(retrievalPipeline) as never,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
       groundedMissResponseComposer,

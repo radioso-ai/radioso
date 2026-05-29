@@ -42,6 +42,7 @@ import {
   NoopAnswerFeedbackHistoryProvider,
   NoopChatIntakeProvider,
   NoopContactHistoryProvider,
+  RetrievalTurnController,
   SkillRetrievalTurnDispatch,
 } from "../../modules/chat/composition.js";
 import {
@@ -744,7 +745,13 @@ export const buildChatServices = (input: {
   const chatService = new ChatService(
     input.conversationRepository,
     input.messageRepository,
-    input.retrievalPipeline,
+    // 066 slice 3: chat reaches retrieval only through a narrow turn port —
+    // interpret via the controller, execute via the dispatched retrieval.answer
+    // skill. ChatService carries no RetrievalPipelineService reference.
+    new RetrievalTurnController(
+      input.retrievalPipeline,
+      new SkillRetrievalTurnDispatch(input.composition.skillExecutorRegistry, retrievalAnswerSkillDefinition),
+    ),
     chatGateway,
     input.auditService,
     input.llmRegistry.createGroundedMissResponseComposer(input.usageEventRecorder),
@@ -755,9 +762,6 @@ export const buildChatServices = (input: {
     chatIntakeProvider,
     chatActionSuggestionService,
     createSkillOutcomeCapabilityProvider(input.composition.skillCatalogRegistry),
-    // 066 slice 2: the chat turn reaches retrieval through the skill-invocation
-    // port (dispatching retrieval.answer) rather than calling the controller.
-    new SkillRetrievalTurnDispatch(input.composition.skillExecutorRegistry, retrievalAnswerSkillDefinition),
   );
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,

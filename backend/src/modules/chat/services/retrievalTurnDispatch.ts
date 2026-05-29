@@ -6,6 +6,7 @@ import {
 import {
   readRetrievalResult,
   type RetrievalPipelineInterpretationResult,
+  type RetrievalPipelineRequest,
   type RetrievalPipelineResult,
   type RetrievalPipelineService,
 } from "../../retrieval/public.js";
@@ -23,6 +24,44 @@ export interface RetrievalTurnDispatchInput {
 
 export interface RetrievalTurnDispatchPort {
   dispatch(input: RetrievalTurnDispatchInput): Promise<RetrievalPipelineResult>;
+}
+
+/**
+ * The chat turn's whole retrieval surface: interpret (gather) and dispatch
+ * (execute). The preparer depends on this narrow port instead of the retrieval
+ * controller, so `ChatService` carries no reference to `RetrievalPipelineService`
+ * (066 SC-002). The route decision between interpret and dispatch stays in the
+ * preparer (chat-owned turn intent).
+ */
+export interface RetrievalTurnPort {
+  interpret(input: RetrievalPipelineRequest): Promise<RetrievalPipelineInterpretationResult>;
+  dispatch(input: RetrievalTurnDispatchInput): Promise<RetrievalPipelineResult>;
+}
+
+/**
+ * Assembles a RetrievalTurnPort from the retrieval controller (for interpret)
+ * and an execution-dispatch port (for dispatch). Defaults the dispatch to the
+ * direct controller path so test/default construction is behavior-preserving;
+ * composition passes {@link SkillRetrievalTurnDispatch} to route execution
+ * through the skill-invocation port.
+ */
+export class RetrievalTurnController implements RetrievalTurnPort {
+  private readonly executionDispatch: RetrievalTurnDispatchPort;
+
+  constructor(
+    private readonly controller: RetrievalPipelineService,
+    executionDispatch?: RetrievalTurnDispatchPort,
+  ) {
+    this.executionDispatch = executionDispatch ?? new DirectRetrievalTurnDispatch(controller);
+  }
+
+  interpret(input: RetrievalPipelineRequest): Promise<RetrievalPipelineInterpretationResult> {
+    return this.controller.interpret(input);
+  }
+
+  dispatch(input: RetrievalTurnDispatchInput): Promise<RetrievalPipelineResult> {
+    return this.executionDispatch.dispatch(input);
+  }
 }
 
 /**

@@ -7,7 +7,9 @@ export {
 export {
   SkillRetrievalTurnDispatch,
   DirectRetrievalTurnDispatch,
+  RetrievalTurnController,
   type RetrievalTurnDispatchPort,
+  type RetrievalTurnPort,
 } from "./services/retrievalTurnDispatch.js";
 export { AnswerPresentationService } from "./services/answerPresentationService.js";
 export { createSkillOutcomeCapabilityProvider } from "./services/chatAnswerPresenter.js";

@@ -20,6 +20,14 @@ const chatConfig: LlmCapabilityConfig = {
   apiKey: "sk-test",
 };
 
+const compatibleChatConfig: LlmCapabilityConfig = {
+  capability: "chat",
+  provider: "openai-compatible",
+  model: "compat-test",
+  apiKey: "sk-test",
+  baseUrl: "http://localhost:1234/v1",
+};
+
 const embeddingConfig: LlmCapabilityConfig = {
   capability: "embeddings",
   provider: "openai",
@@ -112,6 +120,27 @@ describe("OpenAITextGenerationClient.stream", () => {
     expect(createMock).toHaveBeenCalledWith(
       expect.objectContaining({ stream: true, stream_options: { include_usage: true } }),
     );
+  });
+
+  it("does not send OpenAI-only stream usage options to compatible endpoints", async () => {
+    createMock.mockResolvedValue(
+      asyncIterableOf([{ id: "resp-compatible", choices: [{ delta: { content: "Hi" } }] }]),
+    );
+
+    const { textStream } = new OpenAITextGenerationClient(compatibleChatConfig).stream({
+      prompt: "Hi",
+      maxOutputTokens: 20,
+    });
+
+    for await (const _chunk of textStream) {
+      // drain
+    }
+
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({ stream: true, max_tokens: 20 }),
+    );
+    expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("stream_options");
+    expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("max_completion_tokens");
   });
 
   it("resolves usage to undefined when the stream carries no usage chunk", async () => {

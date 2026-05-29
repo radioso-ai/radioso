@@ -171,6 +171,53 @@ describe("grounded miss response composer", () => {
     expect(events[0]!.idempotencyKey).toContain("grounded_miss");
   });
 
+  it("records each retried no-context provider attempt separately", async () => {
+    const { recorder, events } = recordingUsageRecorder();
+    let attempts = 0;
+    const composer = new ModelGroundedMissResponseComposer({
+      metadata: {
+        capability: "chat",
+        provider: "openai",
+        model: "test-model",
+      },
+      async complete() {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("transient provider failure");
+        }
+        return textResult("MODEL_NO_CONTEXT", {
+          inputTokens: 18,
+          outputTokens: 4,
+          totalTokens: 22,
+          quality: "actual",
+        });
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }, recorder);
+
+    await composer.composeNoContext({
+      query: "What does the pricing page say?",
+      usageContext: {
+        accountId: "account-1",
+        workspaceId: "workspace-1",
+        conversationId: "conversation-1",
+        messageId: "message-1",
+        surface: "assistant",
+        operation: "answer",
+        attemptKey: "grounded_miss",
+      },
+    });
+
+    expect(events).toHaveLength(2);
+    expect(events.map((event) => event.status)).toEqual(["failed", "succeeded"]);
+    expect(events[0]!.idempotencyKey).toContain("attempt:1");
+    expect(events[1]!.idempotencyKey).toContain("attempt:2");
+    expect(events[0]!.usageQuality).toBe("estimated");
+    expect(events[1]!.usageQuality).toBe("actual");
+  });
+
   it("falls back when the no-context model output is empty", async () => {
     const composer = new ModelGroundedMissResponseComposer({
       metadata: {

@@ -56,6 +56,13 @@ const buildTokenLimit = (
     ? { max_tokens: maxOutputTokens }
     : { max_completion_tokens: maxOutputTokens };
 
+const buildStreamUsageOptions = (
+  provider: LlmCapabilityConfig["provider"],
+): { stream_options?: { include_usage: true } } =>
+  provider === "openai"
+    ? { stream_options: { include_usage: true } }
+    : {};
+
 export const createOpenAIClient = (config: LlmCapabilityConfig): OpenAI =>
   new OpenAI({
     apiKey: config.apiKey,
@@ -107,7 +114,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
         model: config.model,
         stream: true,
         // Ask OpenAI to append a final usage-only chunk after the content chunks.
-        stream_options: { include_usage: true },
+        ...buildStreamUsageOptions(config.provider),
         temperature: input.temperature,
         ...buildTokenLimit(config.provider, input.maxOutputTokens),
         messages: buildMessages(input),

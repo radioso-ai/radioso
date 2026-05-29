@@ -113,12 +113,20 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     systemPrompt?: string;
     temperature: number;
     maxOutputTokens: number;
-  }): Promise<TextGenerationResult | undefined> {
-    try {
-      return await this.client.complete(request);
-    } catch {
-      return await this.client.complete(request);
+  }, input: GroundedMissNoContextInput): Promise<{ result: TextGenerationResult; attemptIndex: number }> {
+    let lastError: unknown;
+    for (let attemptIndex = 1; attemptIndex <= 2; attemptIndex += 1) {
+      try {
+        return {
+          result: await this.client.complete(request),
+          attemptIndex,
+        };
+      } catch (error) {
+        lastError = error;
+        await this.recordUsage(input, request, "", "failed", undefined, error, attemptIndex);
+      }
     }
+    throw lastError;
   }
 
   async composeNoContext(input: GroundedMissNoContextInput): Promise<string> {
@@ -132,17 +140,16 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
         temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
         maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.noContextMaxOutputTokens,
       };
-      const result = await this.completeWithRetry(request);
-      await this.recordUsage(input, request, result?.text ?? "", "succeeded", result?.usage);
+      const { result, attemptIndex } = await this.completeWithRetry(request, input);
+      await this.recordUsage(input, request, result.text, "succeeded", result.usage, undefined, attemptIndex);
 
-      const normalized = normalizeModelResponse(result?.text);
+      const normalized = normalizeModelResponse(result.text);
       if (normalized) {
         return normalized;
       }
 
       return buildNoContextFallback();
     } catch (error) {
-      await this.recordUsage(input, null, "", "failed", undefined, error);
       if (isProviderCredentialError(error)) {
         throw error;
       }
@@ -158,6 +165,7 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     status: UsageEventStatus,
     providerUsage?: ProviderUsage,
     error?: unknown,
+    attemptIndex = 1,
   ): Promise<void> {
     if (!input.usageContext) {
       return;
@@ -177,6 +185,7 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
         input.usageContext.conversationId,
         input.usageContext.messageId,
         input.usageContext.attemptKey,
+        `attempt:${attemptIndex}`,
         provider,
         model,
         status,

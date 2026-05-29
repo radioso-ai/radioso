@@ -6,7 +6,7 @@ import {
 } from "../../src/modules/retrieval/services/queryRewriteGateways.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
-import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
+import type { TextGenerationClient, TextGenerationRequest } from "../../src/shared/infra/llm/providerTypes.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
 
 const recordingUsageRecorder = () => {
@@ -159,5 +159,64 @@ describe("query rewrite usage metering", () => {
       status: "succeeded",
       usageQuality: "estimated",
     });
+  });
+});
+
+describe("query interpretation reasoning effort", () => {
+  const usageContext = {
+    workspaceId: "workspace-1",
+    requestId: "request-1",
+    surface: "retrieval",
+    operation: "query_interpretation",
+    attemptKey: "rewrite",
+  } as const;
+
+  it("requests minimal reasoning effort for query rewrites", async () => {
+    const requests: TextGenerationRequest[] = [];
+    const gateway = new ModelQueryRewriteGateway(new ModelInferencePipelineService({
+      metadata: { capability: "rewrite", provider: "openai", model: "gpt-5-nano" },
+      async complete(input) {
+        requests.push(input);
+        return textResult(JSON.stringify({ rewrittenQuery: "reset password", confidence: 0.9 }));
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    } satisfies TextGenerationClient));
+
+    await gateway.rewrite({ query: "how do i reset it", contextMessages: [], usageContext });
+
+    expect(requests[0]?.reasoningEffort).toBe("minimal");
+  });
+
+  it("requests minimal reasoning effort for trigger analysis", async () => {
+    const requests: TextGenerationRequest[] = [];
+    const gateway = new ModelTriggerAnalysisGateway(new ModelInferencePipelineService({
+      metadata: { capability: "rewrite", provider: "openai", model: "gpt-5-nano" },
+      async complete(input) {
+        requests.push(input);
+        return textResult(JSON.stringify({
+          status: "applied",
+          consideredRules: [],
+          matchedRuleIds: [],
+          unmatchedRuleIds: [],
+          matchCount: 0,
+          matcherVersion: "model",
+        }));
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    } satisfies TextGenerationClient));
+
+    await gateway.analyze({
+      query: "latest invoices",
+      activeQuery: "latest invoices",
+      contextMessages: [],
+      rules: [],
+      usageContext: { ...usageContext, operation: "trigger_analysis", attemptKey: "trigger_analysis" },
+    });
+
+    expect(requests[0]?.reasoningEffort).toBe("minimal");
   });
 });

@@ -750,7 +750,11 @@ export const buildChatServices = (input: {
     // skill. ChatService carries no RetrievalPipelineService reference.
     new RetrievalTurnController(
       input.retrievalPipeline,
-      new SkillRetrievalTurnDispatch(input.composition.skillExecutorRegistry, retrievalAnswerSkillDefinition),
+      new SkillRetrievalTurnDispatch(
+        input.composition.skillExecutorRegistry,
+        retrievalAnswerSkillDefinition,
+        input.composition.capabilityPolicy,
+      ),
     ),
     chatGateway,
     input.auditService,

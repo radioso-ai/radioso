@@ -3,8 +3,11 @@ import {
   type SkillDefinition,
   type SkillExecutorRegistry,
 } from "../../skills/public.js";
+import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import {
   readRetrievalResult,
+  type ActivityStage,
+  type ActivityTrace,
   type RetrievalPipelineInterpretationResult,
   type RetrievalPipelineRequest,
   type RetrievalPipelineResult,
@@ -89,6 +92,7 @@ export class SkillRetrievalTurnDispatch implements RetrievalTurnDispatchPort {
   constructor(
     private readonly executorRegistry: SkillExecutorRegistry,
     private readonly skill: SkillDefinition,
+    private readonly capabilityPolicy: CapabilityPolicy,
   ) {}
 
   async dispatch({ interpreted, withRetrieval }: RetrievalTurnDispatchInput): Promise<RetrievalPipelineResult> {
@@ -100,10 +104,19 @@ export class SkillRetrievalTurnDispatch implements RetrievalTurnDispatchPort {
       throw new Error(`No skill executor registered for "${this.skill.name}"`);
     }
 
+    // 066 FR-008: skill dispatch must honor the per-agent capability model. If
+    // the agent is not authorized for the skill, do not retrieve — degrade to a
+    // non-grounded answer (the spec's "responds without it"). Capabilities only
+    // gate retrieval; a non-retrieval turn needs no authorization.
+    const capabilityDenied = withRetrieval
+      ? await this.firstDeniedCapability(interpreted.request.workspaceId)
+      : null;
+    const effectiveWithRetrieval = withRetrieval && !capabilityDenied;
+
     const result = await executor.dispatch({
       skill: this.skill,
       collected: {},
-      context: { interpreted, withRetrieval },
+      context: { interpreted, withRetrieval: effectiveWithRetrieval },
       emit: noopSkillEmitPort,
     });
     if (result.disposition !== "settled") {
@@ -114,6 +127,62 @@ export class SkillRetrievalTurnDispatch implements RetrievalTurnDispatchPort {
     if (!retrieval) {
       throw new Error(`Skill "${this.skill.name}" settled without a retrieval result`);
     }
-    return retrieval;
+
+    // 066 FR-015: record the dispatch in the turn trace so the spine is visible
+    // and skill outcomes are distinguishable from raw pipeline runs.
+    return {
+      ...retrieval,
+      trace: appendSkillDispatchStage(retrieval.trace, {
+        skillName: this.skill.name,
+        disposition: result.disposition,
+        outcomeStatus: result.outcome.status,
+        withRetrieval: effectiveWithRetrieval,
+        capabilityDenied: capabilityDenied ?? undefined,
+      }),
+    };
+  }
+
+  private async firstDeniedCapability(workspaceId: string): Promise<string | null> {
+    for (const capability of this.skill.requiredCapabilities ?? []) {
+      const decision = await this.capabilityPolicy.can({ capability, workspaceId });
+      if (!decision.allowed) {
+        return decision.reason ?? "capability_denied";
+      }
+    }
+    return null;
   }
 }
+
+const appendSkillDispatchStage = (
+  trace: ActivityTrace,
+  info: {
+    skillName: string;
+    disposition: string;
+    outcomeStatus: string;
+    withRetrieval: boolean;
+    capabilityDenied?: string;
+  },
+): ActivityTrace => {
+  const previousStageId = trace.stages.at(-1)?.stageId;
+  const stage: ActivityStage = {
+    stageId: "skill_dispatch",
+    kind: "skill_dispatch",
+    label: "Skill dispatch",
+    status: info.capabilityDenied ? "fallback" : "applied",
+    startedAt: new Date().toISOString(),
+    outputs: {
+      skillName: info.skillName,
+      disposition: info.disposition,
+      outcomeStatus: info.outcomeStatus,
+      withRetrieval: info.withRetrieval,
+      ...(info.capabilityDenied ? { capabilityDenied: info.capabilityDenied } : {}),
+    },
+  };
+  return {
+    ...trace,
+    stages: [...trace.stages, stage],
+    links: previousStageId
+      ? [...trace.links, { fromStageId: previousStageId, toStageId: stage.stageId, kind: "sequence" as const }]
+      : trace.links,
+  };
+};

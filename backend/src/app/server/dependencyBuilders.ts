@@ -663,6 +663,7 @@ export const buildChatServices = (input: {
   retrievalPipeline: RetrievalPipelinePort;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   workspaceRepository: WorkspaceRepository;
+  assertPublicWebsiteUrl: (url: string) => Promise<void>;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
   const answerPresentationService = new AnswerPresentationService();
@@ -694,6 +695,7 @@ export const buildChatServices = (input: {
     abuseControlService,
     mailService: input.mailService,
     dashboardBaseUrl: input.env.APP_BASE_URL ?? null,
+    assertPublicWebsiteUrl: input.assertPublicWebsiteUrl,
     skillExecutorRegistry: input.composition.skillExecutorRegistry,
   };
   // Register retrieval.answer as a dispatchable skill (spec 066 slice 1). The

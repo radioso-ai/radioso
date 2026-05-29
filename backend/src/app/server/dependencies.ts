@@ -171,6 +171,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     usageEventRecorder: infrastructure.usageEventRecorder,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     workspaceRepository: repositories.workspaceRepository,
+    assertPublicWebsiteUrl,
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository: repositories.workspaceRepository,

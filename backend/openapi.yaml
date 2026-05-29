@@ -2074,6 +2074,8 @@ components:
               type: string
             suggestedQuestionsEnabled:
               type: boolean
+            assistantLinkUtmEnabled:
+              type: boolean
             theme:
               type: object
               properties:
@@ -2164,6 +2166,7 @@ components:
             - isDefault
             - customInstruction
             - suggestedQuestionsEnabled
+            - assistantLinkUtmEnabled
             - theme
             - branding
             - retrievalEnabled
@@ -2194,6 +2197,8 @@ components:
           type: string
           maxLength: 2000
         suggestedQuestionsEnabled:
+          type: boolean
+        assistantLinkUtmEnabled:
           type: boolean
         theme:
           type: object
@@ -2332,6 +2337,8 @@ components:
           format: uuid
         agentName:
           type: string
+        assistantLinkUtmEnabled:
+          type: boolean
         workspaceName:
           type: string
         publicChatToken:
@@ -2405,6 +2412,7 @@ components:
           type: string
           format: date-time
       required:
+        - assistantLinkUtmEnabled
         - workspaceName
         - publicChatToken
         - publicSessionId

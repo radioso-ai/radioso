@@ -41,12 +41,23 @@ import { type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { AssistantMarkdownContent } from './chat-markdown'
 
 export type CitationOpenResult = 'opened' | 'unavailable' | 'error'
+export type AssistantLinkClickType = 'citation_marker' | 'source_chip' | 'citation_source_url' | 'assistant_url'
+
+export interface AssistantLinkClickAnalyticsInput {
+  linkType: AssistantLinkClickType
+  citationIndex?: number
+  documentId?: string
+  chunkId?: string
+  destinationUrl?: string
+}
 
 interface AssistantMessageContentProps {
   content: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
+  onLinkClickAnalytics?: (input: AssistantLinkClickAnalyticsInput) => void
+  transformAssistantLinkHref?: (href: string) => string
   theme?: WebsiteEmbedTheme | null
   isStreaming?: boolean
   showCitations?: boolean
@@ -96,15 +107,23 @@ const CitationMarker = ({
   citation,
   index,
   onOpenDocument,
+  onLinkClickAnalytics,
 }: {
   citation: Citation
   index: number
   onOpenDocument: (citation: Citation, index: number) => void
+  onLinkClickAnalytics?: (input: AssistantLinkClickAnalyticsInput) => void
 }) => (
   <button
     type="button"
     onClick={(event) => {
       event.stopPropagation()
+      onLinkClickAnalytics?.({
+        linkType: 'citation_marker',
+        citationIndex: index,
+        documentId: citation.documentId,
+        chunkId: citation.chunkId,
+      })
       void onOpenDocument(citation, index)
     }}
     className="ml-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary/10 px-1 align-super text-[0.65em] font-semibold leading-none text-primary hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-none"
@@ -119,10 +138,12 @@ const SourceChip = ({
   citation,
   index,
   onOpenDocument,
+  onLinkClickAnalytics,
 }: {
   citation: Citation
   index: number
   onOpenDocument: (citation: Citation, index: number) => void
+  onLinkClickAnalytics?: (input: AssistantLinkClickAnalyticsInput) => void
 }) => {
   const label = getCitationLabel(citation, index)
   const sourceUrl = citation.sourceUrl?.trim()
@@ -136,6 +157,12 @@ const SourceChip = ({
         type="button"
         onClick={(event) => {
           event.stopPropagation()
+          onLinkClickAnalytics?.({
+            linkType: 'source_chip',
+            citationIndex: index,
+            documentId: citation.documentId,
+            chunkId: citation.chunkId,
+          })
           void onOpenDocument(citation, index)
         }}
         className="inline-flex max-w-full items-center gap-1 truncate text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:underline focus-visible:outline-none"
@@ -149,7 +176,16 @@ const SourceChip = ({
           href={sourceUrl}
           target="_blank"
           rel="noopener noreferrer"
-          onClick={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            onLinkClickAnalytics?.({
+              linkType: 'citation_source_url',
+              citationIndex: index,
+              documentId: citation.documentId,
+              chunkId: citation.chunkId,
+              destinationUrl: sourceUrl,
+            })
+          }}
           className="inline-flex shrink-0 items-center text-primary hover:text-primary/80"
           aria-label={`Open ${label} in a new tab`}
           title={sourceUrl}
@@ -282,6 +318,8 @@ export function AssistantMessageContent({
   citations = [],
   answerSegments,
   onOpenDocument,
+  onLinkClickAnalytics,
+  transformAssistantLinkHref,
   theme,
   isStreaming = false,
   showCitations = true,
@@ -340,6 +378,7 @@ export function AssistantMessageContent({
             citation={citation}
             index={citationIndex}
             onOpenDocument={handleCitationOpen}
+            onLinkClickAnalytics={onLinkClickAnalytics}
           />
         </Fragment>
       )
@@ -379,7 +418,17 @@ export function AssistantMessageContent({
         <ol key={`ordered-list-${segmentIndex}`} className="ml-5 list-decimal space-y-1 text-foreground">
           {listItems.map((item) => (
             <li key={item.key} value={item.number} className="ml-1 text-foreground">
-              <AssistantMarkdownContent content={item.content} inline={!hasBlockMarkdown(item.content)} />
+              <AssistantMarkdownContent
+                content={item.content}
+                inline={!hasBlockMarkdown(item.content)}
+                onLinkClick={(href) => {
+                  onLinkClickAnalytics?.({
+                    linkType: 'assistant_url',
+                    destinationUrl: href,
+                  })
+                }}
+                transformLinkHref={transformAssistantLinkHref}
+              />
               {renderCitations(item.citationIndices)}
             </li>
           ))}
@@ -395,7 +444,17 @@ export function AssistantMessageContent({
 
     contentNodes.push(
       <Fragment key={`segment-${segmentIndex}`}>
-        <AssistantMarkdownContent content={segment.text} inline={inline} />
+        <AssistantMarkdownContent
+          content={segment.text}
+          inline={inline}
+          onLinkClick={(href) => {
+            onLinkClickAnalytics?.({
+              linkType: 'assistant_url',
+              destinationUrl: href,
+            })
+          }}
+          transformLinkHref={transformAssistantLinkHref}
+        />
         {renderCitations(dedupedIndices)}
         {segment.trailingText ?? ''}
       </Fragment>,
@@ -424,6 +483,7 @@ export function AssistantMessageContent({
               citation={citation}
               index={index}
               onOpenDocument={handleCitationOpen}
+              onLinkClickAnalytics={onLinkClickAnalytics}
             />
           ))}
         </div>

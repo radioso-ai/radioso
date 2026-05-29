@@ -107,6 +107,55 @@ describe("frontend product analytics routes", () => {
     }));
   });
 
+  it("captures sanitized assistant link click events", async () => {
+    const { app, repositories } = createTestApp();
+
+    await request(app)
+      .post("/api/v1/observability/product-analytics")
+      .send({
+        eventName: "chat.link_clicked",
+        timestamp: "2026-04-22T10:00:00.000Z",
+        subjectType: "conversation",
+        subjectId: "conversation-1",
+        properties: {
+          surface: "embed",
+          assistantMessageId: "assistant-message-1",
+          citationIndex: 0,
+          linkType: "assistant_url",
+          documentId: "document-1",
+          chunkId: "chunk-1",
+          destinationOrigin: "https://docs.example.com",
+          destinationPath: "/private/path?token=secret#section",
+        },
+        source: "embed",
+      })
+      .expect(202);
+
+    expect(repositories.auditEventRepository.items).toContainEqual(expect.objectContaining({
+      eventType: "product.analytics",
+      eventStatus: "success",
+      metadata: {
+        analytics: expect.objectContaining({
+          eventName: "chat.link_clicked",
+          subjectType: "conversation",
+          subjectId: "conversation-1",
+          properties: {
+            surface: "embed",
+            assistantMessageId: "assistant-message-1",
+            citationIndex: 0,
+            linkType: "assistant_url",
+            documentId: "document-1",
+            chunkId: "chunk-1",
+            destinationOrigin: "https://docs.example.com",
+            destinationPath: "/private/path",
+          },
+          source: "embed",
+          timestamp: expect.not.stringMatching("2026-04-22T10:00:00.000Z"),
+        }),
+      },
+    }));
+  });
+
   it("rejects unsupported frontend analytics event names", async () => {
     const { app } = createTestApp();
 
@@ -147,6 +196,45 @@ describe("frontend product analytics routes", () => {
           url: "https://radioso.app/chat/secret?token=secret",
         },
         source: "frontend",
+      })
+      .expect(400);
+  });
+
+  it("rejects forged tenant identity on assistant citation click events", async () => {
+    const { app } = createTestApp();
+
+    await request(app)
+      .post("/api/v1/observability/product-analytics")
+      .send({
+        eventName: "chat.citation_clicked",
+        workspaceId: "workspace-1",
+        accountId: "account-1",
+        actorType: "operator",
+        subjectType: "conversation",
+        subjectId: "conversation-1",
+        properties: {
+          surface: "dashboard",
+          linkType: "citation_marker",
+          documentId: "document-1",
+        },
+        source: "frontend",
+      })
+      .expect(400);
+  });
+
+  it("rejects raw destination URLs on assistant link analytics", async () => {
+    const { app } = createTestApp();
+
+    await request(app)
+      .post("/api/v1/observability/product-analytics")
+      .send({
+        eventName: "chat.link_clicked",
+        properties: {
+          surface: "embed",
+          linkType: "assistant_url",
+          destinationUrl: "https://docs.example.com/private/path?token=secret#section",
+        },
+        source: "embed",
       })
       .expect(400);
   });

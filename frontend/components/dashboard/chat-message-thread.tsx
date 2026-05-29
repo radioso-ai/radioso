@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -9,8 +9,19 @@ import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
 import { getSkillDisplay, type SkillCatalogDisplayEntry, type SkillDisplaySource } from '@/lib/skill-display'
-import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
+import {
+  AssistantMessageContent,
+  type AssistantLinkClickAnalyticsInput,
+  type CitationOpenResult,
+  linkifyText,
+} from './chat-citations'
 import { SendToEvalAction } from './send-to-eval-action'
+import { API_BASE } from '@/lib/api-client'
+import {
+  BeaconFrontendProductAnalyticsSink,
+  createFrontendProductAnalyticsEmitter,
+} from '@/lib/product-analytics'
+import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import type {
   AnswerFeedbackEntry,
   AnswerFeedbackState,
@@ -34,6 +45,56 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
 
 const SUGGESTION_HOVER_BACKGROUND = '#ffc720'
 const SUGGESTION_HOVER_FOREGROUND = '#142317'
+type ChatLinkAnalyticsSurface = 'dashboard' | 'history' | 'eval' | 'public_chat' | 'embed'
+
+const toAssistantUtmMedium = (assistantName?: string | null) => {
+  const normalized = assistantName
+    ?.trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_')
+
+  return `${normalized || 'assistant'}_agent`
+}
+
+export const appendAssistantLinkUtm = (href: string, assistantName?: string | null) => {
+  try {
+    const url = new URL(href)
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      return href
+    }
+
+    url.searchParams.set('utm_source', 'radioso')
+    url.searchParams.set('utm_medium', toAssistantUtmMedium(assistantName))
+    return url.toString()
+  } catch {
+    return href
+  }
+}
+
+const sanitizeDestinationForAnalytics = (destinationUrl?: string) => {
+  if (!destinationUrl) {
+    return {}
+  }
+
+  try {
+    const url = new URL(destinationUrl)
+    if (!['http:', 'https:', 'mailto:'].includes(url.protocol)) {
+      return {}
+    }
+
+    return {
+      destinationOrigin: url.protocol === 'mailto:' ? 'mailto:' : url.origin,
+      destinationPath: url.protocol === 'mailto:' ? '' : url.pathname,
+    }
+  } catch {
+    return {}
+  }
+}
+
+const removeUndefinedProperties = (record: Record<string, unknown>) =>
+  Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined))
 
 export interface ChatThreadMessage {
   id: string
@@ -216,6 +277,8 @@ export function ChatMessageThread({
   onSuggestionSelect,
   onMessageSelect,
   selectedMessageId,
+  assistantAvatarLabel,
+  assistantLinkUtmEnabled = true,
   theme,
   themedSuggestionButtons = false,
   onAnswerFeedback,
@@ -224,6 +287,9 @@ export function ChatMessageThread({
   copy = DEFAULT_WEBSITE_EMBED_COPY,
   showCitations = true,
   conversationId,
+  analyticsSurface = 'dashboard',
+  analyticsEnabled = true,
+  onEmbedAnalyticsEvent,
   skillCatalog = [],
 }: {
   messages: ChatThreadMessage[]
@@ -235,6 +301,7 @@ export function ChatMessageThread({
   selectedMessageId?: string
   assistantAvatarUrl?: string | null
   assistantAvatarLabel?: string
+  assistantLinkUtmEnabled?: boolean
   hideAssistantAvatar?: boolean
   theme?: WebsiteEmbedTheme | null
   themedSuggestionButtons?: boolean
@@ -245,6 +312,9 @@ export function ChatMessageThread({
   // Authenticated dashboard surfaces (chat + activity) pass this; the public
   // embed and website chat omit it so end users never see the action.
   conversationId?: string
+  analyticsSurface?: ChatLinkAnalyticsSurface
+  analyticsEnabled?: boolean
+  onEmbedAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
   skillCatalog?: SkillCatalogDisplayEntry[]
 }) {
   const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
@@ -252,6 +322,13 @@ export function ChatMessageThread({
     () => new Map(skillCatalog.map((skill) => [skill.name, skill])),
     [skillCatalog],
   )
+  const [analyticsEmitter] = useState(() => createFrontendProductAnalyticsEmitter({
+    sinks: [
+      new BeaconFrontendProductAnalyticsSink({
+        endpoint: `${API_BASE}/observability/product-analytics`,
+      }),
+    ],
+  }))
   const threadRef = useRef<HTMLDivElement | null>(null)
   // Scroll the selected message into view when the selection is set programmatically
   // (e.g. via a deep link from the Quality dashboard). Re-runs only when the target
@@ -276,6 +353,42 @@ export function ChatMessageThread({
     assistantMessageId: string
     comment: string
   } | null>(null)
+
+  const trackAssistantLinkClick = useCallback((input: AssistantLinkClickAnalyticsInput & {
+    assistantMessageId?: string
+  }) => {
+    if (!analyticsEnabled) {
+      return
+    }
+
+    const properties = removeUndefinedProperties({
+      surface: analyticsSurface,
+      assistantMessageId: input.assistantMessageId,
+      citationIndex: input.citationIndex,
+      linkType: input.linkType,
+      documentId: input.documentId,
+      chunkId: input.chunkId,
+      ...sanitizeDestinationForAnalytics(input.destinationUrl),
+    })
+    const event = {
+      eventName: input.linkType === 'assistant_url' ? 'chat.link_clicked' as const : 'chat.citation_clicked' as const,
+      subjectType: conversationId ? 'conversation' as const : undefined,
+      subjectId: conversationId,
+      properties,
+      source: analyticsSurface === 'embed' ? 'embed' as const : 'frontend' as const,
+    }
+
+    void analyticsEmitter.track(event)
+
+    if (analyticsSurface === 'embed') {
+      onEmbedAnalyticsEvent?.({
+        event: input.linkType === 'assistant_url' ? 'chat.link_clicked' : 'chat.citation_clicked',
+        subjectType: conversationId ? 'conversation' : undefined,
+        subjectId: conversationId,
+        properties,
+      })
+    }
+  }, [analyticsEmitter, analyticsEnabled, analyticsSurface, conversationId, onEmbedAnalyticsEvent])
 
   const handleSelectMessage = (messageId: string) => {
     const selection = typeof window !== 'undefined' ? window.getSelection()?.toString().trim() : ''
@@ -520,6 +633,17 @@ export function ChatMessageThread({
                               citations={message.citations}
                               answerSegments={message.answerSegments}
                               onOpenDocument={onOpenDocument}
+                              onLinkClickAnalytics={(input) => {
+                                trackAssistantLinkClick({
+                                  ...input,
+                                  assistantMessageId: message.persistedAssistantMessageId ?? message.id,
+                                })
+                              }}
+                              transformAssistantLinkHref={
+                                assistantLinkUtmEnabled
+                                  ? (href) => appendAssistantLinkUtm(href, assistantAvatarLabel)
+                                  : undefined
+                              }
                               theme={theme}
                               isStreaming={message.status === 'streaming'}
                               showCitations={showCitations}

@@ -275,6 +275,7 @@ export const agentsApi = {
     return agentToAssistantBehaviorSettings(await this.updateAgent(agentId, {
       suggestedQuestionsEnabled: data.suggestedQuestionsEnabled,
       customInstruction: data.customInstruction,
+      assistantLinkUtmEnabled: data.assistantLinkUtmEnabled,
       theme: data.theme,
       branding: data.branding,
       sourceScope: data.sourceScope,

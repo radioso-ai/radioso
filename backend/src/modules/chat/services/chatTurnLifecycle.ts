@@ -25,6 +25,7 @@ import {
 import type { ChatResponse, ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
+import { appendDirectiveSteeringStage } from "./directiveTracePresenter.js";
 
 export const getChatTurnRoute = (session: PreparedSession): ChatRoute => {
   if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
@@ -87,21 +88,24 @@ export class ChatTurnLifecycle {
         retrievalInvoked: route.type === "retrieval",
       },
     });
-    const activityTrace = this.activityTracePresenter.appendAnswerOutcome({
-      trace: input.session.retrieval.trace,
-      summary: activitySummary,
-      outcome: {
-        answer: input.presentation.answer,
-        stream: input.stream,
-        hadContexts: input.session.retrieval.contexts.length > 0,
-        retrievalSkipped: input.session.retrieval.diagnostics.retrievalSkipped,
-        durationMs: Date.now() - input.answerStartedAt,
-        answerOutcome: input.presentation.answerOutcome,
-        skillName: skillTurnOutcome.skillName,
-        skillOutcome: skillTurnOutcome.outcome,
-        skillStatus: skillTurnOutcome.status,
-      },
-    });
+    const activityTrace = appendDirectiveSteeringStage(
+      this.activityTracePresenter.appendAnswerOutcome({
+        trace: input.session.retrieval.trace,
+        summary: activitySummary,
+        outcome: {
+          answer: input.presentation.answer,
+          stream: input.stream,
+          hadContexts: input.session.retrieval.contexts.length > 0,
+          retrievalSkipped: input.session.retrieval.diagnostics.retrievalSkipped,
+          durationMs: Date.now() - input.answerStartedAt,
+          answerOutcome: input.presentation.answerOutcome,
+          skillName: skillTurnOutcome.skillName,
+          skillOutcome: skillTurnOutcome.outcome,
+          skillStatus: skillTurnOutcome.status,
+        },
+      }),
+      input.session.directiveSteering,
+    );
     const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
 
     const assistantMessage = await this.messageRepository.create({

@@ -90,6 +90,8 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
          source_id,
          document_id,
          document_revision,
+         conversation_id,
+         message_id,
          job_id,
          surface,
          operation,
@@ -107,7 +109,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
          error_code,
          occurred_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'embedding', 'embedding', $9, $10, $11, $12, $13, $14, 0, $15, $16, $17, $18, $19, $20::timestamptz)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 0, $19, $20, $21, $22, $23, $24::timestamptz)
        ON CONFLICT (idempotency_key) DO NOTHING
        RETURNING id`,
         [
@@ -116,9 +118,13 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
           accountId,
           event.workspaceId,
           event.sourceId ?? null,
-          event.documentId,
-          event.documentRevision,
+          event.documentId ?? null,
+          event.documentRevision ?? null,
+          event.conversationId ?? null,
+          event.messageId ?? null,
           event.jobId ?? null,
+          event.surface ?? "embedding",
+          event.operation ?? "embedding",
           event.provider,
           event.model,
           event.inputTokens ?? 0,
@@ -140,6 +146,13 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
       const insertedId = inserted[0].id;
 
       if (event.chunks && event.chunks.length > 0) {
+        if (!event.documentId || event.documentRevision === null || event.documentRevision === undefined) {
+          this.logger?.warn(
+            { workspaceId: event.workspaceId, idempotencyKey: event.idempotencyKey },
+            "Embedding usage event included chunk items without document lineage",
+          );
+          return true;
+        }
         await this.insertEmbeddingItems(client, {
           usageEventId: insertedId,
           documentId: event.documentId,
@@ -153,7 +166,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
 
     if (inserted && accountId && event.status === "succeeded") {
       await this.upsertDailyRollupBestEffort(accountId, occurredAt, {
-        operation: "embedding",
+        operation: event.operation ?? "embedding",
         provider: event.provider,
         model: event.model,
         inputTokens: event.inputTokens ?? 0,

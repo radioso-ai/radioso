@@ -2238,4 +2238,97 @@ describe("chat retrieval domain", () => {
       }),
     ]);
   });
+
+  it("passes request-scoped usage lineage to retrieval interpretation and answer generation", async () => {
+    const interpretationInputs: unknown[] = [];
+    const answerInputs: unknown[] = [];
+    const service = new RetrievalAnswerService({
+      retrievalPipeline: {
+        async interpret(input: unknown) {
+          interpretationInputs.push(input);
+          return {
+            interpretation: {
+              result: {
+                responseIntent: "retrieval",
+              },
+            },
+          };
+        },
+        async runInterpreted() {
+          return {
+            rewrittenQuery: "pricing",
+            contexts: [
+              {
+                chunkId: "chunk-1",
+                documentId: "doc-1",
+                title: "Pricing",
+                content: "Pricing is documented.",
+              },
+            ],
+            systemPrompt: "system",
+            prompt: "prompt",
+            diagnostics: {
+              rewriteStatus: "skipped",
+              rerankStatus: "skipped",
+              originalCandidateCount: 1,
+              rewrittenCandidateCount: 0,
+              lexicalCandidateCount: 1,
+              normalizedCandidateCount: 1,
+              finalContextCount: 1,
+              candidateFallbackApplied: false,
+              fallbackApplied: false,
+              parsedQuery: {
+                semanticQuery: "pricing",
+                lexicalQuery: "pricing",
+                constraints: [],
+              },
+            },
+            trace: {
+              traceId: "trace-1",
+              startedAt: new Date().toISOString(),
+              stages: [],
+              links: [],
+            },
+            responseSettings: {
+              citationDisplayEnabled: true,
+            },
+          };
+        },
+      },
+      chatGateway: {
+        async answer(input: unknown) {
+          answerInputs.push(input);
+          return "Pricing is documented.";
+        },
+      },
+    } as never);
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      requestId: "request-1",
+      query: "pricing?",
+    });
+
+    expect(interpretationInputs[0]).toMatchObject({
+      workspaceId: "workspace-1",
+      usageContext: {
+        accountId: "account-1",
+        workspaceId: "workspace-1",
+        requestId: "request-1",
+        surface: "retrieval",
+        attemptKey: "request-1",
+      },
+    });
+    expect(answerInputs[0]).toMatchObject({
+      usageContext: {
+        accountId: "account-1",
+        workspaceId: "workspace-1",
+        requestId: "request-1",
+        surface: "retrieval",
+        operation: "grounded_answer",
+        attemptKey: "answer",
+      },
+    });
+  });
 });

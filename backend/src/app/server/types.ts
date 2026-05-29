@@ -59,7 +59,7 @@ import type { DocumentSourceRepositoryPort } from "../../db/repositories/documen
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import type { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
-import type { TextGenerationClient } from "../../shared/infra/llm/providerTypes.js";
+import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
 import type { EmailService } from "../../modules/mail/public.js";
 import type {
   EvalCaseService,
@@ -134,7 +134,7 @@ export interface AppDependencies {
   connectorRegistry: ConnectorRegistry;
   connectorIngestionPort: ConnectorIngestionPort;
   connectorDb: Database;
-  chatTextGenerationClient: TextGenerationClient;
+  chatInferencePipeline: ModelInferencePipeline;
   crawlerProvider: {
     fetchPageWithScreenshot(url: string, options?: {
       signal?: AbortSignal;

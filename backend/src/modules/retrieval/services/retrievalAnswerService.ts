@@ -37,13 +37,22 @@ export class RetrievalAnswerService {
   async answer(input: RetrievalAnswerRequest): Promise<RetrievalAnswerResult> {
     const history = this.buildContextMessages(input);
     const executionSurface = input.executionSurface ?? "retrieval";
+    const requestId = input.requestId ?? randomUUID();
+    const usageSurface = executionSurface === "mcp_capability" ? "mcp_capability" : "retrieval";
+    const usageContext = {
+      accountId: input.accountId ?? null,
+      workspaceId: input.workspaceId,
+      requestId,
+      surface: usageSurface,
+      attemptKey: requestId,
+    } as const;
     const execution = {
       surface: executionSurface,
       path: executionSurface === "mcp_capability" ? "mcp_grounded_answer" : "retrieval_answer",
       retrievalInvoked: true,
     } as const;
     try {
-      return await this.runAnswer(input, history, execution);
+      return await this.runAnswer(input, history, execution, usageContext);
     } catch (error) {
       await this.recordAuditFailure(input, execution, error);
       throw error;
@@ -54,6 +63,13 @@ export class RetrievalAnswerService {
     input: RetrievalAnswerRequest,
     history: MessageRecord[],
     execution: { surface: "retrieval" | "mcp_capability"; path: "retrieval_answer" | "mcp_grounded_answer"; retrievalInvoked: true },
+    usageContext: {
+      accountId: string | null;
+      workspaceId: string;
+      requestId: string;
+      surface: "retrieval" | "mcp_capability";
+      attemptKey: string;
+    },
   ): Promise<RetrievalAnswerResult> {
     const interpretation = await this.dependencies.retrievalPipeline.interpret({
       workspaceId: input.workspaceId,
@@ -62,6 +78,7 @@ export class RetrievalAnswerService {
       responseIdentity: null,
       metadataFilter: input.metadataFilter,
       execution,
+      usageContext,
     });
     const responseIntent = interpretation.interpretation.result.responseIntent;
     if (responseIntent && responseIntent !== RESPONSE_INTENT.RETRIEVAL) {
@@ -90,6 +107,11 @@ export class RetrievalAnswerService {
         history,
         systemPrompt: retrieval.systemPrompt,
         prompt: retrieval.prompt,
+        usageContext: {
+          ...usageContext,
+          operation: "grounded_answer",
+          attemptKey: "answer",
+        },
       })).trim();
       const evidence = retrieval.contexts.map((context) => ({
         documentId: context.documentId,

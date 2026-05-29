@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { ChatGatewayLlmJudge } from "../../src/modules/eval/services/evalJudge.js";
-import { EvalUsageMeter } from "../../src/modules/eval/services/evalUsageMeter.js";
 import { RetrievalPipelineEvalRunner } from "../../src/modules/eval/services/retrievalPipelineEvalRunner.js";
 import type { LlmCapabilityResolver } from "../../src/shared/infra/llm/capabilityResolver.js";
 import type { ChatGateway } from "../../src/modules/chat/contracts/index.js";
-import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
+import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 
 const fixedPipelineResult = {
   rewrittenQuery: "q",
@@ -30,10 +29,22 @@ const buildPipeline = () => ({
   async runWithoutRetrieval() { return fixedPipelineResult; },
 });
 
-const buildChatGateway = (answerText: string): ChatGateway => ({
-  async answer() { return answerText; },
-  async *streamAnswer() { yield answerText; },
-});
+const buildChatGateway = (answerText: string): { gateway: ChatGateway; calls: ChatGatewayInput[] } => {
+  const calls: ChatGatewayInput[] = [];
+  return {
+    calls,
+    gateway: {
+      async answer(input) {
+        calls.push(input);
+        return answerText;
+      },
+      async *streamAnswer(input) {
+        calls.push(input);
+        yield answerText;
+      },
+    },
+  };
+};
 
 const buildResolver = (): LlmCapabilityResolver => ({
   async resolve() {
@@ -65,23 +76,12 @@ const buildSettingsService = () => ({
   async updateForWorkspace() { throw new Error("not implemented in test"); },
 }) as any;
 
-const buildRecorder = () => {
-  const events: ModelUsageEvent[] = [];
-  const recorder: UsageEventRecorder = {
-    async recordEmbedding() {},
-    async recordModelCall(event) { events.push(event); },
-  };
-  return { recorder, events };
-};
-
 describe("eval LLM-call usage recording end-to-end", () => {
-  it("records one usage event per full_assistant answer", async () => {
-    const { recorder, events } = buildRecorder();
-    const meter = new EvalUsageMeter(recorder, buildResolver());
+  it("threads eval usage context through the full_assistant answer gateway call", async () => {
+    const chat = buildChatGateway("the answer");
     const runner = new RetrievalPipelineEvalRunner(
       buildPipeline() as never,
-      buildChatGateway("the answer"),
-      meter,
+      chat.gateway,
       buildResolver(),
       buildSettingsService(),
     );
@@ -94,20 +94,18 @@ describe("eval LLM-call usage recording end-to-end", () => {
       history: [],
     });
 
-    expect(events).toHaveLength(1);
-    expect(events[0]!.surface).toBe("eval");
-    expect(events[0]!.operation).toBe("full_assistant_answer");
-    expect(events[0]!.status).toBe("succeeded");
-    expect(events[0]!.workspaceId).toBe("ws-1");
-    expect(events[0]!.accountId).toBe("acc-1");
-    expect(events[0]!.provider).toBe("openai");
-    expect(events[0]!.model).toBe("gpt-4o-mini");
+    expect(chat.calls[0]!.usageContext).toEqual({
+      accountId: "acc-1",
+      workspaceId: "ws-1",
+      requestId: "run-1",
+      surface: "eval",
+      operation: "full_assistant",
+      attemptKey: "answer",
+    });
     expect(result.resolvedModel).toEqual({ provider: "openai", model: "gpt-4o-mini" });
   });
 
   it("normalizes generated citation anchors into eval answer artifacts", async () => {
-    const { recorder } = buildRecorder();
-    const meter = new EvalUsageMeter(recorder, buildResolver());
     const context = {
       chunkId: "chunk-1",
       documentId: "doc-1",
@@ -128,6 +126,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       ...fixedPipelineResult,
       contexts: [context],
     };
+    const chat = buildChatGateway("Refunds are available within 30 days[[1]].");
     const runner = new RetrievalPipelineEvalRunner(
       {
         async run() { return pipelineResult as never; },
@@ -135,8 +134,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
         async runInterpreted() { return pipelineResult as never; },
         async runWithoutRetrieval() { return pipelineResult as never; },
       },
-      buildChatGateway("Refunds are available within 30 days[[1]]."),
-      meter,
+      chat.gateway,
       buildResolver(),
       buildSettingsService(),
     );
@@ -163,17 +161,18 @@ describe("eval LLM-call usage recording end-to-end", () => {
     ]);
   });
 
-  it("still records usage when the chat gateway throws", async () => {
-    const { recorder, events } = buildRecorder();
-    const meter = new EvalUsageMeter(recorder, buildResolver());
+  it("propagates chat gateway failures after passing eval usage context", async () => {
+    const calls: ChatGatewayInput[] = [];
     const failingGateway: ChatGateway = {
-      async answer() { throw new Error("rate limited"); },
+      async answer(input) {
+        calls.push(input);
+        throw new Error("rate limited");
+      },
       async *streamAnswer() {},
     };
     const runner = new RetrievalPipelineEvalRunner(
       buildPipeline() as never,
       failingGateway,
-      meter,
       buildResolver(),
       buildSettingsService(),
     );
@@ -187,18 +186,12 @@ describe("eval LLM-call usage recording end-to-end", () => {
       }),
     ).rejects.toThrow(/rate limited/);
 
-    expect(events).toHaveLength(1);
-    expect(events[0]!.status).toBe("failed");
-    expect(events[0]!.errorCode).toContain("rate limited");
+    expect(calls[0]!.usageContext.operation).toBe("full_assistant");
   });
 
-  it("records one usage event per llm_judge call", async () => {
-    const { recorder, events } = buildRecorder();
-    const meter = new EvalUsageMeter(recorder, buildResolver());
-    const judge = new ChatGatewayLlmJudge(
-      buildChatGateway('{"verdict":"pass","reason":"ok"}'),
-      meter,
-    );
+  it("threads eval usage context through the llm_judge gateway call", async () => {
+    const chat = buildChatGateway('{"verdict":"pass","reason":"ok"}');
+    const judge = new ChatGatewayLlmJudge(chat.gateway);
 
     const verdict = await judge.judge({
       workspaceId: "ws-1",
@@ -211,8 +204,13 @@ describe("eval LLM-call usage recording end-to-end", () => {
     });
 
     expect(verdict.status).toBe("pass");
-    expect(events).toHaveLength(1);
-    expect(events[0]!.operation).toBe("llm_judge");
-    expect(events[0]!.idempotencyKey).toBe("eval:run:run-1:llm_judge:assertion-2");
+    expect(chat.calls[0]!.usageContext).toEqual({
+      accountId: "acc-1",
+      workspaceId: "ws-1",
+      requestId: "run-1",
+      surface: "eval",
+      operation: "llm_judge",
+      attemptKey: "assertion-2",
+    });
   });
 });

@@ -88,6 +88,7 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
       metadataFilter: input.request.metadataFilter,
       similarityThreshold: settings.similarityThreshold,
       embeddingModel: ingestionSettings?.embeddingModel,
+      usageContext: input.request.usageContext,
     });
 
     const contexts: FinalPromptContext[] = runResult.selectedChunks.map(toFinalPromptContext);

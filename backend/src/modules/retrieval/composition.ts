@@ -3,6 +3,7 @@ import type { Database } from "../../shared/infra/database.js";
 import type { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
+import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import { CandidatePreparationService } from "./services/candidatePreparationService.js";
 import { ConversationContextService } from "./services/conversationContextService.js";
 import { EmbeddingService } from "./services/embeddingService.js";
@@ -107,6 +108,7 @@ export const createDefaultRetrievalServices = (input: {
   retrievalSettingsService: RetrievalSettingsService;
   telemetryService: TelemetryService;
   ingestionSettingsService?: IngestionSettingsService;
+  usageEventRecorder?: UsageEventRecorder;
 }) => {
   const retrievalPipeline = new RetrievalPipelineService(
     input.retrievalSettingsService,
@@ -114,10 +116,13 @@ export const createDefaultRetrievalServices = (input: {
     new PgVectorSearch(input.database),
     new PgLexicalSearch(input.database),
     new ConversationContextService(),
-    new QueryRewriteService(input.llmRegistry.createRewriteGateway(), input.llmRegistry.createTriggerAnalysisGateway()),
+    new QueryRewriteService(
+      input.llmRegistry.createRewriteGateway(input.usageEventRecorder),
+      input.llmRegistry.createTriggerAnalysisGateway(input.usageEventRecorder),
+    ),
     new CandidatePreparationService(),
     undefined,
-    new RerankService(input.llmRegistry.createRerankGateway(), input.logger),
+    new RerankService(input.llmRegistry.createRerankGateway(input.usageEventRecorder), input.logger),
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(input.telemetryService),

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { ModelCallUsageContext } from "../../../../shared/domain/modelCallUsageContext.js";
 import type { AgentTool } from "../../../../shared/agent-runtime/index.js";
 import type { RetrievalSourceFilter } from "../../domain/retrievalSourceFilter.js";
 import type { VectorSearchPort } from "../../domain/vectorSearch.js";
@@ -19,6 +20,7 @@ export interface SemanticSearchToolDeps {
   readonly embeddingModel?: string;
   readonly similarityThreshold?: number;
   readonly snippetChars?: number;
+  readonly usageContext?: Omit<ModelCallUsageContext, "operation">;
   /**
    * The caller-supplied metadata filter from the retrieval request. Always
    * applied — the model cannot widen this constraint. If the model also
@@ -75,9 +77,18 @@ export const createSemanticSearchTool = (
     "Find chunks semantically similar to a query. Returns short snippets, not full bodies. Use fetch_chunk to read a chunk in full.",
   inputSchema,
   outputSchema,
-  async invoke(input) {
+  async invoke(input, ctx) {
     const topK = input.topK ?? DEFAULT_TOP_K;
-    const [queryEmbedding] = await deps.embeddings.embedTexts([input.query], { model: deps.embeddingModel });
+    const [queryEmbedding] = await deps.embeddings.embedTexts([input.query], {
+      model: deps.embeddingModel,
+      usageContext: deps.usageContext
+        ? {
+            ...deps.usageContext,
+            operation: "query_embedding",
+            attemptKey: `semantic_search:${ctx.stepIndex}:${ctx.callId}`,
+          }
+        : undefined,
+    });
     if (!queryEmbedding) {
       return { results: [] };
     }

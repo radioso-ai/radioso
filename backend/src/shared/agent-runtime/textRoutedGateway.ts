@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { z, type ZodTypeAny } from "zod";
 
-import type { TextGenerationClient } from "../infra/llm/providerTypes.js";
+import type { ModelCallUsageContext } from "../domain/modelCallUsageContext.js";
+import type { ModelInferencePipeline } from "../infra/llm/modelInferencePipeline.js";
 import type {
   ModelToolCall,
   ModelToolCallRequest,
@@ -23,8 +25,8 @@ export interface TextRoutedToolCallingGatewayOptions {
 }
 
 /**
- * Provider-agnostic `ModelToolCallingGateway` that routes through any
- * `TextGenerationClient`. The model is asked to respond with a single JSON
+ * Provider-agnostic `ModelToolCallingGateway` that routes through the shared
+ * inference pipeline. The model is asked to respond with a single JSON
  * object describing the assistant message and optional tool calls; the gateway
  * parses that response into the runtime's structured format.
  *
@@ -36,7 +38,7 @@ export interface TextRoutedToolCallingGatewayOptions {
  */
 export class TextRoutedToolCallingGateway implements ModelToolCallingGateway {
   constructor(
-    private readonly client: TextGenerationClient,
+    private readonly client: ModelInferencePipeline,
     private readonly options: TextRoutedToolCallingGatewayOptions = {},
   ) {}
 
@@ -44,6 +46,11 @@ export class TextRoutedToolCallingGateway implements ModelToolCallingGateway {
     const systemPrompt = buildSystemPrompt(input);
     const prompt = buildPrompt(input);
     const result = await this.client.complete({
+      operation: {
+        ...(input.usageContext ?? fallbackUsageContext()),
+        operation: "agent_step",
+        attemptKey: `agent_step:${input.stepIndex}`,
+      },
       prompt,
       systemPrompt,
       temperature: this.options.temperature,
@@ -52,6 +59,13 @@ export class TextRoutedToolCallingGateway implements ModelToolCallingGateway {
     return parseModelResponse(result.text);
   }
 }
+
+const fallbackUsageContext = (): Omit<ModelCallUsageContext, "operation"> => ({
+  workspaceId: "unknown",
+  requestId: randomUUID(),
+  surface: "agent_runtime",
+  attemptKey: "agent_step",
+});
 
 const buildSystemPrompt = (input: ModelToolCallRequest): string => {
   const toolCatalog = input.toolSchemas.map(formatToolForCatalog).join("\n");

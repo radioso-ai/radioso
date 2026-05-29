@@ -1,6 +1,7 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
-import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.js";
 import type {
   StructuredRewriteResult,
@@ -29,6 +30,7 @@ export interface TriggerAnalysisGatewayInput {
   contextMessages: MessageRecord[];
   rules: RetrievalMetadataRule[];
   workspaceContext?: LlmCapabilityResolveInput;
+  usageContext: ModelCallUsageContext;
 }
 
 export interface QueryRewriteGatewayInput {
@@ -38,6 +40,7 @@ export interface QueryRewriteGatewayInput {
   lexicalRewriteInstructions?: string;
   answerScopeReference?: string;
   workspaceContext?: LlmCapabilityResolveInput;
+  usageContext: ModelCallUsageContext;
 }
 
 export interface QueryRewriteGateway {
@@ -49,10 +52,11 @@ export interface TriggerAnalysisGateway {
 }
 
 export class ModelTriggerAnalysisGateway implements TriggerAnalysisGateway {
-  constructor(private readonly client: TextGenerationClient) {}
+  constructor(private readonly inference: ModelInferencePipeline) {}
 
   async analyze(input: TriggerAnalysisGatewayInput): Promise<TriggerAnalysisResult> {
-    const { text } = await this.client.complete({
+    const { text } = await this.inference.complete({
+      operation: input.usageContext,
       systemPrompt: getTriggerAnalysisSystemPrompt(),
       prompt: buildTriggerAnalysisPrompt({
         query: input.query,
@@ -67,10 +71,11 @@ export class ModelTriggerAnalysisGateway implements TriggerAnalysisGateway {
 }
 
 export class ModelQueryRewriteGateway implements QueryRewriteGateway {
-  constructor(private readonly client: TextGenerationClient) {}
+  constructor(private readonly inference: ModelInferencePipeline) {}
 
   async rewrite(input: QueryRewriteGatewayInput): Promise<StructuredRewriteResult> {
-    const { text } = await this.client.complete({
+    const { text } = await this.inference.complete({
+      operation: input.usageContext,
       prompt: buildQueryRewritePrompt({
         context: formatConversationContext(input.contextMessages),
         semanticRewriteInstructions: input.semanticRewriteInstructions,

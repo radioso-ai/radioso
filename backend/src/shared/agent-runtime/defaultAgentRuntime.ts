@@ -275,7 +275,11 @@ const invokeTool = async (
 
   let output: unknown;
   try {
-    output = await tool.invoke(input as never, { signal: ctx.signal, stepIndex: state.stepIndex });
+    output = await tool.invoke(input as never, {
+      signal: ctx.signal,
+      stepIndex: state.stepIndex,
+      callId: call.callId,
+    });
   } catch (err) {
     const latencyMs = ctx.now() - invokedAt;
     const message = err instanceof Error ? err.message : String(err);
@@ -378,6 +382,7 @@ const runLoop = async (ctx: RunContext): Promise<AgentRunResult> => {
         transcript: state.transcript,
         toolSchemas,
         signal: ctx.signal,
+        usageContext: ctx.options.usageContext,
       });
     } catch (err) {
       if (ctx.signal.aborted) {

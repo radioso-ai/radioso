@@ -124,6 +124,14 @@ export class ChatBootstrapService {
         ?? (await this.chatGateway.answer({
             query: "",
             history: [],
+            usageContext: {
+              accountId: input.accountId ?? null,
+              workspaceId: input.workspaceId,
+              requestId: `bootstrap:${agent.id}:${fingerprint}`,
+              surface: "assistant",
+              operation: "bootstrap_greeting",
+              attemptKey: fingerprint,
+            },
             prompt: buildBootstrapPrompt({
               assistantName: agent.name,
               customInstruction: agent.customInstruction,

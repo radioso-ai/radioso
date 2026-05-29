@@ -1,15 +1,8 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 
-export interface ChatGatewayUsageContext {
-  accountId?: string | null;
-  workspaceId: string;
-  conversationId: string;
-  messageId: string;
-  surface: string;
-  operation: string;
-  attemptKey: string;
-}
+export type ChatGatewayUsageContext = ModelCallUsageContext;
 
 export interface ChatGatewayInput {
   query: string;
@@ -22,7 +15,7 @@ export interface ChatGatewayInput {
    * the gateway uses the env-default chat client.
    */
   workspaceContext?: LlmCapabilityResolveInput;
-  usageContext?: ChatGatewayUsageContext;
+  usageContext: ChatGatewayUsageContext;
 }
 
 export interface ChatGateway {

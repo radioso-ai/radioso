@@ -1,0 +1,133 @@
+import type { ModelCallUsageContext } from "../../domain/modelCallUsageContext.js";
+import {
+  NoopUsageEventRecorder,
+  type UsageEventRecorder,
+  type UsageEventStatus,
+} from "../../domain/usageEventRecorder.js";
+import type {
+  EmbeddingClient,
+  EmbeddingResult,
+  LlmProviderMetadata,
+  ProviderUsage,
+} from "./providerTypes.js";
+
+export interface EmbeddingUsageItem {
+  chunkIndex: number;
+  chunkId?: string | null;
+  contentBytes: number;
+  estimatedTokens?: number | null;
+}
+
+export interface EmbeddingInferenceRequest {
+  texts: string[];
+  model?: string;
+  operation: ModelCallUsageContext;
+  sourceId?: string | null;
+  documentId?: string | null;
+  documentRevision?: number | null;
+  jobId?: string | null;
+  items?: EmbeddingUsageItem[];
+}
+
+export interface EmbeddingInferencePipeline {
+  readonly metadata: LlmProviderMetadata;
+  embedTexts(input: EmbeddingInferenceRequest): Promise<EmbeddingResult>;
+}
+
+const estimateTokens = (bytes: number): number => Math.max(1, Math.ceil(bytes / 4));
+
+const usageErrorCode = (error: unknown): string => {
+  if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
+    return error.code;
+  }
+  if (error instanceof Error && error.message) {
+    return error.message.slice(0, 120);
+  }
+  return "embedding_failed";
+};
+
+const buildUsageIdempotencyKey = (
+  context: ModelCallUsageContext,
+  provider: string,
+  model: string,
+  status: UsageEventStatus,
+): string => [
+  "embedding",
+  context.surface,
+  context.operation,
+  context.conversationId ?? `request:${context.requestId ?? "none"}`,
+  context.messageId ?? "none",
+  context.attemptKey,
+  provider,
+  model,
+  status,
+].join(":");
+
+export class EmbeddingInferencePipelineService implements EmbeddingInferencePipeline {
+  readonly metadata;
+
+  constructor(
+    private readonly delegate: EmbeddingClient,
+    private readonly usageEventRecorder: UsageEventRecorder = new NoopUsageEventRecorder(),
+    private readonly identifyModel?: (model: string) => LlmProviderMetadata,
+  ) {
+    this.metadata = delegate.metadata;
+  }
+
+  async embedTexts(input: EmbeddingInferenceRequest): Promise<EmbeddingResult> {
+    try {
+      const result = await this.delegate.embedTexts(input.texts, { model: input.model });
+      await this.recordUsage(input, "succeeded", result.usage);
+      return result;
+    } catch (error) {
+      await this.recordUsage(input, "failed", undefined, error);
+      throw error;
+    }
+  }
+
+  private async recordUsage(
+    input: EmbeddingInferenceRequest,
+    status: UsageEventStatus,
+    providerUsage?: ProviderUsage,
+    error?: unknown,
+  ): Promise<void> {
+    const model = input.model ?? this.delegate.metadata.model;
+    const identity = this.identifyModel?.(model) ?? {
+      ...this.delegate.metadata,
+      model,
+    };
+    const inputBytes = input.texts.reduce((sum, text) => sum + Buffer.byteLength(text, "utf8"), 0);
+    const estimatedInputTokens = input.items?.reduce(
+      (sum, item) => sum + (item.estimatedTokens ?? estimateTokens(item.contentBytes)),
+      0,
+    ) ?? estimateTokens(inputBytes);
+    const inputTokens = providerUsage?.inputTokens ?? providerUsage?.totalTokens ?? estimatedInputTokens;
+
+    await this.usageEventRecorder.recordEmbedding({
+      idempotencyKey: buildUsageIdempotencyKey(input.operation, identity.provider, identity.model, status),
+      accountId: input.operation.accountId ?? null,
+      workspaceId: input.operation.workspaceId,
+      conversationId: input.operation.conversationId ?? null,
+      messageId: input.operation.messageId ?? null,
+      surface: input.operation.surface,
+      operation: input.operation.operation,
+      sourceId: input.sourceId ?? null,
+      documentId: input.documentId ?? null,
+      documentRevision: input.documentRevision ?? null,
+      jobId: input.jobId ?? null,
+      provider: identity.provider,
+      model: identity.model,
+      inputTokens,
+      outputTokens: providerUsage?.outputTokens ?? null,
+      inputBytes,
+      vectorCount: input.texts.length,
+      status,
+      usageQuality: providerUsage?.quality ?? "estimated",
+      providerRequestId: providerUsage?.providerRequestId ?? null,
+      errorCode: error ? usageErrorCode(error) : null,
+      chunks: input.items,
+    }).catch(() => {
+      // Usage accounting is observational; embedding results remain authoritative.
+    });
+  }
+}

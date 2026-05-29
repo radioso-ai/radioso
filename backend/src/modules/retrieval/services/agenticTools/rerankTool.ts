@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { ModelCallUsageContext } from "../../../../shared/domain/modelCallUsageContext.js";
 import type { AgentTool } from "../../../../shared/agent-runtime/index.js";
 import type { LlmCapabilityResolveInput } from "../../../../shared/infra/llm/workspaceContext.js";
 import type { RetrievalSource, RetrievedCandidate } from "../../domain/retrievalPipelineTypes.js";
@@ -10,6 +11,7 @@ export interface RerankToolDeps {
   readonly rerankGateway: RerankGateway;
   readonly registry: ChunkRegistry;
   readonly workspaceContext?: LlmCapabilityResolveInput;
+  readonly usageContext?: Omit<ModelCallUsageContext, "operation">;
 }
 
 const inputSchema = z.object({
@@ -54,7 +56,7 @@ export const createRerankTool = (deps: RerankToolDeps): AgentTool<RerankInput, R
     "Reorder previously retrieved chunks by relevance to a query. Does not fetch new chunk bodies; operates only on chunks already returned by prior search calls.",
   inputSchema,
   outputSchema,
-  async invoke(input) {
+  async invoke(input, ctx) {
     const resolved = deps.registry.resolve(input.chunkIds);
     const resolvedIds = new Set(resolved.map((chunk) => chunk.chunkId));
     const unknownChunkIds = input.chunkIds.filter((id) => !resolvedIds.has(id));
@@ -68,6 +70,13 @@ export const createRerankTool = (deps: RerankToolDeps): AgentTool<RerankInput, R
       query: input.query,
       contexts: candidates,
       workspaceContext: deps.workspaceContext,
+      usageContext: deps.usageContext
+        ? {
+            ...deps.usageContext,
+            operation: "rerank",
+            attemptKey: `rerank_tool:${ctx.stepIndex}:${ctx.callId}`,
+          }
+        : undefined,
     });
 
     const scoreByChunkId = new Map(scores.map((score) => [score.chunkId, score.relevanceScore]));

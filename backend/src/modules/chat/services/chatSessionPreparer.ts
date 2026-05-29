@@ -99,12 +99,15 @@ export class ChatSessionPreparer {
       inputMetadata: input.inputMetadata,
     });
     const { retrieval, turnRoute } = options.skipRetrieval
-      ? this.prepareDirectOnlyTurn(this.buildPipelineInput(input, agent, history), agent)
+      ? this.prepareDirectOnlyTurn(this.buildPipelineInput(input, agent, history, persistedConversation, userMessage), agent)
       : await this.prepareRetrieval(input, {
           agent,
           conversation: persistedConversation,
           history,
-          retrieval: this.prepareDirectOnlyTurn(this.buildPipelineInput(input, agent, history), agent).retrieval,
+          retrieval: this.prepareDirectOnlyTurn(
+            this.buildPipelineInput(input, agent, history, persistedConversation, userMessage),
+            agent,
+          ).retrieval,
           turnRoute: CHAT_TURN_ROUTE.SOCIAL_ONLY,
           userMessage,
           pageContext: input.pageContext ?? null,
@@ -124,7 +127,7 @@ export class ChatSessionPreparer {
   }
 
   async prepareRetrieval(input: PrepareChatSessionInput, session: PreparedSession): Promise<PreparedSession> {
-    const pipelineInput = this.buildPipelineInput(input, session.agent, session.history);
+    const pipelineInput = this.buildPipelineInput(input, session.agent, session.history, session.conversation, session.userMessage);
     const { retrieval, turnRoute } = isAgentRetrievalEnabled(session.agent)
       ? await this.prepareRetrievalEnabledTurn(pipelineInput)
       : this.prepareDirectOnlyTurn(pipelineInput, session.agent);
@@ -136,7 +139,13 @@ export class ChatSessionPreparer {
     };
   }
 
-  private buildPipelineInput(input: PrepareChatSessionInput, agent: AgentRecord, history: MessageRecord[]): RetrievalPipelineRequest {
+  private buildPipelineInput(
+    input: PrepareChatSessionInput,
+    agent: AgentRecord,
+    history: MessageRecord[],
+    conversation?: ConversationRecord,
+    userMessage?: MessageRecord,
+  ): RetrievalPipelineRequest {
     return {
       workspaceId: input.workspaceId,
       query: input.query,
@@ -150,6 +159,13 @@ export class ChatSessionPreparer {
       responseBehaviorEnabled: true,
       metadataFilter: input.metadataFilter,
       sourceScope: agent.sourceScope,
+      usageContext: {
+        workspaceId: input.workspaceId,
+        conversationId: conversation?.id ?? null,
+        messageId: userMessage?.id ?? null,
+        surface: "assistant",
+        attemptKey: userMessage?.id ?? conversation?.id ?? "chat_turn",
+      },
     };
   }
 

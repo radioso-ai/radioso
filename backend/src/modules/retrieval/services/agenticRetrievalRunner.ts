@@ -8,6 +8,7 @@ import {
   type TraceSink,
 } from "../../../shared/agent-runtime/index.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
+import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { QueryRewritePort } from "../domain/queryRewritePort.js";
 import type { ActivityTrace } from "../domain/retrievalPipelineTypes.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
@@ -51,6 +52,7 @@ export interface AgenticRetrievalRunInput {
    */
   readonly metadataFilter?: Record<string, unknown>;
   readonly workspaceContext?: LlmCapabilityResolveInput;
+  readonly usageContext?: Omit<ModelCallUsageContext, "operation">;
   readonly budgets?: Partial<AgentBudgets>;
   readonly fallbackChunkLimit?: number;
   readonly embeddingModel?: string;
@@ -110,6 +112,7 @@ export class AgenticRetrievalRunner {
         similarityThreshold: input.similarityThreshold,
         snippetChars: input.snippetChars,
         callerMetadataFilter: input.metadataFilter,
+        usageContext: input.usageContext,
       }) as AgentTool,
       createLexicalSearchTool({
         workspaceId: input.workspaceId,
@@ -122,11 +125,13 @@ export class AgenticRetrievalRunner {
       createRewriteQueryTool({
         queryRewrite: this.deps.queryRewrite,
         workspaceContext: input.workspaceContext,
+        usageContext: input.usageContext,
       }) as AgentTool,
       createRerankTool({
         rerankGateway: this.deps.rerankGateway,
         registry,
         workspaceContext: input.workspaceContext,
+        usageContext: input.usageContext,
       }) as AgentTool,
       createFetchChunkTool({ registry }) as AgentTool,
       createFinalizeTool({
@@ -156,6 +161,7 @@ export class AgenticRetrievalRunner {
         signal: input.signal,
         traceSink: sink,
         now: input.now,
+        usageContext: input.usageContext,
       },
     );
 

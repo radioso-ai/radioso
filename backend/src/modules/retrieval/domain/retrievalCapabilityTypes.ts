@@ -10,6 +10,8 @@ export interface RetrievalConversationContext {
 
 export interface RetrievalSearchRequest {
   workspaceId: string;
+  accountId?: string | null;
+  requestId?: string | null;
   query: string;
   metadataFilter?: Record<string, unknown>;
   topK?: number;
@@ -36,6 +38,8 @@ export interface RetrievalSearchResult {
 
 export interface RetrievalAnswerRequest {
   workspaceId: string;
+  accountId?: string | null;
+  requestId?: string | null;
   query: string;
   conversationContext?: RetrievalConversationContext;
   metadataFilter?: Record<string, unknown>;

@@ -1,5 +1,7 @@
 import type { ZodType } from "zod";
 
+import type { ModelCallUsageContext } from "../domain/modelCallUsageContext.js";
+
 export type TerminatedReason =
   | "completed"
   | "step_budget_exhausted"
@@ -12,6 +14,7 @@ export type TerminatedReason =
 export interface AgentToolContext {
   readonly signal: AbortSignal;
   readonly stepIndex: number;
+  readonly callId: string;
 }
 
 export interface AgentTool<TInput = unknown, TOutput = unknown> {
@@ -133,6 +136,7 @@ export interface ModelToolCallRequest {
   readonly transcript: ReadonlyArray<ModelTranscriptEntry>;
   readonly toolSchemas: ReadonlyArray<ToolSchema>;
   readonly signal: AbortSignal;
+  readonly usageContext?: Omit<ModelCallUsageContext, "operation">;
 }
 
 export interface ModelToolCallResponse {
@@ -149,6 +153,7 @@ export interface AgentRunOptions {
   readonly traceSink?: TraceSink;
   readonly now?: () => number;
   readonly clampBudgets?: boolean;
+  readonly usageContext?: Omit<ModelCallUsageContext, "operation">;
   /**
    * Timer hooks for the wall-time deadline. Default to global
    * setTimeout/clearTimeout. Injectable so tests can drive the deadline

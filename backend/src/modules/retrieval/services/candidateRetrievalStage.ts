@@ -27,6 +27,15 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     const embeddingModel = ingestionSettings?.embeddingModel;
     const embeddings = await this.embeddingService.embedChunks(uniqueSemanticQueries, {
       model: embeddingModel,
+      usageContext: {
+        ...(input.request.usageContext ?? {
+          workspaceId: input.request.workspaceId,
+          surface: "retrieval",
+          attemptKey: "query_embedding",
+        }),
+        operation: "query_embedding",
+        attemptKey: "query_embedding",
+      },
     });
     const embeddingBySemanticQuery = new Map(
       uniqueSemanticQueries.map((query, index) => [query, embeddings[index] ?? []] as const),

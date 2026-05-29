@@ -1,4 +1,5 @@
 import type { MessageRecord } from "../../db/repositories/messageRepository.js";
+import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
 import type { ResponseIdentity } from "../../shared/domain/responseIdentity.js";
 import type { RetrievalSettingsRecord } from "../settings/contracts/retrieval.js";
 import type {
@@ -146,6 +147,7 @@ export interface RetrievalPipelineRequest {
   responseLanguagePolicy?: ResponseLanguagePolicy;
   metadataFilter?: Record<string, unknown>;
   sourceScope?: RetrievalSourceScope;
+  usageContext?: Omit<ModelCallUsageContext, "operation">;
   // When set, the retrieval pipeline runs against these settings instead of
   // reading the workspace's persisted retrieval settings. The override is
   // applied as a shallow merge over the workspace record and MUST NOT cause

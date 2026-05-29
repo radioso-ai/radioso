@@ -447,13 +447,6 @@ export const buildDocumentServices = (input: {
     chunkingStrategyRegistry,
     documentSourceContentService,
     logger,
-    usageEventRecorder,
-    {
-      identifyForModel(model: string) {
-        const metadata = llmRegistry.identifyEmbeddingModel(model);
-        return { provider: metadata.provider, model: metadata.model };
-      },
-    },
   );
   const documentIngestionService = new DocumentIngestionService(
     repositories.documentRepository,
@@ -551,6 +544,7 @@ export const buildRetrievalServices = (input: {
   logger: AppLogger;
   retrievalSettingsService: RetrievalSettingsService;
   telemetryService: TelemetryService;
+  usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
 }) => {
   const retrieval = createDefaultRetrievalServices(input);
   const retrievalPipeline = buildRetrievalAnswerExecutor(retrieval.retrievalPipeline, input);
@@ -578,6 +572,7 @@ const buildRetrievalAnswerExecutor = (
     logger: AppLogger;
     telemetryService: TelemetryService;
     ingestionSettingsService?: IngestionSettingsService;
+    usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   },
 ): RetrievalPipelinePort =>
   new RetrievalAnswerExecutor({
@@ -585,12 +580,12 @@ const buildRetrievalAnswerExecutor = (
     reasoning: () => {
       const systemPrompt = loadPromptTemplate("agentic-retrieval/system.md");
       const runner = new AgenticRetrievalRunner({
-        runtime: new DefaultAgentRuntime({ gateway: input.llmRegistry.createToolCallingGateway() }),
+        runtime: new DefaultAgentRuntime({ gateway: input.llmRegistry.createToolCallingGateway(input.usageEventRecorder) }),
         embeddings: input.embeddingService,
         vectorSearch: new PgVectorSearch(input.database),
         lexicalSearch: new PgLexicalSearch(input.database),
-        queryRewrite: new GatewayQueryRewritePortAdapter(input.llmRegistry.createRewriteGateway()),
-        rerankGateway: input.llmRegistry.createRerankGateway(),
+        queryRewrite: new GatewayQueryRewritePortAdapter(input.llmRegistry.createRewriteGateway(input.usageEventRecorder)),
+        rerankGateway: input.llmRegistry.createRerankGateway(input.usageEventRecorder),
       });
       return new AgenticRetrievalPipelineService({
         deterministic,

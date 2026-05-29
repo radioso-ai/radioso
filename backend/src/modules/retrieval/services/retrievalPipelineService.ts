@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { IngestionSettingsService, RetrievalSettingsService } from "../../settings/contracts/services.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
@@ -258,6 +260,12 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
       ...input,
       responseIdentity: input.responseIdentity ?? null,
       sourceFilter: resolveRetrievalSourceFilter(input.sourceScope),
+      usageContext: input.usageContext ?? {
+        workspaceId: input.workspaceId,
+        requestId: randomUUID(),
+        surface: input.execution?.surface ?? "retrieval",
+        attemptKey: input.execution?.path ?? "pipeline",
+      },
     };
   }
 

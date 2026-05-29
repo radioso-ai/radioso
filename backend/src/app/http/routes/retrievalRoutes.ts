@@ -33,6 +33,9 @@ export const retrievalAnswerSchema = z.object({
 const resolveCapabilitySurface = (header: unknown): Extract<RetrievalExecutionSurface, "retrieval" | "mcp_capability"> =>
   header === "mcp" ? "mcp_capability" : "retrieval";
 
+const resolveRequestId = (requestId: unknown): string | undefined =>
+  typeof requestId === "string" && requestId.length > 0 ? requestId : undefined;
+
 const presentRetrievalSearchResult = <T extends {
   activitySummary: unknown;
   activityTrace: unknown;
@@ -74,9 +77,11 @@ export const createRetrievalRoutes = (dependencies: RetrievalRouteDependencies):
 
   router.post("/search", workspaceSession, requireWorkspacePermission(dependencies, "workspace.retrieval.query"), validateBody(retrievalSearchSchema), async (req, res, next) => {
     try {
-      const { workspaceId } = res.locals as { workspaceId: string };
+      const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
       const result = await dependencies.retrievalSearchService.search({
         workspaceId,
+        accountId: accountId ?? null,
+        requestId: resolveRequestId((req as { id?: unknown }).id),
         query: req.body.query,
         metadataFilter: req.body.metadataFilter,
         topK: req.body.topK,
@@ -90,9 +95,11 @@ export const createRetrievalRoutes = (dependencies: RetrievalRouteDependencies):
 
   router.post("/answer", workspaceSession, requireWorkspacePermission(dependencies, "workspace.retrieval.query"), validateBody(retrievalAnswerSchema), async (req, res, next) => {
     try {
-      const { workspaceId } = res.locals as { workspaceId: string };
+      const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
       const result = await dependencies.retrievalAnswerService.answer({
         workspaceId,
+        accountId: accountId ?? null,
+        requestId: resolveRequestId((req as { id?: unknown }).id),
         query: req.body.query,
         conversationContext: req.body.conversationContext,
         metadataFilter: req.body.metadataFilter,

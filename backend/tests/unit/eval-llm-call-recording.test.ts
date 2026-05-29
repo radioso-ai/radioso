@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { ChatGatewayLlmJudge } from "../../src/modules/eval/services/evalJudge.js";
 import { EvalUsageMeter } from "../../src/modules/eval/services/evalUsageMeter.js";
 import { RetrievalPipelineEvalRunner } from "../../src/modules/eval/services/retrievalPipelineEvalRunner.js";
+import { AnswerPresentationService } from "../../src/modules/chat/services/answerPresentationService.js";
+import { resolveCitationArtifacts } from "../../src/modules/chat/services/implicitCitationSupport.js";
 import type { LlmCapabilityResolver } from "../../src/shared/infra/llm/capabilityResolver.js";
 import type { ChatGateway } from "../../src/modules/chat/contracts/index.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
@@ -65,6 +67,15 @@ const buildSettingsService = () => ({
   async updateForWorkspace() { throw new Error("not implemented in test"); },
 }) as any;
 
+const buildAnswerPresentation = () => {
+  const answerPresentationService = new AnswerPresentationService();
+  return {
+    normalize: answerPresentationService.normalize.bind(answerPresentationService),
+    present: answerPresentationService.present.bind(answerPresentationService),
+    resolveCitationArtifacts,
+  };
+};
+
 const buildRecorder = () => {
   const events: ModelUsageEvent[] = [];
   const recorder: UsageEventRecorder = {
@@ -84,6 +95,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       meter,
       buildResolver(),
       buildSettingsService(),
+      buildAnswerPresentation(),
     );
 
     const result = await runner.answer({
@@ -139,6 +151,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       meter,
       buildResolver(),
       buildSettingsService(),
+      buildAnswerPresentation(),
     );
 
     const result = await runner.answer({
@@ -176,6 +189,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       meter,
       buildResolver(),
       buildSettingsService(),
+      buildAnswerPresentation(),
     );
 
     await expect(

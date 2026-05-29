@@ -1,8 +1,10 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import { AnswerPresentationService } from "../../chat/composition.js";
 import type { ChatGateway } from "../../chat/contracts/index.js";
-import type { CitationEvidence } from "../../chat/contracts/answerTypes.js";
-import { resolveCitationArtifacts } from "../../chat/retrievalSupport.js";
+import type {
+  CitationEvidence,
+  NormalizedPresentedAnswer,
+  PresentedAnswer,
+} from "../../chat/contracts/answerTypes.js";
 import {
   resolveContextSourceUrl,
   type FinalPromptContext,
@@ -21,6 +23,16 @@ import type { EvalReplayContext, EvalRetrievalRunnerPort } from "./evalRunner.js
 import type { EvalUsageMeter } from "./evalUsageMeter.js";
 
 const UNKNOWN_MODEL = { provider: "unknown", model: "unknown" } as const;
+
+export interface EvalAnswerPresentationPort {
+  normalize(input: { answer: string; citations: CitationEvidence[] }): NormalizedPresentedAnswer;
+  present(input: { answer: string; citations: CitationEvidence[] }): PresentedAnswer;
+  resolveCitationArtifacts(
+    presented: PresentedAnswer,
+    normalized: NormalizedPresentedAnswer,
+    citationEvidence: CitationEvidence[],
+  ): Pick<PresentedAnswer, "citations" | "answerSegments">;
+}
 
 const toCitationEvidence = (contexts: FinalPromptContext[]): CitationEvidence[] =>
   contexts.map((context) => {
@@ -62,7 +74,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     private readonly usageMeter: EvalUsageMeter,
     private readonly capabilityResolver: LlmCapabilityResolver,
     private readonly retrievalSettings: RetrievalSettingsService,
-    private readonly answerPresenter = new AnswerPresentationService(),
+    private readonly answerPresentation: EvalAnswerPresentationPort,
   ) {}
 
   async retrieve(input: {
@@ -177,15 +189,15 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     }
 
     const citationEvidence = toCitationEvidence(pipelineResult.contexts);
-    const normalized = this.answerPresenter.normalize({
+    const normalized = this.answerPresentation.normalize({
       answer: generated,
       citations: citationEvidence,
     });
-    const presented = this.answerPresenter.present({
+    const presented = this.answerPresentation.present({
       answer: generated,
       citations: citationEvidence,
     });
-    const citationArtifacts = resolveCitationArtifacts(presented, normalized, citationEvidence);
+    const citationArtifacts = this.answerPresentation.resolveCitationArtifacts(presented, normalized, citationEvidence);
 
     return {
       chunks: pipelineResult.contexts.map((ctx, index) => ({

@@ -84,6 +84,9 @@ const parseFrame = (frame: string): RadiosoChatStreamEvent | null => {
     return {
       type: "done",
       conversationId: payload.conversationId,
+      ...(typeof payload.assistantMessageId === "string" ? { assistantMessageId: payload.assistantMessageId } : {}),
+      ...(typeof payload.agentId === "string" ? { agentId: payload.agentId } : {}),
+      ...(typeof payload.agentName === "string" ? { agentName: payload.agentName } : {}),
       answer: payload.answer,
       ...(typeof payload.debug === "object" && payload.debug !== null ? { debug: payload.debug } : {}),
       ...(Array.isArray(payload.citations) ? { citations: payload.citations } : {}),

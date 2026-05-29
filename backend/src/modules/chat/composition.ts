@@ -5,6 +5,7 @@ export {
   ChatService,
 } from "./services/chatService.js";
 export { AnswerPresentationService } from "./services/answerPresentationService.js";
+export { resolveCitationArtifacts } from "./services/implicitCitationSupport.js";
 export { createSkillOutcomeCapabilityProvider } from "./services/chatAnswerPresenter.js";
 export type { ChatGateway, ChatStreamEvent } from "./contracts/index.js";
 export { ChatHistoryService } from "./services/chatHistoryService.js";

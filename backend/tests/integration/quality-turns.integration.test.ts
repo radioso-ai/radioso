@@ -1,12 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { Database } from "../../src/shared/infra/database.js";
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
+import { runAllTestMigrations } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -29,18 +27,11 @@ const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integr
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
 describeIfDatabase("quality turns integration", () => {
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const migrationsPath = path.resolve(__dirname, "../../src/db/migrations");
-
   let database: Database;
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
-    const files = (await readdir(migrationsPath)).filter((file) => file.endsWith(".sql")).sort();
-    for (const file of files) {
-      const sql = await readFile(path.join(migrationsPath, file), "utf8");
-      await database.pool.query(sql);
-    }
+    await runAllTestMigrations(database);
   });
 
   afterAll(async () => {

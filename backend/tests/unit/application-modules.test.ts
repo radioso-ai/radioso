@@ -110,8 +110,12 @@ describe("application modules", () => {
     const registry = createApplicationExtensionRegistry();
     const coordinator = new ApplicationModuleCoordinator({ logger, registry });
 
-    const internalExecutor = { execute: async () => ({ answer: "ok" }) };
-    const pipelineExecutor = { execute: async () => ({ answer: "delivered" }) };
+    const internalExecutor = {
+      dispatch: async () => ({ disposition: "settled" as const, outcome: { status: "completed" as const, answer: "ok" } }),
+    };
+    const pipelineExecutor = {
+      dispatch: async () => ({ disposition: "settled" as const, outcome: { status: "completed" as const, answer: "delivered" } }),
+    };
 
     coordinator.apply([
       {

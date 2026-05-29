@@ -9,6 +9,7 @@ import {
 import {
   SkillExecutorRegistry,
   type SkillDefinition,
+  type SkillDispatchResult,
   type SkillExecutorPort,
 } from "../../src/modules/skills/public.js";
 
@@ -96,11 +97,15 @@ const createProfileAdapter = (): ConfiguredSkillIntakeAdapter => ({
 });
 
 const createProfileExecutor = (executions: Array<Record<string, unknown>> = []): SkillExecutorPort => ({
-  async execute(input) {
-    executions.push(input.collected);
+  async dispatch(invocation): Promise<SkillDispatchResult> {
+    executions.push(invocation.collected);
     return {
-      answer: `Profile ${input.collected.access_code} is ready.`,
-      outputs: { profileStatus: "ready" },
+      disposition: "settled",
+      outcome: {
+        status: "completed",
+        answer: `Profile ${invocation.collected.access_code} is ready.`,
+        outputs: { profileStatus: "ready" },
+      },
     };
   },
 });
@@ -363,9 +368,9 @@ describe("configured skill intake provider", () => {
       kind: "internal",
       adapter: "test_profile_collect",
       executor: {
-        async execute(input) {
-          registryCalls.push(input.collected);
-          return { answer: "from registry" };
+        async dispatch(invocation): Promise<SkillDispatchResult> {
+          registryCalls.push(invocation.collected);
+          return { disposition: "settled", outcome: { status: "completed", answer: "from registry" } };
         },
       },
     });
@@ -390,6 +395,48 @@ describe("configured skill intake provider", () => {
 
     await expect(provider.handle(createChatInput("12345"))).rejects.toThrow(
       /No skill executor registered for internal \(adapter=test_profile_collect\)/,
+    );
+  });
+
+  it("rejects a non-completed settled outcome instead of reporting it as completed", async () => {
+    const registry = new SkillExecutorRegistry();
+    registry.register({
+      kind: "internal",
+      adapter: "test_profile_collect",
+      executor: {
+        async dispatch(): Promise<SkillDispatchResult> {
+          return { disposition: "settled", outcome: { status: "failed", answer: "could not look up profile" } };
+        },
+      },
+    });
+    const provider = new ConfiguredSkillIntakeProvider([createProfileAdapter()], { executorRegistry: registry });
+
+    await provider.handle(createChatInput("Start profile setup"));
+    await provider.handle(createChatInput("alex@example.com"));
+
+    await expect(provider.handle(createChatInput("12345"))).rejects.toThrow(
+      /settled with status "failed", which the intake execution path does not support/,
+    );
+  });
+
+  it("rejects a deferred disposition on the synchronous intake path", async () => {
+    const registry = new SkillExecutorRegistry();
+    registry.register({
+      kind: "internal",
+      adapter: "test_profile_collect",
+      executor: {
+        async dispatch(): Promise<SkillDispatchResult> {
+          return { disposition: "deferred", ticket: { ticketId: "profile-1" } };
+        },
+      },
+    });
+    const provider = new ConfiguredSkillIntakeProvider([createProfileAdapter()], { executorRegistry: registry });
+
+    await provider.handle(createChatInput("Start profile setup"));
+    await provider.handle(createChatInput("alex@example.com"));
+
+    await expect(provider.handle(createChatInput("12345"))).rejects.toThrow(
+      /returned a deferred result, which the intake execution path does not support/,
     );
   });
 

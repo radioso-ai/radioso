@@ -2,9 +2,15 @@ export { createDefaultSkillCatalogRegistry, builtInSkillCatalogEntries } from ".
 export { SkillCatalogRegistry } from "./skillCatalogRegistry.js";
 export {
   SkillExecutorRegistry,
+  noopSkillEmitPort,
+  type SkillDeferralTicket,
+  type SkillDispatchResult,
+  type SkillEmitPort,
   type SkillExecutorDescriptor,
-  type SkillExecutorInput,
   type SkillExecutorPort,
   type SkillExecutorRegistration,
-  type SkillExecutorResult,
+  type SkillInvocation,
+  type SkillOutcome,
+  type SkillOutcomeControl,
+  type SkillTransientGuidance,
 } from "./skillExecutorRegistry.js";

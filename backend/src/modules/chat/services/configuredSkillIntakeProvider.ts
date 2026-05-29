@@ -8,6 +8,7 @@ import type {
   SkillExecutorRegistry,
   SkillIntakeField,
 } from "../../skills/public.js";
+import { noopSkillEmitPort } from "../../skills/public.js";
 import type { ActivityStage, ActivityStageStatus, ActivitySummary, ActivityTrace } from "../../retrieval/public.js";
 import type { ChatIntakeProviderPort, ChatIntakeResult } from "./chatIntakeProvider.js";
 
@@ -476,7 +477,33 @@ export class ConfiguredSkillIntakeProvider implements ChatIntakeProviderPort {
           `No skill executor registered for ${skill.execution.kind} (${identifier}) declared by skill "${skill.name}"`,
         );
       }
-      return executor.execute({ skill, collected, context: { chat: input } });
+      const result = await executor.dispatch({
+        skill,
+        collected,
+        context: { chat: input },
+        // The intake execution path has no live session to stream into; the chat
+        // turn loop owns interim emission. A no-op keeps behavior unchanged here.
+        emit: noopSkillEmitPort,
+      });
+      if (result.disposition === "deferred") {
+        // Deferred results are reconciled by the chat turn loop, not this
+        // synchronous intake path. No v1 executor returns deferred.
+        throw new Error(
+          `Skill "${skill.name}" returned a deferred result, which the intake execution path does not support`,
+        );
+      }
+      const { outcome } = result;
+      if (outcome.status !== "completed") {
+        // This synchronous intake path can only faithfully represent a terminal
+        // success. Non-completed statuses (failed, awaiting_confirmation,
+        // awaiting_tool, paused, …) require turn-lifecycle handling owned by the
+        // chat turn loop; rejecting here prevents silently reporting them as a
+        // completed/success skill. No v1 executor returns these.
+        throw new Error(
+          `Skill "${skill.name}" settled with status "${outcome.status}", which the intake execution path does not support (only "completed" is handled synchronously)`,
+        );
+      }
+      return { answer: outcome.answer ?? "", outputs: outcome.outputs };
     }
     if (!adapter.execute) {
       throw new Error(

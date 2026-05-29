@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   SkillExecutorRegistry,
+  type SkillDispatchResult,
   type SkillExecutorPort,
 } from "../../src/modules/skills/public.js";
 
 const noopExecutor = (label: string): SkillExecutorPort => ({
-  async execute() {
-    return { answer: label };
+  async dispatch(): Promise<SkillDispatchResult> {
+    return { disposition: "settled", outcome: { status: "completed", answer: label } };
   },
 });
 
@@ -60,5 +61,68 @@ describe("SkillExecutorRegistry", () => {
       endpointId: "endpoint-1",
       enqueue: false,
     })).toBe(executor);
+  });
+});
+
+describe("skill-invocation port shape", () => {
+  it("hands the executor an emit port and returns a settled control envelope", async () => {
+    const emitted: string[] = [];
+    const executor: SkillExecutorPort = {
+      async dispatch(invocation): Promise<SkillDispatchResult> {
+        await invocation.emit.emitStatus("working", { skill: invocation.skill.name });
+        emitted.push("status");
+        return {
+          disposition: "settled",
+          outcome: {
+            status: "completed",
+            answer: "done",
+            outputs: { ok: true },
+            control: { sessionMode: "manual", lifespan: "session" },
+            guidance: [{ action: "stay formal" }],
+            metadata: { traceId: "abc" },
+          },
+        };
+      },
+    };
+
+    const result = await executor.dispatch({
+      skill: { name: "demo" } as never,
+      collected: {},
+      emit: {
+        async emitStatus() {},
+        async emitCustom() {},
+      },
+    });
+
+    expect(emitted).toEqual(["status"]);
+    expect(result.disposition).toBe("settled");
+    if (result.disposition === "settled") {
+      expect(result.outcome.control?.sessionMode).toBe("manual");
+      expect(result.outcome.metadata).toEqual({ traceId: "abc" });
+    }
+  });
+
+  it("admits a deferred disposition in the port type (no async engine exercised)", async () => {
+    // The async weave must be expressible against the real port without a
+    // breaking change. No shipped executor returns this today.
+    const deferredExecutor: SkillExecutorPort = {
+      async dispatch(): Promise<SkillDispatchResult> {
+        return { disposition: "deferred", ticket: { ticketId: "order-status-1" } };
+      },
+    };
+
+    const result = await deferredExecutor.dispatch({
+      skill: { name: "order_status" } as never,
+      collected: {},
+      emit: {
+        async emitStatus() {},
+        async emitCustom() {},
+      },
+    });
+
+    expect(result.disposition).toBe("deferred");
+    if (result.disposition === "deferred") {
+      expect(result.ticket.ticketId).toBe("order-status-1");
+    }
   });
 });

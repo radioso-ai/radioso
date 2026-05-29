@@ -20,6 +20,12 @@ import {
 const envelope = (answer: string, suggestions: unknown[]): string =>
   `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(suggestions)}`;
 
+const groundingEnvelope = (
+  answer: string,
+  grounding: "grounded" | "degraded",
+  suggestions: unknown[] = [],
+): string => `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ grounding, suggestions })}`;
+
 const groundedSkillCapabilities: SkillOutcomeCapabilityProvider = {
   supportsGroundedAnswer: () => true,
 };
@@ -1953,7 +1959,7 @@ describe("chat service streaming", () => {
     ]);
   });
 
-  it("omits mixed unsupported substantive content before returning a non-streaming grounded answer", async () => {
+  it("preserves mixed-support content in a non-streaming grounded answer", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2016,19 +2022,22 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(response.answer).toEqual(expect.any(String));
-    expect(response.answer.length).toBeGreaterThan(0);
-    expect(response.answer).not.toContain("24/7 phone support");
-    expect(response.answerSegments).toEqual([
-      expect.objectContaining({ text: expect.any(String), citationIndices: [0] }),
-    ]);
+    expect(response.answer).toContain("24/7 phone support");
+    expect(response.answerSegments).toHaveLength(2);
+    expect(response.answerSegments?.[0]).toEqual(
+      expect.objectContaining({ citationIndices: [0] }),
+    );
+    expect(response.answerSegments?.[1]?.citationIndices).toBeUndefined();
+    expect(response.answerSegments?.map((segment) => segment.text).join("")).toContain(
+      "24/7 phone support",
+    );
 
     const [conversationId] = conversationRepository.items.keys();
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)?.content).toBe(response.answer);
   });
 
-  it("drops generated substantive content outside cited segments", async () => {
+  it("preserves generated content outside cited segments", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2091,7 +2100,7 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(response.answer).not.toContain("24/7 phone support");
+    expect(response.answer).toContain("24/7 phone support");
     expect(response.citations).toEqual([{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }]);
     expect(response.answerSegments).toEqual([
       {
@@ -2099,12 +2108,149 @@ describe("chat service streaming", () => {
         citationIndices: [0],
       },
       {
-        text: ".",
+        text: ". It also offers 24/7 phone support.",
       },
     ]);
     expect(response.activityTrace.stages).toEqual(expect.arrayContaining([
       expect.objectContaining({ stageId: "answer" }),
     ]));
+  });
+
+  it("records a grounded_degraded outcome when the model flags weak grounding", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Guide",
+              content: "The page explains testing and parsing content for users.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: { semanticQuery: "page do", lexicalQuery: "page do", constraints: [] },
+          },
+          responseSettings: { citationDisplayEnabled: true },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return groundingEnvelope(
+          "The page explains testing and parsing content for users[[1]], though the materials don't cover edge cases.",
+          "degraded",
+        );
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      asChatActivityPipeline(retrievalPipeline) as never,
+      chatGateway,
+      auditService,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "What does this page do?",
+      stream: false,
+    });
+
+    expect(response.citations).toEqual([{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }]);
+    const [conversationId] = conversationRepository.items.keys();
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    expect(persisted.at(-1)).toMatchObject({
+      skillName: "retrieval.answer",
+      skillOutcome: "grounded_degraded",
+      skillStatus: "completed",
+    });
+  });
+
+  it("keeps a degraded verdict from overriding the no-context grounded miss", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Guide",
+              content: "The page explains testing and parsing content for users.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: { semanticQuery: "page do", lexicalQuery: "page do", constraints: [] },
+          },
+          responseSettings: { citationDisplayEnabled: true },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        // Degraded verdict, but the model cited nothing — the grounded-miss safety
+        // net must still win and classify the turn as no_context.
+        return groundingEnvelope("We don't have specific details on that.", "degraded");
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      asChatActivityPipeline(retrievalPipeline) as never,
+      chatGateway,
+      auditService,
+    );
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "What does this page do?",
+      stream: false,
+    });
+
+    const [conversationId] = conversationRepository.items.keys();
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    expect(persisted.at(-1)).toMatchObject({
+      skillName: "retrieval.answer",
+      skillOutcome: "no_context",
+    });
   });
 
   it("plans grounded suggestions for cited answers", async () => {
@@ -2361,7 +2507,7 @@ describe("chat service streaming", () => {
     expect(persisted.at(-1)?.content).toBe(response.answer);
   });
 
-  it("streams provisional strict-mode chunks and omits unsupported content from the final answer", async () => {
+  it("streams provisional strict-mode chunks and keeps uncited content in the final answer", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2451,7 +2597,7 @@ describe("chat service streaming", () => {
     expect(events.at(-1)).toEqual(
       expect.objectContaining({
         type: "done",
-        answer: "The page explains testing and parsing content for users.",
+        answer: "The page explains testing and parsing content for users. It also offers 24/7 phone support.",
       }),
     );
   });

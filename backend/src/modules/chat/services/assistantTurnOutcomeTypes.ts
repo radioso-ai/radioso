@@ -33,6 +33,11 @@ export const SKILL_TURN_OUTCOME = {
     outcome: "grounded",
     status: "completed",
   },
+  RETRIEVAL_GROUNDED_DEGRADED: {
+    skillName: "retrieval.answer",
+    outcome: "grounded_degraded",
+    status: "completed",
+  },
   RETRIEVAL_NO_CONTEXT: {
     skillName: "retrieval.answer",
     outcome: "no_context",
@@ -43,7 +48,13 @@ export const SKILL_TURN_OUTCOME = {
 export const legacyAnswerOutcomeForSkillTurnOutcome = (
   skillTurnOutcome: SkillTurnOutcome,
 ): AssistantTurnOutcome | undefined => {
-  if (skillTurnOutcome.skillName === "retrieval.answer" && skillTurnOutcome.outcome === "grounded") {
+  if (
+    skillTurnOutcome.skillName === "retrieval.answer"
+    && (skillTurnOutcome.outcome === "grounded" || skillTurnOutcome.outcome === "grounded_degraded")
+  ) {
+    // The legacy answer_outcome enum has no degraded value; both grounded variants
+    // collapse to grounded_success there. The skill_outcome column carries the
+    // finer distinction (and is what the Quality dashboard filters on).
     return ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS;
   }
   if (skillTurnOutcome.skillName === "retrieval.answer" && skillTurnOutcome.outcome === "no_context") {

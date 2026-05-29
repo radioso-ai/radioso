@@ -42,6 +42,7 @@ import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retr
 import {
   GroundedAnswerEnvelopeReader,
   parseGroundedAnswerEnvelope,
+  type AnswerGroundingVerdict,
   type GroundedAnswerEnvelope,
   type PlannedEnvelopeSuggestion,
 } from "./groundedAnswerEnvelope.js";
@@ -560,6 +561,7 @@ export class ChatService {
       session = await this.chatSessionPreparer.prepareRetrieval(input, session);
       let rawAnswer = "";
       let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
+      let answerGrounding: AnswerGroundingVerdict = "grounded";
       let noContextPresentation: ChatPresentedAnswer | null = null;
       const answerStartedAt = Date.now();
 
@@ -623,6 +625,7 @@ export class ChatService {
 
         const finalized = reader.finalize();
         plannedSuggestions = finalized.suggestions;
+        answerGrounding = finalized.grounding;
         const trailingSafe = sanitizer.push(finalized.trailingAnswer);
         const trailingFlush = sanitizer.flush();
         const tail = `${trailingSafe ?? ""}${trailingFlush ?? ""}`;
@@ -644,6 +647,7 @@ export class ChatService {
         rawAnswer,
         input.query,
         input.userExpectedLocale,
+        answerGrounding,
       );
       if (
         !noContextPresentation
@@ -767,6 +771,7 @@ export class ChatService {
 
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
+    let answerGrounding: AnswerGroundingVerdict = "grounded";
 
     if (session.retrieval.contexts.length === 0) {
       const fallback = await this.generateAnswerWithPageContext(session, query);
@@ -789,6 +794,7 @@ export class ChatService {
       );
       answer = envelope.answer;
       plannedSuggestions = envelope.suggestions;
+      answerGrounding = envelope.grounding;
     }
 
     const presentation = await this.chatAnswerPresenter.presentWithSuggestions(
@@ -797,6 +803,7 @@ export class ChatService {
       query,
       plannedSuggestions,
       userExpectedLocale,
+      answerGrounding,
     );
     if (session.retrieval.contexts.length > 0 && !hasCitedAnswerSegment(presentation)) {
       const groundedMiss = await this.groundedMissResponseComposer.composeNoContext({

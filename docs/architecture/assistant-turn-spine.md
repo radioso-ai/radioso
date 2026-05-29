@@ -46,6 +46,14 @@ Backend application composition can inject the default engine into chat when
 operators can validate the adapter path before routing production chat through
 the reusable engine.
 
+When the flag is enabled, the engine performs the real turn work for the
+grounded/direct answer: its selector consults the existing `TurnSelectionStrategy`
+and its dispatcher builds the `retrieval.answer` outcome from the prepared
+session, instead of receiving an already-built outcome from `ChatService`. The
+composer still renders through the Radioso `TurnOutcomeRendererRegistry`, and
+`ChatService` continues to own session prep, the skill-intake path, lifecycle,
+persistence, audit, and billing. Behavior is identical with the flag on or off.
+
 ## Skills are dispatched, not called
 
 A skill is reached through one port, `SkillExecutorPort.dispatch`. A dispatch

@@ -7,10 +7,12 @@ import type { AgentRecord } from "../../src/modules/agents/public.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { runPreparedChatTurnWithConversationEngine } from "../../src/modules/chat/services/conversationEngineChatTurn.js";
 import {
-  GenericTurnOutcomeRenderer,
+  RETRIEVAL_OUTCOME_KIND,
+  RETRIEVAL_TURN_SKILL,
   TurnOutcomeRendererRegistry,
-  type TurnOutcome,
+  type TurnOutcomeRenderer,
 } from "../../src/modules/chat/services/turnOutcome.js";
+import { DefaultTurnSelectionStrategy } from "../../src/modules/chat/services/turnSelectionStrategy.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 
 const conversation = (): ConversationRecord => ({
@@ -107,7 +109,11 @@ const session = (): PreparedSession => ({
 });
 
 describe("runPreparedChatTurnWithConversationEngine", () => {
-  it("runs a prepared chat outcome through the pure engine and Radioso renderer registry", async () => {
+  it("lets the engine select and dispatch retrieval.answer, then renders via the registry", async () => {
+    const selectorCalls: number[] = [];
+    const dispatched: string[] = [];
+    // A fake engine that drives the adapter's ports the way the real engine does:
+    // select, dispatch the selected skill, then compose.
     const engine: ConversationEngine = {
       async processTurn(input) {
         const history = await input.stores.loadHistory({ sessionId: input.sessionId });
@@ -124,61 +130,53 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
           skills: input.skills,
           directives: [],
         });
-        const skill = input.skills.find((candidate) => candidate.name === decision.selected[0]?.skillName);
-        if (!skill || !decision.selected[0]) {
+        selectorCalls.push(decision.selected.length);
+        const selected = decision.selected[0];
+        const skill = input.skills.find((candidate) => candidate.name === selected?.skillName);
+        if (!skill || !selected) {
           throw new Error("test skill selection failed");
         }
-        const outcome = await input.dispatcher.dispatch({
-          skill,
-          turn,
-          selected: decision.selected[0],
-        });
-        const response = await input.composer.compose({
-          turn,
-          outcomes: [outcome],
-          decision,
-        });
+        const outcome = await input.dispatcher.dispatch({ skill, turn, selected });
+        dispatched.push(outcome.skillName);
+        const response = await input.composer.compose({ turn, outcomes: [outcome], decision });
         return {
           sessionId: input.sessionId,
           events: [],
           decision,
           outcomes: [outcome],
           response,
-          trace: {
-            traceId: "test-engine",
-            startedAt: "2026-01-01T00:00:00.000Z",
-            stages: [],
-          },
+          trace: { traceId: "test-engine", startedAt: "2026-01-01T00:00:00.000Z", stages: [] },
         };
       },
     };
-    const turnOutcome: TurnOutcome = {
-      kind: "generic",
-      skillName: "order.status",
-      outcome: {
-        status: "completed",
-        answer: "Your order ships tomorrow.",
-      },
-      stagedContext: [],
-      steering: [],
-      trace: {
-        traceId: "trace_1",
-        startedAt: "2026-01-01T00:00:00.000Z",
-        stages: [],
+
+    // Stand-in retrieval renderer: the real one composes a grounded answer via the
+    // gateway; here we assert the engine reached the retrieval outcome and rendered it.
+    const retrievalRenderer: TurnOutcomeRenderer = {
+      supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
+      async render(outcome) {
+        return {
+          answer: "Grounded answer.",
+          skillName: outcome.skillName,
+          skillOutcome: outcome.outcome.status,
+          skillStatus: outcome.outcome.status,
+        };
       },
     };
 
     const presentation = await runPreparedChatTurnWithConversationEngine({
       engine,
       session: session(),
-      turnOutcome,
-      turnRenderers: new TurnOutcomeRendererRegistry([new GenericTurnOutcomeRenderer()]),
+      selectionStrategy: new DefaultTurnSelectionStrategy(),
+      turnRenderers: new TurnOutcomeRendererRegistry([retrievalRenderer]),
       query: "Where is my order?",
     });
 
+    expect(selectorCalls).toEqual([1]);
+    expect(dispatched).toEqual([RETRIEVAL_TURN_SKILL]);
     expect(presentation).toMatchObject({
-      answer: "Your order ships tomorrow.",
-      skillName: "order.status",
+      answer: "Grounded answer.",
+      skillName: RETRIEVAL_TURN_SKILL,
       skillOutcome: "completed",
       skillStatus: "completed",
     });

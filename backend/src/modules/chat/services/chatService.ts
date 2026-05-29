@@ -28,7 +28,6 @@ import {
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
-import { toConversationTrace, toRetrievalStagedContext } from "./conversationContractMappers.js";
 import { runPreparedChatTurnWithConversationEngine } from "./conversationEngineChatTurn.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import { noopDirectiveSteering, type DirectiveSteeringPort } from "../../directives/public.js";
@@ -36,17 +35,12 @@ import {
   GenericTurnOutcomeRenderer,
   RETRIEVAL_OUTCOME_KIND,
   TurnOutcomeRendererRegistry,
-  type TurnOutcome,
+  buildRetrievalTurnOutcome,
 } from "./turnOutcome.js";
 import {
   DefaultTurnSelectionStrategy,
   type TurnSelectionStrategy,
 } from "./turnSelectionStrategy.js";
-
-// The skill name a grounded (retrieval) turn dispatches; the retrieval renderer
-// claims outcomes under it. A non-retrieval skill's outcome falls through to the
-// generic renderer.
-const RETRIEVAL_TURN_SKILL = "retrieval.answer";
 import {
   ChatAnswerPresenter,
   type ChatPresentedAnswer,
@@ -303,18 +297,34 @@ export class ChatService {
     ]);
   }
 
-  private buildRetrievalTurnOutcome(session: PreparedSession): TurnOutcome {
-    // The rich retrieval result rides on session.retrieval (read by the
-    // retrieval renderer); the outcome carries the steering set for the composer
-    // and declares its rendering kind so renderers match by kind, not skill name.
-    return {
-      kind: RETRIEVAL_OUTCOME_KIND,
-      skillName: RETRIEVAL_TURN_SKILL,
-      outcome: { status: "completed" },
-      stagedContext: [toRetrievalStagedContext(session.retrieval)],
-      steering: session.directiveSteering?.rules ?? [],
-      trace: toConversationTrace(session.retrieval.trace),
-    };
+  /**
+   * Produces the grounded/direct answer for a prepared turn. With the engine
+   * enabled, the conversation engine selects and dispatches `retrieval.answer`
+   * itself; otherwise the retrieval outcome is built and rendered directly. Both
+   * paths render through the same registry, so behavior is identical.
+   */
+  private async renderRetrievalTurn(
+    session: PreparedSession,
+    input: { query: string; userExpectedLocale?: string | null; accountId?: string },
+  ): Promise<ChatPresentedAnswer> {
+    if (this.conversationEngine) {
+      return runPreparedChatTurnWithConversationEngine({
+        engine: this.conversationEngine,
+        session,
+        selectionStrategy: this.selectionStrategy,
+        turnRenderers: this.turnRenderers,
+        query: input.query,
+        userExpectedLocale: input.userExpectedLocale,
+        accountId: input.accountId,
+      });
+    }
+    const turnOutcome = buildRetrievalTurnOutcome(session);
+    return this.turnRenderers.resolve(turnOutcome).render(turnOutcome, {
+      session,
+      query: input.query,
+      userExpectedLocale: input.userExpectedLocale,
+      accountId: input.accountId,
+    });
   }
 
   private buildChatWorkspaceContext(session: PreparedSession): LlmCapabilityResolveInput {
@@ -550,23 +560,7 @@ export class ChatService {
         ? await this.chatSessionPreparer.prepareRetrieval(input, session)
         : await this.chatSessionPreparer.prepareDirect(input, session);
       const answerStartedAt = Date.now();
-      const turnOutcome = this.buildRetrievalTurnOutcome(session);
-      const presentation = this.conversationEngine
-        ? await runPreparedChatTurnWithConversationEngine({
-            engine: this.conversationEngine,
-            session,
-            turnOutcome,
-            turnRenderers: this.turnRenderers,
-            query: input.query,
-            userExpectedLocale: input.userExpectedLocale,
-            accountId: input.accountId,
-          })
-        : await this.turnRenderers.resolve(turnOutcome).render(turnOutcome, {
-            session,
-            query: input.query,
-            userExpectedLocale: input.userExpectedLocale,
-            accountId: input.accountId,
-          });
+      const presentation = await this.renderRetrievalTurn(session, input);
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,

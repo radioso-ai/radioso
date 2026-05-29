@@ -177,7 +177,7 @@ export const buildInfrastructure = (input: {
   // OSS default: durable usage accounting out of the box (FR-027). A module may
   // still override the recorder by registering its own.
   const usageEventRecorder = !composition.usageEventRecorderRegistration
-    ? new DurableUsageEventRecorder(requireTransactionalUsageEventDatabase(database))
+    ? new DurableUsageEventRecorder(requireTransactionalUsageEventDatabase(database), logger)
     : typeof composition.usageEventRecorderRegistration === "function"
       ? composition.usageEventRecorderRegistration({ database, logger })
       : composition.usageEventRecorderRegistration;

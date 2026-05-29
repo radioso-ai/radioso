@@ -25,16 +25,26 @@ export const streamWithUsage = (
   const textStream = (async function* () {
     const iterator = generate();
     let captured: ProviderUsage | undefined;
+    let completed = false;
     try {
       while (true) {
         const next = await iterator.next();
         if (next.done) {
           captured = next.value ?? undefined;
+          completed = true;
           break;
         }
         yield next.value;
       }
     } finally {
+      if (!completed) {
+        try {
+          await iterator.return?.(undefined);
+        } catch {
+          // Closing the provider iterator is best-effort. Preserve the caller's
+          // stream cancellation/error path rather than replacing it here.
+        }
+      }
       resolveUsage(captured);
     }
   })();

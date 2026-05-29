@@ -308,13 +308,18 @@ describe("durable usage event recorder", () => {
     expect(database.rollups.size).toBe(0);
   });
 
-  it("does not persist an event when rollup update fails in the same transaction", async () => {
+  it("keeps embedding ledger events when the derived rollup update fails", async () => {
     const database = new FakeRecorderDatabase();
     database.workspaceAccounts.set("workspace-1", "account-1");
     database.throwOnRollup = true;
-    const recorder = new DurableUsageEventRecorder(database);
+    const warnings: unknown[][] = [];
+    const recorder = new DurableUsageEventRecorder(database, {
+      warn(...args: unknown[]) {
+        warnings.push(args);
+      },
+    });
 
-    await expect(recorder.recordEmbedding({
+    await recorder.recordEmbedding({
       idempotencyKey: "embed:workspace-1:doc-1:1:job-1:chunks:a:openai:text-embedding-3-small:succeeded",
       workspaceId: "workspace-1",
       documentId: "doc-1",
@@ -326,11 +331,12 @@ describe("durable usage event recorder", () => {
       vectorCount: 1,
       status: "succeeded",
       usageQuality: "actual",
-    })).rejects.toThrow("rollup unavailable");
+    });
 
-    expect(database.events.size).toBe(0);
-    expect(database.idempotencyKeys.size).toBe(0);
+    expect(database.events.size).toBe(1);
+    expect(database.idempotencyKeys.size).toBe(1);
     expect(database.rollups.size).toBe(0);
+    expect(warnings).toHaveLength(1);
   });
 
   it("records model usage events with conversation lineage", async () => {
@@ -358,5 +364,37 @@ describe("durable usage event recorder", () => {
     expect(event.conversation_id).toBe("conv-1");
     expect(event.operation).toBe("answer");
     expect(event.total_tokens).toBe(1500);
+  });
+
+  it("keeps model ledger events when the derived rollup update fails", async () => {
+    const database = new FakeRecorderDatabase();
+    database.workspaceAccounts.set("workspace-1", "account-1");
+    database.throwOnRollup = true;
+    const warnings: unknown[][] = [];
+    const recorder = new DurableUsageEventRecorder(database, {
+      warn(...args: unknown[]) {
+        warnings.push(args);
+      },
+    });
+
+    await recorder.recordModelCall({
+      idempotencyKey: "answer:conv-1:msg-1:openai:gpt-5.2:attempt-1",
+      workspaceId: "workspace-1",
+      conversationId: "conv-1",
+      messageId: "msg-1",
+      surface: "assistant",
+      operation: "answer",
+      provider: "openai",
+      model: "gpt-5.2",
+      inputTokens: 1200,
+      outputTokens: 300,
+      totalTokens: 1500,
+      status: "succeeded",
+      usageQuality: "actual",
+    });
+
+    expect(database.events.size).toBe(1);
+    expect(database.rollups.size).toBe(0);
+    expect(warnings).toHaveLength(1);
   });
 });

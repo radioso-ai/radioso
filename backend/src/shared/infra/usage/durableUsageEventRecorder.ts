@@ -7,6 +7,7 @@ import type {
   ModelUsageEvent,
   UsageEventRecorder,
 } from "../../domain/usageEventRecorder.js";
+import type { AppLogger } from "../../observability/logger.js";
 
 /**
  * Minimal transactional database surface the durable recorder needs. The OSS
@@ -54,16 +55,20 @@ const resolveAccountId = async (
 
 /**
  * OSS durable usage-event recorder. Writes immutable events to `usage_events`
- * (plus `embedding_usage_items`) and maintains the derived `usage_daily_rollups`
- * cache inside the same transaction. Idempotent on `idempotency_key`: a repeated
- * attempt inserts nothing and skips the rollup, so replays never inflate totals.
+ * (plus `embedding_usage_items`) and best-effort maintains the derived
+ * `usage_daily_rollups` cache after the authoritative event transaction commits.
+ * Idempotent on `idempotency_key`: a repeated attempt inserts nothing and skips
+ * the rollup, so replays never inflate totals.
  *
  * Ledger insertion is authoritative. The daily rollup is a rebuildable cache
  * derived from these events (see migration `067_usage_ledger_oss.sql`); a future
  * delivery phase owns the rebuild/recovery job and richer summary read-models.
  */
 export class DurableUsageEventRecorder implements UsageEventRecorder {
-  constructor(private readonly database: TransactionalUsageEventDatabase) {}
+  constructor(
+    private readonly database: TransactionalUsageEventDatabase,
+    private readonly logger?: Pick<AppLogger, "warn">,
+  ) {}
 
   async recordEmbedding(event: EmbeddingUsageEvent): Promise<void> {
     const accountId = await resolveAccountId(this.database, {
@@ -74,7 +79,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
     const totalTokens = (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
     const eventId = randomUUID();
 
-    await this.database.withTransaction(async (client) => {
+    const inserted = await this.database.withTransaction(async (client) => {
       const inserted = await queryRows<{ id: string }>(
         client,
         `INSERT INTO usage_events (
@@ -130,7 +135,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
       );
 
       if (inserted.length === 0) {
-        return;
+        return false;
       }
       const insertedId = inserted[0].id;
 
@@ -143,20 +148,22 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
         });
       }
 
-      if (accountId && event.status === "succeeded") {
-        await this.upsertDailyRollup(client, accountId, occurredAt, {
-          operation: "embedding",
-          provider: event.provider,
-          model: event.model,
-          inputTokens: event.inputTokens ?? 0,
-          outputTokens: event.outputTokens ?? 0,
-          totalTokens,
-          inputBytes: event.inputBytes,
-          outputBytes: 0,
-          vectorCount: event.vectorCount,
-        });
-      }
+      return true;
     });
+
+    if (inserted && accountId && event.status === "succeeded") {
+      await this.upsertDailyRollupBestEffort(accountId, occurredAt, {
+        operation: "embedding",
+        provider: event.provider,
+        model: event.model,
+        inputTokens: event.inputTokens ?? 0,
+        outputTokens: event.outputTokens ?? 0,
+        totalTokens,
+        inputBytes: event.inputBytes,
+        outputBytes: 0,
+        vectorCount: event.vectorCount,
+      });
+    }
   }
 
   private async insertEmbeddingItems(
@@ -212,7 +219,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
     const totalTokens = event.totalTokens ?? ((event.inputTokens ?? 0) + (event.outputTokens ?? 0));
     const eventId = randomUUID();
 
-    await this.database.withTransaction(async (client) => {
+    const inserted = await this.database.withTransaction(async (client) => {
       const inserted = await queryRows<{ id: string }>(
         client,
         `INSERT INTO usage_events (
@@ -266,23 +273,57 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
       );
 
       if (inserted.length === 0) {
-        return;
+        return false;
       }
 
-      if (accountId && event.status === "succeeded") {
-        await this.upsertDailyRollup(client, accountId, occurredAt, {
-          operation: event.operation,
-          provider: event.provider,
-          model: event.model,
-          inputTokens: event.inputTokens ?? 0,
-          outputTokens: event.outputTokens ?? 0,
-          totalTokens,
-          inputBytes: event.inputBytes ?? 0,
-          outputBytes: event.outputBytes ?? 0,
-          vectorCount: 0,
-        });
-      }
+      return true;
     });
+
+    if (inserted && accountId && event.status === "succeeded") {
+      await this.upsertDailyRollupBestEffort(accountId, occurredAt, {
+        operation: event.operation,
+        provider: event.provider,
+        model: event.model,
+        inputTokens: event.inputTokens ?? 0,
+        outputTokens: event.outputTokens ?? 0,
+        totalTokens,
+        inputBytes: event.inputBytes ?? 0,
+        outputBytes: event.outputBytes ?? 0,
+        vectorCount: 0,
+      });
+    }
+  }
+
+  private async upsertDailyRollupBestEffort(
+    accountId: string,
+    occurredAt: Date,
+    deltas: {
+      operation: string;
+      provider: string;
+      model: string;
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+      inputBytes: number;
+      outputBytes: number;
+      vectorCount: number;
+    },
+  ): Promise<void> {
+    try {
+      await this.upsertDailyRollup(this.database, accountId, occurredAt, deltas);
+    } catch (error) {
+      this.logger?.warn(
+        {
+          accountId,
+          usageDate: toIsoDate(occurredAt),
+          operation: deltas.operation,
+          provider: deltas.provider,
+          model: deltas.model,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "Failed to update usage daily rollup after recording usage event",
+      );
+    }
   }
 
   private async upsertDailyRollup(

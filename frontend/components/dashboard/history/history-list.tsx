@@ -2,6 +2,7 @@
 
 import { Activity, FileText, MessageSquareText } from 'lucide-react'
 
+import { DashboardPaginatedContent } from '@/components/dashboard/shared/dashboard-paginated-content'
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import {
@@ -497,7 +498,11 @@ export function HistoryList({
               </div>
             ) : null}
             {activeFilter === 'all' ? (
-              <>
+              <DashboardPaginatedContent
+                as="section"
+                className="space-y-3"
+                isRefreshing={isLoading && visibleAllHistoryItems.length > 0}
+              >
                 <HistoryPagination
                   accountId={accountId}
                   workspaceId={workspaceId}
@@ -511,7 +516,7 @@ export function HistoryList({
                   onPrevious={() => onAllPageChange(Math.max(1, allPage - 1))}
                   onNext={() => onAllPageChange(Math.min(allTotalPages, allPage + 1))}
                 />
-                {isLoading ? (
+                {isLoading && visibleAllHistoryItems.length === 0 ? (
                   <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border">
                     <LogoSpinner imageClassName="h-7 w-7" />
                   </div>
@@ -535,10 +540,14 @@ export function HistoryList({
                   onPrevious={() => onAllPageChange(Math.max(1, allPage - 1))}
                   onNext={() => onAllPageChange(Math.min(allTotalPages, allPage + 1))}
                 />
-              </>
+              </DashboardPaginatedContent>
             ) : null}
             {activeFilter === 'chat' ? (
-              <section className="space-y-3">
+              <DashboardPaginatedContent
+                as="section"
+                className="space-y-3"
+                isRefreshing={isLoading && conversations.length > 0}
+              >
                 <HistoryPagination
                   accountId={accountId}
                   workspaceId={workspaceId}
@@ -552,7 +561,7 @@ export function HistoryList({
                   onPrevious={() => onConversationPageChange(Math.max(1, conversationPage - 1))}
                   onNext={() => onConversationPageChange(Math.min(conversationTotalPages, conversationPage + 1))}
                 />
-                {isLoading ? (
+                {isLoading && conversations.length === 0 ? (
                   <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border">
                     <LogoSpinner imageClassName="h-7 w-7" />
                   </div>
@@ -581,10 +590,14 @@ export function HistoryList({
                   onPrevious={() => onConversationPageChange(Math.max(1, conversationPage - 1))}
                   onNext={() => onConversationPageChange(Math.min(conversationTotalPages, conversationPage + 1))}
                 />
-              </section>
+              </DashboardPaginatedContent>
             ) : null}
             {activeFilter === 'search' ? (
-              <section className="space-y-3">
+              <DashboardPaginatedContent
+                as="section"
+                className="space-y-3"
+                isRefreshing={isLoading && searches.length > 0}
+              >
                 <HistoryPagination
                   accountId={accountId}
                   workspaceId={workspaceId}
@@ -598,7 +611,7 @@ export function HistoryList({
                   onPrevious={() => onSearchPageChange(Math.max(1, searchPage - 1))}
                   onNext={() => onSearchPageChange(Math.min(searchTotalPages, searchPage + 1))}
                 />
-                {isLoading ? (
+                {isLoading && searches.length === 0 ? (
                   <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border">
                     <LogoSpinner imageClassName="h-7 w-7" />
                   </div>
@@ -627,10 +640,14 @@ export function HistoryList({
                   onPrevious={() => onSearchPageChange(Math.max(1, searchPage - 1))}
                   onNext={() => onSearchPageChange(Math.min(searchTotalPages, searchPage + 1))}
                 />
-              </section>
+              </DashboardPaginatedContent>
             ) : null}
             {editionController.canUseHumanContact() && activeFilter === 'contact' ? (
-              <section className="space-y-3">
+              <DashboardPaginatedContent
+                as="section"
+                className="space-y-3"
+                isRefreshing={isLoading && contacts.length > 0}
+              >
                 <HistoryPagination
                   accountId={accountId}
                   workspaceId={workspaceId}
@@ -644,7 +661,7 @@ export function HistoryList({
                   onPrevious={() => onContactPageChange(Math.max(1, contactPage - 1))}
                   onNext={() => onContactPageChange(Math.min(contactTotalPages, contactPage + 1))}
                 />
-                {isLoading ? (
+                {isLoading && contacts.length === 0 ? (
                   <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border">
                     <LogoSpinner imageClassName="h-7 w-7" />
                   </div>
@@ -673,7 +690,7 @@ export function HistoryList({
                   onPrevious={() => onContactPageChange(Math.max(1, contactPage - 1))}
                   onNext={() => onContactPageChange(Math.min(contactTotalPages, contactPage + 1))}
                 />
-              </section>
+              </DashboardPaginatedContent>
             ) : null}
           </div>
         )}

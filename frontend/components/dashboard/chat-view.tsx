@@ -301,6 +301,7 @@ export function ChatView({ accountId, agentId, assistantName, assistantLinkUtmEn
               onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
               showCitations={showCitations}
               conversationId={conversationId}
+              evalCaptureEnabled
               assistantAvatarLabel={assistantName}
               assistantLinkUtmEnabled={assistantLinkUtmEnabled}
               skillCatalog={skillCatalog}

@@ -424,6 +424,7 @@ export function ConversationDrawer({
                     onMessageSelect={handleSelectThreadMessage}
                     selectedMessageId={selectedThreadMessageId ?? undefined}
                     conversationId={selectedItem?.kind === 'chat' ? selectedItem.id : undefined}
+                    evalCaptureEnabled={selectedItem?.kind === 'chat'}
                     analyticsSurface="history"
                     skillCatalog={skillCatalog}
                   />

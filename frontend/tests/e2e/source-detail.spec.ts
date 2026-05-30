@@ -215,7 +215,7 @@ test("connector sources reopen setup with sync status and manual sync", async ({
   await page.goto(`/w/${workspaceKey}/knowledge?tab=sources`);
 
   await page.getByText("wordpress:https://example.com").click();
-  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
 
   const dialog = page.getByRole("dialog", { name: /WordPress/ });
   await expect(dialog).toBeVisible();

@@ -9,6 +9,20 @@ export type QualitySkillStatus =
   | "failed";
 export type QualityFeedbackValue = "up" | "down";
 
+/**
+ * Operator triage lifecycle for an assistant turn. Shared across all quality
+ * signals; `open` is the implicit default when no triage row exists.
+ * `resolved`/`dismissed` are the closed states that drain the active backlog.
+ */
+export type QualityTriageState = "open" | "acknowledged" | "resolved" | "dismissed";
+
+export const QUALITY_TRIAGE_STATES: readonly QualityTriageState[] = [
+  "open",
+  "acknowledged",
+  "resolved",
+  "dismissed",
+];
+
 export interface QualityActionFilter {
   skillName: string;
   outcome: string;
@@ -38,12 +52,20 @@ export interface LowQualityTurn {
   totalLatencyMs: number | null;
   createdAt: string;
   feedback: QualityFeedbackSummary;
+  triage: QualityTriageRecord;
+}
+
+export interface QualityTriageRecord {
+  state: QualityTriageState;
+  reason: string | null;
+  updatedAt: string | null;
 }
 
 export interface ListLowQualityTurnsInput {
   actions?: QualityActionFilter[];
   statuses?: QualitySkillStatus[];
   feedbackValues?: QualityFeedbackValue[];
+  triageStates?: QualityTriageState[];
   hasComment?: boolean;
   minTotalLatencyMs?: number;
   maxTotalLatencyMs?: number;
@@ -63,6 +85,18 @@ export interface LowQualityTurnsPage {
   totalPages: number;
 }
 
+export interface SetTriageStateInput {
+  assistantMessageId: string;
+  state: QualityTriageState;
+  reason?: string | null;
+  updatedBy?: string | null;
+}
+
 export interface QualityTurnsServicePort {
   listLowQualityTurns(workspaceId: string, input: ListLowQualityTurnsInput): Promise<LowQualityTurnsPage>;
+  /**
+   * Upserts the triage state for an assistant turn. Returns the stored record,
+   * or null when the turn does not exist in the workspace.
+   */
+  setTriageState(workspaceId: string, input: SetTriageStateInput): Promise<QualityTriageRecord | null>;
 }

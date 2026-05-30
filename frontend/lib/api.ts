@@ -35,6 +35,8 @@ export type {
   QualityActionFilter,
   QualityFeedbackSummary,
   QualitySkillStatus,
+  QualityTriageState,
+  QualityTriageRecord,
 } from './api-quality'
 export { skillsApi } from './api-skills'
 export type {

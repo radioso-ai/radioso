@@ -457,13 +457,13 @@ function TriageStateControl({
           // Radix still opens the menu since stopPropagation doesn't preventDefault.
           onClick={(event) => event.stopPropagation()}
           className={cn(
-            'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors disabled:opacity-50',
+            'inline-flex max-w-full min-w-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors disabled:opacity-50',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
             meta.className,
           )}
         >
-          {meta.label}
-          <ChevronDown className="h-3 w-3 opacity-70" aria-hidden />
+          <span className="truncate">{meta.label}</span>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
@@ -1053,9 +1053,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
               <DashboardTableHeader className="w-40">Action</DashboardTableHeader>
               <DashboardTableHeader className="w-28">Status</DashboardTableHeader>
               <DashboardTableHeader className="w-20">Latency</DashboardTableHeader>
-              <DashboardTableHeader className="w-24">Feedback</DashboardTableHeader>
-              <DashboardTableHeader className="w-36">When</DashboardTableHeader>
-              <DashboardTableHeader className="w-32">Triage</DashboardTableHeader>
+              <DashboardTableHeader className="w-20">Feedback</DashboardTableHeader>
+              <DashboardTableHeader className="w-32">When</DashboardTableHeader>
+              <DashboardTableHeader className="w-40">Triage</DashboardTableHeader>
             </DashboardTableHead>
             <DashboardTableBody>
               {items.map((turn) => {
@@ -1137,7 +1137,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                       <DashboardTableCell className="w-20 text-xs text-muted-foreground">
                         {formatDuration(turn.totalLatencyMs)}
                       </DashboardTableCell>
-                      <DashboardTableCell className="w-24">
+                      <DashboardTableCell className="w-20">
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           {turn.feedback.downCount > 0 && (
                             <span className="inline-flex items-center gap-1">
@@ -1156,10 +1156,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                           )}
                         </div>
                       </DashboardTableCell>
-                      <DashboardTableCell className="w-36 text-xs text-muted-foreground">
+                      <DashboardTableCell className="w-32 text-xs text-muted-foreground">
                         {formatTimestamp(turn.createdAt)}
                       </DashboardTableCell>
-                      <DashboardTableCell className="w-32">
+                      <DashboardTableCell className="w-40">
                         <TriageStateControl
                           state={turn.triage.state}
                           pending={pendingTriageId === turn.assistantMessageId}

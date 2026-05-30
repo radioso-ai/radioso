@@ -5,6 +5,7 @@ export {
   isFilterApplied,
   type FilterDefinition,
   type FilterOption,
+  type FilterSection,
   type FilterValue,
   type FilterValues,
 } from './filter-schema'

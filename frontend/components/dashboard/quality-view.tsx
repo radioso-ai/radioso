@@ -1,10 +1,9 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ChevronDown,
-  ChevronRight,
   Clock,
   FileSearch,
   MessageSquareWarning,
@@ -454,6 +453,9 @@ function TriageStateControl({
           type="button"
           disabled={pending}
           aria-label={`Triage state: ${meta.label}. Change state.`}
+          // Keep clicks off the surrounding row (which opens the conversation);
+          // Radix still opens the menu since stopPropagation doesn't preventDefault.
+          onClick={(event) => event.stopPropagation()}
           className={cn(
             'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors disabled:opacity-50',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
@@ -502,7 +504,6 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   const [isFetching, setIsFetching] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [expandedMessageId, setExpandedMessageId] = useState<string | null>(null)
   const [openedConversation, setOpenedConversation] = useState<{
     conversationId: string
     assistantMessageId: string
@@ -696,11 +697,16 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       {
         id: 'feedback',
         kind: 'multi-select',
-        label: 'User rating',
+        label: 'Rating',
         options: (Object.keys(FEEDBACK_LABEL) as QualityFeedbackFilter[]).map((value) => ({
           value,
           label: FEEDBACK_LABEL[value],
         })),
+      },
+      {
+        id: 'hasComment',
+        kind: 'boolean',
+        label: 'Has a written comment',
       },
       {
         id: 'triage',
@@ -714,18 +720,31 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       {
         id: 'latency',
         kind: 'single-select',
-        label: 'Total latency',
+        label: 'Response time',
         placeholder: 'Any latency',
         options: LATENCY_FILTERS.map((value) => ({
           value,
           label: LATENCY_BUCKETS[value].label,
         })),
       },
+    ],
+    [actionFilterGroups],
+  )
+
+  // Presentation grouping for the filter dialog: high-signal filters open by
+  // default; the per-skill action groups collapse under one "Assistant outcome".
+  const qualitySections = useMemo(
+    () => [
+      { id: 'status', label: 'Conversation status', defaultOpen: true, filterIds: ['status'] },
+      { id: 'feedback', label: 'Feedback', defaultOpen: true, filterIds: ['feedback', 'hasComment'] },
+      { id: 'triage', label: 'Triage state', defaultOpen: true, filterIds: ['triage'] },
       {
-        id: 'hasComment',
-        kind: 'boolean',
-        label: 'Has written feedback',
+        id: 'outcome',
+        label: 'Assistant outcome',
+        defaultOpen: false,
+        filterIds: actionFilterGroups.map((group) => group.id),
       },
+      { id: 'latency', label: 'Response time', defaultOpen: false, filterIds: ['latency'] },
     ],
     [actionFilterGroups],
   )
@@ -1027,7 +1046,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         >
           {renderPagination()}
 
-          <DashboardTable aria-label="Assistant answers to review" minWidth="min-w-[920px]">
+          <DashboardTable aria-label="Assistant answers to review" minWidth="min-w-[936px]">
             <DashboardTableHead>
               <DashboardTableHeader className="w-32">Agent</DashboardTableHeader>
               <DashboardTableHeader>Question &amp; answer</DashboardTableHeader>
@@ -1035,8 +1054,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
               <DashboardTableHeader className="w-28">Status</DashboardTableHeader>
               <DashboardTableHeader className="w-20">Latency</DashboardTableHeader>
               <DashboardTableHeader className="w-24">Feedback</DashboardTableHeader>
-              <DashboardTableHeader className="w-40">When</DashboardTableHeader>
-              <DashboardTableHeader className="w-24" />
+              <DashboardTableHeader className="w-36">When</DashboardTableHeader>
+              <DashboardTableHeader className="w-32">Triage</DashboardTableHeader>
             </DashboardTableHead>
             <DashboardTableBody>
               {items.map((turn) => {
@@ -1045,8 +1064,6 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                   : null
                 const action = actionKey ? actionLookup.get(actionKey) ?? null : null
                 const statusMeta = resolveStatusMeta(turn.skillStatus)
-                const isExpanded = expandedMessageId === turn.assistantMessageId
-                const hasComments = turn.feedback.comments.length > 0
                 const actionLabel = action
                   ? action.outcome.displayName
                   : turn.skillOutcome ?? null
@@ -1055,8 +1072,11 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                   ? `${action.skill.displayName}${action.outcome.description ? ` — ${action.outcome.description}` : ''}`
                   : actionLabel ?? ''
                 return (
-                  <Fragment key={turn.assistantMessageId}>
-                    <DashboardTableRow>
+                    <DashboardTableRow
+                      key={turn.assistantMessageId}
+                      onClick={() => openConversation(turn)}
+                      className="cursor-pointer"
+                    >
                       <DashboardTableCell className="w-32">
                         <div className="flex flex-col gap-0.5">
                           <span className="block truncate text-sm text-muted-foreground">
@@ -1068,24 +1088,19 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                         </div>
                       </DashboardTableCell>
                       <DashboardTableCell>
-                        <p
-                          className="block truncate text-sm font-medium leading-5 text-foreground"
+                        <button
+                          type="button"
+                          onClick={() => openConversation(turn)}
                           title={turn.question ?? ''}
+                          className="block max-w-full truncate text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
                           {turn.question || (
                             <span className="italic text-muted-foreground">(no preceding user message)</span>
                           )}
-                        </p>
+                        </button>
                         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                           {turn.answerPreview}
                         </p>
-                        <div className="mt-2">
-                          <TriageStateControl
-                            state={turn.triage.state}
-                            pending={pendingTriageId === turn.assistantMessageId}
-                            onChange={(next) => void updateTriageState(turn, next)}
-                          />
-                        </div>
                       </DashboardTableCell>
                       <DashboardTableCell className="w-40">
                         {actionLabel ? (
@@ -1141,71 +1156,17 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                           )}
                         </div>
                       </DashboardTableCell>
-                      <DashboardTableCell className="w-40 text-xs text-muted-foreground">
+                      <DashboardTableCell className="w-36 text-xs text-muted-foreground">
                         {formatTimestamp(turn.createdAt)}
                       </DashboardTableCell>
-                      <DashboardTableCell className="w-24">
-                        <div className="flex items-center justify-end gap-1">
-                          {hasComments ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              aria-label={isExpanded ? 'Hide comments' : 'Show comments'}
-                              onClick={() =>
-                                setExpandedMessageId(isExpanded ? null : turn.assistantMessageId)
-                              }
-                            >
-                              {isExpanded ? (
-                                <ChevronDown className="h-4 w-4" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4" />
-                              )}
-                            </Button>
-                          ) : null}
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openConversation(turn)}
-                          >
-                            Review
-                          </Button>
-                        </div>
+                      <DashboardTableCell className="w-32">
+                        <TriageStateControl
+                          state={turn.triage.state}
+                          pending={pendingTriageId === turn.assistantMessageId}
+                          onChange={(next) => void updateTriageState(turn, next)}
+                        />
                       </DashboardTableCell>
                     </DashboardTableRow>
-                    {isExpanded && hasComments ? (
-                      <DashboardTableRow className="bg-muted/20 hover:bg-muted/20">
-                        <DashboardTableCell className="w-32">{null}</DashboardTableCell>
-                        <DashboardTableCell>
-                          <ul className="space-y-2">
-                            {turn.feedback.comments.map((comment, index) => (
-                              <li
-                                key={`${turn.assistantMessageId}-${index}`}
-                                className="rounded-md bg-background/70 px-3 py-2 text-xs"
-                              >
-                                <div className="mb-1 flex items-center gap-2 text-muted-foreground">
-                                  {comment.value === 'down' ? (
-                                    <ThumbsDown className="h-3 w-3 text-destructive" />
-                                  ) : (
-                                    <ThumbsUp className="h-3 w-3 text-emerald-500" />
-                                  )}
-                                  <span>{formatTimestamp(comment.createdAt)}</span>
-                                </div>
-                                <p className="text-foreground">{comment.comment}</p>
-                              </li>
-                            ))}
-                          </ul>
-                        </DashboardTableCell>
-                        <DashboardTableCell className="w-40">{null}</DashboardTableCell>
-                        <DashboardTableCell className="w-28">{null}</DashboardTableCell>
-                        <DashboardTableCell className="w-20">{null}</DashboardTableCell>
-                        <DashboardTableCell className="w-24">{null}</DashboardTableCell>
-                        <DashboardTableCell className="w-40">{null}</DashboardTableCell>
-                        <DashboardTableCell className="w-24">{null}</DashboardTableCell>
-                      </DashboardTableRow>
-                    ) : null}
-                  </Fragment>
                 )
               })}
             </DashboardTableBody>
@@ -1219,6 +1180,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       open={isFilterDialogOpen}
       onOpenChange={setIsFilterDialogOpen}
       filters={qualityFilters}
+      sections={qualitySections}
       values={filterValues}
       title="Filter assistant answers"
       description="Choose the statuses, actions, feedback, and latency band you want to inspect."

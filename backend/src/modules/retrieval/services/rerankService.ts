@@ -5,6 +5,11 @@ import type { UsageEventRecorder, UsageEventStatus } from "../../../shared/domai
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { ReasoningEffort } from "../../../shared/infra/llm/providerTypes.js";
+import {
+  isReasoningEffortKnownUnsupported,
+  isUnsupportedReasoningEffortError,
+  markReasoningEffortUnsupported,
+} from "../../../shared/infra/llm/reasoningEffortSupport.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
@@ -24,19 +29,22 @@ export interface RerankGateway {
 const buildRerankPrompt = (input: { query: string; candidates: string }): string =>
   renderPromptTemplate("retrieval/rerank.md", input);
 
+type RerankSamplingParams = { temperature?: number; reasoning?: { effort: ReasoningEffort } };
+
 // OpenAI's Responses API takes a nested `reasoning.effort` rather than
 // chat.completions' flat `reasoning_effort`. gpt-5 family reasoning models reject
-// a non-default temperature and otherwise spend the whole output budget on hidden
-// reasoning before scoring, so send minimal reasoning effort and drop temperature
-// for them; other OpenAI rerank models keep temperature. Inlined here (rather than
-// reusing the provider helper) because the OpenAI vendor module must not be
-// imported outside the LLM-infra layer.
-const buildRerankResponsesSamplingParams = (
-  model: string,
-): { temperature: number } | { reasoning: { effort: ReasoningEffort } } =>
-  /^gpt-5(?:[.-]|$)/i.test(model)
-    ? { reasoning: { effort: RETRIEVAL_BEHAVIOR.rerank.reasoningEffort } }
-    : { temperature: RETRIEVAL_BEHAVIOR.rerank.temperature };
+// a non-default temperature, so send reasoning effort (no temperature) for them;
+// other OpenAI rerank models keep temperature. If the model has already rejected
+// the effort value, send neither so it reranks at the model default rather than
+// failing. Detection/cache live in the shared (non-vendor) module so this path
+// degrades the same way the chat-completions path does.
+const buildRerankResponsesSamplingParams = (model: string): RerankSamplingParams => {
+  if (!/^gpt-5(?:[.-]|$)/i.test(model)) {
+    return { temperature: RETRIEVAL_BEHAVIOR.rerank.temperature };
+  }
+  const effort = RETRIEVAL_BEHAVIOR.rerank.reasoningEffort;
+  return isReasoningEffortKnownUnsupported(model, effort) ? {} : { reasoning: { effort } };
+};
 
 export class ModelRerankGateway implements RerankGateway {
   constructor(
@@ -146,17 +154,31 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
 
     const prompt = buildRerankPrompt({ query: input.query, candidates });
     const operation = input.usageContext ?? fallbackRerankOperation(input.workspaceContext?.workspaceId);
-    let response: Awaited<ReturnType<typeof this.client.responses.create>> | undefined;
-    try {
-      response = await this.client.responses.create({
+    const sampling = buildRerankResponsesSamplingParams(this.model);
+    const createRerank = (params: RerankSamplingParams) =>
+      this.client.responses.create({
         model: this.model,
-        ...buildRerankResponsesSamplingParams(this.model),
+        ...params,
         max_output_tokens: maxOutputTokens,
         input: prompt,
         text: {
           format: OpenAISemanticRerankGateway.RESPONSE_FORMAT,
         },
       });
+    let response: Awaited<ReturnType<typeof this.client.responses.create>> | undefined;
+    try {
+      try {
+        response = await createRerank(sampling);
+      } catch (error) {
+        // A reasoning-effort rejection must degrade to a real rerank at the model
+        // default, not silently fall through to similarity ordering. Retry without
+        // the effort and remember it so the failed round-trip is paid at most once.
+        if (!sampling.reasoning || !isUnsupportedReasoningEffortError(error)) {
+          throw error;
+        }
+        markReasoningEffortUnsupported(this.model, sampling.reasoning.effort);
+        response = await createRerank({});
+      }
     } catch (error) {
       await this.recordUsage({
         operation,

@@ -20,7 +20,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { ChatMessageThread, type ChatThreadMessage } from '@/components/dashboard/chat-message-thread'
+import {
+  ChatMessageThread,
+  THEMED_SUGGESTION_BUTTON_CLASS,
+  getThemedSuggestionButtonStyle,
+  type ChatThreadMessage,
+} from '@/components/dashboard/chat-message-thread'
 import { AssistantMessageContent } from '@/components/dashboard/chat-citations'
 import { ScrollToBottomButton } from '@/components/chat/scroll-to-bottom-button'
 import { useChatScroll } from '@/hooks/use-chat-scroll'
@@ -291,7 +296,7 @@ function PublicChatOptionsMenu({
   )
 }
 
-function PublicChatCenteredIntro({
+export function PublicChatCenteredIntro({
   copy,
   theme,
   themeOverrides,
@@ -370,12 +375,8 @@ function PublicChatCenteredIntro({
                     variant="outline"
                     size="sm"
                     disabled={isLoading}
-                    className="h-auto max-w-full whitespace-normal rounded-full px-3 py-1 text-left text-sm leading-snug shadow-none transition-colors"
-                    style={{
-                      background: theme.mutedBackground,
-                      borderColor: theme.panelBorder,
-                      color: theme.panelForeground,
-                    }}
+                    className={`h-auto max-w-full whitespace-normal rounded-full px-3 py-1 text-left text-sm leading-snug shadow-none ${THEMED_SUGGESTION_BUTTON_CLASS}`}
+                    style={getThemedSuggestionButtonStyle(theme)}
                     onClick={() => onSuggestionSelect(suggestion, greetingMessage.id)}
                   >
                     {suggestion.text}

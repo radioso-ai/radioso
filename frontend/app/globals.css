@@ -196,6 +196,12 @@
   }
 }
 
+.radioso-suggestion-hover-highlight:hover {
+  border-color: #ffc720 !important;
+  background-color: #ffc720 !important;
+  color: #142317 !important;
+}
+
 .dark .syntax-highlight span {
   color: var(--code-token-dark) !important;
   background-color: var(--code-token-dark-bg) !important;

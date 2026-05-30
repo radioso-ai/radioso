@@ -287,6 +287,7 @@ export function ChatMessageThread({
   copy = DEFAULT_WEBSITE_EMBED_COPY,
   showCitations = true,
   conversationId,
+  evalCaptureEnabled = false,
   analyticsSurface = 'dashboard',
   analyticsEnabled = true,
   onEmbedAnalyticsEvent,
@@ -308,10 +309,11 @@ export function ChatMessageThread({
   hideFeedbackEntries?: boolean
   copy?: WebsiteEmbedCopy
   showCitations?: boolean
-  // When provided, assistant turns show a "Send to eval" hover action.
-  // Authenticated dashboard surfaces (chat + activity) pass this; the public
-  // embed and website chat omit it so end users never see the action.
+  // Eval capture is an authenticated operator action. Public chat and embed
+  // surfaces also pass conversationId for analytics and session continuity, so
+  // the control must stay explicitly opt-in.
   conversationId?: string
+  evalCaptureEnabled?: boolean
   analyticsSurface?: ChatLinkAnalyticsSurface
   analyticsEnabled?: boolean
   onEmbedAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
@@ -725,7 +727,7 @@ export function ChatMessageThread({
                           {message.content ? (
                             <MessageCopyButton content={message.content} theme={theme} />
                           ) : null}
-                          {conversationId && assistantMessageId ? (
+                          {evalCaptureEnabled && conversationId && assistantMessageId ? (
                             <SendToEvalAction
                               conversationId={conversationId}
                               assistantMessageId={assistantMessageId}

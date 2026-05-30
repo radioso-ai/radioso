@@ -1,5 +1,7 @@
 'use client'
 
+import { type ReactNode } from 'react'
+
 import { MarkdownContent } from '@/components/markdown/markdown-content'
 
 const UNORDERED_LIST_MARKER_PATTERN = /(^|\s)([-+*•])\s+/g
@@ -46,11 +48,13 @@ const expandInlineUnorderedLists = (content: string) =>
 export function AssistantMarkdownContent({
   content,
   inline = false,
+  trailingInlineContent,
   onLinkClick,
   transformLinkHref,
 }: {
   content: string
   inline?: boolean
+  trailingInlineContent?: ReactNode
   onLinkClick?: (href: string) => void
   transformLinkHref?: (href: string) => string
 }) {
@@ -61,6 +65,7 @@ export function AssistantMarkdownContent({
       content={normalizedContent}
       variant="chat"
       inline={inline}
+      trailingInlineContent={trailingInlineContent}
       onLinkClick={onLinkClick}
       transformLinkHref={transformLinkHref}
     />

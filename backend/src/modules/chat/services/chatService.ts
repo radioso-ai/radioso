@@ -33,11 +33,11 @@ import { runPreparedChatTurnWithConversationEngine } from "./conversationEngineC
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import { noopDirectiveSteering, type DirectiveSteeringPort } from "../../directives/public.js";
 import {
-  GenericTurnOutcomeRenderer,
-  RETRIEVAL_OUTCOME_KIND,
-  TurnOutcomeRendererRegistry,
-  buildRetrievalTurnOutcome,
+  buildTurnRendererRegistry,
+  type TurnOutcomeRendererRegistry,
+  type TurnSkill,
 } from "./turnOutcome.js";
+import { createRetrievalTurnSkill } from "./retrievalTurnSkill.js";
 import {
   DefaultTurnSelectionStrategy,
   type TurnSelectionStrategy,
@@ -246,6 +246,7 @@ export class ChatService {
   private readonly chatAnswerPresenter: ChatAnswerPresenter;
   private readonly chatSessionPreparer: ChatSessionPreparer;
   private readonly chatTurnLifecycle: ChatTurnLifecycle;
+  private readonly turnSkills: TurnSkill[];
   private readonly turnRenderers: TurnOutcomeRendererRegistry;
   constructor(
     conversationRepository: ConversationRepositoryPort,
@@ -287,17 +288,16 @@ export class ChatService {
       chatActionSuggestionService,
       skillOutcomeCapabilities,
     );
-    // The retrieval renderer wraps today's grounded composition unchanged; the
-    // generic renderer handles any other skill's outcome. The loop composes
-    // through this registry, never branching on a specific skill.
-    this.turnRenderers = new TurnOutcomeRendererRegistry([
-      {
-        supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
-        render: (_outcome, ctx) =>
+    // Retrieval is registered as a terminal turn skill; the turn machinery and the
+    // engine adapter stay skill-agnostic and only see skill-shaped input. Adding
+    // further skills is registration here, not a code branch in the turn loop.
+    this.turnSkills = [
+      createRetrievalTurnSkill({
+        renderAnswer: (ctx) =>
           this.generateAnswerPresentation(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId),
-      },
-      new GenericTurnOutcomeRenderer(),
-    ]);
+      }),
+    ];
+    this.turnRenderers = buildTurnRendererRegistry(this.turnSkills);
   }
 
   /**
@@ -317,14 +317,18 @@ export class ChatService {
         engine: this.conversationEngine,
         session,
         selectionStrategy: this.selectionStrategy,
-        turnRenderers: this.turnRenderers,
+        turnSkills: this.turnSkills,
         query: input.query,
         userExpectedLocale: input.userExpectedLocale,
         accountId: input.accountId,
       });
       return { presentation, engineTrace: result.trace };
     }
-    const turnOutcome = buildRetrievalTurnOutcome(session);
+    const skill = this.turnSkills.find((candidate) => candidate.selects(session)) ?? this.turnSkills[0];
+    if (!skill) {
+      throw new Error("chat_no_turn_skill_registered");
+    }
+    const turnOutcome = await skill.dispatch(session);
     const presentation = await this.turnRenderers.resolve(turnOutcome).render(turnOutcome, {
       session,
       query: input.query,

@@ -6,12 +6,12 @@ import type { MessageRecord } from "../../src/db/repositories/messageRepository.
 import type { AgentRecord } from "../../src/modules/agents/public.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { runPreparedChatTurnWithConversationEngine } from "../../src/modules/chat/services/conversationEngineChatTurn.js";
+import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import {
   RETRIEVAL_OUTCOME_KIND,
   RETRIEVAL_TURN_SKILL,
-  TurnOutcomeRendererRegistry,
-  type TurnOutcomeRenderer,
-} from "../../src/modules/chat/services/turnOutcome.js";
+  buildRetrievalTurnOutcome,
+} from "../../src/modules/chat/services/retrievalTurnSkill.js";
 import { DefaultTurnSelectionStrategy } from "../../src/modules/chat/services/turnSelectionStrategy.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 
@@ -108,67 +108,70 @@ const session = (): PreparedSession => ({
   },
 });
 
-describe("runPreparedChatTurnWithConversationEngine", () => {
-  it("lets the engine select and dispatch retrieval.answer, then renders via the registry", async () => {
-    const selectorCalls: number[] = [];
-    const dispatched: string[] = [];
-    // A fake engine that drives the adapter's ports the way the real engine does:
-    // select, dispatch the selected skill, then compose.
-    const engine: ConversationEngine = {
-      async processTurn(input) {
-        const history = await input.stores.loadHistory({ sessionId: input.sessionId });
-        const turn = {
-          agent: input.agent,
-          sessionId: input.sessionId,
-          inputEvent: input.inputEvent,
-          history,
-          stagedContext: [],
-          steering: [],
-        };
-        const decision = await input.selector.select({
-          turn,
-          skills: input.skills,
-          directives: [],
-        });
-        selectorCalls.push(decision.selected.length);
-        const selected = decision.selected[0];
-        const skill = input.skills.find((candidate) => candidate.name === selected?.skillName);
-        if (!skill || !selected) {
-          throw new Error("test skill selection failed");
-        }
-        const outcome = await input.dispatcher.dispatch({ skill, turn, selected });
-        dispatched.push(outcome.skillName);
-        const response = await input.composer.compose({ turn, outcomes: [outcome], decision });
-        return {
-          sessionId: input.sessionId,
-          events: [],
-          decision,
-          outcomes: [outcome],
-          response,
-          trace: { traceId: "test-engine", startedAt: "2026-01-01T00:00:00.000Z", stages: [] },
-        };
-      },
-    };
+// A fake engine that drives the adapter's ports the way the real engine does:
+// select, dispatch the selected skill, then compose. Records what was dispatched.
+const drivingEngine = (): { engine: ConversationEngine; dispatched: string[]; selectorCalls: number[] } => {
+  const dispatched: string[] = [];
+  const selectorCalls: number[] = [];
+  const engine: ConversationEngine = {
+    async processTurn(input) {
+      const history = await input.stores.loadHistory({ sessionId: input.sessionId });
+      const turn = {
+        agent: input.agent,
+        sessionId: input.sessionId,
+        inputEvent: input.inputEvent,
+        history,
+        stagedContext: [],
+        steering: [],
+      };
+      const decision = await input.selector.select({ turn, skills: input.skills, directives: [] });
+      selectorCalls.push(decision.selected.length);
+      const selected = decision.selected[0];
+      const skill = input.skills.find((candidate) => candidate.name === selected?.skillName);
+      if (!skill || !selected) {
+        throw new Error("test skill selection failed");
+      }
+      const outcome = await input.dispatcher.dispatch({ skill, turn, selected });
+      dispatched.push(outcome.skillName);
+      const response = await input.composer.compose({ turn, outcomes: [outcome], decision });
+      return {
+        sessionId: input.sessionId,
+        events: [],
+        decision,
+        outcomes: [outcome],
+        response,
+        trace: { traceId: "test-engine", startedAt: "2026-01-01T00:00:00.000Z", stages: [] },
+      };
+    },
+  };
+  return { engine, dispatched, selectorCalls };
+};
 
-    // Stand-in retrieval renderer: the real one composes a grounded answer via the
-    // gateway; here we assert the engine reached the retrieval outcome and rendered it.
-    const retrievalRenderer: TurnOutcomeRenderer = {
-      supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
-      async render(outcome) {
-        return {
+describe("runPreparedChatTurnWithConversationEngine", () => {
+  it("lets the engine select and dispatch the registered retrieval skill, then renders it", async () => {
+    // The retrieval skill is injected as skill-shaped input — the adapter names no
+    // skill itself. The renderer stands in for the host's grounded composition.
+    const retrievalSkill: TurnSkill = {
+      definition: { name: RETRIEVAL_TURN_SKILL, outcomeKinds: [RETRIEVAL_OUTCOME_KIND] },
+      selects: () => true,
+      dispatch: (s) => buildRetrievalTurnOutcome(s),
+      renderer: {
+        supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
+        render: async (outcome) => ({
           answer: "Grounded answer.",
           skillName: outcome.skillName,
           skillOutcome: outcome.outcome.status,
           skillStatus: outcome.outcome.status,
-        };
+        }),
       },
     };
 
+    const { engine, dispatched, selectorCalls } = drivingEngine();
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine,
       session: session(),
       selectionStrategy: new DefaultTurnSelectionStrategy(),
-      turnRenderers: new TurnOutcomeRendererRegistry([retrievalRenderer]),
+      turnSkills: [retrievalSkill],
       query: "Where is my order?",
     });
 
@@ -182,5 +185,43 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     });
     // The adapter surfaces the engine's turn result so the host can persist its trace.
     expect(result.outcomes[0]?.skillName).toBe(RETRIEVAL_TURN_SKILL);
+  });
+
+  it("dispatches and renders whatever terminal skill is registered (no retrieval coupling)", async () => {
+    // A non-retrieval skill proves the adapter is skill-agnostic: it dispatches and
+    // renders purely from the injected skill, with no `retrieval` knowledge.
+    const bookingSkill: TurnSkill = {
+      definition: { name: "booking.create", outcomeKinds: ["booking"] },
+      selects: () => true,
+      dispatch: () => ({
+        kind: "booking",
+        skillName: "booking.create",
+        outcome: { status: "completed", answer: "Booked." },
+        stagedContext: [],
+        steering: [],
+        trace: { traceId: "t", startedAt: "2026-01-01T00:00:00.000Z", stages: [] },
+      }),
+      renderer: {
+        supports: (outcome) => outcome.kind === "booking",
+        render: async (outcome) => ({
+          answer: outcome.outcome.answer ?? "",
+          skillName: outcome.skillName,
+          skillOutcome: outcome.outcome.status,
+          skillStatus: outcome.outcome.status,
+        }),
+      },
+    };
+
+    const { engine, dispatched } = drivingEngine();
+    const { presentation } = await runPreparedChatTurnWithConversationEngine({
+      engine,
+      session: session(),
+      selectionStrategy: new DefaultTurnSelectionStrategy(),
+      turnSkills: [bookingSkill],
+      query: "Book me a slot",
+    });
+
+    expect(dispatched).toEqual(["booking.create"]);
+    expect(presentation).toMatchObject({ answer: "Booked.", skillName: "booking.create" });
   });
 });

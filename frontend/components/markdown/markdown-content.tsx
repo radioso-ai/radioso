@@ -1,6 +1,13 @@
 'use client'
 
-import { Fragment, useMemo, type ComponentPropsWithoutRef, type ReactNode } from 'react'
+import {
+  Fragment,
+  createContext,
+  useContext,
+  useMemo,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+} from 'react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -89,16 +96,49 @@ const hasChildEndingAtContentEnd = (node: HastElement | undefined, contentEndOff
     child.type === 'element' && nodeEndsAtContentEnd(child, contentEndOffset),
   ) ?? false
 
+// Per-render inputs the overrides need. They flow through context rather than
+// `createComponents` parameters so the `components` map can be memoized on the
+// stable `variant`/`inline` pair alone — see the DynamicContext note on
+// MarkdownContent. Context value changes re-render only the small consumer
+// components below; because their function identities are module-stable,
+// react-markdown reconciles their DOM in place instead of remounting it.
+type MarkdownDynamics = {
+  trailingInlineContent: ReactNode
+  contentEndOffset: number
+  onLinkClick?: (href: string) => void
+  transformLinkHref?: (href: string) => string
+}
+
+const MarkdownDynamicsContext = createContext<MarkdownDynamics>({
+  trailingInlineContent: null,
+  contentEndOffset: 0,
+})
+
+// Renders the message's trailing inline content (citation markers, trailing
+// text) once, attached to whichever node ends at the content's end offset.
+const TrailingInlineContent = ({
+  node,
+  suppressIfChildEndsAtContentEnd = false,
+}: {
+  node?: HastElement
+  suppressIfChildEndsAtContentEnd?: boolean
+}) => {
+  const { trailingInlineContent, contentEndOffset } = useContext(MarkdownDynamicsContext)
+  if (!trailingInlineContent) {
+    return null
+  }
+  if (suppressIfChildEndsAtContentEnd && hasChildEndingAtContentEnd(node, contentEndOffset)) {
+    return null
+  }
+  return nodeEndsAtContentEnd(node, contentEndOffset) ? <>{trailingInlineContent}</> : null
+}
+
 const MarkdownLink = ({
   href,
   children,
   className,
-  onLinkClick,
-  transformLinkHref,
-}: ComponentPropsWithoutRef<'a'> & {
-  onLinkClick?: (href: string) => void
-  transformLinkHref?: (href: string) => string
-}) => {
+}: ComponentPropsWithoutRef<'a'>) => {
+  const { onLinkClick, transformLinkHref } = useContext(MarkdownDynamicsContext)
   if (!isSafeHref(href)) {
     return <span className="text-foreground">{children}</span>
   }
@@ -151,13 +191,12 @@ const documentHeadingClasses: Record<1 | 2 | 3 | 4 | 5 | 6, string> = {
 const buildHeading = (
   level: 1 | 2 | 3 | 4 | 5 | 6,
   classes: Record<1 | 2 | 3 | 4 | 5 | 6, string>,
-  renderTrailingInlineContent?: (node?: HastElement) => ReactNode,
 ) => {
   const Tag = `h${level}` as 'h1'
   const Component = ({ children, className, node }: ComponentPropsWithoutRef<'h1'> & ExtraProps) => (
     <Tag className={cn(classes[level], className)}>
       {children}
-      {renderTrailingInlineContent?.(node)}
+      <TrailingInlineContent node={node} />
     </Tag>
   )
   Component.displayName = `MarkdownHeading${level}`
@@ -167,25 +206,12 @@ const buildHeading = (
 const createComponents = (
   variant: MarkdownVariant,
   inline: boolean,
-  trailingInlineContent: ReactNode,
-  contentEndOffset: number,
-  onLinkClick?: (href: string) => void,
-  transformLinkHref?: (href: string) => string,
 ): Components => {
   const headingClasses = variant === 'chat' ? chatHeadingClasses : documentHeadingClasses
-  const renderTrailingInlineContent = (node?: HastElement) =>
-    trailingInlineContent && nodeEndsAtContentEnd(node, contentEndOffset)
-      ? trailingInlineContent
-      : null
 
   return {
     a: ({ href, children, className }) => (
-      <MarkdownLink
-        href={href}
-        className={className}
-        onLinkClick={onLinkClick}
-        transformLinkHref={transformLinkHref}
-      >
+      <MarkdownLink href={href} className={className}>
         {children}
       </MarkdownLink>
     ),
@@ -207,16 +233,16 @@ const createComponents = (
     em: ({ children, className }) => (
       <em className={cn('italic', className)}>{children}</em>
     ),
-    h1: buildHeading(1, headingClasses, renderTrailingInlineContent),
-    h2: buildHeading(2, headingClasses, renderTrailingInlineContent),
-    h3: buildHeading(3, headingClasses, renderTrailingInlineContent),
-    h4: buildHeading(4, headingClasses, renderTrailingInlineContent),
-    h5: buildHeading(5, headingClasses, renderTrailingInlineContent),
-    h6: buildHeading(6, headingClasses, renderTrailingInlineContent),
+    h1: buildHeading(1, headingClasses),
+    h2: buildHeading(2, headingClasses),
+    h3: buildHeading(3, headingClasses),
+    h4: buildHeading(4, headingClasses),
+    h5: buildHeading(5, headingClasses),
+    h6: buildHeading(6, headingClasses),
     hr: ({ className, node }) => (
       <>
         <hr className={cn('my-4 border-border', className)} />
-        {renderTrailingInlineContent(node)}
+        <TrailingInlineContent node={node} />
       </>
     ),
     img: ({ src, alt, title }) => {
@@ -264,7 +290,7 @@ const createComponents = (
     li: ({ children, className, node }) => (
       <li className={cn('ml-1 text-foreground', className)}>
         {children}
-        {!hasChildEndingAtContentEnd(node, contentEndOffset) ? renderTrailingInlineContent(node) : null}
+        <TrailingInlineContent node={node} suppressIfChildEndsAtContentEnd />
       </li>
     ),
     ol: ({ children, className }) => (
@@ -278,7 +304,7 @@ const createComponents = (
       ) : (
         <p className={cn('mt-3 text-foreground first:mt-0', className)}>
           {children}
-          {renderTrailingInlineContent(node)}
+          <TrailingInlineContent node={node} />
         </p>
       ),
     pre: ({ children, node }: PreProps) => {
@@ -287,14 +313,14 @@ const createComponents = (
         return (
           <>
             <CodeBlock code={fenced.code} language={fenced.language} />
-            {renderTrailingInlineContent(node)}
+            <TrailingInlineContent node={node} />
           </>
         )
       }
       return (
         <>
           <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 text-xs leading-6 text-foreground">{children}</pre>
-          {renderTrailingInlineContent(node)}
+          <TrailingInlineContent node={node} />
         </>
       )
     },
@@ -339,7 +365,7 @@ const createComponents = (
     td: ({ children, className, node }) => (
       <td className={cn('px-3 py-2 align-top', className)}>
         {children}
-        {renderTrailingInlineContent(node)}
+        <TrailingInlineContent node={node} />
       </td>
     ),
     ul: ({ children, className }) => (
@@ -350,10 +376,6 @@ const createComponents = (
   }
 }
 
-// Memoizing keeps the `components` object identity stable across renders so
-// react-markdown reconciles tags in place instead of unmounting them. Without
-// this, every render replaced live DOM (e.g. a focused <a> inside an <li>),
-// which dropped focus mid-click and prevented link clicks from completing.
 const REMARK_PLUGINS = [remarkGfm]
 
 export function MarkdownContent({
@@ -371,14 +393,32 @@ export function MarkdownContent({
   onLinkClick?: (href: string) => void
   transformLinkHref?: (href: string) => string
 }) {
-  const contentEndOffset = content.trimEnd().length
-  const components = useMemo(
-    () => createComponents(variant, inline, trailingInlineContent, contentEndOffset, onLinkClick, transformLinkHref),
-    [variant, inline, trailingInlineContent, contentEndOffset, onLinkClick, transformLinkHref],
+  // DynamicContext: callers (e.g. AssistantMessageContent) pass a fresh
+  // `onLinkClick`/`trailingInlineContent` reference on every render, and the
+  // website embed's viewport focusin listener forces a re-render on every focus
+  // change. If those unstable values fed the `components` memo directly, the
+  // memo would bust each render, react-markdown would see a new component type,
+  // and it would unmount and remount live DOM — replacing the focused <a>
+  // mid-click so `mouseup` landed on a different node and the browser never
+  // fired `click`. Memoizing `components` on the stable variant/inline pair and
+  // flowing the dynamic values through context keeps every override's identity
+  // stable: a re-render only updates the context, which reconciles the <a> in
+  // place instead of remounting it.
+  const components = useMemo(() => createComponents(variant, inline), [variant, inline])
+  const dynamics = useMemo<MarkdownDynamics>(
+    () => ({
+      trailingInlineContent,
+      contentEndOffset: content.trimEnd().length,
+      onLinkClick,
+      transformLinkHref,
+    }),
+    [trailingInlineContent, content, onLinkClick, transformLinkHref],
   )
   return (
-    <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
-      {content}
-    </ReactMarkdown>
+    <MarkdownDynamicsContext.Provider value={dynamics}>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
+        {content}
+      </ReactMarkdown>
+    </MarkdownDynamicsContext.Provider>
   )
 }

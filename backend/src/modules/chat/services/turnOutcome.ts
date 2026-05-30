@@ -1,8 +1,7 @@
-import type { TurnOutcome } from "@radioso/conversation-contract";
+import type { SkillDefinition, TurnOutcome } from "@radioso/conversation-contract";
 
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
-import { toConversationTrace, toRetrievalStagedContext } from "./conversationContractMappers.js";
 
 /**
  * The generic, per-turn result the assistant composes its reply from — the
@@ -16,31 +15,6 @@ import { toConversationTrace, toRetrievalStagedContext } from "./conversationCon
  * read by the generic renderer. The loop never branches on a specific skill.
  */
 export type { TurnOutcome } from "@radioso/conversation-contract";
-
-/** The outcome kind a grounded/retrieval turn produces. */
-export const RETRIEVAL_OUTCOME_KIND = "retrieval";
-
-// The skill name a grounded (retrieval) turn dispatches; the retrieval renderer
-// claims outcomes under this kind, while a non-retrieval skill's outcome falls
-// through to the generic renderer.
-export const RETRIEVAL_TURN_SKILL = "retrieval.answer";
-
-/**
- * Wraps a prepared session's grounded/direct result into the generic turn
- * outcome a retrieval dispatch produces. The rich retrieval result rides on
- * `session.retrieval` (read by the retrieval renderer); the outcome carries the
- * steering set for the composer and declares its rendering kind so renderers
- * match by kind, not skill name. Pure mapping — retrieval execution already
- * happened during session prep.
- */
-export const buildRetrievalTurnOutcome = (session: PreparedSession): TurnOutcome => ({
-  kind: RETRIEVAL_OUTCOME_KIND,
-  skillName: RETRIEVAL_TURN_SKILL,
-  outcome: { status: "completed" },
-  stagedContext: [toRetrievalStagedContext(session.retrieval)],
-  steering: session.directiveSteering?.rules ?? [],
-  trace: toConversationTrace(session.retrieval.trace),
-});
 
 /** Turn-scoped inputs a renderer needs beyond the outcome itself. */
 export interface TurnRenderContext {
@@ -98,3 +72,28 @@ export class GenericTurnOutcomeRenderer implements TurnOutcomeRenderer {
     };
   }
 }
+
+/**
+ * A registered terminal turn capability: its public `definition` (what the
+ * selector and engine see), how it `dispatch`es into a `TurnOutcome`, and how that
+ * outcome `renderer`s. Concrete skills (e.g. retrieval) live outside this module
+ * and are registered by the host, so the turn machinery stays capability-neutral
+ * and only ever expects skill-shaped input — it names no specific skill.
+ */
+export interface TurnSkill {
+  definition: SkillDefinition;
+  /** Whether this skill is the terminal answer for the prepared turn. */
+  selects(session: PreparedSession): boolean;
+  /** Produces the turn outcome; a concrete skill may read the session's capabilities. */
+  dispatch(session: PreparedSession): Promise<TurnOutcome> | TurnOutcome;
+  /** Renders this skill's outcome into a chat presentation. */
+  renderer: TurnOutcomeRenderer;
+}
+
+/**
+ * Builds the renderer registry for a set of registered turn skills, with the
+ * generic renderer as the always-last fallback. The loop composes through this
+ * registry, never branching on a specific skill.
+ */
+export const buildTurnRendererRegistry = (skills: TurnSkill[]): TurnOutcomeRendererRegistry =>
+  new TurnOutcomeRendererRegistry([...skills.map((skill) => skill.renderer), new GenericTurnOutcomeRenderer()]);

@@ -164,7 +164,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       },
     };
 
-    const presentation = await runPreparedChatTurnWithConversationEngine({
+    const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine,
       session: session(),
       selectionStrategy: new DefaultTurnSelectionStrategy(),
@@ -180,5 +180,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       skillOutcome: "completed",
       skillStatus: "completed",
     });
+    // The adapter surfaces the engine's turn result so the host can persist its trace.
+    expect(result.outcomes[0]?.skillName).toBe(RETRIEVAL_TURN_SKILL);
   });
 });

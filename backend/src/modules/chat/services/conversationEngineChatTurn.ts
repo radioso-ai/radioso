@@ -1,5 +1,6 @@
 import type {
   ConversationEngine,
+  ProcessTurnResult,
   RenderableTurn,
   SkillDefinition,
 } from "@radioso/conversation-contract";
@@ -23,6 +24,13 @@ export interface RunPreparedChatTurnWithConversationEngineInput {
   query: string;
   userExpectedLocale?: string | null;
   accountId?: string;
+}
+
+export interface RunPreparedChatTurnWithConversationEngineResult {
+  /** The Radioso-rendered presentation the host persists and returns. */
+  presentation: ChatPresentedAnswer;
+  /** The engine's turn result — its selection/dispatch trace and events. */
+  result: ProcessTurnResult;
 }
 
 // The single answer skill this slice dispatches. Intake candidates are handled
@@ -58,7 +66,7 @@ const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => 
  */
 export const runPreparedChatTurnWithConversationEngine = async (
   input: RunPreparedChatTurnWithConversationEngineInput,
-): Promise<ChatPresentedAnswer> => {
+): Promise<RunPreparedChatTurnWithConversationEngineResult> => {
   let rendered: ChatPresentedAnswer | null = null;
   const processTurnInput = createChatProcessTurnInput({
     session: input.session,
@@ -103,9 +111,9 @@ export const runPreparedChatTurnWithConversationEngine = async (
     },
   });
 
-  await input.engine.processTurn(processTurnInput);
+  const result = await input.engine.processTurn(processTurnInput);
   if (!rendered) {
     throw new Error("conversation_engine_rendered_no_chat_presentation");
   }
-  return rendered;
+  return { presentation: rendered, result };
 };

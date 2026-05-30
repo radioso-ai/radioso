@@ -1,5 +1,5 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
-import type { ConversationEngine } from "@radioso/conversation-contract";
+import type { ConversationEngine, ConversationTrace } from "@radioso/conversation-contract";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
@@ -300,15 +300,17 @@ export class ChatService {
   /**
    * Produces the grounded/direct answer for a prepared turn. With the engine
    * enabled, the conversation engine selects and dispatches `retrieval.answer`
-   * itself; otherwise the retrieval outcome is built and rendered directly. Both
-   * paths render through the same registry, so behavior is identical.
+   * itself and returns its turn trace for audit; otherwise the retrieval outcome
+   * is built and rendered directly. Both paths render through the same registry,
+   * so the user-facing answer is identical — `engineTrace` is added observability
+   * present only on the engine path.
    */
   private async renderRetrievalTurn(
     session: PreparedSession,
     input: { query: string; userExpectedLocale?: string | null; accountId?: string },
-  ): Promise<ChatPresentedAnswer> {
+  ): Promise<{ presentation: ChatPresentedAnswer; engineTrace?: ConversationTrace }> {
     if (this.conversationEngine) {
-      return runPreparedChatTurnWithConversationEngine({
+      const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
         engine: this.conversationEngine,
         session,
         selectionStrategy: this.selectionStrategy,
@@ -317,14 +319,16 @@ export class ChatService {
         userExpectedLocale: input.userExpectedLocale,
         accountId: input.accountId,
       });
+      return { presentation, engineTrace: result.trace };
     }
     const turnOutcome = buildRetrievalTurnOutcome(session);
-    return this.turnRenderers.resolve(turnOutcome).render(turnOutcome, {
+    const presentation = await this.turnRenderers.resolve(turnOutcome).render(turnOutcome, {
       session,
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
     });
+    return { presentation };
   }
 
   private buildChatWorkspaceContext(session: PreparedSession): LlmCapabilityResolveInput {
@@ -560,7 +564,7 @@ export class ChatService {
         ? await this.chatSessionPreparer.prepareRetrieval(input, session)
         : await this.chatSessionPreparer.prepareDirect(input, session);
       const answerStartedAt = Date.now();
-      const presentation = await this.renderRetrievalTurn(session, input);
+      const { presentation, engineTrace } = await this.renderRetrievalTurn(session, input);
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
@@ -568,6 +572,7 @@ export class ChatService {
         presentation,
         answerStartedAt,
         stream: input.stream,
+        engineTrace,
       });
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();

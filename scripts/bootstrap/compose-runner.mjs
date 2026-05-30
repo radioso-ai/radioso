@@ -1,4 +1,5 @@
 import { getComposeArgs } from "./preflight.mjs";
+import { localHttpUrl, resolveLocalPorts } from "./support/local-ports.mjs";
 import { sleep, spawnInherited } from "./support/process-utils.mjs";
 
 const fetchReady = async (url) => {
@@ -13,9 +14,12 @@ const fetchReady = async (url) => {
 export const waitForReadiness = async (options = {}) => {
   const timeoutMs = options.timeoutMs ?? 120_000;
   const intervalMs = options.intervalMs ?? 2_000;
+  const ports = options.ports ?? resolveLocalPorts();
+  const frontendUrl = localHttpUrl(ports.frontend);
+  const backendUrl = localHttpUrl(ports.backend);
   const checks = options.checks ?? [
-    { name: "frontend", probe: () => fetchReady("http://127.0.0.1:3000") },
-    { name: "backend", probe: () => fetchReady("http://127.0.0.1:8080/health") },
+    { name: "frontend", probe: () => fetchReady(frontendUrl) },
+    { name: "backend", probe: () => fetchReady(`${backendUrl}/health`) },
   ];
 
   const startedAt = Date.now();
@@ -32,7 +36,7 @@ export const waitForReadiness = async (options = {}) => {
         ok: true,
         readyServices: statuses.map((status) => status.name),
         failedServices: [],
-        applicationUrls: ["http://127.0.0.1:3000", "http://127.0.0.1:8080"],
+        applicationUrls: [frontendUrl, backendUrl],
         nextSteps: [
           "Open Radioso in your browser.",
           "Containers keep running in detached mode after this command exits.",

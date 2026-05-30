@@ -18,7 +18,9 @@ The default local start command for the full Radioso stack is:
 
 That command checks Docker and other local prerequisites, asks which supported AI provider you want to use, collects the required API credentials into `.env`, and starts the local frontend, backend, and database stack through Docker Compose.
 
-After the stack is ready, open the app on [http://localhost:3000](http://localhost:3000), sign in, let Radioso seed the starter docs for an empty workspace, wait for processing, and ask one of the suggested first questions. A valid provider key is required for document processing and chat.
+The full stack uses `RADIOSO_FRONTEND_PORT`, `RADIOSO_BACKEND_PORT`, and `RADIOSO_POSTGRES_PORT` when those variables are set. In Conductor workspaces, `./run-dev.sh` maps these from the workspace `CONDUCTOR_PORT` range so parallel workspaces do not share the same Docker project or host ports.
+
+After the stack is ready, open the frontend URL printed by the bootstrap, sign in, let Radioso seed the starter docs for an empty workspace, wait for processing, and ask one of the suggested first questions. A valid provider key is required for document processing and chat.
 
 If you only need the standalone frontend development server, run:
 

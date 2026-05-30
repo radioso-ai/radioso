@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModelRerankGateway, OpenAISemanticRerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
 import { OpenAIEmbeddingClient, OpenAITextGenerationClient } from "../../src/shared/infra/llm/openaiProvider.js";
+import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+import type { TextGenerationClient, TextGenerationRequest } from "../../src/shared/infra/llm/providerTypes.js";
+import type { RetrievedCandidate } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
+import { streamResult, textResult } from "../support/llmStubs.js";
 import {
   LlmProviderRegistry,
   ProviderConfigurationError,
@@ -256,6 +260,139 @@ describe("LlmProviderRegistry", () => {
   });
 });
 
+describe("OpenAISemanticRerankGateway", () => {
+  const usageContext = {
+    workspaceId: "ws-1",
+    surface: "assistant",
+    operation: "rerank",
+    attemptKey: "rerank:0",
+  } as const;
+
+  const context: RetrievedCandidate = {
+    chunkId: "chunk-1",
+    documentId: "doc-1",
+    title: "Doc",
+    content: "Relevant content",
+    similarity: 0.8,
+    metadata: {},
+    retrievalSources: [],
+    retrievalText: "Relevant content",
+    semanticScore: 0.8,
+    lexicalScore: 0,
+  };
+
+  it("omits temperature and requests minimal reasoning for GPT-5 rerank models", async () => {
+    let request: Record<string, unknown> | undefined;
+    const gateway = new OpenAISemanticRerankGateway(
+      {
+        responses: {
+          async create(input: Record<string, unknown>) {
+            request = input;
+            return { output_text: JSON.stringify({ scores: [{ candidateIndex: 1, relevanceScore: 0.91 }] }) };
+          },
+        },
+      },
+      "gpt-5-nano",
+    );
+
+    await gateway.rerank({ query: "retreats", contexts: [context], usageContext });
+
+    expect(request).toMatchObject({ model: "gpt-5-nano", reasoning: { effort: "minimal" } });
+    expect(request).not.toHaveProperty("temperature");
+  });
+
+  it("keeps temperature for non-reasoning OpenAI rerank models", async () => {
+    let request: Record<string, unknown> | undefined;
+    const gateway = new OpenAISemanticRerankGateway(
+      {
+        responses: {
+          async create(input: Record<string, unknown>) {
+            request = input;
+            return { output_text: JSON.stringify({ scores: [{ candidateIndex: 1, relevanceScore: 0.91 }] }) };
+          },
+        },
+      },
+      "gpt-4.1-mini",
+    );
+
+    await gateway.rerank({ query: "retreats", contexts: [context], usageContext });
+
+    expect(request).toMatchObject({ model: "gpt-4.1-mini", temperature: 0.2 });
+    expect(request).not.toHaveProperty("reasoning");
+  });
+
+  it("retries without reasoning and reranks when the model rejects the effort", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const gateway = new OpenAISemanticRerankGateway(
+      {
+        responses: {
+          async create(input: Record<string, unknown>) {
+            requests.push(input);
+            if ("reasoning" in input) {
+              throw Object.assign(new Error("Unsupported value: 'reasoning.effort' does not support 'minimal'."), {
+                status: 400,
+                code: "unsupported_value",
+                param: "reasoning.effort",
+              });
+            }
+            return { output_text: JSON.stringify({ scores: [{ candidateIndex: 1, relevanceScore: 0.93 }] }) };
+          },
+        },
+      },
+      "gpt-5.4-nano-rerank-test",
+    );
+
+    const result = await gateway.rerank({ query: "retreats", contexts: [context], usageContext });
+
+    // First attempt sends reasoning; on rejection it retries without it and still
+    // reranks (rather than throwing through to the similarity fallback).
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toHaveProperty("reasoning");
+    expect(requests[1]).not.toHaveProperty("reasoning");
+    expect(result).toEqual([{ chunkId: "chunk-1", relevanceScore: 0.93 }]);
+  });
+});
+
+describe("ModelRerankGateway", () => {
+  it("requests minimal reasoning effort for openai-compatible rerank models", async () => {
+    const requests: TextGenerationRequest[] = [];
+    const gateway = new ModelRerankGateway(new ModelInferencePipelineService({
+      metadata: { capability: "rerank", provider: "openai-compatible", model: "rerank-model" },
+      async complete(input) {
+        requests.push(input);
+        return textResult(JSON.stringify({ scores: [{ candidateIndex: 1, relevanceScore: 0.9 }] }));
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    } satisfies TextGenerationClient));
+
+    await gateway.rerank({
+      query: "retreats",
+      contexts: [{
+        chunkId: "chunk-1",
+        documentId: "doc-1",
+        title: "Doc",
+        content: "Relevant content",
+        similarity: 0.8,
+        metadata: {},
+        retrievalSources: [],
+        retrievalText: "Relevant content",
+        semanticScore: 0.8,
+        lexicalScore: 0,
+      }],
+      usageContext: {
+        workspaceId: "ws-1",
+        surface: "assistant",
+        operation: "rerank",
+        attemptKey: "rerank:0",
+      },
+    });
+
+    expect(requests[0]?.reasoningEffort).toBe("minimal");
+  });
+});
+
 describe("OpenAITextGenerationClient", () => {
   it("uses max_tokens for openai-compatible chat completions", async () => {
     let request: Record<string, unknown> | undefined;
@@ -326,6 +463,119 @@ describe("OpenAITextGenerationClient", () => {
       max_completion_tokens: 123,
     });
     expect(request).not.toHaveProperty("max_tokens");
+  });
+
+  const unsupportedReasoningEffortError = () =>
+    Object.assign(new Error("Unsupported value: 'reasoning_effort' does not support 'minimal'."), {
+      status: 400,
+      code: "unsupported_value",
+      param: "reasoning_effort",
+    });
+
+  const stubChatCreate = (
+    client: OpenAITextGenerationClient,
+    create: (input: Record<string, unknown>) => Promise<unknown>,
+  ) => {
+    (
+      client as unknown as {
+        client: { chat: { completions: { create(input: Record<string, unknown>): Promise<unknown> } } };
+      }
+    ).client.chat.completions.create = create;
+  };
+
+  it("retries chat completion without reasoning_effort when the model rejects the value", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const client = new OpenAITextGenerationClient({
+      capability: "rewrite",
+      provider: "openai",
+      model: "gpt-5.4-nano-complete-test",
+      apiKey: "openai-key",
+    });
+    stubChatCreate(client, async (input) => {
+      requests.push(input);
+      if ("reasoning_effort" in input) {
+        throw unsupportedReasoningEffortError();
+      }
+      return { choices: [{ message: { content: "ok" } }] };
+    });
+
+    const result = await client.complete({ prompt: "hi", reasoningEffort: "minimal" });
+
+    expect(result.text).toBe("ok");
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toHaveProperty("reasoning_effort", "minimal");
+    expect(requests[1]).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("rethrows chat completion errors unrelated to reasoning_effort", async () => {
+    const client = new OpenAITextGenerationClient({
+      capability: "rewrite",
+      provider: "openai",
+      model: "gpt-5.4-nano-rethrow-test",
+      apiKey: "openai-key",
+    });
+    stubChatCreate(client, async () => {
+      throw Object.assign(new Error("rate limited"), { status: 429, code: "rate_limit_exceeded" });
+    });
+
+    await expect(client.complete({ prompt: "hi", reasoningEffort: "minimal" })).rejects.toThrow("rate limited");
+  });
+
+  it("retries streaming without reasoning_effort when the model rejects the value", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const client = new OpenAITextGenerationClient({
+      capability: "chat",
+      provider: "openai",
+      model: "gpt-5.4-nano-stream-test",
+      apiKey: "openai-key",
+    });
+    stubChatCreate(client, async (input) => {
+      requests.push(input);
+      if ("reasoning_effort" in input) {
+        throw unsupportedReasoningEffortError();
+      }
+      return (async function* () {
+        yield { id: "c1", choices: [{ delta: { content: "A" } }] };
+        yield { id: "c1", choices: [{ delta: { content: "B" } }] };
+      })();
+    });
+
+    const chunks: string[] = [];
+    const { textStream } = client.stream({ prompt: "hi", reasoningEffort: "minimal" });
+    for await (const chunk of textStream) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(["A", "B"]);
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toHaveProperty("reasoning_effort", "minimal");
+    expect(requests[1]).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("only strips the rejected effort, not a different supported effort on the same model", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const client = new OpenAITextGenerationClient({
+      capability: "chat",
+      provider: "openai",
+      model: "gpt-5.4-nano-mixed-test",
+      apiKey: "openai-key",
+    });
+    stubChatCreate(client, async (input) => {
+      requests.push(input);
+      // This model rejects "minimal" but accepts other efforts (e.g. "low").
+      if (input.reasoning_effort === "minimal") {
+        throw unsupportedReasoningEffortError();
+      }
+      return { choices: [{ message: { content: "ok" } }] };
+    });
+
+    // A minimal-effort call (e.g. query interpretation) is rejected and retried.
+    await client.complete({ prompt: "a", reasoningEffort: "minimal" });
+    // A later low-effort call (e.g. answer synthesis) on the SAME model must still
+    // send "low" — the minimal rejection must not strip it back to provider default.
+    await client.complete({ prompt: "b", reasoningEffort: "low" });
+
+    expect(requests.some((request) => request.reasoning_effort === "low")).toBe(true);
   });
 });
 

@@ -1,5 +1,6 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { ConversationEngine, ConversationTrace } from "@radioso/conversation-contract";
+import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
@@ -94,6 +95,7 @@ export class ModelChatGateway implements ChatGateway {
       operation: input.usageContext,
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
+      reasoningEffort: CHAT_BEHAVIOR.answer.reasoningEffort,
       validateResult(result) {
         if (!result.text?.trim()) {
           throw new BlankChatAnswerError();
@@ -108,6 +110,7 @@ export class ModelChatGateway implements ChatGateway {
       operation: input.usageContext,
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
+      reasoningEffort: CHAT_BEHAVIOR.answer.reasoningEffort,
     });
     for await (const chunk of textStream) {
       if (chunk.length > 0) {

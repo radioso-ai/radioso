@@ -14,6 +14,11 @@ import {
 } from "./providerTypes.js";
 import { streamWithUsage } from "./providerStreaming.js";
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
+import {
+  isReasoningEffortKnownUnsupported,
+  isUnsupportedReasoningEffortError,
+  markReasoningEffortUnsupported,
+} from "./reasoningEffortSupport.js";
 import type { AppLogger } from "../../observability/logger.js";
 
 interface OpenAIUsagePayload {
@@ -92,6 +97,33 @@ const buildStreamUsageOptions = (
     ? { stream_options: { include_usage: true } }
     : {};
 
+const withoutReasoningEffort = ({ reasoning_effort: _omit, ...rest }: ChatSamplingParams): ChatSamplingParams => rest;
+
+// Runs a chat.completions create, retrying once without reasoning_effort if the
+// model rejects the requested value. The (model, effort) pair is remembered so the
+// failed round-trip is paid at most once — and so a rejected effort never strips a
+// different, supported effort on a later call to the same model.
+const createChatCompletionWithReasoningFallback = async <T>(
+  model: string,
+  sampling: ChatSamplingParams,
+  create: (sampling: ChatSamplingParams) => Promise<T>,
+): Promise<T> => {
+  const effort = sampling.reasoning_effort;
+  const initial =
+    effort !== undefined && isReasoningEffortKnownUnsupported(model, effort)
+      ? withoutReasoningEffort(sampling)
+      : sampling;
+  try {
+    return await create(initial);
+  } catch (error) {
+    if (initial.reasoning_effort === undefined || !isUnsupportedReasoningEffortError(error)) {
+      throw error;
+    }
+    markReasoningEffortUnsupported(model, initial.reasoning_effort);
+    return create(withoutReasoningEffort(initial));
+  }
+};
+
 export const createOpenAIClient = (config: LlmCapabilityConfig): OpenAI =>
   new OpenAI({
     apiKey: config.apiKey,
@@ -112,11 +144,17 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
   }
 
   async complete(input: TextGenerationRequest): Promise<TextGenerationResult> {
-    const response = await this.client.chat.completions.create({
-      model: this.config.model,
-      ...buildChatSamplingParams(this.config.provider, input),
-      messages: buildMessages(input),
-    });
+    const messages = buildMessages(input);
+    const response = await createChatCompletionWithReasoningFallback(
+      this.config.model,
+      buildChatSamplingParams(this.config.provider, input),
+      (sampling) =>
+        this.client.chat.completions.create({
+          model: this.config.model,
+          ...sampling,
+          messages,
+        }),
+    );
 
     return {
       text: response.choices[0]?.message?.content ?? "",
@@ -127,15 +165,21 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
   stream(input: TextGenerationRequest): TextGenerationStreamResult {
     const client = this.client;
     const config = this.config;
+    const messages = buildMessages(input);
     return streamWithUsage(async function* () {
-      const stream = await client.chat.completions.create({
-        model: config.model,
-        stream: true,
-        // Ask OpenAI to append a final usage-only chunk after the content chunks.
-        ...buildStreamUsageOptions(config.provider),
-        ...buildChatSamplingParams(config.provider, input),
-        messages: buildMessages(input),
-      });
+      const stream = await createChatCompletionWithReasoningFallback(
+        config.model,
+        buildChatSamplingParams(config.provider, input),
+        (sampling) =>
+          client.chat.completions.create({
+            model: config.model,
+            stream: true,
+            // Ask OpenAI to append a final usage-only chunk after the content chunks.
+            ...buildStreamUsageOptions(config.provider),
+            ...sampling,
+            messages,
+          }),
+      );
 
       let usage: ProviderUsage | undefined;
       let requestId: string | undefined;

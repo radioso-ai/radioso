@@ -1,5 +1,6 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.js";
@@ -64,6 +65,7 @@ export class ModelTriggerAnalysisGateway implements TriggerAnalysisGateway {
         context: formatConversationContext(input.contextMessages),
         rules: input.rules,
       }),
+      reasoningEffort: RETRIEVAL_BEHAVIOR.queryInterpretation.reasoningEffort,
     });
 
     return parseStructuredTriggerAnalysis(text, input.rules);
@@ -83,6 +85,7 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
         answerScopeReference: input.answerScopeReference,
         query: input.query,
       }),
+      reasoningEffort: RETRIEVAL_BEHAVIOR.queryInterpretation.reasoningEffort,
     });
 
     return parseStructuredRewrite(text);

@@ -12,6 +12,17 @@ export const CHAT_BEHAVIOR = {
   intentRouting: {
     nonRetrievalConfidenceThreshold: 0.85,
   },
+  answer: {
+    // gpt-5 family reasoning models otherwise default to medium effort and burn
+    // thousands of hidden reasoning tokens before any visible text, which
+    // dominates answer latency (and, on streamed turns, time-to-first-token).
+    // "low" rather than "minimal": minimal was observed declining answerable
+    // grounded questions (the model failed to synthesize/cite retrieved context),
+    // so grounded synthesis needs a little reasoning headroom. Still far cheaper
+    // than the medium default. Ignored by non-reasoning models and non-OpenAI
+    // providers.
+    reasoningEffort: "low",
+  },
   groundedMiss: {
     temperature: 0,
     // Reasoning models (e.g. gpt-5 family) spend output tokens on hidden reasoning
@@ -35,6 +46,12 @@ export const RETRIEVAL_BEHAVIOR = {
   promptContextMinUsefulChars: 24,
   rewriteConversationContextMaxMessages: 10,
   promptHistoryMaxMessages: 4,
+  queryInterpretation: {
+    // Rewrite, intent classification, and trigger analysis are short structured
+    // calls that run before retrieval can start. Minimal reasoning effort avoids
+    // a multi-second hidden-reasoning pass on gpt-5 models on the critical path.
+    reasoningEffort: "minimal",
+  },
   candidateMergeSecondaryWeight: 0.25,
   metadataBoostWeight: 0.2,
   hybrid: {
@@ -47,6 +64,10 @@ export const RETRIEVAL_BEHAVIOR = {
   },
   rerank: {
     temperature: 0.2,
+    // Scoring candidates is a structured-output task, not a deliberation task;
+    // minimal reasoning effort keeps the rerank round-trip off the latency budget
+    // on gpt-5 models. Ignored by non-reasoning models and non-OpenAI providers.
+    reasoningEffort: "minimal",
     modelMaxCompletionTokens: 100,
     openAiMinOutputTokens: 200,
     openAiMaxOutputTokens: 1200,

@@ -306,6 +306,57 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('aria-label="Thumbs down"')
   })
 
+  it('renders eval capture only when the operator surface opts in', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            persistedAssistantMessageId: 'persisted-assistant-1',
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+        conversationId="conversation-1"
+        evalCaptureEnabled
+      />,
+    )
+
+    expect(html).toContain('aria-label="Send to eval"')
+  })
+
+  it('does not expose eval capture on public chat or embed surfaces', () => {
+    const message = {
+      id: 'assistant-1',
+      role: 'assistant' as const,
+      content: 'Answer text',
+      createdAt: '2026-04-02T10:00:00.000Z',
+      persistedAssistantMessageId: 'persisted-assistant-1',
+    }
+
+    const publicHtml = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[message]}
+        onOpenDocument={async () => 'opened'}
+        conversationId="conversation-1"
+        analyticsSurface="public_chat"
+      />,
+    )
+    const embedHtml = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[message]}
+        onOpenDocument={async () => 'opened'}
+        conversationId="conversation-1"
+        analyticsSurface="embed"
+      />,
+    )
+
+    expect(publicHtml).not.toContain('aria-label="Send to eval"')
+    expect(embedHtml).not.toContain('aria-label="Send to eval"')
+  })
+
   it('does not render answer feedback controls for unpersisted assistant messages', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread

@@ -320,6 +320,37 @@ describe("OpenAISemanticRerankGateway", () => {
     expect(request).toMatchObject({ model: "gpt-4.1-mini", temperature: 0.2 });
     expect(request).not.toHaveProperty("reasoning");
   });
+
+  it("retries without reasoning and reranks when the model rejects the effort", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const gateway = new OpenAISemanticRerankGateway(
+      {
+        responses: {
+          async create(input: Record<string, unknown>) {
+            requests.push(input);
+            if ("reasoning" in input) {
+              throw Object.assign(new Error("Unsupported value: 'reasoning.effort' does not support 'minimal'."), {
+                status: 400,
+                code: "unsupported_value",
+                param: "reasoning.effort",
+              });
+            }
+            return { output_text: JSON.stringify({ scores: [{ candidateIndex: 1, relevanceScore: 0.93 }] }) };
+          },
+        },
+      },
+      "gpt-5.4-nano-rerank-test",
+    );
+
+    const result = await gateway.rerank({ query: "retreats", contexts: [context], usageContext });
+
+    // First attempt sends reasoning; on rejection it retries without it and still
+    // reranks (rather than throwing through to the similarity fallback).
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toHaveProperty("reasoning");
+    expect(requests[1]).not.toHaveProperty("reasoning");
+    expect(result).toEqual([{ chunkId: "chunk-1", relevanceScore: 0.93 }]);
+  });
 });
 
 describe("ModelRerankGateway", () => {
@@ -519,6 +550,32 @@ describe("OpenAITextGenerationClient", () => {
     expect(requests).toHaveLength(2);
     expect(requests[0]).toHaveProperty("reasoning_effort", "minimal");
     expect(requests[1]).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("only strips the rejected effort, not a different supported effort on the same model", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const client = new OpenAITextGenerationClient({
+      capability: "chat",
+      provider: "openai",
+      model: "gpt-5.4-nano-mixed-test",
+      apiKey: "openai-key",
+    });
+    stubChatCreate(client, async (input) => {
+      requests.push(input);
+      // This model rejects "minimal" but accepts other efforts (e.g. "low").
+      if (input.reasoning_effort === "minimal") {
+        throw unsupportedReasoningEffortError();
+      }
+      return { choices: [{ message: { content: "ok" } }] };
+    });
+
+    // A minimal-effort call (e.g. query interpretation) is rejected and retried.
+    await client.complete({ prompt: "a", reasoningEffort: "minimal" });
+    // A later low-effort call (e.g. answer synthesis) on the SAME model must still
+    // send "low" — the minimal rejection must not strip it back to provider default.
+    await client.complete({ prompt: "b", reasoningEffort: "low" });
+
+    expect(requests.some((request) => request.reasoning_effort === "low")).toBe(true);
   });
 });
 

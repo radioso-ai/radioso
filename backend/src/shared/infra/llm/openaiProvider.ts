@@ -14,6 +14,11 @@ import {
 } from "./providerTypes.js";
 import { streamWithUsage } from "./providerStreaming.js";
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
+import {
+  isReasoningEffortKnownUnsupported,
+  isUnsupportedReasoningEffortError,
+  markReasoningEffortUnsupported,
+} from "./reasoningEffortSupport.js";
 import type { AppLogger } from "../../observability/logger.js";
 
 interface OpenAIUsagePayload {
@@ -92,45 +97,29 @@ const buildStreamUsageOptions = (
     ? { stream_options: { include_usage: true } }
     : {};
 
-// `reasoning_effort` support varies across OpenAI reasoning models and versions:
-// some (e.g. gpt-5-nano) accept "minimal" while others (e.g. gpt-5.4-nano) reject
-// the value with a 400 unsupported_value. The effort is only a latency hint, so a
-// rejection must never break the call — we strip it and retry. Models that reject
-// it are remembered for the process so we stop paying the failed round-trip.
-const modelsRejectingReasoningEffort = new Set<string>();
-
-const isUnsupportedReasoningEffortError = (error: unknown): boolean => {
-  if (!error || typeof error !== "object") {
-    return false;
-  }
-  const candidate = error as { code?: unknown; param?: unknown; message?: unknown };
-  const param = typeof candidate.param === "string" ? candidate.param : "";
-  const message = typeof candidate.message === "string" ? candidate.message : "";
-  const code = typeof candidate.code === "string" ? candidate.code : "";
-  const mentionsReasoningEffort = /reasoning_effort/i.test(`${param} ${message}`);
-  const unsupportedCode =
-    code === "unsupported_value" || code === "unsupported_parameter" || code === "unknown_parameter";
-  return param === "reasoning_effort" || (unsupportedCode && mentionsReasoningEffort);
-};
-
 const withoutReasoningEffort = ({ reasoning_effort: _omit, ...rest }: ChatSamplingParams): ChatSamplingParams => rest;
 
 // Runs a chat.completions create, retrying once without reasoning_effort if the
-// model rejects the requested value. Models that reject it are remembered so the
-// failed round-trip is paid at most once per process.
+// model rejects the requested value. The (model, effort) pair is remembered so the
+// failed round-trip is paid at most once — and so a rejected effort never strips a
+// different, supported effort on a later call to the same model.
 const createChatCompletionWithReasoningFallback = async <T>(
   model: string,
   sampling: ChatSamplingParams,
   create: (sampling: ChatSamplingParams) => Promise<T>,
 ): Promise<T> => {
-  const initial = modelsRejectingReasoningEffort.has(model) ? withoutReasoningEffort(sampling) : sampling;
+  const effort = sampling.reasoning_effort;
+  const initial =
+    effort !== undefined && isReasoningEffortKnownUnsupported(model, effort)
+      ? withoutReasoningEffort(sampling)
+      : sampling;
   try {
     return await create(initial);
   } catch (error) {
     if (initial.reasoning_effort === undefined || !isUnsupportedReasoningEffortError(error)) {
       throw error;
     }
-    modelsRejectingReasoningEffort.add(model);
+    markReasoningEffortUnsupported(model, initial.reasoning_effort);
     return create(withoutReasoningEffort(initial));
   }
 };

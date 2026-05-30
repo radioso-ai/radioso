@@ -106,6 +106,9 @@ export interface OpenApiSchemaCatalog {
   QualityFeedbackSummarySchema: z.ZodTypeAny;
   QualityFeedbackValueSchema: z.ZodTypeAny;
   QualitySkillStatusSchema: z.ZodTypeAny;
+  QualityTriageStateSchema: z.ZodTypeAny;
+  QualityTriageRecordSchema: z.ZodTypeAny;
+  SetQualityTriageRequestSchema: z.ZodTypeAny;
   IngestionSettingsSchema: z.ZodTypeAny;
   InvitationAcceptRequestSchema: z.ZodTypeAny;
   InvitationDetailsResponseSchema: z.ZodTypeAny;

@@ -4,8 +4,10 @@ import { z } from "zod";
 import type { AppDependencies } from "../../app/server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
-import { badRequest } from "../../shared/domain/errors.js";
+import { badRequest, notFound } from "../../shared/domain/errors.js";
 import type { QualityTurnsServicePort } from "./contracts/index.js";
+
+const triageStateSchema = z.enum(["open", "acknowledged", "resolved", "dismissed"]);
 
 export type QualityRouteDependencies = WorkspaceSessionDependencies
   & Pick<AppDependencies, "accountAccessService">;
@@ -50,6 +52,7 @@ const turnsQuerySchema = z.object({
     ]),
   ),
   feedback: csvOrArray(z.enum(["up", "down"])),
+  triage: csvOrArray(triageStateSchema),
   hasComment: z.preprocess((value) => {
     if (value === undefined) return undefined;
     if (typeof value === "boolean") return value;
@@ -85,6 +88,9 @@ export const createQualityRoutes = (
   // this surface is admin/owner only — `workspace.quality.read` is not in the
   // workspace-member allowlist on AccountAccessService.
   const qualityRead = requireWorkspacePermission(dependencies, "workspace.quality.read");
+  // Setting triage state mutates the workspace, so it needs the manage grant
+  // (admin/owner only), not just read.
+  const qualityManage = requireWorkspacePermission(dependencies, "workspace.quality.manage");
 
   router.get("/turns", workspaceSession, qualityRead, async (req, res, next) => {
     try {
@@ -94,6 +100,7 @@ export const createQualityRoutes = (
         actions: query.actions,
         statuses: query.statuses,
         feedbackValues: query.feedback,
+        triageStates: query.triage,
         hasComment: query.hasComment,
         minTotalLatencyMs: query.minTotalLatencyMs,
         maxTotalLatencyMs: query.maxTotalLatencyMs,
@@ -105,6 +112,43 @@ export const createQualityRoutes = (
         limit: query.limit ?? 25,
       });
       res.status(200).json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.put("/turns/:assistantMessageId/triage", workspaceSession, qualityManage, async (req, res, next) => {
+    try {
+      const params = z
+        .object({ assistantMessageId: z.string().uuid() })
+        .safeParse(req.params);
+      if (!params.success) {
+        throw badRequest("Invalid assistant message id", params.error.flatten());
+      }
+
+      const body = z
+        .object({
+          state: triageStateSchema,
+          reason: z.string().trim().max(500).nullish(),
+        })
+        .safeParse(req.body);
+      if (!body.success) {
+        throw badRequest("Invalid triage update", body.error.flatten());
+      }
+
+      const { workspaceId, userId } = res.locals as { workspaceId: string; userId?: string | null };
+      const record = await service.setTriageState(workspaceId, {
+        assistantMessageId: params.data.assistantMessageId,
+        state: body.data.state,
+        reason: body.data.reason ?? null,
+        updatedBy: userId ?? null,
+      });
+
+      if (!record) {
+        throw notFound("Assistant turn not found");
+      }
+
+      res.status(200).json(record);
     } catch (error) {
       next(error);
     }

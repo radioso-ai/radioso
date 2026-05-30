@@ -16,10 +16,12 @@ export const CHAT_BEHAVIOR = {
     // gpt-5 family reasoning models otherwise default to medium effort and burn
     // thousands of hidden reasoning tokens before any visible text, which
     // dominates answer latency (and, on streamed turns, time-to-first-token).
-    // Minimal keeps grounded answers fast; raise to "low" if grounded-answer
-    // instruction-following or citation quality regresses. Ignored by
-    // non-reasoning models and non-OpenAI providers.
-    reasoningEffort: "minimal",
+    // "low" rather than "minimal": minimal was observed declining answerable
+    // grounded questions (the model failed to synthesize/cite retrieved context),
+    // so grounded synthesis needs a little reasoning headroom. Still far cheaper
+    // than the medium default. Ignored by non-reasoning models and non-OpenAI
+    // providers.
+    reasoningEffort: "low",
   },
   groundedMiss: {
     temperature: 0,

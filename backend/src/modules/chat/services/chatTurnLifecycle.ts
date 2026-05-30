@@ -1,3 +1,4 @@
+import type { ConversationTrace } from "@radioso/conversation-contract";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -78,6 +79,12 @@ export class ChatTurnLifecycle {
     presentation: ChatPresentedAnswer;
     answerStartedAt: number;
     stream: boolean;
+    /**
+     * The conversation engine's turn trace, present only when the engine ran the
+     * turn (flag on). Recorded as audit-only observability alongside the
+     * retrieval-derived activity trace; it does not change the user-facing reply.
+     */
+    engineTrace?: ConversationTrace;
   }): Promise<CompletedAssistantTurn> {
     const route = getChatTurnRoute(input.session);
     const skillTurnOutcome = toPresentationSkillTurnOutcome(input.presentation);
@@ -159,6 +166,7 @@ export class ChatTurnLifecycle {
       priorRewriteContinuityState: input.session.priorRewriteContinuityState,
       diagnostics: input.session.retrieval.diagnostics,
       activityTrace,
+      engineTrace: input.engineTrace,
       route,
       stream: input.stream,
     });
@@ -345,6 +353,7 @@ export class ChatTurnLifecycle {
     priorRewriteContinuityState?: RewriteContinuityState;
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
     activityTrace: ActivityTrace;
+    engineTrace?: ConversationTrace;
     route: ChatRoute;
     stream: boolean;
     skillIntake?: {
@@ -388,6 +397,9 @@ export class ChatTurnLifecycle {
         }),
         retrieval: input.diagnostics,
         activityTrace: input.activityTrace,
+        // Engine-native turns record their selection/dispatch trace as
+        // observability; absent on the legacy (engine-off) path.
+        ...(input.engineTrace ? { conversationEngine: { trace: input.engineTrace } } : {}),
       },
     });
     try {

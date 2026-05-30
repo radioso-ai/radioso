@@ -296,7 +296,7 @@ function PublicChatOptionsMenu({
   )
 }
 
-export function PublicChatCenteredIntro({
+function PublicChatCenteredIntro({
   copy,
   theme,
   themeOverrides,

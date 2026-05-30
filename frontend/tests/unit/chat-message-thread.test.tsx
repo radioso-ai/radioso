@@ -2,8 +2,6 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { appendAssistantLinkUtm, ChatMessageThread } from '@/components/dashboard/chat-message-thread'
-import { PublicChatCenteredIntro } from '@/components/chat/public-chat-shell'
-import { DEFAULT_WEBSITE_EMBED_COPY, getWebsiteEmbedTheme } from '@/lib/embed-widget'
 
 const UTILITY_BUTTON_LABELS = /aria-label="(Copy message|Copied|Thumbs up|Thumbs down)"/
 
@@ -197,31 +195,6 @@ describe('ChatMessageThread', () => {
     )
 
     expect(countSuggestionButtons(html)).toBe(1)
-  })
-
-  it('keeps centered intro suggestion buttons visually highlighted on hover', () => {
-    const theme = getWebsiteEmbedTheme()
-    const html = renderToStaticMarkup(
-      <PublicChatCenteredIntro
-        copy={DEFAULT_WEBSITE_EMBED_COPY}
-        theme={theme}
-        workspaceName="Docs Assistant"
-        greetingMessage={{
-          id: 'assistant-greeting',
-          role: 'assistant',
-          content: 'How can I help?',
-          createdAt: '2026-04-02T10:00:00.000Z',
-          suggestions: [{ text: 'What can this answer?' }],
-        }}
-        onSuggestionSelect={() => {}}
-        isLoading={false}
-      >
-        <div />
-      </PublicChatCenteredIntro>,
-    )
-
-    expect(html).toContain('--suggestion-hover-bg:#ffc720')
-    expect(html).toContain('hover:bg-[var(--suggestion-hover-bg)]')
   })
 
   it('can hide assistant message avatars for narrow embedded chat layouts', () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConversationEngine } from "@radioso/conversation-contract";
+import { createConversationEngine } from "@radioso/conversation-engine";
 import {
   BlankChatAnswerError,
   ChatService,
@@ -699,6 +700,104 @@ describe("chat service streaming", () => {
     expect(response.answer).toBe("Normal answer.");
     const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
     expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("records the conversation engine trace in chat.answer audit metadata when the engine selects and dispatches", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Normal answer.";
+      },
+      async *streamAnswer() {
+        yield "Normal answer.";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
+        query: "I need help",
+        responseIntent: "social_only",
+      })) as never),
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      // Real engine: drives selection + dispatch and produces the turn trace.
+      createConversationEngine(),
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "I need help",
+      stream: false,
+    });
+
+    const answerEvent = auditService.events.find(
+      (event) => event.eventType === "chat.answer" && event.eventStatus === "success",
+    );
+    expect(answerEvent).toBeDefined();
+    const metadata = answerEvent?.metadata as {
+      activityTrace?: unknown;
+      conversationEngine?: {
+        trace?: { stages?: Array<{ kind: string; outputs?: Record<string, unknown> }> };
+      };
+    };
+    // The retrieval-derived activity trace stays unchanged (behavior-preserving).
+    expect(metadata.activityTrace).toBeDefined();
+    const engineTrace = metadata.conversationEngine?.trace;
+    expect(engineTrace).toBeDefined();
+    const selectionStage = engineTrace?.stages?.find((stage) => stage.kind === "skill_selection");
+    expect(selectionStage?.outputs?.selectedSkills).toContain("retrieval.answer");
+    expect(engineTrace?.stages?.some((stage) => stage.kind === "skill_dispatch")).toBe(true);
+    expect(response.answer).toBe("Normal answer.");
+  });
+
+  it("omits conversation engine audit metadata when no engine is wired", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Normal answer.";
+      },
+      async *streamAnswer() {
+        yield "Normal answer.";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
+        query: "I need help",
+        responseIntent: "social_only",
+      })) as never),
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: "I need help",
+      stream: false,
+    });
+
+    const answerEvent = auditService.events.find(
+      (event) => event.eventType === "chat.answer" && event.eventStatus === "success",
+    );
+    expect(answerEvent).toBeDefined();
+    expect((answerEvent?.metadata as { conversationEngine?: unknown }).conversationEngine).toBeUndefined();
   });
 
   it("persists the normalized assistant answer only after the stream completes", async () => {

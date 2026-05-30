@@ -738,6 +738,13 @@ export class ChatService {
         const reader = new GroundedAnswerEnvelopeReader();
         const citationSanitizer = new CitationAnchorSanitizer();
         let pendingStreamText = "";
+        // Un-cited prose can be retracted wholesale as a grounded miss (see the
+        // hasCitedAnswerSegment replacement below), so we withhold the answer
+        // until it is anchored. The FIRST citation anchor proves the answer is
+        // grounded; once seen, every later token is part of the final answer and
+        // streams immediately. Re-holding after each anchor would batch the
+        // stream into citation-sized chunks — the cause of coarse streaming.
+        let groundingConfirmed = false;
         for await (const text of this.chatGateway.streamAnswer({
           query: input.query,
           history: session.history,
@@ -750,8 +757,14 @@ export class ChatService {
             continue;
           }
           pendingStreamText += reader.push(text);
-          const { streamable, remaining } = splitCitedAnswerPrefix(pendingStreamText);
-          pendingStreamText = remaining;
+          if (!groundingConfirmed && splitCitedAnswerPrefix(pendingStreamText).streamable) {
+            groundingConfirmed = true;
+          }
+          let streamable = "";
+          if (groundingConfirmed) {
+            streamable = pendingStreamText;
+            pendingStreamText = "";
+          }
           const cleanChunk = citationSanitizer.push(streamable);
           if (cleanChunk) {
             streamedAnswer += cleanChunk;

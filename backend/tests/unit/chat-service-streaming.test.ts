@@ -1029,6 +1029,99 @@ describe("chat service streaming", () => {
     }));
   });
 
+  it("streams grounded prose token-by-token after the first citation instead of batching per citation", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const fullAnswer =
+      "The first supporting claim is fully grounded in the provided source material. "
+      + "This following sentence continues the explanation without its own citation marker. "
+      + "And a third sentence streams in as the model keeps generating more tokens. "
+      + "Finally a closing sentence wraps things up neatly.";
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "explain the grounded topic",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Source",
+              content: fullAnswer,
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Source" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "grounded topic",
+              lexicalQuery: "grounded topic",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+          },
+        };
+      },
+    } as const;
+    // Only the first sentence carries a citation; the rest is un-cited prose that
+    // is part of the final grounded answer. The provider emits each sentence as a
+    // separate streaming chunk.
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return fullAnswer;
+      },
+      async *streamAnswer() {
+        yield "The first supporting claim is fully grounded in the provided source material[[1]]. ";
+        yield "This following sentence continues the explanation without its own citation marker. ";
+        yield "And a third sentence streams in as the model keeps generating more tokens. ";
+        yield "Finally a closing sentence wraps things up neatly.";
+        yield `\n${SUGGESTIONS_SENTINEL}\n[]`;
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const chunks: string[] = [];
+    let doneAnswer = "";
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "Explain the grounded topic.",
+      stream: true,
+    })) {
+      if (event.type === "chunk") {
+        expect(event.text).not.toContain("[[");
+        expect(event.text).not.toContain("]]");
+        chunks.push(event.text);
+      } else if (event.type === "done") {
+        doneAnswer = event.answer ?? "";
+      }
+    }
+
+    // Per-citation batching emitted only two body chunks (the cited prefix, then
+    // every later sentence dumped together at finalize). Latching on the first
+    // citation streams the trailing prose incrementally instead.
+    expect(chunks.length).toBeGreaterThanOrEqual(4);
+    expect(chunks.join("").trim()).toBe(doneAnswer);
+    expect(doneAnswer).toBe(fullAnswer);
+  });
+
   it("emits grounded answer chunks before the provider stream finishes", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

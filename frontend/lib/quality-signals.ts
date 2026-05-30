@@ -45,6 +45,7 @@ export function groundingGapActions(
 export interface AppliedQualityFilters {
   feedback: FeedbackValue[]
   actions: QualityActionFilter[]
+  triageStates: QualityTriageState[]
   latency: QualityLatencyFilter | null
 }
 
@@ -62,6 +63,20 @@ const sameActionSet = (
   return left.every((action) => rightKeys.has(actionKey(action)))
 }
 
+const sameStringSet = (
+  left: readonly string[],
+  right: readonly string[],
+): boolean => {
+  if (left.length !== right.length) {
+    return false
+  }
+  const rightValues = new Set(right)
+  return left.every((value) => rightValues.has(value))
+}
+
+const hasActiveTriagePreset = (triageStates: QualityTriageState[]): boolean =>
+  sameStringSet(triageStates, ACTIVE_TRIAGE_STATES)
+
 /**
  * Which operator signal, if any, the currently applied filters represent. Used
  * to toggle the signal tiles' active state. Returns null when the filters do
@@ -75,8 +90,10 @@ export function activeQualitySignal(
   const hasFeedback = applied.feedback.length > 0
   const hasActions = applied.actions.length > 0
   const hasLatency = applied.latency != null
+  const hasActiveTriage = hasActiveTriagePreset(applied.triageStates)
 
   if (
+    hasActiveTriage &&
     hasFeedback &&
     !hasActions &&
     !hasLatency &&
@@ -87,6 +104,7 @@ export function activeQualitySignal(
   }
 
   if (
+    hasActiveTriage &&
     hasLatency &&
     !hasFeedback &&
     !hasActions &&
@@ -96,6 +114,7 @@ export function activeQualitySignal(
   }
 
   if (
+    hasActiveTriage &&
     hasActions &&
     !hasFeedback &&
     !hasLatency &&

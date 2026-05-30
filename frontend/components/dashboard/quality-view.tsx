@@ -518,6 +518,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const [pendingTriageId, setPendingTriageId] = useState<string | null>(null)
   // Bumped after a triage change so the active-backlog signal counts refetch.
   const [countsRefreshKey, setCountsRefreshKey] = useState(0)
+  // Bumped after a triage change so server-filtered rows/totals stay current.
+  const [turnsRefreshKey, setTurnsRefreshKey] = useState(0)
   const drawerSelectedItem: SelectedHistoryItem = openedConversation
     ? { kind: 'chat', id: openedConversation.conversationId }
     : null
@@ -570,10 +572,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const activeSignal = useMemo(
     () =>
       activeQualitySignal(
-        { feedback, actions: decodedActions, latency: latency ?? null },
+        { feedback, actions: decodedActions, triageStates, latency: latency ?? null },
         groundingActions,
       ),
-    [feedback, decodedActions, latency, groundingActions],
+    [feedback, decodedActions, triageStates, latency, groundingActions],
   )
 
   // Stable dependency for the count effect: groundingActions is a fresh array
@@ -858,7 +860,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const setPage = (next: number) =>
     navigateWith({ qualityPage: next > 1 ? next : undefined })
 
-  // Selecting a signal narrows the table to that issue class and clears any
+  // Selecting a signal narrows the table to that active issue class and clears
   // other filters; selecting the active signal again (null) clears it.
   const applySignal = (signalId: QualitySignalId | null) => {
     navigateWith({
@@ -866,7 +868,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       qualityActions: signalId === 'grounding_gaps' ? groundingActions : undefined,
       qualityLatency: signalId === 'slow_responses' ? SLOW_RESPONSE_LATENCY_BUCKET : undefined,
       qualityStatuses: undefined,
-      qualityTriageStates: undefined,
+      qualityTriageStates: signalId ? [...ACTIVE_TRIAGE_STATES] : undefined,
       qualityHasComment: undefined,
       qualityPage: undefined,
     })
@@ -929,7 +931,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     return () => {
       cancelled = true
     }
-  }, [currentPage, feedbackKey, hasComment, latency, actionsKey, statusesKey, triageKey])
+  }, [currentPage, feedbackKey, hasComment, latency, actionsKey, statusesKey, triageKey, turnsRefreshKey])
 
   const openConversation = (turn: LowQualityTurn) =>
     setOpenedConversation({
@@ -952,6 +954,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         ),
       )
       setCountsRefreshKey((key) => key + 1)
+      setTurnsRefreshKey((key) => key + 1)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Failed to update triage state')
     } finally {

@@ -246,6 +246,24 @@ describe('dashboard route state', () => {
     expect(areDashboardRouteStatesEqual(current, next)).toBe(true)
   })
 
+  it('preserves quality triage filters in route state', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'quality',
+      workspacePublicRouteKey: 'ws-key',
+      qualityFeedback: ['down'],
+      qualityTriageStates: ['open', 'acknowledged'],
+    })).toBe('/w/ws-key/quality?feedback=down&triage=open%2Cacknowledged')
+
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({
+      feedback: 'down',
+      triage: 'open,acknowledged,bogus',
+    }))).toEqual({
+      section: 'quality',
+      qualityFeedback: ['down'],
+      qualityTriageStates: ['open', 'acknowledged'],
+    })
+  })
+
   it('parses the eval list route', () => {
     const parsed = parseDashboardRoute(['eval'], new URLSearchParams())
     expect(parsed).toEqual({ section: 'eval' })

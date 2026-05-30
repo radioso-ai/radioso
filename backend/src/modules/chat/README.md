@@ -54,6 +54,10 @@ imports from `services/`.
 - Reusable turn engine: `conversationContractMappers.ts`,
   `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`, and
   application composition in `src/app/server/dependencyBuilders.ts`.
+  `turnOutcome.ts` holds only the capability-neutral turn machinery (`TurnSkill`,
+  renderer registry); concrete skills register themselves — retrieval lives in
+  `retrievalTurnSkill.ts` (`createRetrievalTurnSkill`). The engine adapter names
+  no specific skill and only takes skill-shaped input.
 
 ## Tests
 

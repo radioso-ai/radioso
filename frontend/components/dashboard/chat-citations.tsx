@@ -1,7 +1,7 @@
 'use client'
 
-import { Fragment, type CSSProperties, type ReactNode, useState } from 'react'
-import { ExternalLink, FileText } from 'lucide-react'
+import { Fragment, type CSSProperties, type ReactNode, useId, useState } from 'react'
+import { ChevronDown, ExternalLink, FileText } from 'lucide-react'
 
 const URL_REGEX = /https?:\/\/[^\s<>)"']+/g
 
@@ -235,11 +235,40 @@ const stripWhitespace = (text: string) => text.replace(/\s+/g, '')
 
 type RenderableSegment = AnswerSegment & { trailingText?: string }
 
+const attachDetachedCitationSegments = (
+  segments: AnswerSegment[],
+  citations: Citation[],
+): RenderableSegment[] => {
+  const normalized: RenderableSegment[] = []
+
+  for (const segment of segments) {
+    const citationIndices = getSegmentCitationIndices(segment, citations)
+    const detachedCitationOnlySegment =
+      citationIndices.length > 0 && (segment.text.length === 0 || isSentencePunctuationOnly(segment.text))
+    const previous = normalized.at(-1)
+
+    if (detachedCitationOnlySegment && previous) {
+      previous.citationIndices = [
+        ...new Set([...(previous.citationIndices ?? []), ...citationIndices]),
+      ]
+      const trailingText = stripWhitespace(segment.text)
+      if (trailingText) {
+        previous.trailingText = (previous.trailingText ?? '') + trailingText
+      }
+      continue
+    }
+
+    normalized.push({ ...segment })
+  }
+
+  return normalized
+}
+
 const redistributeLeadingPunctuation = (
   segments: AnswerSegment[],
   citations: Citation[],
 ): RenderableSegment[] => {
-  const cloned: RenderableSegment[] = segments.map((segment) => ({ ...segment }))
+  const cloned = attachDetachedCitationSegments(segments, citations)
 
   for (let index = 0; index < cloned.length; index += 1) {
     const current = cloned[index]
@@ -325,6 +354,9 @@ export function AssistantMessageContent({
   showCitations = true,
 }: AssistantMessageContentProps) {
   const [citationNotice, setCitationNotice] = useState<{ scope: string; message: string } | null>(null)
+  const [sourcesExpanded, setSourcesExpanded] = useState(false)
+  const [sourcesRendered, setSourcesRendered] = useState(false)
+  const sourcesPanelId = useId()
   const effectiveCitations = showCitations ? citations : []
   const effectiveAnswerSegments = showCitations ? answerSegments : undefined
   const noticeScope = `${content}|${effectiveCitations.length}|${effectiveAnswerSegments?.length ?? 0}`
@@ -384,6 +416,16 @@ export function AssistantMessageContent({
       )
     })
 
+  const handleSourcesToggle = () => {
+    if (sourcesExpanded) {
+      setSourcesExpanded(false)
+      return
+    }
+
+    setSourcesRendered(true)
+    setSourcesExpanded(true)
+  }
+
   const contentNodes: ReactNode[] = []
 
   for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
@@ -441,12 +483,22 @@ export function AssistantMessageContent({
     const segmentIsPunctuationOnly = isPunctuationOnly(segment.text)
     const inline =
       (dedupedIndices.length > 0 || segmentIsPunctuationOnly) && !hasBlockMarkdown(segment.text)
+    const trailingInlineContent =
+      inline || (dedupedIndices.length === 0 && !segment.trailingText)
+        ? null
+        : (
+          <>
+            {renderCitations(dedupedIndices)}
+            {segment.trailingText ?? ''}
+          </>
+        )
 
     contentNodes.push(
       <Fragment key={`segment-${segmentIndex}`}>
         <AssistantMarkdownContent
           content={segment.text}
           inline={inline}
+          trailingInlineContent={trailingInlineContent}
           onLinkClick={(href) => {
             onLinkClickAnalytics?.({
               linkType: 'assistant_url',
@@ -455,8 +507,8 @@ export function AssistantMessageContent({
           }}
           transformLinkHref={transformAssistantLinkHref}
         />
-        {renderCitations(dedupedIndices)}
-        {segment.trailingText ?? ''}
+        {inline ? renderCitations(dedupedIndices) : null}
+        {inline ? segment.trailingText ?? '' : null}
       </Fragment>,
     )
   }
@@ -475,17 +527,53 @@ export function AssistantMessageContent({
         {contentNodes}
       </div>
       {uniqueCitations.length > 0 ? (
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1.5 pt-1 text-xs text-muted-foreground">
-          <span className="font-semibold uppercase tracking-[0.08em]">Sources</span>
-          {uniqueCitations.map(({ citation, index }) => (
-            <SourceChip
-              key={`source-${citation.documentId}-${index}`}
-              citation={citation}
-              index={index}
-              onOpenDocument={handleCitationOpen}
-              onLinkClickAnalytics={onLinkClickAnalytics}
+        <div className="pt-1 text-xs text-muted-foreground">
+          <button
+            type="button"
+            className="inline-flex h-7 items-center gap-1.5 rounded-full border border-transparent px-2.5 text-muted-foreground transition-colors duration-150 hover:border-border/70 hover:bg-muted/35 hover:text-foreground focus-visible:border-border focus-visible:bg-muted/45 focus-visible:text-foreground focus-visible:outline-none"
+            aria-expanded={sourcesExpanded}
+            aria-controls={sourcesPanelId}
+            onClick={(event) => {
+              event.stopPropagation()
+              handleSourcesToggle()
+            }}
+          >
+            <span className="font-semibold text-foreground">{uniqueCitations.length}</span>
+            <span className="font-medium">Sources</span>
+            <ChevronDown
+              className={`h-3.5 w-3.5 opacity-70 transition-transform duration-150 ease-out ${sourcesExpanded ? '' : '-rotate-90'}`}
+              aria-hidden="true"
             />
-          ))}
+          </button>
+          {sourcesRendered ? (
+            <div
+              id={sourcesPanelId}
+              className={`grid transition-[grid-template-rows,opacity,transform] duration-150 ease-out ${
+                sourcesExpanded
+                  ? 'mt-2 translate-y-0 grid-rows-[1fr] opacity-100'
+                  : 'mt-1 -translate-y-1 grid-rows-[0fr] opacity-0'
+              }`}
+              aria-hidden={!sourcesExpanded}
+              inert={!sourcesExpanded ? true : undefined}
+              onTransitionEnd={(event) => {
+                if (event.target === event.currentTarget && !sourcesExpanded) {
+                  setSourcesRendered(false)
+                }
+              }}
+            >
+              <div className="flex min-h-0 flex-wrap items-baseline gap-x-3 gap-y-1.5 overflow-hidden">
+                {uniqueCitations.map(({ citation, index }) => (
+                  <SourceChip
+                    key={`source-${citation.documentId}-${index}`}
+                    citation={citation}
+                    index={index}
+                    onOpenDocument={handleCitationOpen}
+                    onLinkClickAnalytics={onLinkClickAnalytics}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
       {citationNotice && citationNotice.scope === noticeScope ? (

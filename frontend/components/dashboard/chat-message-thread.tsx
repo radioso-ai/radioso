@@ -43,19 +43,16 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
   minute: '2-digit',
 })
 
-export const THEMED_SUGGESTION_BUTTON_CLASS =
-  'border-[var(--suggestion-border)] bg-[var(--suggestion-bg)] text-[var(--suggestion-fg)] transition-colors hover:border-[var(--suggestion-hover-border)] hover:bg-[var(--suggestion-hover-bg)] hover:text-[var(--suggestion-hover-fg)]'
+const SUGGESTION_BUTTON_HOVER_CLASS =
+  'radioso-suggestion-hover-highlight'
 
-const SUGGESTION_HOVER_BACKGROUND = '#ffc720'
-const SUGGESTION_HOVER_FOREGROUND = '#142317'
+export const THEMED_SUGGESTION_BUTTON_CLASS =
+  `border-[var(--suggestion-border)] bg-[var(--suggestion-bg)] text-[var(--suggestion-fg)] transition-colors ${SUGGESTION_BUTTON_HOVER_CLASS}`
 
 export const getThemedSuggestionButtonStyle = (theme: WebsiteEmbedTheme): CSSProperties => ({
   '--suggestion-bg': theme.mutedBackground,
   '--suggestion-border': theme.panelBorder,
   '--suggestion-fg': theme.panelForeground,
-  '--suggestion-hover-bg': SUGGESTION_HOVER_BACKGROUND,
-  '--suggestion-hover-border': SUGGESTION_HOVER_BACKGROUND,
-  '--suggestion-hover-fg': SUGGESTION_HOVER_FOREGROUND,
 } as CSSProperties)
 type ChatLinkAnalyticsSurface = 'dashboard' | 'history' | 'eval' | 'public_chat' | 'embed'
 
@@ -688,7 +685,7 @@ export function ChatMessageThread({
                                   className={`h-auto max-w-full whitespace-normal rounded-full px-3 py-1 text-left text-sm leading-snug shadow-none ${
                                     themedSuggestionButtons
                                       ? THEMED_SUGGESTION_BUTTON_CLASS
-                                      : ''
+                                      : SUGGESTION_BUTTON_HOVER_CLASS
                                   }`}
                                   style={themedSuggestionButtons ? suggestionThemeVars : undefined}
                                   onClick={(event) => {

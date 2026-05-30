@@ -192,4 +192,98 @@ describeIfDatabase("quality turns integration", () => {
     expect(ids).toContain(messageInWorkspaceA);
     expect(ids).not.toContain(messageInWorkspaceB);
   });
+
+  it("defaults turns to open triage and upserts/filters by triage state", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const userId = randomUUID();
+    const conversationId = randomUUID();
+
+    await database.query(
+      `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
+      [accountId, "Triage Account", `triage-${accountId}@example.com`, "hash"],
+    );
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
+      [workspaceId, accountId, "Triage WS", `tr-${workspaceId.slice(0, 8)}`],
+    );
+    await database.query(
+      `INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3)`,
+      [userId, `op-${userId}@example.com`, "hash"],
+    );
+    await database.query(
+      `INSERT INTO conversations (id, workspace_id, source_channel) VALUES ($1, $2, 'dashboard')`,
+      [conversationId, workspaceId],
+    );
+
+    const openMessageId = randomUUID();
+    const resolvedMessageId = randomUUID();
+    await database.query(
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, skill_name, skill_outcome, skill_status, created_at)
+       VALUES
+         ($1, $2, $3, 'assistant', 'Still open',  'retrieval.answer', 'no_context', 'completed', $4),
+         ($5, $2, $3, 'assistant', 'Was resolved', 'retrieval.answer', 'no_context', 'completed', $6)`,
+      [
+        openMessageId,
+        conversationId,
+        workspaceId,
+        "2026-05-23T09:00:00.000Z",
+        resolvedMessageId,
+        "2026-05-23T09:01:00.000Z",
+      ],
+    );
+
+    const service = new QualityTurnsService(database);
+
+    const initial = await service.listLowQualityTurns(workspaceId, { limit: 25 });
+    const openTurn = initial.items.find((item) => item.assistantMessageId === openMessageId);
+    expect(openTurn?.triage).toEqual({ state: "open", reason: null, updatedAt: null });
+
+    const updated = await service.setTriageState(workspaceId, {
+      assistantMessageId: resolvedMessageId,
+      state: "resolved",
+      reason: "Added knowledge",
+      updatedBy: userId,
+    });
+    expect(updated?.state).toBe("resolved");
+    expect(updated?.reason).toBe("Added knowledge");
+    expect(updated?.updatedAt).toEqual(expect.any(String));
+
+    const openOnly = await service.listLowQualityTurns(workspaceId, {
+      limit: 25,
+      triageStates: ["open"],
+    });
+    const openIds = openOnly.items.map((item) => item.assistantMessageId);
+    expect(openIds).toContain(openMessageId);
+    expect(openIds).not.toContain(resolvedMessageId);
+
+    const resolvedOnly = await service.listLowQualityTurns(workspaceId, {
+      limit: 25,
+      triageStates: ["resolved"],
+    });
+    const resolvedIds = resolvedOnly.items.map((item) => item.assistantMessageId);
+    expect(resolvedIds).toEqual([resolvedMessageId]);
+    expect(resolvedOnly.items[0]?.triage.state).toBe("resolved");
+  });
+
+  it("returns null when setting triage on a turn outside the workspace", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+
+    await database.query(
+      `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
+      [accountId, "No Turn Account", `noturn-${accountId}@example.com`, "hash"],
+    );
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
+      [workspaceId, accountId, "No Turn WS", `nt-${workspaceId.slice(0, 8)}`],
+    );
+
+    const service = new QualityTurnsService(database);
+    const result = await service.setTriageState(workspaceId, {
+      assistantMessageId: randomUUID(),
+      state: "acknowledged",
+    });
+    expect(result).toBeNull();
+  });
 });

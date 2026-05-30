@@ -26,6 +26,14 @@ const QUALITY_STATUS_VALUES: ReadonlySet<QualityStatusFilter> = new Set([
 ])
 export type QualityFeedbackFilter = 'up' | 'down'
 export type QualityLatencyFilter = 'lt_2s' | '2s_5s' | '5s_10s' | 'gte_10s'
+export type QualityTriageFilter = 'open' | 'acknowledged' | 'resolved' | 'dismissed'
+
+const QUALITY_TRIAGE_VALUES: ReadonlySet<QualityTriageFilter> = new Set([
+  'open',
+  'acknowledged',
+  'resolved',
+  'dismissed',
+])
 
 export interface QualityActionRoute {
   skillName: string
@@ -53,6 +61,7 @@ export interface DashboardRouteState {
   qualityStatuses?: QualityStatusFilter[]
   qualityFeedback?: QualityFeedbackFilter[]
   qualityLatency?: QualityLatencyFilter
+  qualityTriageStates?: QualityTriageFilter[]
   qualityHasComment?: boolean
   evalCaseId?: string
   anchor?: string
@@ -79,6 +88,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'qualityStatuses',
   'qualityFeedback',
   'qualityLatency',
+  'qualityTriageStates',
   'qualityHasComment',
   'evalCaseId',
   'anchor',
@@ -167,6 +177,19 @@ const parseQualityLatency = (value: string | null): QualityLatencyFilter | undef
   return value === 'lt_2s' || value === '2s_5s' || value === '5s_10s' || value === 'gte_10s'
     ? value
     : undefined
+}
+
+const parseQualityTriageStates = (value: string | null): QualityTriageFilter[] | undefined => {
+  if (!value) {
+    return undefined
+  }
+  const parsed = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry): entry is QualityTriageFilter =>
+      QUALITY_TRIAGE_VALUES.has(entry as QualityTriageFilter),
+    )
+  return parsed.length > 0 ? parsed : undefined
 }
 
 const parseAgentTab = (value: string | null): AgentTab | undefined => {
@@ -301,6 +324,9 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.qualityLatency) {
       normalized.qualityLatency = state.qualityLatency
     }
+    if (state.qualityTriageStates && state.qualityTriageStates.length > 0) {
+      normalized.qualityTriageStates = [...state.qualityTriageStates]
+    }
     if (state.qualityHasComment) {
       normalized.qualityHasComment = true
     }
@@ -402,6 +428,9 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.qualityLatency) {
       searchParams.set('latency', normalized.qualityLatency)
+    }
+    if (normalized.qualityTriageStates && normalized.qualityTriageStates.length > 0) {
+      searchParams.set('triage', normalized.qualityTriageStates.join(','))
     }
     if (normalized.qualityHasComment) {
       searchParams.set('hasComment', 'true')
@@ -631,6 +660,7 @@ export const parseDashboardRoute = (
       qualityStatuses: parseQualityStatuses(searchParams?.get('statuses') ?? null),
       qualityFeedback: parseQualityFeedback(searchParams?.get('feedback') ?? null),
       qualityLatency: parseQualityLatency(searchParams?.get('latency') ?? null),
+      qualityTriageStates: parseQualityTriageStates(searchParams?.get('triage') ?? null),
       qualityHasComment: searchParams?.get('hasComment') === 'true' ? true : undefined,
     })
   }

@@ -27,6 +27,7 @@ export type AccountPermission =
   | "workspace.retrieval.query"
   | "workspace.history.read"
   | "workspace.quality.read"
+  | "workspace.quality.manage"
   | "workspace.skills.read"
   | "workspace.agents.read"
   | "workspace.agents.manage"

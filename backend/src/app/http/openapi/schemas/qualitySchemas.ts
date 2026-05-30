@@ -23,6 +23,20 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
     ]),
   );
 
+  const QualityTriageStateSchema = registry.register(
+    "QualityTriageState",
+    z.enum(["open", "acknowledged", "resolved", "dismissed"]),
+  );
+
+  const QualityTriageRecordSchema = registry.register(
+    "QualityTriageRecord",
+    z.object({
+      state: QualityTriageStateSchema,
+      reason: z.string().nullable(),
+      updatedAt: z.string().datetime().nullable(),
+    }),
+  );
+
   const QualityFeedbackCommentSchema = registry.register(
     "QualityFeedbackComment",
     z.object({
@@ -57,6 +71,15 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
       totalLatencyMs: z.number().int().nullable(),
       createdAt: z.string().datetime(),
       feedback: QualityFeedbackSummarySchema,
+      triage: QualityTriageRecordSchema,
+    }),
+  );
+
+  const SetQualityTriageRequestSchema = registry.register(
+    "SetQualityTriageRequest",
+    z.object({
+      state: QualityTriageStateSchema,
+      reason: z.string().max(500).nullish(),
     }),
   );
 
@@ -73,6 +96,9 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
 
   schemas.QualityFeedbackValueSchema = QualityFeedbackValueSchema;
   schemas.QualitySkillStatusSchema = QualitySkillStatusSchema;
+  schemas.QualityTriageStateSchema = QualityTriageStateSchema;
+  schemas.QualityTriageRecordSchema = QualityTriageRecordSchema;
+  schemas.SetQualityTriageRequestSchema = SetQualityTriageRequestSchema;
   schemas.QualityFeedbackCommentSchema = QualityFeedbackCommentSchema;
   schemas.QualityFeedbackSummarySchema = QualityFeedbackSummarySchema;
   schemas.LowQualityTurnSchema = LowQualityTurnSchema;

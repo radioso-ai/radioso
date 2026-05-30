@@ -186,6 +186,8 @@ Assistant conversations are listed from `GET /api/v1/history/chat` and fetched f
 
 Persisted assistant answers can receive thumbs up or thumbs down feedback in the dashboard, public chat, and website embed. Authenticated callers use `PUT /api/v1/answer-feedback/messages/<assistant-message-id>` and `DELETE /api/v1/answer-feedback/messages/<assistant-message-id>`. Public chat sessions use `PUT /api/v1/answer-feedback/public/chat/<token>/messages/<assistant-message-id>` and the matching `DELETE` route. A thumbs down request may include an optional `comment` up to 2000 characters.
 
+Operators can review assistant-answer quality with `GET /api/v1/quality/turns`. Admins and owners can update an answer's triage state with `PUT /api/v1/quality/turns/<assistant-message-id>/triage`, using one of `open`, `acknowledged`, `resolved`, or `dismissed`.
+
 Assistant, retrieval, and search responses are lean by default. Add `includeDebug: true` to supported request bodies when an authenticated operator or integration needs diagnostic metadata. Debug responses place routing, retrieval summaries, activity traces, and full evidence under a `debug` field instead of mixing them into the normal user-facing payload.
 
 This is a breaking response-shape change for SDK and direct REST consumers that previously read diagnostics from top-level fields. Update TypeScript SDK clients to `@radioso/typescript-sdk` 0.2.0 or later and read diagnostic data from `response.debug`.

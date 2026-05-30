@@ -1290,6 +1290,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/quality/turns/{assistantMessageId}/triage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the triage state of an assistant turn
+         * @description Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an assistant turn. Admin/owner only (requires the `workspace.quality.manage` permission).
+         */
+        put: operations["setQualityTurnTriage"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/chat/{token}": {
         parameters: {
             query?: never;
@@ -3391,6 +3411,14 @@ export interface components {
         QualityFeedbackValue: "up" | "down";
         /** @enum {string} */
         QualitySkillStatus: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+        /** @enum {string} */
+        QualityTriageState: "open" | "acknowledged" | "resolved" | "dismissed";
+        QualityTriageRecord: {
+            state: components["schemas"]["QualityTriageState"];
+            reason: string | null;
+            /** Format: date-time */
+            updatedAt: string | null;
+        };
         QualityFeedbackComment: {
             value: components["schemas"]["QualityFeedbackValue"];
             comment: string;
@@ -3420,6 +3448,11 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             feedback: components["schemas"]["QualityFeedbackSummary"];
+            triage: components["schemas"]["QualityTriageRecord"];
+        };
+        SetQualityTriageRequest: {
+            state: components["schemas"]["QualityTriageState"];
+            reason?: string | null;
         };
         LowQualityTurnsPage: {
             items: components["schemas"]["LowQualityTurn"][];
@@ -7441,6 +7474,8 @@ export interface operations {
                 statuses?: string;
                 /** @description Comma-separated `QualityFeedbackValue` values (`up`, `down`). */
                 feedback?: string;
+                /** @description Comma-separated `QualityTriageState` values (`open`, `acknowledged`, `resolved`, `dismissed`). */
+                triage?: string;
                 hasComment?: boolean | null;
                 agentId?: string;
                 channel?: string;
@@ -7486,6 +7521,68 @@ export interface operations {
             };
             /** @description Caller lacks the workspace.quality.read permission */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setQualityTurnTriage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetQualityTriageRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated triage record */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualityTriageRecord"];
+                };
+            };
+            /** @description Invalid request body or assistant message id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks the workspace.quality.manage permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Assistant turn not found in this workspace */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

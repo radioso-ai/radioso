@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { Check } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Check, ChevronDown } from 'lucide-react'
 
 import {
   Dialog,
@@ -11,6 +11,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -25,6 +30,7 @@ import {
   isFilterApplied,
   type FilterDefinition,
   type FilterOption,
+  type FilterSection,
   type FilterValue,
   type FilterValues,
 } from './filter-schema'
@@ -39,6 +45,8 @@ interface FilterDialogProps {
   onApply: (next: FilterValues) => void
   title?: string
   description?: string
+  /** Optional collapsible grouping. Filters not referenced render flat below. */
+  sections?: ReadonlyArray<FilterSection>
 }
 
 const normalizeValues = (values: FilterValues): string => {
@@ -68,8 +76,10 @@ export function FilterDialog({
   onApply,
   title = 'Filter',
   description,
+  sections,
 }: FilterDialogProps) {
   const [draft, setDraft] = useState<FilterValues>(values)
+  const filterById = useMemo(() => new Map(filters.map((filter) => [filter.id, filter])), [filters])
 
   useEffect(() => {
     if (open) {
@@ -96,6 +106,16 @@ export function FilterDialog({
     [draft, values],
   )
 
+  const renderFilterRow = (filter: FilterDefinition, hideLabel: boolean) => (
+    <FilterRow
+      key={filter.id}
+      filter={filter}
+      value={draft[filter.id]}
+      hideLabel={hideLabel}
+      onChange={(next) => setDraft((current) => ({ ...current, [filter.id]: next }))}
+    />
+  )
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -104,15 +124,48 @@ export function FilterDialog({
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
 
-        <div className="max-h-[60vh] space-y-5 overflow-y-auto py-2 pr-1">
-          {filters.map((filter) => (
-            <FilterRow
-              key={filter.id}
-              filter={filter}
-              value={draft[filter.id]}
-              onChange={(next) => setDraft((current) => ({ ...current, [filter.id]: next }))}
-            />
-          ))}
+        <div
+          className={cn(
+            'max-h-[60vh] overflow-y-auto py-2 pr-1',
+            sections && sections.length > 0 ? 'space-y-3' : 'space-y-5',
+          )}
+        >
+          {sections && sections.length > 0 ? (
+            <>
+              {sections.map((section) => {
+                const sectionFilters = section.filterIds
+                  .map((id) => filterById.get(id))
+                  .filter((filter): filter is FilterDefinition => Boolean(filter))
+                if (sectionFilters.length === 0) {
+                  return null
+                }
+                const appliedCount = sectionFilters.filter((filter) =>
+                  isFilterApplied(draft[filter.id]),
+                ).length
+                // Open if asked to, or if it already carries an applied filter so
+                // active filters are never hidden behind a collapsed header.
+                const initiallyOpen =
+                  Boolean(section.defaultOpen) ||
+                  sectionFilters.some((filter) => isFilterApplied(values[filter.id]))
+                const hideInnerLabels = sectionFilters.length === 1
+                return (
+                  <FilterSectionCard
+                    key={section.id}
+                    label={section.label}
+                    appliedCount={appliedCount}
+                    defaultOpen={initiallyOpen}
+                  >
+                    {sectionFilters.map((filter) => renderFilterRow(filter, hideInnerLabels))}
+                  </FilterSectionCard>
+                )
+              })}
+              {filters
+                .filter((filter) => !sections.some((section) => section.filterIds.includes(filter.id)))
+                .map((filter) => renderFilterRow(filter, false))}
+            </>
+          ) : (
+            filters.map((filter) => renderFilterRow(filter, false))
+          )}
         </div>
 
         <DialogFooter className="gap-2 sm:gap-2">
@@ -137,18 +190,51 @@ export function FilterDialog({
   )
 }
 
+function FilterSectionCard({
+  label,
+  appliedCount,
+  defaultOpen,
+  children,
+}: {
+  label: string
+  appliedCount: number
+  defaultOpen: boolean
+  children: ReactNode
+}) {
+  return (
+    <Collapsible defaultOpen={defaultOpen} className="rounded-lg border border-border">
+      <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <span className="flex items-center gap-2">
+          {label}
+          {appliedCount > 0 ? (
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+              {appliedCount}
+            </span>
+          ) : null}
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="space-y-4 border-t border-border px-3 pb-3 pt-3">
+        {children}
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
 interface FilterRowProps {
   filter: FilterDefinition
   value: FilterValue | undefined
   onChange: (next: FilterValue | undefined) => void
+  hideLabel?: boolean
 }
 
-function FilterRow({ filter, value, onChange }: FilterRowProps) {
+function FilterRow({ filter, value, onChange, hideLabel = false }: FilterRowProps) {
   switch (filter.kind) {
     case 'multi-select':
       return (
         <MultiSelectRow
           label={filter.label}
+          hideLabel={hideLabel}
           options={filter.options}
           presentation={filter.presentation ?? 'list'}
           selected={value?.kind === 'multi-select' ? value.values : []}
@@ -161,6 +247,7 @@ function FilterRow({ filter, value, onChange }: FilterRowProps) {
       return (
         <SingleSelectRow
           label={filter.label}
+          hideLabel={hideLabel}
           placeholder={filter.placeholder}
           options={filter.options}
           selected={value?.kind === 'single-select' ? value.value : null}
@@ -182,12 +269,14 @@ function FilterRow({ filter, value, onChange }: FilterRowProps) {
 
 function MultiSelectRow({
   label,
+  hideLabel = false,
   options,
   presentation,
   selected,
   onChange,
 }: {
   label: string
+  hideLabel?: boolean
   options: ReadonlyArray<FilterOption>
   presentation: 'list' | 'pills'
   selected: string[]
@@ -200,7 +289,7 @@ function MultiSelectRow({
   if (presentation === 'pills') {
     return (
       <div className="space-y-2">
-        <p className="text-sm font-medium text-foreground">{label}</p>
+        {hideLabel ? null : <p className="text-sm font-medium text-foreground">{label}</p>}
         <div className="flex flex-wrap gap-1.5">
           {options.map((option) => {
             const checked = selected.includes(option.value)
@@ -230,7 +319,7 @@ function MultiSelectRow({
 
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium text-foreground">{label}</p>
+      {hideLabel ? null : <p className="text-sm font-medium text-foreground">{label}</p>}
       <div className="space-y-1">
         {options.map((option) => {
           const checked = selected.includes(option.value)
@@ -271,12 +360,14 @@ function MultiSelectRow({
 
 function SingleSelectRow({
   label,
+  hideLabel = false,
   placeholder,
   options,
   selected,
   onChange,
 }: {
   label: string
+  hideLabel?: boolean
   placeholder?: string
   options: ReadonlyArray<FilterOption>
   selected: string | null
@@ -284,7 +375,7 @@ function SingleSelectRow({
 }) {
   return (
     <div className="space-y-1.5">
-      <p className="text-sm font-medium text-foreground">{label}</p>
+      {hideLabel ? null : <p className="text-sm font-medium text-foreground">{label}</p>}
       <Select
         value={selected ?? UNSET_SINGLE_SELECT_VALUE}
         onValueChange={(next) => onChange(next === UNSET_SINGLE_SELECT_VALUE ? null : next)}

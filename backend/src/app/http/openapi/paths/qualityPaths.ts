@@ -34,6 +34,9 @@ export const registerQualityPaths = (
         feedback: csvOrArrayString
           .describe("Comma-separated `QualityFeedbackValue` values (`up`, `down`).")
           .optional(),
+        triage: csvOrArrayString
+          .describe("Comma-separated `QualityTriageState` values (`open`, `acknowledged`, `resolved`, `dismissed`).")
+          .optional(),
         hasComment: z.coerce.boolean().optional(),
         agentId: z.string().uuid().optional(),
         channel: z.string().min(1).max(64).optional(),
@@ -72,6 +75,71 @@ export const registerQualityPaths = (
       },
       403: {
         description: "Caller lacks the workspace.quality.read permission",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/quality/turns/{assistantMessageId}/triage",
+    tags: ["Quality"],
+    summary: "Set the triage state of an assistant turn",
+    description:
+      "Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an " +
+      "assistant turn. Admin/owner only (requires the `workspace.quality.manage` permission).",
+    operationId: "setQualityTurnTriage",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: z.object({ assistantMessageId: z.string().uuid() }),
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.SetQualityTriageRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Updated triage record",
+        content: {
+          "application/json": {
+            schema: schemas.QualityTriageRecordSchema,
+          },
+        },
+      },
+      400: {
+        description: "Invalid request body or assistant message id",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Caller lacks the workspace.quality.manage permission",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Assistant turn not found in this workspace",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

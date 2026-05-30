@@ -46,6 +46,19 @@ export type FilterDefinition =
       label: string
     }
 
+/**
+ * Optional presentation grouping for the dialog. A section gathers one or more
+ * filters (by id) under a collapsible heading. Filters not referenced by any
+ * section render flat. Sections are layout-only — values stay keyed by filter
+ * `id`, so URL persistence is unaffected.
+ */
+export interface FilterSection {
+  id: string
+  label: string
+  defaultOpen?: boolean
+  filterIds: ReadonlyArray<string>
+}
+
 export const countAppliedFilters = (values: FilterValues): number => {
   let count = 0
   for (const value of Object.values(values)) {

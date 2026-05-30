@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useMemo, type ComponentPropsWithoutRef } from 'react'
+import { Fragment, useMemo, type ComponentPropsWithoutRef, type ReactNode } from 'react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -79,6 +79,16 @@ const extractFencedCode = (node?: HastElement): { code: string; language?: strin
   return { code, language }
 }
 
+const getNodeEndOffset = (node?: HastElement) => node?.position?.end.offset
+
+const nodeEndsAtContentEnd = (node: HastElement | undefined, contentEndOffset: number) =>
+  typeof getNodeEndOffset(node) === 'number' && getNodeEndOffset(node) === contentEndOffset
+
+const hasChildEndingAtContentEnd = (node: HastElement | undefined, contentEndOffset: number) =>
+  node?.children.some((child) =>
+    child.type === 'element' && nodeEndsAtContentEnd(child, contentEndOffset),
+  ) ?? false
+
 const MarkdownLink = ({
   href,
   children,
@@ -141,10 +151,14 @@ const documentHeadingClasses: Record<1 | 2 | 3 | 4 | 5 | 6, string> = {
 const buildHeading = (
   level: 1 | 2 | 3 | 4 | 5 | 6,
   classes: Record<1 | 2 | 3 | 4 | 5 | 6, string>,
+  renderTrailingInlineContent?: (node?: HastElement) => ReactNode,
 ) => {
   const Tag = `h${level}` as 'h1'
-  const Component = ({ children, className }: ComponentPropsWithoutRef<'h1'>) => (
-    <Tag className={cn(classes[level], className)}>{children}</Tag>
+  const Component = ({ children, className, node }: ComponentPropsWithoutRef<'h1'> & ExtraProps) => (
+    <Tag className={cn(classes[level], className)}>
+      {children}
+      {renderTrailingInlineContent?.(node)}
+    </Tag>
   )
   Component.displayName = `MarkdownHeading${level}`
   return Component
@@ -153,10 +167,16 @@ const buildHeading = (
 const createComponents = (
   variant: MarkdownVariant,
   inline: boolean,
+  trailingInlineContent: ReactNode,
+  contentEndOffset: number,
   onLinkClick?: (href: string) => void,
   transformLinkHref?: (href: string) => string,
 ): Components => {
   const headingClasses = variant === 'chat' ? chatHeadingClasses : documentHeadingClasses
+  const renderTrailingInlineContent = (node?: HastElement) =>
+    trailingInlineContent && nodeEndsAtContentEnd(node, contentEndOffset)
+      ? trailingInlineContent
+      : null
 
   return {
     a: ({ href, children, className }) => (
@@ -187,14 +207,17 @@ const createComponents = (
     em: ({ children, className }) => (
       <em className={cn('italic', className)}>{children}</em>
     ),
-    h1: buildHeading(1, headingClasses),
-    h2: buildHeading(2, headingClasses),
-    h3: buildHeading(3, headingClasses),
-    h4: buildHeading(4, headingClasses),
-    h5: buildHeading(5, headingClasses),
-    h6: buildHeading(6, headingClasses),
-    hr: ({ className }) => (
-      <hr className={cn('my-4 border-border', className)} />
+    h1: buildHeading(1, headingClasses, renderTrailingInlineContent),
+    h2: buildHeading(2, headingClasses, renderTrailingInlineContent),
+    h3: buildHeading(3, headingClasses, renderTrailingInlineContent),
+    h4: buildHeading(4, headingClasses, renderTrailingInlineContent),
+    h5: buildHeading(5, headingClasses, renderTrailingInlineContent),
+    h6: buildHeading(6, headingClasses, renderTrailingInlineContent),
+    hr: ({ className, node }) => (
+      <>
+        <hr className={cn('my-4 border-border', className)} />
+        {renderTrailingInlineContent(node)}
+      </>
     ),
     img: ({ src, alt, title }) => {
       if (variant !== 'document') {
@@ -238,26 +261,42 @@ const createComponents = (
         />
       )
     },
-    li: ({ children, className }) => (
-      <li className={cn('ml-1 text-foreground', className)}>{children}</li>
+    li: ({ children, className, node }) => (
+      <li className={cn('ml-1 text-foreground', className)}>
+        {children}
+        {!hasChildEndingAtContentEnd(node, contentEndOffset) ? renderTrailingInlineContent(node) : null}
+      </li>
     ),
     ol: ({ children, className }) => (
       <ol className={cn('my-3 ml-5 list-decimal space-y-1.5 text-foreground first:mt-0', className)}>
         {children}
       </ol>
     ),
-    p: ({ children, className }) =>
+    p: ({ children, className, node }) =>
       inline ? (
         <Fragment>{children}</Fragment>
       ) : (
-        <p className={cn('mt-3 text-foreground first:mt-0', className)}>{children}</p>
+        <p className={cn('mt-3 text-foreground first:mt-0', className)}>
+          {children}
+          {renderTrailingInlineContent(node)}
+        </p>
       ),
     pre: ({ children, node }: PreProps) => {
       const fenced = extractFencedCode(node)
       if (fenced) {
-        return <CodeBlock code={fenced.code} language={fenced.language} />
+        return (
+          <>
+            <CodeBlock code={fenced.code} language={fenced.language} />
+            {renderTrailingInlineContent(node)}
+          </>
+        )
       }
-      return <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 text-xs leading-6 text-foreground">{children}</pre>
+      return (
+        <>
+          <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 text-xs leading-6 text-foreground">{children}</pre>
+          {renderTrailingInlineContent(node)}
+        </>
+      )
     },
     strong: ({ children, className }) => (
       <strong className={cn('font-semibold text-foreground', className)}>
@@ -297,8 +336,11 @@ const createComponents = (
         {children}
       </th>
     ),
-    td: ({ children, className }) => (
-      <td className={cn('px-3 py-2 align-top', className)}>{children}</td>
+    td: ({ children, className, node }) => (
+      <td className={cn('px-3 py-2 align-top', className)}>
+        {children}
+        {renderTrailingInlineContent(node)}
+      </td>
     ),
     ul: ({ children, className }) => (
       <ul className={cn('my-3 ml-5 list-disc space-y-1.5 text-foreground first:mt-0', className)}>
@@ -318,18 +360,21 @@ export function MarkdownContent({
   content,
   variant = 'chat',
   inline = false,
+  trailingInlineContent = null,
   onLinkClick,
   transformLinkHref,
 }: {
   content: string
   variant?: MarkdownVariant
   inline?: boolean
+  trailingInlineContent?: ReactNode
   onLinkClick?: (href: string) => void
   transformLinkHref?: (href: string) => string
 }) {
+  const contentEndOffset = content.trimEnd().length
   const components = useMemo(
-    () => createComponents(variant, inline, onLinkClick, transformLinkHref),
-    [variant, inline, onLinkClick, transformLinkHref],
+    () => createComponents(variant, inline, trailingInlineContent, contentEndOffset, onLinkClick, transformLinkHref),
+    [variant, inline, trailingInlineContent, contentEndOffset, onLinkClick, transformLinkHref],
   )
   return (
     <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>

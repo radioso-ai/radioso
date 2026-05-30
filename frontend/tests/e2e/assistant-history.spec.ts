@@ -55,19 +55,22 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
       {
         id: assistantMessageId,
         role: "assistant",
-        content: "The advanced workshop runs next month.",
+        content: "Preparation includes:\n\n- Daily meditation\n- Advanced techniques",
         createdAt: nowIso,
         citations: [
           {
             documentId: "doc-1",
             chunkId: "chunk-1",
             title: "Course Calendar",
-            quote: "The advanced workshop runs next month.",
+            quote: "Advanced techniques",
           },
         ],
         answerSegments: [
           {
-            text: "The advanced workshop runs next month.",
+            text: "Preparation includes:\n\n- Daily meditation\n- Advanced techniques",
+          },
+          {
+            text: "\n\n",
             citationIndices: [0],
           },
         ],
@@ -188,6 +191,9 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
   await page.getByRole("button", { name: /What courses are coming up next month/ }).click();
 
   await expect(page).toHaveURL(/itemKind=chat/);
+  await expect(
+    page.locator("li").filter({ hasText: "Advanced techniques" }).getByRole("button", { name: /Open source 1/ }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Debug" }).click();
   await expect(page.getByText("Route", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /Context/ })).toBeVisible();

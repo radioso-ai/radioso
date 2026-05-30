@@ -59,6 +59,14 @@ describe('AssistantMessageContent link analytics', () => {
       container.querySelector<HTMLButtonElement>('[data-citation-index="1"]')?.click()
     })
 
+    expect(container.querySelector<HTMLAnchorElement>('a[aria-label="Open Source 1 in a new tab"]')).toBeNull()
+
+    const sourcesToggle = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes('Sources'))
+    await act(async () => {
+      sourcesToggle?.click()
+    })
+
     container.querySelector<HTMLAnchorElement>('a[aria-label="Open Source 1 in a new tab"]')?.click()
     container.querySelector<HTMLAnchorElement>('a[href="https://example.com/guide?token=secret#intro"]')?.click()
 

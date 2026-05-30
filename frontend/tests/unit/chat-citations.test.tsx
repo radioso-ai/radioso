@@ -140,9 +140,64 @@ describe('AssistantMessageContent', () => {
     expect(html).toContain('<p')
     expect(html).toContain('href="https://example.com"')
     expect(html).toContain('Second paragraph')
+    expect(html).toMatch(/Second paragraph[\s\S]*data-citation-index="1"[\s\S]*<\/button><\/p>/)
+    expect(html).not.toContain('</p><button')
   })
 
-  it('renders a Sources footer rail listing each cited document once', async () => {
+  it('keeps citation markers inside the final list item of cited block segments', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          {
+            documentId: 'doc-1',
+            chunkId: 'chunk-1',
+            title: 'Source 1',
+          },
+        ]}
+        answerSegments={[
+          {
+            text: 'Preparation includes:\n\n- Daily meditation\n- Advanced techniques',
+            citationIndices: [0],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toMatch(/Advanced techniques[\s\S]*data-citation-index="1"[\s\S]*<\/button><\/li>\s*<\/ul>/)
+    expect(html).not.toContain('</ul><button')
+  })
+
+  it('reattaches historical citation-only segments to the preceding block segment', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          {
+            documentId: 'doc-1',
+            chunkId: 'chunk-1',
+            title: 'Source 1',
+          },
+        ]}
+        answerSegments={[
+          {
+            text: 'Preparation includes:\n\n- Daily meditation\n- Advanced techniques',
+          },
+          {
+            text: '\n\n',
+            citationIndices: [0],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toMatch(/Advanced techniques[\s\S]*data-citation-index="1"[\s\S]*<\/button><\/li>\s*<\/ul>/)
+    expect(html).not.toContain('</ul><button')
+  })
+
+  it('renders a collapsed Sources disclosure with the unique source count', async () => {
     const html = renderToStaticMarkup(
       <AssistantMessageContent
         content="unused"
@@ -161,13 +216,13 @@ describe('AssistantMessageContent', () => {
     )
 
     expect(html).toContain('Sources')
-    expect(html).toContain('Architecture')
-    // doc-1 appears twice in citations but should produce only one footer chip
-    expect(html.match(/title="Retrieval guide"/g)?.length).toBe(1)
-    expect(html.match(/title="Architecture"/g)?.length).toBe(1)
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).toMatch(/<span class="font-semibold text-foreground">2<\/span><span class="font-medium">Sources<\/span>/)
+    expect(html).not.toContain('title="Retrieval guide"')
+    expect(html).not.toContain('title="Architecture"')
   })
 
-  it('renders an external-link affordance for sources that carry a sourceUrl', async () => {
+  it('hides source URL affordances while the Sources disclosure is collapsed', async () => {
     const html = renderToStaticMarkup(
       <AssistantMessageContent
         content="unused"
@@ -187,7 +242,8 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    expect(html).toContain('href="https://example.com/overview"')
+    expect(html).toContain('Sources')
+    expect(html).not.toContain('href="https://example.com/overview"')
   })
 
   it('omits the external-link affordance for sources without a sourceUrl', async () => {

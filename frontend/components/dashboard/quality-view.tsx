@@ -2,10 +2,27 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronRight, MessageSquareWarning, SlidersHorizontal, ThumbsDown, ThumbsUp } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  FileSearch,
+  MessageSquareWarning,
+  SlidersHorizontal,
+  ThumbsDown,
+  ThumbsUp,
+} from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 import { ConversationDrawer } from './conversation-drawer'
@@ -32,6 +49,7 @@ import {
   skillsApi,
   type QualityActionFilter,
   type LowQualityTurn,
+  type QualityTriageState,
   type SkillCatalogEntry,
   type SkillOwner,
   type SkillOutcomeDefinition,
@@ -42,8 +60,16 @@ import {
   type QualityFeedbackFilter,
   type QualityLatencyFilter,
   type QualityStatusFilter,
+  type QualityTriageFilter,
 } from '@/lib/dashboard-routes'
 import { useWorkspace } from '@/lib/workspace-context'
+import {
+  activeQualitySignal,
+  groundingGapActions,
+  ACTIVE_TRIAGE_STATES,
+  SLOW_RESPONSE_LATENCY_BUCKET,
+  type QualitySignalId,
+} from '@/lib/quality-signals'
 
 const PAGE_SIZE = 25
 
@@ -302,6 +328,159 @@ const formatActionFallbackLabel = (encodedAction: string): string => {
   return decoded?.outcome.replaceAll('_', ' ') ?? encodedAction
 }
 
+interface QualitySignalDefinition {
+  id: QualitySignalId
+  label: string
+  description: string
+  icon: typeof ThumbsDown
+  iconClass: string
+}
+
+const QUALITY_SIGNALS: ReadonlyArray<QualitySignalDefinition> = [
+  {
+    id: 'negative_feedback',
+    label: 'Negative feedback',
+    description: 'Answers users rated thumbs-down',
+    icon: ThumbsDown,
+    iconClass: 'text-destructive',
+  },
+  {
+    id: 'grounding_gaps',
+    label: 'Grounding gaps',
+    description: 'No context or degraded evidence',
+    icon: FileSearch,
+    iconClass: 'text-amber-600 dark:text-amber-400',
+  },
+  {
+    id: 'slow_responses',
+    label: 'Slow responses',
+    description: '10 seconds or more to answer',
+    icon: Clock,
+    iconClass: 'text-muted-foreground',
+  },
+]
+
+function QualitySignalTile({
+  signal,
+  count,
+  active,
+  onSelect,
+}: {
+  signal: QualitySignalDefinition
+  count: number | null
+  active: boolean
+  onSelect: (id: QualitySignalId | null) => void
+}) {
+  const Icon = signal.icon
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(active ? null : signal.id)}
+      aria-pressed={active}
+      className={cn(
+        'flex items-start justify-between gap-3 rounded-lg border bg-card p-4 text-left transition-colors',
+        'hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        active ? 'border-primary ring-1 ring-primary/30' : 'border-border',
+      )}
+    >
+      <div className="min-w-0">
+        <p className="text-sm text-muted-foreground">{signal.label}</p>
+        <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-foreground">
+          {count === null ? '—' : count}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{signal.description}</p>
+      </div>
+      <Icon className={cn('h-4 w-4 shrink-0', signal.iconClass)} aria-hidden />
+    </button>
+  )
+}
+
+function QualitySignalsBar({
+  counts,
+  activeSignal,
+  onSelect,
+}: {
+  counts: Record<QualitySignalId, number | null>
+  activeSignal: QualitySignalId | null
+  onSelect: (id: QualitySignalId | null) => void
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {QUALITY_SIGNALS.map((signal) => (
+        <QualitySignalTile
+          key={signal.id}
+          signal={signal}
+          count={counts[signal.id]}
+          active={activeSignal === signal.id}
+          onSelect={onSelect}
+        />
+      ))}
+    </div>
+  )
+}
+
+const TRIAGE_STATE_ORDER: QualityTriageState[] = ['open', 'acknowledged', 'resolved', 'dismissed']
+
+const TRIAGE_STATE_META: Record<QualityTriageState, { label: string; className: string }> = {
+  open: { label: 'Open', className: 'border-border bg-muted text-muted-foreground' },
+  acknowledged: {
+    label: 'Acknowledged',
+    className: 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300',
+  },
+  resolved: {
+    label: 'Resolved',
+    className: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  },
+  dismissed: {
+    label: 'Dismissed',
+    className: 'border-muted-foreground/30 bg-muted text-muted-foreground',
+  },
+}
+
+function TriageStateControl({
+  state,
+  pending,
+  onChange,
+}: {
+  state: QualityTriageState
+  pending: boolean
+  onChange: (next: QualityTriageState) => void
+}) {
+  const meta = TRIAGE_STATE_META[state]
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={pending}
+          aria-label={`Triage state: ${meta.label}. Change state.`}
+          className={cn(
+            'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors disabled:opacity-50',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
+            meta.className,
+          )}
+        >
+          {meta.label}
+          <ChevronDown className="h-3 w-3 opacity-70" aria-hidden />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuLabel>Triage state</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={state}
+          onValueChange={(value) => onChange(value as QualityTriageState)}
+        >
+          {TRIAGE_STATE_ORDER.map((value) => (
+            <DropdownMenuRadioItem key={value} value={value}>
+              {TRIAGE_STATE_META[value].label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 export function QualityView({ accountId, routeState }: QualityViewProps) {
   const router = useRouter()
   const { activeWorkspaceId } = useWorkspace()
@@ -314,6 +493,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     .join(',')
   const statusesKey = (routeState.qualityStatuses ?? []).join(',')
   const feedbackKey = (routeState.qualityFeedback ?? []).join(',')
+  const triageKey = (routeState.qualityTriageStates ?? []).join(',')
   const latency = routeState.qualityLatency
 
   const [items, setItems] = useState<LowQualityTurn[]>([])
@@ -329,6 +509,14 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   } | null>(null)
   const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false)
   const [skillCatalog, setSkillCatalog] = useState<SkillCatalogEntry[]>([])
+  const [signalCounts, setSignalCounts] = useState<Record<QualitySignalId, number | null>>({
+    negative_feedback: null,
+    grounding_gaps: null,
+    slow_responses: null,
+  })
+  const [pendingTriageId, setPendingTriageId] = useState<string | null>(null)
+  // Bumped after a triage change so the active-backlog signal counts refetch.
+  const [countsRefreshKey, setCountsRefreshKey] = useState(0)
   const drawerSelectedItem: SelectedHistoryItem = openedConversation
     ? { kind: 'chat', id: openedConversation.conversationId }
     : null
@@ -341,6 +529,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const feedback = useMemo<QualityFeedbackFilter[]>(
     () => (feedbackKey ? (feedbackKey.split(',') as QualityFeedbackFilter[]) : []),
     [feedbackKey],
+  )
+  const triageStates = useMemo<QualityTriageFilter[]>(
+    () => (triageKey ? (triageKey.split(',') as QualityTriageFilter[]) : []),
+    [triageKey],
   )
 
   useEffect(() => {
@@ -363,6 +555,81 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   }, [])
 
   const actionLookup = useMemo(() => buildActionLookup(skillCatalog), [skillCatalog])
+
+  const groundingActions = useMemo(() => groundingGapActions(skillCatalog), [skillCatalog])
+
+  const decodedActions = useMemo<QualityActionFilter[]>(
+    () =>
+      actions
+        .map(decodeAction)
+        .filter((entry): entry is QualityActionFilter => entry !== null),
+    [actions],
+  )
+
+  const activeSignal = useMemo(
+    () =>
+      activeQualitySignal(
+        { feedback, actions: decodedActions, latency: latency ?? null },
+        groundingActions,
+      ),
+    [feedback, decodedActions, latency, groundingActions],
+  )
+
+  // Stable dependency for the count effect: groundingActions is a fresh array
+  // each render, so depend on its serialized form instead.
+  const groundingActionsKey = groundingActions
+    .map((action) => encodeAction(action.skillName, action.outcome))
+    .join(',')
+
+  // Signal counts are the at-a-glance triage totals across the whole dataset,
+  // independent of the current page or applied filters — cheap `total`-only
+  // probes that reuse the same filters the tiles apply when clicked.
+  useEffect(() => {
+    let cancelled = false
+
+    const countFor = async (
+      options: Parameters<typeof qualityApi.listTurns>[0],
+    ): Promise<number | null> => {
+      try {
+        const page = await qualityApi.listTurns({ ...options, offset: 0, limit: 1 })
+        return page.total
+      } catch {
+        // Signals are an enhancement over the table; a failed probe shows "—"
+        // rather than blocking the page.
+        return null
+      }
+    }
+
+    // Only count the active backlog so resolved/dismissed turns drain out.
+    const triageStatesFilter = [...ACTIVE_TRIAGE_STATES]
+    const loadSignalCounts = async () => {
+      const [negative, grounding, slow] = await Promise.all([
+        countFor({ feedback: ['down'], triageStates: triageStatesFilter }),
+        groundingActions.length > 0
+          ? countFor({ actions: groundingActions, triageStates: triageStatesFilter })
+          : Promise.resolve(0),
+        countFor({
+          minTotalLatencyMs: LATENCY_BUCKETS[SLOW_RESPONSE_LATENCY_BUCKET].minTotalLatencyMs,
+          triageStates: triageStatesFilter,
+        }),
+      ])
+      if (!cancelled) {
+        setSignalCounts({
+          negative_feedback: negative,
+          grounding_gaps: grounding,
+          slow_responses: slow,
+        })
+      }
+    }
+
+    void loadSignalCounts()
+    return () => {
+      cancelled = true
+    }
+    // groundingActionsKey fully captures the grounding-action dependency;
+    // countsRefreshKey forces a refetch after a triage change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groundingActionsKey, countsRefreshKey])
 
   const actionFilterGroups = useMemo<ActionFilterGroup[]>(() => {
     const groups = new Map<string, ActionFilterGroup>()
@@ -436,6 +703,15 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         })),
       },
       {
+        id: 'triage',
+        kind: 'multi-select',
+        label: 'Triage state',
+        options: TRIAGE_STATE_ORDER.map((value) => ({
+          value,
+          label: TRIAGE_STATE_META[value].label,
+        })),
+      },
+      {
         id: 'latency',
         kind: 'single-select',
         label: 'Total latency',
@@ -482,6 +758,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     if (feedback.length > 0) {
       next.feedback = { kind: 'multi-select', values: feedback }
     }
+    if (triageStates.length > 0) {
+      next.triage = { kind: 'multi-select', values: triageStates }
+    }
     if (hasComment) {
       next.hasComment = { kind: 'boolean', value: true }
     }
@@ -489,10 +768,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       next.latency = { kind: 'single-select', value: latency }
     }
     return next
-    // statusesKey/actionsKey/feedbackKey/hasComment/latency plus the loaded action catalog
+    // statusesKey/actionsKey/feedbackKey/triageKey/hasComment/latency plus the loaded action catalog
     // together fully determine these values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusesKey, actionsKey, actionFilterGroups, feedbackKey, hasComment, latency])
+  }, [statusesKey, actionsKey, actionFilterGroups, feedbackKey, triageKey, hasComment, latency])
 
   const appliedFilterCount = countAppliedFilters(filterValues)
 
@@ -517,6 +796,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       })
       const statusValue = next.status
       const feedbackValue = next.feedback
+      const triageValue = next.triage
       const latencyValue = next.latency
       const hasCommentValue = next.hasComment
       const uniqueActionValues = [...new Set(actionValues)]
@@ -534,6 +814,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         qualityFeedback:
           feedbackValue?.kind === 'multi-select' && feedbackValue.values.length > 0
             ? (feedbackValue.values as QualityFeedbackFilter[])
+            : undefined,
+        qualityTriageStates:
+          triageValue?.kind === 'multi-select' && triageValue.values.length > 0
+            ? (triageValue.values as QualityTriageFilter[])
             : undefined,
         qualityLatency:
           latencyValue?.kind === 'single-select'
@@ -555,6 +839,20 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const setPage = (next: number) =>
     navigateWith({ qualityPage: next > 1 ? next : undefined })
 
+  // Selecting a signal narrows the table to that issue class and clears any
+  // other filters; selecting the active signal again (null) clears it.
+  const applySignal = (signalId: QualitySignalId | null) => {
+    navigateWith({
+      qualityFeedback: signalId === 'negative_feedback' ? ['down'] : undefined,
+      qualityActions: signalId === 'grounding_gaps' ? groundingActions : undefined,
+      qualityLatency: signalId === 'slow_responses' ? SLOW_RESPONSE_LATENCY_BUCKET : undefined,
+      qualityStatuses: undefined,
+      qualityTriageStates: undefined,
+      qualityHasComment: undefined,
+      qualityPage: undefined,
+    })
+  }
+
   useEffect(() => {
     let cancelled = false
 
@@ -566,6 +864,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       : undefined
     const statusesList = statusesKey ? (statusesKey.split(',') as QualityStatusFilter[]) : undefined
     const feedbackList = feedbackKey ? (feedbackKey.split(',') as QualityFeedbackFilter[]) : undefined
+    const triageList = triageKey ? (triageKey.split(',') as QualityTriageState[]) : undefined
     const latencyBucket = latency ? LATENCY_BUCKETS[latency] : undefined
 
     const loadTurns = async () => {
@@ -579,6 +878,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           actions: actionTuples && actionTuples.length > 0 ? actionTuples : undefined,
           statuses: statusesList,
           feedback: feedbackList,
+          triageStates: triageList,
           hasComment: hasComment || undefined,
           minTotalLatencyMs: latencyBucket?.minTotalLatencyMs,
           maxTotalLatencyMs: latencyBucket?.maxTotalLatencyMs,
@@ -610,13 +910,35 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     return () => {
       cancelled = true
     }
-  }, [currentPage, feedbackKey, hasComment, latency, actionsKey, statusesKey])
+  }, [currentPage, feedbackKey, hasComment, latency, actionsKey, statusesKey, triageKey])
 
   const openConversation = (turn: LowQualityTurn) =>
     setOpenedConversation({
       conversationId: turn.conversationId,
       assistantMessageId: turn.assistantMessageId,
     })
+
+  // Optimistically reflect the new state on the row and refresh the active
+  // backlog counts; a failed update reverts and surfaces an error.
+  const updateTriageState = async (turn: LowQualityTurn, next: QualityTriageState) => {
+    if (turn.triage.state === next || pendingTriageId === turn.assistantMessageId) {
+      return
+    }
+    setPendingTriageId(turn.assistantMessageId)
+    try {
+      const record = await qualityApi.setTriageState(turn.assistantMessageId, { state: next })
+      setItems((prev) =>
+        prev.map((item) =>
+          item.assistantMessageId === turn.assistantMessageId ? { ...item, triage: record } : item,
+        ),
+      )
+      setCountsRefreshKey((key) => key + 1)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Failed to update triage state')
+    } finally {
+      setPendingTriageId((current) => (current === turn.assistantMessageId ? null : current))
+    }
+  }
 
   const renderPagination = () => (
     <DashboardPagination
@@ -668,8 +990,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   return (
     <>
     <DashboardPage
-      title="Assistant answers to review"
-      description="Browse assistant turns by conversation status, action type, user feedback, and response time."
+      title="Quality review"
+      description="Triage the answers that need attention — negative feedback, grounding gaps, and slow responses — then open the conversation to act."
       titleAccessory={<MessageSquareWarning className="h-4 w-4 text-muted-foreground" />}
       actions={filterButton}
       headerContent={headerPills}
@@ -680,13 +1002,21 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         </div>
       ) : null}
 
+      <div className="mb-6">
+        <QualitySignalsBar
+          counts={signalCounts}
+          activeSignal={activeSignal}
+          onSelect={applySignal}
+        />
+      </div>
+
       {!hasLoadedOnce ? (
         <div className="flex min-h-48 items-center justify-center">
           <LogoSpinner imageClassName="h-7 w-7" />
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-          {statuses.length === 0 && actions.length === 0 && feedback.length === 0 && !hasComment && !latency
+          {statuses.length === 0 && actions.length === 0 && feedback.length === 0 && triageStates.length === 0 && !hasComment && !latency
             ? 'No assistant turns are available yet. Turns will show up here as your assistant handles traffic.'
             : 'No assistant turns match these filters. Try clearing one of them.'}
         </div>
@@ -697,15 +1027,15 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         >
           {renderPagination()}
 
-          <DashboardTable aria-label="Assistant answers to review" minWidth="min-w-[1120px]">
+          <DashboardTable aria-label="Assistant answers to review" minWidth="min-w-[920px]">
             <DashboardTableHead>
-              <DashboardTableHeader className="w-36">Agent</DashboardTableHeader>
+              <DashboardTableHeader className="w-32">Agent</DashboardTableHeader>
               <DashboardTableHeader>Question &amp; answer</DashboardTableHeader>
-              <DashboardTableHeader className="w-52">Action</DashboardTableHeader>
-              <DashboardTableHeader className="w-32">Status</DashboardTableHeader>
-              <DashboardTableHeader className="w-28">Latency</DashboardTableHeader>
-              <DashboardTableHeader className="w-32">Feedback</DashboardTableHeader>
-              <DashboardTableHeader className="w-44">When</DashboardTableHeader>
+              <DashboardTableHeader className="w-40">Action</DashboardTableHeader>
+              <DashboardTableHeader className="w-28">Status</DashboardTableHeader>
+              <DashboardTableHeader className="w-20">Latency</DashboardTableHeader>
+              <DashboardTableHeader className="w-24">Feedback</DashboardTableHeader>
+              <DashboardTableHeader className="w-40">When</DashboardTableHeader>
               <DashboardTableHeader className="w-24" />
             </DashboardTableHead>
             <DashboardTableBody>
@@ -727,7 +1057,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                 return (
                   <Fragment key={turn.assistantMessageId}>
                     <DashboardTableRow>
-                      <DashboardTableCell className="w-36">
+                      <DashboardTableCell className="w-32">
                         <div className="flex flex-col gap-0.5">
                           <span className="block truncate text-sm text-muted-foreground">
                             {turn.agentName ?? '—'}
@@ -749,8 +1079,15 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                           {turn.answerPreview}
                         </p>
+                        <div className="mt-2">
+                          <TriageStateControl
+                            state={turn.triage.state}
+                            pending={pendingTriageId === turn.assistantMessageId}
+                            onChange={(next) => void updateTriageState(turn, next)}
+                          />
+                        </div>
                       </DashboardTableCell>
-                      <DashboardTableCell className="w-52">
+                      <DashboardTableCell className="w-40">
                         {actionLabel ? (
                           <Badge
                             variant={action && actionTone === 'neutral' ? 'secondary' : 'outline'}
@@ -764,7 +1101,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </DashboardTableCell>
-                      <DashboardTableCell className="w-32">
+                      <DashboardTableCell className="w-28">
                         {statusMeta ? (
                           <Badge
                             variant={statusMeta.tone === 'neutral' ? 'secondary' : 'outline'}
@@ -782,10 +1119,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </DashboardTableCell>
-                      <DashboardTableCell className="w-28 text-xs text-muted-foreground">
+                      <DashboardTableCell className="w-20 text-xs text-muted-foreground">
                         {formatDuration(turn.totalLatencyMs)}
                       </DashboardTableCell>
-                      <DashboardTableCell className="w-32">
+                      <DashboardTableCell className="w-24">
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           {turn.feedback.downCount > 0 && (
                             <span className="inline-flex items-center gap-1">
@@ -804,7 +1141,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                           )}
                         </div>
                       </DashboardTableCell>
-                      <DashboardTableCell className="w-44 text-xs text-muted-foreground">
+                      <DashboardTableCell className="w-40 text-xs text-muted-foreground">
                         {formatTimestamp(turn.createdAt)}
                       </DashboardTableCell>
                       <DashboardTableCell className="w-24">
@@ -839,7 +1176,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                     </DashboardTableRow>
                     {isExpanded && hasComments ? (
                       <DashboardTableRow className="bg-muted/20 hover:bg-muted/20">
-                        <DashboardTableCell className="w-36">{null}</DashboardTableCell>
+                        <DashboardTableCell className="w-32">{null}</DashboardTableCell>
                         <DashboardTableCell>
                           <ul className="space-y-2">
                             {turn.feedback.comments.map((comment, index) => (
@@ -860,11 +1197,11 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                             ))}
                           </ul>
                         </DashboardTableCell>
-                        <DashboardTableCell className="w-52">{null}</DashboardTableCell>
-                        <DashboardTableCell className="w-32">{null}</DashboardTableCell>
+                        <DashboardTableCell className="w-40">{null}</DashboardTableCell>
                         <DashboardTableCell className="w-28">{null}</DashboardTableCell>
-                        <DashboardTableCell className="w-32">{null}</DashboardTableCell>
-                        <DashboardTableCell className="w-44">{null}</DashboardTableCell>
+                        <DashboardTableCell className="w-20">{null}</DashboardTableCell>
+                        <DashboardTableCell className="w-24">{null}</DashboardTableCell>
+                        <DashboardTableCell className="w-40">{null}</DashboardTableCell>
                         <DashboardTableCell className="w-24">{null}</DashboardTableCell>
                       </DashboardTableRow>
                     ) : null}

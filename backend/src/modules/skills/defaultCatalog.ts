@@ -15,6 +15,53 @@ const legacyStrategyDiagnostics = {
   strategyAware: true,
 };
 
+// Assistant-owned terminal answer capabilities that reply without retrieval. They
+// are the single source of truth for these skills' identity; the chat turn loop
+// derives its skill names from these definitions rather than minting its own.
+export const socialAnswerSkillDefinition: SkillCatalogEntryDefinition = {
+  name: "social_only.answer",
+  displayName: "Social only",
+  description:
+    "Acknowledge, reciprocate small talk, or respond with politeness in the assistant's own voice, without retrieval.",
+  owner: "assistant",
+  executionClass: "interactive",
+  supportedCallers: ["assistant"],
+  requiredCapabilities: [],
+  contractReferences: [],
+  diagnostics,
+  outcomes: [
+    {
+      name: "social_only",
+      displayName: "Social reply",
+      description: "The assistant replied socially without grounding in workspace evidence.",
+      status: "completed",
+      tone: "info",
+    },
+  ],
+};
+
+export const assistantIdentityAnswerSkillDefinition: SkillCatalogEntryDefinition = {
+  name: "assistant_identity.answer",
+  displayName: "Assistant identity",
+  description:
+    "Answer questions about the assistant itself — who it is and what it can do — from its configured identity, without retrieval.",
+  owner: "assistant",
+  executionClass: "interactive",
+  supportedCallers: ["assistant"],
+  requiredCapabilities: [],
+  contractReferences: [],
+  diagnostics,
+  outcomes: [
+    {
+      name: "assistant_identity",
+      displayName: "Identity reply",
+      description: "The assistant answered about itself from its configured identity.",
+      status: "completed",
+      tone: "info",
+    },
+  ],
+};
+
 export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
   {
     name: "assistant.chat",
@@ -67,6 +114,8 @@ export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
     diagnostics: legacyStrategyDiagnostics,
   },
   retrievalAnswerSkillDefinition,
+  socialAnswerSkillDefinition,
+  assistantIdentityAnswerSkillDefinition,
   {
     name: "documents.ingest",
     displayName: "Document ingestion",

@@ -758,7 +758,9 @@ describe("chat service streaming", () => {
     const engineTrace = metadata.conversationEngine?.trace;
     expect(engineTrace).toBeDefined();
     const selectionStage = engineTrace?.stages?.find((stage) => stage.kind === "skill_selection");
-    expect(selectionStage?.outputs?.selectedSkills).toContain("retrieval.answer");
+    // The engine routes on the turn's intent: a social_only turn selects the social
+    // answer skill (not retrieval) — selection is genuinely capability-based now.
+    expect(selectionStage?.outputs?.selectedSkills).toContain("social_only.answer");
     expect(engineTrace?.stages?.some((stage) => stage.kind === "skill_dispatch")).toBe(true);
     expect(response.answer).toBe("Normal answer.");
   });

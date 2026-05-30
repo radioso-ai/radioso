@@ -1595,6 +1595,26 @@ describe("chat service streaming", () => {
     expect(response.answer).toContain("museum guide");
     expect(response.citations).toBeUndefined();
     expect(response.answerSegments).toBeUndefined();
+    const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    const assistantMessage = messages.find((message) => message.role === "assistant");
+    expect(assistantMessage).toMatchObject({
+      skillName: "assistant_identity.answer",
+      skillOutcome: "assistant_identity",
+      skillStatus: "completed",
+    });
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "chat.answer",
+        eventStatus: "success",
+        metadata: expect.objectContaining({
+          skillTurn: {
+            skillName: "assistant_identity.answer",
+            outcome: "assistant_identity",
+            status: "completed",
+          },
+        }),
+      }),
+    );
   });
 
   it("falls back to the normal no-context response when the identity prompt returns blank output", async () => {
@@ -4609,6 +4629,11 @@ describe("chat service streaming", () => {
         eventType: "chat.answer",
         eventStatus: "success",
         metadata: expect.objectContaining({
+          skillTurn: {
+            skillName: "social_only.answer",
+            outcome: "social_only",
+            status: "completed",
+          },
           answerOutcome: "non_retrieval_response",
           route: expect.objectContaining({
             generator: "assistant",
@@ -4619,6 +4644,13 @@ describe("chat service streaming", () => {
         }),
       }),
     );
+    const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    const assistantMessage = messages.find((message) => message.role === "assistant");
+    expect(assistantMessage).toMatchObject({
+      skillName: "social_only.answer",
+      skillOutcome: "social_only",
+      skillStatus: "completed",
+    });
   });
 
   it("routes assistant-identity turns through the same non-retrieval path without regex checks", async () => {

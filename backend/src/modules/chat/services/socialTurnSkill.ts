@@ -13,6 +13,11 @@ import type { TurnOutcome, TurnRenderContext, TurnSkill } from "./turnOutcome.js
 /** The outcome kind (chat-side renderer tag) and the canonical skill identity. */
 export const SOCIAL_OUTCOME_KIND = "social_only";
 export const SOCIAL_TURN_SKILL = socialAnswerSkillDefinition.name;
+const SOCIAL_TURN_OUTCOME = {
+  skillName: SOCIAL_TURN_SKILL,
+  outcome: SOCIAL_OUTCOME_KIND,
+  status: "completed" as const,
+};
 
 export const buildSocialTurnOutcome = (session: PreparedSession): TurnOutcome =>
   buildPreparedTurnOutcome(session, { kind: SOCIAL_OUTCOME_KIND, skillName: SOCIAL_TURN_SKILL });
@@ -64,7 +69,7 @@ export class SocialAnswerComposer {
     if (!answer) {
       return null;
     }
-    return this.chatAnswerPresenter.presentNonRetrievalAnswer(answer);
+    return this.chatAnswerPresenter.presentNonRetrievalAnswer(answer, SOCIAL_TURN_OUTCOME);
   }
 
   async composeAnswer(
@@ -87,7 +92,7 @@ export class SocialAnswerComposer {
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, "social_only_miss"),
     });
-    return this.chatAnswerPresenter.presentGroundedMissAnswer(miss);
+    return this.chatAnswerPresenter.presentNonRetrievalAnswer(miss, SOCIAL_TURN_OUTCOME);
   }
 }
 

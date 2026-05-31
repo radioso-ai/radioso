@@ -35,7 +35,8 @@ export const inlineSupportedLinksDirective: Directive = {
   criticality: "high",
   description: "Use available source URLs as inline links in grounded answers.",
   action: [
-    "When a retrieved finding has a URL and you use facts from that finding, link the most relevant descriptive phrase with Markdown at least once in the answer.",
+    "When you name or reference a page, site, course, event, video, or resource that has a URL in the retrieved findings, link it inline with Markdown — do this every time you mention such a resource, not just once.",
+    "Provide ample inline links: prefer linking each named resource over leaving it as plain text.",
     "If the user asks for a link, page, URL, source, or where to learn more and a supported URL exists, provide it as an inline Markdown link.",
     "Use human-readable link text, such as [course page](https://example.com/course), never [https://example.com/course](https://example.com/course).",
     "Never print a bare/raw URL unless the user explicitly asks for the literal URL.",

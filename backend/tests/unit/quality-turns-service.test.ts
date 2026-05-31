@@ -43,6 +43,9 @@ describe("QualityTurnsService", () => {
           up_count: "0",
           down_count: "2",
           created_at: new Date("2026-05-22T10:00:00.000Z"),
+          triage_state: "open",
+          triage_reason: null,
+          triage_updated_at: null,
         },
       ],
       [
@@ -83,6 +86,11 @@ describe("QualityTurnsService", () => {
             },
           ],
         },
+        triage: {
+          state: "open",
+          reason: null,
+          updatedAt: null,
+        },
       },
     ]);
     expect(page.total).toBe(1);
@@ -100,6 +108,18 @@ describe("QualityTurnsService", () => {
     const [countQuery] = database.queries;
     expect(countQuery?.text).toMatch(/SELECT COUNT/);
     expect(countQuery?.text).not.toMatch(/m\.skill_outcome IS DISTINCT FROM/);
+  });
+
+  it("filters for turns without written comments when hasComment is false", async () => {
+    const database = new CapturingDatabase([totalRow(0), [], []]);
+    const service = new QualityTurnsService(database);
+
+    await service.listLowQualityTurns("workspace-1", { limit: 10, hasComment: false });
+
+    const [countQuery, listQuery] = database.queries;
+    expect(countQuery?.text).toMatch(/NOT EXISTS/);
+    expect(listQuery?.text).toMatch(/NOT EXISTS/);
+    expect(listQuery?.text).toMatch(/f\.comment IS NOT NULL/);
   });
 
   it("applies status, action, feedback, latency, agent, channel, and date filters with offset pagination", async () => {
@@ -171,6 +191,9 @@ describe("QualityTurnsService", () => {
         up_count: "0",
         down_count: "0",
         created_at: new Date(`2026-05-2${index % 10}T10:00:00.000Z`),
+        triage_state: "open",
+        triage_reason: null,
+        triage_updated_at: null,
       })),
       [],
     ]);

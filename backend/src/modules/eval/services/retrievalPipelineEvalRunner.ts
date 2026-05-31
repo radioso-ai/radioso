@@ -125,7 +125,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     try {
       const config = await this.capabilityResolver.resolve("chat", {
         workspaceId: input.workspaceId,
-        capabilityOverride: (input.modelOverride ?? null) as never,
+        capabilityOverride: input.modelOverride ?? null,
       });
       resolvedProvider = config.provider;
       resolvedModel = config.model;
@@ -161,7 +161,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
         systemPrompt: pipelineResult.systemPrompt,
         workspaceContext: {
           workspaceId: input.workspaceId,
-          capabilityOverride: (input.modelOverride ?? null) as never,
+          capabilityOverride: input.modelOverride ?? null,
         },
         usageContext: {
           accountId: input.accountId ?? null,

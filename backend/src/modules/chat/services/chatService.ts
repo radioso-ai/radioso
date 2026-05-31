@@ -50,30 +50,12 @@ import {
 } from "./chatAnswerPresenter.js";
 import { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
 import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
-import {
-  GroundedAnswerEnvelopeReader,
-  type AnswerGroundingVerdict,
-  type GroundedAnswerEnvelope,
-  type PlannedEnvelopeSuggestion,
-} from "./groundedAnswerEnvelope.js";
+import type { PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
 import { BlankChatAnswerError, hasCitedAnswerSegment } from "./chatAnswerErrors.js";
-import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
 export { BlankChatAnswerError } from "./chatAnswerErrors.js";
-const CITED_ANSWER_PREFIX_PATTERN = /\[\[\d+\]\](?:[ \t]*[.,;:!?)]?)?[ \t]*/g;
-
-const splitCitedAnswerPrefix = (buffer: string): { streamable: string; remaining: string } => {
-  let releaseEnd = 0;
-  for (const match of buffer.matchAll(CITED_ANSWER_PREFIX_PATTERN)) {
-    releaseEnd = match.index + match[0].length;
-  }
-  return {
-    streamable: buffer.slice(0, releaseEnd),
-    remaining: buffer.slice(releaseEnd),
-  };
-};
 
 export class ModelChatGateway implements ChatGateway {
   constructor(private readonly inference: ModelInferencePipeline) {}
@@ -363,36 +345,6 @@ export class ChatService {
     return this.answerSupport.buildAnswerInstructionBlock(session);
   }
 
-  private buildPromptWithPageContext(prompt: string, pageContext?: AssistantPageContext | null): string {
-    return this.answerSupport.buildPromptWithPageContext(prompt, pageContext);
-  }
-
-  private composeGroundedSystemPrompt(session: PreparedSession): string {
-    return this.retrievalComposer.composeGroundedSystemPrompt(session);
-  }
-
-  private generateAnswerWithPageContext(
-    session: PreparedSession,
-    query: string,
-    accountId: string | undefined,
-  ): Promise<GroundedAnswerEnvelope | null> {
-    return this.retrievalComposer.generateAnswerWithPageContext(session, query, accountId);
-  }
-
-  // streamAnswer's non-retrieval branch routes to the capability that claims the
-  // turn (null on a blank reply, so streaming keeps its own fallback).
-  private generateNonRetrievalAnswer(
-    session: PreparedSession,
-    query: string,
-    accountId: string | undefined,
-  ): Promise<ChatPresentedAnswer | null> {
-    if (session.turnRoute === CHAT_TURN_ROUTE.RETRIEVAL) {
-      return Promise.resolve(null);
-    }
-    const composer = session.turnRoute === CHAT_TURN_ROUTE.SOCIAL_ONLY ? this.socialComposer : this.identityComposer;
-    return composer.tryComposeAnswer(session, query, accountId);
-  }
-
   async answer(input: {
     workspaceId: string;
     agentId?: string | null;
@@ -581,96 +533,32 @@ export class ChatService {
       session = candidates.includes("retrieval")
         ? await this.chatSessionPreparer.prepareRetrieval(input, session)
         : await this.chatSessionPreparer.prepareDirect(input, session);
-      let rawAnswer = "";
-      let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
-      let answerGrounding: AnswerGroundingVerdict = "grounded";
-      let noContextPresentation: ChatPresentedAnswer | null = null;
-      let hasStreamedAnswer = false;
-      let streamedAnswer = "";
       const answerStartedAt = Date.now();
 
-      if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
-        noContextPresentation = await this.generateNonRetrievalAnswer(session, input.query, input.accountId);
-        rawAnswer = noContextPresentation?.answer
-          ?? await this.groundedMissResponseComposer.composeNoContext({
-            query: input.query,
-            userExpectedLocale: input.userExpectedLocale,
-            answerInstructionBlock: this.buildAnswerInstructionBlock(session),
-            workspaceContext: this.buildChatWorkspaceContext(session),
-            usageContext: this.buildChatUsageContext(session, input.accountId, "stream_non_retrieval_miss"),
-          });
-        yield {
-          type: "chunk",
-          text: rawAnswer,
-        };
-        hasStreamedAnswer = true;
-        streamedAnswer += rawAnswer;
-      } else if (session.retrieval.contexts.length === 0) {
-        const fallbackEnvelope = await this.generateAnswerWithPageContext(session, input.query, input.accountId);
-        rawAnswer = fallbackEnvelope?.answer
-          ?? await this.groundedMissResponseComposer.composeNoContext({
-            query: input.query,
-            userExpectedLocale: input.userExpectedLocale,
-            answerInstructionBlock: this.buildAnswerInstructionBlock(session),
-            workspaceContext: this.buildChatWorkspaceContext(session),
-            usageContext: this.buildChatUsageContext(session, input.accountId, "stream_grounded_miss"),
-          });
-        yield {
-          type: "chunk",
-          text: rawAnswer,
-        };
-        hasStreamedAnswer = true;
-        streamedAnswer += rawAnswer;
-      } else {
-        const reader = new GroundedAnswerEnvelopeReader();
-        const citationSanitizer = new CitationAnchorSanitizer();
-        let pendingStreamText = "";
-        // Un-cited prose can be retracted wholesale as a grounded miss (see the
-        // hasCitedAnswerSegment replacement below), so we withhold the answer
-        // until it is anchored. The FIRST citation anchor proves the answer is
-        // grounded; once seen, every later token is part of the final answer and
-        // streams immediately. Re-holding after each anchor would batch the
-        // stream into citation-sized chunks — the cause of coarse streaming.
-        let groundingConfirmed = false;
-        for await (const text of this.chatGateway.streamAnswer({
-          query: input.query,
-          history: session.history,
-          systemPrompt: this.composeGroundedSystemPrompt(session),
-          prompt: this.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext),
-          workspaceContext: this.buildChatWorkspaceContext(session),
-          usageContext: this.buildChatUsageContext(session, input.accountId, "stream_grounded"),
-        })) {
-          if (!text) {
-            continue;
-          }
-          pendingStreamText += reader.push(text);
-          if (!groundingConfirmed && splitCitedAnswerPrefix(pendingStreamText).streamable) {
-            groundingConfirmed = true;
-          }
-          let streamable = "";
-          if (groundingConfirmed) {
-            streamable = pendingStreamText;
-            pendingStreamText = "";
-          }
-          const cleanChunk = citationSanitizer.push(streamable);
-          if (cleanChunk) {
-            streamedAnswer += cleanChunk;
-            yield {
-              type: "chunk",
-              text: cleanChunk,
-            };
-            hasStreamedAnswer = true;
-          }
-        }
-
-        const finalized = reader.finalize();
-        plannedSuggestions = finalized.suggestions;
-        answerGrounding = finalized.grounding;
-        rawAnswer = finalized.fullAnswer;
-        if (!rawAnswer.trim()) {
-          throw new BlankChatAnswerError();
-        }
+      // Route to the capability that claims this turn and stream its answer. The
+      // skill owns generating + streaming; the host owns the finalization below
+      // (present, grounded-miss reconcile, persist, suggest).
+      const preparedSession = session;
+      const skill = this.turnSkills.find((candidate) => candidate.selects(preparedSession)) ?? this.turnSkills[0];
+      if (!skill?.streamRender) {
+        throw new Error("chat_no_streamable_turn_skill");
       }
+      const answerStream = skill.streamRender({
+        session: preparedSession,
+        query: input.query,
+        userExpectedLocale: input.userExpectedLocale,
+        accountId: input.accountId,
+      });
+      let streamStep = await answerStream.next();
+      while (!streamStep.done) {
+        yield {
+          type: "chunk",
+          text: streamStep.value,
+        };
+        streamStep = await answerStream.next();
+      }
+      const { rawAnswer, plannedSuggestions, answerGrounding, noContextPresentation } = streamStep.value;
+      let { hasStreamedAnswer, streamedAnswer } = streamStep.value;
 
       let presentationWithoutSuggestions = noContextPresentation ?? await this.chatAnswerPresenter.presentWithoutSuggestions(
         session,

@@ -1745,7 +1745,8 @@ describe("chat service streaming", () => {
         throw new BlankChatAnswerError();
       },
       async *streamAnswer() {
-        yield "unused";
+        // A blank stream — the non-retrieval skill falls back to the no-context reply.
+        yield "";
       },
     };
     const service = new ChatService(
@@ -4619,6 +4620,8 @@ describe("chat service streaming", () => {
         }),
       }),
     );
+    const socialMessages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    expect(socialMessages.find((message) => message.role === "assistant")?.skillName).toBe("social_only.answer");
   });
 
   it("routes assistant-identity turns through the same non-retrieval path without regex checks", async () => {
@@ -4782,6 +4785,8 @@ describe("chat service streaming", () => {
     expect(observedPrompt).toContain("Answer Instructions:");
     expect(observedPrompt).toContain("Vikram");
     expect(observedPrompt).toContain("Keep the reply brief.");
+    const identityMessages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    expect(identityMessages.find((message) => message.role === "assistant")?.skillName).toBe("assistant_identity.answer");
   });
 
   it("adds explicit missing-identity guidance when assistant identity is not configured", async () => {

@@ -8,7 +8,7 @@ import type { GroundedMissResponseComposer } from "./groundedMissResponseCompose
 import { buildNonRetrievalAnswerPrompt } from "./nonRetrievalAnswerPromptBuilder.js";
 import { buildPreparedTurnOutcome } from "./preparedTurnOutcome.js";
 import { socialAnswerSkillDefinition } from "../../skills/public.js";
-import type { TurnOutcome, TurnRenderContext, TurnSkill } from "./turnOutcome.js";
+import type { TurnOutcome, TurnRenderContext, TurnSkill, TurnStreamResult } from "./turnOutcome.js";
 
 /** The outcome kind (chat-side renderer tag) and the canonical skill identity. */
 export const SOCIAL_OUTCOME_KIND = "social_only";
@@ -30,7 +30,30 @@ export class SocialAnswerComposer {
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer,
   ) {}
 
-  /** Generates the reply, or `null` when the model returns a blank answer. */
+  /** Builds the social reply prompt (the assistant's own voice, no retrieval). */
+  private buildPrompt(session: PreparedSession, query: string): string {
+    return buildNonRetrievalAnswerPrompt({
+      route: session.turnRoute,
+      responseIdentity: session.retrieval.responseIdentity,
+      history: session.history,
+      query,
+      intentTopic: session.retrieval.diagnostics.rewriteProposal?.intentTopic,
+      inScopeRequest: session.retrieval.diagnostics.rewriteProposal?.inScopeRequest,
+      outsideScopeRequest: session.retrieval.diagnostics.rewriteProposal?.outsideScopeRequest,
+      answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
+      pageContextBlock: this.support.buildPageContextBlock(session.pageContext),
+    });
+  }
+
+  private presentReply(answer: string): ChatPresentedAnswer {
+    return this.chatAnswerPresenter.presentNonRetrievalAnswer(answer, {
+      skillName: SOCIAL_TURN_SKILL,
+      outcome: SOCIAL_OUTCOME_KIND,
+      status: "completed",
+    });
+  }
+
+  /** Generates the reply in one shot (non-streaming), or `null` when blank. */
   async tryComposeAnswer(
     session: PreparedSession,
     query: string,
@@ -41,17 +64,7 @@ export class SocialAnswerComposer {
       answer = (await this.chatGateway.answer({
         query,
         history: session.history,
-        prompt: buildNonRetrievalAnswerPrompt({
-          route: session.turnRoute,
-          responseIdentity: session.retrieval.responseIdentity,
-          history: session.history,
-          query,
-          intentTopic: session.retrieval.diagnostics.rewriteProposal?.intentTopic,
-          inScopeRequest: session.retrieval.diagnostics.rewriteProposal?.inScopeRequest,
-          outsideScopeRequest: session.retrieval.diagnostics.rewriteProposal?.outsideScopeRequest,
-          answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
-          pageContextBlock: this.support.buildPageContextBlock(session.pageContext),
-        }),
+        prompt: this.buildPrompt(session, query),
         workspaceContext: this.support.buildChatWorkspaceContext(session),
         usageContext: this.support.buildChatUsageContext(session, accountId, "social_only"),
       })).trim();
@@ -64,7 +77,7 @@ export class SocialAnswerComposer {
     if (!answer) {
       return null;
     }
-    return this.chatAnswerPresenter.presentNonRetrievalAnswer(answer);
+    return this.presentReply(answer);
   }
 
   async composeAnswer(
@@ -89,6 +102,64 @@ export class SocialAnswerComposer {
     });
     return this.chatAnswerPresenter.presentGroundedMissAnswer(miss);
   }
+
+  /**
+   * Streams the social reply token-by-token via the gateway's streaming API. On a
+   * blank reply it falls back to a graceful no-answer reply (one chunk). Returns the
+   * reply as the no-context presentation so the host finalizes it as a non-grounded
+   * turn.
+   */
+  async *streamAnswer(
+    session: PreparedSession,
+    query: string,
+    userExpectedLocale: string | null | undefined,
+    accountId: string | undefined,
+  ): AsyncGenerator<string, TurnStreamResult> {
+    let streamedAnswer = "";
+    for await (const text of this.chatGateway.streamAnswer({
+      query,
+      history: session.history,
+      prompt: this.buildPrompt(session, query),
+      workspaceContext: this.support.buildChatWorkspaceContext(session),
+      usageContext: this.support.buildChatUsageContext(session, accountId, "stream_social_only"),
+    })) {
+      if (!text) {
+        continue;
+      }
+      streamedAnswer += text;
+      yield text;
+    }
+
+    const answer = streamedAnswer.trim();
+    if (answer) {
+      return {
+        rawAnswer: answer,
+        plannedSuggestions: [],
+        answerGrounding: "grounded",
+        noContextPresentation: this.presentReply(answer),
+        hasStreamedAnswer: true,
+        streamedAnswer,
+      };
+    }
+
+    // Blank reply: graceful no-answer fallback, emitted as a single chunk.
+    const miss = await this.groundedMissResponseComposer.composeNoContext({
+      query,
+      userExpectedLocale,
+      answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
+      workspaceContext: this.support.buildChatWorkspaceContext(session),
+      usageContext: this.support.buildChatUsageContext(session, accountId, "stream_social_only_miss"),
+    });
+    yield miss;
+    return {
+      rawAnswer: miss,
+      plannedSuggestions: [],
+      answerGrounding: "grounded",
+      noContextPresentation: this.chatAnswerPresenter.presentGroundedMissAnswer(miss),
+      hasStreamedAnswer: true,
+      streamedAnswer: streamedAnswer + miss,
+    };
+  }
 }
 
 /** Registers the social-only answer as a terminal `TurnSkill`, selected for `SOCIAL_ONLY` turns. */
@@ -101,4 +172,6 @@ export const createSocialTurnSkill = (composer: SocialAnswerComposer): TurnSkill
     render: (_outcome, ctx: TurnRenderContext) =>
       composer.composeAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId),
   },
+  streamRender: (ctx: TurnRenderContext) =>
+    composer.streamAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId),
 });

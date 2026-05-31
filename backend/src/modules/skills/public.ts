@@ -44,12 +44,9 @@ export {
   type ResolvedSkillStep,
 } from "./domain.js";
 export { retrievalAnswerSkillDefinition } from "./definitions/retrieval.answer.js";
-export {
-  assistantIdentityAnswerSkillDefinition,
-  builtInSkillCatalogEntries,
-  createDefaultSkillCatalogRegistry,
-  socialAnswerSkillDefinition,
-} from "./defaultCatalog.js";
+export { builtInSkillCatalogEntries, createDefaultSkillCatalogRegistry } from "./defaultCatalog.js";
+export { socialAnswerSkillDefinition } from "./definitions/social_only.js";
+export { assistantIdentityAnswerSkillDefinition } from "./definitions/assistant_identity.js";
 export { SkillRunResolver } from "./skillRunResolver.js";
 export { SkillCatalogRegistry } from "./skillCatalogRegistry.js";
 export { SkillCatalogService, type SkillCatalogContext } from "./skillCatalogService.js";

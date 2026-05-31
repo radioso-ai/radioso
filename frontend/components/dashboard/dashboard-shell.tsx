@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { AppSidebar } from './app-sidebar'
+import { AgentSubNavContainer } from './agent-subnav-container'
 import { AgentView } from './agent-view'
 import { ChatHistoryView } from './chat-history-view'
 import { KnowledgeView } from './knowledge-view'
@@ -49,6 +50,10 @@ export function DashboardShell({
     : undefined
   const currentView = routeState.section
   const isAgentChatView = currentView === 'agents' && (routeState.agentTab ?? 'chat') === 'chat'
+  // The first-run takeover replaces the agent surface, so it shows full-width
+  // without the second column (and the rail stays expanded).
+  const showFirstRun = isAgentChatView && onboarding.shouldShowFirstRun
+  const hasSubNav = currentView === 'agents' && !showFirstRun
 
   useEffect(() => {
     const syncKey = requestedWorkspaceExists ? (requestedWorkspaceId ?? null) : null
@@ -129,7 +134,7 @@ export function DashboardShell({
     })
   ) {
     return (
-      <SidebarProvider className="h-svh min-h-0 overflow-hidden">
+      <SidebarProvider open={!hasSubNav} onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
         <AppSidebar accountId={accountId} currentView={currentView} routeState={routeState} />
         <SidebarInset className="min-h-0 overflow-hidden">
           <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
@@ -144,7 +149,7 @@ export function DashboardShell({
   }
 
   return (
-    <SidebarProvider className="h-svh min-h-0 overflow-hidden">
+    <SidebarProvider open={!hasSubNav} onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
       <AppSidebar accountId={accountId} currentView={currentView} routeState={routeState} />
       <SidebarInset className="min-h-0 overflow-hidden">
         <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
@@ -152,15 +157,20 @@ export function DashboardShell({
         </header>
         <div key={activeWorkspaceId} className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 flex-col md:h-screen">
           {currentView === 'agents' && (
-            isAgentChatView && onboarding.shouldShowFirstRun ? (
+            showFirstRun ? (
               <FirstRunExperience accountId={accountId} onboarding={onboarding} />
             ) : (
-              <AgentView
-                accountId={accountId}
-                routeState={routeState}
-                onboarding={onboarding}
-                onOpenDocument={openDocument}
-              />
+              <div className="flex min-h-0 flex-1">
+                <AgentSubNavContainer accountId={accountId} routeState={routeState} />
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <AgentView
+                    accountId={accountId}
+                    routeState={routeState}
+                    onboarding={onboarding}
+                    onOpenDocument={openDocument}
+                  />
+                </div>
+              </div>
             )
           )}
           {currentView === 'activity' && (

@@ -9,12 +9,11 @@ import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-indicator'
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   buildDashboardHref,
-  type AgentTab,
   type DashboardRouteState,
 } from '@/lib/dashboard-routes'
+import { agentSectionFromRoute, type AgentSectionId } from '@/components/dashboard/dashboard-subnav'
 import { agentsApi, type AgentSettings } from '@/lib/api'
 import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
 import {
@@ -61,10 +60,16 @@ const clearAgentCreationHandoff: () => void = agentCreationExtensionsEnabled
   ? rawClearAgentCreationHandoff as () => void
   : () => {}
 
-const agentTabSummaries: Record<AgentTab, string> = {
-  chat: 'Test the selected agent against this workspace knowledge.',
-  behavior: 'Identity, behavior, and escalation for the selected agent.',
-  channels: 'Where users can access this agent.',
+/** Each non-chat agent section maps to a content mode and a column-3 title. */
+const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, { title: string; mode: 'assistant' | 'channels' }> = {
+  identity: { title: 'Identity & appearance', mode: 'assistant' },
+  behavior: { title: 'Behavior', mode: 'assistant' },
+  skills: { title: 'Skills', mode: 'assistant' },
+  'public-chat-link': { title: 'Public chat link', mode: 'channels' },
+  'website-embed': { title: 'Website widget', mode: 'channels' },
+  'api-channel': { title: 'API', mode: 'channels' },
+  'mcp-channel': { title: 'MCP', mode: 'channels' },
+  danger: { title: 'Danger zone', mode: 'assistant' },
 }
 
 function AgentCreationHandoffBanner({
@@ -119,7 +124,6 @@ export function AgentView({
 }) {
   const router = useRouter()
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
-  const activeTab = routeState.agentTab ?? 'chat'
   const [agents, setAgents] = useState<AgentSettings[]>([])
   const [agentsError, setAgentsError] = useState<string | null>(null)
   const [isAgentsLoading, setIsAgentsLoading] = useState(true)
@@ -266,16 +270,6 @@ export function AgentView({
     }))
   }, [accountId, agentsError, isAgentsLoading, routeState, router, selectedAgentId])
 
-  const tabNavigation = (
-    <div className="flex flex-wrap items-center gap-2">
-      <TabsList>
-        <TabsTrigger value="chat">Chat</TabsTrigger>
-        <TabsTrigger value="behavior">Assistant</TabsTrigger>
-        <TabsTrigger value="channels">Channels</TabsTrigger>
-      </TabsList>
-    </div>
-  )
-
   const saveStateAccessory = <SaveStateIndicator saveState={saveState} />
 
   const agentUnavailableContent = agentSelectionPending ? (
@@ -350,7 +344,6 @@ export function AgentView({
       title="Agent"
       description={agentsError ?? description}
       titleAccessory={saveStateAccessory}
-      actions={tabNavigation}
       contentClassName="flex flex-col overflow-hidden p-0"
       contentScroll={false}
     >
@@ -358,110 +351,75 @@ export function AgentView({
     </DashboardPage>
   )
 
-  useEffect(() => {
-    if (!routeState.anchor) {
-      return
-    }
-
-    const element = document.getElementById(routeState.anchor)
-    if (!element) {
-      router.replace(buildDashboardHref(accountId, {
-        ...routeState,
-        section: 'agents',
-        anchor: undefined,
-      }))
-      return
-    }
-
-    element.scrollIntoView({ block: 'start', behavior: 'auto' })
-  }, [accountId, routeState, router])
-
-  return (
-    <Tabs
-      value={activeTab}
-      onValueChange={(value) => {
-        setSaveState({ state: 'idle' })
-        router.push(buildDashboardHref(accountId, {
-          ...routeState,
+  const wizard = WizardDialog ? (
+    <WizardDialog
+      open={wizardOpen}
+      onOpenChange={setWizardOpen}
+      agentSettingsHrefBuilder={(agentId) =>
+        buildDashboardHref(accountId, {
           section: 'agents',
-          agentTab: value as AgentTab,
-          anchor: undefined,
-        }))
-      }}
-      className="h-full min-h-0 gap-0"
-    >
-      <TabsContent value="chat" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-        {agentSelectionPending || agentSelectionUnavailable ? (
-          renderAgentUnavailablePage(agentTabSummaries.chat)
-        ) : (
-          <ChatView
-            key={selectedAgentId}
-            accountId={accountId}
-            agentId={selectedAgentId}
-            assistantName={selectedAgent?.name}
-            assistantLinkUtmEnabled={selectedAgent?.assistantLinkUtmEnabled}
-            onOpenDocument={onOpenDocument}
-            onboarding={onboarding}
-            navigation={tabNavigation}
-          />
-        )}
-      </TabsContent>
+          agentId,
+          agentTab: 'behavior',
+          anchor: 'assistant-identity',
+          workspaceId: activeWorkspaceId ?? undefined,
+          workspacePublicRouteKey: activeWorkspace?.publicRouteKey ?? undefined,
+        })
+      }
+    />
+  ) : null
 
-      <TabsContent value="behavior" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-        {agentSelectionPending || agentSelectionUnavailable ? (
-          renderAgentUnavailablePage(agentTabSummaries.behavior)
-        ) : (
-          <DashboardPage
-            title="Agent"
-            description={agentsError ?? selectedAgent?.name ?? agentTabSummaries.behavior}
-            titleAccessory={saveStateAccessory}
-            actions={tabNavigation}
-            contentClassName="flex flex-col overflow-hidden p-0"
-            contentScroll={false}
-          >
-            {agentCreationHandoff ? (
-              <AgentCreationHandoffBanner
-                summary={agentCreationHandoff}
-                onDismiss={dismissAgentCreationHandoff}
-              />
-            ) : null}
-            <WorkspaceAssistantChannelsTab accountId={accountId} mode="assistant" agentId={selectedAgentId} channelsTabHref={channelsTabHref} onSaveStateChange={setSaveState} />
-          </DashboardPage>
-        )}
-      </TabsContent>
+  if (agentSelectionPending || agentSelectionUnavailable) {
+    return (
+      <>
+        {renderAgentUnavailablePage('')}
+        {wizard}
+      </>
+    )
+  }
 
-      <TabsContent value="channels" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-        {agentSelectionPending || agentSelectionUnavailable ? (
-          renderAgentUnavailablePage(agentTabSummaries.channels)
-        ) : (
-          <DashboardPage
-            title="Agent"
-            description={agentsError ?? selectedAgent?.name ?? agentTabSummaries.channels}
-            titleAccessory={saveStateAccessory}
-            actions={tabNavigation}
-            contentClassName="flex flex-col overflow-hidden p-0"
-            contentScroll={false}
-          >
-            <WorkspaceAssistantChannelsTab accountId={accountId} mode="channels" agentId={selectedAgentId} onSaveStateChange={setSaveState} />
-          </DashboardPage>
-        )}
-      </TabsContent>
-      {WizardDialog ? (
-        <WizardDialog
-          open={wizardOpen}
-          onOpenChange={setWizardOpen}
-          agentSettingsHrefBuilder={(agentId) =>
-            buildDashboardHref(accountId, {
-              section: 'agents',
-              agentId,
-              agentTab: 'behavior',
-              anchor: 'assistant-identity',
-              workspaceId: activeWorkspaceId ?? undefined,
-              workspacePublicRouteKey: activeWorkspace?.publicRouteKey ?? undefined,
-            })
-          }
+  // The second column owns section selection; this view renders the one section
+  // the route points at (no in-page tabs).
+  const section = agentSectionFromRoute(routeState)
+
+  if (section === 'chat') {
+    return (
+      <>
+        <ChatView
+          key={selectedAgentId}
+          accountId={accountId}
+          agentId={selectedAgentId}
+          assistantName={selectedAgent?.name}
+          assistantLinkUtmEnabled={selectedAgent?.assistantLinkUtmEnabled}
+          onOpenDocument={onOpenDocument}
+          onboarding={onboarding}
         />
-      ) : null}
-    </Tabs>
+        {wizard}
+      </>
+    )
+  }
+
+  const meta = AGENT_SECTION_META[section]
+  return (
+    <>
+      <DashboardPage
+        title={meta.title}
+        titleAccessory={saveStateAccessory}
+        contentClassName="flex flex-col overflow-hidden p-0"
+        contentScroll={false}
+      >
+        {section === 'identity' && agentCreationHandoff ? (
+          <AgentCreationHandoffBanner summary={agentCreationHandoff} onDismiss={dismissAgentCreationHandoff} />
+        ) : null}
+        <WorkspaceAssistantChannelsTab
+          accountId={accountId}
+          mode={meta.mode}
+          agentId={selectedAgentId}
+          agentSection={section}
+          channelsTabHref={channelsTabHref}
+          onSaveStateChange={setSaveState}
+        />
+      </DashboardPage>
+      {wizard}
+    </>
   )
 }

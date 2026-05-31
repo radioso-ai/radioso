@@ -51,7 +51,7 @@ test("shared settings saves assistant, retrieval, and channel sections without c
 
   await page.goto(`/w/${workspaceKey}/agents?tab=channels`);
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=channels$`));
-  await expect(page.getByText("Public chat link")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Public chat link", level: 1 })).toBeVisible();
   await page.locator("#anonChatToggle").click();
 
   await expect.poll(() => agentUpdates.length).toBeGreaterThanOrEqual(2);

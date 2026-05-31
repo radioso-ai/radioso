@@ -8,10 +8,11 @@ import {
 import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
 import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
 import type { TurnSkill } from "./turnOutcome.js";
+import { AssistantReplyComposer } from "./assistantReplyComposer.js";
 import { RetrievalAnswerComposer, createRetrievalTurnSkill } from "./retrievalTurnSkill.js";
-import { SocialAnswerComposer, createSocialTurnSkill } from "./socialTurnSkill.js";
+import { SOCIAL_REPLY_CONFIG, createSocialTurnSkill } from "./socialTurnSkill.js";
 import {
-  AssistantIdentityAnswerComposer,
+  ASSISTANT_IDENTITY_REPLY_CONFIG,
   createAssistantIdentityTurnSkill,
 } from "./assistantIdentityTurnSkill.js";
 
@@ -60,19 +61,21 @@ export const buildChatTurnRuntime = (
       ),
     ),
     createSocialTurnSkill(
-      new SocialAnswerComposer(
+      new AssistantReplyComposer(
         answerSupport,
         deps.chatGateway,
         chatAnswerPresenter,
         deps.fallbackReplyComposer,
+        SOCIAL_REPLY_CONFIG,
       ),
     ),
     createAssistantIdentityTurnSkill(
-      new AssistantIdentityAnswerComposer(
+      new AssistantReplyComposer(
         answerSupport,
         deps.chatGateway,
         chatAnswerPresenter,
         deps.fallbackReplyComposer,
+        ASSISTANT_IDENTITY_REPLY_CONFIG,
       ),
     ),
   ];

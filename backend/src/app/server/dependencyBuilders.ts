@@ -788,7 +788,6 @@ export const buildChatServices = (input: {
     chatGateway,
     auditService: input.auditService,
     turnRuntime: chatTurnRuntime,
-    fallbackReplyComposer,
     productAnalyticsService: input.productAnalyticsService,
     workspaceRepository: input.workspaceRepository,
     usageLimitPolicy: input.usageLimitPolicy,

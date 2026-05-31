@@ -25,13 +25,16 @@ export interface ChatTurnRuntimeDependencies {
 
 /**
  * The assembled per-turn collaborators a chat host needs to answer: the answer
- * support helpers, the answer presenter, and the registered terminal-answer
- * skills. Built once and handed to the host; the host never re-assembles it.
+ * support helpers, the answer presenter, the registered terminal-answer skills,
+ * and the fallback reply composer. Built once and handed to the host; the host
+ * never re-assembles it. The fallback composer is the same instance the skills
+ * use, so the host's grounded-miss reconcile can't drift onto a different one.
  */
 export interface ChatTurnRuntime {
   answerSupport: ChatAnswerSupport;
   chatAnswerPresenter: ChatAnswerPresenter;
   turnSkills: TurnSkill[];
+  fallbackReplyComposer: FallbackReplyComposer;
 }
 
 /**
@@ -79,5 +82,10 @@ export const buildChatTurnRuntime = (
       ),
     ),
   ];
-  return { answerSupport, chatAnswerPresenter, turnSkills };
+  return {
+    answerSupport,
+    chatAnswerPresenter,
+    turnSkills,
+    fallbackReplyComposer: deps.fallbackReplyComposer,
+  };
 };

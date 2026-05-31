@@ -10,10 +10,7 @@ import type { AgentService } from "../../agents/public.js";
 import type { ChatGateway, ChatGatewayInput, ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ChatStreamEvent, SkillStreamPayload, SkillStreamPhase } from "../contracts/streamEvents.js";
-import {
-  MissingFallbackReplyComposer,
-  type FallbackReplyComposer,
-} from "./fallbackReplyComposer.js";
+import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
@@ -218,9 +215,6 @@ export interface ChatServiceOptions {
   chatGateway: ChatGateway;
   auditService: AuditService;
   turnRuntime: ChatTurnRuntime;
-  // Shared with the runtime's composers; also drives the host's post-stream
-  // grounded-miss reconciliation. Defaults to a no-LLM stub.
-  fallbackReplyComposer?: FallbackReplyComposer;
   productAnalyticsService?: ProductAnalyticsPort;
   workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">;
   usageLimitPolicy?: UsageLimitPolicy;
@@ -254,7 +248,6 @@ export class ChatService {
       chatGateway,
       auditService,
       turnRuntime,
-      fallbackReplyComposer = new MissingFallbackReplyComposer(),
       productAnalyticsService = new NoopProductAnalyticsService(),
       workspaceRepository,
       usageLimitPolicy = new NoopUsageLimitPolicy(),
@@ -266,7 +259,9 @@ export class ChatService {
     } = options;
     this.chatGateway = chatGateway;
     this.auditService = auditService;
-    this.fallbackReplyComposer = fallbackReplyComposer;
+    // Same instance the runtime's skills use — the host's grounded-miss reconcile
+    // can't silently bind to a different composer.
+    this.fallbackReplyComposer = turnRuntime.fallbackReplyComposer;
     this.usageLimitPolicy = usageLimitPolicy;
     this.chatIntakeProvider = chatIntakeProvider;
     this.selectionStrategy = selectionStrategy;

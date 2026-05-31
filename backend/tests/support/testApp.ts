@@ -668,7 +668,6 @@ export const createTestDependencies = (overrides: {
       fallbackReplyComposer,
       skillOutcomeCapabilities: createSkillOutcomeCapabilityProvider(skillCatalogRegistry),
     }),
-    fallbackReplyComposer,
     productAnalyticsService,
     workspaceRepository,
     usageLimitPolicy,

@@ -1,0 +1,38 @@
+{
+  "name": "retrieval.search",
+  "displayName": "Retrieval search",
+  "description": "Search workspace evidence without assistant persona or social behavior.",
+  "owner": "retrieval",
+  "executionClass": "interactive",
+  "supportedCallers": ["retrieval_api", "sdk"],
+  "requiredCapabilities": ["retrieval.search"],
+  "contractReferences": [
+    {
+      "kind": "http",
+      "label": "Retrieval search API",
+      "method": "POST",
+      "path": "/api/v1/retrieval/search"
+    }
+  ],
+  "diagnostics": {
+    "defined": true,
+    "shapeAware": false,
+    "strategyAware": true,
+    "supportedFields": [
+      "skillName",
+      "shapeName",
+      "strategy",
+      "selectionMode",
+      "selectionReason",
+      "selectionConfidence",
+      "callerSurface",
+      "capabilityChecks",
+      "parameters",
+      "fallback",
+      "outcome",
+      "error",
+      "evidence"
+    ]
+  },
+  "steps": []
+}

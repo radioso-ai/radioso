@@ -1,0 +1,44 @@
+{
+  "name": "documents.delete",
+  "displayName": "Document deletion",
+  "description": "Delete a workspace document after capability policy allows the action.",
+  "owner": "documents",
+  "executionClass": "administrative",
+  "supportedCallers": ["dashboard", "sdk", "mcp"],
+  "requiredCapabilities": ["documents.delete"],
+  "availabilityCheck": "capability_policy",
+  "contractReferences": [
+    {
+      "kind": "http",
+      "label": "Document delete API",
+      "method": "DELETE",
+      "path": "/api/v1/document/{documentId}"
+    },
+    {
+      "kind": "mcp_tool",
+      "label": "MCP delete document tool",
+      "path": "delete_document"
+    }
+  ],
+  "diagnostics": {
+    "defined": true,
+    "shapeAware": false,
+    "strategyAware": false,
+    "supportedFields": [
+      "skillName",
+      "shapeName",
+      "strategy",
+      "selectionMode",
+      "selectionReason",
+      "selectionConfidence",
+      "callerSurface",
+      "capabilityChecks",
+      "parameters",
+      "fallback",
+      "outcome",
+      "error",
+      "evidence"
+    ]
+  },
+  "steps": []
+}

@@ -1,0 +1,42 @@
+{
+  "name": "mcp.describe_capabilities",
+  "displayName": "MCP capability discovery",
+  "description": "Describe read and write tools available from the Radioso MCP server.",
+  "owner": "mcp",
+  "executionClass": "interactive",
+  "supportedCallers": ["mcp"],
+  "requiredCapabilities": ["mcp.describe_capabilities"],
+  "contractReferences": [
+    {
+      "kind": "mcp_tool",
+      "label": "MCP describe capabilities tool",
+      "path": "describe_capabilities"
+    },
+    {
+      "kind": "documentation",
+      "label": "MCP client setup",
+      "path": "docs/mcp-client-setup.md"
+    }
+  ],
+  "diagnostics": {
+    "defined": true,
+    "shapeAware": false,
+    "strategyAware": false,
+    "supportedFields": [
+      "skillName",
+      "shapeName",
+      "strategy",
+      "selectionMode",
+      "selectionReason",
+      "selectionConfidence",
+      "callerSurface",
+      "capabilityChecks",
+      "parameters",
+      "fallback",
+      "outcome",
+      "error",
+      "evidence"
+    ]
+  },
+  "steps": []
+}

@@ -6,12 +6,20 @@ import {
   BlankChatAnswerError,
   ChatService,
   type ChatGateway,
+  type ChatServiceOptions,
   type ChatStreamEvent,
 } from "../../src/modules/chat/services/chatService.js";
+import {
+  buildChatTurnRuntime,
+  type ChatTurnRuntimeDependencies,
+} from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { SkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { ChatIntakeProviderPort } from "../../src/modules/chat/services/chatIntakeProvider.js";
-import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
+import {
+  MissingFallbackReplyComposer,
+  type FallbackReplyComposer,
+} from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import {
   createAuditService,
@@ -33,11 +41,57 @@ const groundedSkillCapabilities: SkillOutcomeCapabilityProvider = {
   supportsGroundedAnswer: () => true,
 };
 
-const groundedMissResponseComposer: GroundedMissResponseComposer = {
+const fallbackReplyComposer: FallbackReplyComposer = {
   async composeNoContext() {
     return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
   },
 };
+
+// Bridges the legacy positional construction used across these streaming tests to
+// the options-object ChatService API. Production wiring (dependencyBuilders) passes
+// options directly and injects the runtime; here we assemble it from the same
+// gateway / fallback / capabilities the positional form supplied.
+const makeChatService = (
+  conversationRepository: ChatServiceOptions["conversationRepository"],
+  messageRepository: ChatServiceOptions["messageRepository"],
+  retrievalTurn: ChatServiceOptions["retrievalTurn"],
+  chatGateway: ChatServiceOptions["chatGateway"],
+  auditService: ChatServiceOptions["auditService"],
+  fallbackReplyComposer: ChatTurnRuntimeDependencies["fallbackReplyComposer"] = new MissingFallbackReplyComposer(),
+  productAnalyticsService?: ChatServiceOptions["productAnalyticsService"],
+  workspaceRepository?: ChatServiceOptions["workspaceRepository"],
+  usageLimitPolicy?: ChatServiceOptions["usageLimitPolicy"],
+  agentService?: ChatServiceOptions["agentService"],
+  chatIntakeProvider?: ChatServiceOptions["chatIntakeProvider"],
+  chatActionSuggestionService?: ChatTurnRuntimeDependencies["chatActionSuggestionService"],
+  skillOutcomeCapabilities: ChatTurnRuntimeDependencies["skillOutcomeCapabilities"] = {
+    supportsGroundedAnswer: () => false,
+  },
+  directiveSteering?: ChatServiceOptions["directiveSteering"],
+  selectionStrategy?: ChatServiceOptions["selectionStrategy"],
+  conversationEngine?: ChatServiceOptions["conversationEngine"],
+): ChatService =>
+  new ChatService({
+    conversationRepository,
+    messageRepository,
+    retrievalTurn,
+    chatGateway,
+    auditService,
+    turnRuntime: buildChatTurnRuntime({
+      chatGateway,
+      fallbackReplyComposer,
+      chatActionSuggestionService,
+      skillOutcomeCapabilities,
+    }),
+    productAnalyticsService,
+    workspaceRepository,
+    usageLimitPolicy,
+    agentService,
+    chatIntakeProvider,
+    directiveSteering,
+    selectionStrategy,
+    conversationEngine,
+  });
 
 const asChatActivityPipeline = (pipeline: Record<string, unknown>) => {
   if (
@@ -274,7 +328,7 @@ describe("chat service streaming", () => {
         };
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -287,7 +341,7 @@ describe("chat service streaming", () => {
         },
       },
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -338,7 +392,7 @@ describe("chat service streaming", () => {
         };
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -347,7 +401,7 @@ describe("chat service streaming", () => {
         async *streamAnswer() { yield "Normal."; },
       },
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -409,7 +463,7 @@ describe("chat service streaming", () => {
         };
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -418,7 +472,7 @@ describe("chat service streaming", () => {
         async *streamAnswer() { yield "Normal."; },
       },
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -498,7 +552,7 @@ describe("chat service streaming", () => {
         };
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -511,7 +565,7 @@ describe("chat service streaming", () => {
         },
       },
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -579,7 +633,7 @@ describe("chat service streaming", () => {
         throw new Error("intake unavailable");
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
@@ -588,7 +642,7 @@ describe("chat service streaming", () => {
       })) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -668,7 +722,7 @@ describe("chat service streaming", () => {
         };
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
@@ -677,7 +731,7 @@ describe("chat service streaming", () => {
       })) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -714,7 +768,7 @@ describe("chat service streaming", () => {
         yield "Normal answer.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
@@ -723,7 +777,7 @@ describe("chat service streaming", () => {
       })) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -758,7 +812,9 @@ describe("chat service streaming", () => {
     const engineTrace = metadata.conversationEngine?.trace;
     expect(engineTrace).toBeDefined();
     const selectionStage = engineTrace?.stages?.find((stage) => stage.kind === "skill_selection");
-    expect(selectionStage?.outputs?.selectedSkills).toContain("retrieval.answer");
+    // The engine routes on the turn's intent: a social_only turn selects the social
+    // answer skill (not retrieval) — selection is genuinely capability-based now.
+    expect(selectionStage?.outputs?.selectedSkills).toContain("social_only.answer");
     expect(engineTrace?.stages?.some((stage) => stage.kind === "skill_dispatch")).toBe(true);
     expect(response.answer).toBe("Normal answer.");
   });
@@ -775,7 +831,7 @@ describe("chat service streaming", () => {
         yield "Normal answer.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
@@ -784,7 +840,7 @@ describe("chat service streaming", () => {
       })) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     await service.answer({
@@ -849,13 +905,13 @@ describe("chat service streaming", () => {
         yield "1]]";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -987,13 +1043,13 @@ describe("chat service streaming", () => {
         yield "and simple. Begin with a few minutes each day.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -1089,13 +1145,13 @@ describe("chat service streaming", () => {
         yield `\n${SUGGESTIONS_SENTINEL}\n[]`;
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const chunks: string[] = [];
@@ -1179,13 +1235,13 @@ describe("chat service streaming", () => {
         yield `\n${SUGGESTIONS_SENTINEL}\n[]`;
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const iterator = service.streamAnswer({
@@ -1270,13 +1326,13 @@ describe("chat service streaming", () => {
         yield "and simple. Begin with a few minutes each day.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -1362,13 +1418,13 @@ describe("chat service streaming", () => {
         yield "support and a discount code.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -1442,13 +1498,13 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const iterator = service.streamAnswer({
@@ -1531,13 +1587,13 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     await expect(
@@ -1574,13 +1630,13 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const response = await service.answer({
@@ -1614,13 +1670,13 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const response = await service.answer({
@@ -1652,13 +1708,13 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     await expect(
@@ -1699,13 +1755,13 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -1743,16 +1799,17 @@ describe("chat service streaming", () => {
         throw new BlankChatAnswerError();
       },
       async *streamAnswer() {
-        yield "unused";
+        // A blank stream — the non-retrieval skill falls back to the no-context reply.
+        yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -1820,13 +1877,13 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const response = await service.answer({
@@ -1889,13 +1946,13 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const fallbackComposer: GroundedMissResponseComposer = {
+    const fallbackComposer: FallbackReplyComposer = {
       async composeNoContext(input) {
         observedNoContextInstruction = input.answerInstructionBlock ?? "";
         return "I can't tell from that. I can help you choose and book Ananda courses.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1979,13 +2036,13 @@ describe("chat service streaming", () => {
         yield "full answer[[1]]";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const first = await service.answer({
@@ -2066,13 +2123,13 @@ describe("chat service streaming", () => {
         yield "full answer[[1]]";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     await service.answer({
@@ -2135,13 +2192,13 @@ describe("chat service streaming", () => {
         yield " marker";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const chunkTexts: string[] = [];
@@ -2240,13 +2297,13 @@ describe("chat service streaming", () => {
         yield "full answer[[";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const chunkTexts: string[] = [];
@@ -2352,13 +2409,13 @@ describe("chat service streaming", () => {
         yield "full answer";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     await expect(service.answer({
@@ -2395,7 +2452,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2465,7 +2522,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2543,7 +2600,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2619,7 +2676,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2688,7 +2745,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2767,7 +2824,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2864,7 +2921,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2934,13 +2991,13 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const response = await service.answer({
@@ -3014,7 +3071,7 @@ describe("chat service streaming", () => {
         yield "It also offers 24/7 phone support.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -3109,7 +3166,7 @@ describe("chat service streaming", () => {
         yield " and author.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -3209,13 +3266,13 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const response = await service.answer({
@@ -3302,13 +3359,13 @@ describe("chat service streaming", () => {
         yield "Mahiya is a teacher and author[[1]].";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -3414,13 +3471,13 @@ describe("chat service streaming", () => {
         ]);
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -3515,13 +3572,13 @@ describe("chat service streaming", () => {
         yield "Mahiya is a teacher and author[[1]].";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -3603,13 +3660,13 @@ describe("chat service streaming", () => {
         yield "Narayani ha scritto La mia anima ricorda Swami Kriyananda[[1]].";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -3703,13 +3760,13 @@ describe("chat service streaming", () => {
         yield "Yes — here's the next page of the Assisi videos archive: https://anandaeurope.org/category/video-from-assisi/page/3/[[1]]";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -3801,13 +3858,13 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -3960,13 +4017,13 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -4066,13 +4123,13 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -4169,13 +4226,13 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -4279,13 +4336,13 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -4378,13 +4435,13 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const response = await service.answer({
@@ -4553,13 +4610,13 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const fallbackComposer: GroundedMissResponseComposer = {
+    const fallbackComposer: FallbackReplyComposer = {
       async composeNoContext() {
         groundedMissCalls += 1;
         return "I couldn't find supporting material.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -4617,6 +4674,8 @@ describe("chat service streaming", () => {
         }),
       }),
     );
+    const socialMessages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    expect(socialMessages.find((message) => message.role === "assistant")?.skillName).toBe("social_only.answer");
   });
 
   it("routes assistant-identity turns through the same non-retrieval path without regex checks", async () => {
@@ -4753,13 +4812,13 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     const response = await service.answer({
@@ -4780,6 +4839,8 @@ describe("chat service streaming", () => {
     expect(observedPrompt).toContain("Answer Instructions:");
     expect(observedPrompt).toContain("Vikram");
     expect(observedPrompt).toContain("Keep the reply brief.");
+    const identityMessages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    expect(identityMessages.find((message) => message.role === "assistant")?.skillName).toBe("assistant_identity.answer");
   });
 
   it("adds explicit missing-identity guidance when assistant identity is not configured", async () => {
@@ -4800,13 +4861,13 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
-      groundedMissResponseComposer,
+      fallbackReplyComposer,
     );
 
     await service.answer({

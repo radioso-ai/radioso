@@ -1,0 +1,43 @@
+{
+  "name": "documents.search",
+  "displayName": "Document search",
+  "description": "Search indexed workspace documents and history-oriented search records.",
+  "owner": "documents",
+  "executionClass": "interactive",
+  "supportedCallers": ["dashboard", "sdk", "mcp"],
+  "requiredCapabilities": ["documents.search"],
+  "contractReferences": [
+    {
+      "kind": "http",
+      "label": "Document search API",
+      "method": "POST",
+      "path": "/api/v1/document/search"
+    },
+    {
+      "kind": "mcp_tool",
+      "label": "MCP document search tool",
+      "path": "search_documents"
+    }
+  ],
+  "diagnostics": {
+    "defined": true,
+    "shapeAware": false,
+    "strategyAware": false,
+    "supportedFields": [
+      "skillName",
+      "shapeName",
+      "strategy",
+      "selectionMode",
+      "selectionReason",
+      "selectionConfidence",
+      "callerSurface",
+      "capabilityChecks",
+      "parameters",
+      "fallback",
+      "outcome",
+      "error",
+      "evidence"
+    ]
+  },
+  "steps": []
+}

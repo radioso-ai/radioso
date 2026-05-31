@@ -48,11 +48,18 @@ describe("default application composition", () => {
     expect(composition.connectors).toEqual([]);
     expect(composition.websiteCrawlerProvider).toBeUndefined();
     expect(composition.modules.map((module) => module.id)).toEqual([
+      "radioso-answer-directives",
       "radioso-answer-feedback",
       "radioso-website-embed",
       "radioso-agent-wizard",
       "radioso-quality",
     ]);
+    expect(composition.directiveRegistrations.map((registration) => registration.directive.name)).toEqual([
+      "concise-readable-formatting",
+      "represent-organization",
+      "inline-supported-links",
+    ]);
+    expect(composition.directiveRegistrations.every((registration) => registration.routes === undefined)).toBe(true);
     expect(composition.routeMounts.map((mount) => mount.path)).toContain("/api/v1/answer-feedback");
     expect(composition.routeMounts.map((mount) => mount.path)).toContain("/api/v1/quality");
     expect(composition.answerFeedbackHistoryProviderRegistration).toBeTypeOf("function");
@@ -76,12 +83,35 @@ describe("default application composition", () => {
 
     expect(composition.connectors).toEqual([connector]);
     expect(composition.modules.map((module) => module.id)).toEqual([
+      "radioso-answer-directives",
       "radioso-answer-feedback",
       "radioso-website-embed",
       "radioso-agent-wizard",
       "radioso-quality",
       "connector-module",
     ]);
+  });
+
+  it("applies optional directive contributions through module registration", () => {
+    const composition = createDefaultApplicationComposition({
+      logger: createLogger(),
+      modules: [
+        {
+          id: "directive-module",
+          register(context) {
+            context.registerDirective({
+              name: "custom-directive",
+              condition: { kind: "always" },
+              action: "Apply custom module steering.",
+            });
+          },
+        },
+      ],
+    });
+
+    expect(composition.directiveRegistrations.map((registration) => registration.directive.name)).toContain(
+      "custom-directive",
+    );
   });
 
   it("applies optional skill catalog entries through module registration", () => {

@@ -122,10 +122,7 @@ export class ChatSessionPreparer {
           priorRewriteContinuityState: rewriteContinuityState,
         });
 
-    const directiveSteering = await this.directiveSteering.steer({
-      workspaceId: input.workspaceId,
-      turnContext: { query: input.query },
-    });
+    const directiveSteering = await this.resolveDirectiveSteering(input, turnRoute);
 
     return {
       agent,
@@ -150,6 +147,7 @@ export class ChatSessionPreparer {
       ...session,
       retrieval,
       turnRoute,
+      directiveSteering: await this.resolveDirectiveSteering(input, turnRoute),
     };
   }
 
@@ -164,7 +162,12 @@ export class ChatSessionPreparer {
     const pipelineInput = this.buildPipelineInput(input, session.agent, session.history, session.conversation, session.userMessage);
     if (!isAgentRetrievalEnabled(session.agent)) {
       const { retrieval, turnRoute } = this.prepareDirectOnlyTurn(pipelineInput, session.agent);
-      return { ...session, retrieval, turnRoute };
+      return {
+        ...session,
+        retrieval,
+        turnRoute,
+        directiveSteering: await this.resolveDirectiveSteering(input, turnRoute),
+      };
     }
     const interpretation = await this.retrievalTurn.interpret(pipelineInput);
     const interpretedWithExecution = {
@@ -179,7 +182,22 @@ export class ChatSessionPreparer {
       },
     };
     const retrieval = await this.retrievalTurn.dispatch({ interpreted: interpretedWithExecution, withRetrieval: false });
-    return { ...session, retrieval, turnRoute: CHAT_TURN_ROUTE.SOCIAL_ONLY };
+    return {
+      ...session,
+      retrieval,
+      turnRoute: CHAT_TURN_ROUTE.SOCIAL_ONLY,
+      directiveSteering: await this.resolveDirectiveSteering(input, CHAT_TURN_ROUTE.SOCIAL_ONLY),
+    };
+  }
+
+  private async resolveDirectiveSteering(
+    input: PrepareChatSessionInput,
+    turnRoute: ChatTurnRoute,
+  ): Promise<DirectiveSteeringResult> {
+    return this.directiveSteering.steer({
+      workspaceId: input.workspaceId,
+      turnContext: { query: input.query, route: turnRoute },
+    });
   }
 
   private buildPipelineInput(

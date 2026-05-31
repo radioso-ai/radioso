@@ -36,12 +36,14 @@ import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import {
   ApplicationModuleCoordinator,
   createApplicationExtensionRegistry,
+  type ApplicationDirectiveRegistration,
   type ApplicationModule,
 } from "./applicationModule.js";
 import { createAnswerFeedbackApplicationModule } from "./builtIn/answerFeedbackModule.js";
 import { createWebsiteEmbedApplicationModule } from "./builtIn/websiteEmbedModule.js";
 import { createAgentWizardApplicationModule } from "./builtIn/agentWizardModule.js";
 import { createQualityApplicationModule } from "./builtIn/qualityModule.js";
+import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirectivesModule.js";
 import {
   createDefaultSkillCatalogRegistry,
   SkillExecutorRegistry,
@@ -77,6 +79,7 @@ export interface ApplicationComposition {
   contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
   answerFeedbackHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["answerFeedbackHistoryProviderRegistration"];
   agentSurfaceExtensions: ReturnType<typeof createApplicationExtensionRegistry>["agentSurfaceExtensions"];
+  directiveRegistrations: ApplicationDirectiveRegistration[];
   skillCatalogRegistry: SkillCatalogRegistry;
   skillExecutorRegistry: SkillExecutorRegistry;
   chatActionSuggestionProviders: ReturnType<typeof createApplicationExtensionRegistry>["chatActionSuggestionProviders"];
@@ -97,6 +100,7 @@ export const createDefaultApplicationComposition = (options: {
   // Built-in OSS modules first; user-supplied modules can override their
   // registrations (e.g. a custom website-embed integration provider).
   coordinator.apply([
+    createAnswerDirectivesApplicationModule(),
     createAnswerFeedbackApplicationModule(),
     createWebsiteEmbedApplicationModule({ widgetOrigin: options.widgetOrigin }),
     createAgentWizardApplicationModule(),
@@ -124,6 +128,7 @@ export const createDefaultApplicationComposition = (options: {
     contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
     answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,
     agentSurfaceExtensions: registry.agentSurfaceExtensions,
+    directiveRegistrations: registry.directiveRegistrations,
     skillCatalogRegistry: createDefaultSkillCatalogRegistry([
       ...registry.skillCatalogEntries,
       ...registry.skillDefinitions,

@@ -493,6 +493,7 @@ export class ChatService {
           outsideScopeRequest: session.retrieval.diagnostics.rewriteProposal?.outsideScopeRequest,
           answerInstructionBlock: this.buildAnswerInstructionBlock(session),
           pageContextBlock: this.buildPageContextBlock(session.pageContext),
+          steering: session.directiveSteering?.rules ?? [],
         }),
         workspaceContext: this.buildChatWorkspaceContext(session),
         usageContext: this.buildChatUsageContext(session, accountId, "non_retrieval"),
@@ -713,6 +714,7 @@ export class ChatService {
             query: input.query,
             userExpectedLocale: input.userExpectedLocale,
             answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+            steering: session.directiveSteering?.rules ?? [],
             workspaceContext: this.buildChatWorkspaceContext(session),
             usageContext: this.buildChatUsageContext(session, input.accountId, "stream_non_retrieval_miss"),
           });
@@ -729,6 +731,7 @@ export class ChatService {
             query: input.query,
             userExpectedLocale: input.userExpectedLocale,
             answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+            steering: session.directiveSteering?.rules ?? [],
             workspaceContext: this.buildChatWorkspaceContext(session),
             usageContext: this.buildChatUsageContext(session, input.accountId, "stream_grounded_miss"),
           });
@@ -805,6 +808,7 @@ export class ChatService {
           query: input.query,
           userExpectedLocale: input.userExpectedLocale,
           answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+          steering: session.directiveSteering?.rules ?? [],
           workspaceContext: this.buildChatWorkspaceContext(session),
           usageContext: this.buildChatUsageContext(session, input.accountId, "stream_grounded_unsupported"),
         });
@@ -952,6 +956,7 @@ export class ChatService {
           query,
           userExpectedLocale,
           answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+          steering: session.directiveSteering?.rules ?? [],
           workspaceContext: this.buildChatWorkspaceContext(session),
           usageContext: this.buildChatUsageContext(session, accountId, "grounded_miss"),
         });
@@ -982,6 +987,7 @@ export class ChatService {
         query,
         userExpectedLocale,
         answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+        steering: session.directiveSteering?.rules ?? [],
         workspaceContext: this.buildChatWorkspaceContext(session),
         usageContext: this.buildChatUsageContext(session, accountId, "grounded_unsupported"),
       });

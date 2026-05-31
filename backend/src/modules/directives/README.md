@@ -37,14 +37,23 @@ skill-emitted `SkillTransientGuidance` so the composer reads one steering set.
 - `domain.ts`: the `Directive` / `DirectiveCondition` / `DirectiveMatch` types
   and `directiveToSteeringRule`.
 - `directiveMatcher.ts`: `DirectiveMatcherPort` and the deterministic
-  `AlwaysMatchDirectiveMatcher` (the v1 matcher; the probabilistic LLM matcher
-  is a later slice).
+  `AlwaysMatchDirectiveMatcher`.
+- `probabilisticDirectiveMatcher.ts`: the optional LLM-backed contextual
+  matcher, enabled by composition when a text-generation client is supplied.
 - `directiveSteeringService.ts`: matches the standing set, capability-filters,
   and maps survivors to an ordered `SteeringRule[]`.
+- `defaultAnswerDirectives.ts`: built-in answer steering registered by
+  application composition.
+- `../chat/services/routeScopedDirectiveSteering.ts`: host-side route enactment
+  for composition-registered answer directives.
+- `../chat/services/answerDirectiveRoutePolicy.ts`: chat-owned default route
+  policy for built-in answer directives.
 
 ## Tests
 
 - `cd backend && pnpm test -- tests/unit/directives.test.ts`
+- `cd backend && pnpm test -- tests/unit/default-composition.test.ts`
+- `cd backend && pnpm test -- tests/unit/route-scoped-directive-steering.test.ts`
 - `cd backend && pnpm test -- tests/unit/steering-rule.test.ts`
 - `cd backend && pnpm test -- tests/unit/grounded-answer-steering.test.ts` (compose injection)
 - `cd backend && pnpm test -- tests/unit/directive-trace.test.ts` (activity-trace parity)

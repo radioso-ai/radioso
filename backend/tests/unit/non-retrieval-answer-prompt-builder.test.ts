@@ -85,4 +85,23 @@ describe("non-retrieval answer prompt builder", () => {
     expect(prompt).toContain("use the Answer Instructions to describe the configured scope");
     expect(prompt).toContain("Identity status: configured_or_not_needed");
   });
+
+  it("renders matched steering directives into the prompt", () => {
+    const prompt = buildNonRetrievalAnswerPrompt({
+      route: CHAT_TURN_ROUTE.SOCIAL_ONLY,
+      answerInstructionBlock: "Configured response instructions:\nHelp visitors choose retreats and courses.",
+      history: [],
+      query: "Thanks!",
+      steering: [
+        {
+          action: "Prefer short paragraphs and avoid unnecessary structure.",
+          source: "directive",
+          lifespan: "response",
+        },
+      ],
+    });
+
+    expect(prompt).toContain("The following behavioral directives apply to this turn");
+    expect(prompt).toContain("Prefer short paragraphs and avoid unnecessary structure.");
+  });
 });

@@ -29,4 +29,10 @@ export {
 export { CompositeDirectiveMatcher } from "./compositeDirectiveMatcher.js";
 export { parseDirectiveClassifications } from "./directiveMatchParser.js";
 export { buildDirectiveMatchPrompt, getDirectiveMatchSystemPrompt } from "./directiveMatchPrompt.js";
+export {
+  conciseReadableFormattingDirective,
+  defaultAnswerDirectives,
+  inlineSupportedLinksDirective,
+  representOrganizationDirective,
+} from "./defaultAnswerDirectives.js";
 export { createDirectiveMatcher, createDirectiveSteering } from "./composition.js";

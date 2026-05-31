@@ -2208,6 +2208,116 @@ describe("chat retrieval domain", () => {
     });
   });
 
+  it("applies retrieval-route directive steering to direct answer generation", async () => {
+    const steeringInputs: unknown[] = [];
+    const answerInputs: Array<{ systemPrompt: string }> = [];
+    const service = new RetrievalAnswerService({
+      retrievalPipeline: {
+        async interpret() {
+          return {
+            interpretation: {
+              result: {
+                responseIntent: "retrieval",
+              },
+            },
+          };
+        },
+        async runInterpreted() {
+          return {
+            rewrittenQuery: "pricing",
+            contexts: [
+              {
+                chunkId: "chunk-1",
+                documentId: "doc-1",
+                title: "Pricing",
+                content: "Pricing is documented.",
+              },
+            ],
+            systemPrompt: "base retrieval system",
+            prompt: "prompt",
+            diagnostics: {
+              rewriteStatus: "skipped",
+              rerankStatus: "skipped",
+              originalCandidateCount: 1,
+              rewrittenCandidateCount: 0,
+              lexicalCandidateCount: 1,
+              normalizedCandidateCount: 1,
+              finalContextCount: 1,
+              candidateFallbackApplied: false,
+              fallbackApplied: false,
+              parsedQuery: {
+                semanticQuery: "pricing",
+                lexicalQuery: "pricing",
+                constraints: [],
+              },
+            },
+            trace: {
+              traceId: "trace-1",
+              startedAt: new Date().toISOString(),
+              stages: [],
+              links: [],
+            },
+            responseSettings: {
+              citationDisplayEnabled: true,
+            },
+          };
+        },
+      },
+      chatGateway: {
+        async answer(input: { systemPrompt: string }) {
+          answerInputs.push(input);
+          return "Pricing is documented.";
+        },
+      },
+      directiveSteering: {
+        async steer(input: unknown) {
+          steeringInputs.push(input);
+          return {
+            matches: [],
+            omissions: [],
+            rules: [
+              {
+                action: "Represent the organization as its assistant.",
+                priority: 80,
+                criticality: "high",
+                source: "directive",
+                lifespan: "response",
+              },
+              {
+                action: "Use supported links inline with human-readable text.",
+                priority: 90,
+                criticality: "high",
+                source: "directive",
+                lifespan: "response",
+              },
+            ],
+          };
+        },
+      },
+    } as never);
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "What is pricing?",
+      executionSurface: "mcp_capability",
+    });
+
+    expect(steeringInputs[0]).toMatchObject({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      turnContext: {
+        query: "What is pricing?",
+        route: "retrieval",
+        surface: "mcp_capability",
+      },
+    });
+    expect(answerInputs[0]?.systemPrompt).toContain("base retrieval system");
+    expect(answerInputs[0]?.systemPrompt).toContain("The following behavioral directives apply");
+    expect(answerInputs[0]?.systemPrompt).toContain("Represent the organization as its assistant.");
+    expect(answerInputs[0]?.systemPrompt).toContain("Use supported links inline with human-readable text.");
+  });
+
   it("records a retrieval.answer failure when the retrieval pipeline throws", async () => {
     const recordedEvents: Array<{ eventType: string; eventStatus: string; metadata: Record<string, unknown> }> = [];
     const auditService = {

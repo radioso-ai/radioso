@@ -59,9 +59,10 @@ export class DirectiveSteeringService implements DirectiveSteeringPort {
   }
 
   async steer(input: DirectiveSteerInput): Promise<DirectiveSteeringResult> {
+    const turnContext = input.turnContext ?? {};
     const directives = this.registry.list();
     const candidates = await this.matcher.match({
-      turnContext: input.turnContext ?? {},
+      turnContext,
       directives,
     });
 

@@ -4,7 +4,6 @@ import {
 } from "../../../shared/domain/responseIdentity.js";
 import { renderCustomResponseInstructionBlock } from "../../../shared/domain/customResponseInstructionBlock.js";
 import { normalizeLlmClassifierLanguageLabel } from "../../../shared/domain/llmClassifierFields.js";
-import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ResponseLanguagePolicy } from "../../retrieval/public.js";
 
 export interface AssistantInstructionInput {
@@ -19,7 +18,6 @@ export class AssistantInstructionBuilder {
     return [
       this.renderResponseIdentity(input.responseIdentity),
       this.renderCustomInstruction(input.customInstruction),
-      this.renderResponseFormattingGuidelines(),
       this.renderResponseLanguageInstruction(input.responseLanguagePolicy ?? "match_user_question", input.responseLanguage),
     ]
       .filter((block): block is string => Boolean(block))
@@ -45,11 +43,6 @@ export class AssistantInstructionBuilder {
       ...identityLines,
       "When the user asks about your name, answer consistently with this identity.",
     ].join("\n");
-  }
-
-  private renderResponseFormattingGuidelines(): string | null {
-    const guidelines = loadPromptTemplate("chat/response-formatting-guidelines.md");
-    return guidelines.trim() ? `Response formatting guidance:\n${guidelines}` : null;
   }
 
   private renderResponseLanguageInstruction(

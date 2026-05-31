@@ -12,8 +12,8 @@ import { ModelDirectiveMatchGateway, ProbabilisticDirectiveMatcher } from "./pro
 /**
  * Builds the directive matcher. Always includes the deterministic always-match
  * matcher; adds the probabilistic contextual matcher when a text-generation
- * client is supplied. With an empty standing set (v1 default) no contextual
- * directives exist, so the probabilistic matcher makes no model call.
+ * client is supplied. When the standing set has no contextual directives, the
+ * probabilistic matcher makes no model call.
  */
 export const createDirectiveMatcher = (input: {
   textGenerationClient?: TextGenerationClient;
@@ -33,9 +33,9 @@ export const createDirectiveMatcher = (input: {
 };
 
 /**
- * Builds the default directive steering port for an agent. v1 ships an empty
- * standing set (behavior-preserving); the per-agent set is wired here as it
- * arrives, never inside the chat turn loop.
+ * Builds the default directive steering port for an agent. The standing set is
+ * supplied by application composition; per-agent or module-provided sets are
+ * wired here, never inside the chat turn loop.
  */
 export const createDirectiveSteering = (input: {
   capabilityPolicy: CapabilityPolicy;

@@ -5,6 +5,7 @@ import {
   createApplicationExtensionRegistry,
   type ApplicationModule,
 } from "../../src/app/composition/applicationModule.js";
+import type { Directive } from "../../src/modules/directives/public.js";
 
 const createLogger = () => ({
   info: vi.fn(),
@@ -143,6 +144,28 @@ describe("application modules", () => {
     expect(registry.skillExecutors).toHaveLength(2);
     expect(registry.skillExecutors[0]).toMatchObject({ kind: "internal", adapter: "echo" });
     expect(registry.skillExecutors[1]).toMatchObject({ kind: "delivery_pipeline", adapter: "human_contact" });
+  });
+
+  it("collects directive registrations from application modules", () => {
+    const logger = createLogger();
+    const registry = createApplicationExtensionRegistry();
+    const coordinator = new ApplicationModuleCoordinator({ logger, registry });
+    const directive: Directive = {
+      name: "module-directive",
+      condition: { kind: "always" },
+      action: "Steer the answer from a module.",
+    };
+
+    coordinator.apply([
+      {
+        id: "directive-module",
+        register(context) {
+          context.registerDirective(directive, { routes: ["retrieval"] });
+        },
+      },
+    ]);
+
+    expect(registry.directiveRegistrations).toEqual([{ directive, routes: ["retrieval"] }]);
   });
 
   it("continues shutting down remaining modules when one shutdown hook fails", async () => {

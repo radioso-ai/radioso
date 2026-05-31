@@ -12,4 +12,12 @@ describe("grounded answer prompt contract", () => {
     expect(prompt).not.toMatch(/do not write citation markers/i);
     expect(prompt).not.toMatch(/application attaches source citations after generation/i);
   });
+
+  it("keeps reusable answer behavior out of the base prompt so directives own it", () => {
+    const prompt = loadPromptTemplate("retrieval/answer.md");
+
+    expect(prompt).not.toContain("You are representing the organization");
+    expect(prompt).not.toContain("Embed inline Markdown links directly in the answer");
+    expect(prompt).not.toContain("Provide ample links");
+  });
 });

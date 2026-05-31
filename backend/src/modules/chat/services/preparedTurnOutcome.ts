@@ -6,8 +6,8 @@ import { toConversationTrace, toPreparedStagedContext } from "./conversationCont
 /**
  * Wraps a prepared chat session's result into a terminal turn outcome for the given
  * skill. Capability-agnostic: each answer skill (retrieval, social, identity, …)
- * stamps its own `kind` and `skillName`. The prepared result rides on
- * `stagedContext`/`trace`; the skill's renderer composes the actual reply.
+ * stamps its own `kind`, `skillName`, and staged-context `source`. The prepared
+ * result rides on `stagedContext`/`trace`; the skill's renderer composes the reply.
  */
 export const buildPreparedTurnOutcome = (
   session: PreparedSession,
@@ -16,7 +16,7 @@ export const buildPreparedTurnOutcome = (
   kind: options.kind,
   skillName: options.skillName,
   outcome: { status: "completed" },
-  stagedContext: [toPreparedStagedContext(session.retrieval)],
+  stagedContext: [toPreparedStagedContext(session.retrieval, options.skillName)],
   steering: session.directiveSteering?.rules ?? [],
   trace: toConversationTrace(session.retrieval.trace),
 });

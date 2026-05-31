@@ -102,6 +102,29 @@ describe("runtime configuration", () => {
     ]));
   });
 
+  it("keeps backend dev dependency installation aligned with backend workspace imports", async () => {
+    const dockerfile = await readFile(new URL("../../../infra/backend.dev.Dockerfile", import.meta.url), "utf8");
+    const entrypoint = await readFile(new URL("../../../infra/backend.dev.entrypoint.sh", import.meta.url), "utf8");
+
+    for (const manifest of [
+      "packages/conversation-contract/package.json",
+      "packages/conversation-engine/package.json",
+      "packages/connector-api/package.json",
+      "packages/crawler/package.json",
+      "packages/document-parser/package.json",
+      "packages/radioso-mcp-server/package.json",
+      "packages/skill-contract/package.json",
+      "packages/usage-contract/package.json",
+    ]) {
+      expect(dockerfile).toContain(`COPY ${manifest}`);
+    }
+
+    expect(entrypoint).toContain("backend_modules_ready");
+    expect(entrypoint).toContain("module_is_ready_from");
+    expect(entrypoint).toContain("zod/package.json");
+    expect(entrypoint).toContain("backend/node_modules/@radioso/conversation-engine");
+  });
+
   it("provides default observability configuration without extra vendor settings", () => {
     const env = getEnv({
       ...baseEnv,

@@ -26,6 +26,12 @@
   // are typically ≥768px tall so they keep the bubble.
   const NARROW_VIEWPORT_MAX_HEIGHT = 500
   const MAX_PAGE_CONTEXT_CONTENT_CHARS = 6000
+  const LAUNCHER_DRAG_THRESHOLD_PX = 6
+  const LAUNCHER_TRAIL_MIN_INTERVAL_MS = 18
+  const LAUNCHER_DRAG_VIEWPORT_MARGIN_PX = 8
+  const LAUNCHER_RETURN_TRANSITION = 'transform 820ms cubic-bezier(0.22, 1.42, 0.36, 1)'
+  const LAUNCHER_TRAIL_COLORS = ['#FFC720', '#FFE08A', '#F4B400']
+  const LAUNCHER_RELEASE_COLORS = ['#FFC720', '#FFE08A', '#22C55E', '#38BDF8', '#A78BFA', '#FB7185', '#F97316']
   const defaultCopy = {
     launcherDefaultLabel: 'Chat with us',
     iframeTitle: 'Radioso embedded chat',
@@ -206,6 +212,7 @@
       '@keyframes radioso-bounce-in { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }',
       '@keyframes radioso-typing-ring { 0% { box-shadow: 0 0 0 0 var(--radioso-accent, rgba(15,23,42,0.55)); } 70% { box-shadow: 0 0 0 8px rgba(15,23,42,0); } 100% { box-shadow: 0 0 0 0 rgba(15,23,42,0); } }',
       '@keyframes radioso-teaser-in { 0% { transform: translateY(8px) scale(0.96); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }',
+      '@keyframes radioso-comet-square { 0% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); opacity: 0.95; } 100% { transform: translate3d(var(--radioso-tail-dx, 0), var(--radioso-tail-dy, 16px), 0) rotate(var(--radioso-tail-rotate, 90deg)) scale(0.35); opacity: 0; } }',
       '.radioso-launcher { position: relative; }',
       // !important needed because the launcher button uses inline `all: unset`,
       // which sets `animation: none` inline. Stylesheet rules normally lose to
@@ -223,11 +230,13 @@
       '.radioso-teaser[data-position="bottom-left"] { transform-origin: bottom left; }',
       '.radioso-teaser-close { position: absolute; top: 4px; right: 6px; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 9999px; background: transparent; color: inherit; opacity: 0.55; cursor: pointer; font: inherit; font-size: 14px; line-height: 1; padding: 0; }',
       '.radioso-teaser-close:hover { opacity: 1; }',
+      '.radioso-comet-square { position: fixed; left: 0; top: 0; width: var(--radioso-tail-size, 8px); height: var(--radioso-tail-size, 8px); border-radius: 2px; background: #FFC720; box-shadow: 0 4px 12px rgba(255, 199, 32, 0.32); pointer-events: none; z-index: 2147483646; animation: radioso-comet-square 720ms ease-out forwards; will-change: transform, opacity; }',
       '@media (prefers-reduced-motion: reduce) {',
       '  .radioso-launcher[data-radioso-attention] { animation: none !important; }',
       '  .radioso-launcher[data-radioso-attention="pulse"]::before { animation: none !important; opacity: 0 !important; }',
       '  .radioso-launcher[data-radioso-typing="true"] .radioso-launcher-avatar { animation: none !important; }',
       '  .radioso-teaser { animation: none !important; opacity: 1; transform: none; }',
+      '  .radioso-comet-square { display: none !important; animation: none !important; }',
       '}',
     ].join('\n')
     document.head.appendChild(style)
@@ -490,6 +499,8 @@
     container.style.flexShrink = '0'
     container.style.background = theme.mutedBackground
     container.style.color = theme.accent
+    container.style.pointerEvents = 'none'
+    container.style.userSelect = 'none'
   }
 
   const setLauncherAvatarMarkup = (container, icon, avatarUrl) => {
@@ -499,10 +510,16 @@
       image.alt = ''
       image.src = avatarUrl
       image.referrerPolicy = 'no-referrer'
+      image.draggable = false
       image.style.width = '100%'
       image.style.height = '100%'
       image.style.objectFit = 'cover'
       image.style.display = 'block'
+      image.style.userSelect = 'none'
+      image.style.webkitUserDrag = 'none'
+      image.addEventListener('dragstart', (event) => {
+        event.preventDefault()
+      })
       image.addEventListener(
         'error',
         () => {
@@ -598,6 +615,12 @@
     button.style.boxShadow = theme.launcherShadow
     button.style.pointerEvents = 'auto'
     button.style.transition = 'opacity 180ms ease'
+    button.style.userSelect = 'none'
+    button.style.touchAction = 'none'
+    button.draggable = false
+    button.addEventListener('dragstart', (event) => {
+      event.preventDefault()
+    })
     if (position === 'bottom-left') {
       button.style.right = '0'
       button.style.borderRadius = '0 18px 18px 0'
@@ -759,9 +782,14 @@
     button.style.fontWeight = '600'
     button.style.lineHeight = '1'
     button.style.boxShadow = `${theme.launcherShadow}, inset 0 1px 0 rgba(255, 255, 255, 0.18)`
-    button.style.transition = 'box-shadow 200ms ease, opacity 140ms ease'
+    button.style.transition = `box-shadow 200ms ease, opacity 140ms ease, ${LAUNCHER_RETURN_TRANSITION}`
     button.style.userSelect = 'none'
+    button.style.touchAction = 'none'
     button.style.pointerEvents = 'auto'
+    button.draggable = false
+    button.addEventListener('dragstart', (event) => {
+      event.preventDefault()
+    })
     button.addEventListener('mouseenter', () => {
       button.style.boxShadow = `0 22px 48px rgba(15, 23, 42, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.22)`
     })
@@ -795,6 +823,111 @@
     close.textContent = '×'
     teaser.appendChild(close)
     return { teaser, close }
+  }
+
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
+  const formatCssNumber = (value) => Number(value.toFixed(3))
+
+  const getEventClientPoint = (event) => {
+    if (typeof event?.clientX !== 'number' || typeof event?.clientY !== 'number') {
+      return null
+    }
+    return { x: event.clientX, y: event.clientY }
+  }
+
+  const normalizeDragAxisBounds = (min, max) => {
+    if (min <= max) {
+      return { min, max }
+    }
+
+    const midpoint = (min + max) / 2
+    return { min: midpoint, max: midpoint }
+  }
+
+  const getLauncherDragBounds = (button) => {
+    if (typeof button.getBoundingClientRect !== 'function') {
+      return null
+    }
+
+    const rect = button.getBoundingClientRect()
+    if (
+      !rect ||
+      !Number.isFinite(rect.left) ||
+      !Number.isFinite(rect.right) ||
+      !Number.isFinite(rect.top) ||
+      !Number.isFinite(rect.bottom)
+    ) {
+      return null
+    }
+
+    const viewport = getViewportFrame()
+    const horizontal = normalizeDragAxisBounds(
+      viewport.offsetLeft + LAUNCHER_DRAG_VIEWPORT_MARGIN_PX - rect.left,
+      viewport.offsetLeft + viewport.width - LAUNCHER_DRAG_VIEWPORT_MARGIN_PX - rect.right,
+    )
+    const vertical = normalizeDragAxisBounds(
+      viewport.offsetTop + LAUNCHER_DRAG_VIEWPORT_MARGIN_PX - rect.top,
+      viewport.offsetTop + viewport.height - LAUNCHER_DRAG_VIEWPORT_MARGIN_PX - rect.bottom,
+    )
+
+    return {
+      minX: horizontal.min,
+      maxX: horizontal.max,
+      minY: vertical.min,
+      maxY: vertical.max,
+    }
+  }
+
+  const clampLauncherDragOffset = (offset, bounds) => {
+    if (!bounds) {
+      return offset
+    }
+
+    return {
+      x: clamp(offset.x, bounds.minX, bounds.maxX),
+      y: clamp(offset.y, bounds.minY, bounds.maxY),
+    }
+  }
+
+  const createCometSquare = (point, velocity, options = {}) => {
+    const square = document.createElement('span')
+    const colors = options.colors || LAUNCHER_TRAIL_COLORS
+    const size = (options.minSize || 5) + Math.round(Math.random() * (options.sizeRange || 7))
+    const spread = options.spread || 24
+    const lift = options.lift === undefined ? 16 : options.lift
+    const velocityScale = options.velocityScale === undefined ? 0.72 : options.velocityScale
+    const pointJitter = options.pointJitter || 0
+    const driftX = clamp(-(velocity.x * velocityScale) + (Math.random() - 0.5) * spread, -96, 96)
+    const driftY = clamp(-(velocity.y * velocityScale) + lift + (Math.random() - 0.5) * spread, -96, 110)
+    const color = colors[Math.floor(Math.random() * colors.length)] || '#FFC720'
+    const x = point.x + (Math.random() - 0.5) * pointJitter
+    const y = point.y + (Math.random() - 0.5) * pointJitter
+
+    square.className = 'radioso-comet-square'
+    square.setAttribute('aria-hidden', 'true')
+    square.style.left = `${x - size / 2}px`
+    square.style.top = `${y - size / 2}px`
+    square.style.background = color
+    square.style.setProperty('--radioso-tail-size', `${size}px`)
+    square.style.setProperty('--radioso-tail-dx', `${driftX}px`)
+    square.style.setProperty('--radioso-tail-dy', `${driftY}px`)
+    square.style.setProperty('--radioso-tail-rotate', `${Math.round(90 + Math.random() * 220)}deg`)
+    document.body.appendChild(square)
+    setTimeout(() => {
+      if (square.parentNode) {
+        square.parentNode.removeChild(square)
+      }
+    }, 760)
+  }
+
+  const createCometBurst = (point, velocity, options = {}) => {
+    const count = options.count || 1
+    for (let index = 0; index < count; index += 1) {
+      createCometSquare(point, {
+        x: velocity.x + (Math.random() - 0.5) * (options.velocityJitter || 0),
+        y: velocity.y + (Math.random() - 0.5) * (options.velocityJitter || 0),
+      }, options)
+    }
   }
 
   const init = async () => {
@@ -963,6 +1096,7 @@
     let isOpen = initialState === 'open'
     let isFullscreenOpen = false
     let isManualFullscreenOpen = false
+    let suppressNextLauncherClick = false
     let bootstrapPromise = null
     let iframe = null
 
@@ -1314,6 +1448,217 @@
       dismissTeaser(true)
     }
 
+    const installBubbleDragEffects = () => {
+      if (displayMode !== 'bubble' || reducedMotion) {
+        return
+      }
+
+      let dragState = null
+      let returnTimer = null
+      const returnSparkleTimers = new Set()
+
+      const clearReturnSparkleTrail = () => {
+        for (const timer of returnSparkleTimers) {
+          clearTimeout(timer)
+        }
+        returnSparkleTimers.clear()
+      }
+
+      const addGlobalDragListeners = () => {
+        window.addEventListener('pointerup', finishPointerDrag)
+        window.addEventListener('pointercancel', finishPointerDrag)
+        window.addEventListener('blur', finishPointerDrag)
+      }
+
+      const removeGlobalDragListeners = () => {
+        window.removeEventListener('pointerup', finishPointerDrag)
+        window.removeEventListener('pointercancel', finishPointerDrag)
+        window.removeEventListener('blur', finishPointerDrag)
+      }
+
+      const resetLauncherTransform = () => {
+        if (returnTimer) {
+          clearTimeout(returnTimer)
+          returnTimer = null
+        }
+        button.style.transition = `box-shadow 200ms ease, opacity 140ms ease, ${LAUNCHER_RETURN_TRANSITION}`
+        button.style.transform = 'translate3d(0px, 0px, 0) rotate(0deg)'
+        returnTimer = setTimeout(() => {
+          button.style.transform = ''
+          button.style.transition = `box-shadow 200ms ease, opacity 140ms ease, ${LAUNCHER_RETURN_TRANSITION}`
+          button.style.willChange = ''
+          returnTimer = null
+        }, 840)
+      }
+
+      const startReturnSparkleTrail = (releasePoint, releaseOffset, releaseVelocity) => {
+        clearReturnSparkleTrail()
+        for (let index = 1; index <= 8; index += 1) {
+          const timer = setTimeout(() => {
+            returnSparkleTimers.delete(timer)
+            const progress = index / 8
+            const point = {
+              x: releasePoint.x - releaseOffset.x * progress,
+              y: releasePoint.y - releaseOffset.y * progress,
+            }
+            createCometBurst(point, {
+              x: releaseVelocity.x - releaseOffset.x * 0.14,
+              y: releaseVelocity.y - releaseOffset.y * 0.14,
+            }, {
+              colors: LAUNCHER_RELEASE_COLORS,
+              count: 3,
+              lift: 2,
+              minSize: 4,
+              pointJitter: 28,
+              sizeRange: 7,
+              spread: 70,
+              velocityJitter: 24,
+              velocityScale: 0.82,
+            })
+          }, index * 58)
+          returnSparkleTimers.add(timer)
+        }
+      }
+
+      const handlePointerDown = (event) => {
+        if (isOpen || isFullscreenOpen) {
+          return
+        }
+        if (event.button !== undefined && event.button !== 0) {
+          return
+        }
+        if (event.isPrimary === false) {
+          return
+        }
+
+        const point = getEventClientPoint(event)
+        if (!point) {
+          return
+        }
+
+        if (returnTimer) {
+          clearTimeout(returnTimer)
+          returnTimer = null
+        }
+        clearReturnSparkleTrail()
+
+        dragState = {
+          pointerId: event.pointerId,
+          start: point,
+          previous: point,
+          velocity: { x: 0, y: 0 },
+          offset: { x: 0, y: 0 },
+          bounds: getLauncherDragBounds(button),
+          lastTrailAt: 0,
+          dragging: false,
+        }
+        button.style.transition = 'box-shadow 200ms ease, opacity 140ms ease'
+        button.style.willChange = 'transform'
+        button.style.cursor = 'grabbing'
+        if (typeof button.setPointerCapture === 'function' && event.pointerId !== undefined) {
+          button.setPointerCapture(event.pointerId)
+        }
+        addGlobalDragListeners()
+      }
+
+      const handlePointerMove = (event) => {
+        if (!dragState || (dragState.pointerId !== undefined && event.pointerId !== dragState.pointerId)) {
+          return
+        }
+
+        const point = getEventClientPoint(event)
+        if (!point) {
+          return
+        }
+
+        const dx = point.x - dragState.start.x
+        const dy = point.y - dragState.start.y
+        const distance = Math.hypot(dx, dy)
+        if (distance < LAUNCHER_DRAG_THRESHOLD_PX && !dragState.dragging) {
+          return
+        }
+
+        if (!dragState.dragging) {
+          dragState.dragging = true
+          suppressNextLauncherClick = true
+          stopAttention()
+          dismissTeaser(false)
+        }
+
+        event.preventDefault?.()
+        const boundedOffset = clampLauncherDragOffset({ x: dx, y: dy }, dragState.bounds)
+        const rotation = formatCssNumber(clamp(boundedOffset.x * 0.035, -10, 10))
+        button.style.transform = `translate3d(${formatCssNumber(boundedOffset.x)}px, ${formatCssNumber(boundedOffset.y)}px, 0) rotate(${rotation}deg)`
+        dragState.offset = boundedOffset
+        dragState.velocity = {
+          x: point.x - dragState.previous.x,
+          y: point.y - dragState.previous.y,
+        }
+
+        const now = Date.now()
+        if (now - dragState.lastTrailAt >= LAUNCHER_TRAIL_MIN_INTERVAL_MS) {
+          createCometBurst(point, dragState.velocity, {
+            count: 3,
+            pointJitter: 18,
+            spread: 34,
+            velocityJitter: 8,
+          })
+          dragState.lastTrailAt = now
+        }
+        dragState.previous = point
+      }
+
+      const finishPointerDrag = (event) => {
+        if (
+          !dragState ||
+          (
+            dragState.pointerId !== undefined &&
+            event?.pointerId !== undefined &&
+            event.pointerId !== dragState.pointerId
+          )
+        ) {
+          return
+        }
+
+        const wasDragging = dragState.dragging
+        const releasePoint = getEventClientPoint(event) || dragState.previous
+        const releaseVelocity = dragState.velocity
+        const releaseOffset = dragState.offset
+        dragState = null
+        button.style.cursor = 'pointer'
+        removeGlobalDragListeners()
+        if (typeof button.releasePointerCapture === 'function' && event.pointerId !== undefined) {
+          button.releasePointerCapture(event.pointerId)
+        }
+        if (wasDragging) {
+          event.preventDefault?.()
+          const releaseSpeed = Math.hypot(releaseVelocity.x, releaseVelocity.y)
+          const releaseSquares = Math.round(clamp(releaseSpeed / 3, 14, 30))
+          createCometBurst(releasePoint, releaseVelocity, {
+            colors: LAUNCHER_RELEASE_COLORS,
+            count: releaseSquares,
+            lift: 0,
+            minSize: 4,
+            pointJitter: 42,
+            sizeRange: 8,
+            spread: 92,
+            velocityJitter: 34,
+            velocityScale: 1.05,
+          })
+          startReturnSparkleTrail(releasePoint, releaseOffset, releaseVelocity)
+          resetLauncherTransform()
+        } else {
+          button.style.transition = `box-shadow 200ms ease, opacity 140ms ease, ${LAUNCHER_RETURN_TRANSITION}`
+          button.style.willChange = ''
+        }
+      }
+
+      button.addEventListener('pointerdown', handlePointerDown)
+      button.addEventListener('pointermove', handlePointerMove)
+      button.addEventListener('pointerup', finishPointerDrag)
+      button.addEventListener('pointercancel', finishPointerDrag)
+    }
+
     const showTeaser = () => {
       if (teaser || isOpen || isFullscreenOpen || !teaserText) {
         return
@@ -1352,7 +1697,16 @@
       teaserTimer = setTimeout(() => dismissTeaser(false), TEASER_AUTO_HIDE_MS)
     }
 
-    button.addEventListener('click', () => {
+    installBubbleDragEffects()
+
+    button.addEventListener('click', (event) => {
+      if (suppressNextLauncherClick) {
+        suppressNextLauncherClick = false
+        if (event.detail !== 0) {
+          event.preventDefault?.()
+          return
+        }
+      }
       isOpen = !isOpen
       if (isOpen) {
         ensureIframe()

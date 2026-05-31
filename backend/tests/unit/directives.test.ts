@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { CapabilityCheckInput, CapabilityDecision, CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import {
   AlwaysMatchDirectiveMatcher,
+  conciseReadableFormattingDirective,
   DirectiveCatalogRegistry,
   DirectiveSteeringService,
   directiveToSteeringRule,
+  inlineSupportedLinksDirective,
   type Directive,
   type DirectiveMatch,
 } from "../../src/modules/directives/public.js";
@@ -107,6 +109,22 @@ describe("DirectiveSteeringService", () => {
   it("returns empty steering for an empty standing set (behavior-preserving default)", async () => {
     const result = await build([]).steer({ workspaceId: "w1" });
     expect(result).toEqual({ rules: [], matches: [], omissions: [] });
+  });
+});
+
+describe("default answer directives", () => {
+  it("preserves the extracted formatting and link behavior from answer prompts", () => {
+    expect(conciseReadableFormattingDirective.action).toContain("Prefer short paragraphs");
+    expect(conciseReadableFormattingDirective.action).toContain("Do not add headings unless");
+    expect(conciseReadableFormattingDirective.action).toContain("Do not use tables unless");
+    expect(inlineSupportedLinksDirective.action).toContain("link it inline with Markdown");
+    expect(inlineSupportedLinksDirective.action).toContain("every time you mention such a resource");
+    expect(inlineSupportedLinksDirective.action).toContain("Provide ample inline links");
+    expect(inlineSupportedLinksDirective.action).toContain("If the user asks for a link");
+    expect(inlineSupportedLinksDirective.action).toContain("human-readable link text");
+    expect(inlineSupportedLinksDirective.action).toContain("Never print a bare/raw URL");
+    expect(inlineSupportedLinksDirective.action).toContain("Do not collect links in a separate reference list");
+    expect(inlineSupportedLinksDirective.action).toContain("For resource lists or closing paths");
   });
 });
 

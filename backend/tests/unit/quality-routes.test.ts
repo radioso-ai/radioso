@@ -209,6 +209,22 @@ describe("quality routes", () => {
     });
   });
 
+  it("forwards hasComment=false from the query string", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/turns")
+      .query({ hasComment: "false" })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(200);
+    expect(service.calls[0]?.input).toEqual({
+      hasComment: false,
+      limit: 25,
+    });
+  });
+
   it("rejects malformed action filter entries with 400", async () => {
     const service = new CapturingService(emptyPage);
     const app = createApp(service);

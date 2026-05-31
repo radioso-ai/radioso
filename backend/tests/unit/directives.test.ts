@@ -117,9 +117,13 @@ describe("default answer directives", () => {
     expect(conciseReadableFormattingDirective.action).toContain("Prefer short paragraphs");
     expect(conciseReadableFormattingDirective.action).toContain("Do not add headings unless");
     expect(conciseReadableFormattingDirective.action).toContain("Do not use tables unless");
+    expect(inlineSupportedLinksDirective.action).toContain("link the most relevant descriptive phrase");
+    expect(inlineSupportedLinksDirective.action).toContain("at least once");
+    expect(inlineSupportedLinksDirective.action).toContain("If the user asks for a link");
     expect(inlineSupportedLinksDirective.action).toContain("human-readable link text");
     expect(inlineSupportedLinksDirective.action).toContain("Never print a bare/raw URL");
     expect(inlineSupportedLinksDirective.action).toContain("Do not collect links in a separate reference list");
+    expect(inlineSupportedLinksDirective.action).toContain("For resource lists or closing paths");
   });
 });
 

@@ -33,13 +33,15 @@ export const inlineSupportedLinksDirective: Directive = {
   condition: { kind: "always" },
   priority: 90,
   criticality: "high",
-  description: "Use available source URLs as inline links where they help the grounded answer.",
+  description: "Use available source URLs as inline links in grounded answers.",
   action: [
-    "When you mention a supported page, site, or resource that has a URL, link the descriptive phrase itself with Markdown.",
+    "When a retrieved finding has a URL and you use facts from that finding, link the most relevant descriptive phrase with Markdown at least once in the answer.",
+    "If the user asks for a link, page, URL, source, or where to learn more and a supported URL exists, provide it as an inline Markdown link.",
     "Use human-readable link text, such as [course page](https://example.com/course), never [https://example.com/course](https://example.com/course).",
     "Never print a bare/raw URL unless the user explicitly asks for the literal URL.",
     "Do not collect links in a separate reference list, use trailing read-more fragments, or leave a link alone on its own line.",
-    "Include only useful supported links that help the visitor continue.",
+    "For resource lists or closing paths, link the resource name or page description inline.",
+    "Include useful supported links that help the visitor continue, but do not invent links.",
   ].join(" "),
 };
 

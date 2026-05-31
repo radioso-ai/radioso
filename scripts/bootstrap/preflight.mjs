@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { classifyEnvState, readEnvFile } from "./env-file.mjs";
 import { getEnvContract } from "./support/env-contract.mjs";
+import { resolveLocalPorts } from "./support/local-ports.mjs";
 import { isPortAvailable, runCommand } from "./support/process-utils.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -77,7 +78,9 @@ export const runPreflightChecks = async (options = {}) => {
   );
   const projectAlreadyRunning = projectPs.ok && projectPs.stdout.trim().length > 0;
 
-  for (const port of [3000, 5432, 8080]) {
+  const ports = resolveLocalPorts();
+
+  for (const port of [ports.frontend, ports.postgres, ports.backend]) {
     const available = await portCheck(port);
     const blocked = !available && !projectAlreadyRunning;
     results.push({

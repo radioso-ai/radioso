@@ -1,16 +1,13 @@
-name: radioso
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: radioso-postgres
     shm_size: "1gb"
     environment:
       POSTGRES_DB: radioso
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "${RADIOSO_POSTGRES_PORT:-5432}:5432"
     volumes:
       - radioso_postgres_data:/var/lib/postgresql/data
       - ./backend/src/db/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
@@ -22,7 +19,6 @@ services:
       start_period: 5s
 
   backend:
-    container_name: radioso-backend
     pull_policy: build
     build:
       context: .
@@ -36,12 +32,13 @@ services:
       PORT: 8080
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
+      PUBLIC_CHAT_BASE_URL: ${PUBLIC_CHAT_BASE_URL:-http://localhost:3000/chat}
       SESSION_TTL_HOURS: 168
     volumes:
       - radioso_document_storage:/app/.context/document-storage
     command: ["node", "./dist/src/httpServer.js"]
     ports:
-      - "8080:8080"
+      - "${RADIOSO_BACKEND_PORT:-8080}:8080"
     healthcheck:
       test:
         [
@@ -56,7 +53,6 @@ services:
       start_period: 10s
 
   backend-worker:
-    container_name: radioso-backend-worker
     pull_policy: build
     build:
       context: .
@@ -71,13 +67,13 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
+      PUBLIC_CHAT_BASE_URL: ${PUBLIC_CHAT_BASE_URL:-http://localhost:3000/chat}
       SESSION_TTL_HOURS: 168
     volumes:
       - radioso_document_storage:/app/.context/document-storage
     command: ["node", "./dist/src/documentWorker.js"]
 
   backend-crawler-worker:
-    container_name: radioso-backend-crawler-worker
     pull_policy: build
     build:
       context: .
@@ -92,13 +88,13 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
+      PUBLIC_CHAT_BASE_URL: ${PUBLIC_CHAT_BASE_URL:-http://localhost:3000/chat}
       SESSION_TTL_HOURS: 168
     volumes:
       - radioso_document_storage:/app/.context/document-storage
     command: ["node", "./dist/src/crawlerWorker.js"]
 
   frontend:
-    container_name: radioso-frontend
     pull_policy: build
     build:
       context: .
@@ -113,7 +109,7 @@ services:
     environment:
       BACKEND_INTERNAL_URL: http://backend:8080
     ports:
-      - "3000:3000"
+      - "${RADIOSO_FRONTEND_PORT:-3000}:3000"
 
 volumes:
   radioso_postgres_data:

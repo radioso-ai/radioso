@@ -27,6 +27,8 @@ describe("skills catalog", () => {
       "assistant.chat",
       "retrieval.search",
       "retrieval.answer",
+      "social_only.answer",
+      "assistant_identity.answer",
       "documents.ingest",
       "documents.search",
       "documents.delete",

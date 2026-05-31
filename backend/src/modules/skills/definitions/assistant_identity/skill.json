@@ -1,0 +1,40 @@
+{
+  "name": "assistant_identity.answer",
+  "displayName": "Assistant identity",
+  "description": "Answer questions about the assistant itself — who it is and what it can do — from its configured identity, without retrieval.",
+  "owner": "assistant",
+  "executionClass": "interactive",
+  "supportedCallers": ["assistant"],
+  "requiredCapabilities": [],
+  "contractReferences": [],
+  "diagnostics": {
+    "defined": true,
+    "shapeAware": false,
+    "strategyAware": false,
+    "supportedFields": [
+      "skillName",
+      "shapeName",
+      "strategy",
+      "selectionMode",
+      "selectionReason",
+      "selectionConfidence",
+      "callerSurface",
+      "capabilityChecks",
+      "parameters",
+      "fallback",
+      "outcome",
+      "error",
+      "evidence"
+    ]
+  },
+  "steps": [],
+  "outcomes": [
+    {
+      "name": "assistant_identity",
+      "displayName": "Identity reply",
+      "description": "The assistant answered about itself from its configured identity.",
+      "status": "completed",
+      "tone": "info"
+    }
+  ]
+}

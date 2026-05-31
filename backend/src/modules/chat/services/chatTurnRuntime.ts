@@ -1,0 +1,91 @@
+import type { ChatGateway } from "../contracts/chatGateway.js";
+import { AssistantSuggestionExpansionService } from "./assistantSuggestionExpansionService.js";
+import { ChatAnswerSupport } from "./chatAnswerSupport.js";
+import {
+  ChatAnswerPresenter,
+  type SkillOutcomeCapabilityProvider,
+} from "./chatAnswerPresenter.js";
+import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
+import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
+import type { TurnSkill } from "./turnOutcome.js";
+import { AssistantReplyComposer } from "./assistantReplyComposer.js";
+import { RetrievalAnswerComposer, createRetrievalTurnSkill } from "./retrievalTurnSkill.js";
+import { SOCIAL_REPLY_CONFIG, createSocialTurnSkill } from "./socialTurnSkill.js";
+import {
+  ASSISTANT_IDENTITY_REPLY_CONFIG,
+  createAssistantIdentityTurnSkill,
+} from "./assistantIdentityTurnSkill.js";
+
+export interface ChatTurnRuntimeDependencies {
+  chatGateway: ChatGateway;
+  fallbackReplyComposer: FallbackReplyComposer;
+  chatActionSuggestionService?: ChatActionSuggestionService;
+  skillOutcomeCapabilities: SkillOutcomeCapabilityProvider;
+}
+
+/**
+ * The assembled per-turn collaborators a chat host needs to answer: the answer
+ * support helpers, the answer presenter, the registered terminal-answer skills,
+ * and the fallback reply composer. Built once and handed to the host; the host
+ * never re-assembles it. The fallback composer is the same instance the skills
+ * use, so the host's grounded-miss reconcile can't drift onto a different one.
+ */
+export interface ChatTurnRuntime {
+  answerSupport: ChatAnswerSupport;
+  chatAnswerPresenter: ChatAnswerPresenter;
+  turnSkills: TurnSkill[];
+  fallbackReplyComposer: FallbackReplyComposer;
+}
+
+/**
+ * Assembles the chat module's turn runtime. Composition supplies the external
+ * collaborators (gateway, fallback composer, suggestion service, capability
+ * provider); this factory owns which terminal-answer capabilities exist
+ * (retrieval, social, identity) and how their composers are wired. Adding a
+ * capability is a registration here, not a branch in the host's turn loop — the
+ * host receives `turnSkills` and selects among them by route.
+ */
+export const buildChatTurnRuntime = (
+  deps: ChatTurnRuntimeDependencies,
+): ChatTurnRuntime => {
+  const answerSupport = new ChatAnswerSupport();
+  const chatAnswerPresenter = new ChatAnswerPresenter(
+    new AssistantSuggestionExpansionService(),
+    deps.chatActionSuggestionService,
+    deps.skillOutcomeCapabilities,
+  );
+  const turnSkills: TurnSkill[] = [
+    createRetrievalTurnSkill(
+      new RetrievalAnswerComposer(
+        answerSupport,
+        deps.chatGateway,
+        chatAnswerPresenter,
+        deps.fallbackReplyComposer,
+      ),
+    ),
+    createSocialTurnSkill(
+      new AssistantReplyComposer(
+        answerSupport,
+        deps.chatGateway,
+        chatAnswerPresenter,
+        deps.fallbackReplyComposer,
+        SOCIAL_REPLY_CONFIG,
+      ),
+    ),
+    createAssistantIdentityTurnSkill(
+      new AssistantReplyComposer(
+        answerSupport,
+        deps.chatGateway,
+        chatAnswerPresenter,
+        deps.fallbackReplyComposer,
+        ASSISTANT_IDENTITY_REPLY_CONFIG,
+      ),
+    ),
+  ];
+  return {
+    answerSupport,
+    chatAnswerPresenter,
+    turnSkills,
+    fallbackReplyComposer: deps.fallbackReplyComposer,
+  };
+};

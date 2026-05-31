@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
-import { buildNonRetrievalAnswerPrompt } from "../../src/modules/chat/services/nonRetrievalAnswerPromptBuilder.js";
+import { buildAssistantReplyPrompt } from "../../src/modules/chat/services/assistantReplyPromptBuilder.js";
 import { CHAT_TURN_ROUTE } from "../../src/modules/chat/services/chatTurnIntentService.js";
 
 const historyMessage = (overrides: Partial<MessageRecord>): MessageRecord => ({
@@ -16,7 +16,7 @@ const historyMessage = (overrides: Partial<MessageRecord>): MessageRecord => ({
 
 describe("non-retrieval answer prompt builder", () => {
   it("instructs social replies to loop back to the configured assistant scope", () => {
-    const prompt = buildNonRetrievalAnswerPrompt({
+    const prompt = buildAssistantReplyPrompt({
       route: CHAT_TURN_ROUTE.SOCIAL_ONLY,
       responseIdentity: {
         name: "Vikram",
@@ -46,7 +46,7 @@ describe("non-retrieval answer prompt builder", () => {
   });
 
   it("treats detected intent topic as evidence for scope handling instead of answer authority", () => {
-    const prompt = buildNonRetrievalAnswerPrompt({
+    const prompt = buildAssistantReplyPrompt({
       route: CHAT_TURN_ROUTE.SOCIAL_ONLY,
       responseIdentity: {
         name: "Vikram",
@@ -71,7 +71,7 @@ describe("non-retrieval answer prompt builder", () => {
   });
 
   it("instructs identity replies to describe the configured scope when asked what the assistant can do", () => {
-    const prompt = buildNonRetrievalAnswerPrompt({
+    const prompt = buildAssistantReplyPrompt({
       route: CHAT_TURN_ROUTE.ASSISTANT_IDENTITY,
       responseIdentity: {
         name: "Vikram",
@@ -87,7 +87,7 @@ describe("non-retrieval answer prompt builder", () => {
   });
 
   it("renders matched steering directives into the prompt", () => {
-    const prompt = buildNonRetrievalAnswerPrompt({
+    const prompt = buildAssistantReplyPrompt({
       route: CHAT_TURN_ROUTE.SOCIAL_ONLY,
       answerInstructionBlock: "Configured response instructions:\nHelp visitors choose retreats and courses.",
       history: [],

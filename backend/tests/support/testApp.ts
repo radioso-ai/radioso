@@ -13,14 +13,15 @@ import { EmailVerificationService } from "../../src/modules/auth/services/emailV
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../src/modules/agents/public.js";
 import {
-  type GroundedMissResponseComposer,
-} from "../../src/modules/chat/services/groundedMissResponseComposer.js";
+  type FallbackReplyComposer,
+} from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
@@ -225,7 +226,7 @@ interface TestRepositories {
 const appDependencyMap = new WeakMap<object, AppDependencies>();
 const appRepositoryMap = new WeakMap<object, TestRepositories>();
 
-class TestGroundedMissResponseComposer implements GroundedMissResponseComposer {
+class TestFallbackReplyComposer implements FallbackReplyComposer {
   async composeNoContext(): Promise<string> {
     return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
   }
@@ -239,7 +240,7 @@ export const createTestDependencies = (overrides: {
   rerankGateway?: RerankGateway;
   envOverrides?: Partial<Env>;
   abuseControlRepository?: AbuseControlRepositoryPort;
-  groundedMissResponseComposer?: GroundedMissResponseComposer;
+  fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   chatIntakeProvider?: ChatIntakeProviderPort;
@@ -655,21 +656,24 @@ export const createTestDependencies = (overrides: {
       ? chatIntakeProviders[0]!
       : new ChainedChatIntakeProvider(chatIntakeProviders);
   const skillCatalogRegistry = createDefaultSkillCatalogRegistry();
-  const chatService = new ChatService(
+  const fallbackReplyComposer = overrides.fallbackReplyComposer ?? new TestFallbackReplyComposer();
+  const chatService = new ChatService({
     conversationRepository,
     messageRepository,
-    new RetrievalTurnController(retrievalPipeline),
+    retrievalTurn: new RetrievalTurnController(retrievalPipeline),
     chatGateway,
     auditService,
-    overrides.groundedMissResponseComposer ?? new TestGroundedMissResponseComposer(),
+    turnRuntime: buildChatTurnRuntime({
+      chatGateway,
+      fallbackReplyComposer,
+      skillOutcomeCapabilities: createSkillOutcomeCapabilityProvider(skillCatalogRegistry),
+    }),
     productAnalyticsService,
     workspaceRepository,
     usageLimitPolicy,
     agentService,
     chatIntakeProvider,
-    undefined,
-    createSkillOutcomeCapabilityProvider(skillCatalogRegistry),
-  );
+  });
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
     bootstrapGreetingCacheRepository,
@@ -875,7 +879,7 @@ export const createTestApp = (overrides: {
   rerankGateway?: RerankGateway;
   envOverrides?: Partial<Env>;
   abuseControlRepository?: AbuseControlRepositoryPort;
-  groundedMissResponseComposer?: GroundedMissResponseComposer;
+  fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   chatIntakeProvider?: ChatIntakeProviderPort;

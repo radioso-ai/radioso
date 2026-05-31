@@ -7,7 +7,7 @@ import {
   toConversationInputEvent,
   toConversationMessage,
   toConversationTrace,
-  toRetrievalStagedContext,
+  toPreparedStagedContext,
 } from "../../src/modules/chat/services/conversationContractMappers.js";
 import type { ActivityTrace, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 
@@ -170,13 +170,13 @@ describe("conversation contract mappers", () => {
     expect(trace.startedAt).toEqual(expect.any(String));
   });
 
-  it("wraps retrieval results as staged context", () => {
+  it("wraps the prepared result as staged context sourced from the owning skill", () => {
     const retrieval = {
       contexts: [{ chunkId: "chunk_1" }],
       diagnostics: { retrievalSkipped: false },
     } as RetrievalPipelineResult;
 
-    expect(toRetrievalStagedContext(retrieval)).toEqual({
+    expect(toPreparedStagedContext(retrieval, "retrieval.answer")).toEqual({
       kind: "retrieval",
       source: "retrieval.answer",
       data: retrieval,
@@ -185,5 +185,17 @@ describe("conversation contract mappers", () => {
         retrievalSkipped: false,
       },
     });
+  });
+
+  it("sources the staged context from a non-retrieval skill — never retrieval.answer", () => {
+    const skipped = {
+      contexts: [],
+      diagnostics: { retrievalSkipped: true },
+    } as unknown as RetrievalPipelineResult;
+
+    expect(toPreparedStagedContext(skipped, "social_only.answer").source).toBe("social_only.answer");
+    expect(toPreparedStagedContext(skipped, "assistant_identity.answer").source).toBe(
+      "assistant_identity.answer",
+    );
   });
 });

@@ -5,6 +5,16 @@ export {
   ChatService,
 } from "./services/chatService.js";
 export {
+  buildChatTurnRuntime,
+  type ChatTurnRuntime,
+  type ChatTurnRuntimeDependencies,
+} from "./services/chatTurnRuntime.js";
+export {
+  createRouteScopedDirectiveSteering,
+  type RouteScopedDirectiveRegistration,
+  type DirectiveRoutePolicy,
+} from "./services/routeScopedDirectiveSteering.js";
+export {
   SkillRetrievalTurnDispatch,
   DirectRetrievalTurnDispatch,
   RetrievalTurnController,

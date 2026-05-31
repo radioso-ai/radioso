@@ -81,9 +81,16 @@ export const toConversationTrace = (trace: ActivityTrace | undefined): Conversat
   };
 };
 
-export const toRetrievalStagedContext = (retrieval: RetrievalPipelineResult): StagedContext => ({
+// Stages the prepared session's retrieval result for the terminal skill. `kind`
+// describes the staged data shape (a retrieval pipeline result, skipped or not);
+// `source` is the owning skill — a social or identity turn carries its own
+// skill name here, never "retrieval.answer".
+export const toPreparedStagedContext = (
+  retrieval: RetrievalPipelineResult,
+  source: string,
+): StagedContext => ({
   kind: "retrieval",
-  source: "retrieval.answer",
+  source,
   data: retrieval,
   metadata: {
     contextCount: retrieval.contexts.length,

@@ -1,0 +1,52 @@
+{
+  "name": "assistant.chat",
+  "displayName": "Assistant chat",
+  "description": "Run human-facing assistant chat with assistant-owned routing and conversation behavior.",
+  "owner": "assistant",
+  "executionClass": "interactive",
+  "supportedCallers": ["assistant", "dashboard", "public_embed", "sdk"],
+  "requiredCapabilities": ["assistant.chat"],
+  "contractReferences": [
+    {
+      "kind": "http",
+      "label": "Assistant chat API",
+      "method": "POST",
+      "path": "/api/v1/assistant/chat"
+    },
+    {
+      "kind": "sdk",
+      "label": "TypeScript SDK assistant chat",
+      "path": "chat.stream"
+    }
+  ],
+  "diagnostics": {
+    "defined": true,
+    "shapeAware": false,
+    "strategyAware": true,
+    "supportedFields": [
+      "skillName",
+      "shapeName",
+      "strategy",
+      "selectionMode",
+      "selectionReason",
+      "selectionConfidence",
+      "callerSurface",
+      "capabilityChecks",
+      "parameters",
+      "fallback",
+      "outcome",
+      "error",
+      "evidence"
+    ]
+  },
+  "steps": [],
+  "outcomes": [
+    {
+      "name": "conversational",
+      "displayName": "Conversational response",
+      "description": "The assistant answered without invoking a skill-specific action.",
+      "status": "completed",
+      "tone": "info"
+    }
+  ]
+}

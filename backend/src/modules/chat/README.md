@@ -55,9 +55,17 @@ imports from `services/`.
   `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`, and
   application composition in `src/app/server/dependencyBuilders.ts`.
   `turnOutcome.ts` holds only the capability-neutral turn machinery (`TurnSkill`,
-  renderer registry); concrete skills register themselves — retrieval lives in
-  `retrievalTurnSkill.ts` (`createRetrievalTurnSkill`). The engine adapter names
-  no specific skill and only takes skill-shaped input.
+  renderer registry); the engine adapter names no specific skill and only takes
+  skill-shaped input. Each terminal answer capability is its own skill, selected by
+  route — `retrievalTurnSkill.ts`, `socialTurnSkill.ts`,
+  `assistantIdentityTurnSkill.ts` — each owning its composition (no "retrieval vs
+  non-retrieval" branch). Skill **identity is sourced from the canonical catalog**
+  (`modules/skills`): these files derive their skill name from
+  `retrievalAnswerSkillDefinition` / `socialAnswerSkillDefinition` /
+  `assistantIdentityAnswerSkillDefinition` — the chat loop never mints its own skill
+  names. The `TurnSkill` here is the chat-side render binding, not a second skill
+  registry. Shared answer plumbing: `chatAnswerSupport.ts` (neutral prompt/context
+  builders), `preparedTurnOutcome.ts`, `chatAnswerErrors.ts`.
 
 ## Tests
 

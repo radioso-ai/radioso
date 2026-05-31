@@ -2,6 +2,7 @@ import type { SkillDefinition, TurnOutcome } from "@radioso/conversation-contrac
 
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
+import type { AnswerGroundingVerdict, PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
 
 /**
  * The generic, per-turn result the assistant composes its reply from — the
@@ -80,14 +81,32 @@ export class GenericTurnOutcomeRenderer implements TurnOutcomeRenderer {
  * and are registered by the host, so the turn machinery stays capability-neutral
  * and only ever expects skill-shaped input — it names no specific skill.
  */
+/**
+ * The raw result of streaming a turn's answer — what the host needs to finalize
+ * (present, reconcile, persist, suggest) after the chunks have been yielded. The
+ * skill owns generating + streaming the answer; the host owns the common
+ * finalization that follows.
+ */
+export interface TurnStreamResult {
+  rawAnswer: string;
+  plannedSuggestions: PlannedEnvelopeSuggestion[];
+  answerGrounding: AnswerGroundingVerdict;
+  /** Set when the reply was produced off the grounded path (social/identity). */
+  noContextPresentation: ChatPresentedAnswer | null;
+  hasStreamedAnswer: boolean;
+  streamedAnswer: string;
+}
+
 export interface TurnSkill {
   definition: SkillDefinition;
   /** Whether this skill is the terminal answer for the prepared turn. */
   selects(session: PreparedSession): boolean;
   /** Produces the turn outcome; a concrete skill may read the session's capabilities. */
   dispatch(session: PreparedSession): Promise<TurnOutcome> | TurnOutcome;
-  /** Renders this skill's outcome into a chat presentation. */
+  /** Renders this skill's outcome into a chat presentation (non-streaming path). */
   renderer: TurnOutcomeRenderer;
+  /** Streams this skill's answer (when it supports streaming): yields chunk text, returns the raw result. */
+  streamRender?(ctx: TurnRenderContext): AsyncGenerator<string, TurnStreamResult>;
 }
 
 /**

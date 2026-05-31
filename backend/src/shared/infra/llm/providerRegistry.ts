@@ -1,4 +1,4 @@
-import { ModelChatGateway, ModelGroundedMissResponseComposer } from "../../../modules/chat/llmAdapters.js";
+import { ModelChatGateway, ModelFallbackReplyComposer } from "../../../modules/chat/llmAdapters.js";
 import {
   TextRoutedToolCallingGateway,
   type ModelToolCallingGateway,
@@ -13,7 +13,7 @@ import {
 import type { LlmCapabilityResolver } from "./capabilityResolver.js";
 import {
   ContextualChatGateway,
-  ContextualGroundedMissResponseComposer,
+  ContextualFallbackReplyComposer,
   ContextualQueryRewriteGateway,
   ContextualRerankGateway,
   ContextualTriggerAnalysisGateway,
@@ -177,12 +177,12 @@ export class LlmProviderRegistry {
     return new TextRoutedToolCallingGateway(this.createInferencePipeline(this.config.chat, usageEventRecorder));
   }
 
-  createGroundedMissResponseComposer(usageEventRecorder?: UsageEventRecorder) {
-    const fallback = new ModelGroundedMissResponseComposer(this.createInferencePipeline(this.config.chat, usageEventRecorder));
+  createFallbackReplyComposer(usageEventRecorder?: UsageEventRecorder) {
+    const fallback = new ModelFallbackReplyComposer(this.createInferencePipeline(this.config.chat, usageEventRecorder));
     if (!this.resolver) {
       return fallback;
     }
-    return new ContextualGroundedMissResponseComposer(
+    return new ContextualFallbackReplyComposer(
       { resolver: this.resolver, clientCache: this.clientCache },
       fallback,
       usageEventRecorder,

@@ -1,0 +1,43 @@
+{
+  "name": "documents.ingest",
+  "displayName": "Document ingestion",
+  "description": "Add workspace documents for asynchronous processing and future retrieval.",
+  "owner": "documents",
+  "executionClass": "deferred",
+  "supportedCallers": ["dashboard", "sdk", "mcp"],
+  "requiredCapabilities": ["documents.ingest"],
+  "contractReferences": [
+    {
+      "kind": "http",
+      "label": "Document upload API",
+      "method": "POST",
+      "path": "/api/v1/document"
+    },
+    {
+      "kind": "mcp_tool",
+      "label": "MCP create document tool",
+      "path": "create_document"
+    }
+  ],
+  "diagnostics": {
+    "defined": true,
+    "shapeAware": false,
+    "strategyAware": false,
+    "supportedFields": [
+      "skillName",
+      "shapeName",
+      "strategy",
+      "selectionMode",
+      "selectionReason",
+      "selectionConfidence",
+      "callerSurface",
+      "capabilityChecks",
+      "parameters",
+      "fallback",
+      "outcome",
+      "error",
+      "evidence"
+    ]
+  },
+  "steps": []
+}

@@ -124,18 +124,24 @@ export class ChatAnswerPresenter {
     },
   ) {}
 
-  presentNonRetrievalAnswer(answer: string): ChatPresentedAnswer {
+  presentNonRetrievalAnswer(
+    answer: string,
+    skillTurnOutcome: SkillTurnOutcome = SKILL_TURN_OUTCOME.ASSISTANT_CONVERSATIONAL,
+  ): ChatPresentedAnswer {
     const presented = this.answerPresentationService.present({
       answer,
       citations: [],
     });
 
+    // The non-retrieval answer skills (social / identity) pass their own identity so
+    // the persisted turn reflects the capability that handled it; the legacy
+    // answer_outcome stays the coarse non-retrieval value.
     return {
       ...presented,
       planningCitations: [],
-      skillName: SKILL_TURN_OUTCOME.ASSISTANT_CONVERSATIONAL.skillName,
-      skillOutcome: SKILL_TURN_OUTCOME.ASSISTANT_CONVERSATIONAL.outcome,
-      skillStatus: SKILL_TURN_OUTCOME.ASSISTANT_CONVERSATIONAL.status,
+      skillName: skillTurnOutcome.skillName,
+      skillOutcome: skillTurnOutcome.outcome,
+      skillStatus: skillTurnOutcome.status,
       answerOutcome: ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE,
     };
   }

@@ -6,7 +6,7 @@ import type { ChatTurnRoute } from "./chatTurnIntentService.js";
 import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
 import { appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 
-export const buildNonRetrievalAnswerPrompt = (input: {
+export const buildAssistantReplyPrompt = (input: {
   route: ChatTurnRoute;
   responseIdentity?: ResponseIdentity | null;
   answerInstructionBlock: string;

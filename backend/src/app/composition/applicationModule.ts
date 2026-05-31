@@ -32,6 +32,7 @@ import type {
   SkillExecutorRegistration,
   SkillExecutorRegistry,
 } from "../../modules/skills/public.js";
+import type { Directive } from "../../modules/directives/public.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { AgentSurfaceExtension } from "../../modules/agents/public.js";
 import type { TextChunkingProviderPort } from "../../modules/retrieval/public.js";
@@ -124,6 +125,11 @@ export type ApplicationAnswerFeedbackHistoryProviderRegistration =
       logger: AppLogger;
     }) => AnswerFeedbackHistoryProviderPort);
 
+export interface ApplicationDirectiveRegistration {
+  directive: Directive;
+  routes?: string[];
+}
+
 export type ApplicationAccountCreatedHook = (context: {
   accountId: string;
   database: ApplicationDatabasePort;
@@ -153,6 +159,7 @@ export interface ApplicationExtensionRegistry {
   skillCatalogEntries: SkillCatalogEntryDefinition[];
   skillDefinitions: SkillDefinition[];
   skillExecutors: SkillExecutorRegistration[];
+  directiveRegistrations: ApplicationDirectiveRegistration[];
   agentSurfaceExtensions: AgentSurfaceExtension[];
   chatActionSuggestionProviders: ApplicationChatActionSuggestionProviderRegistration[];
 }
@@ -180,6 +187,7 @@ export interface ApplicationModuleRegistrationContext {
   registerSkillCatalogEntry(entry: SkillCatalogEntryDefinition): void;
   registerSkillDefinition(definition: SkillDefinition): void;
   registerSkillExecutor(registration: SkillExecutorRegistration): void;
+  registerDirective(directive: Directive, options?: { routes?: string[] }): void;
   registerAgentSurfaceExtension(extension: AgentSurfaceExtension): void;
   registerChatActionSuggestionProvider(provider: ApplicationChatActionSuggestionProviderRegistration): void;
 }
@@ -204,6 +212,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   skillCatalogEntries: [],
   skillDefinitions: [],
   skillExecutors: [],
+  directiveRegistrations: [],
   agentSurfaceExtensions: [],
   chatActionSuggestionProviders: [],
 });
@@ -274,6 +283,11 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerSkillExecutor(registration) {
     registry.skillExecutors.push(registration);
+  },
+  registerDirective(directive, options) {
+    registry.directiveRegistrations.push(
+      options?.routes ? { directive, routes: [...options.routes] } : { directive },
+    );
   },
   registerAgentSurfaceExtension(extension) {
     registry.agentSurfaceExtensions.push(extension);

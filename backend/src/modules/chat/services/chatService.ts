@@ -35,7 +35,7 @@ import {
   type TurnSkill,
 } from "./turnOutcome.js";
 import type { ChatAnswerSupport } from "./chatAnswerSupport.js";
-import { buildChatTurnRuntime, type ChatTurnRuntime } from "./chatTurnRuntime.js";
+import type { ChatTurnRuntime } from "./chatTurnRuntime.js";
 import {
   DefaultTurnSelectionStrategy,
   type TurnSelectionStrategy,
@@ -43,10 +43,8 @@ import {
 import type {
   ChatAnswerPresenter,
   ChatPresentedAnswer,
-  SkillOutcomeCapabilityProvider,
 } from "./chatAnswerPresenter.js";
 import { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
-import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
 import type { PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
 import { BlankChatAnswerError, hasCitedAnswerSegment } from "./chatAnswerErrors.js";
 
@@ -208,38 +206,74 @@ const buildSkillStreamPayload = (
   receipt: intakeResult.receipt,
 });
 
+/**
+ * Everything ChatService needs to run a turn. The turn runtime (presenter +
+ * registered skills) is assembled by composition via {@link buildChatTurnRuntime}
+ * and injected — registration lives in the wiring layer, never inline here.
+ */
+export interface ChatServiceOptions {
+  conversationRepository: ConversationRepositoryPort;
+  messageRepository: MessageRepositoryPort;
+  retrievalTurn: RetrievalTurnPort;
+  chatGateway: ChatGateway;
+  auditService: AuditService;
+  turnRuntime: ChatTurnRuntime;
+  // Shared with the runtime's composers; also drives the host's post-stream
+  // grounded-miss reconciliation. Defaults to a no-LLM stub.
+  fallbackReplyComposer?: FallbackReplyComposer;
+  productAnalyticsService?: ProductAnalyticsPort;
+  workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">;
+  usageLimitPolicy?: UsageLimitPolicy;
+  agentService?: Pick<AgentService, "resolve">;
+  chatIntakeProvider?: ChatIntakeProviderPort;
+  directiveSteering?: DirectiveSteeringPort;
+  selectionStrategy?: TurnSelectionStrategy;
+  conversationEngine?: ConversationEngine;
+}
+
 export class ChatService {
+  private readonly chatGateway: ChatGateway;
+  private readonly auditService: AuditService;
+  private readonly fallbackReplyComposer: FallbackReplyComposer;
+  private readonly usageLimitPolicy: UsageLimitPolicy;
+  private readonly chatIntakeProvider: ChatIntakeProviderPort;
+  private readonly selectionStrategy: TurnSelectionStrategy;
+  private readonly conversationEngine?: ConversationEngine;
   private readonly chatAnswerPresenter: ChatAnswerPresenter;
   private readonly chatSessionPreparer: ChatSessionPreparer;
   private readonly chatTurnLifecycle: ChatTurnLifecycle;
   private readonly answerSupport: ChatAnswerSupport;
   private readonly turnSkills: TurnSkill[];
   private readonly turnRenderers: TurnOutcomeRendererRegistry;
-  constructor(
-    conversationRepository: ConversationRepositoryPort,
-    messageRepository: MessageRepositoryPort,
-    retrievalTurn: RetrievalTurnPort,
-    private readonly chatGateway: ChatGateway,
-    private readonly auditService: AuditService,
-    private readonly fallbackReplyComposer: FallbackReplyComposer = new MissingFallbackReplyComposer(),
-    productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
-    workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
-    private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
-    agentService?: Pick<AgentService, "resolve">,
-    private readonly chatIntakeProvider: ChatIntakeProviderPort = new NoopChatIntakeProvider(),
-    chatActionSuggestionService?: ChatActionSuggestionService,
-    skillOutcomeCapabilities: SkillOutcomeCapabilityProvider = {
-      supportsGroundedAnswer: () => false,
-    },
-    directiveSteering: DirectiveSteeringPort = noopDirectiveSteering,
-    private readonly selectionStrategy: TurnSelectionStrategy = new DefaultTurnSelectionStrategy(),
-    private readonly conversationEngine?: ConversationEngine,
-    // Composition assembles the turn runtime (presenter + registered skills) and
-    // injects it, so registration lives in the wiring layer. When absent (e.g.
-    // focused host tests), it is assembled from the gateway/fallback/capabilities
-    // above — this host never inlines composer wiring.
-    turnRuntime?: ChatTurnRuntime,
-  ) {
+
+  constructor(options: ChatServiceOptions) {
+    const {
+      conversationRepository,
+      messageRepository,
+      retrievalTurn,
+      chatGateway,
+      auditService,
+      turnRuntime,
+      fallbackReplyComposer = new MissingFallbackReplyComposer(),
+      productAnalyticsService = new NoopProductAnalyticsService(),
+      workspaceRepository,
+      usageLimitPolicy = new NoopUsageLimitPolicy(),
+      agentService,
+      chatIntakeProvider = new NoopChatIntakeProvider(),
+      directiveSteering = noopDirectiveSteering,
+      selectionStrategy = new DefaultTurnSelectionStrategy(),
+      conversationEngine,
+    } = options;
+    this.chatGateway = chatGateway;
+    this.auditService = auditService;
+    this.fallbackReplyComposer = fallbackReplyComposer;
+    this.usageLimitPolicy = usageLimitPolicy;
+    this.chatIntakeProvider = chatIntakeProvider;
+    this.selectionStrategy = selectionStrategy;
+    this.conversationEngine = conversationEngine;
+    this.answerSupport = turnRuntime.answerSupport;
+    this.chatAnswerPresenter = turnRuntime.chatAnswerPresenter;
+    this.turnSkills = turnRuntime.turnSkills;
     this.chatTurnLifecycle = new ChatTurnLifecycle(
       conversationRepository,
       messageRepository,
@@ -255,20 +289,6 @@ export class ChatService {
       agentService,
       directiveSteering,
     );
-    // Each terminal answer capability is a registered skill, selected by route;
-    // the host never branches on "retrieval vs not". Composition owns this
-    // assembly and injects it; the default keeps focused host tests terse.
-    const runtime =
-      turnRuntime ??
-      buildChatTurnRuntime({
-        chatGateway: this.chatGateway,
-        fallbackReplyComposer: this.fallbackReplyComposer,
-        chatActionSuggestionService,
-        skillOutcomeCapabilities,
-      });
-    this.answerSupport = runtime.answerSupport;
-    this.chatAnswerPresenter = runtime.chatAnswerPresenter;
-    this.turnSkills = runtime.turnSkills;
     this.turnRenderers = buildTurnRendererRegistry(this.turnSkills);
   }
 

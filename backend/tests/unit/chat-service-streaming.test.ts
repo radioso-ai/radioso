@@ -6,12 +6,20 @@ import {
   BlankChatAnswerError,
   ChatService,
   type ChatGateway,
+  type ChatServiceOptions,
   type ChatStreamEvent,
 } from "../../src/modules/chat/services/chatService.js";
+import {
+  buildChatTurnRuntime,
+  type ChatTurnRuntimeDependencies,
+} from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { SkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { ChatIntakeProviderPort } from "../../src/modules/chat/services/chatIntakeProvider.js";
-import type { FallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
+import {
+  MissingFallbackReplyComposer,
+  type FallbackReplyComposer,
+} from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import {
   createAuditService,
@@ -38,6 +46,53 @@ const fallbackReplyComposer: FallbackReplyComposer = {
     return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
   },
 };
+
+// Bridges the legacy positional construction used across these streaming tests to
+// the options-object ChatService API. Production wiring (dependencyBuilders) passes
+// options directly and injects the runtime; here we assemble it from the same
+// gateway / fallback / capabilities the positional form supplied.
+const makeChatService = (
+  conversationRepository: ChatServiceOptions["conversationRepository"],
+  messageRepository: ChatServiceOptions["messageRepository"],
+  retrievalTurn: ChatServiceOptions["retrievalTurn"],
+  chatGateway: ChatServiceOptions["chatGateway"],
+  auditService: ChatServiceOptions["auditService"],
+  fallbackReplyComposer: NonNullable<ChatServiceOptions["fallbackReplyComposer"]> = new MissingFallbackReplyComposer(),
+  productAnalyticsService?: ChatServiceOptions["productAnalyticsService"],
+  workspaceRepository?: ChatServiceOptions["workspaceRepository"],
+  usageLimitPolicy?: ChatServiceOptions["usageLimitPolicy"],
+  agentService?: ChatServiceOptions["agentService"],
+  chatIntakeProvider?: ChatServiceOptions["chatIntakeProvider"],
+  chatActionSuggestionService?: ChatTurnRuntimeDependencies["chatActionSuggestionService"],
+  skillOutcomeCapabilities: ChatTurnRuntimeDependencies["skillOutcomeCapabilities"] = {
+    supportsGroundedAnswer: () => false,
+  },
+  directiveSteering?: ChatServiceOptions["directiveSteering"],
+  selectionStrategy?: ChatServiceOptions["selectionStrategy"],
+  conversationEngine?: ChatServiceOptions["conversationEngine"],
+): ChatService =>
+  new ChatService({
+    conversationRepository,
+    messageRepository,
+    retrievalTurn,
+    chatGateway,
+    auditService,
+    turnRuntime: buildChatTurnRuntime({
+      chatGateway,
+      fallbackReplyComposer,
+      chatActionSuggestionService,
+      skillOutcomeCapabilities,
+    }),
+    fallbackReplyComposer,
+    productAnalyticsService,
+    workspaceRepository,
+    usageLimitPolicy,
+    agentService,
+    chatIntakeProvider,
+    directiveSteering,
+    selectionStrategy,
+    conversationEngine,
+  });
 
 const asChatActivityPipeline = (pipeline: Record<string, unknown>) => {
   if (
@@ -274,7 +329,7 @@ describe("chat service streaming", () => {
         };
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -338,7 +393,7 @@ describe("chat service streaming", () => {
         };
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -409,7 +464,7 @@ describe("chat service streaming", () => {
         };
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -498,7 +553,7 @@ describe("chat service streaming", () => {
         };
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -579,7 +634,7 @@ describe("chat service streaming", () => {
         throw new Error("intake unavailable");
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
@@ -668,7 +723,7 @@ describe("chat service streaming", () => {
         };
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
@@ -714,7 +769,7 @@ describe("chat service streaming", () => {
         yield "Normal answer.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
@@ -777,7 +832,7 @@ describe("chat service streaming", () => {
         yield "Normal answer.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
@@ -851,7 +906,7 @@ describe("chat service streaming", () => {
         yield "1]]";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -989,7 +1044,7 @@ describe("chat service streaming", () => {
         yield "and simple. Begin with a few minutes each day.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1091,7 +1146,7 @@ describe("chat service streaming", () => {
         yield `\n${SUGGESTIONS_SENTINEL}\n[]`;
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1181,7 +1236,7 @@ describe("chat service streaming", () => {
         yield `\n${SUGGESTIONS_SENTINEL}\n[]`;
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1272,7 +1327,7 @@ describe("chat service streaming", () => {
         yield "and simple. Begin with a few minutes each day.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1364,7 +1419,7 @@ describe("chat service streaming", () => {
         yield "support and a discount code.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1444,7 +1499,7 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1533,7 +1588,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1576,7 +1631,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1616,7 +1671,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1654,7 +1709,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1701,7 +1756,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1749,7 +1804,7 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1823,7 +1878,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1898,7 +1953,7 @@ describe("chat service streaming", () => {
         return "I can't tell from that. I can help you choose and book Ananda courses.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -1982,7 +2037,7 @@ describe("chat service streaming", () => {
         yield "full answer[[1]]";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2069,7 +2124,7 @@ describe("chat service streaming", () => {
         yield "full answer[[1]]";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2138,7 +2193,7 @@ describe("chat service streaming", () => {
         yield " marker";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2243,7 +2298,7 @@ describe("chat service streaming", () => {
         yield "full answer[[";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2355,7 +2410,7 @@ describe("chat service streaming", () => {
         yield "full answer";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2398,7 +2453,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2468,7 +2523,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2546,7 +2601,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2622,7 +2677,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2691,7 +2746,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2770,7 +2825,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2867,7 +2922,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -2937,7 +2992,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -3017,7 +3072,7 @@ describe("chat service streaming", () => {
         yield "It also offers 24/7 phone support.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -3112,7 +3167,7 @@ describe("chat service streaming", () => {
         yield " and author.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -3212,7 +3267,7 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -3305,7 +3360,7 @@ describe("chat service streaming", () => {
         yield "Mahiya is a teacher and author[[1]].";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -3417,7 +3472,7 @@ describe("chat service streaming", () => {
         ]);
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -3518,7 +3573,7 @@ describe("chat service streaming", () => {
         yield "Mahiya is a teacher and author[[1]].";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -3606,7 +3661,7 @@ describe("chat service streaming", () => {
         yield "Narayani ha scritto La mia anima ricorda Swami Kriyananda[[1]].";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -3706,7 +3761,7 @@ describe("chat service streaming", () => {
         yield "Yes — here's the next page of the Assisi videos archive: https://anandaeurope.org/category/video-from-assisi/page/3/[[1]]";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -3804,7 +3859,7 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -3963,7 +4018,7 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -4069,7 +4124,7 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -4172,7 +4227,7 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -4282,7 +4337,7 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -4381,7 +4436,7 @@ describe("chat service streaming", () => {
         yield "";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -4562,7 +4617,7 @@ describe("chat service streaming", () => {
         return "I couldn't find supporting material.";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -4758,7 +4813,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
@@ -4807,7 +4862,7 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
-    const service = new ChatService(
+    const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),

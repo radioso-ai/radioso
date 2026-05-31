@@ -771,13 +771,13 @@ export const buildChatServices = (input: {
       input.composition.skillCatalogRegistry,
     ),
   });
-  const chatService = new ChatService(
-    input.conversationRepository,
-    input.messageRepository,
+  const chatService = new ChatService({
+    conversationRepository: input.conversationRepository,
+    messageRepository: input.messageRepository,
     // 066 slice 3: chat reaches retrieval only through a narrow turn port —
     // interpret via the controller, execute via the dispatched retrieval.answer
     // skill. ChatService carries no RetrievalPipelineService reference.
-    new RetrievalTurnController(
+    retrievalTurn: new RetrievalTurnController(
       input.retrievalPipeline,
       new SkillRetrievalTurnDispatch(
         input.composition.skillExecutorRegistry,
@@ -786,17 +786,14 @@ export const buildChatServices = (input: {
       ),
     ),
     chatGateway,
-    input.auditService,
+    auditService: input.auditService,
+    turnRuntime: chatTurnRuntime,
     fallbackReplyComposer,
-    input.productAnalyticsService,
-    input.workspaceRepository,
-    input.usageLimitPolicy,
-    input.agentService,
+    productAnalyticsService: input.productAnalyticsService,
+    workspaceRepository: input.workspaceRepository,
+    usageLimitPolicy: input.usageLimitPolicy,
+    agentService: input.agentService,
     chatIntakeProvider,
-    // Suggestion service + grounded-answer capabilities are consumed by the
-    // injected chatTurnRuntime above; the host no longer re-assembles them.
-    undefined,
-    undefined,
     // 067: behavioral steering. Empty standing set by default, so only the
     // deterministic always-match matcher is wired and no model call happens.
     // The probabilistic (contextual) matcher is intentionally not wired here: the
@@ -804,13 +801,11 @@ export const buildChatServices = (input: {
     // ModelInferencePipelines (#473), so wiring it requires refactoring
     // ModelDirectiveMatchGateway onto ModelInferencePipeline with a usage
     // context — a follow-up to land before any contextual directive ships.
-    createDirectiveSteering({
+    directiveSteering: createDirectiveSteering({
       capabilityPolicy: input.composition.capabilityPolicy,
     }),
-    undefined,
-    createDefaultConversationEngine(input.env),
-    chatTurnRuntime,
-  );
+    conversationEngine: createDefaultConversationEngine(input.env),
+  });
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,
     input.bootstrapGreetingCacheRepository,

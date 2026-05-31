@@ -13,6 +13,7 @@ import { EmailVerificationService } from "../../src/modules/auth/services/emailV
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
@@ -655,21 +656,25 @@ export const createTestDependencies = (overrides: {
       ? chatIntakeProviders[0]!
       : new ChainedChatIntakeProvider(chatIntakeProviders);
   const skillCatalogRegistry = createDefaultSkillCatalogRegistry();
-  const chatService = new ChatService(
+  const fallbackReplyComposer = overrides.fallbackReplyComposer ?? new TestFallbackReplyComposer();
+  const chatService = new ChatService({
     conversationRepository,
     messageRepository,
-    new RetrievalTurnController(retrievalPipeline),
+    retrievalTurn: new RetrievalTurnController(retrievalPipeline),
     chatGateway,
     auditService,
-    overrides.fallbackReplyComposer ?? new TestFallbackReplyComposer(),
+    turnRuntime: buildChatTurnRuntime({
+      chatGateway,
+      fallbackReplyComposer,
+      skillOutcomeCapabilities: createSkillOutcomeCapabilityProvider(skillCatalogRegistry),
+    }),
+    fallbackReplyComposer,
     productAnalyticsService,
     workspaceRepository,
     usageLimitPolicy,
     agentService,
     chatIntakeProvider,
-    undefined,
-    createSkillOutcomeCapabilityProvider(skillCatalogRegistry),
-  );
+  });
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
     bootstrapGreetingCacheRepository,

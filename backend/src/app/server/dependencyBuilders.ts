@@ -109,7 +109,7 @@ import {
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
 import { SkillCatalogService, retrievalAnswerSkillDefinition } from "../../modules/skills/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../modules/retrieval/public.js";
-import { createDirectiveSteering } from "../../modules/directives/public.js";
+import { createRouteScopedDirectiveSteering } from "../../modules/chat/services/routeScopedDirectiveSteering.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
@@ -781,15 +781,16 @@ export const buildChatServices = (input: {
     chatIntakeProvider,
     chatActionSuggestionService,
     createSkillOutcomeCapabilityProvider(input.composition.skillCatalogRegistry),
-    // 067: behavioral steering. Empty standing set by default, so only the
-    // deterministic always-match matcher is wired and no model call happens.
+    // 067: behavioral steering. The standing set is supplied by application
+    // composition; default answer behavior is registered by a built-in module.
     // The probabilistic (contextual) matcher is intentionally not wired here: the
     // LLM registry moved from a raw TextGenerationClient to usage-accounted
     // ModelInferencePipelines (#473), so wiring it requires refactoring
     // ModelDirectiveMatchGateway onto ModelInferencePipeline with a usage
     // context — a follow-up to land before any contextual directive ships.
-    createDirectiveSteering({
+    createRouteScopedDirectiveSteering({
       capabilityPolicy: input.composition.capabilityPolicy,
+      registrations: input.composition.directiveRegistrations,
     }),
     undefined,
     createDefaultConversationEngine(input.env),

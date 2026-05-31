@@ -1,9 +1,10 @@
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import { orderSteeringRules, type SteeringRule } from "../../../shared/domain/steeringRule.js";
+import type { SteeringRule } from "../../../shared/domain/steeringRule.js";
 import {
   formatConversationIntentSnapshot,
   type ConversationIntentSnapshot,
 } from "./conversationIntentSnapshot.js";
+import { renderSteeringBlock } from "./steeringPromptRenderer.js";
 
 export interface GroundedAnswerSystemPromptInput {
   baseSystemPrompt: string;
@@ -21,16 +22,6 @@ export interface GroundedAnswerSystemPromptResult {
 }
 
 const joinBlocks = (head: string, block: string): string => (head ? `${head}\n\n${block}` : block);
-
-const renderSteeringBlock = (steering: SteeringRule[]): string => {
-  if (steering.length === 0) {
-    return "";
-  }
-  const lines = orderSteeringRules(steering)
-    .map((rule) => (rule.condition ? `- ${rule.action} (when: ${rule.condition})` : `- ${rule.action}`))
-    .join("\n");
-  return renderPromptTemplate("chat/steering.md", { steering_rules: lines });
-};
 
 export const composeGroundedAnswerSystemPrompt = (
   input: GroundedAnswerSystemPromptInput,

@@ -1003,8 +1003,8 @@ export function DocumentsView({
         />
       ) : (
         <DashboardPage
-          title="Knowledge Base"
-          description="Manage your knowledge base"
+          title="Documents"
+          description="Manage the shared knowledge available in this workspace."
           headerContent={
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <DocumentSearchBar

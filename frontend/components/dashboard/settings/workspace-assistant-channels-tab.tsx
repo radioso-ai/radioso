@@ -2,13 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, CheckCircle2, CircleAlert, ExternalLink, FolderOpen, KeyRound, Link as LinkIcon, Mail, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook, Wrench } from 'lucide-react'
+import { Building2, CheckCircle2, ChevronLeft, CircleAlert, ExternalLink, FolderOpen, Globe, KeyRound, Link as LinkIcon, Mail, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook, Wrench } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
 import { AssistantIdentityAppearanceSection } from '@/components/dashboard/settings/assistant-identity-appearance-section'
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
+import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
+import { type AgentSectionId } from '@/lib/dashboard-areas'
 import {
   getAssistantLocaleLabel,
   NO_GREETING_LOCALE_LABEL,
@@ -115,6 +117,15 @@ const HUMAN_CONTACT_EMAIL_RECIPIENT_LIMIT = 25
 
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
 
+type ChannelId = 'public-chat-link' | 'website-embed' | 'api-channel' | 'mcp-channel'
+
+const CHANNEL_TITLES: Record<ChannelId, string> = {
+  'public-chat-link': 'Public chat link',
+  'website-embed': 'Website chat widget',
+  'api-channel': 'API channel',
+  'mcp-channel': 'MCP channel',
+}
+
 const normalizeAssistantBehaviorSettingsByAgent = (agentId: string | undefined, settings: AssistantBehaviorSettings) => ({
   ...settings,
   sourceScope: agentId ? settings.sourceScope ?? { mode: 'all' } : undefined,
@@ -133,12 +144,15 @@ export function WorkspaceAssistantChannelsTab({
   accountId,
   mode,
   agentId,
+  agentSection,
   channelsTabHref,
   onSaveStateChange,
 }: {
   accountId: string
   mode: 'workspace' | 'assistant' | 'channels'
   agentId?: string
+  /** When set, render only this section (the second column owns selection). */
+  agentSection?: AgentSectionId
   channelsTabHref?: string
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
@@ -196,6 +210,14 @@ export function WorkspaceAssistantChannelsTab({
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
   const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
+  const [selectedChannel, setSelectedChannel] = useState<ChannelId | null>(null)
+  // When the second column drives selection, render exactly one section and
+  // skip the in-page channel index/back affordance.
+  const showSection = (id: AgentSectionId) => !agentSection || agentSection === id
+  const isChannelId = (id: AgentSectionId | undefined): id is ChannelId =>
+    id === 'public-chat-link' || id === 'website-embed' || id === 'api-channel' || id === 'mcp-channel'
+  const resolvedChannel: ChannelId | null = isChannelId(agentSection) ? agentSection : selectedChannel
+  const channelIndexEnabled = !agentSection
   const organizationDraftVersionRef = useRef(0)
   const workspaceDraftVersionRef = useRef(0)
   const anonDraftVersionRef = useRef(0)
@@ -265,6 +287,11 @@ export function WorkspaceAssistantChannelsTab({
       active = false
     }
   }, [accountId])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Switching agent/workspace returns the channels list to its index.
+    setSelectedChannel(null)
+  }, [agentId, activeWorkspaceId])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Workspace switch invalidates token rotation UI state.
@@ -1084,8 +1111,8 @@ export function WorkspaceAssistantChannelsTab({
         </section>
         ) : null}
 
-          {mode === 'assistant' ? (
-          <section id="assistant-identity" className="space-y-6 scroll-mt-24">
+          {mode === 'assistant' && (showSection('identity') || showSection('behavior')) ? (
+          <section id={showSection('behavior') ? 'assistant-behavior' : 'assistant-identity'} className="space-y-6 scroll-mt-24">
             {isAnonLoading || isAssistantBehaviorLoading ? (
               <div className="flex items-center justify-center py-4">
                 <LogoSpinner imageClassName="h-6 w-6" />
@@ -1096,28 +1123,32 @@ export function WorkspaceAssistantChannelsTab({
                   {assistantSettingsError ? (
                     <p className="text-sm text-destructive" role="alert">{assistantSettingsError}</p>
                   ) : null}
-                  <AssistantIdentityAppearanceSection
-                    anonSettings={anonSettings}
-                    assistantBehaviorSettings={assistantBehaviorSettings}
-                    onAssistantSettingChange={handleAssistantSettingChange}
-                    onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
-                    onAssistantLogoUpload={(file) => void handleAssistantLogoUpload(file)}
-                    onAssistantLogoDelete={() => void handleAssistantLogoDelete()}
-                    isAnonSaving={isAnonSaving}
-                    isAssistantLogoSaving={isAssistantLogoSaving}
-                  />
-                  <AssistantBehaviorSection
-                    anonSettings={anonSettings}
-                    assistantBehaviorSettings={assistantBehaviorSettings}
-                    assistantLocaleInput={assistantLocaleInput}
-                    onAssistantSettingChange={handleAssistantSettingChange}
-                    onAssistantLocaleInputChange={handleAssistantLocaleInputChange}
-                    onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
-                    isAnonSaving={isAnonSaving}
-                    sourceList={sourceList}
-                    isSourceListLoading={isSourceListLoading}
-                    sourceListError={sourceListError}
-                  />
+                  {showSection('identity') ? (
+                    <AssistantIdentityAppearanceSection
+                      anonSettings={anonSettings}
+                      assistantBehaviorSettings={assistantBehaviorSettings}
+                      onAssistantSettingChange={handleAssistantSettingChange}
+                      onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
+                      onAssistantLogoUpload={(file) => void handleAssistantLogoUpload(file)}
+                      onAssistantLogoDelete={() => void handleAssistantLogoDelete()}
+                      isAnonSaving={isAnonSaving}
+                      isAssistantLogoSaving={isAssistantLogoSaving}
+                    />
+                  ) : null}
+                  {showSection('behavior') ? (
+                    <AssistantBehaviorSection
+                      anonSettings={anonSettings}
+                      assistantBehaviorSettings={assistantBehaviorSettings}
+                      assistantLocaleInput={assistantLocaleInput}
+                      onAssistantSettingChange={handleAssistantSettingChange}
+                      onAssistantLocaleInputChange={handleAssistantLocaleInputChange}
+                      onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
+                      isAnonSaving={isAnonSaving}
+                      sourceList={sourceList}
+                      isSourceListLoading={isSourceListLoading}
+                      sourceListError={sourceListError}
+                    />
+                  ) : null}
                 </div>
                 <AssistantPreviewRail
                   anonSettings={anonSettings}
@@ -1131,7 +1162,7 @@ export function WorkspaceAssistantChannelsTab({
           </section>
           ) : null}
 
-          {editionController.canUseHumanContact() && mode === 'assistant' ? (
+          {editionController.canUseHumanContact() && mode === 'assistant' && showSection('skills') ? (
           <section id="assistant-skills" className="space-y-6 scroll-mt-24">
             <SettingsCard
               icon={<Wrench className="h-5 w-5 text-primary" />}
@@ -1341,7 +1372,51 @@ export function WorkspaceAssistantChannelsTab({
           </section>
           ) : null}
 
-          {mode === 'channels' && !isAnonLoading ? (
+          {mode === 'channels' && !isAnonLoading && channelIndexEnabled && selectedChannel === null ? (
+          <section className="space-y-4">
+            <SettingsRowList>
+              <SettingsRow
+                icon={<LinkIcon className="h-5 w-5 text-primary" />}
+                title={CHANNEL_TITLES['public-chat-link']}
+                description="A shareable URL anyone can open without signing in."
+                status={anonSettings?.anonymousChatEnabled ? { label: 'On', tone: 'active' } : { label: 'Off', tone: 'muted' }}
+                onClick={() => setSelectedChannel('public-chat-link')}
+              />
+              <SettingsRow
+                icon={<Globe className="h-5 w-5 text-primary" />}
+                title={CHANNEL_TITLES['website-embed']}
+                description="Add a chat button to your website so visitors can ask questions."
+                status={anonSettings?.websiteEmbedEnabled ? { label: 'On', tone: 'active' } : { label: 'Off', tone: 'muted' }}
+                onClick={() => setSelectedChannel('website-embed')}
+              />
+              <SettingsRow
+                icon={<KeyRound className="h-5 w-5 text-primary" />}
+                title={CHANNEL_TITLES['api-channel']}
+                description="Programmatic access for SDK clients and integrations."
+                onClick={() => setSelectedChannel('api-channel')}
+              />
+              <SettingsRow
+                icon={<Wrench className="h-5 w-5 text-primary" />}
+                title={CHANNEL_TITLES['mcp-channel']}
+                description="Connect Model Context Protocol clients to this agent."
+                onClick={() => setSelectedChannel('mcp-channel')}
+              />
+            </SettingsRowList>
+          </section>
+          ) : null}
+
+          {mode === 'channels' && !isAnonLoading && channelIndexEnabled && selectedChannel !== null ? (
+          <button
+            type="button"
+            onClick={() => setSelectedChannel(null)}
+            className="inline-flex items-center gap-1 self-start text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            All channels
+          </button>
+          ) : null}
+
+          {mode === 'channels' && !isAnonLoading && resolvedChannel === 'public-chat-link' ? (
           <section id="public-chat-link" className="space-y-6 scroll-mt-24">
             {anonSettings ? (
               <SettingsCard
@@ -1400,6 +1475,7 @@ export function WorkspaceAssistantChannelsTab({
           ) : null}
 
 
+          {mode !== 'channels' || (!isAnonLoading && resolvedChannel === 'website-embed') ? (
           <WebsiteEmbedSettingsController
             mode={mode}
             anonSettings={anonSettings}
@@ -1415,14 +1491,15 @@ export function WorkspaceAssistantChannelsTab({
             setSaveState={setSaveState}
             setSaveError={setSaveError}
           />
+          ) : null}
 
-          {mode === 'channels' && !isAnonLoading ? (
+          {mode === 'channels' && !isAnonLoading && resolvedChannel === 'api-channel' ? (
           <section id="api-channel" className="space-y-6 scroll-mt-24">
             <ApiChannelCard workspaceId={activeWorkspaceId} />
           </section>
           ) : null}
 
-          {mode === 'channels' && !isAnonLoading ? (
+          {mode === 'channels' && !isAnonLoading && resolvedChannel === 'mcp-channel' ? (
           <section id="mcp-channel" className="space-y-6 scroll-mt-24">
             <McpChannelCard workspaceId={activeWorkspaceId} />
           </section>
@@ -1652,7 +1729,7 @@ export function WorkspaceAssistantChannelsTab({
           </section>
           ) : null}
 
-          {mode === 'assistant' && agentId ? (
+          {mode === 'assistant' && agentId && showSection('danger') ? (
           <section id="agent-danger-zone" className="space-y-6 scroll-mt-24">
             <SettingsCard
               icon={<ShieldAlert className="h-5 w-5 text-destructive" />}

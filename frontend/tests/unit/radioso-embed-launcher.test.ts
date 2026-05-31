@@ -9,6 +9,7 @@ class FakeElement {
   readonly dataset: Record<string, string> = {}
   readonly style: Record<string, string | ((name: string, value: string) => void)>
   readonly children: FakeElement[] = []
+  readonly eventListeners = new Map<string, Array<(event: unknown) => void>>()
   attributes = new Map<string, string>()
   contentWindow: object
   parentNode: FakeElement | null = null
@@ -21,6 +22,7 @@ class FakeElement {
   loading = ''
   referrerPolicy = ''
   allow = ''
+  draggable = true
 
   constructor(tagName: string) {
     this.tagName = tagName.toUpperCase()
@@ -66,8 +68,29 @@ class FakeElement {
     return this.attributes.get(name) ?? null
   }
 
-  addEventListener() {
-    // The launcher registers browser events; the regression only needs mounted DOM state.
+  addEventListener(eventName: string, handler: (event: unknown) => void) {
+    const handlers = this.eventListeners.get(eventName) ?? []
+    handlers.push(handler)
+    this.eventListeners.set(eventName, handlers)
+  }
+
+  dispatchEvent(eventName: string, event: Record<string, unknown> = {}) {
+    for (const handler of this.eventListeners.get(eventName) ?? []) {
+      handler({
+        target: this,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+        ...event,
+      })
+    }
+  }
+
+  setPointerCapture() {
+    // Pointer capture is not relevant to the fake DOM, but the launcher checks for it.
+  }
+
+  releasePointerCapture() {
+    // Pointer capture is not relevant to the fake DOM, but the launcher checks for it.
   }
 
   querySelector(selector: string): FakeElement | null {
@@ -292,6 +315,222 @@ describe('radioso embed launcher', () => {
     expect(button.children).toHaveLength(2)
     expect(button.children.some((child) => child.textContent === 'Claudio')).toBe(false)
     expect(button.querySelector('[data-radioso-launcher-avatar="true"]')?.style.width).toBe('3rem')
+  })
+
+  it('lets the collapsed bubble drag with a comet trail without opening chat', async () => {
+    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const script = new FakeElement('script')
+    script.src = 'https://app.example.com/radioso-embed.js'
+    script.dataset.radiosoToken = 'embed-token'
+
+    const head = new FakeElement('head')
+    const body = new FakeElement('body')
+    const document = {
+      readyState: 'complete',
+      currentScript: script,
+      scripts: [script],
+      head,
+      body,
+      documentElement: { clientWidth: 1024, clientHeight: 768, lang: 'en' },
+      title: 'Host page',
+      createElement: (tagName: string) => new FakeElement(tagName),
+      getElementById: () => null,
+      addEventListener: vi.fn(),
+    }
+    const sessionStorage = {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+    }
+    const fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        launcherLabel: 'Chat with us',
+        launcherPosition: 'bottom-right',
+        theme: {
+          brand: '#0f172a',
+          brandText: '#f8fafc',
+          surface: '#ffffff',
+          text: '#0f172a',
+        },
+        copy: {},
+        expertOverrides: {},
+        proactiveGreetingEnabled: false,
+      }),
+    }))
+    const scheduledTimers: Array<() => void> = []
+    const clearedTimers = new Set<number>()
+    const setTimeout = vi.fn((callback: () => void) => {
+      const timerId = scheduledTimers.length
+      scheduledTimers.push(callback)
+      return timerId
+    })
+    const clearTimeout = vi.fn((timerId: number) => {
+      clearedTimers.add(timerId)
+    })
+    const window = {
+      location: { href: 'https://host.example.com/page', origin: 'https://host.example.com' },
+      navigator: { languages: ['en-US'], language: 'en-US' },
+      sessionStorage,
+      matchMedia: vi.fn(() => ({ matches: false })),
+      innerWidth: 1024,
+      innerHeight: 768,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        callback(0)
+        return 1
+      },
+      setTimeout,
+      clearTimeout,
+      visualViewport: null,
+    }
+
+    vm.runInNewContext(launcherSource, {
+      document,
+      window,
+      fetch,
+      URL,
+      setTimeout,
+      clearTimeout,
+      requestAnimationFrame: window.requestAnimationFrame,
+    })
+    for (let index = 0; index < 10; index += 1) {
+      await Promise.resolve()
+    }
+
+    const button = collectElements(body, (element) => element.tagName === 'BUTTON')[0]
+    const avatar = button.querySelector('[data-radioso-launcher-avatar="true"]')
+    const avatarImage = collectElements(button, (element) => element.tagName === 'IMG')[0]
+    expect(avatar?.style.pointerEvents).toBe('none')
+    expect(avatarImage.draggable).toBe(false)
+
+    button.dispatchEvent('pointerdown', { pointerId: 1, button: 0, isPrimary: true, clientX: 960, clientY: 710 })
+    button.dispatchEvent('pointermove', { pointerId: 1, clientX: 820, clientY: 610 })
+    expect(button.style.transform).toBe('translate3d(-140px, -100px, 0) rotate(-4.9deg)')
+
+    button.dispatchEvent('pointerup', { pointerId: 1, clientX: 820, clientY: 610 })
+
+    expect(button.style.transform).toBe('translate3d(0px, 0px, 0) rotate(0deg)')
+    expect(collectElements(body, (element) => element.className === 'radioso-comet-square').length).toBeGreaterThan(10)
+
+    button.dispatchEvent('pointerdown', { pointerId: 2, button: 0, isPrimary: true, clientX: 960, clientY: 710 })
+    expect(clearTimeout.mock.calls.length).toBeGreaterThanOrEqual(9)
+
+    for (const [timerId, callback] of [...scheduledTimers].entries()) {
+      if (!clearedTimers.has(timerId)) {
+        callback()
+      }
+    }
+    button.dispatchEvent('click')
+    expect(collectElements(body, (element) => element.tagName === 'IFRAME')).toHaveLength(0)
+  })
+
+  it('keeps an over-dragged bubble inside the viewport and returns it on window release', async () => {
+    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const script = new FakeElement('script')
+    script.src = 'https://app.example.com/radioso-embed.js'
+    script.dataset.radiosoToken = 'embed-token'
+
+    const head = new FakeElement('head')
+    const body = new FakeElement('body')
+    const document = {
+      readyState: 'complete',
+      currentScript: script,
+      scripts: [script],
+      head,
+      body,
+      documentElement: { clientWidth: 1024, clientHeight: 768, lang: 'en' },
+      title: 'Host page',
+      createElement: (tagName: string) => new FakeElement(tagName),
+      getElementById: () => null,
+      addEventListener: vi.fn(),
+    }
+    const sessionStorage = {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+    }
+    const fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        launcherLabel: 'Chat with us',
+        launcherPosition: 'bottom-right',
+        theme: {
+          brand: '#0f172a',
+          brandText: '#f8fafc',
+          surface: '#ffffff',
+          text: '#0f172a',
+        },
+        copy: {},
+        expertOverrides: {},
+        proactiveGreetingEnabled: false,
+      }),
+    }))
+    const setTimeout = vi.fn()
+    const window = {
+      location: { href: 'https://host.example.com/page', origin: 'https://host.example.com' },
+      navigator: { languages: ['en-US'], language: 'en-US' },
+      sessionStorage,
+      matchMedia: vi.fn(() => ({ matches: false })),
+      innerWidth: 1024,
+      innerHeight: 768,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        callback(0)
+        return 1
+      },
+      setTimeout,
+      clearTimeout: vi.fn(),
+      visualViewport: null,
+    }
+
+    vm.runInNewContext(launcherSource, {
+      document,
+      window,
+      fetch,
+      URL,
+      setTimeout,
+      clearTimeout: vi.fn(),
+      requestAnimationFrame: window.requestAnimationFrame,
+    })
+    for (let index = 0; index < 10; index += 1) {
+      await Promise.resolve()
+    }
+
+    const button = collectElements(body, (element) => element.tagName === 'BUTTON')[0] as FakeElement & {
+      getBoundingClientRect: () => {
+        left: number
+        right: number
+        top: number
+        bottom: number
+        width: number
+        height: number
+      }
+    }
+    button.getBoundingClientRect = () => ({
+      left: 900,
+      right: 1010,
+      top: 690,
+      bottom: 750,
+      width: 110,
+      height: 60,
+    })
+
+    button.dispatchEvent('pointerdown', { pointerId: 1, button: 0, isPrimary: true, clientX: 960, clientY: 710 })
+    button.dispatchEvent('pointermove', { pointerId: 1, clientX: 2000, clientY: 1200 })
+
+    expect(button.style.transform).toBe('translate3d(6px, 10px, 0) rotate(0.21deg)')
+
+    const windowPointerUp = window.addEventListener.mock.calls.find(([eventName]) => eventName === 'pointerup')?.[1] as
+      | ((event: unknown) => void)
+      | undefined
+    expect(windowPointerUp).toBeDefined()
+    windowPointerUp?.({ pointerId: 1, clientX: 2000, clientY: 1200, preventDefault: vi.fn() })
+
+    expect(button.style.transform).toBe('translate3d(0px, 0px, 0) rotate(0deg)')
+    const removedWindowListeners = window.removeEventListener.mock.calls.map(([eventName]) => eventName)
+    expect(removedWindowListeners).toEqual(expect.arrayContaining(['pointerup', 'pointercancel', 'blur']))
+    expect(collectElements(body, (element) => element.tagName === 'IFRAME')).toHaveLength(0)
   })
 
   it('toggles the mounted embed fullscreen state on iframe request', async () => {

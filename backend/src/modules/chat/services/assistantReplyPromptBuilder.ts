@@ -1,8 +1,10 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { SteeringRule } from "../../../shared/domain/steeringRule.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ChatTurnRoute } from "./chatTurnIntentService.js";
 import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
+import { appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 
 export const buildAssistantReplyPrompt = (input: {
   route: ChatTurnRoute;
@@ -14,11 +16,12 @@ export const buildAssistantReplyPrompt = (input: {
   inScopeRequest?: string;
   outsideScopeRequest?: string;
   pageContextBlock?: string;
+  steering?: SteeringRule[];
 }): string => {
   const historySection = input.history
     .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
     .join("\n");
-  return renderPromptTemplate("chat/non-retrieval-answer.md", {
+  const prompt = renderPromptTemplate("chat/non-retrieval-answer.md", {
     route_type: input.route,
     identity_status:
       input.route === CHAT_TURN_ROUTE.ASSISTANT_IDENTITY && !input.responseIdentity
@@ -32,4 +35,5 @@ export const buildAssistantReplyPrompt = (input: {
     history_section: historySection || "No prior history",
     query: input.query,
   });
+  return appendSteeringBlock(prompt, input.steering);
 };

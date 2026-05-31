@@ -43,18 +43,6 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
       },
     ],
   },
-  users: {
-    id: 'users',
-    title: 'Users',
-    summary: 'Invite teammates and manage account access.',
-    sections: [
-      {
-        id: 'users-access',
-        label: 'Users and invitations',
-        summary: 'Active users, invitations, and account access.',
-      },
-    ],
-  },
 }
 
 export const getSettingsTabDescriptor = (tab: SettingsTab): SettingsTabDescriptor =>

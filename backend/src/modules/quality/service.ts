@@ -6,7 +6,10 @@ import type {
   LowQualityTurn,
   LowQualityTurnsPage,
   QualityFeedbackValue,
+  QualityTriageRecord,
+  QualityTriageState,
   QualityTurnsServicePort,
+  SetTriageStateInput,
 } from "./contracts/index.js";
 
 type TurnRow = QueryResultRow & {
@@ -24,6 +27,9 @@ type TurnRow = QueryResultRow & {
   up_count: string;
   down_count: string;
   created_at: Date | string;
+  triage_state: string;
+  triage_reason: string | null;
+  triage_updated_at: Date | string | null;
 };
 
 type CommentRow = QueryResultRow & {
@@ -74,6 +80,7 @@ export class QualityTurnsService implements QualityTurnsServicePort {
     const actions = input.actions ?? [];
     const statuses = input.statuses ?? [];
     const feedbackValues = input.feedbackValues ?? [];
+    const triageStates = input.triageStates ?? [];
 
     if (actions.length > 0) {
       params.push(actions.map((action) => action.skillName));
@@ -94,6 +101,11 @@ export class QualityTurnsService implements QualityTurnsServicePort {
       filters.push(`m.skill_status = ANY($${params.length}::text[])`);
     }
 
+    if (triageStates.length > 0) {
+      params.push(triageStates);
+      filters.push(`COALESCE(tr.state, 'open') = ANY($${params.length}::text[])`);
+    }
+
     if (feedbackValues.length > 0) {
       params.push(feedbackValues);
       filters.push(
@@ -105,9 +117,17 @@ export class QualityTurnsService implements QualityTurnsServicePort {
       );
     }
 
-    if (input.hasComment) {
+    if (input.hasComment === true) {
       filters.push(
         `EXISTS (
+           SELECT 1 FROM assistant_answer_feedback f
+           WHERE f.assistant_message_id = m.id
+             AND f.comment IS NOT NULL
+         )`,
+      );
+    } else if (input.hasComment === false) {
+      filters.push(
+        `NOT EXISTS (
            SELECT 1 FROM assistant_answer_feedback f
            WHERE f.assistant_message_id = m.id
              AND f.comment IS NOT NULL
@@ -172,11 +192,19 @@ export class QualityTurnsService implements QualityTurnsServicePort {
        ) turn_event ON TRUE`
       : "";
 
+    // The list query always projects triage state, so it joins unconditionally
+    // below. The count query only needs the join when a triage filter is set.
+    const triageJoin =
+      `LEFT JOIN assistant_answer_triage tr
+         ON tr.workspace_id = m.workspace_id AND tr.assistant_message_id = m.id`;
+    const countTriageJoin = triageStates.length > 0 ? triageJoin : "";
+
     const [totalRow] = await this.database.query<{ total: string }>(
       `SELECT COUNT(*)::text AS total
        FROM messages m
        JOIN conversations c ON c.id = m.conversation_id AND c.workspace_id = m.workspace_id
        ${countLatencyJoin}
+       ${countTriageJoin}
        WHERE ${whereClause}`,
       params,
     );
@@ -200,6 +228,9 @@ export class QualityTurnsService implements QualityTurnsServicePort {
          m.skill_status,
          turn_event.total_latency_ms,
          m.created_at,
+         COALESCE(tr.state, 'open') AS triage_state,
+         tr.reason AS triage_reason,
+         tr.updated_at AS triage_updated_at,
          (
            SELECT um.content
            FROM messages um
@@ -222,6 +253,7 @@ export class QualityTurnsService implements QualityTurnsServicePort {
        FROM messages m
        JOIN conversations c ON c.id = m.conversation_id AND c.workspace_id = m.workspace_id
        LEFT JOIN agents a ON a.id = c.agent_id
+       ${triageJoin}
        LEFT JOIN LATERAL (
          SELECT
            CASE
@@ -263,6 +295,11 @@ export class QualityTurnsService implements QualityTurnsServicePort {
         downCount: Number(row.down_count),
         comments: commentsByMessageId.get(row.assistant_message_id) ?? [],
       },
+      triage: {
+        state: row.triage_state as QualityTriageState,
+        reason: row.triage_reason,
+        updatedAt: row.triage_updated_at === null ? null : serializeDate(row.triage_updated_at),
+      },
     }));
 
     const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
@@ -274,6 +311,44 @@ export class QualityTurnsService implements QualityTurnsServicePort {
       page,
       pageSize: limit,
       totalPages,
+    };
+  }
+
+  async setTriageState(
+    workspaceId: string,
+    input: SetTriageStateInput,
+  ): Promise<QualityTriageRecord | null> {
+    // Scope the upsert to assistant turns in this workspace: the SELECT yields
+    // no row (and the insert is a no-op) when the turn is missing or foreign,
+    // which we surface as a 404 at the route.
+    const rows = await this.database.query<{
+      state: string;
+      reason: string | null;
+      updated_at: Date | string;
+    }>(
+      `INSERT INTO assistant_answer_triage (workspace_id, assistant_message_id, state, reason, updated_by, updated_at)
+       SELECT m.workspace_id, m.id, $3, $4, $5, NOW()
+       FROM messages m
+       WHERE m.id = $2 AND m.workspace_id = $1 AND m.role = 'assistant'
+       ON CONFLICT (workspace_id, assistant_message_id)
+       DO UPDATE SET
+         state = EXCLUDED.state,
+         reason = EXCLUDED.reason,
+         updated_by = EXCLUDED.updated_by,
+         updated_at = NOW()
+       RETURNING state, reason, updated_at`,
+      [workspaceId, input.assistantMessageId, input.state, input.reason ?? null, input.updatedBy ?? null],
+    );
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+
+    return {
+      state: row.state as QualityTriageState,
+      reason: row.reason,
+      updatedAt: serializeDate(row.updated_at),
     };
   }
 

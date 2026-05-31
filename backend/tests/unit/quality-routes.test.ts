@@ -6,21 +6,38 @@ import { createQualityRoutes, type QualityRouteDependencies } from "../../src/mo
 import type {
   ListLowQualityTurnsInput,
   LowQualityTurnsPage,
+  QualityTriageRecord,
   QualityTurnsServicePort,
+  SetTriageStateInput,
 } from "../../src/modules/quality/contracts/index.js";
 
 const WORKSPACE_ID = "11111111-1111-1111-1111-111111111111";
 const ACCOUNT_ID = "22222222-2222-2222-2222-222222222222";
 const USER_ID = "33333333-3333-3333-3333-333333333333";
 
+const DEFAULT_TRIAGE_RESULT: QualityTriageRecord = {
+  state: "resolved",
+  reason: "Fixed",
+  updatedAt: "2026-05-23T10:00:00.000Z",
+};
+
 class CapturingService implements QualityTurnsServicePort {
   readonly calls: Array<{ workspaceId: string; input: ListLowQualityTurnsInput }> = [];
+  readonly triageCalls: Array<{ workspaceId: string; input: SetTriageStateInput }> = [];
 
-  constructor(private readonly page: LowQualityTurnsPage) {}
+  constructor(
+    private readonly page: LowQualityTurnsPage,
+    private readonly triageResult: QualityTriageRecord | null = DEFAULT_TRIAGE_RESULT,
+  ) {}
 
   async listLowQualityTurns(workspaceId: string, input: ListLowQualityTurnsInput): Promise<LowQualityTurnsPage> {
     this.calls.push({ workspaceId, input });
     return this.page;
+  }
+
+  async setTriageState(workspaceId: string, input: SetTriageStateInput): Promise<QualityTriageRecord | null> {
+    this.triageCalls.push({ workspaceId, input });
+    return this.triageResult;
   }
 }
 
@@ -131,6 +148,7 @@ describe("quality routes", () => {
           totalLatencyMs: 3200,
           createdAt: "2026-05-22T10:00:00.000Z",
           feedback: { upCount: 0, downCount: 1, comments: [] },
+          triage: { state: "open", reason: null, updatedAt: null },
         },
       ],
     };
@@ -191,6 +209,22 @@ describe("quality routes", () => {
     });
   });
 
+  it("forwards hasComment=false from the query string", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/turns")
+      .query({ hasComment: "false" })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(200);
+    expect(service.calls[0]?.input).toEqual({
+      hasComment: false,
+      limit: 25,
+    });
+  });
+
   it("rejects malformed action filter entries with 400", async () => {
     const service = new CapturingService(emptyPage);
     const app = createApp(service);
@@ -202,5 +236,80 @@ describe("quality routes", () => {
 
     expect(response.status).toBe(400);
     expect(service.calls).toHaveLength(0);
+  });
+
+  it("forwards triage-state filters from the query string", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/turns")
+      .query({ triage: "open,resolved" })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(200);
+    expect(service.calls[0]?.input.triageStates).toEqual(["open", "resolved"]);
+  });
+
+  it("rejects an unknown triage-state filter with 400", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/turns")
+      .query({ triage: "bogus" })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(400);
+    expect(service.calls).toHaveLength(0);
+  });
+
+  it("sets triage state for an authenticated session caller", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+      .set("Cookie", "radioso_session=valid-session")
+      .send({ state: "resolved", reason: "Added knowledge" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(DEFAULT_TRIAGE_RESULT);
+    expect(service.triageCalls).toEqual([
+      {
+        workspaceId: WORKSPACE_ID,
+        input: {
+          assistantMessageId: "44444444-4444-4444-4444-444444444444",
+          state: "resolved",
+          reason: "Added knowledge",
+          updatedBy: USER_ID,
+        },
+      },
+    ]);
+  });
+
+  it("rejects an invalid triage state with 400", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+      .set("Cookie", "radioso_session=valid-session")
+      .send({ state: "bogus" });
+
+    expect(response.status).toBe(400);
+    expect(service.triageCalls).toHaveLength(0);
+  });
+
+  it("returns 404 when the turn is not in the workspace", async () => {
+    const service = new CapturingService(emptyPage, null);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+      .set("Cookie", "radioso_session=valid-session")
+      .send({ state: "acknowledged" });
+
+    expect(response.status).toBe(404);
   });
 });

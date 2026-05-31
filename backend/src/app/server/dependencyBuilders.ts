@@ -42,6 +42,7 @@ import {
   ChatService,
   ChainedChatIntakeProvider,
   buildChatTurnRuntime,
+  createRouteScopedDirectiveSteering,
   createSkillOutcomeCapabilityProvider,
   NoopAnswerFeedbackHistoryProvider,
   NoopChatIntakeProvider,
@@ -110,7 +111,6 @@ import {
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
 import { SkillCatalogService, retrievalAnswerSkillDefinition } from "../../modules/skills/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../modules/retrieval/public.js";
-import { createDirectiveSteering } from "../../modules/directives/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
@@ -771,6 +771,13 @@ export const buildChatServices = (input: {
       input.composition.skillCatalogRegistry,
     ),
   });
+  // Behavioral steering comes from application composition. Chat and direct
+  // retrieval answer surfaces share this port so extracted answer directives
+  // stay consistent across `/assistant/chat`, `/retrieval/answer`, and MCP.
+  const directiveSteering = createRouteScopedDirectiveSteering({
+    capabilityPolicy: input.composition.capabilityPolicy,
+    registrations: input.composition.directiveRegistrations,
+  });
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -793,16 +800,14 @@ export const buildChatServices = (input: {
     usageLimitPolicy: input.usageLimitPolicy,
     agentService: input.agentService,
     chatIntakeProvider,
-    // 067: behavioral steering. Empty standing set by default, so only the
-    // deterministic always-match matcher is wired and no model call happens.
+    // 067: behavioral steering. The standing set is supplied by application
+    // composition; default answer behavior is registered by a built-in module.
     // The probabilistic (contextual) matcher is intentionally not wired here: the
     // LLM registry moved from a raw TextGenerationClient to usage-accounted
     // ModelInferencePipelines (#473), so wiring it requires refactoring
     // ModelDirectiveMatchGateway onto ModelInferencePipeline with a usage
     // context — a follow-up to land before any contextual directive ships.
-    directiveSteering: createDirectiveSteering({
-      capabilityPolicy: input.composition.capabilityPolicy,
-    }),
+    directiveSteering,
     conversationEngine: createDefaultConversationEngine(input.env),
   });
   const chatBootstrapService = new ChatBootstrapService(
@@ -827,6 +832,7 @@ export const buildChatServices = (input: {
     chatGateway,
     usageLimitPolicy: input.usageLimitPolicy,
     auditService: input.auditService,
+    directiveSteering,
   });
 
   return {

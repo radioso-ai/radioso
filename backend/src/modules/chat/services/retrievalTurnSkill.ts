@@ -142,6 +142,7 @@ export class RetrievalAnswerComposer {
           query,
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
+          steering: session.directiveSteering?.rules ?? [],
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "grounded_miss"),
         });
@@ -172,6 +173,7 @@ export class RetrievalAnswerComposer {
         query,
         userExpectedLocale,
         answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
+        steering: session.directiveSteering?.rules ?? [],
         workspaceContext: this.support.buildChatWorkspaceContext(session),
         usageContext: this.support.buildChatUsageContext(session, accountId, "grounded_unsupported"),
       });
@@ -206,6 +208,7 @@ export class RetrievalAnswerComposer {
           query,
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
+          steering: session.directiveSteering?.rules ?? [],
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded_miss"),
         });

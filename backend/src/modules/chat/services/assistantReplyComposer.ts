@@ -45,6 +45,7 @@ export class AssistantReplyComposer {
       outsideScopeRequest: session.retrieval.diagnostics.rewriteProposal?.outsideScopeRequest,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
       pageContextBlock: this.support.buildPageContextBlock(session.pageContext),
+      steering: session.directiveSteering?.rules ?? [],
     });
   }
 
@@ -100,6 +101,7 @@ export class AssistantReplyComposer {
       query,
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
+      steering: session.directiveSteering?.rules ?? [],
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `${this.config.outcomeKind}_miss`),
     });
@@ -149,6 +151,7 @@ export class AssistantReplyComposer {
       query,
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
+      steering: session.directiveSteering?.rules ?? [],
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `stream_${this.config.outcomeKind}_miss`),
     });

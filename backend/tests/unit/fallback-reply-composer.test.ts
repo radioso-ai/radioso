@@ -109,6 +109,39 @@ describe("grounded miss response composer", () => {
     expect(observedPrompt).toContain("Do not mention internal labels");
   });
 
+  it("passes matched steering directives into no-context generation", async () => {
+    let observedPrompt = "";
+    const composer = new ModelFallbackReplyComposer(pipeline({
+      metadata: {
+        capability: "chat",
+        provider: "openai",
+        model: "test-model",
+      },
+      async complete({ prompt }) {
+        observedPrompt = prompt;
+        return textResult("MODEL_NO_CONTEXT");
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }));
+
+    await composer.composeNoContext({
+      query: "Thanks",
+      usageContext,
+      steering: [
+        {
+          action: "Prefer short paragraphs and avoid unnecessary structure.",
+          source: "directive",
+          lifespan: "response",
+        },
+      ],
+    });
+
+    expect(observedPrompt).toContain("The following behavioral directives apply to this turn");
+    expect(observedPrompt).toContain("Prefer short paragraphs and avoid unnecessary structure.");
+  });
+
   it("forbids librarian phrasing in the grounded-miss prompt rules", async () => {
     let observedPrompt = "";
     const composer = new ModelFallbackReplyComposer(pipeline({

@@ -8045,6 +8045,41 @@
           "failed"
         ]
       },
+      "QualityTriageState": {
+        "type": "string",
+        "enum": [
+          "open",
+          "acknowledged",
+          "resolved",
+          "dismissed"
+        ]
+      },
+      "QualityTriageRecord": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/QualityTriageState"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "state",
+          "reason",
+          "updatedAt"
+        ]
+      },
       "QualityFeedbackComment": {
         "type": "object",
         "properties": {
@@ -8165,6 +8200,9 @@
           },
           "feedback": {
             "$ref": "#/components/schemas/QualityFeedbackSummary"
+          },
+          "triage": {
+            "$ref": "#/components/schemas/QualityTriageRecord"
           }
         },
         "required": [
@@ -8180,7 +8218,26 @@
           "skillStatus",
           "totalLatencyMs",
           "createdAt",
-          "feedback"
+          "feedback",
+          "triage"
+        ]
+      },
+      "SetQualityTriageRequest": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/QualityTriageState"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "state"
         ]
       },
       "LowQualityTurnsPage": {
@@ -13954,12 +14011,24 @@
           },
           {
             "schema": {
+              "type": "string",
+              "description": "Comma-separated `QualityTriageState` values (`open`, `acknowledged`, `resolved`, `dismissed`)."
+            },
+            "required": false,
+            "description": "Comma-separated `QualityTriageState` values (`open`, `acknowledged`, `resolved`, `dismissed`).",
+            "name": "triage",
+            "in": "query"
+          },
+          {
+            "schema": {
               "type": [
                 "boolean",
                 "null"
-              ]
+              ],
+              "description": "When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned."
             },
             "required": false,
+            "description": "When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned.",
             "name": "hasComment",
             "in": "query"
           },
@@ -14080,6 +14149,94 @@
           },
           "403": {
             "description": "Caller lacks the workspace.quality.read permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quality/turns/{assistantMessageId}/triage": {
+      "put": {
+        "tags": [
+          "Quality"
+        ],
+        "summary": "Set the triage state of an assistant turn",
+        "description": "Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an assistant turn. Admin/owner only (requires the `workspace.quality.manage` permission).",
+        "operationId": "setQualityTurnTriage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "assistantMessageId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetQualityTriageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated triage record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QualityTriageRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or assistant message id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks the workspace.quality.manage permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Assistant turn not found in this workspace",
             "content": {
               "application/json": {
                 "schema": {

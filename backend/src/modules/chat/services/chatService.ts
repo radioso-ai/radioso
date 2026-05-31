@@ -572,6 +572,7 @@ export class ChatService {
           query: input.query,
           userExpectedLocale: input.userExpectedLocale,
           answerInstructionBlock: this.buildAnswerInstructionBlock(session),
+          steering: session.directiveSteering?.rules ?? [],
           workspaceContext: this.buildChatWorkspaceContext(session),
           usageContext: this.buildChatUsageContext(session, input.accountId, "stream_grounded_unsupported"),
         });

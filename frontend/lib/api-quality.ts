@@ -11,6 +11,13 @@ export type QualitySkillStatus =
   | 'expired'
   | 'failed'
 export type FeedbackValue = 'up' | 'down'
+export type QualityTriageState = 'open' | 'acknowledged' | 'resolved' | 'dismissed'
+
+export interface QualityTriageRecord {
+  state: QualityTriageState
+  reason: string | null
+  updatedAt: string | null
+}
 
 export interface QualityActionFilter {
   skillName: string
@@ -41,6 +48,7 @@ export interface LowQualityTurn {
   totalLatencyMs: number | null
   createdAt: string
   feedback: QualityFeedbackSummary
+  triage: QualityTriageRecord
 }
 
 export interface LowQualityTurnsPage {
@@ -55,6 +63,7 @@ export interface ListLowQualityTurnsOptions {
   actions?: QualityActionFilter[]
   statuses?: QualitySkillStatus[]
   feedback?: FeedbackValue[]
+  triageStates?: QualityTriageState[]
   hasComment?: boolean
   minTotalLatencyMs?: number
   maxTotalLatencyMs?: number
@@ -77,6 +86,7 @@ export const qualityApi = {
       actions: encodeActions(options.actions),
       statuses: options.statuses && options.statuses.length > 0 ? options.statuses.join(',') : undefined,
       feedback: options.feedback && options.feedback.length > 0 ? options.feedback.join(',') : undefined,
+      triage: options.triageStates && options.triageStates.length > 0 ? options.triageStates.join(',') : undefined,
       hasComment: options.hasComment === undefined ? undefined : String(options.hasComment),
       minTotalLatencyMs: options.minTotalLatencyMs === undefined ? undefined : String(options.minTotalLatencyMs),
       maxTotalLatencyMs: options.maxTotalLatencyMs === undefined ? undefined : String(options.maxTotalLatencyMs),
@@ -87,5 +97,16 @@ export const qualityApi = {
     }
     const path = withQuery('/quality/turns', query)
     return request<LowQualityTurnsPage>(path, { method: 'GET' }, { withApiToken: true })
+  },
+
+  async setTriageState(
+    assistantMessageId: string,
+    input: { state: QualityTriageState; reason?: string | null },
+  ): Promise<QualityTriageRecord> {
+    return request<QualityTriageRecord>(
+      `/quality/turns/${encodeURIComponent(assistantMessageId)}/triage`,
+      { method: 'PUT', body: JSON.stringify(input) },
+      { withApiToken: true },
+    )
   },
 }

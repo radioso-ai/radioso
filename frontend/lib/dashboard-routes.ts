@@ -1,7 +1,8 @@
-export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'eval' | 'settings' | 'usage'
+export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'eval' | 'settings' | 'account'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
 export type KnowledgeTab = 'documents' | 'sources' | 'ingestion' | 'retrieval'
-export type SettingsTab = 'workspace' | 'providers' | 'users'
+export type SettingsTab = 'workspace' | 'providers'
+export type AccountTab = 'members' | 'usage'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
 export type HistoryItemKind = 'chat' | 'search' | 'contact'
 export type QualityStatusFilter =
@@ -26,6 +27,14 @@ const QUALITY_STATUS_VALUES: ReadonlySet<QualityStatusFilter> = new Set([
 ])
 export type QualityFeedbackFilter = 'up' | 'down'
 export type QualityLatencyFilter = 'lt_2s' | '2s_5s' | '5s_10s' | 'gte_10s'
+export type QualityTriageFilter = 'open' | 'acknowledged' | 'resolved' | 'dismissed'
+
+const QUALITY_TRIAGE_VALUES: ReadonlySet<QualityTriageFilter> = new Set([
+  'open',
+  'acknowledged',
+  'resolved',
+  'dismissed',
+])
 
 export interface QualityActionRoute {
   skillName: string
@@ -40,6 +49,7 @@ export interface DashboardRouteState {
   agentTab?: AgentTab
   knowledgeTab?: KnowledgeTab
   settingsTab?: SettingsTab
+  accountTab?: AccountTab
   documentId?: string
   documentsPage?: number
   documentSourceFilter?: string
@@ -53,6 +63,7 @@ export interface DashboardRouteState {
   qualityStatuses?: QualityStatusFilter[]
   qualityFeedback?: QualityFeedbackFilter[]
   qualityLatency?: QualityLatencyFilter
+  qualityTriageStates?: QualityTriageFilter[]
   qualityHasComment?: boolean
   evalCaseId?: string
   anchor?: string
@@ -66,6 +77,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'agentTab',
   'knowledgeTab',
   'settingsTab',
+  'accountTab',
   'documentId',
   'documentsPage',
   'documentSourceFilter',
@@ -79,6 +91,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'qualityStatuses',
   'qualityFeedback',
   'qualityLatency',
+  'qualityTriageStates',
   'qualityHasComment',
   'evalCaseId',
   'anchor',
@@ -89,6 +102,7 @@ const DEFAULT_AGENT_TAB: AgentTab = 'chat'
 const DEFAULT_KNOWLEDGE_TAB: KnowledgeTab = 'documents'
 const DEFAULT_HISTORY_FILTER: HistoryFilter = 'all'
 const DEFAULT_SETTINGS_TAB: SettingsTab = 'workspace'
+const DEFAULT_ACCOUNT_TAB: AccountTab = 'members'
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const parsePositiveInt = (value: string | null): number | undefined => {
@@ -169,6 +183,19 @@ const parseQualityLatency = (value: string | null): QualityLatencyFilter | undef
     : undefined
 }
 
+const parseQualityTriageStates = (value: string | null): QualityTriageFilter[] | undefined => {
+  if (!value) {
+    return undefined
+  }
+  const parsed = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry): entry is QualityTriageFilter =>
+      QUALITY_TRIAGE_VALUES.has(entry as QualityTriageFilter),
+    )
+  return parsed.length > 0 ? parsed : undefined
+}
+
 const parseAgentTab = (value: string | null): AgentTab | undefined => {
   if (value === 'chat' || value === 'behavior' || value === 'channels') {
     return value
@@ -191,11 +218,22 @@ const parseKnowledgeTab = (value: string | null): KnowledgeTab | undefined => {
 }
 
 const parseSettingsTab = (value: string | null): SettingsTab | undefined => {
-  if (value === 'workspace' || value === 'providers' || value === 'users') {
+  if (value === 'workspace' || value === 'providers') {
     return value
   }
   if (value === 'general') {
     return 'workspace'
+  }
+
+  return undefined
+}
+
+const parseAccountTab = (value: string | null): AccountTab | undefined => {
+  if (value === 'members' || value === 'usage') {
+    return value
+  }
+  if (value === 'users') {
+    return 'members'
   }
 
   return undefined
@@ -285,6 +323,13 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     return normalized
   }
 
+  if (state.section === 'account') {
+    if (state.accountTab && state.accountTab !== DEFAULT_ACCOUNT_TAB) {
+      normalized.accountTab = state.accountTab
+    }
+    return normalized
+  }
+
   if (state.section === 'quality') {
     if (state.qualityPage && state.qualityPage > 1) {
       normalized.qualityPage = state.qualityPage
@@ -300,6 +345,9 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     }
     if (state.qualityLatency) {
       normalized.qualityLatency = state.qualityLatency
+    }
+    if (state.qualityTriageStates && state.qualityTriageStates.length > 0) {
+      normalized.qualityTriageStates = [...state.qualityTriageStates]
     }
     if (state.qualityHasComment) {
       normalized.qualityHasComment = true
@@ -387,6 +435,12 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
   }
 
+  if (normalized.section === 'account') {
+    if (normalized.accountTab) {
+      searchParams.set('tab', normalized.accountTab)
+    }
+  }
+
   if (normalized.section === 'quality') {
     if (normalized.qualityPage && normalized.qualityPage > 1) {
       searchParams.set('page', String(normalized.qualityPage))
@@ -402,6 +456,9 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.qualityLatency) {
       searchParams.set('latency', normalized.qualityLatency)
+    }
+    if (normalized.qualityTriageStates && normalized.qualityTriageStates.length > 0) {
+      searchParams.set('triage', normalized.qualityTriageStates.join(','))
     }
     if (normalized.qualityHasComment) {
       searchParams.set('hasComment', 'true')
@@ -474,7 +531,7 @@ export const buildAccountRoute = (
 
 const parseLegacySettingsRoute = (
   searchParams?: Pick<URLSearchParams, 'get'> | null,
-): Pick<DashboardRouteState, 'section' | 'agentTab' | 'knowledgeTab' | 'settingsTab' | 'anchor'> => {
+): Pick<DashboardRouteState, 'section' | 'agentTab' | 'knowledgeTab' | 'settingsTab' | 'accountTab' | 'anchor'> => {
   const legacyTab = searchParams?.get('tab') ?? null
   const anchor = parseAnchor(searchParams?.get('anchor') ?? null)
 
@@ -486,6 +543,10 @@ const parseLegacySettingsRoute = (
   }
   if (legacyTab === 'ingestion' || legacyTab === 'retrieval') {
     return { section: 'knowledge', knowledgeTab: legacyTab, ...(anchor ? { anchor } : {}) }
+  }
+  // Members moved out of Settings into the Account area.
+  if (legacyTab === 'users') {
+    return { section: 'account', accountTab: 'members' }
   }
 
   return {
@@ -546,7 +607,7 @@ export const parseDashboardRoute = (
 
   if (sectionCandidate === 'users') {
     return rest.length === 0 && !secondSegment
-      ? normalizeState({ section: 'settings', workspaceId, settingsTab: 'users' })
+      ? normalizeState({ section: 'account', workspaceId, accountTab: 'members' })
       : null
   }
 
@@ -614,8 +675,20 @@ export const parseDashboardRoute = (
       return null
     }
     return normalizeState({
-      section: 'usage',
+      section: 'account',
+      accountTab: 'usage',
       workspaceId,
+    })
+  }
+
+  if (sectionCandidate === 'account') {
+    if (secondSegment || thirdSegment || rest.length > 0) {
+      return null
+    }
+    return normalizeState({
+      section: 'account',
+      workspaceId,
+      accountTab: parseAccountTab(searchParams?.get('tab') ?? null),
     })
   }
 
@@ -631,6 +704,7 @@ export const parseDashboardRoute = (
       qualityStatuses: parseQualityStatuses(searchParams?.get('statuses') ?? null),
       qualityFeedback: parseQualityFeedback(searchParams?.get('feedback') ?? null),
       qualityLatency: parseQualityLatency(searchParams?.get('latency') ?? null),
+      qualityTriageStates: parseQualityTriageStates(searchParams?.get('triage') ?? null),
       qualityHasComment: searchParams?.get('hasComment') === 'true' ? true : undefined,
     })
   }
@@ -697,6 +771,14 @@ export const retargetDashboardRouteToWorkspace = (
     return normalizeState({
       section: 'settings',
       settingsTab: state.settingsTab,
+      ...workspaceState,
+    })
+  }
+
+  if (state.section === 'account') {
+    return normalizeState({
+      section: 'account',
+      accountTab: state.accountTab,
       ...workspaceState,
     })
   }

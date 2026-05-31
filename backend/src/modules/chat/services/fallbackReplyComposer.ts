@@ -5,15 +5,18 @@ import type {
   TextGenerationResult,
 } from "../../../shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import type { SteeringRule } from "../../../shared/domain/steeringRule.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import { resolveChatLocale } from "./chatLocale.js";
+import { appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 
 export interface FallbackReplyInput {
   query: string;
   userExpectedLocale?: string | null;
   answerInstructionBlock?: string;
+  steering?: SteeringRule[];
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext: ChatGatewayUsageContext;
 }
@@ -139,11 +142,14 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
     try {
       const request = {
         systemPrompt: GROUNDED_MISS_SYSTEM_PROMPT,
-        prompt: renderGroundedMissSection("prompt", {
-          locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
-          query: input.query,
-          answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
-        }),
+        prompt: appendSteeringBlock(
+          renderGroundedMissSection("prompt", {
+            locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
+            query: input.query,
+            answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
+          }),
+          input.steering,
+        ),
         temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
         maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.noContextMaxOutputTokens,
         // Short utility decline: keep reasoning spend minimal so the token budget

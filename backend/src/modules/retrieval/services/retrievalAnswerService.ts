@@ -19,12 +19,17 @@ import type { CitationEvidence } from "../../chat/contracts/answerTypes.js";
 import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
 import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
+import type { DirectiveSteeringPort } from "../../directives/public.js";
+import { appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
+
+const RETRIEVAL_DIRECTIVE_ROUTE = "retrieval";
 
 export interface RetrievalAnswerServiceDependencies {
   retrievalPipeline: Pick<RetrievalPipelineService, "interpret" | "runInterpreted">;
   chatGateway: Pick<ChatGateway, "answer">;
   usageLimitPolicy?: UsageLimitPolicy;
   auditService?: AuditPort;
+  directiveSteering?: DirectiveSteeringPort;
 }
 
 export class RetrievalAnswerService {
@@ -93,6 +98,16 @@ export class RetrievalAnswerService {
     }
 
     const retrieval = await this.dependencies.retrievalPipeline.runInterpreted(interpretation);
+    const directiveSteering = await this.dependencies.directiveSteering?.steer({
+      workspaceId: input.workspaceId,
+      accountId: input.accountId ?? undefined,
+      turnContext: {
+        query: input.query,
+        route: RETRIEVAL_DIRECTIVE_ROUTE,
+        surface: execution.surface,
+      },
+    });
+    const systemPrompt = appendSteeringBlock(retrieval.systemPrompt, directiveSteering?.rules ?? []);
     const activitySummary = this.activitySummaryPresenter.present(retrieval.diagnostics, {
       execution,
     });
@@ -105,7 +120,7 @@ export class RetrievalAnswerService {
       const rawAnswer = (await this.dependencies.chatGateway.answer({
         query: input.query,
         history,
-        systemPrompt: retrieval.systemPrompt,
+        systemPrompt,
         prompt: retrieval.prompt,
         usageContext: {
           ...usageContext,

@@ -34,6 +34,7 @@ import {
   type FilterDefinition,
   type FilterValues,
 } from '@/components/dashboard/shared/filters'
+import { DashboardPaginatedContent } from '@/components/dashboard/shared/dashboard-paginated-content'
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import {
   DashboardTable,
@@ -1043,10 +1044,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
             : 'No assistant turns match these filters. Try clearing one of them.'}
         </div>
       ) : (
-        <div
-          className={cn('space-y-4 transition-opacity', isFetching && 'opacity-60')}
-          aria-busy={isFetching}
-        >
+        <DashboardPaginatedContent className="space-y-4" isRefreshing={isFetching}>
           {renderPagination()}
 
           <DashboardTable aria-label="Assistant answers to review" minWidth="min-w-[936px]">
@@ -1176,7 +1174,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           </DashboardTable>
 
           {renderPagination()}
-        </div>
+        </DashboardPaginatedContent>
       )}
     </DashboardPage>
     <FilterDialog

@@ -5,6 +5,7 @@ import { FileText, Globe, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { DocumentStatus } from '@/components/dashboard/document-status'
+import { DashboardPaginatedContent } from '@/components/dashboard/shared/dashboard-paginated-content'
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import {
   DashboardTable,
@@ -224,6 +225,8 @@ export function DocumentList({
   const pageItemCount = isLoading ? pageSize : documents.length
   const pageEnd = Math.min(pageStart + pageItemCount, totalDocuments)
   const shouldShowPagination = totalDocuments > pageSize
+  const hasRows = documents.length > 0
+  const isRefreshingRows = isLoading && hasRows
 
   if (isLoading && totalDocuments === 0) {
     return (
@@ -260,7 +263,7 @@ export function DocumentList({
   }
 
   return (
-    <div className="w-full space-y-4">
+    <DashboardPaginatedContent className="w-full space-y-4" isRefreshing={isRefreshingRows}>
       {shouldShowPagination ? (
         <DocumentsPagination
           accountId={accountId}
@@ -275,7 +278,7 @@ export function DocumentList({
           onNext={onNextPage}
         />
       ) : null}
-      {isLoading ? (
+      {isLoading && !hasRows ? (
         <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border">
           <LogoSpinner imageClassName="h-7 w-7" />
         </div>
@@ -321,6 +324,6 @@ export function DocumentList({
           onNext={onNextPage}
         />
       ) : null}
-    </div>
+    </DashboardPaginatedContent>
   )
 }

@@ -81,7 +81,7 @@ export const toConversationTrace = (trace: ActivityTrace | undefined): Conversat
   };
 };
 
-export const toRetrievalStagedContext = (retrieval: RetrievalPipelineResult): StagedContext => ({
+export const toPreparedStagedContext = (retrieval: RetrievalPipelineResult): StagedContext => ({
   kind: "retrieval",
   source: "retrieval.answer",
   data: retrieval,

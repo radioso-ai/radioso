@@ -4,7 +4,7 @@ import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader
 import type { ChatTurnRoute } from "./chatTurnIntentService.js";
 import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
 
-export const buildNonRetrievalAnswerPrompt = (input: {
+export const buildAssistantReplyPrompt = (input: {
   route: ChatTurnRoute;
   responseIdentity?: ResponseIdentity | null;
   answerInstructionBlock: string;

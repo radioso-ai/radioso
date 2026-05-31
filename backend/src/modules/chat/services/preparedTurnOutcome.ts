@@ -1,7 +1,7 @@
 import type { TurnOutcome } from "@radioso/conversation-contract";
 
 import type { PreparedSession } from "./chatSessionPreparer.js";
-import { toConversationTrace, toRetrievalStagedContext } from "./conversationContractMappers.js";
+import { toConversationTrace, toPreparedStagedContext } from "./conversationContractMappers.js";
 
 /**
  * Wraps a prepared chat session's result into a terminal turn outcome for the given
@@ -16,7 +16,7 @@ export const buildPreparedTurnOutcome = (
   kind: options.kind,
   skillName: options.skillName,
   outcome: { status: "completed" },
-  stagedContext: [toRetrievalStagedContext(session.retrieval)],
+  stagedContext: [toPreparedStagedContext(session.retrieval)],
   steering: session.directiveSteering?.rules ?? [],
   trace: toConversationTrace(session.retrieval.trace),
 });

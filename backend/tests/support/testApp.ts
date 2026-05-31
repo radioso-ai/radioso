@@ -19,8 +19,8 @@ import { AssistantChatService } from "../../src/modules/chat/services/assistantC
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../src/modules/agents/public.js";
 import {
-  type GroundedMissResponseComposer,
-} from "../../src/modules/chat/services/groundedMissResponseComposer.js";
+  type FallbackReplyComposer,
+} from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
@@ -225,7 +225,7 @@ interface TestRepositories {
 const appDependencyMap = new WeakMap<object, AppDependencies>();
 const appRepositoryMap = new WeakMap<object, TestRepositories>();
 
-class TestGroundedMissResponseComposer implements GroundedMissResponseComposer {
+class TestFallbackReplyComposer implements FallbackReplyComposer {
   async composeNoContext(): Promise<string> {
     return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
   }
@@ -239,7 +239,7 @@ export const createTestDependencies = (overrides: {
   rerankGateway?: RerankGateway;
   envOverrides?: Partial<Env>;
   abuseControlRepository?: AbuseControlRepositoryPort;
-  groundedMissResponseComposer?: GroundedMissResponseComposer;
+  fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   chatIntakeProvider?: ChatIntakeProviderPort;
@@ -661,7 +661,7 @@ export const createTestDependencies = (overrides: {
     new RetrievalTurnController(retrievalPipeline),
     chatGateway,
     auditService,
-    overrides.groundedMissResponseComposer ?? new TestGroundedMissResponseComposer(),
+    overrides.fallbackReplyComposer ?? new TestFallbackReplyComposer(),
     productAnalyticsService,
     workspaceRepository,
     usageLimitPolicy,
@@ -875,7 +875,7 @@ export const createTestApp = (overrides: {
   rerankGateway?: RerankGateway;
   envOverrides?: Partial<Env>;
   abuseControlRepository?: AbuseControlRepositoryPort;
-  groundedMissResponseComposer?: GroundedMissResponseComposer;
+  fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   chatIntakeProvider?: ChatIntakeProviderPort;

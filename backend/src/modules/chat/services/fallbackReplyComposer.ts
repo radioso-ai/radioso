@@ -10,7 +10,7 @@ import { isProviderCredentialError } from "../../../shared/infra/llm/providerErr
 import type { ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import { resolveChatLocale } from "./chatLocale.js";
 
-export interface GroundedMissNoContextInput {
+export interface FallbackReplyInput {
   query: string;
   userExpectedLocale?: string | null;
   answerInstructionBlock?: string;
@@ -18,12 +18,12 @@ export interface GroundedMissNoContextInput {
   usageContext: ChatGatewayUsageContext;
 }
 
-export interface GroundedMissResponseComposer {
-  composeNoContext(input: GroundedMissNoContextInput): Promise<string>;
+export interface FallbackReplyComposer {
+  composeNoContext(input: FallbackReplyInput): Promise<string>;
 }
 
-export class MissingGroundedMissResponseComposer implements GroundedMissResponseComposer {
-  async composeNoContext(_input: GroundedMissNoContextInput): Promise<string> {
+export class MissingFallbackReplyComposer implements FallbackReplyComposer {
+  async composeNoContext(_input: FallbackReplyInput): Promise<string> {
     return buildNoContextFallback();
   }
 }
@@ -108,12 +108,12 @@ const buildAnswerInstructionBlock = (answerInstructionBlock?: string): string =>
 
 const buildNoContextFallback = (): string => renderGroundedMissSection("fallback_no_context", {});
 
-export class ModelGroundedMissResponseComposer implements GroundedMissResponseComposer {
+export class ModelFallbackReplyComposer implements FallbackReplyComposer {
   constructor(private readonly inference: ModelInferencePipeline) {}
 
   private async completeWithRetry(
     request: TextGenerationRequest,
-    input: GroundedMissNoContextInput,
+    input: FallbackReplyInput,
   ): Promise<{ result: TextGenerationResult; attemptIndex: number }> {
     let lastError: unknown;
     for (let attemptIndex = 1; attemptIndex <= 2; attemptIndex += 1) {
@@ -135,7 +135,7 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     throw lastError;
   }
 
-  async composeNoContext(input: GroundedMissNoContextInput): Promise<string> {
+  async composeNoContext(input: FallbackReplyInput): Promise<string> {
     try {
       const request = {
         systemPrompt: GROUNDED_MISS_SYSTEM_PROMPT,

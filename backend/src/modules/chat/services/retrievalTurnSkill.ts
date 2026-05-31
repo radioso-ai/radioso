@@ -14,7 +14,7 @@ import {
 } from "./groundedAnswerEnvelope.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import { composeGroundedAnswerSystemPrompt } from "./groundedAnswerPromptComposer.js";
-import type { GroundedMissResponseComposer } from "./groundedMissResponseComposer.js";
+import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
 import { buildPreparedTurnOutcome } from "./preparedTurnOutcome.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import { retrievalAnswerSkillDefinition } from "../../skills/public.js";
@@ -57,7 +57,7 @@ export class RetrievalAnswerComposer {
     private readonly support: ChatAnswerSupport,
     private readonly chatGateway: ChatGateway,
     private readonly chatAnswerPresenter: ChatAnswerPresenter,
-    private readonly groundedMissResponseComposer: GroundedMissResponseComposer,
+    private readonly fallbackReplyComposer: FallbackReplyComposer,
   ) {}
 
   composeGroundedSystemPrompt(session: PreparedSession): string {
@@ -138,7 +138,7 @@ export class RetrievalAnswerComposer {
         answer = fallback.answer;
         plannedSuggestions = fallback.suggestions;
       } else {
-        answer = await this.groundedMissResponseComposer.composeNoContext({
+        answer = await this.fallbackReplyComposer.composeNoContext({
           query,
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
@@ -168,7 +168,7 @@ export class RetrievalAnswerComposer {
       answerGrounding,
     );
     if (session.retrieval.contexts.length > 0 && !hasCitedAnswerSegment(presentation)) {
-      const groundedMiss = await this.groundedMissResponseComposer.composeNoContext({
+      const groundedMiss = await this.fallbackReplyComposer.composeNoContext({
         query,
         userExpectedLocale,
         answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
@@ -202,7 +202,7 @@ export class RetrievalAnswerComposer {
     if (session.retrieval.contexts.length === 0) {
       const fallbackEnvelope = await this.generateAnswerWithPageContext(session, query, accountId);
       rawAnswer = fallbackEnvelope?.answer
-        ?? await this.groundedMissResponseComposer.composeNoContext({
+        ?? await this.fallbackReplyComposer.composeNoContext({
           query,
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),

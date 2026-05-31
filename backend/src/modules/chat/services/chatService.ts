@@ -11,9 +11,9 @@ import type { ChatGateway, ChatGatewayInput, ChatGatewayUsageContext } from "../
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ChatStreamEvent, SkillStreamPayload, SkillStreamPhase } from "../contracts/streamEvents.js";
 import {
-  MissingGroundedMissResponseComposer,
-  type GroundedMissResponseComposer,
-} from "./groundedMissResponseComposer.js";
+  MissingFallbackReplyComposer,
+  type FallbackReplyComposer,
+} from "./fallbackReplyComposer.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { AssistantSuggestionExpansionService } from "./assistantSuggestionExpansionService.js";
 import type { ChatResponse } from "../types/chatResponses.js";
@@ -227,7 +227,7 @@ export class ChatService {
     retrievalTurn: RetrievalTurnPort,
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
-    private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
+    private readonly fallbackReplyComposer: FallbackReplyComposer = new MissingFallbackReplyComposer(),
     productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
     workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
@@ -266,19 +266,19 @@ export class ChatService {
       this.answerSupport,
       this.chatGateway,
       this.chatAnswerPresenter,
-      this.groundedMissResponseComposer,
+      this.fallbackReplyComposer,
     );
     this.socialComposer = new SocialAnswerComposer(
       this.answerSupport,
       this.chatGateway,
       this.chatAnswerPresenter,
-      this.groundedMissResponseComposer,
+      this.fallbackReplyComposer,
     );
     this.identityComposer = new AssistantIdentityAnswerComposer(
       this.answerSupport,
       this.chatGateway,
       this.chatAnswerPresenter,
-      this.groundedMissResponseComposer,
+      this.fallbackReplyComposer,
     );
     // Each terminal answer capability registers as its own skill, selected by route.
     // The turn machinery never branches on "retrieval vs not" — adding a capability
@@ -572,7 +572,7 @@ export class ChatService {
         && session.retrieval.contexts.length > 0
         && !hasCitedAnswerSegment(presentationWithoutSuggestions)
       ) {
-        const groundedMiss = await this.groundedMissResponseComposer.composeNoContext({
+        const groundedMiss = await this.fallbackReplyComposer.composeNoContext({
           query: input.query,
           userExpectedLocale: input.userExpectedLocale,
           answerInstructionBlock: this.buildAnswerInstructionBlock(session),

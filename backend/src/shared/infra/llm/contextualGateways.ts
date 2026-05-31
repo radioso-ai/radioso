@@ -4,11 +4,11 @@ import { ModelInferencePipelineService, type ModelInferencePipeline } from "./mo
 import { TextGenerationClientCache, createTextGenerationClient } from "./textClientFactory.js";
 import {
   ModelChatGateway,
-  ModelGroundedMissResponseComposer,
+  ModelFallbackReplyComposer,
   type ChatGateway,
   type ChatGatewayInput,
-  type GroundedMissResponseComposer,
-  type GroundedMissNoContextInput,
+  type FallbackReplyComposer,
+  type FallbackReplyInput,
 } from "../../../modules/chat/llmAdapters.js";
 import {
   ModelQueryRewriteGateway,
@@ -83,24 +83,24 @@ export class ContextualChatGateway implements ChatGateway {
   }
 }
 
-export class ContextualGroundedMissResponseComposer implements GroundedMissResponseComposer {
+export class ContextualFallbackReplyComposer implements FallbackReplyComposer {
   private readonly cache: TextGenerationClientCache;
 
   constructor(
     private readonly deps: ContextualGatewayDependencies,
-    private readonly fallback: GroundedMissResponseComposer,
+    private readonly fallback: FallbackReplyComposer,
     private readonly usageEventRecorder?: UsageEventRecorder,
   ) {
     this.cache = deps.clientCache ?? new TextGenerationClientCache();
   }
 
-  async composeNoContext(input: GroundedMissNoContextInput): Promise<string> {
+  async composeNoContext(input: FallbackReplyInput): Promise<string> {
     const ctx = requireWorkspaceContext(input);
     if (!ctx) {
       return this.fallback.composeNoContext(input);
     }
     const client = await resolveClient(this.cache, this.deps.resolver, "chat", ctx);
-    return new ModelGroundedMissResponseComposer(toInferencePipeline(client, this.usageEventRecorder)).composeNoContext(input);
+    return new ModelFallbackReplyComposer(toInferencePipeline(client, this.usageEventRecorder)).composeNoContext(input);
   }
 }
 

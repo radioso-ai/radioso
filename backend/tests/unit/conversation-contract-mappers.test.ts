@@ -7,7 +7,7 @@ import {
   toConversationInputEvent,
   toConversationMessage,
   toConversationTrace,
-  toRetrievalStagedContext,
+  toPreparedStagedContext,
 } from "../../src/modules/chat/services/conversationContractMappers.js";
 import type { ActivityTrace, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 
@@ -176,7 +176,7 @@ describe("conversation contract mappers", () => {
       diagnostics: { retrievalSkipped: false },
     } as RetrievalPipelineResult;
 
-    expect(toRetrievalStagedContext(retrieval)).toEqual({
+    expect(toPreparedStagedContext(retrieval)).toEqual({
       kind: "retrieval",
       source: "retrieval.answer",
       data: retrieval,

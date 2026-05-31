@@ -773,7 +773,7 @@ export const buildChatServices = (input: {
     ),
     chatGateway,
     input.auditService,
-    input.llmRegistry.createGroundedMissResponseComposer(input.usageEventRecorder),
+    input.llmRegistry.createFallbackReplyComposer(input.usageEventRecorder),
     input.productAnalyticsService,
     input.workspaceRepository,
     input.usageLimitPolicy,

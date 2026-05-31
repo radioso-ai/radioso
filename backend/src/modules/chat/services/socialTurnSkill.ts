@@ -4,8 +4,8 @@ import { isBlankChatAnswerError } from "./chatAnswerErrors.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
-import type { GroundedMissResponseComposer } from "./groundedMissResponseComposer.js";
-import { buildNonRetrievalAnswerPrompt } from "./nonRetrievalAnswerPromptBuilder.js";
+import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
+import { buildAssistantReplyPrompt } from "./assistantReplyPromptBuilder.js";
 import { buildPreparedTurnOutcome } from "./preparedTurnOutcome.js";
 import { socialAnswerSkillDefinition } from "../../skills/public.js";
 import type { TurnOutcome, TurnRenderContext, TurnSkill, TurnStreamResult } from "./turnOutcome.js";
@@ -27,12 +27,12 @@ export class SocialAnswerComposer {
     private readonly support: ChatAnswerSupport,
     private readonly chatGateway: ChatGateway,
     private readonly chatAnswerPresenter: ChatAnswerPresenter,
-    private readonly groundedMissResponseComposer: GroundedMissResponseComposer,
+    private readonly fallbackReplyComposer: FallbackReplyComposer,
   ) {}
 
   /** Builds the social reply prompt (the assistant's own voice, no retrieval). */
   private buildPrompt(session: PreparedSession, query: string): string {
-    return buildNonRetrievalAnswerPrompt({
+    return buildAssistantReplyPrompt({
       route: session.turnRoute,
       responseIdentity: session.retrieval.responseIdentity,
       history: session.history,
@@ -93,7 +93,7 @@ export class SocialAnswerComposer {
     // Graceful no-answer fallback. A blank social reply is near-unreachable, but
     // when it happens we decline gracefully via the shared "couldn't answer"
     // composer rather than failing the turn.
-    const miss = await this.groundedMissResponseComposer.composeNoContext({
+    const miss = await this.fallbackReplyComposer.composeNoContext({
       query,
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
@@ -143,7 +143,7 @@ export class SocialAnswerComposer {
     }
 
     // Blank reply: graceful no-answer fallback, emitted as a single chunk.
-    const miss = await this.groundedMissResponseComposer.composeNoContext({
+    const miss = await this.fallbackReplyComposer.composeNoContext({
       query,
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),

@@ -176,6 +176,17 @@ const emptySearchHistory = {
   hasMore: false,
 };
 
+const emptyDocumentSources = {
+  sources: [],
+};
+
+const emptyCrawlJobs = {
+  jobs: [],
+  total: 0,
+  nextCursor: null,
+  hasMore: false,
+};
+
 const buildWorkspaceSummary = (input: {
   documentList: unknown;
   historyList: unknown;
@@ -343,17 +354,12 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/document/sources") {
-      await json(route, { sources: [] });
+      await json(route, emptyDocumentSources);
       return;
     }
 
     if (request.method() === "GET" && path === "/document/crawl/jobs") {
-      await json(route, {
-        jobs: [],
-        total: 0,
-        nextCursor: null,
-        hasMore: false,
-      });
+      await json(route, emptyCrawlJobs);
       return;
     }
 

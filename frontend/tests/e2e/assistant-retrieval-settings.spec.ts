@@ -19,7 +19,7 @@ test("agent settings saves behavior and channel sections without retrieval drift
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior`);
 
-  await expect(page.getByRole("heading", { name: "Agent" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Identity & appearance", level: 1 })).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=behavior$`));
   await page.getByLabel("Assistant name").fill("Marta Knowledge Desk");
 
@@ -29,9 +29,9 @@ test("agent settings saves behavior and channel sections without retrieval drift
   });
   expect(agentUpdates.at(-1)).not.toHaveProperty("retrieval");
 
-  await page.getByRole("tab", { name: "Channels" }).click();
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels`);
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=channels$`));
-  await expect(page.getByText("Public chat link")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Public chat link", level: 1 })).toBeVisible();
   await page.locator("#anonChatToggle").click();
 
   await expect.poll(() => agentUpdates.length).toBeGreaterThanOrEqual(2);

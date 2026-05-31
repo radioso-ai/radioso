@@ -124,19 +124,23 @@ describe('dashboard route state', () => {
     expect(parseDashboardRoute(['agents', 'abc'], new URLSearchParams())).toBeNull()
   })
 
-  it('parses and builds the users tab route without extra state', () => {
+  it('redirects legacy users routes into the account area', () => {
     expect(parseDashboardRoute(['settings'], new URLSearchParams({ workspace: 'workspace-5', tab: 'users' }))).toEqual({
-      section: 'settings',
+      section: 'account',
       workspaceId: 'workspace-5',
-      settingsTab: 'users',
+    })
+
+    expect(parseDashboardRoute(['users'], new URLSearchParams({ workspace: 'workspace-5' }))).toEqual({
+      section: 'account',
+      workspaceId: 'workspace-5',
     })
 
     expect(buildDashboardHref('account-7', {
-      section: 'settings',
-      settingsTab: 'users',
+      section: 'account',
+      accountTab: 'usage',
       workspaceId: 'workspace-5',
       workspacePublicRouteKey: 'workspace-five-abc123',
-    })).toBe('/w/workspace-five-abc123/settings?tab=users')
+    })).toBe('/w/workspace-five-abc123/account?tab=usage')
   })
 
   it('parses legacy routes into canonical route state', () => {
@@ -157,8 +161,7 @@ describe('dashboard route state', () => {
     })
 
     expect(parseDashboardRoute(['users'], new URLSearchParams())).toEqual({
-      section: 'settings',
-      settingsTab: 'users',
+      section: 'account',
     })
   })
 

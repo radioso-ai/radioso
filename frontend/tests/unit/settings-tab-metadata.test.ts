@@ -12,16 +12,16 @@ describe('settings tab metadata', () => {
       'workspace-access',
     ])
 
-    expect(settingsTabMetadata.users.sections.map((section) => section.id)).toEqual([
-      'users-access',
+    expect(settingsTabMetadata.providers.sections.map((section) => section.id)).toEqual([
+      'provider-credentials',
+      'provider-models',
     ])
   })
 
   it('returns tab descriptors and resolves only known sections', () => {
-    expect(getSettingsTabDescriptor('users').id).toBe('users')
+    expect(getSettingsTabDescriptor('providers').id).toBe('providers')
     expect(getSettingsSectionDescriptor('workspace', 'workspace-access')?.id).toBe('workspace-access')
-    expect(getSettingsSectionDescriptor('users', 'users-access')?.id).toBe('users-access')
-    expect(getSettingsSectionDescriptor('users', 'missing-section')).toBeNull()
+    expect(getSettingsSectionDescriptor('workspace', 'missing-section')).toBeNull()
     expect(getSettingsSectionDescriptor('workspace', undefined)).toBeNull()
   })
 })

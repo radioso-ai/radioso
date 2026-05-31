@@ -43,6 +43,9 @@ describe("QualityTurnsService", () => {
           up_count: "0",
           down_count: "2",
           created_at: new Date("2026-05-22T10:00:00.000Z"),
+          triage_state: "acknowledged",
+          triage_reason: "Needs source review",
+          triage_updated_at: new Date("2026-05-22T10:10:00.000Z"),
         },
       ],
       [
@@ -82,6 +85,11 @@ describe("QualityTurnsService", () => {
               createdAt: "2026-05-22T10:05:00.000Z",
             },
           ],
+        },
+        triage: {
+          state: "acknowledged",
+          reason: "Needs source review",
+          updatedAt: "2026-05-22T10:10:00.000Z",
         },
       },
     ]);
@@ -171,6 +179,9 @@ describe("QualityTurnsService", () => {
         up_count: "0",
         down_count: "0",
         created_at: new Date(`2026-05-2${index % 10}T10:00:00.000Z`),
+        triage_state: "open",
+        triage_reason: null,
+        triage_updated_at: null,
       })),
       [],
     ]);

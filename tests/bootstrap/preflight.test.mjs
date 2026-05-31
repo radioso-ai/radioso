@@ -91,6 +91,48 @@ test("runPreflightChecks reports port conflicts when project is not already runn
   assert.equal(blockedPort?.status, "fail");
 });
 
+test("runPreflightChecks uses Conductor port allocation when present", async () => {
+  const originalConductorPort = process.env.CONDUCTOR_PORT;
+  const originalFrontendPort = process.env.RADIOSO_FRONTEND_PORT;
+  const originalBackendPort = process.env.RADIOSO_BACKEND_PORT;
+  const originalPostgresPort = process.env.RADIOSO_POSTGRES_PORT;
+
+  try {
+    process.env.CONDUCTOR_PORT = "4100";
+    delete process.env.RADIOSO_FRONTEND_PORT;
+    delete process.env.RADIOSO_BACKEND_PORT;
+    delete process.env.RADIOSO_POSTGRES_PORT;
+
+    const composePsKey = ["docker", ...getComposeArgs(), "ps", "--services", "--status", "running"].join(" ");
+    const responses = {
+      "docker --version": { ok: true, stdout: "Docker version", stderr: "" },
+      "docker compose version": { ok: true, stdout: "Docker Compose version", stderr: "" },
+      "docker info": { ok: true, stdout: "info", stderr: "" },
+      [composePsKey]: { ok: true, stdout: "", stderr: "" },
+    };
+    const checkedPorts = [];
+
+    await runPreflightChecks({
+      run: async (command, args) => responses[[command, ...args].join(" ")],
+      portCheck: async (port) => {
+        checkedPorts.push(port);
+        return true;
+      },
+    });
+
+    assert.deepEqual(checkedPorts, [4100, 4102, 4101]);
+  } finally {
+    if (originalConductorPort === undefined) delete process.env.CONDUCTOR_PORT;
+    else process.env.CONDUCTOR_PORT = originalConductorPort;
+    if (originalFrontendPort === undefined) delete process.env.RADIOSO_FRONTEND_PORT;
+    else process.env.RADIOSO_FRONTEND_PORT = originalFrontendPort;
+    if (originalBackendPort === undefined) delete process.env.RADIOSO_BACKEND_PORT;
+    else process.env.RADIOSO_BACKEND_PORT = originalBackendPort;
+    if (originalPostgresPort === undefined) delete process.env.RADIOSO_POSTGRES_PORT;
+    else process.env.RADIOSO_POSTGRES_PORT = originalPostgresPort;
+  }
+});
+
 test("runPreflightChecks fails fast when docker info times out", async () => {
   const results = await runPreflightChecks({
     run: async (command, args) => {

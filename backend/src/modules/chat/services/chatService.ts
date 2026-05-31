@@ -7,10 +7,8 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AgentService } from "../../agents/public.js";
-import type { ChatGateway, ChatGatewayInput, ChatGatewayUsageContext } from "../contracts/chatGateway.js";
-import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
+import type { ChatGateway, ChatGatewayInput } from "../contracts/chatGateway.js";
 import type { ChatStreamEvent, SkillStreamPayload, SkillStreamPhase } from "../contracts/streamEvents.js";
-import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
@@ -30,8 +28,8 @@ import {
   buildTurnRendererRegistry,
   type TurnOutcomeRendererRegistry,
   type TurnSkill,
+  type TurnStreamSuggestions,
 } from "./turnOutcome.js";
-import type { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import type { ChatTurnRuntime } from "./chatTurnRuntime.js";
 import {
   DefaultTurnSelectionStrategy,
@@ -42,8 +40,7 @@ import type {
   ChatPresentedAnswer,
 } from "./chatAnswerPresenter.js";
 import { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
-import type { PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
-import { BlankChatAnswerError, hasCitedAnswerSegment } from "./chatAnswerErrors.js";
+import { BlankChatAnswerError } from "./chatAnswerErrors.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -228,7 +225,6 @@ export interface ChatServiceOptions {
 export class ChatService {
   private readonly chatGateway: ChatGateway;
   private readonly auditService: AuditService;
-  private readonly fallbackReplyComposer: FallbackReplyComposer;
   private readonly usageLimitPolicy: UsageLimitPolicy;
   private readonly chatIntakeProvider: ChatIntakeProviderPort;
   private readonly selectionStrategy: TurnSelectionStrategy;
@@ -236,7 +232,6 @@ export class ChatService {
   private readonly chatAnswerPresenter: ChatAnswerPresenter;
   private readonly chatSessionPreparer: ChatSessionPreparer;
   private readonly chatTurnLifecycle: ChatTurnLifecycle;
-  private readonly answerSupport: ChatAnswerSupport;
   private readonly turnSkills: TurnSkill[];
   private readonly turnRenderers: TurnOutcomeRendererRegistry;
 
@@ -259,14 +254,10 @@ export class ChatService {
     } = options;
     this.chatGateway = chatGateway;
     this.auditService = auditService;
-    // Same instance the runtime's skills use — the host's grounded-miss reconcile
-    // can't silently bind to a different composer.
-    this.fallbackReplyComposer = turnRuntime.fallbackReplyComposer;
     this.usageLimitPolicy = usageLimitPolicy;
     this.chatIntakeProvider = chatIntakeProvider;
     this.selectionStrategy = selectionStrategy;
     this.conversationEngine = conversationEngine;
-    this.answerSupport = turnRuntime.answerSupport;
     this.chatAnswerPresenter = turnRuntime.chatAnswerPresenter;
     this.turnSkills = turnRuntime.turnSkills;
     this.chatTurnLifecycle = new ChatTurnLifecycle(
@@ -323,22 +314,6 @@ export class ChatService {
       accountId: input.accountId,
     });
     return { presentation };
-  }
-
-  private buildChatWorkspaceContext(session: PreparedSession): LlmCapabilityResolveInput {
-    return this.answerSupport.buildChatWorkspaceContext(session);
-  }
-
-  private buildChatUsageContext(
-    session: PreparedSession,
-    accountId: string | undefined,
-    attemptKey: string,
-  ): ChatGatewayUsageContext {
-    return this.answerSupport.buildChatUsageContext(session, accountId, attemptKey);
-  }
-
-  private buildAnswerInstructionBlock(session: PreparedSession): string {
-    return this.answerSupport.buildAnswerInstructionBlock(session);
   }
 
   async answer(input: {
@@ -553,44 +528,25 @@ export class ChatService {
         };
         streamStep = await answerStream.next();
       }
-      const { rawAnswer, plannedSuggestions, answerGrounding, noContextPresentation } = streamStep.value;
+      const { finalPresentation, suggestions } = streamStep.value;
       let { hasStreamedAnswer, streamedAnswer } = streamStep.value;
 
-      let presentationWithoutSuggestions = noContextPresentation ?? await this.chatAnswerPresenter.presentWithoutSuggestions(
-        session,
-        rawAnswer,
-        input.query,
-        input.userExpectedLocale,
-        answerGrounding,
-      );
-      if (
-        !noContextPresentation
-        && session.retrieval.contexts.length > 0
-        && !hasCitedAnswerSegment(presentationWithoutSuggestions)
-      ) {
-        const groundedMiss = await this.fallbackReplyComposer.composeNoContext({
-          query: input.query,
-          userExpectedLocale: input.userExpectedLocale,
-          answerInstructionBlock: this.buildAnswerInstructionBlock(session),
-          steering: session.directiveSteering?.rules ?? [],
-          workspaceContext: this.buildChatWorkspaceContext(session),
-          usageContext: this.buildChatUsageContext(session, input.accountId, "stream_grounded_unsupported"),
-        });
-        presentationWithoutSuggestions = this.chatAnswerPresenter.presentGroundedMissAnswer(groundedMiss);
-      }
-      if (!hasStreamedAnswer && presentationWithoutSuggestions.answer) {
+      // The skill produced the fully reconciled presentation (its grounded-miss
+      // safety net included). The host stays capability-neutral: emit any part of
+      // the final answer that wasn't already streamed, then persist and suggest.
+      if (!hasStreamedAnswer && finalPresentation.answer) {
         yield {
           type: "chunk",
-          text: presentationWithoutSuggestions.answer,
+          text: finalPresentation.answer,
         };
         hasStreamedAnswer = true;
-        streamedAnswer += presentationWithoutSuggestions.answer;
+        streamedAnswer += finalPresentation.answer;
       } else if (
         hasStreamedAnswer
-        && presentationWithoutSuggestions.answer
-        && presentationWithoutSuggestions.answer.startsWith(streamedAnswer)
+        && finalPresentation.answer
+        && finalPresentation.answer.startsWith(streamedAnswer)
       ) {
-        const remainingAnswer = presentationWithoutSuggestions.answer.slice(streamedAnswer.length);
+        const remainingAnswer = finalPresentation.answer.slice(streamedAnswer.length);
         if (remainingAnswer) {
           yield {
             type: "chunk",
@@ -605,14 +561,13 @@ export class ChatService {
       // skips emitting suggestions, which is the desired behavior.
       lazySuggestionsPromise = this.composeLazySuggestions({
         session,
-        presentationWithoutSuggestions,
-        noContextPresentation,
-        plannedSuggestions,
+        presentation: finalPresentation,
+        suggestions,
         userExpectedLocale: input.userExpectedLocale,
       });
       lazySuggestionsPromise.catch(() => undefined);
       const presentation: ChatPresentedAnswer = {
-        ...presentationWithoutSuggestions,
+        ...finalPresentation,
         suggestions: undefined,
       };
 
@@ -673,20 +628,22 @@ export class ChatService {
 
   private async composeLazySuggestions(input: {
     session: PreparedSession;
-    presentationWithoutSuggestions: ChatPresentedAnswer;
-    noContextPresentation: ChatPresentedAnswer | null;
-    plannedSuggestions: PlannedEnvelopeSuggestion[];
+    presentation: ChatPresentedAnswer;
+    suggestions: TurnStreamSuggestions;
     userExpectedLocale?: string | null;
   }): Promise<Pick<ChatPresentedAnswer, "suggestions">> {
-    const { session, presentationWithoutSuggestions, noContextPresentation, plannedSuggestions, userExpectedLocale } = input;
-    const questionSuggestions = noContextPresentation
-      ? (noContextPresentation.suggestions ?? [])
+    const { session, presentation, suggestions, userExpectedLocale } = input;
+    // The skill decides where question suggestions come from: assistant-voice
+    // replies settle their own onto the presentation; retrieval defers to the
+    // host's expansion of the model's planned envelope suggestions.
+    const questionSuggestions = suggestions.mode === "presentation"
+      ? (presentation.suggestions ?? [])
       : (this.chatAnswerPresenter
-          .applyAssistantSuggestions(session, presentationWithoutSuggestions, plannedSuggestions)
+          .applyAssistantSuggestions(session, presentation, suggestions.planned)
           .suggestions ?? []);
     const actionSuggestionsResult = await this.chatAnswerPresenter.applyActionSuggestions(
       session,
-      presentationWithoutSuggestions,
+      presentation,
       userExpectedLocale,
     );
     const actionMergedSuggestions = actionSuggestionsResult.suggestions ?? [];

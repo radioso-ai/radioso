@@ -4,7 +4,7 @@ import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.j
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ChatTurnRoute } from "./chatTurnIntentService.js";
 import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
-import { appendSteeringBlock } from "./steeringPromptRenderer.js";
+import { appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 
 export const buildNonRetrievalAnswerPrompt = (input: {
   route: ChatTurnRoute;

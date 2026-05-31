@@ -757,6 +757,13 @@ export const buildChatServices = (input: {
       },
     },
   );
+  // Behavioral steering comes from application composition. Chat and direct
+  // retrieval answer surfaces share this port so extracted answer directives
+  // stay consistent across `/assistant/chat`, `/retrieval/answer`, and MCP.
+  const directiveSteering = createRouteScopedDirectiveSteering({
+    capabilityPolicy: input.composition.capabilityPolicy,
+    registrations: input.composition.directiveRegistrations,
+  });
   const chatService = new ChatService(
     input.conversationRepository,
     input.messageRepository,
@@ -788,10 +795,7 @@ export const buildChatServices = (input: {
     // ModelInferencePipelines (#473), so wiring it requires refactoring
     // ModelDirectiveMatchGateway onto ModelInferencePipeline with a usage
     // context — a follow-up to land before any contextual directive ships.
-    createRouteScopedDirectiveSteering({
-      capabilityPolicy: input.composition.capabilityPolicy,
-      registrations: input.composition.directiveRegistrations,
-    }),
+    directiveSteering,
     undefined,
     createDefaultConversationEngine(input.env),
   );
@@ -817,6 +821,7 @@ export const buildChatServices = (input: {
     chatGateway,
     usageLimitPolicy: input.usageLimitPolicy,
     auditService: input.auditService,
+    directiveSteering,
   });
 
   return {

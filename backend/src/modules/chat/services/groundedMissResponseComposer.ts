@@ -10,7 +10,7 @@ import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.j
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import { resolveChatLocale } from "./chatLocale.js";
-import { appendSteeringBlock } from "./steeringPromptRenderer.js";
+import { appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 
 export interface GroundedMissNoContextInput {
   query: string;

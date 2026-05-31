@@ -4,7 +4,7 @@ import {
   formatConversationIntentSnapshot,
   type ConversationIntentSnapshot,
 } from "./conversationIntentSnapshot.js";
-import { renderSteeringBlock } from "./steeringPromptRenderer.js";
+import { renderSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 
 export interface GroundedAnswerSystemPromptInput {
   baseSystemPrompt: string;

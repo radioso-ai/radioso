@@ -1,5 +1,5 @@
-import { orderSteeringRules, type SteeringRule } from "../../../shared/domain/steeringRule.js";
-import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { orderSteeringRules, type SteeringRule } from "../../domain/steeringRule.js";
+import { renderPromptTemplate } from "./promptLoader.js";
 
 export const renderSteeringBlock = (steering: SteeringRule[] = []): string => {
   if (steering.length === 0) {

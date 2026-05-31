@@ -342,6 +342,21 @@ export const installDashboardApiMocks = async (
       return;
     }
 
+    if (request.method() === "GET" && path === "/document/sources") {
+      await json(route, { sources: [] });
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/document/crawl/jobs") {
+      await json(route, {
+        jobs: [],
+        total: 0,
+        nextCursor: null,
+        hasMore: false,
+      });
+      return;
+    }
+
     if (request.method() === "GET" && path.startsWith("/document/")) {
       const documentId = path.replace("/document/", "");
       const documentListItems = (documents as { documents?: Array<Record<string, unknown>> }).documents ?? [];

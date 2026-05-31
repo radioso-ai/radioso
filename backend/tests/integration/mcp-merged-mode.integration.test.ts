@@ -137,10 +137,35 @@ describe("merged MCP backend mount", () => {
     });
     const { token } = await issueTestToken(app);
 
-    await request(app)
+    const initializeResponse = await request(app)
+      .post("/mcp")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Content-Type", "application/json")
+      .set("Mcp-Protocol-Version", "2025-11-25")
+      .set("Accept", "application/json, text/event-stream")
+      .send({
+        id: "init-delete-1",
+        jsonrpc: "2.0",
+        method: "initialize",
+        params: {
+          capabilities: {},
+          clientInfo: { name: "integration-test", version: "1.0.0" },
+          protocolVersion: "2025-11-25",
+        },
+      })
+      .expect(200);
+
+    const deleteRequest = request(app)
       .delete("/mcp")
       .set("Authorization", `Bearer ${token}`)
-      .set("Mcp-Protocol-Version", "2025-11-25")
+      .set("Mcp-Protocol-Version", "2025-11-25");
+
+    const sessionId = initializeResponse.headers["mcp-session-id"];
+    if (typeof sessionId === "string") {
+      deleteRequest.set("Mcp-Session-Id", sessionId);
+    }
+
+    await deleteRequest
       .expect((response) => {
         expect(response.status).not.toBe(404);
       });

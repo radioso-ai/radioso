@@ -7,19 +7,7 @@ import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-indicator'
 import { ProvidersPanel } from '@/components/dashboard/settings/providers-panel'
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
-import { UsersPanel } from '@/components/dashboard/users-view'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  buildDashboardHref,
-  type DashboardRouteState,
-  type SettingsTab,
-} from '@/lib/dashboard-routes'
-
-const settingsTabSummaries: Record<SettingsTab, string> = {
-  workspace: 'Control workspace identity, API access, and lifecycle.',
-  providers: 'Connect AI provider API keys and pick which model handles chat, query rewrite, rerank, and embeddings.',
-  users: 'Invite teammates and manage account access.',
-}
+import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 
 export function SettingsView({
   accountId,
@@ -56,48 +44,17 @@ export function SettingsView({
   }, [accountId, routeState, router])
 
   return (
-    <Tabs
-      value={activeTab}
-      onValueChange={(value) => {
-        setSaveState({ state: 'idle' })
-        router.push(buildDashboardHref(accountId, {
-          ...routeState,
-          section: 'settings',
-          settingsTab: value as SettingsTab,
-          anchor: undefined,
-        }))
-      }}
-      className="h-full min-h-0 gap-0"
+    <DashboardPage
+      title={activeTab === 'providers' ? 'Providers' : 'Workspace'}
+      titleAccessory={saveStateAccessory}
+      contentClassName="flex flex-col overflow-hidden p-0"
+      contentScroll={false}
     >
-      <DashboardPage
-        title="Settings"
-        description={settingsTabSummaries[activeTab]}
-        titleAccessory={activeTab === 'workspace' || activeTab === 'providers' ? saveStateAccessory : null}
-        actions={
-          <TabsList>
-            <TabsTrigger value="workspace">Workspace</TabsTrigger>
-            <TabsTrigger value="providers">Providers</TabsTrigger>
-            <TabsTrigger value="users">Users</TabsTrigger>
-          </TabsList>
-        }
-        actionsClassName="xl:self-start"
-        contentClassName="flex flex-col overflow-hidden p-0"
-        contentScroll={false}
-      >
-        <TabsContent value="workspace" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-          <WorkspaceAssistantChannelsTab accountId={accountId} mode="workspace" onSaveStateChange={setSaveState} />
-        </TabsContent>
-
-        <TabsContent value="providers" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-          <ProvidersPanel onSaveStateChange={setSaveState} />
-        </TabsContent>
-
-        <TabsContent value="users" className="settings-surface min-h-0 flex-1 overflow-y-auto">
-          <div className="w-full p-6">
-            <UsersPanel />
-          </div>
-        </TabsContent>
-      </DashboardPage>
-    </Tabs>
+      {activeTab === 'providers' ? (
+        <ProvidersPanel onSaveStateChange={setSaveState} />
+      ) : (
+        <WorkspaceAssistantChannelsTab accountId={accountId} mode="workspace" onSaveStateChange={setSaveState} />
+      )}
+    </DashboardPage>
   )
 }

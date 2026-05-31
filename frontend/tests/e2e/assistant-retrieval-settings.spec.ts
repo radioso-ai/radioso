@@ -8,18 +8,16 @@ import {
   workspaceKey,
 } from "./dashboard-fixtures";
 
-test("shared settings saves assistant, retrieval, and channel sections without cross-section drift", async ({ page }) => {
-  const settingsUpdates: unknown[] = [];
+test("agent settings saves behavior and channel sections without retrieval drift", async ({ page }) => {
   const agentUpdates: unknown[] = [];
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     platformSettings: basePlatformSettings(),
     agentUpdates,
-    settingsUpdates,
   });
 
-  await page.goto(`/w/${workspaceKey}/agents?tab=behavior`);
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior`);
 
   await expect(page.getByRole("heading", { name: "Agent" })).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=behavior$`));
@@ -30,6 +28,31 @@ test("shared settings saves assistant, retrieval, and channel sections without c
     name: "Marta Knowledge Desk",
   });
   expect(agentUpdates.at(-1)).not.toHaveProperty("retrieval");
+
+  await page.getByRole("tab", { name: "Channels" }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=channels$`));
+  await expect(page.getByText("Public chat link")).toBeVisible();
+  await page.locator("#anonChatToggle").click();
+
+  await expect.poll(() => agentUpdates.length).toBeGreaterThanOrEqual(2);
+  expect(agentUpdates.at(-1)).toMatchObject({
+    surfaceSettings: {
+      anonymousChat: {
+        enabled: true,
+      },
+    },
+  });
+  expect(agentUpdates.at(-1)).not.toHaveProperty("retrieval");
+});
+
+test("retrieval settings saves without channel drift", async ({ page }) => {
+  const settingsUpdates: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    settingsUpdates,
+  });
 
   await page.goto(`/w/${workspaceKey}/knowledge?tab=retrieval`);
   await expect(page.getByRole("heading", { name: "Query rewrite", exact: true })).toBeVisible();
@@ -48,21 +71,6 @@ test("shared settings saves assistant, retrieval, and channel sections without c
     },
   });
   expect(settingsUpdates.at(-1)).not.toHaveProperty("channels");
-
-  await page.goto(`/w/${workspaceKey}/agents?tab=channels`);
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=channels$`));
-  await expect(page.getByText("Public chat link")).toBeVisible();
-  await page.locator("#anonChatToggle").click();
-
-  await expect.poll(() => agentUpdates.length).toBeGreaterThanOrEqual(2);
-  expect(agentUpdates.at(-1)).toMatchObject({
-    surfaceSettings: {
-      anonymousChat: {
-        enabled: true,
-      },
-    },
-  });
-  expect(agentUpdates.at(-1)).not.toHaveProperty("retrieval");
 });
 
 test("retrieval settings can switch the answering strategy to reasoning", async ({ page }) => {

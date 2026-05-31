@@ -2,6 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
+import type { ReactNode } from 'react'
 
 import {
   Sidebar,
@@ -14,27 +15,12 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { useAuth } from '@/lib/auth-context'
-import { useTheme } from '@/components/theme-provider'
 import {
   Activity,
   Bot,
   BookOpen,
   Settings,
-  LogOut,
-  Moon,
-  Sun,
-  Monitor,
-  ChevronUp,
-  Users,
-  Gauge,
   FlaskConical,
   ShieldAlert,
 } from 'lucide-react'
@@ -50,6 +36,8 @@ interface AppSidebarProps {
   accountId: string
   currentView: DashboardSection
   routeState: DashboardRouteState
+  /** The active area's second column, shown inside the mobile drawer only. */
+  areaSubNav?: ReactNode
 }
 
 const navItems = [
@@ -61,10 +49,9 @@ const navItems = [
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
 
-export function AppSidebar({ accountId, currentView, routeState }: AppSidebarProps) {
-  const { user, logout } = useAuth()
+export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: AppSidebarProps) {
+  const { user } = useAuth()
   const { activeWorkspace, activeWorkspaceId, accounts } = useWorkspace()
-  const { theme, setTheme } = useTheme()
   const organizationName = accounts.find((account) => account.accountId === accountId)?.organizationName ?? 'radioso'
   const userDisplayName = user?.email?.split('@')[0] || 'User'
   const userInitial = userDisplayName.charAt(0).toUpperCase() || 'U'
@@ -110,81 +97,43 @@ export function AppSidebar({ accountId, currentView, routeState }: AppSidebarPro
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {areaSubNav ? (
+          <SidebarGroup className="md:hidden">
+            <SidebarGroupContent className="[&>aside]:w-full [&>aside]:border-r-0">{areaSubNav}</SidebarGroupContent>
+          </SidebarGroup>
+        ) : null}
       </SidebarContent>
 
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <SidebarMenuButton className="group/user w-full">
-                  <div className="relative flex-shrink-0">
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-secondary/60 to-primary/40 flex items-center justify-center text-xs font-semibold text-sidebar-foreground">
-                      {userInitial}
-                    </div>
-                    <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-sidebar" />
+            <SidebarMenuButton
+              asChild
+              isActive={currentView === 'account'}
+              tooltip={user?.email || userDisplayName}
+              className="group/user"
+            >
+              <Link
+                href={buildDashboardHref(accountId, {
+                  section: 'account',
+                  accountTab: 'members',
+                  workspaceId: activeWorkspaceId ?? undefined,
+                  workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+                })}
+              >
+                <div className="relative flex-shrink-0">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-secondary/60 to-primary/40 text-xs font-semibold text-sidebar-foreground">
+                    {userInitial}
                   </div>
-                  <div className="flex-1 min-w-0 text-left">
-                    <p className="text-sm font-medium text-foreground truncate">{userDisplayName}</p>
-                    <p className="text-xs text-muted-foreground truncate">{user?.email || 'user@example.com'}</p>
-                  </div>
-                  <ChevronUp className="w-4 h-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]/user:rotate-180" />
-                </SidebarMenuButton>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                <div className="px-2 py-1.5">
-                  <p className="text-sm font-medium">{userDisplayName}</p>
-                  <p className="text-xs text-muted-foreground">{user?.email}</p>
+                  <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-sidebar" />
                 </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setTheme('light')}>
-                  <Sun className="w-4 h-4 mr-2" />
-                  Light
-                  {theme === 'light' && <span className="ml-auto text-xs">✓</span>}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme('dark')}>
-                  <Moon className="w-4 h-4 mr-2" />
-                  Dark
-                  {theme === 'dark' && <span className="ml-auto text-xs">✓</span>}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme('system')}>
-                  <Monitor className="w-4 h-4 mr-2" />
-                  System
-                  {theme === 'system' && <span className="ml-auto text-xs">✓</span>}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link
-                    href={buildDashboardHref(accountId, {
-                      section: 'settings',
-                      settingsTab: 'users',
-                      workspaceId: activeWorkspaceId ?? undefined,
-                      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-                    })}
-                  >
-                    <Users className="w-4 h-4 mr-2" />
-                    Users
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link
-                    href={buildDashboardHref(accountId, {
-                      section: 'usage',
-                      workspaceId: activeWorkspaceId ?? undefined,
-                      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-                    })}
-                  >
-                    <Gauge className="w-4 h-4 mr-2" />
-                    Usage
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                <div className="min-w-0 flex-1 text-left">
+                  <p className="truncate text-sm font-medium text-foreground">{userDisplayName}</p>
+                  <p className="truncate text-xs text-muted-foreground">{user?.email || 'user@example.com'}</p>
+                </div>
+              </Link>
+            </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

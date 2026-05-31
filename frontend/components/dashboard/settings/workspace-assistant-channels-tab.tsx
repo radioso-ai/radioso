@@ -10,7 +10,7 @@ import { AssistantIdentityAppearanceSection } from '@/components/dashboard/setti
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
-import { type AgentSectionId } from '@/components/dashboard/dashboard-subnav'
+import { type AgentSectionId } from '@/lib/dashboard-areas'
 import {
   getAssistantLocaleLabel,
   NO_GREETING_LOCALE_LABEL,

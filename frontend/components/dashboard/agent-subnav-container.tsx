@@ -4,14 +4,8 @@ import React, { type FormEvent, useCallback, useEffect, useMemo, useState } from
 import { useRouter } from 'next/navigation'
 import { Globe2, RefreshCw } from 'lucide-react'
 
-import {
-  AgentSwitcher,
-  DashboardSubNav,
-  agentSectionFromRoute,
-  agentSectionRoute,
-  type AgentSectionId,
-  type ChannelStatus,
-} from '@/components/dashboard/dashboard-subnav'
+import { AgentSwitcher, DashboardSubNav, type ChannelStatus } from '@/components/dashboard/dashboard-subnav'
+import { agentSectionFromRoute, agentSectionRoute, type AgentSectionId } from '@/lib/dashboard-areas'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'

@@ -6,11 +6,12 @@ import { useRouter } from 'next/navigation'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { AppSidebar } from './app-sidebar'
 import { AgentSubNavContainer } from './agent-subnav-container'
+import { AccountSubNav, KnowledgeSubNav, SettingsSubNav } from './area-subnavs'
 import { AgentView } from './agent-view'
+import { AccountView } from './account-view'
 import { ChatHistoryView } from './chat-history-view'
 import { KnowledgeView } from './knowledge-view'
 import { SettingsView } from './settings-view'
-import { UsageView } from './usage-view'
 import { QualityView } from './quality-view'
 import { EvalView } from './eval-view'
 import { FirstRunExperience } from './first-run-experience'
@@ -19,12 +20,14 @@ import {
   retargetDashboardRouteToWorkspace,
   type DashboardRouteState,
 } from '@/lib/dashboard-routes'
+import { activeArea } from '@/lib/dashboard-areas'
 import {
   shouldRewriteToActiveWorkspace,
   shouldWaitForRouteWorkspace,
 } from '@/lib/dashboard-workspace-sync'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useWorkspaceOnboarding } from '@/lib/onboarding'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { LogoSpinner } from '@/components/ui/spinner'
 
 interface DashboardShellProps {
@@ -37,6 +40,7 @@ export function DashboardShell({
   routeState,
 }: DashboardShellProps) {
   const router = useRouter()
+  const isMobile = useIsMobile()
   const routeWorkspaceSyncKeyRef = useRef<string | null>(null)
   const pendingRouteWorkspaceIdRef = useRef<string | null>(null)
   const { activeWorkspaceId, workspaces, isLoading: isWorkspaceLoading, switchWorkspace } = useWorkspace()
@@ -53,7 +57,8 @@ export function DashboardShell({
   // The first-run takeover replaces the agent surface, so it shows full-width
   // without the second column (and the rail stays expanded).
   const showFirstRun = isAgentChatView && onboarding.shouldShowFirstRun
-  const hasSubNav = currentView === 'agents' && !showFirstRun
+  const area = activeArea(routeState)
+  const hasSubNav = area !== null && !showFirstRun
 
   useEffect(() => {
     const syncKey = requestedWorkspaceExists ? (requestedWorkspaceId ?? null) : null
@@ -148,59 +153,62 @@ export function DashboardShell({
     )
   }
 
+  // The sub-nav renders in exactly one place per breakpoint: inline beside the
+  // content on desktop, or inside the rail drawer on mobile. Computing it once
+  // keeps stateful containers (e.g. the agent switcher) from mounting twice.
+  const subNav = !hasSubNav ? null : area === 'agents' ? (
+    <AgentSubNavContainer accountId={accountId} routeState={routeState} />
+  ) : area === 'knowledge' ? (
+    <KnowledgeSubNav accountId={accountId} routeState={routeState} />
+  ) : area === 'settings' ? (
+    <SettingsSubNav accountId={accountId} routeState={routeState} />
+  ) : (
+    <AccountSubNav accountId={accountId} routeState={routeState} />
+  )
+
+  const areaContent = area === 'agents' ? (
+    <AgentView accountId={accountId} routeState={routeState} onboarding={onboarding} onOpenDocument={openDocument} />
+  ) : area === 'knowledge' ? (
+    <KnowledgeView
+      routeState={routeState}
+      accountId={accountId}
+      selectedDocumentId={routeState.documentId ?? null}
+      onSelectedDocumentChange={openDocument}
+      onboarding={onboarding}
+    />
+  ) : area === 'settings' ? (
+    <SettingsView accountId={accountId} routeState={routeState} />
+  ) : (
+    <AccountView routeState={routeState} />
+  )
+
   return (
     <SidebarProvider open={!hasSubNav} onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
-      <AppSidebar accountId={accountId} currentView={currentView} routeState={routeState} />
+      <AppSidebar
+        accountId={accountId}
+        currentView={currentView}
+        routeState={routeState}
+        areaSubNav={isMobile ? subNav : undefined}
+      />
       <SidebarInset className="min-h-0 overflow-hidden">
         <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
           <SidebarTrigger />
         </header>
         <div key={activeWorkspaceId} className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 flex-col md:h-screen">
-          {currentView === 'agents' && (
-            showFirstRun ? (
-              <FirstRunExperience accountId={accountId} onboarding={onboarding} />
-            ) : (
-              <div className="flex min-h-0 flex-1">
-                <AgentSubNavContainer accountId={accountId} routeState={routeState} />
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <AgentView
-                    accountId={accountId}
-                    routeState={routeState}
-                    onboarding={onboarding}
-                    onOpenDocument={openDocument}
-                  />
-                </div>
-              </div>
-            )
-          )}
-          {currentView === 'activity' && (
-            <ChatHistoryView
-              accountId={accountId}
-              onboarding={onboarding}
-              routeState={routeState}
-            />
-          )}
-          {currentView === 'knowledge' && (
-            <KnowledgeView
-              routeState={routeState}
-              accountId={accountId}
-              selectedDocumentId={routeState.documentId ?? null}
-              onSelectedDocumentChange={openDocument}
-              onboarding={onboarding}
-            />
-          )}
-          {currentView === 'settings' && (
-            <SettingsView accountId={accountId} routeState={routeState} />
-          )}
-          {currentView === 'usage' && (
-            <UsageView />
-          )}
-          {currentView === 'quality' && (
+          {showFirstRun ? (
+            <FirstRunExperience accountId={accountId} onboarding={onboarding} />
+          ) : hasSubNav ? (
+            <div className="flex min-h-0 flex-1">
+              {isMobile ? null : subNav}
+              <div className="flex min-w-0 flex-1 flex-col">{areaContent}</div>
+            </div>
+          ) : currentView === 'activity' ? (
+            <ChatHistoryView accountId={accountId} onboarding={onboarding} routeState={routeState} />
+          ) : currentView === 'quality' ? (
             <QualityView accountId={accountId} routeState={routeState} />
-          )}
-          {currentView === 'eval' && (
+          ) : currentView === 'eval' ? (
             <EvalView accountId={accountId} routeState={routeState} />
-          )}
+          ) : null}
         </div>
       </SidebarInset>
     </SidebarProvider>

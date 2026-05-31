@@ -13,7 +13,7 @@ import {
   buildDashboardHref,
   type DashboardRouteState,
 } from '@/lib/dashboard-routes'
-import { agentSectionFromRoute, type AgentSectionId } from '@/components/dashboard/dashboard-subnav'
+import { agentSectionFromRoute, type AgentSectionId } from '@/lib/dashboard-areas'
 import { agentsApi, type AgentSettings } from '@/lib/api'
 import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
 import {

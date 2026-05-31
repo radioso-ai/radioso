@@ -1,5 +1,6 @@
 import type { AgentSnapshot } from "../../agents/public.js";
 import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
+import type { LlmCapabilityOverride } from "../../../shared/infra/llm/workspaceContext.js";
 import type {
   RetrievalSettingsRecord,
   RetrievalSettingsSnapshot,
@@ -98,10 +99,7 @@ export interface EvalCase {
 export type EvalRunMode = "retrieval_only" | "full_assistant";
 export type EvalRunStatus = "pass" | "fail" | "error" | "recorded";
 
-export interface EvalRunModelOverride {
-  provider: string;
-  model: string;
-}
+export type EvalRunModelOverride = LlmCapabilityOverride;
 
 export interface EvalRunOverrides {
   // Per-run override for the chat model. When set, this exact provider+model

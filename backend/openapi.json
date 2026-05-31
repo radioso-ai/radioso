@@ -14024,9 +14024,11 @@
               "type": [
                 "boolean",
                 "null"
-              ]
+              ],
+              "description": "When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned."
             },
             "required": false,
+            "description": "When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned.",
             "name": "hasComment",
             "in": "query"
           },

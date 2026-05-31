@@ -7476,6 +7476,7 @@ export interface operations {
                 feedback?: string;
                 /** @description Comma-separated `QualityTriageState` values (`open`, `acknowledged`, `resolved`, `dismissed`). */
                 triage?: string;
+                /** @description When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned. */
                 hasComment?: boolean | null;
                 agentId?: string;
                 channel?: string;

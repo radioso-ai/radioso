@@ -66,6 +66,7 @@ export interface ListLowQualityTurnsInput {
   statuses?: QualitySkillStatus[];
   feedbackValues?: QualityFeedbackValue[];
   triageStates?: QualityTriageState[];
+  /** true returns turns with written feedback comments; false returns turns without them. */
   hasComment?: boolean;
   minTotalLatencyMs?: number;
   maxTotalLatencyMs?: number;

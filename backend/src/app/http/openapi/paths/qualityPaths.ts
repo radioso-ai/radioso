@@ -37,7 +37,9 @@ export const registerQualityPaths = (
         triage: csvOrArrayString
           .describe("Comma-separated `QualityTriageState` values (`open`, `acknowledged`, `resolved`, `dismissed`).")
           .optional(),
-        hasComment: z.coerce.boolean().optional(),
+        hasComment: z.coerce.boolean()
+          .describe("When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned.")
+          .optional(),
         agentId: z.string().uuid().optional(),
         channel: z.string().min(1).max(64).optional(),
         from: z.string().datetime().optional(),

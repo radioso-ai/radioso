@@ -117,9 +117,17 @@ export class QualityTurnsService implements QualityTurnsServicePort {
       );
     }
 
-    if (input.hasComment) {
+    if (input.hasComment === true) {
       filters.push(
         `EXISTS (
+           SELECT 1 FROM assistant_answer_feedback f
+           WHERE f.assistant_message_id = m.id
+             AND f.comment IS NOT NULL
+         )`,
+      );
+    } else if (input.hasComment === false) {
+      filters.push(
+        `NOT EXISTS (
            SELECT 1 FROM assistant_answer_feedback f
            WHERE f.assistant_message_id = m.id
              AND f.comment IS NOT NULL

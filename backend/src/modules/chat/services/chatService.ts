@@ -15,7 +15,6 @@ import {
   type FallbackReplyComposer,
 } from "./fallbackReplyComposer.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
-import { AssistantSuggestionExpansionService } from "./assistantSuggestionExpansionService.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
@@ -35,18 +34,16 @@ import {
   type TurnOutcomeRendererRegistry,
   type TurnSkill,
 } from "./turnOutcome.js";
-import { ChatAnswerSupport } from "./chatAnswerSupport.js";
-import { RetrievalAnswerComposer, createRetrievalTurnSkill } from "./retrievalTurnSkill.js";
-import { SocialAnswerComposer, createSocialTurnSkill } from "./socialTurnSkill.js";
-import { AssistantIdentityAnswerComposer, createAssistantIdentityTurnSkill } from "./assistantIdentityTurnSkill.js";
+import type { ChatAnswerSupport } from "./chatAnswerSupport.js";
+import { buildChatTurnRuntime, type ChatTurnRuntime } from "./chatTurnRuntime.js";
 import {
   DefaultTurnSelectionStrategy,
   type TurnSelectionStrategy,
 } from "./turnSelectionStrategy.js";
-import {
+import type {
   ChatAnswerPresenter,
-  type ChatPresentedAnswer,
-  type SkillOutcomeCapabilityProvider,
+  ChatPresentedAnswer,
+  SkillOutcomeCapabilityProvider,
 } from "./chatAnswerPresenter.js";
 import { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
 import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
@@ -216,9 +213,6 @@ export class ChatService {
   private readonly chatSessionPreparer: ChatSessionPreparer;
   private readonly chatTurnLifecycle: ChatTurnLifecycle;
   private readonly answerSupport: ChatAnswerSupport;
-  private readonly retrievalComposer: RetrievalAnswerComposer;
-  private readonly socialComposer: SocialAnswerComposer;
-  private readonly identityComposer: AssistantIdentityAnswerComposer;
   private readonly turnSkills: TurnSkill[];
   private readonly turnRenderers: TurnOutcomeRendererRegistry;
   constructor(
@@ -233,13 +227,18 @@ export class ChatService {
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
     agentService?: Pick<AgentService, "resolve">,
     private readonly chatIntakeProvider: ChatIntakeProviderPort = new NoopChatIntakeProvider(),
-    private readonly chatActionSuggestionService?: ChatActionSuggestionService,
+    chatActionSuggestionService?: ChatActionSuggestionService,
     skillOutcomeCapabilities: SkillOutcomeCapabilityProvider = {
       supportsGroundedAnswer: () => false,
     },
     directiveSteering: DirectiveSteeringPort = noopDirectiveSteering,
     private readonly selectionStrategy: TurnSelectionStrategy = new DefaultTurnSelectionStrategy(),
     private readonly conversationEngine?: ConversationEngine,
+    // Composition assembles the turn runtime (presenter + registered skills) and
+    // injects it, so registration lives in the wiring layer. When absent (e.g.
+    // focused host tests), it is assembled from the gateway/fallback/capabilities
+    // above — this host never inlines composer wiring.
+    turnRuntime?: ChatTurnRuntime,
   ) {
     this.chatTurnLifecycle = new ChatTurnLifecycle(
       conversationRepository,
@@ -256,38 +255,20 @@ export class ChatService {
       agentService,
       directiveSteering,
     );
-    this.chatAnswerPresenter = new ChatAnswerPresenter(
-      new AssistantSuggestionExpansionService(),
-      chatActionSuggestionService,
-      skillOutcomeCapabilities,
-    );
-    this.answerSupport = new ChatAnswerSupport();
-    this.retrievalComposer = new RetrievalAnswerComposer(
-      this.answerSupport,
-      this.chatGateway,
-      this.chatAnswerPresenter,
-      this.fallbackReplyComposer,
-    );
-    this.socialComposer = new SocialAnswerComposer(
-      this.answerSupport,
-      this.chatGateway,
-      this.chatAnswerPresenter,
-      this.fallbackReplyComposer,
-    );
-    this.identityComposer = new AssistantIdentityAnswerComposer(
-      this.answerSupport,
-      this.chatGateway,
-      this.chatAnswerPresenter,
-      this.fallbackReplyComposer,
-    );
-    // Each terminal answer capability registers as its own skill, selected by route.
-    // The turn machinery never branches on "retrieval vs not" — adding a capability
-    // is registration here, not a code branch in the turn loop.
-    this.turnSkills = [
-      createRetrievalTurnSkill(this.retrievalComposer),
-      createSocialTurnSkill(this.socialComposer),
-      createAssistantIdentityTurnSkill(this.identityComposer),
-    ];
+    // Each terminal answer capability is a registered skill, selected by route;
+    // the host never branches on "retrieval vs not". Composition owns this
+    // assembly and injects it; the default keeps focused host tests terse.
+    const runtime =
+      turnRuntime ??
+      buildChatTurnRuntime({
+        chatGateway: this.chatGateway,
+        fallbackReplyComposer: this.fallbackReplyComposer,
+        chatActionSuggestionService,
+        skillOutcomeCapabilities,
+      });
+    this.answerSupport = runtime.answerSupport;
+    this.chatAnswerPresenter = runtime.chatAnswerPresenter;
+    this.turnSkills = runtime.turnSkills;
     this.turnRenderers = buildTurnRendererRegistry(this.turnSkills);
   }
 

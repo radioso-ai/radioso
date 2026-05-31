@@ -41,6 +41,7 @@ import {
   ChatHistoryService,
   ChatService,
   ChainedChatIntakeProvider,
+  buildChatTurnRuntime,
   createSkillOutcomeCapabilityProvider,
   NoopAnswerFeedbackHistoryProvider,
   NoopChatIntakeProvider,
@@ -757,6 +758,19 @@ export const buildChatServices = (input: {
       },
     },
   );
+  const fallbackReplyComposer = input.llmRegistry.createFallbackReplyComposer(
+    input.usageEventRecorder,
+  );
+  // Composition owns terminal-answer skill registration: assemble the chat turn
+  // runtime here and inject it, so the host does not inline composer wiring.
+  const chatTurnRuntime = buildChatTurnRuntime({
+    chatGateway,
+    fallbackReplyComposer,
+    chatActionSuggestionService,
+    skillOutcomeCapabilities: createSkillOutcomeCapabilityProvider(
+      input.composition.skillCatalogRegistry,
+    ),
+  });
   const chatService = new ChatService(
     input.conversationRepository,
     input.messageRepository,
@@ -773,14 +787,16 @@ export const buildChatServices = (input: {
     ),
     chatGateway,
     input.auditService,
-    input.llmRegistry.createFallbackReplyComposer(input.usageEventRecorder),
+    fallbackReplyComposer,
     input.productAnalyticsService,
     input.workspaceRepository,
     input.usageLimitPolicy,
     input.agentService,
     chatIntakeProvider,
-    chatActionSuggestionService,
-    createSkillOutcomeCapabilityProvider(input.composition.skillCatalogRegistry),
+    // Suggestion service + grounded-answer capabilities are consumed by the
+    // injected chatTurnRuntime above; the host no longer re-assembles them.
+    undefined,
+    undefined,
     // 067: behavioral steering. Empty standing set by default, so only the
     // deterministic always-match matcher is wired and no model call happens.
     // The probabilistic (contextual) matcher is intentionally not wired here: the
@@ -793,6 +809,7 @@ export const buildChatServices = (input: {
     }),
     undefined,
     createDefaultConversationEngine(input.env),
+    chatTurnRuntime,
   );
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,

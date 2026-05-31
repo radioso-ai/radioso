@@ -54,8 +54,9 @@ export function DashboardShell({
     : undefined
   const currentView = routeState.section
   const isAgentChatView = currentView === 'agents' && (routeState.agentTab ?? 'chat') === 'chat'
-  // The first-run takeover replaces the agent surface, so it shows full-width
-  // without the second column (and the rail stays expanded).
+  // The icon rail is always collapsed for a stable first column; only the
+  // second column appears or disappears per area. The first-run takeover shows
+  // full-width with no second column.
   const showFirstRun = isAgentChatView && onboarding.shouldShowFirstRun
   const area = activeArea(routeState)
   const hasSubNav = area !== null && !showFirstRun
@@ -139,7 +140,7 @@ export function DashboardShell({
     })
   ) {
     return (
-      <SidebarProvider open={!hasSubNav} onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
+      <SidebarProvider open={false} onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
         <AppSidebar accountId={accountId} currentView={currentView} routeState={routeState} />
         <SidebarInset className="min-h-0 overflow-hidden">
           <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
@@ -183,7 +184,7 @@ export function DashboardShell({
   )
 
   return (
-    <SidebarProvider open={!hasSubNav} onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
+    <SidebarProvider open={false} onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
       <AppSidebar
         accountId={accountId}
         currentView={currentView}

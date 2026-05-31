@@ -49,9 +49,7 @@ export function SubNavColumn({
         {groups.map((group, index) => (
           <div key={group.label ?? `group-${index}`} className={cn(index > 0 && 'mt-3')}>
             {group.label ? (
-              <p className="px-3 pb-1 pt-1 text-[11px] font-medium uppercase tracking-[0.14em] text-sidebar-foreground/50">
-                {group.label}
-              </p>
+              <p className="px-3 pb-1 pt-1 text-xs font-medium text-sidebar-foreground/50">{group.label}</p>
             ) : null}
             <div className="space-y-0.5">
               {group.items.map((entry) => (

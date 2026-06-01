@@ -35,6 +35,7 @@ import {
   DefaultTurnSelectionStrategy,
   type TurnSelectionStrategy,
 } from "./turnSelectionStrategy.js";
+import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
 import type {
   ChatAnswerPresenter,
   ChatPresentedAnswer,
@@ -234,6 +235,7 @@ export class ChatService {
   private readonly chatTurnLifecycle: ChatTurnLifecycle;
   private readonly turnSkills: TurnSkill[];
   private readonly turnRenderers: TurnOutcomeRendererRegistry;
+  private readonly turnSkillSelector: ChatTurnSkillSelector;
 
   constructor(options: ChatServiceOptions) {
     const {
@@ -276,6 +278,9 @@ export class ChatService {
       directiveSteering,
     );
     this.turnRenderers = buildTurnRendererRegistry(this.turnSkills);
+    // One selection seam shared by the engine turn and the host streaming path, so
+    // streamed and non-streamed turns resolve the terminal skill identically.
+    this.turnSkillSelector = new ChatTurnSkillSelector(this.turnSkills, this.selectionStrategy);
   }
 
   /**
@@ -294,7 +299,7 @@ export class ChatService {
       const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
         engine: this.conversationEngine,
         session,
-        selectionStrategy: this.selectionStrategy,
+        turnSkillSelector: this.turnSkillSelector,
         turnSkills: this.turnSkills,
         query: input.query,
         userExpectedLocale: input.userExpectedLocale,
@@ -302,10 +307,7 @@ export class ChatService {
       });
       return { presentation, engineTrace: result.trace };
     }
-    const skill = this.turnSkills.find((candidate) => candidate.selects(session)) ?? this.turnSkills[0];
-    if (!skill) {
-      throw new Error("chat_no_turn_skill_registered");
-    }
+    const skill = this.turnSkillSelector.resolveSkill(session);
     const turnOutcome = await skill.dispatch(session);
     const presentation = await this.turnRenderers.resolve(turnOutcome).render(turnOutcome, {
       session,
@@ -506,12 +508,13 @@ export class ChatService {
         : await this.chatSessionPreparer.prepareDirect(input, session);
       const answerStartedAt = Date.now();
 
-      // Route to the capability that claims this turn and stream its answer. The
-      // skill owns generating + streaming; the host owns the finalization below
-      // (present, grounded-miss reconcile, persist, suggest).
+      // Route to the capability that claims this turn (through the same selection
+      // seam the engine uses) and stream its answer. The skill owns generating,
+      // streaming, presentation, and its grounded-miss reconcile; the host owns the
+      // finalization below (persist + suggest).
       const preparedSession = session;
-      const skill = this.turnSkills.find((candidate) => candidate.selects(preparedSession)) ?? this.turnSkills[0];
-      if (!skill?.streamRender) {
+      const skill = this.turnSkillSelector.resolveSkill(preparedSession);
+      if (!skill.streamRender) {
         throw new Error("chat_no_streamable_turn_skill");
       }
       const answerStream = skill.streamRender({

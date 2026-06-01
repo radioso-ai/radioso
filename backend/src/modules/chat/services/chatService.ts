@@ -21,11 +21,15 @@ import {
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
-import { runPreparedChatTurnWithConversationEngine } from "./conversationEngineChatTurn.js";
+import {
+  runPreparedChatTurnStreamWithConversationEngine,
+  runPreparedChatTurnWithConversationEngine,
+} from "./conversationEngineChatTurn.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import { noopDirectiveSteering, type DirectiveSteeringPort } from "../../directives/public.js";
 import {
   buildTurnRendererRegistry,
+  getUnstreamedFinalAnswerRemainder,
   type TurnOutcomeRendererRegistry,
   type TurnSkill,
   type TurnStreamSuggestions,
@@ -81,6 +85,15 @@ export class ModelChatGateway implements ChatGateway {
 }
 
 export class OpenAIChatGateway extends ModelChatGateway {}
+
+type PreparedChatStreamTurnEvent =
+  | { type: "chunk"; text: string }
+  | {
+      type: "final";
+      finalPresentation: ChatPresentedAnswer;
+      suggestions: TurnStreamSuggestions;
+      engineTrace?: ConversationTrace;
+    };
 
 const SKILL_CHIP_TAG_PATTERN = /<skill_chip>([\s\S]*?)<\/skill_chip>\s*/i;
 const SKILL_RECEIPT_TAG_PATTERN = /<skill_receipt>([\s\S]*?)<\/skill_receipt>\s*/i;
@@ -318,6 +331,67 @@ export class ChatService {
     return { presentation };
   }
 
+  private async *streamTurn(
+    session: PreparedSession,
+    input: { query: string; userExpectedLocale?: string | null; accountId?: string },
+  ): AsyncIterable<PreparedChatStreamTurnEvent> {
+    if (this.conversationEngine) {
+      for await (const event of runPreparedChatTurnStreamWithConversationEngine({
+        engine: this.conversationEngine,
+        session,
+        turnSkillSelector: this.turnSkillSelector,
+        turnSkills: this.turnSkills,
+        query: input.query,
+        userExpectedLocale: input.userExpectedLocale,
+        accountId: input.accountId,
+      })) {
+        if (event.type === "chunk") {
+          yield event;
+          continue;
+        }
+        yield {
+          type: "final",
+          finalPresentation: event.presentation,
+          suggestions: event.suggestions,
+          engineTrace: event.engineTrace,
+        };
+      }
+      return;
+    }
+
+    const skill = this.turnSkillSelector.resolveSkill(session);
+    if (!skill.streamRender) {
+      throw new Error("chat_no_streamable_turn_skill");
+    }
+    const answerStream = skill.streamRender({
+      session,
+      query: input.query,
+      userExpectedLocale: input.userExpectedLocale,
+      accountId: input.accountId,
+    });
+    let streamStep = await answerStream.next();
+    while (!streamStep.done) {
+      yield {
+        type: "chunk",
+        text: streamStep.value,
+      };
+      streamStep = await answerStream.next();
+    }
+    const streamResult = streamStep.value;
+    const remainingAnswer = getUnstreamedFinalAnswerRemainder(streamResult);
+    if (remainingAnswer) {
+      yield {
+        type: "chunk",
+        text: remainingAnswer,
+      };
+    }
+    yield {
+      type: "final",
+      finalPresentation: streamResult.finalPresentation,
+      suggestions: streamResult.suggestions,
+    };
+  }
+
   async answer(input: {
     workspaceId: string;
     agentId?: string | null;
@@ -508,54 +582,26 @@ export class ChatService {
         : await this.chatSessionPreparer.prepareDirect(input, session);
       const answerStartedAt = Date.now();
 
-      // Route to the capability that claims this turn (through the same selection
-      // seam the engine uses) and stream its answer. The skill owns generating,
-      // streaming, presentation, and its grounded-miss reconcile; the host owns the
-      // finalization below (persist + suggest).
-      const preparedSession = session;
-      const skill = this.turnSkillSelector.resolveSkill(preparedSession);
-      if (!skill.streamRender) {
-        throw new Error("chat_no_streamable_turn_skill");
-      }
-      const answerStream = skill.streamRender({
-        session: preparedSession,
-        query: input.query,
-        userExpectedLocale: input.userExpectedLocale,
-        accountId: input.accountId,
-      });
-      let streamStep = await answerStream.next();
-      while (!streamStep.done) {
-        yield {
-          type: "chunk",
-          text: streamStep.value,
-        };
-        streamStep = await answerStream.next();
-      }
-      const { finalPresentation, suggestions } = streamStep.value;
-      let { hasStreamedAnswer, streamedAnswer } = streamStep.value;
-
-      // The skill produced the fully reconciled presentation (its grounded-miss
-      // safety net included). The host stays capability-neutral: emit any part of
-      // the final answer that wasn't already streamed, then persist and suggest.
-      if (!hasStreamedAnswer && finalPresentation.answer) {
-        yield {
-          type: "chunk",
-          text: finalPresentation.answer,
-        };
-        hasStreamedAnswer = true;
-        streamedAnswer += finalPresentation.answer;
-      } else if (
-        hasStreamedAnswer
-        && finalPresentation.answer
-        && finalPresentation.answer.startsWith(streamedAnswer)
-      ) {
-        const remainingAnswer = finalPresentation.answer.slice(streamedAnswer.length);
-        if (remainingAnswer) {
+      // Route to the capability that claims this turn and stream its answer. When
+      // the reusable engine is wired, it drives the terminal selection/dispatch
+      // stages; otherwise the host uses the same selection seam directly.
+      let finalPresentation: ChatPresentedAnswer | null = null;
+      let suggestions: TurnStreamSuggestions | null = null;
+      let engineTrace: ConversationTrace | undefined;
+      for await (const event of this.streamTurn(session, input)) {
+        if (event.type === "chunk") {
           yield {
             type: "chunk",
-            text: remainingAnswer,
+            text: event.text,
           };
+          continue;
         }
+        finalPresentation = event.finalPresentation;
+        suggestions = event.suggestions;
+        engineTrace = event.engineTrace;
+      }
+      if (!finalPresentation || !suggestions) {
+        throw new Error("chat_stream_missing_final_presentation");
       }
       // The lazy promise can call chatActionSuggestionService.evaluate (which may
       // hit an LLM). If completeAssistantTurn below throws, we rethrow but the
@@ -581,6 +627,7 @@ export class ChatService {
         presentation,
         answerStartedAt,
         stream: input.stream,
+        engineTrace,
       });
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();

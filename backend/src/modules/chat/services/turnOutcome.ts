@@ -107,6 +107,16 @@ export interface TurnStreamResult {
   streamedAnswer: string;
 }
 
+export const getUnstreamedFinalAnswerRemainder = (result: TurnStreamResult): string => {
+  if (!result.hasStreamedAnswer) {
+    return result.finalPresentation.answer;
+  }
+  if (result.finalPresentation.answer && result.finalPresentation.answer.startsWith(result.streamedAnswer)) {
+    return result.finalPresentation.answer.slice(result.streamedAnswer.length);
+  }
+  return "";
+};
+
 /**
  * A registered terminal turn capability: its public `definition` (what the
  * selector and engine see), how it `dispatch`es into a `TurnOutcome`, and how that

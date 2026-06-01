@@ -721,6 +721,9 @@ describe("chat service streaming", () => {
           },
         };
       },
+      async *processTurnStream() {
+        throw new Error("processTurnStream should not be used in this test");
+      },
     };
     const service = makeChatService(
       conversationRepository,
@@ -817,6 +820,68 @@ describe("chat service streaming", () => {
     expect(selectionStage?.outputs?.selectedSkills).toContain("social_only.answer");
     expect(engineTrace?.stages?.some((stage) => stage.kind === "skill_dispatch")).toBe(true);
     expect(response.answer).toBe("Normal answer.");
+  });
+
+  it("records the conversation engine trace for streamed terminal answers when the engine is wired", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Normal answer.";
+      },
+      async *streamAnswer() {
+        yield "Normal";
+        yield " answer.";
+      },
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
+        query: "I need help",
+        responseIntent: "social_only",
+      })) as never),
+      chatGateway,
+      auditService,
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+    );
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "I need help",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events.filter((event) => event.type === "chunk").map((event) => event.text).join("")).toBe("Normal answer.");
+    const doneEvent = events.find((event): event is Extract<ChatStreamEvent, { type: "done" }> => event.type === "done");
+    expect(doneEvent?.answer).toBe("Normal answer.");
+    const answerEvent = auditService.events.find(
+      (event) => event.eventType === "chat.answer" && event.eventStatus === "success",
+    );
+    const metadata = answerEvent?.metadata as {
+      conversationEngine?: {
+        trace?: { stages?: Array<{ kind: string; outputs?: Record<string, unknown> }> };
+      };
+    };
+    const engineTrace = metadata.conversationEngine?.trace;
+    expect(engineTrace).toBeDefined();
+    expect(engineTrace?.stages?.find((stage) => stage.kind === "skill_selection")?.outputs?.selectedSkills)
+      .toContain("social_only.answer");
+    expect(engineTrace?.stages?.some((stage) => stage.kind === "compose")).toBe(true);
   });
 
   it("omits conversation engine audit metadata when no engine is wired", async () => {

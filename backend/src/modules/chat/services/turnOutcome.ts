@@ -2,7 +2,7 @@ import type { SkillDefinition, TurnOutcome } from "@radioso/conversation-contrac
 
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
-import type { AnswerGroundingVerdict, PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
+import type { PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
 
 /**
  * The generic, per-turn result the assistant composes its reply from — the
@@ -75,28 +75,45 @@ export class GenericTurnOutcomeRenderer implements TurnOutcomeRenderer {
 }
 
 /**
+ * How the host should source this turn's question suggestions after the stream —
+ * the second role the old `noContextPresentation` conflated with the presentation
+ * override. Keeping it separate lets a skill own a *final presentation* (including
+ * its own grounded-miss reconcile) without also dictating where suggestions come
+ * from, the exact coupling that made grounded-miss un-movable before.
+ *
+ * - `presentation`: the skill already settled this turn's question suggestions onto
+ *   `finalPresentation` (assistant-voice replies); the host uses them as-is.
+ * - `assistant`: the host expands the model's planned envelope suggestions against
+ *   the answer (retrieval — both cited answers and grounded misses).
+ */
+export type TurnStreamSuggestions =
+  | { mode: "presentation" }
+  | { mode: "assistant"; planned: PlannedEnvelopeSuggestion[] };
+
+/**
+ * The settled result of streaming a turn's answer — what the host needs to finalize
+ * (persist, suggest) after the chunks have been yielded. The skill owns generating,
+ * streaming, AND fully reconciling the answer (its grounded-miss / blank fallbacks
+ * included), surfacing the finished presentation here; the host stays
+ * capability-neutral and only persists, re-emits any non-streamed remainder, and
+ * sources suggestions per {@link TurnStreamSuggestions}.
+ */
+export interface TurnStreamResult {
+  /** The skill's fully reconciled presentation (incl. any grounded-miss swap). */
+  finalPresentation: ChatPresentedAnswer;
+  /** How the host sources this turn's question suggestions after the stream. */
+  suggestions: TurnStreamSuggestions;
+  hasStreamedAnswer: boolean;
+  streamedAnswer: string;
+}
+
+/**
  * A registered terminal turn capability: its public `definition` (what the
  * selector and engine see), how it `dispatch`es into a `TurnOutcome`, and how that
  * outcome `renderer`s. Concrete skills (e.g. retrieval) live outside this module
  * and are registered by the host, so the turn machinery stays capability-neutral
  * and only ever expects skill-shaped input — it names no specific skill.
  */
-/**
- * The raw result of streaming a turn's answer — what the host needs to finalize
- * (present, reconcile, persist, suggest) after the chunks have been yielded. The
- * skill owns generating + streaming the answer; the host owns the common
- * finalization that follows.
- */
-export interface TurnStreamResult {
-  rawAnswer: string;
-  plannedSuggestions: PlannedEnvelopeSuggestion[];
-  answerGrounding: AnswerGroundingVerdict;
-  /** Set when the reply was produced off the grounded path (social/identity). */
-  noContextPresentation: ChatPresentedAnswer | null;
-  hasStreamedAnswer: boolean;
-  streamedAnswer: string;
-}
-
 export interface TurnSkill {
   definition: SkillDefinition;
   /** Whether this skill is the terminal answer for the prepared turn. */

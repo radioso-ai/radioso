@@ -275,6 +275,43 @@ export interface ConversationTurnStreamComposer extends ConversationTurnComposer
   stream(input: ConversationTurnComposeInput): AsyncIterable<TurnStreamEvent>;
 }
 
+/**
+ * A session's position in an in-flight Routine (a stateful, multi-step flow).
+ * `path` is the node-index history (last element is the current step); `variables`
+ * holds captured slots. The engine persists this between turns and resumes from it.
+ */
+export interface RoutineState {
+  sessionId: string;
+  routineId: string;
+  path: string[];
+  variables: Record<string, unknown>;
+  status: "active" | "completed" | "expired";
+  metadata?: Record<string, unknown>;
+}
+
+/** Durable, session-scoped store for the active Routine's position + variables. */
+export interface ConversationRoutineStore {
+  loadActive(input: { sessionId: string }): Promise<RoutineState | null>;
+  save(state: RoutineState): Promise<void>;
+  clear(input: { sessionId: string }): Promise<void>;
+}
+
+export interface ConversationRoutineResumeResult {
+  response: RenderableTurn;
+  /** The next state to persist; `null` clears it (the routine reached a terminal step). */
+  nextState: RoutineState | null;
+  outcomes?: TurnOutcome[];
+}
+
+/**
+ * Advances an active Routine one step for the current turn. The runner is the seam
+ * the declarative model + LLM progression (later slices) fill; the engine only
+ * resumes through it and persists the returned next state.
+ */
+export interface ConversationRoutineRunner {
+  resume(input: { turn: TurnContext; state: RoutineState }): Promise<ConversationRoutineResumeResult>;
+}
+
 export interface ProcessTurnInput {
   agent: ConversationAgentConfig;
   sessionId: string;
@@ -287,6 +324,12 @@ export interface ProcessTurnInput {
   directiveMatcher: ConversationDirectiveMatcher;
   selector: ConversationSkillSelector;
   composer: ConversationTurnComposer;
+  /**
+   * When both are wired and the session holds an active routine, the engine resumes
+   * it before normal selection. Optional — absent leaves turn behavior unchanged.
+   */
+  routineStore?: ConversationRoutineStore;
+  routineRunner?: ConversationRoutineRunner;
 }
 
 export interface ProcessTurnStreamInput extends Omit<ProcessTurnInput, "composer"> {

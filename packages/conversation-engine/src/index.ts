@@ -243,7 +243,78 @@ export class DefaultConversationEngine implements ConversationEngine {
     };
   }
 
+  /**
+   * Resume-first stage: when a routine store + runner are wired and the session
+   * holds an active routine, advance it for this turn instead of running normal
+   * selection/dispatch/compose. Returns null (falling through to the normal turn)
+   * when no routine machinery is wired or nothing is in flight, so turn behavior is
+   * unchanged unless a routine is active.
+   */
+  private async tryResumeRoutine(
+    input: ProcessTurnInput | ProcessTurnStreamInput,
+  ): Promise<ProcessTurnResult | null> {
+    if (!input.routineStore || !input.routineRunner) {
+      return null;
+    }
+    const state = await input.routineStore.loadActive({ sessionId: input.sessionId });
+    if (!state || state.status !== "active") {
+      return null;
+    }
+
+    const events: ConversationEvent[] = [];
+    const history = await input.stores.loadHistory({ sessionId: input.sessionId });
+    const inputEvent = createInputEvent(input);
+    await input.stores.appendEvent(inputEvent);
+    events.push(inputEvent);
+
+    const turn: TurnContext = {
+      agent: input.agent,
+      sessionId: input.sessionId,
+      inputEvent: input.inputEvent,
+      history,
+      stagedContext: [],
+      steering: [],
+    };
+    const gatherStage = stage({
+      id: "gather",
+      kind: "gather",
+      status: "applied",
+      outputs: { historyCount: history.length },
+    });
+
+    const result = await input.routineRunner.resume({ turn, state });
+    if (result.nextState) {
+      await input.routineStore.save(result.nextState);
+    } else {
+      await input.routineStore.clear({ sessionId: input.sessionId });
+    }
+
+    const responseEvent = createResponseEvent(input.sessionId, result.response);
+    await input.stores.appendEvent(responseEvent);
+    events.push(responseEvent);
+
+    const resumeStage = stage({
+      id: `routine:${state.routineId}`,
+      kind: "routine_resume",
+      status: "applied",
+      outputs: { routineId: state.routineId, completed: result.nextState === null },
+    });
+
+    return createProcessTurnResult({
+      sessionId: input.sessionId,
+      events,
+      decision: { selected: [], reason: `routine_resumed:${state.routineId}` },
+      outcomes: result.outcomes ?? [],
+      response: result.response,
+      trace: createTrace([gatherStage, resumeStage]),
+    });
+  }
+
   async processTurn(input: ProcessTurnInput): Promise<ProcessTurnResult> {
+    const resumed = await this.tryResumeRoutine(input);
+    if (resumed) {
+      return resumed;
+    }
     const prepared = await this.prepareTurn(input);
     const response = await input.composer.compose({
       turn: prepared.composeTurn,
@@ -272,6 +343,14 @@ export class DefaultConversationEngine implements ConversationEngine {
   }
 
   async *processTurnStream(input: ProcessTurnStreamInput): AsyncIterable<ProcessTurnStreamEvent> {
+    const resumed = await this.tryResumeRoutine(input);
+    if (resumed) {
+      if (resumed.response.answer) {
+        yield { type: "delta", sessionId: input.sessionId, text: resumed.response.answer };
+      }
+      yield { type: "final", result: resumed };
+      return;
+    }
     const prepared = await this.prepareTurn(input);
     let response: RenderableTurn | null = null;
     let finalMetadata: Record<string, unknown> | undefined;

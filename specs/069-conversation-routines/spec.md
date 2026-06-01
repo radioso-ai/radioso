@@ -2,7 +2,7 @@
 
 **Feature Branch**: `069-conversation-routines`
 **Created**: 2026-06-01
-**Status**: Draft
+**Status**: Approved (implementation in progress; slice 4 soak-gated)
 **Input**: #482 entanglement #4 (intake is a parallel mini-engine), #520 (intake unification → Routine runtime). See `research.md` for the model and rationale.
 
 **Scope Note**: This spec adds **Routines** — the stateful, multi-step conversational flows the platform vocabulary already names ("Directives first, Routines second": Directives steer, Routines run multi-step flows). A Routine is an authored graph of **steps** connected by conditional **transitions**; the conversation engine activates a Routine, persists the session's position in it, advances it one step per turn via an LLM next-step selector, **projects the current step into a Directive** so it steers the reply through the existing steering set, and dispatches **skills** at tool steps. The EE human-contact flow — today a ~640-line hand-rolled intake state machine running *outside* the engine — is the **pilot**: it is transplanted onto the Routine runtime in the terminal slice, after which the parallel `registerChatIntakeProvider` path and the pre-engine intake loop in `ChatService` are retired.

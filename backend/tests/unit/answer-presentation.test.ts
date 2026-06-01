@@ -385,6 +385,81 @@ describe("answer presentation service", () => {
     ]);
   });
 
+  it("reflows orphaned punctuation when an anchor sat on its own line after a paragraph break", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer:
+        "It is a science that releases karma when practiced consistently\n\n[[1]].\n\nAnanda Europe teaches Kriya.",
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Kriya Yoga",
+          content: "It is a science that releases karma when practiced consistently.",
+        },
+      ],
+    });
+
+    expect(result.answer).toBe(
+      "It is a science that releases karma when practiced consistently.\n\nAnanda Europe teaches Kriya.",
+    );
+    expect(result.answerSegments).toEqual([
+      {
+        text: "It is a science that releases karma when practiced consistently",
+        citationIndices: [0],
+      },
+      {
+        text: ".\n\nAnanda Europe teaches Kriya.",
+      },
+    ]);
+  });
+
+  it("reattaches a trailing link list that followed a standalone citation anchor", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer:
+        "See our course pages for details\n\n[[1]] ; [Kriya Yoga intro and practice](https://example.com/intro).",
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Kriya Yoga intro",
+          content: "See our course pages for details.",
+        },
+      ],
+    });
+
+    expect(result.answer).toBe(
+      "See our course pages for details; [Kriya Yoga intro and practice](https://example.com/intro).",
+    );
+  });
+
+  it("leaves a line-leading punctuation that no anchor detached intact", () => {
+    const service = new AnswerPresentationService();
+
+    // The reflow must be scoped to the anchor seam: ordinary answer content that
+    // starts a line with `:` or `.` (CSS selectors, filenames) must survive even when
+    // a citation anchor elsewhere drives the citation-presentation path.
+    const result = service.present({
+      answer:
+        "Style the link with this rule[[1]]:\n\n:hover { color: blue; }\n\nSave it as\n\n.env in the project root.",
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Styling guide",
+          content: "Style the link with this rule.",
+        },
+      ],
+    });
+
+    expect(result.answer).toBe(
+      "Style the link with this rule:\n\n:hover { color: blue; }\n\nSave it as\n\n.env in the project root.",
+    );
+  });
+
   it("present() preserves sourceUrl on emitted citations", () => {
     const service = new AnswerPresentationService();
 

@@ -18,6 +18,75 @@ describe("citation anchor sanitizer", () => {
     );
   });
 
+  it("reflows an orphaned period when an anchor was streamed on its own line", () => {
+    const sanitizer = new CitationAnchorSanitizer();
+
+    const chunks = [
+      sanitizer.push("It is a science when practiced consistently\n\n[[1]]"),
+      sanitizer.push(".\n\nAnanda Europe teaches Kriya."),
+      sanitizer.flush(),
+    ];
+
+    expect(chunks.join("")).toBe(
+      "It is a science when practiced consistently.\n\nAnanda Europe teaches Kriya.",
+    );
+  });
+
+  it("reattaches a semicolon-led link list streamed after a standalone anchor", () => {
+    const sanitizer = new CitationAnchorSanitizer();
+
+    const chunks = [
+      sanitizer.push("See our course pages for details\n\n[[1]]"),
+      sanitizer.push(" ; [Kriya Yoga intro and practice](https://example.com/intro)."),
+      sanitizer.flush(),
+    ];
+
+    expect(chunks.join("")).toBe(
+      "See our course pages for details; [Kriya Yoga intro and practice](https://example.com/intro).",
+    );
+  });
+
+  it("preserves a genuine paragraph break that is not adjacent to punctuation", () => {
+    const sanitizer = new CitationAnchorSanitizer();
+
+    const chunks = [
+      sanitizer.push("First grounded paragraph[[1]].\n\n"),
+      sanitizer.push("Second grounded paragraph."),
+      sanitizer.flush(),
+    ];
+
+    expect(chunks.join("")).toBe(
+      "First grounded paragraph.\n\nSecond grounded paragraph.",
+    );
+  });
+
+  it("collapses a detached anchor whose punctuation arrives in the same chunk", () => {
+    const sanitizer = new CitationAnchorSanitizer();
+
+    const chunks = [
+      sanitizer.push("It is a science when practiced consistently\n\n[[1]]. Ananda Europe teaches Kriya."),
+      sanitizer.flush(),
+    ];
+
+    expect(chunks.join("")).toBe(
+      "It is a science when practiced consistently. Ananda Europe teaches Kriya.",
+    );
+  });
+
+  it("leaves line-leading punctuation that no anchor detached intact across chunks", () => {
+    const sanitizer = new CitationAnchorSanitizer();
+
+    // No citation anchor is involved, so the line break before `:hover` is real answer
+    // content (a CSS selector) and must be preserved, not collapsed.
+    const chunks = [
+      sanitizer.push("Use this selector:\n\n"),
+      sanitizer.push(":hover { color: red; }"),
+      sanitizer.flush(),
+    ];
+
+    expect(chunks.join("")).toBe("Use this selector:\n\n:hover { color: red; }");
+  });
+
   it("preserves natural single-bracket numeric text in streamed output", () => {
     const sanitizer = new CitationAnchorSanitizer();
 

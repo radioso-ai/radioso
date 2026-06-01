@@ -35,13 +35,13 @@ export const inlineSupportedLinksDirective: Directive = {
   criticality: "high",
   description: "Use available source URLs as inline links in grounded answers.",
   action: [
-    "When you name or reference a page, site, course, event, video, or resource that has a URL in the retrieved findings, link it inline with Markdown — do this every time you mention such a resource, not just once.",
-    "Provide ample inline links: prefer linking each named resource over leaving it as plain text.",
+    "When you name or reference a page, site, course, event, video, or resource that has a URL in the retrieved findings, link it inline with Markdown by turning the resource's own name or description into the link, within the sentence that mentions it.",
+    "Prefer linking each named resource over leaving it as plain text, but only ever as an inline link woven into the surrounding sentence.",
+    "Never gather links into a trailing list, a closing line, a sources or read-more block, a run of links separated by semicolons or commas, or any group that follows a citation marker — even when several resources are relevant, link each one in place instead.",
+    "Never leave a link, or a citation marker, alone on its own line.",
     "If the user asks for a link, page, URL, source, or where to learn more and a supported URL exists, provide it as an inline Markdown link.",
     "Use human-readable link text, such as [course page](https://example.com/course), never [https://example.com/course](https://example.com/course).",
     "Never print a bare/raw URL unless the user explicitly asks for the literal URL.",
-    "Do not collect links in a separate reference list, use trailing read-more fragments, or leave a link alone on its own line.",
-    "For resource lists or closing paths, link the resource name or page description inline.",
     "Include useful supported links that help the visitor continue, but do not invent links.",
   ].join(" "),
 };

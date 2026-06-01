@@ -69,7 +69,9 @@ const makeChatService = (
   },
   directiveSteering?: ChatServiceOptions["directiveSteering"],
   selectionStrategy?: ChatServiceOptions["selectionStrategy"],
-  conversationEngine?: ChatServiceOptions["conversationEngine"],
+  // The engine is the only turn path now; default to a real one so every streaming
+  // test exercises it, matching production composition.
+  conversationEngine: ChatServiceOptions["conversationEngine"] = createConversationEngine(),
 ): ChatService =>
   new ChatService({
     conversationRepository,
@@ -882,43 +884,6 @@ describe("chat service streaming", () => {
     expect(engineTrace?.stages?.find((stage) => stage.kind === "skill_selection")?.outputs?.selectedSkills)
       .toContain("social_only.answer");
     expect(engineTrace?.stages?.some((stage) => stage.kind === "compose")).toBe(true);
-  });
-
-  it("omits conversation engine audit metadata when no engine is wired", async () => {
-    const conversationRepository = new InMemoryConversationRepository();
-    const messageRepository = new InMemoryMessageRepository();
-    const auditService = createAuditService();
-    const chatGateway: ChatGateway = {
-      async answer() {
-        return "Normal answer.";
-      },
-      async *streamAnswer() {
-        yield "Normal answer.";
-      },
-    };
-    const service = makeChatService(
-      conversationRepository,
-      messageRepository,
-      new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
-        query: "I need help",
-        responseIntent: "social_only",
-      })) as never),
-      chatGateway,
-      auditService,
-      fallbackReplyComposer,
-    );
-
-    await service.answer({
-      workspaceId: "workspace-1",
-      query: "I need help",
-      stream: false,
-    });
-
-    const answerEvent = auditService.events.find(
-      (event) => event.eventType === "chat.answer" && event.eventStatus === "success",
-    );
-    expect(answerEvent).toBeDefined();
-    expect((answerEvent?.metadata as { conversationEngine?: unknown }).conversationEngine).toBeUndefined();
   });
 
   it("persists the normalized assistant answer only after the stream completes", async () => {

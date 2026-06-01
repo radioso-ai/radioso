@@ -13,6 +13,7 @@ import { EmailVerificationService } from "../../src/modules/auth/services/emailV
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { createConversationEngine } from "@radioso/conversation-engine";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
@@ -672,6 +673,7 @@ export const createTestDependencies = (overrides: {
     usageLimitPolicy,
     agentService,
     chatIntakeProvider,
+    conversationEngine: createConversationEngine(),
   });
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,

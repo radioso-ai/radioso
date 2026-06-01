@@ -49,8 +49,8 @@ and its dispatcher builds the `retrieval.answer` outcome from the prepared
 session, instead of receiving an already-built outcome from `ChatService`. The
 composer still renders through the Radioso `TurnOutcomeRendererRegistry`, and
 `ChatService` continues to own session prep, the skill-intake path, lifecycle,
-persistence, audit, and billing. `ChatService` keeps an engine-less fallback path
-for tests, but production always runs the engine.
+persistence, audit, and billing. The engine is `ChatService`'s only turn path — it
+is a required dependency, with no engine-less fallback.
 
 The engine's turn trace (its gather/directive/selection/dispatch/compose stages)
 is recorded on the `chat.answer` success audit event under

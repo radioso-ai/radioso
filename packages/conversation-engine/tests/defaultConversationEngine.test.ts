@@ -362,4 +362,38 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     expect(input.composer.compose).toHaveBeenCalled();
     expect(result.trace.stages.map((stage) => stage.kind)).toContain("compose");
   });
+
+  it("yields an active routine to the normal turn without appending input or persisting", async () => {
+    const input = withRoutine({ resume: vi.fn(async () => ({ yielded: true, response: { answer: "" }, nextState: null })) });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    // Fell through to the normal turn; routine state left untouched for a later resume.
+    expect(input.routineRunner!.resume).toHaveBeenCalled();
+    expect(input.routineStore!.save).not.toHaveBeenCalled();
+    expect(input.routineStore!.clear).not.toHaveBeenCalled();
+    expect(input.selector.select).toHaveBeenCalled();
+    expect(input.composer.compose).toHaveBeenCalled();
+    expect(result.trace.stages.map((stage) => stage.kind)).toContain("compose");
+    // The input event is appended exactly once (by the normal path, not twice).
+    expect(input.stores.appendEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it("seeds initial variables from the activator when starting a routine", async () => {
+    const input: ProcessTurnInput = {
+      ...createInput(),
+      routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) },
+      routineActivator: { activate: vi.fn(async () => ({ routineId: "contact", variables: { email: "a@b.c" } })) },
+      routineRunner: {
+        resume: vi.fn(async () => ({ response: { answer: "What's your message?" }, nextState: { ...activeState, variables: { email: "a@b.c" } } })),
+      },
+    };
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(input.routineRunner!.resume).toHaveBeenCalledWith({
+      turn: expect.objectContaining({ sessionId: "session_1" }),
+      state: expect.objectContaining({ routineId: "contact", path: [], variables: { email: "a@b.c" } }),
+    });
+  });
 });

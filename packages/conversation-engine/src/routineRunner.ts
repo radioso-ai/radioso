@@ -80,6 +80,12 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       transitions: outgoing(currentStepId),
       turn,
     });
+    // The user's message is off-topic for the routine → decline this turn and let
+    // normal answering handle it; the routine stays at its current step to resume.
+    // response/nextState are inert placeholders the engine ignores on a yield.
+    if (decision.yieldTurn) {
+      return { yielded: true, response: { answer: "" }, nextState: null };
+    }
     const landedId = landingStepId(currentStepId, decision);
     let step = landedId === currentStepId ? currentStep : stepById(landedId);
     let variables = { ...state.variables, ...(decision.variables ?? {}) };

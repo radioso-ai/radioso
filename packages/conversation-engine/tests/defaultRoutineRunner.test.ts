@@ -278,9 +278,7 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     // From ask_message land on submit; on submit the selector declines (returns the
     // current step id) → the runner advances to the first edge (done) instead of
     // parking on the skill step and re-dispatching next turn.
-    const select = vi.fn(async ({ currentStep }: { currentStep: { id: string } }) =>
-      currentStep.id === "submit" ? { nextStepId: "submit" } : { nextStepId: "submit" },
-    );
+    const select = vi.fn(async () => ({ nextStepId: "submit" }));
     const dispatch = vi.fn(async () => ({ status: "completed" as const }));
     const runner = new DefaultRoutineRunner([multiEdge], { select }, { render: vi.fn(echoRenderer.render) }, { dispatch });
 

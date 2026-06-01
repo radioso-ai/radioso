@@ -42,7 +42,13 @@ imports from `services/`.
 ## Common Change Paths
 
 - Streaming: `services/chatService.ts`, `contracts/streamEvents.ts`, frontend
-  chat stream adapters.
+  chat stream adapters. Each terminal skill's `streamRender` owns its full
+  post-stream reconcile (grounded-miss safety net included) and returns a
+  `TurnStreamResult` (`turnOutcome.ts`) carrying the final presentation plus how
+  the host should source question suggestions; the host streaming finalize stays
+  capability-neutral (persist, re-emit any non-streamed remainder, suggest) and
+  never reaches into retrieval. Engine-native streaming (`processTurnStream`) is
+  intentionally deferred — see issue #507.
 - Citations: `citation*`, `implicitCitationSupport.ts`,
   `chatAnswerPresenter.ts`.
 - Suggestions and skill intake: `chatIntakeProvider.ts`,

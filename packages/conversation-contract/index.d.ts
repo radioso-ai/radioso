@@ -30,7 +30,7 @@ export interface ConversationInputEvent {
   metadata?: Record<string, unknown>;
 }
 
-export type SteeringSource = "directive" | "skill";
+export type SteeringSource = "directive" | "skill" | "routine";
 
 export type SteeringLifespan = "response" | "session";
 
@@ -275,6 +275,152 @@ export interface ConversationTurnStreamComposer extends ConversationTurnComposer
   stream(input: ConversationTurnComposeInput): AsyncIterable<TurnStreamEvent>;
 }
 
+/**
+ * A session's position in an in-flight Routine (a stateful, multi-step flow).
+ * `path` is the node-index history (last element is the current step); `variables`
+ * holds captured slots. The engine persists this between turns and resumes from it.
+ */
+export interface RoutineState {
+  sessionId: string;
+  routineId: string;
+  path: string[];
+  variables: Record<string, unknown>;
+  status: "active" | "completed" | "expired";
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * A Routine is an authored graph of steps connected by conditional transitions.
+ * A `chat` step's `action` is projected into a steering rule (it steers the reply);
+ * a `skill` step dispatches `skillName`; a `terminal` step ends the routine.
+ */
+export interface RoutineStep {
+  id: string;
+  kind: "chat" | "skill" | "terminal";
+  /** Instruction projected into steering for a `chat`/`terminal` step. */
+  action?: string;
+  /** The skill a `skill` step dispatches. */
+  skillName?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RoutineTransition {
+  from: string;
+  to: string;
+  /** Condition the next-step selector evaluates to decide whether this edge fires. */
+  condition: string;
+}
+
+export interface Routine {
+  id: string;
+  rootStepId: string;
+  steps: RoutineStep[];
+  transitions: RoutineTransition[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface RoutineNextStepDecision {
+  /**
+   * The chosen step id. It MUST be either an outgoing transition's target or the
+   * current step id (the reserved "stay / re-ask" sentinel) — the runner constrains
+   * the choice to declared successors and treats anything else as staying put, so a
+   * self-transition (`from === to`) cannot model an advance.
+   */
+  nextStepId: string;
+  /** Variables captured this turn (merged into routine state). */
+  variables?: Record<string, unknown>;
+  rationale?: string;
+}
+
+/** The result of dispatching a Routine skill (tool) step. */
+export interface RoutineSkillResult {
+  status: SkillOutcomeStatus;
+  outputs?: Record<string, unknown>;
+  answer?: string;
+}
+
+/**
+ * Dispatches a Routine skill (tool) step's skill. The host implements it over the
+ * existing skill-executor registry; the runner advances past the step on its result.
+ */
+export interface ConversationRoutineSkillDispatcher {
+  dispatch(input: {
+    skillName: string;
+    state: RoutineState;
+    turn: TurnContext;
+  }): Promise<RoutineSkillResult>;
+}
+
+/**
+ * Advances an active Routine: given the current step and its outgoing transitions,
+ * decide which step the turn lands on and capture any slot variables. Slice 3
+ * provides the LLM implementation; the runner consumes it through this port. When a
+ * skill step just ran, its `skillResult` is passed so the selector can read the
+ * outcome (e.g. to choose a success vs. failure edge).
+ */
+export interface ConversationRoutineNextStepSelector {
+  select(input: {
+    routine: Routine;
+    state: RoutineState;
+    currentStep: RoutineStep;
+    transitions: RoutineTransition[];
+    turn: TurnContext;
+    skillResult?: RoutineSkillResult;
+  }): Promise<RoutineNextStepDecision>;
+}
+
+/**
+ * Renders the reply for the routine's current step. The host implements this with
+ * the Radioso composer (the projected step steering is passed in), so the pure
+ * engine owns graph mechanics and the host owns generation/presentation. It is told
+ * only what it needs to write the message — the step and its projected steering for
+ * this turn — not the graph topology or slot state.
+ */
+export interface ConversationRoutineStepRenderer {
+  render(input: {
+    step: RoutineStep;
+    steering: SteeringRule[];
+    turn: TurnContext;
+  }): Promise<RenderableTurn>;
+}
+
+/**
+ * Durable, session-scoped store for the active Routine's position + variables.
+ * `loadActive` returns only an in-flight (`status: "active"`) routine — the store
+ * owns expiry/TTL (clearing or expiring stale rows), so the engine never resumes a
+ * completed or expired routine.
+ */
+export interface ConversationRoutineStore {
+  loadActive(input: { sessionId: string }): Promise<RoutineState | null>;
+  save(state: RoutineState): Promise<void>;
+  clear(input: { sessionId: string }): Promise<void>;
+}
+
+export interface ConversationRoutineResumeResult {
+  response: RenderableTurn;
+  /** The next state to persist; `null` clears it (the routine reached a terminal step). */
+  nextState: RoutineState | null;
+  outcomes?: TurnOutcome[];
+}
+
+/**
+ * Advances an active Routine one step for the current turn. The runner is the seam
+ * the declarative model + LLM progression (later slices) fill; the engine only
+ * resumes through it and persists the returned next state.
+ */
+export interface ConversationRoutineRunner {
+  resume(input: { turn: TurnContext; state: RoutineState }): Promise<ConversationRoutineResumeResult>;
+}
+
+/**
+ * Decides whether a Routine should *start* this turn (a trigger fired) when no
+ * routine is active. Consulted before normal skill selection; returning null leaves
+ * the turn to normal selection. The new routine begins at its root step.
+ */
+export interface ConversationRoutineActivator {
+  activate(input: { turn: TurnContext }): Promise<{ routineId: string } | null>;
+}
+
 export interface ProcessTurnInput {
   agent: ConversationAgentConfig;
   sessionId: string;
@@ -287,6 +433,15 @@ export interface ProcessTurnInput {
   directiveMatcher: ConversationDirectiveMatcher;
   selector: ConversationSkillSelector;
   composer: ConversationTurnComposer;
+  /**
+   * Routine machinery, all optional. `routineStore` + `routineRunner` travel together
+   * (both required to resume an active routine; wiring one without the other is inert).
+   * With `routineActivator` also wired, the engine may start a new routine when none
+   * is active. Absent leaves turn behavior unchanged.
+   */
+  routineStore?: ConversationRoutineStore;
+  routineRunner?: ConversationRoutineRunner;
+  routineActivator?: ConversationRoutineActivator;
 }
 
 export interface ProcessTurnStreamInput extends Omit<ProcessTurnInput, "composer"> {

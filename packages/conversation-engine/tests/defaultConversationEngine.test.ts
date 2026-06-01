@@ -324,4 +324,42 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const final = events.at(-1);
     expect(final?.type === "final" ? final.result.response.answer : "").toBe("What's your email?");
   });
+
+  it("activates a new routine at its root when the activator claims an idle turn", async () => {
+    const started: RoutineState = { ...activeState, path: ["ask_email"] };
+    const input: ProcessTurnInput = {
+      ...createInput(),
+      routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) },
+      routineActivator: { activate: vi.fn(async () => ({ routineId: "contact" })) },
+      routineRunner: { resume: vi.fn(async () => ({ response: { answer: "What's your email?" }, nextState: started })) },
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(input.routineActivator!.activate).toHaveBeenCalledWith({ turn: expect.objectContaining({ sessionId: "session_1" }) });
+    expect(input.routineRunner!.resume).toHaveBeenCalledWith({
+      turn: expect.objectContaining({ sessionId: "session_1" }),
+      // A fresh routine starts at its root (empty path).
+      state: expect.objectContaining({ routineId: "contact", path: [], status: "active" }),
+    });
+    expect(input.routineStore!.save).toHaveBeenCalledWith(started);
+    expect(input.selector.select).not.toHaveBeenCalled();
+    expect(result.trace.stages.map((stage) => stage.kind)).toEqual(["gather", "routine_activate"]);
+  });
+
+  it("declines activation and runs the normal turn when the activator returns null", async () => {
+    const input: ProcessTurnInput = {
+      ...createInput(),
+      routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(), clear: vi.fn() },
+      routineActivator: { activate: vi.fn(async () => null) },
+      routineRunner: { resume: vi.fn() },
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(input.routineRunner!.resume).not.toHaveBeenCalled();
+    expect(input.selector.select).toHaveBeenCalled();
+    expect(input.composer.compose).toHaveBeenCalled();
+    expect(result.trace.stages.map((stage) => stage.kind)).toContain("compose");
+  });
 });

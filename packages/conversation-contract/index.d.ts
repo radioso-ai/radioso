@@ -380,6 +380,15 @@ export interface ConversationRoutineRunner {
   resume(input: { turn: TurnContext; state: RoutineState }): Promise<ConversationRoutineResumeResult>;
 }
 
+/**
+ * Decides whether a Routine should *start* this turn (a trigger fired) when no
+ * routine is active. Consulted before normal skill selection; returning null leaves
+ * the turn to normal selection. The new routine begins at its root step.
+ */
+export interface ConversationRoutineActivator {
+  activate(input: { turn: TurnContext }): Promise<{ routineId: string } | null>;
+}
+
 export interface ProcessTurnInput {
   agent: ConversationAgentConfig;
   sessionId: string;
@@ -393,11 +402,13 @@ export interface ProcessTurnInput {
   selector: ConversationSkillSelector;
   composer: ConversationTurnComposer;
   /**
-   * When both are wired and the session holds an active routine, the engine resumes
-   * it before normal selection. Optional — absent leaves turn behavior unchanged.
+   * When the store + runner are wired, the engine resumes an active routine before
+   * normal selection; with an activator also wired, it may start a new routine when
+   * no routine is active. All optional — absent leaves turn behavior unchanged.
    */
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
+  routineActivator?: ConversationRoutineActivator;
 }
 
 export interface ProcessTurnStreamInput extends Omit<ProcessTurnInput, "composer"> {

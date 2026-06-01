@@ -196,7 +196,7 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
   async runWithoutRetrieval(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult> {
     const responseBehavior = input.request.responseBehavior;
     const responseSettings = {
-      citationDisplayEnabled: input.context.result.settings.citationDisplayEnabled,
+      citationDisplayEnabled: responseBehavior?.citationDisplayEnabled ?? true,
       suggestedQuestionsEnabled: responseBehavior?.suggestedQuestionsEnabled ?? input.context.result.settings.suggestedQuestionsEnabled,
       suggestedQuestionsCount: responseBehavior?.suggestedQuestionsCount ?? input.context.result.settings.suggestedQuestionsCount,
       customInstruction: responseBehavior?.customInstruction ?? input.context.result.settings.customInstruction,

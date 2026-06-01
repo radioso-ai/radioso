@@ -20,7 +20,6 @@ const baseInput = (overrides: Partial<RetrievalSettingsInput> = {}): RetrievalSe
   vectorTopK: 10,
   similarityThreshold: 0.3,
   rerankTopK: 5,
-  citationDisplayEnabled: true,
   metadataRules: [],
   customInstruction: "",
   ...overrides,

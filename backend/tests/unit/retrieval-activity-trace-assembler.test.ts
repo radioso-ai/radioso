@@ -24,7 +24,6 @@ describe("activity trace assembler", () => {
           vectorTopK: 20,
           similarityThreshold: 0.2,
           rerankTopK: 5,
-          citationDisplayEnabled: true,
           metadataRules: [],
           customInstruction: "",
           createdAt: new Date(),

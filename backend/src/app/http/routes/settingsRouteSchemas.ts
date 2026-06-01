@@ -23,7 +23,6 @@ export const updateSettingsSchema = z.object({
   vectorTopK: z.number().int().min(1),
   similarityThreshold: z.number(),
   rerankTopK: z.number().int().max(RETRIEVAL_BEHAVIOR.rerank.candidateLimit),
-  citationDisplayEnabled: z.boolean(),
   retrievalStrategy: z.enum(retrievalStrategyPreferences).optional(),
   metadataRules: z
     .array(
@@ -85,7 +84,6 @@ export const updatePlatformSettingsSchema = z.object({
     vectorTopK: z.number().int().optional(),
     similarityThreshold: z.number().optional(),
     rerankTopK: z.number().int().optional(),
-    citationDisplayEnabled: z.boolean().optional(),
     retrievalStrategy: z.enum(retrievalStrategyPreferences).optional(),
     metadataRules: updateSettingsSchema.shape.metadataRules,
   }).optional(),

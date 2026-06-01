@@ -295,6 +295,7 @@ export function ChatMessageThread({
   hideFeedbackEntries = false,
   copy = DEFAULT_WEBSITE_EMBED_COPY,
   showCitations = true,
+  documentInteractivity = 'open',
   conversationId,
   evalCaptureEnabled = false,
   analyticsSurface = 'dashboard',
@@ -318,6 +319,7 @@ export function ChatMessageThread({
   hideFeedbackEntries?: boolean
   copy?: WebsiteEmbedCopy
   showCitations?: boolean
+  documentInteractivity?: 'open' | 'link-only'
   // Eval capture is an authenticated operator action. Public chat and embed
   // surfaces also pass conversationId for analytics and session continuity, so
   // the control must stay explicitly opt-in.
@@ -649,6 +651,7 @@ export function ChatMessageThread({
                               theme={theme}
                               isStreaming={message.status === 'streaming'}
                               showCitations={showCitations}
+                              documentInteractivity={documentInteractivity}
                             />
                           </div>
                         )}

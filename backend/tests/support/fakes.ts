@@ -1108,7 +1108,6 @@ export class InMemoryRetrievalSettingsRepository
       vectorTopK: input.vectorTopK,
       similarityThreshold: input.similarityThreshold,
       rerankTopK: input.rerankTopK,
-      citationDisplayEnabled: input.citationDisplayEnabled,
       metadataRules: input.metadataRules,
       customInstruction: input.customInstruction,
       createdAt: existing?.createdAt ?? new Date(),

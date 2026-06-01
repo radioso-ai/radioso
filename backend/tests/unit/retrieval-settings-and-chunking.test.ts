@@ -29,7 +29,6 @@ describe("settings and chunking", () => {
         vectorTopK: 0,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         metadataRules: [],
         customInstruction: "",
       }),
@@ -79,7 +78,6 @@ describe("settings and chunking", () => {
         vectorTopK: 15,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         metadataRules: [metadataRule],
         customInstruction: "",
       }),
@@ -109,7 +107,6 @@ describe("settings and chunking", () => {
 
     expect(defaults.vectorTopK).toBe(15);
     expect(defaults.similarityThreshold).toBe(0.2);
-    expect(defaults.citationDisplayEnabled).toBe(true);
     expect(defaults.metadataRules).toEqual([]);
     expect(defaults.customInstruction).toBe("");
     expect(defaults.semanticRewriteInstructions).not.toBe("");
@@ -147,7 +144,6 @@ describe("settings and chunking", () => {
         vectorTopK: 15,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         metadataRules: [metadataRule],
         customInstruction: "a".repeat(2001),
       }),
@@ -170,7 +166,6 @@ describe("settings and chunking", () => {
       vectorTopK: 15,
       similarityThreshold: 0.2,
       rerankTopK: 5,
-      citationDisplayEnabled: true,
       metadataRules: [metadataRule],
     };
 
@@ -190,7 +185,6 @@ describe("settings and chunking", () => {
       vectorTopK: 15,
       similarityThreshold: 0.2,
       rerankTopK: 5,
-      citationDisplayEnabled: true,
       metadataRules: [],
       customInstruction: "",
     });
@@ -215,7 +209,6 @@ describe("settings and chunking", () => {
         vectorTopK: 15,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         metadataRules: [],
         customInstruction: "",
       }),
@@ -291,7 +284,6 @@ describe("settings and chunking", () => {
         vectorTopK: 15,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         metadataRules: [],
         customInstruction: "",
       }),
@@ -309,7 +301,6 @@ describe("settings and chunking", () => {
       vectorTopK: 15,
       similarityThreshold: 0.2,
       rerankTopK: 5,
-      citationDisplayEnabled: true,
       metadataRules: [
         {
           ...createDefaultMetadataRule(),
@@ -348,7 +339,6 @@ describe("settings and chunking", () => {
       vectorTopK: 15,
       similarityThreshold: 0.2,
       rerankTopK: 5,
-      citationDisplayEnabled: true,
       metadataRules: [
         {
           ...createDefaultMetadataRule(),
@@ -400,7 +390,6 @@ describe("settings and chunking", () => {
         vectorTopK: 15,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         metadataRules: [
           {
             ...createDefaultMetadataRule(),

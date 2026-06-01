@@ -114,9 +114,6 @@
           "type": "integer",
           "maximum": 50
         },
-        "citationDisplayEnabled": {
-          "type": "boolean"
-        },
         "retrievalStrategy": {
           "type": "string",
           "enum": [

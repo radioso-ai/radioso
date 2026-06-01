@@ -3,6 +3,7 @@ import type { ChatConversationDetail } from "../../../modules/chat/services/chat
 import {
   CitationAnchorSanitizer,
   type AnswerSegment,
+  type ChatCitation,
   type ChatStreamEvent,
   type ChatSuggestion,
 } from "../../../modules/chat/contracts/index.js";
@@ -46,6 +47,7 @@ export const presentPublicChatSession = ({
   agentId: agent.id,
   agentName: agent.name,
   assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
+  citationDisplayEnabled: agent.citationDisplayEnabled,
   publicChatToken,
   publicSessionId: session.publicSessionId,
   publicSessionToken: session.token,
@@ -92,8 +94,25 @@ const stripPublicSuggestionCitation = (suggestion: ChatSuggestion): ChatSuggesti
   return publicSuggestion;
 };
 
-const stripPublicAnswerSegmentCitations = (answerSegments?: AnswerSegment[]): AnswerSegment[] | undefined =>
-  answerSegments?.map((segment) => ({ text: segment.text }));
+const stripPublicAnswerSegmentCitations = (
+  answerSegments: AnswerSegment[] | undefined,
+  exposeCitations: boolean,
+): AnswerSegment[] | undefined =>
+  answerSegments?.map((segment) =>
+    exposeCitations && segment.citationIndices
+      ? { text: segment.text, citationIndices: segment.citationIndices }
+      : { text: segment.text },
+  );
+
+// Public surfaces expose a citation's human-facing label and outbound link, but
+// never the internal document/chunk identifiers — anonymous visitors must not be
+// able to open the underlying source document.
+const toPublicCitation = (citation: ChatCitation): ChatCitation => ({
+  documentId: "",
+  chunkId: "",
+  title: citation.title,
+  ...(citation.sourceUrl ? { sourceUrl: citation.sourceUrl } : {}),
+});
 
 type ConversationFeedbackEntry = NonNullable<ChatConversationDetail["messages"][number]["answerFeedbackEntries"]>[number];
 
@@ -119,12 +138,13 @@ export const stripPublicChatCitationArtifacts = <T extends {
   activitySummary?: unknown;
   activityTrace?: unknown;
   debug?: unknown;
-}>(payload: T): Omit<T, "citations" | "answerSegments" | "suggestions" | "route" | "activitySummary" | "activityTrace" | "debug"> & {
+}>(payload: T, exposeCitations: boolean): Omit<T, "citations" | "answerSegments" | "suggestions" | "route" | "activitySummary" | "activityTrace" | "debug"> & {
+  citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
 } => {
   const {
-    citations: _citations,
+    citations,
     answerSegments,
     suggestions,
     route: _route,
@@ -136,7 +156,10 @@ export const stripPublicChatCitationArtifacts = <T extends {
 
   return {
     ...publicPayload,
-    ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments) } : {}),
+    ...(exposeCitations && Array.isArray(citations)
+      ? { citations: (citations as ChatCitation[]).map(toPublicCitation) }
+      : {}),
+    ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments, exposeCitations) } : {}),
     ...(suggestions ? { suggestions: suggestions.map(stripPublicSuggestionCitation) } : {}),
   };
 };
@@ -144,11 +167,12 @@ export const stripPublicChatCitationArtifacts = <T extends {
 export const stripPublicConversationCitationArtifacts = (
   detail: ChatConversationDetail,
   anonymousSessionId: string,
+  exposeCitations: boolean,
 ): ChatConversationDetail => ({
   ...detail,
   messages: detail.messages.map((message) => {
     const {
-      citations: _citations,
+      citations,
       answerSegments,
       suggestions,
       answerFeedbackEntries,
@@ -161,7 +185,10 @@ export const stripPublicConversationCitationArtifacts = (
 
     return {
       ...publicMessage,
-      ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments) } : {}),
+      ...(exposeCitations && Array.isArray(citations)
+        ? { citations: (citations as ChatCitation[]).map(toPublicCitation) }
+        : {}),
+      ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments, exposeCitations) } : {}),
       ...(suggestions ? { suggestions: suggestions.map(stripPublicSuggestionCitation) } : {}),
       ...(publicAnswerFeedbackEntries && publicAnswerFeedbackEntries.length > 0
         ? { answerFeedbackEntries: publicAnswerFeedbackEntries }
@@ -172,6 +199,7 @@ export const stripPublicConversationCitationArtifacts = (
 
 export async function* stripPublicStreamCitationArtifacts(
   events: AsyncIterable<ChatStreamEvent>,
+  exposeCitations: boolean,
 ): AsyncIterable<ChatStreamEvent> {
   const chunkSanitizer = new CitationAnchorSanitizer();
 
@@ -186,7 +214,7 @@ export async function* stripPublicStreamCitationArtifacts(
 
     if (event.type === "done") {
       chunkSanitizer.flush();
-      yield stripPublicChatCitationArtifacts(presentChatPayload(event)) as ChatStreamEvent;
+      yield stripPublicChatCitationArtifacts(presentChatPayload(event), exposeCitations) as ChatStreamEvent;
       continue;
     }
 

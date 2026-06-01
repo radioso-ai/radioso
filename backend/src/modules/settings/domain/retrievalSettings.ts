@@ -112,7 +112,6 @@ export interface RetrievalSettingsRecord {
   vectorTopK: number;
   similarityThreshold: number;
   rerankTopK: number;
-  citationDisplayEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
   retrievalStrategy?: RetrievalStrategyPreference;
@@ -130,7 +129,6 @@ export interface RetrievalSettingsInput {
   vectorTopK: number;
   similarityThreshold: number;
   rerankTopK: number;
-  citationDisplayEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
   // The workspace's retrieval execution strategy. Optional on input; omitted
@@ -159,7 +157,6 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   vectorTopK: 15,
   similarityThreshold: RETRIEVAL_BEHAVIOR.defaultSimilarityThreshold,
   rerankTopK: 5,
-  citationDisplayEnabled: true,
   metadataRules: [],
   customInstruction: "",
   retrievalStrategy: DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,

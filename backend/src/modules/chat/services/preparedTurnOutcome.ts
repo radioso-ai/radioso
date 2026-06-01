@@ -18,6 +18,11 @@ export const buildPreparedTurnOutcome = (
   kind: options.kind,
   skillName: options.skillName,
   outcome: { status: "completed" },
+  // The preparer stages exactly one (retrieval) entry today, so stamping the
+  // dispatching skill as its source is exact parity with the prior single-entry
+  // code. If a future turn stages multiple contexts (e.g. retrieval + a tool
+  // result), this blanket re-source is wrong — only entries the dispatching skill
+  // owns should carry its name; revisit then rather than re-sourcing all of them.
   stagedContext: session.stagedContext.map((staged) => ({ ...staged, source: options.skillName })),
   steering: session.directiveSteering?.rules ?? [],
   trace: session.turnTrace,

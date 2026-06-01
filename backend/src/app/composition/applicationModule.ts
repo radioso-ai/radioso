@@ -161,8 +161,11 @@ export interface ApplicationExtensionRegistry {
   skillDefinitions: SkillDefinition[];
   skillExecutors: SkillExecutorRegistration[];
   directiveRegistrations: ApplicationDirectiveRegistration[];
-  // Engine extension points (issue #482, part C). Both single-instance, last-wins,
-  // defaulted by composition when unregistered — mirroring `capabilityPolicy`.
+  // Engine extension points (issue #482, part C). Both single-instance, last-wins.
+  // `selectionStrategy` is defaulted by composition when unregistered (mirroring
+  // `capabilityPolicy`). `directiveMatcher` stays optional through composition; its
+  // default (always-match) is applied downstream in `createDirectiveSteering`, so a
+  // missing registration flows through as `undefined`.
   selectionStrategy?: TurnSelectionStrategy;
   directiveMatcher?: DirectiveMatcherPort;
   agentSurfaceExtensions: AgentSurfaceExtension[];

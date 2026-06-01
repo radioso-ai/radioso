@@ -329,6 +329,13 @@ export interface RoutineNextStepDecision {
   nextStepId: string;
   /** Variables captured this turn (merged into routine state). */
   variables?: Record<string, unknown>;
+  /**
+   * When true, the routine declines this turn: the user's message is off-topic for
+   * the routine (e.g. a question that merely mentions a value being collected), so it
+   * is yielded to normal answering and the routine stays at its current step to
+   * resume later. Distinct from staying put to re-ask (which still answers in-routine).
+   */
+  yieldTurn?: boolean;
   rationale?: string;
 }
 
@@ -401,6 +408,13 @@ export interface ConversationRoutineResumeResult {
   /** The next state to persist; `null` clears it (the routine reached a terminal step). */
   nextState: RoutineState | null;
   outcomes?: TurnOutcome[];
+  /**
+   * When true, the routine *declined* this turn: the user's message was off-topic for
+   * the routine, so the engine yields to normal answering and leaves the routine's
+   * position unchanged (to resume later). `response`/`nextState` are ignored — the
+   * runner returns inert placeholders.
+   */
+  yielded?: boolean;
 }
 
 /**
@@ -418,7 +432,7 @@ export interface ConversationRoutineRunner {
  * the turn to normal selection. The new routine begins at its root step.
  */
 export interface ConversationRoutineActivator {
-  activate(input: { turn: TurnContext }): Promise<{ routineId: string } | null>;
+  activate(input: { turn: TurnContext }): Promise<{ routineId: string; variables?: Record<string, unknown> } | null>;
 }
 
 export interface ProcessTurnInput {

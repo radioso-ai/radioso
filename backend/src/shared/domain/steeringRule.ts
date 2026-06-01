@@ -3,8 +3,9 @@
  * composer reads. It unifies two sources that share the same `condition → action`
  * shape but differ in origin and lifespan:
  *
- * - authored standing **Directives** (matched per turn), and
- * - skill-emitted **transient guidance** (a `SkillOutcome` injects for one turn).
+ * - authored standing **Directives** (matched per turn),
+ * - skill-emitted **transient guidance** (a `SkillOutcome` injects for one turn), and
+ * - a **routine** step's action, projected into steering for the turn it runs.
  *
  * `source` and `lifespan` are assigned by the turn loop when it merges the two
  * sources into one ordered set — they are NOT authored on either side. This is
@@ -15,7 +16,7 @@
  * never literal user-facing copy. Radioso is multilingual; rendering stays owned
  * by the compose path.
  */
-export type SteeringSource = "directive" | "skill";
+export type SteeringSource = "directive" | "skill" | "routine";
 
 export type SteeringLifespan = "response" | "session";
 

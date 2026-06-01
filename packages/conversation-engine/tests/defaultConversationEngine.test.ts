@@ -6,6 +6,7 @@ import type {
   ProcessTurnStreamEvent,
   ProcessTurnStreamInput,
   ProcessTurnInput,
+  RoutineState,
   TurnOutcome,
 } from "@radioso/conversation-contract";
 
@@ -211,5 +212,154 @@ describe("DefaultConversationEngine", () => {
       "skill_dispatch",
       "compose",
     ]);
+  });
+});
+
+describe("DefaultConversationEngine routines (resume-first substrate)", () => {
+  const activeState: RoutineState = {
+    sessionId: "session_1",
+    routineId: "contact",
+    path: ["ask_email"],
+    variables: {},
+    status: "active",
+  };
+
+  const withRoutine = (
+    runner: ProcessTurnInput["routineRunner"],
+    loaded: RoutineState | null = activeState,
+  ): ProcessTurnInput => ({
+    ...createInput(),
+    routineStore: {
+      loadActive: vi.fn(async () => loaded),
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    },
+    routineRunner: runner,
+  });
+
+  it("resumes an active routine before normal selection and short-circuits select/dispatch/compose", async () => {
+    const nextState: RoutineState = { ...activeState, path: ["ask_email", "ask_message"], variables: { email: "x@y.z" } };
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "What's your message?" }, nextState })),
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(input.routineStore!.loadActive).toHaveBeenCalledWith({ sessionId: "session_1" });
+    expect(input.routineRunner!.resume).toHaveBeenCalledWith({
+      turn: expect.objectContaining({ sessionId: "session_1" }),
+      state: activeState,
+    });
+    // Normal turn machinery is bypassed.
+    expect(input.selector.select).not.toHaveBeenCalled();
+    expect(input.dispatcher.dispatch).not.toHaveBeenCalled();
+    expect(input.composer.compose).not.toHaveBeenCalled();
+    // Next state persisted; input + response events appended.
+    expect(input.routineStore!.save).toHaveBeenCalledWith(nextState);
+    expect(input.routineStore!.clear).not.toHaveBeenCalled();
+    expect(input.stores.appendEvent).toHaveBeenCalledTimes(2);
+    expect(result.response.answer).toBe("What's your message?");
+    expect(result.trace.stages.map((stage) => stage.kind)).toEqual(["gather", "routine_resume"]);
+  });
+
+  it("clears routine state when the routine completes (null next state)", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "Sent — thanks!" }, nextState: null })),
+    });
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(input.routineStore!.clear).toHaveBeenCalledWith({ sessionId: "session_1" });
+    expect(input.routineStore!.save).not.toHaveBeenCalled();
+  });
+
+  it("falls through to the normal turn when no routine is active", async () => {
+    const input = withRoutine(
+      { resume: vi.fn() },
+      null,
+    );
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(input.routineRunner!.resume).not.toHaveBeenCalled();
+    expect(input.selector.select).toHaveBeenCalled();
+    expect(input.composer.compose).toHaveBeenCalled();
+    expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "gather",
+      "directive_match",
+      "skill_selection",
+      "skill_dispatch",
+      "compose",
+    ]);
+  });
+
+  it("leaves behavior unchanged when no routine store is wired", async () => {
+    const input = createInput();
+    const result = await new DefaultConversationEngine().processTurn(input);
+    expect(result.trace.stages.map((stage) => stage.kind)).toContain("compose");
+  });
+
+  it("streams a resumed routine as a single delta plus final, bypassing the composer stream", async () => {
+    const base = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "What's your email?" }, nextState: activeState })),
+    });
+    const input: ProcessTurnStreamInput = {
+      ...base,
+      composer: {
+        compose: vi.fn(),
+        stream: vi.fn(async function* () {
+          yield { type: "final", response: { answer: "should not run" } };
+        }),
+      },
+    };
+
+    const events: ProcessTurnStreamEvent[] = [];
+    for await (const event of new DefaultConversationEngine().processTurnStream(input)) {
+      events.push(event);
+    }
+
+    expect(events.map((event) => event.type)).toEqual(["delta", "final"]);
+    expect(events[0]).toMatchObject({ type: "delta", text: "What's your email?" });
+    expect(input.composer.stream).not.toHaveBeenCalled();
+    const final = events.at(-1);
+    expect(final?.type === "final" ? final.result.response.answer : "").toBe("What's your email?");
+  });
+
+  it("activates a new routine at its root when the activator claims an idle turn", async () => {
+    const started: RoutineState = { ...activeState, path: ["ask_email"] };
+    const input: ProcessTurnInput = {
+      ...createInput(),
+      routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) },
+      routineActivator: { activate: vi.fn(async () => ({ routineId: "contact" })) },
+      routineRunner: { resume: vi.fn(async () => ({ response: { answer: "What's your email?" }, nextState: started })) },
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(input.routineActivator!.activate).toHaveBeenCalledWith({ turn: expect.objectContaining({ sessionId: "session_1" }) });
+    expect(input.routineRunner!.resume).toHaveBeenCalledWith({
+      turn: expect.objectContaining({ sessionId: "session_1" }),
+      // A fresh routine starts at its root (empty path).
+      state: expect.objectContaining({ routineId: "contact", path: [], status: "active" }),
+    });
+    expect(input.routineStore!.save).toHaveBeenCalledWith(started);
+    expect(input.selector.select).not.toHaveBeenCalled();
+    expect(result.trace.stages.map((stage) => stage.kind)).toEqual(["gather", "routine_activate"]);
+  });
+
+  it("declines activation and runs the normal turn when the activator returns null", async () => {
+    const input: ProcessTurnInput = {
+      ...createInput(),
+      routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(), clear: vi.fn() },
+      routineActivator: { activate: vi.fn(async () => null) },
+      routineRunner: { resume: vi.fn() },
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(input.routineRunner!.resume).not.toHaveBeenCalled();
+    expect(input.selector.select).toHaveBeenCalled();
+    expect(input.composer.compose).toHaveBeenCalled();
+    expect(result.trace.stages.map((stage) => stage.kind)).toContain("compose");
   });
 });

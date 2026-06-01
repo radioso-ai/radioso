@@ -243,7 +243,100 @@ export class DefaultConversationEngine implements ConversationEngine {
     };
   }
 
+  /**
+   * Routine stage: when a routine store + runner are wired, the engine resumes an
+   * active routine — or, with an activator wired, starts a new one whose trigger
+   * fired — instead of running normal selection/dispatch/compose. Returns null
+   * (falling through to the normal turn) when no routine machinery is wired or
+   * nothing claims the turn, so behavior is unchanged unless a routine is in play.
+   *
+   * The user input event is appended only once the turn is committed to a routine,
+   * so a non-claiming activation check leaves the normal path to append it.
+   */
+  private async tryRoutineTurn(
+    input: ProcessTurnInput | ProcessTurnStreamInput,
+  ): Promise<ProcessTurnResult | null> {
+    if (!input.routineStore || !input.routineRunner) {
+      return null;
+    }
+    const active = await input.routineStore.loadActive({ sessionId: input.sessionId });
+    const resuming = !!active && active.status === "active";
+
+    const history = await input.stores.loadHistory({ sessionId: input.sessionId });
+    const turn: TurnContext = {
+      agent: input.agent,
+      sessionId: input.sessionId,
+      inputEvent: input.inputEvent,
+      history,
+      stagedContext: [],
+      steering: [],
+    };
+
+    let state = resuming ? active! : null;
+    if (!state) {
+      if (!input.routineActivator) {
+        return null;
+      }
+      const activation = await input.routineActivator.activate({ turn });
+      if (!activation) {
+        return null;
+      }
+      state = {
+        sessionId: input.sessionId,
+        routineId: activation.routineId,
+        path: [],
+        variables: {},
+        status: "active",
+      };
+    }
+
+    const events: ConversationEvent[] = [];
+    const inputEvent = createInputEvent(input);
+    await input.stores.appendEvent(inputEvent);
+    events.push(inputEvent);
+
+    const result = await input.routineRunner.resume({ turn, state });
+    if (result.nextState) {
+      await input.routineStore.save(result.nextState);
+    } else {
+      await input.routineStore.clear({ sessionId: input.sessionId });
+    }
+
+    const responseEvent = createResponseEvent(input.sessionId, result.response);
+    await input.stores.appendEvent(responseEvent);
+    events.push(responseEvent);
+
+    const gatherStage = stage({
+      id: "gather",
+      kind: "gather",
+      status: "applied",
+      outputs: { historyCount: history.length },
+    });
+    const routineStage = stage({
+      id: `routine:${state.routineId}`,
+      kind: resuming ? "routine_resume" : "routine_activate",
+      status: "applied",
+      outputs: { routineId: state.routineId, completed: result.nextState === null },
+    });
+
+    return createProcessTurnResult({
+      sessionId: input.sessionId,
+      events,
+      decision: {
+        selected: [],
+        reason: `${resuming ? "routine_resumed" : "routine_activated"}:${state.routineId}`,
+      },
+      outcomes: result.outcomes ?? [],
+      response: result.response,
+      trace: createTrace([gatherStage, routineStage]),
+    });
+  }
+
   async processTurn(input: ProcessTurnInput): Promise<ProcessTurnResult> {
+    const resumed = await this.tryRoutineTurn(input);
+    if (resumed) {
+      return resumed;
+    }
     const prepared = await this.prepareTurn(input);
     const response = await input.composer.compose({
       turn: prepared.composeTurn,
@@ -272,6 +365,14 @@ export class DefaultConversationEngine implements ConversationEngine {
   }
 
   async *processTurnStream(input: ProcessTurnStreamInput): AsyncIterable<ProcessTurnStreamEvent> {
+    const resumed = await this.tryRoutineTurn(input);
+    if (resumed) {
+      if (resumed.response.answer) {
+        yield { type: "delta", sessionId: input.sessionId, text: resumed.response.answer };
+      }
+      yield { type: "final", result: resumed };
+      return;
+    }
     const prepared = await this.prepareTurn(input);
     let response: RenderableTurn | null = null;
     let finalMetadata: Record<string, unknown> | undefined;
@@ -328,3 +429,5 @@ export class DefaultConversationEngine implements ConversationEngine {
 }
 
 export const createConversationEngine = (): ConversationEngine => new DefaultConversationEngine();
+
+export { DefaultRoutineRunner } from "./routineRunner.js";

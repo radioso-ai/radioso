@@ -8,12 +8,13 @@ import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import { createChatProcessTurnInput } from "./conversationProcessTurnInput.js";
 import { buildTurnRendererRegistry, type TurnSkill } from "./turnOutcome.js";
-import type { TurnSelectionStrategy } from "./turnSelectionStrategy.js";
+import type { ChatTurnSkillSelector } from "./turnSkillSelector.js";
 
 export interface RunPreparedChatTurnWithConversationEngineInput {
   engine: ConversationEngine;
   session: PreparedSession;
-  selectionStrategy: TurnSelectionStrategy;
+  /** The shared seam that resolves which terminal skill claims this turn. */
+  turnSkillSelector: ChatTurnSkillSelector;
   /** The registered turn skills the engine selects, dispatches, and renders. */
   turnSkills: TurnSkill[];
   query: string;
@@ -60,33 +61,19 @@ export const runPreparedChatTurnWithConversationEngine = async (
   let rendered: ChatPresentedAnswer | null = null;
   const skillsByName = new Map(input.turnSkills.map((skill) => [skill.definition.name, skill]));
   const renderers = buildTurnRendererRegistry(input.turnSkills);
-  // The terminal answer skill for this prepared turn. Intake candidates were
-  // already resolved by ChatService before the engine runs, and retrieval-vs-direct
-  // is resolved during session prep, so the terminal candidate is whichever
-  // registered skill claims this turn.
-  const terminal = input.turnSkills.find((skill) => skill.selects(input.session)) ?? input.turnSkills[0];
-  if (!terminal) {
-    throw new Error("conversation_engine_no_turn_skill_registered");
-  }
+  // The selection decision for this prepared turn, resolved through the shared seam
+  // the host streaming path also uses (so streamed and non-streamed turns select
+  // identically). Intake candidates were already resolved by ChatService before the
+  // engine runs, and retrieval-vs-direct is resolved during session prep, so the
+  // seam picks whichever registered skill claims this turn.
+  const { decision } = input.turnSkillSelector.select(input.session);
 
   const processTurnInput = createChatProcessTurnInput({
     session: input.session,
     skills: input.turnSkills.map((skill) => skill.definition),
     selector: {
       async select() {
-        // Consult the per-agent strategy so the selection seam is honored, then
-        // select the terminal skill that claims this turn.
-        const candidates = input.selectionStrategy.select({
-          session: input.session,
-          directives: input.session.directiveSteering?.matches ?? [],
-        });
-        return {
-          selected: [{
-            skillName: terminal.definition.name,
-            reason: "turn_selection_strategy",
-          }],
-          reason: candidates.length > 0 ? `candidates:${candidates.join(",")}` : "turn_selection_strategy",
-        };
+        return decision;
       },
     },
     dispatcher: {

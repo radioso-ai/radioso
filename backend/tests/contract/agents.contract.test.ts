@@ -474,12 +474,15 @@ describe("agents contract", () => {
         },
       },
       chatGateway: {
-        async answer(input) {
-          observedPrompt = input.prompt;
-          return "I am Balaram.";
+        // Each answer capability owns its own streaming now (#508): a non-retrieval
+        // identity turn streams through its skill's streamRender, so the streaming
+        // gateway is the path that runs — not the one-shot answer().
+        async answer() {
+          throw new Error("assistant identity streaming should use the streaming answer path");
         },
-        async *streamAnswer() {
-          throw new Error("non-retrieval agent identity should use the direct answer path");
+        async *streamAnswer(input) {
+          observedPrompt = input.prompt;
+          yield "I am Balaram.";
         },
       },
     });

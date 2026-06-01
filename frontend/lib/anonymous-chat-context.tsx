@@ -193,8 +193,11 @@ const stripPublicSuggestionCitation = (suggestion: ChatSuggestion): ChatSuggesti
 const stripPublicSuggestionCitations = (suggestions?: ChatSuggestion[]) =>
   suggestions?.map(stripPublicSuggestionCitation)
 
-const stripPublicAnswerSegmentCitations = (answerSegments?: AnswerSegment[]) =>
-  answerSegments?.map((segment) => ({ text: segment.text }))
+const toPublicAnswerSegments = (answerSegments?: AnswerSegment[]) =>
+  answerSegments?.map((segment) => ({
+    text: segment.text,
+    ...(segment.citationIndices ? { citationIndices: segment.citationIndices } : {}),
+  }))
 
 const toChatMessages = (
   detail: ChatConversationDetail,
@@ -209,7 +212,7 @@ const toChatMessages = (
       createdAt: message.createdAt,
       inputMetadata: message.inputMetadata,
       citations: message.citations,
-      answerSegments: stripPublicAnswerSegmentCitations(message.answerSegments),
+      answerSegments: toPublicAnswerSegments(message.answerSegments),
       suggestions: stripPublicSuggestionCitations(message.suggestions),
       answerFeedback: message.role === 'assistant'
         ? resolveOwnFeedback(message.answerFeedbackEntries, anonymousSessionId)
@@ -439,7 +442,8 @@ export function AnonymousChatProvider({
                 role: 'assistant',
                 content: bootstrap.answer,
                 createdAt: new Date().toISOString(),
-                answerSegments: stripPublicAnswerSegmentCitations(bootstrap.answerSegments),
+                citations: bootstrap.citations,
+                answerSegments: toPublicAnswerSegments(bootstrap.answerSegments),
                 suggestions: stripPublicSuggestionCitations(bootstrap.suggestions),
                 activitySummary: bootstrap.activitySummary,
                 activityTrace: bootstrap.activityTrace,
@@ -503,7 +507,8 @@ export function AnonymousChatProvider({
                 ...message,
                 persistedAssistantMessageId: completion.assistantMessageId ?? message.persistedAssistantMessageId,
                 content: completion.answer ?? message.content,
-                answerSegments: stripPublicAnswerSegmentCitations(completion.answerSegments),
+                citations: completion.citations,
+                answerSegments: toPublicAnswerSegments(completion.answerSegments),
                 suggestions: stripPublicSuggestionCitations(completion.suggestions),
                 activitySummary: completion.debug?.activitySummary,
                 activityTrace: completion.debug?.activityTrace,
@@ -540,7 +545,8 @@ export function AnonymousChatProvider({
             ? {
                 ...message,
                 content: assistantMessage.content,
-                answerSegments: stripPublicAnswerSegmentCitations(assistantMessage.answerSegments),
+                citations: assistantMessage.citations,
+                answerSegments: toPublicAnswerSegments(assistantMessage.answerSegments),
                 suggestions: stripPublicSuggestionCitations(assistantMessage.suggestions),
                 answerFeedback: assistantMessage.answerFeedback,
                 answerFeedbackEntries: assistantMessage.answerFeedbackEntries,

@@ -1,7 +1,20 @@
 module.exports = {
-  // TODO: keep module-boundary coverage expanding as new modules expose public
-  // contract entrypoints; each contract-owning module should get matching rules.
   forbidden: [
+    {
+      name: "no-cross-module-internals",
+      severity: "error",
+      comment:
+        "Generic module boundary: a module may import another module only through a recognized public entrypoint (public.ts, composition.ts, llmAdapters.ts, retrievalSupport.ts, historySupport.ts, contracts/, templates/). Covers every module — including new ones — by default, so a new module cannot silently skip the boundary check. The module-specific rules below add finer from-restrictions (e.g. composition only from app wiring); the redundant per-module no-external-*-nonpublic rules can be retired in a follow-up.",
+      from: { path: "^src/modules/([^/]+)/" },
+      to: {
+        path: "^src/modules/([^/]+)/",
+        pathNot: [
+          "^src/modules/$1/",
+          "^src/modules/[^/]+/(public|composition|llmAdapters|retrievalSupport|historySupport)\\.ts$",
+          "^src/modules/[^/]+/(contracts|templates)/",
+        ],
+      },
+    },
     {
       name: "no-direct-crawler-package-imports",
       severity: "error",

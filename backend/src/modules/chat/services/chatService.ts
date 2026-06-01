@@ -28,9 +28,6 @@ import {
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import { noopDirectiveSteering, type DirectiveSteeringPort } from "../../directives/public.js";
 import {
-  buildTurnRendererRegistry,
-  getUnstreamedFinalAnswerRemainder,
-  type TurnOutcomeRendererRegistry,
   type TurnSkill,
   type TurnStreamSuggestions,
 } from "./turnOutcome.js";
@@ -233,7 +230,8 @@ export interface ChatServiceOptions {
   chatIntakeProvider?: ChatIntakeProviderPort;
   directiveSteering?: DirectiveSteeringPort;
   selectionStrategy?: TurnSelectionStrategy;
-  conversationEngine?: ConversationEngine;
+  /** The reusable conversation engine drives every chat turn; composition always wires it. */
+  conversationEngine: ConversationEngine;
 }
 
 export class ChatService {
@@ -242,12 +240,11 @@ export class ChatService {
   private readonly usageLimitPolicy: UsageLimitPolicy;
   private readonly chatIntakeProvider: ChatIntakeProviderPort;
   private readonly selectionStrategy: TurnSelectionStrategy;
-  private readonly conversationEngine?: ConversationEngine;
+  private readonly conversationEngine: ConversationEngine;
   private readonly chatAnswerPresenter: ChatAnswerPresenter;
   private readonly chatSessionPreparer: ChatSessionPreparer;
   private readonly chatTurnLifecycle: ChatTurnLifecycle;
   private readonly turnSkills: TurnSkill[];
-  private readonly turnRenderers: TurnOutcomeRendererRegistry;
   private readonly turnSkillSelector: ChatTurnSkillSelector;
 
   constructor(options: ChatServiceOptions) {
@@ -290,106 +287,56 @@ export class ChatService {
       agentService,
       directiveSteering,
     );
-    this.turnRenderers = buildTurnRendererRegistry(this.turnSkills);
     // One selection seam shared by the engine turn and the host streaming path, so
     // streamed and non-streamed turns resolve the terminal skill identically.
     this.turnSkillSelector = new ChatTurnSkillSelector(this.turnSkills, this.selectionStrategy);
   }
 
   /**
-   * Produces the answer for a prepared turn by selecting the capability that claims
-   * it (retrieval / social / identity) and rendering its outcome. With the engine
-   * enabled, the conversation engine drives selection + dispatch and returns its
-   * turn trace for audit; otherwise the same skill is selected and rendered
-   * directly. Both paths render through the same registry, so the user-facing
-   * answer is identical — `engineTrace` is added observability on the engine path.
+   * Produces the answer for a prepared turn. The conversation engine drives
+   * selection + dispatch and renders the outcome through the shared registry,
+   * returning its turn trace for audit (`engineTrace`).
    */
   private async renderTurn(
     session: PreparedSession,
     input: { query: string; userExpectedLocale?: string | null; accountId?: string },
   ): Promise<{ presentation: ChatPresentedAnswer; engineTrace?: ConversationTrace }> {
-    if (this.conversationEngine) {
-      const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
-        engine: this.conversationEngine,
-        session,
-        turnSkillSelector: this.turnSkillSelector,
-        turnSkills: this.turnSkills,
-        query: input.query,
-        userExpectedLocale: input.userExpectedLocale,
-        accountId: input.accountId,
-      });
-      return { presentation, engineTrace: result.trace };
-    }
-    const skill = this.turnSkillSelector.resolveSkill(session);
-    const turnOutcome = await skill.dispatch(session);
-    const presentation = await this.turnRenderers.resolve(turnOutcome).render(turnOutcome, {
+    const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
+      engine: this.conversationEngine,
       session,
+      turnSkillSelector: this.turnSkillSelector,
+      turnSkills: this.turnSkills,
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
     });
-    return { presentation };
+    return { presentation, engineTrace: result.trace };
   }
 
   private async *streamTurn(
     session: PreparedSession,
     input: { query: string; userExpectedLocale?: string | null; accountId?: string },
   ): AsyncIterable<PreparedChatStreamTurnEvent> {
-    if (this.conversationEngine) {
-      for await (const event of runPreparedChatTurnStreamWithConversationEngine({
-        engine: this.conversationEngine,
-        session,
-        turnSkillSelector: this.turnSkillSelector,
-        turnSkills: this.turnSkills,
-        query: input.query,
-        userExpectedLocale: input.userExpectedLocale,
-        accountId: input.accountId,
-      })) {
-        if (event.type === "chunk") {
-          yield event;
-          continue;
-        }
-        yield {
-          type: "final",
-          finalPresentation: event.presentation,
-          suggestions: event.suggestions,
-          engineTrace: event.engineTrace,
-        };
-      }
-      return;
-    }
-
-    const skill = this.turnSkillSelector.resolveSkill(session);
-    if (!skill.streamRender) {
-      throw new Error("chat_no_streamable_turn_skill");
-    }
-    const answerStream = skill.streamRender({
+    for await (const event of runPreparedChatTurnStreamWithConversationEngine({
+      engine: this.conversationEngine,
       session,
+      turnSkillSelector: this.turnSkillSelector,
+      turnSkills: this.turnSkills,
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
-    });
-    let streamStep = await answerStream.next();
-    while (!streamStep.done) {
+    })) {
+      if (event.type === "chunk") {
+        yield event;
+        continue;
+      }
       yield {
-        type: "chunk",
-        text: streamStep.value,
-      };
-      streamStep = await answerStream.next();
-    }
-    const streamResult = streamStep.value;
-    const remainingAnswer = getUnstreamedFinalAnswerRemainder(streamResult);
-    if (remainingAnswer) {
-      yield {
-        type: "chunk",
-        text: remainingAnswer,
+        type: "final",
+        finalPresentation: event.presentation,
+        suggestions: event.suggestions,
+        engineTrace: event.engineTrace,
       };
     }
-    yield {
-      type: "final",
-      finalPresentation: streamResult.finalPresentation,
-      suggestions: streamResult.suggestions,
-    };
   }
 
   async answer(input: {

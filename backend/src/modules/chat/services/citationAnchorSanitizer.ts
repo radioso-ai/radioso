@@ -29,7 +29,12 @@ export class CitationAnchorSanitizer {
       return stripped.slice(0, -1);
     }
 
-    const trailingWhitespace = stripped.match(/[ \t]+$/)?.[0];
+    // Hold any trailing whitespace run, including newlines, so the next chunk can
+    // reflow against it: if a removed anchor left a newline before this point and the
+    // next chunk opens with punctuation (`claim\n\n` + `. rest`), stripCompleteAnchors
+    // collapses it once the two are combined. Trailing whitespace at end-of-stream is
+    // dropped by flush(), which is the desired trim.
+    const trailingWhitespace = stripped.match(/\s+$/)?.[0];
     if (trailingWhitespace) {
       this.carry = trailingWhitespace;
       return stripped.slice(0, -trailingWhitespace.length);

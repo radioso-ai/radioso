@@ -385,6 +385,57 @@ describe("answer presentation service", () => {
     ]);
   });
 
+  it("reflows orphaned punctuation when an anchor sat on its own line after a paragraph break", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer:
+        "It is a science that releases karma when practiced consistently\n\n[[1]].\n\nAnanda Europe teaches Kriya.",
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Kriya Yoga",
+          content: "It is a science that releases karma when practiced consistently.",
+        },
+      ],
+    });
+
+    expect(result.answer).toBe(
+      "It is a science that releases karma when practiced consistently.\n\nAnanda Europe teaches Kriya.",
+    );
+    expect(result.answerSegments).toEqual([
+      {
+        text: "It is a science that releases karma when practiced consistently",
+        citationIndices: [0],
+      },
+      {
+        text: ".\n\nAnanda Europe teaches Kriya.",
+      },
+    ]);
+  });
+
+  it("reattaches a trailing link list that followed a standalone citation anchor", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer:
+        "See our course pages for details\n\n[[1]] ; [Kriya Yoga intro and practice](https://example.com/intro).",
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Kriya Yoga intro",
+          content: "See our course pages for details.",
+        },
+      ],
+    });
+
+    expect(result.answer).toBe(
+      "See our course pages for details; [Kriya Yoga intro and practice](https://example.com/intro).",
+    );
+  });
+
   it("present() preserves sourceUrl on emitted citations", () => {
     const service = new AnswerPresentationService();
 

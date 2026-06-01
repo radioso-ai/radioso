@@ -1,4 +1,5 @@
 import { findCitationAnchorGroups, stripResidualCitationSyntax } from "./citationAnchorParser.js";
+import { removeDetachedPunctuationSpacing } from "./citationTextNormalization.js";
 import type {
   AnswerSegment,
   ChatCitation,
@@ -196,10 +197,20 @@ export class AnswerPresentationService {
     currentText += stripResidualCitationSyntax(answer.slice(lastIndex));
     pushSegment(currentText);
 
+    // A removed anchor can strand its trailing punctuation or link list at the start
+    // of the following segment (`...consistently` | `\n\n.\n\nAnanda`). Reflow each
+    // finalized segment so that punctuation rejoins the prior line, then rebuild the
+    // flat answer from the reflowed segments so both representations stay in sync.
+    const reflowedSegments = answerSegments.map((segment) =>
+      segment.citationIndices && segment.citationIndices.length > 0
+        ? { text: removeDetachedPunctuationSpacing(segment.text), citationIndices: segment.citationIndices }
+        : { text: removeDetachedPunctuationSpacing(segment.text) },
+    );
+
     return {
-      answer: answerText,
+      answer: reflowedSegments.map((segment) => segment.text).join(""),
       citationEvidence: visibleCitations,
-      answerSegments,
+      answerSegments: reflowedSegments,
     };
   }
 }

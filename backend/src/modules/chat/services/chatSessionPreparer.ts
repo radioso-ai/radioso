@@ -1,5 +1,8 @@
+import type { ConversationTrace, StagedContext } from "@radioso/conversation-contract";
+
 import { notFound } from "../../../shared/domain/errors.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { toConversationTrace, toPreparedStagedContext } from "./conversationContractMappers.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort, UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
@@ -38,6 +41,17 @@ export interface PreparedSession {
   priorRewriteContinuityState?: RewriteContinuityState;
   /** Behavioral steering matched for this turn; consumed by the answer composer and the trace. */
   directiveSteering?: DirectiveSteeringResult;
+  /**
+   * Neutral staged outcomes for this turn (A1, issue #482). Retrieval contributes
+   * one entry; the turn-outcome builder reads these instead of `retrieval`, so the
+   * outcome is a generic conversation outcome rather than a retrieval-shaped one.
+   */
+  stagedContext: StagedContext[];
+  /**
+   * Pre-answer dispatch trace (neutral `ConversationTrace`) that rides on the turn
+   * outcome. Distinct from the lifecycle's post-answer `ActivityTrace`.
+   */
+  turnTrace: ConversationTrace;
 }
 
 export interface PrepareChatSessionInput {
@@ -106,20 +120,26 @@ export class ChatSessionPreparer {
       content: input.query,
       inputMetadata: input.inputMetadata,
     });
+    // The direct-only (non-grounded) base turn. Used as-is when retrieval is
+    // skipped, otherwise as the throwaway base `prepareRetrieval` recomputes from.
+    const directOnlyTurn = this.prepareDirectOnlyTurn(
+      this.buildPipelineInput(input, agent, history, persistedConversation, userMessage),
+      agent,
+    );
     const { retrieval, turnRoute } = options.skipRetrieval
-      ? this.prepareDirectOnlyTurn(this.buildPipelineInput(input, agent, history, persistedConversation, userMessage), agent)
+      ? directOnlyTurn
       : await this.prepareRetrieval(input, {
           agent,
           conversation: persistedConversation,
           history,
-          retrieval: this.prepareDirectOnlyTurn(
-            this.buildPipelineInput(input, agent, history, persistedConversation, userMessage),
-            agent,
-          ).retrieval,
+          retrieval: directOnlyTurn.retrieval,
           turnRoute: CHAT_TURN_ROUTE.SOCIAL_ONLY,
           userMessage,
           pageContext: input.pageContext ?? null,
           priorRewriteContinuityState: rewriteContinuityState,
+          // Only present to satisfy the PreparedSession shape; prepareRetrieval
+          // recomputes the spine from the real retrieval result.
+          ...this.stagedSpineFor(directOnlyTurn.retrieval),
         });
 
     const directiveSteering = await this.resolveDirectiveSteering(input, turnRoute);
@@ -134,6 +154,22 @@ export class ChatSessionPreparer {
       pageContext: input.pageContext ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
       directiveSteering,
+      ...this.stagedSpineFor(retrieval),
+    };
+  }
+
+  /**
+   * Builds the neutral turn spine (A1, issue #482) the turn-outcome builder reads:
+   * the staged retrieval result (source stamped later, at dispatch) and the
+   * pre-answer dispatch trace. Sourced verbatim from the retrieval result so the
+   * staged data and trace are identical to the prior dispatch-time derivation.
+   */
+  private stagedSpineFor(
+    retrieval: PreparedSession["retrieval"],
+  ): Pick<PreparedSession, "stagedContext" | "turnTrace"> {
+    return {
+      stagedContext: [toPreparedStagedContext(retrieval)],
+      turnTrace: toConversationTrace(retrieval.trace),
     };
   }
 
@@ -148,6 +184,7 @@ export class ChatSessionPreparer {
       retrieval,
       turnRoute,
       directiveSteering: await this.resolveDirectiveSteering(input, turnRoute),
+      ...this.stagedSpineFor(retrieval),
     };
   }
 
@@ -167,6 +204,7 @@ export class ChatSessionPreparer {
         retrieval,
         turnRoute,
         directiveSteering: await this.resolveDirectiveSteering(input, turnRoute),
+        ...this.stagedSpineFor(retrieval),
       };
     }
     const interpretation = await this.retrievalTurn.interpret(pipelineInput);
@@ -187,6 +225,7 @@ export class ChatSessionPreparer {
       retrieval,
       turnRoute: CHAT_TURN_ROUTE.SOCIAL_ONLY,
       directiveSteering: await this.resolveDirectiveSteering(input, CHAT_TURN_ROUTE.SOCIAL_ONLY),
+      ...this.stagedSpineFor(retrieval),
     };
   }
 

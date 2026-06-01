@@ -67,7 +67,6 @@ test("retrieval settings saves without channel drift", async ({ page }) => {
     retrieval: {
       queryRewriteEnabled: true,
       vectorTopK: 20,
-      citationDisplayEnabled: true,
     },
   });
   expect(settingsUpdates.at(-1)).not.toHaveProperty("channels");

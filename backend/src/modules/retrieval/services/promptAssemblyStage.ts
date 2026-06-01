@@ -32,7 +32,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       prompt: prompt.prompt,
       citations: prompt.citations,
       responseSettings: {
-        citationDisplayEnabled: input.settings.citationDisplayEnabled,
+        citationDisplayEnabled: responseBehavior?.citationDisplayEnabled ?? true,
         suggestedQuestionsEnabled: includeResponseBehavior ? suggestedQuestionsEnabled : false,
         suggestedQuestionsCount: includeResponseBehavior ? suggestedQuestionsCount : 0,
         customInstruction: includeResponseBehavior ? customInstruction : undefined,

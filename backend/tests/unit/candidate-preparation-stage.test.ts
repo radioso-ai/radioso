@@ -39,7 +39,6 @@ const buildInput = (rewrittenContexts: RetrievedChunk[]): CandidateRetrievalStag
     vectorTopK: 60,
     similarityThreshold: 0.14,
     rerankTopK: 15,
-    citationDisplayEnabled: true,
     customInstruction: "",
     metadataRules: [
       {

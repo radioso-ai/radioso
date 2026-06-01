@@ -15,7 +15,6 @@ const baseSettings = (workspaceId: string): RetrievalSettingsRecord => ({
   vectorTopK: 20,
   similarityThreshold: 0.2,
   rerankTopK: 5,
-  citationDisplayEnabled: true,
   customInstruction: "",
   metadataRules: [],
   createdAt: new Date(),

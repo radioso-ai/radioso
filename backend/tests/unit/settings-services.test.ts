@@ -35,6 +35,7 @@ describe("settings services", () => {
     proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
     suggestedQuestionsEnabled: true,
     assistantLinkUtmEnabled: true,
+    citationDisplayEnabled: true,
     customInstruction: "",
     retrievalEnabled: true,
     sourceScope: { mode: "all" },

@@ -1221,6 +1221,7 @@ describe("chat retrieval domain", () => {
           customInstruction: "Help visitors choose meditation retreats and courses.",
           suggestedQuestionsEnabled: true,
           suggestedQuestionsCount: 3,
+          citationDisplayEnabled: true,
         },
       },
       settings: defaultRetrievalSettings("workspace-1"),

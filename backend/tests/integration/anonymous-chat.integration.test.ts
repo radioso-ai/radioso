@@ -170,14 +170,15 @@ describe("anonymous chat bootstrap integration", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).not.toHaveProperty("route");
-    expect(response.body).not.toHaveProperty("citations");
-    expect(response.body.answerSegments).toEqual(
-      expect.arrayContaining([
-        expect.not.objectContaining({
-          citationIndices: expect.any(Array),
-        }),
-      ]),
-    );
+    // Citation display defaults on, so public answers expose sanitized sources:
+    // human-facing labels and outbound links, but never internal identifiers.
+    expect(Array.isArray(response.body.citations)).toBe(true);
+    for (const citation of response.body.citations) {
+      expect(citation.documentId).toBe("");
+      expect(citation.chunkId).toBe("");
+      expect(typeof citation.title).toBe("string");
+    }
+    expect(Array.isArray(response.body.answerSegments)).toBe(true);
     expect(response.body).not.toHaveProperty("activitySummary");
     expect(response.body.suggestions.length).toBeGreaterThan(0);
     expect(
@@ -195,14 +196,12 @@ describe("anonymous chat bootstrap integration", () => {
       .set("Cookie", anonCookie!)
       .expect(200);
     const assistantTurn = history.body.messages.find((message: { role: string }) => message.role === "assistant");
-    expect(assistantTurn).not.toHaveProperty("citations");
-    expect(assistantTurn?.answerSegments).toEqual(
-      expect.arrayContaining([
-        expect.not.objectContaining({
-          citationIndices: expect.any(Array),
-        }),
-      ]),
-    );
+    expect(Array.isArray(assistantTurn?.citations)).toBe(true);
+    for (const citation of assistantTurn.citations) {
+      expect(citation.documentId).toBe("");
+      expect(citation.chunkId).toBe("");
+    }
+    expect(Array.isArray(assistantTurn?.answerSegments)).toBe(true);
     expect(assistantTurn).not.toHaveProperty("debug");
   });
 });

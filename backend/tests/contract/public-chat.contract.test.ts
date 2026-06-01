@@ -310,14 +310,14 @@ describe("public chat contract", () => {
         },
       });
 
-    expect(chat.body).not.toHaveProperty("citations");
-    expect(chat.body.answerSegments).toEqual(
-      expect.arrayContaining([
-        expect.not.objectContaining({
-          citationIndices: expect.any(Array),
-        }),
-      ]),
-    );
+    // Public answers expose sanitized sources (labels + links) but never the
+    // internal document/chunk identifiers.
+    expect(Array.isArray(chat.body.citations)).toBe(true);
+    for (const citation of chat.body.citations) {
+      expect(citation.documentId).toBe("");
+      expect(citation.chunkId).toBe("");
+    }
+    expect(Array.isArray(chat.body.answerSegments)).toBe(true);
 
     const cookies = chat.headers["set-cookie"];
     const anonCookie = findAnonymousCookie(cookies);
@@ -351,7 +351,11 @@ describe("public chat contract", () => {
       ]),
     );
     const assistantTurn = detail.body.messages.find((message: { role: string }) => message.role === "assistant");
-    expect(assistantTurn).not.toHaveProperty("citations");
+    expect(Array.isArray(assistantTurn?.citations)).toBe(true);
+    for (const citation of assistantTurn.citations) {
+      expect(citation.documentId).toBe("");
+      expect(citation.chunkId).toBe("");
+    }
     expect(assistantTurn).not.toHaveProperty("debug");
     expect(assistantTurn?.answerFeedbackEntries).toHaveLength(1);
     expect(assistantTurn?.answerFeedbackEntries).toEqual([
@@ -372,13 +376,7 @@ describe("public chat contract", () => {
         }),
       ]),
     );
-    expect(assistantTurn?.answerSegments).toEqual(
-      expect.arrayContaining([
-        expect.not.objectContaining({
-          citationIndices: expect.any(Array),
-        }),
-      ]),
-    );
+    expect(Array.isArray(assistantTurn?.answerSegments)).toBe(true);
     expect(detail.body.nextCursor).toBeNull();
     expect(detail.body.hasOlderMessages).toBe(false);
   });
@@ -511,7 +509,6 @@ describe("public chat contract", () => {
         vectorTopK: 15,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         metadataRules: [],
         customInstruction: "",
       })

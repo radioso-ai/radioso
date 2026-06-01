@@ -955,9 +955,6 @@
             "type": "integer",
             "minimum": 1
           },
-          "citationDisplayEnabled": {
-            "type": "boolean"
-          },
           "retrievalStrategy": {
             "type": "string",
             "enum": [
@@ -1139,7 +1136,6 @@
           "vectorTopK",
           "similarityThreshold",
           "rerankTopK",
-          "citationDisplayEnabled",
           "retrievalStrategy",
           "customInstruction",
           "createdAt",
@@ -1176,9 +1172,6 @@
           "rerankTopK": {
             "type": "integer",
             "maximum": 50
-          },
-          "citationDisplayEnabled": {
-            "type": "boolean"
           },
           "retrievalStrategy": {
             "type": "string",
@@ -1320,8 +1313,7 @@
           "rerankEnabled",
           "vectorTopK",
           "similarityThreshold",
-          "rerankTopK",
-          "citationDisplayEnabled"
+          "rerankTopK"
         ]
       },
       "RetrievalSettingsOverride": {
@@ -1354,9 +1346,6 @@
           "rerankTopK": {
             "type": "integer",
             "maximum": 50
-          },
-          "citationDisplayEnabled": {
-            "type": "boolean"
           },
           "retrievalStrategy": {
             "type": "string",
@@ -2164,9 +2153,6 @@
             "type": "integer",
             "minimum": 1
           },
-          "citationDisplayEnabled": {
-            "type": "boolean"
-          },
           "metadataRules": {
             "type": "array",
             "items": {
@@ -2334,7 +2320,6 @@
           "vectorTopK",
           "similarityThreshold",
           "rerankTopK",
-          "citationDisplayEnabled",
           "retrievalStrategy"
         ]
       },
@@ -2518,9 +2503,6 @@
               },
               "rerankTopK": {
                 "type": "integer"
-              },
-              "citationDisplayEnabled": {
-                "type": "boolean"
               },
               "retrievalStrategy": {
                 "type": "string",
@@ -3193,6 +3175,9 @@
               "assistantLinkUtmEnabled": {
                 "type": "boolean"
               },
+              "citationDisplayEnabled": {
+                "type": "boolean"
+              },
               "theme": {
                 "type": "object",
                 "properties": {
@@ -3324,6 +3309,7 @@
               "customInstruction",
               "suggestedQuestionsEnabled",
               "assistantLinkUtmEnabled",
+              "citationDisplayEnabled",
               "theme",
               "branding",
               "retrievalEnabled",
@@ -3368,6 +3354,9 @@
             "type": "boolean"
           },
           "assistantLinkUtmEnabled": {
+            "type": "boolean"
+          },
+          "citationDisplayEnabled": {
             "type": "boolean"
           },
           "theme": {

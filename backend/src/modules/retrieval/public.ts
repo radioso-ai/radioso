@@ -135,6 +135,7 @@ export interface RetrievalResponseBehavior {
   customInstruction?: string;
   suggestedQuestionsEnabled: boolean;
   suggestedQuestionsCount: number;
+  citationDisplayEnabled: boolean;
 }
 
 export interface RetrievalPipelineRequest {

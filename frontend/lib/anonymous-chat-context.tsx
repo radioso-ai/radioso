@@ -111,6 +111,7 @@ interface AnonymousChatContextValue {
   workspaceName: string | null
   assistantAvatarUrl: string | null
   assistantLinkUtmEnabled: boolean
+  citationDisplayEnabled: boolean
   assistantTheme: WebsiteEmbedThemeOverrides | null
   branding: AgentBrandingSettings | null
   intakeActions: PublicChatIntakeAction[]
@@ -315,6 +316,7 @@ export function AnonymousChatProvider({
   const [workspaceName, setWorkspaceName] = useState<string | null>(null)
   const [assistantAvatarUrl, setAssistantAvatarUrl] = useState<string | null>(null)
   const [assistantLinkUtmEnabled, setAssistantLinkUtmEnabled] = useState(true)
+  const [citationDisplayEnabled, setCitationDisplayEnabled] = useState(true)
   const [assistantTheme, setAssistantTheme] = useState<WebsiteEmbedThemeOverrides | null>(null)
   const [branding, setBranding] = useState<AgentBrandingSettings | null>(null)
   const [intakeActions, setIntakeActions] = useState<PublicChatIntakeAction[]>([])
@@ -344,6 +346,7 @@ export function AnonymousChatProvider({
       setEffectivePublicChatToken(session.publicChatToken)
       setAssistantAvatarUrl(session.assistantAvatarUrl ?? null)
       setAssistantLinkUtmEnabled(session.assistantLinkUtmEnabled ?? true)
+      setCitationDisplayEnabled(session.citationDisplayEnabled ?? true)
       setAssistantTheme(deriveThemeOverridesFromModel(session.theme))
       setBranding(session.branding ?? null)
       setIntakeActions(session.intakeActions ?? [])
@@ -388,6 +391,7 @@ export function AnonymousChatProvider({
     setWorkspaceName(null)
     setAssistantAvatarUrl(null)
     setAssistantLinkUtmEnabled(true)
+    setCitationDisplayEnabled(true)
     setAssistantTheme(null)
     setBranding(null)
     setIntakeActions([])
@@ -402,6 +406,7 @@ export function AnonymousChatProvider({
       setWorkspaceName(response.workspaceName ?? null)
       setAssistantAvatarUrl(response.assistantAvatarUrl ?? null)
       setAssistantLinkUtmEnabled(response.assistantLinkUtmEnabled ?? true)
+      setCitationDisplayEnabled(response.citationDisplayEnabled ?? true)
       setAssistantTheme(deriveThemeOverridesFromModel(response.theme))
       setBranding(response.branding ?? null)
       setIntakeActions(response.intakeActions ?? [])
@@ -859,6 +864,7 @@ export function AnonymousChatProvider({
       workspaceName,
       assistantAvatarUrl,
       assistantLinkUtmEnabled,
+      citationDisplayEnabled,
       assistantTheme,
       branding,
       intakeActions,
@@ -881,6 +887,7 @@ export function AnonymousChatProvider({
       workspaceName,
       assistantAvatarUrl,
       assistantLinkUtmEnabled,
+      citationDisplayEnabled,
       assistantTheme,
       branding,
       intakeActions,

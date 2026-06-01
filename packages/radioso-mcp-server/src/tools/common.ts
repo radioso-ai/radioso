@@ -5,7 +5,6 @@ import type { JsonRecord, ToolDefinition } from "../types.js";
 export const metadataRecordSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]));
 
 export const retrievalPatchSchema = z.object({
-  citationDisplayEnabled: z.boolean().optional(),
   customInstruction: z.string().max(2000).optional(),
   lexicalRewriteInstructions: z.string().max(2000).optional(),
   metadataRules: z

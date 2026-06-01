@@ -75,7 +75,6 @@ const overridesSchema = z
         vectorTopK: z.number().int().min(1).max(200).optional(),
         similarityThreshold: z.number().min(0).max(1).optional(),
         rerankTopK: z.number().int().min(1).max(50).optional(),
-        citationDisplayEnabled: z.boolean().optional(),
         customInstruction: z.string().max(4000).optional(),
       })
       .strict()

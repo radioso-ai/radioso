@@ -75,7 +75,6 @@ interface RetrievalSettingsRow {
   vector_top_k: number;
   similarity_threshold: number;
   rerank_top_k: number;
-  citation_display_enabled: boolean;
   attribute_controls: unknown;
   custom_instruction: string;
   created_at: Date;
@@ -107,7 +106,6 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => {
     vectorTopK: row.vector_top_k,
     similarityThreshold: row.similarity_threshold,
     rerankTopK: row.rerank_top_k,
-    citationDisplayEnabled: row.citation_display_enabled,
     metadataRules: normalizeMetadataRules(payload.metadataRules),
     customInstruction: row.custom_instruction,
     retrievalStrategy:
@@ -159,7 +157,7 @@ export class RetrievalSettingsRepository
 
   async findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null> {
     const row = await this.database.queryOptional<RetrievalSettingsRow>(
-      `SELECT workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, citation_display_enabled, attribute_controls, custom_instruction, created_at, updated_at
+      `SELECT workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, attribute_controls, custom_instruction, created_at, updated_at
        FROM retrieval_settings
        WHERE workspace_id = $1`,
       [workspaceId],
@@ -178,11 +176,10 @@ export class RetrievalSettingsRepository
          similarity_threshold,
          rerank_top_k,
          warmth_level,
-         citation_display_enabled,
          attribute_controls,
          custom_instruction
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
        ON CONFLICT (workspace_id)
        DO UPDATE SET query_rewrite_enabled = EXCLUDED.query_rewrite_enabled,
                      rerank_enabled = EXCLUDED.rerank_enabled,
@@ -190,11 +187,10 @@ export class RetrievalSettingsRepository
                      similarity_threshold = EXCLUDED.similarity_threshold,
                      rerank_top_k = EXCLUDED.rerank_top_k,
                      warmth_level = EXCLUDED.warmth_level,
-                     citation_display_enabled = EXCLUDED.citation_display_enabled,
                      attribute_controls = EXCLUDED.attribute_controls,
                      custom_instruction = EXCLUDED.custom_instruction,
                      updated_at = NOW()
-       RETURNING workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, citation_display_enabled, attribute_controls, custom_instruction, created_at, updated_at`,
+       RETURNING workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, attribute_controls, custom_instruction, created_at, updated_at`,
       [
         workspaceId,
         input.queryRewriteEnabled,
@@ -203,7 +199,6 @@ export class RetrievalSettingsRepository
         input.similarityThreshold,
         input.rerankTopK,
         5,
-        input.citationDisplayEnabled,
         JSON.stringify({
           metadataRules: input.metadataRules,
           semanticRewriteInstructions: input.semanticRewriteInstructions,

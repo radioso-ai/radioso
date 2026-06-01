@@ -69,6 +69,7 @@ const agentBodySchema = z.object({
   customInstruction: z.string().max(2000).optional(),
   suggestedQuestionsEnabled: z.boolean().optional(),
   assistantLinkUtmEnabled: z.boolean().optional(),
+  citationDisplayEnabled: z.boolean().optional(),
   theme: assistantThemeSchema.optional(),
   branding: brandingSchema,
   retrievalEnabled: z.boolean().optional(),

@@ -22,7 +22,6 @@ export interface PlatformRetrievalSettingsSection {
   vectorTopK: number;
   similarityThreshold: number;
   rerankTopK: number;
-  citationDisplayEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   metadataFieldSuggestions: MetadataFieldSuggestion[];
   retrievalStrategy: RetrievalStrategyPreference;
@@ -57,7 +56,6 @@ export interface PlatformRetrievalSettingsPatch {
   vectorTopK?: number;
   similarityThreshold?: number;
   rerankTopK?: number;
-  citationDisplayEnabled?: boolean;
   metadataRules?: RetrievalMetadataRule[];
   retrievalStrategy?: RetrievalStrategyPreference;
 }

@@ -39,7 +39,6 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
       vectorTopK: z.number().int().min(1).max(300),
       similarityThreshold: z.number().min(0).max(1),
       rerankTopK: z.number().int().min(1),
-      citationDisplayEnabled: z.boolean(),
       retrievalStrategy: z.enum(retrievalStrategyPreferences),
       metadataFieldSuggestions: z.array(
         z.object({
@@ -234,7 +233,6 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
       vectorTopK: z.number().int().min(1).max(300),
       similarityThreshold: z.number().min(0).max(1),
       rerankTopK: z.number().int().min(1),
-      citationDisplayEnabled: z.boolean(),
       metadataRules: z.array(
         z.object({
           id: z.string(),

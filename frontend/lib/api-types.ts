@@ -43,6 +43,7 @@ export type AssistantBehaviorSettings = Pick<
   'suggestedQuestionsEnabled' | 'customInstruction'
 > & {
   assistantLinkUtmEnabled: boolean
+  citationDisplayEnabled: boolean
   theme: WebsiteEmbedThemeSettings
   branding?: AgentBrandingSettings
   sourceScope?: AgentSourceScope
@@ -141,6 +142,7 @@ export interface PublicChatIntakeAction {
 }
 export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse'] & {
   assistantLinkUtmEnabled?: boolean
+  citationDisplayEnabled?: boolean
   intakeActions?: PublicChatIntakeAction[]
 }
 
@@ -348,6 +350,7 @@ export type ChatHistoryListResponse = ApiSchemas['ChatHistoryListResponse'] & {
   workspaceName?: string
   assistantBootstrapActive?: boolean
   assistantLinkUtmEnabled?: boolean
+  citationDisplayEnabled?: boolean
   intakeActions?: PublicChatIntakeAction[]
 }
 
@@ -512,6 +515,7 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
   customInstruction: agent.customInstruction,
   assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
+  citationDisplayEnabled: agent.citationDisplayEnabled,
   theme: agent.theme,
   branding: agent.branding,
   sourceScope: agent.sourceScope,
@@ -522,6 +526,7 @@ export const retrievalSettingsToAssistantBehaviorSettings = (settings: Retrieval
   suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
   customInstruction: settings.customInstruction,
   assistantLinkUtmEnabled: true,
+  citationDisplayEnabled: true,
   theme: {
     brand: '#0f172a',
     brandText: '#f8fafc',

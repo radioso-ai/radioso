@@ -31,9 +31,13 @@ test("dashboard page headers stay fixed while content panes scroll", async ({ pa
 
   await page.goto(`/w/${workspaceKey}/knowledge`);
 
-  const header = page.getByRole("heading", { name: "Knowledge Base", exact: true });
+  const header = page.getByRole("heading", { name: "Documents", exact: true });
+  const documentsTable = page.getByRole("table", { name: "Documents" });
+  const contentPane = documentsTable.locator(
+    'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " overflow-y-auto ")][1]',
+  );
   await expect(header).toBeVisible();
-  await expect(page.getByRole("table", { name: "Documents" })).toBeVisible();
+  await expect(documentsTable).toBeVisible();
   await page.getByRole("button", { name: "Course Guide 1", exact: true }).click();
   await expect(page.getByRole("button", { name: "Back to documents" }).first()).toBeVisible();
   await page.getByRole("button", { name: "Back to documents" }).first().click();
@@ -42,12 +46,12 @@ test("dashboard page headers stay fixed while content panes scroll", async ({ pa
   const initialHeaderTop = await header.evaluate((element) => element.getBoundingClientRect().top);
   const initialWindowScrollY = await page.evaluate(() => window.scrollY);
 
-  await page.locator("div.overflow-y-auto").first().evaluate((element) => {
+  await contentPane.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
 
   await expect
-    .poll(() => page.locator("div.overflow-y-auto").first().evaluate((element) => element.scrollTop))
+    .poll(() => contentPane.evaluate((element) => element.scrollTop))
     .toBeGreaterThan(0);
   await expect.poll(() => header.evaluate((element) => element.getBoundingClientRect().top)).toBe(initialHeaderTop);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(initialWindowScrollY);

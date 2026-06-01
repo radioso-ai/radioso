@@ -252,7 +252,7 @@ test("documents direct page links request only the target offset page", async ({
   await installDashboardApiMocks(page, { documentList, requestLog });
 
   await page.goto(`/w/${workspaceKey}/knowledge?page=3`);
-  await expect(page.getByRole("heading", { name: "Knowledge Base", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Documents", exact: true })).toBeVisible();
   await expect(page.getByRole("table", { name: "Documents" })).toBeVisible();
 
   expect(requestLog).toContain("GET /document/?limit=100&offset=200");

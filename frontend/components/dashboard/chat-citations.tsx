@@ -61,6 +61,10 @@ interface AssistantMessageContentProps {
   theme?: WebsiteEmbedTheme | null
   isStreaming?: boolean
   showCitations?: boolean
+  // 'open' (default) lets a citation open the underlying document in the
+  // dashboard viewer. 'link-only' is for public surfaces: sources are shown but
+  // never openable — only an outbound source link (when present) is exposed.
+  documentInteractivity?: 'open' | 'link-only'
 }
 
 const HTML_ENTITY_MAP: Record<string, string> = {
@@ -103,45 +107,69 @@ const decodeHtmlEntities = (text: string) =>
 const getCitationLabel = (citation: Citation, index: number) =>
   decodeHtmlEntities(citation.title?.trim() || `Document ${index + 1}`)
 
+const CITATION_MARKER_BASE_CLASS =
+  'ml-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary/10 px-1 align-super text-[0.65em] font-semibold leading-none text-primary'
+
 const CitationMarker = ({
   citation,
   index,
+  interactive,
   onOpenDocument,
   onLinkClickAnalytics,
 }: {
   citation: Citation
   index: number
+  interactive: boolean
   onOpenDocument: (citation: Citation, index: number) => void
   onLinkClickAnalytics?: (input: AssistantLinkClickAnalyticsInput) => void
-}) => (
-  <button
-    type="button"
-    onClick={(event) => {
-      event.stopPropagation()
-      onLinkClickAnalytics?.({
-        linkType: 'citation_marker',
-        citationIndex: index,
-        documentId: citation.documentId,
-        chunkId: citation.chunkId,
-      })
-      void onOpenDocument(citation, index)
-    }}
-    className="ml-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary/10 px-1 align-super text-[0.65em] font-semibold leading-none text-primary hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-none"
-    aria-label={`Open source ${index + 1}: ${getCitationLabel(citation, index)}`}
-    data-citation-index={index + 1}
-  >
-    {index + 1}
-  </button>
-)
+}) => {
+  // Non-interactive surfaces render a plain superscript that signals grounding
+  // without offering to open the source document. The outbound link, if any, is
+  // surfaced through the source chip below.
+  if (!interactive) {
+    return (
+      <span
+        className={CITATION_MARKER_BASE_CLASS}
+        aria-label={`Source ${index + 1}: ${getCitationLabel(citation, index)}`}
+        data-citation-index={index + 1}
+      >
+        {index + 1}
+      </span>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation()
+        onLinkClickAnalytics?.({
+          linkType: 'citation_marker',
+          citationIndex: index,
+          documentId: citation.documentId,
+          chunkId: citation.chunkId,
+        })
+        void onOpenDocument(citation, index)
+      }}
+      className={`${CITATION_MARKER_BASE_CLASS} hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-none`}
+      aria-label={`Open source ${index + 1}: ${getCitationLabel(citation, index)}`}
+      data-citation-index={index + 1}
+    >
+      {index + 1}
+    </button>
+  )
+}
 
 const SourceChip = ({
   citation,
   index,
+  interactive,
   onOpenDocument,
   onLinkClickAnalytics,
 }: {
   citation: Citation
   index: number
+  interactive: boolean
   onOpenDocument: (citation: Citation, index: number) => void
   onLinkClickAnalytics?: (input: AssistantLinkClickAnalyticsInput) => void
 }) => {
@@ -153,24 +181,31 @@ const SourceChip = ({
       <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/10 px-1 text-[10px] font-semibold leading-none text-primary">
         {index + 1}
       </span>
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation()
-          onLinkClickAnalytics?.({
-            linkType: 'source_chip',
-            citationIndex: index,
-            documentId: citation.documentId,
-            chunkId: citation.chunkId,
-          })
-          void onOpenDocument(citation, index)
-        }}
-        className="inline-flex max-w-full items-center gap-1 truncate text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:underline focus-visible:outline-none"
-        title={label}
-      >
-        <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        <span className="truncate">{label}</span>
-      </button>
+      {interactive ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onLinkClickAnalytics?.({
+              linkType: 'source_chip',
+              citationIndex: index,
+              documentId: citation.documentId,
+              chunkId: citation.chunkId,
+            })
+            void onOpenDocument(citation, index)
+          }}
+          className="inline-flex max-w-full items-center gap-1 truncate text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:underline focus-visible:outline-none"
+          title={label}
+        >
+          <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate">{label}</span>
+        </button>
+      ) : (
+        <span className="inline-flex max-w-full items-center gap-1 truncate text-left text-muted-foreground" title={label}>
+          <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate">{label}</span>
+        </span>
+      )}
       {sourceUrl ? (
         <a
           href={sourceUrl}
@@ -352,7 +387,9 @@ export function AssistantMessageContent({
   theme,
   isStreaming = false,
   showCitations = true,
+  documentInteractivity = 'open',
 }: AssistantMessageContentProps) {
+  const citationsInteractive = documentInteractivity !== 'link-only'
   const [citationNotice, setCitationNotice] = useState<{ scope: string; message: string } | null>(null)
   const [sourcesExpanded, setSourcesExpanded] = useState(false)
   const [sourcesRendered, setSourcesRendered] = useState(false)
@@ -409,6 +446,7 @@ export function AssistantMessageContent({
           <CitationMarker
             citation={citation}
             index={citationIndex}
+            interactive={citationsInteractive}
             onOpenDocument={handleCitationOpen}
             onLinkClickAnalytics={onLinkClickAnalytics}
           />
@@ -567,6 +605,7 @@ export function AssistantMessageContent({
                     key={`source-${citation.documentId}-${index}`}
                     citation={citation}
                     index={index}
+                    interactive={citationsInteractive}
                     onOpenDocument={handleCitationOpen}
                     onLinkClickAnalytics={onLinkClickAnalytics}
                   />

@@ -502,6 +502,7 @@ describe("EvalRunService.execute (retrieval_only)", () => {
         assistantDefaultLocale: null,
         retrievalEnabled: true,
         suggestedQuestionsEnabled: true,
+        citationDisplayEnabled: true,
         sourceScope: { mode: "selected", sourceIds: ["src-1", "src-2"] },
         chatModelOverride: null,
       },

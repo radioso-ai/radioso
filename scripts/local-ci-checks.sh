@@ -241,7 +241,7 @@ if [ "$frontend" = true ]; then
   else
     run_sh "cd frontend && pnpm exec playwright install chromium"
   fi
-  run_sh "cd frontend && pnpm run test:e2e"
+  run_sh "cd frontend && CI=1 pnpm run test:e2e"
 fi
 
 if [ "$docs" = true ]; then

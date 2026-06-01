@@ -105,6 +105,7 @@ const toBehaviorSettings = (agent: NormalizedAgentInput): Record<string, unknown
   customInstruction: agent.customInstruction,
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
   assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
+  citationDisplayEnabled: agent.citationDisplayEnabled,
   logo: agent.logo,
   theme: agent.theme,
   branding: agent.branding,
@@ -164,6 +165,7 @@ const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegist
     customInstruction: readString(behavior, "customInstruction"),
     suggestedQuestionsEnabled: readBoolean(behavior, "suggestedQuestionsEnabled"),
     assistantLinkUtmEnabled: readBoolean(behavior, "assistantLinkUtmEnabled") ?? true,
+    citationDisplayEnabled: readBoolean(behavior, "citationDisplayEnabled") ?? true,
     retrievalEnabled: row.retrieval_enabled,
     sourceScope: row.source_scope_mode === "selected"
       ? { mode: "selected", sourceIds: row.source_ids ?? [] }

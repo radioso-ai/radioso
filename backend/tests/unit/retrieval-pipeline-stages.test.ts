@@ -29,7 +29,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [],
         createdAt: new Date(),
@@ -99,7 +98,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [
           {
@@ -174,7 +172,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [
           {
@@ -250,7 +247,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [
           {
@@ -331,7 +327,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [
           {
@@ -417,7 +412,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [
           {
@@ -501,7 +495,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [
           {
@@ -639,7 +632,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [
           {
@@ -727,7 +719,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [],
         createdAt: new Date(),
@@ -792,7 +783,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [],
         createdAt: new Date(),
@@ -854,7 +844,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [],
         createdAt: new Date(),
@@ -901,7 +890,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [],
         createdAt: new Date(),
@@ -966,7 +954,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [],
         createdAt: new Date(),
@@ -1046,7 +1033,6 @@ describe("retrieval pipeline stages", () => {
             vectorTopK: 20,
             similarityThreshold: 0.2,
             rerankTopK: 5,
-            citationDisplayEnabled: true,
             customInstruction: "",
             metadataRules: [],
             createdAt: new Date(),
@@ -1142,7 +1128,6 @@ describe("retrieval pipeline stages", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [],
         createdAt: new Date(),

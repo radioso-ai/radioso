@@ -8,6 +8,11 @@ describe("agent branding normalization", () => {
     expect(normalized.branding).toEqual({ hidePoweredBy: false, privacyPolicyUrl: null });
   });
 
+  it("defaults citation display to enabled and round-trips an explicit value", () => {
+    expect(validateAgentInput({ name: "Agent" }).citationDisplayEnabled).toBe(true);
+    expect(validateAgentInput({ name: "Agent", citationDisplayEnabled: false }).citationDisplayEnabled).toBe(false);
+  });
+
   it("preserves a valid https privacy policy URL", () => {
     const normalized = validateAgentInput({
       name: "Agent",

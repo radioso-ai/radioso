@@ -1619,7 +1619,6 @@ export interface components {
             vectorTopK: number;
             similarityThreshold: number;
             rerankTopK: number;
-            citationDisplayEnabled: boolean;
             /** @enum {string} */
             retrievalStrategy: "fixed" | "reasoning" | "auto";
             /** @default [] */
@@ -1674,7 +1673,6 @@ export interface components {
             vectorTopK: number;
             similarityThreshold: number;
             rerankTopK: number;
-            citationDisplayEnabled: boolean;
             /** @enum {string} */
             retrievalStrategy?: "fixed" | "reasoning" | "auto";
             metadataRules?: {
@@ -1714,7 +1712,6 @@ export interface components {
             vectorTopK?: number;
             similarityThreshold?: number;
             rerankTopK?: number;
-            citationDisplayEnabled?: boolean;
             /** @enum {string} */
             retrievalStrategy?: "fixed" | "reasoning" | "auto";
             metadataRules?: {
@@ -1909,7 +1906,6 @@ export interface components {
             vectorTopK: number;
             similarityThreshold: number;
             rerankTopK: number;
-            citationDisplayEnabled: boolean;
             /** @default [] */
             metadataRules: {
                 id: string;
@@ -1998,7 +1994,6 @@ export interface components {
                 vectorTopK?: number;
                 similarityThreshold?: number;
                 rerankTopK?: number;
-                citationDisplayEnabled?: boolean;
                 /** @enum {string} */
                 retrievalStrategy?: "fixed" | "reasoning" | "auto";
                 metadataRules?: {
@@ -2158,6 +2153,7 @@ export interface components {
             customInstruction: string;
             suggestedQuestionsEnabled: boolean;
             assistantLinkUtmEnabled: boolean;
+            citationDisplayEnabled: boolean;
             theme: {
                 brand: string;
                 brandText: string;
@@ -2197,6 +2193,7 @@ export interface components {
             customInstruction?: string;
             suggestedQuestionsEnabled?: boolean;
             assistantLinkUtmEnabled?: boolean;
+            citationDisplayEnabled?: boolean;
             theme?: {
                 brand?: string;
                 brandText?: string;

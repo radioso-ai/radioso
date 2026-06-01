@@ -17,7 +17,7 @@ The bootstrap prompts for your AI provider credentials, generates secrets, and s
 
 In the Docker development stack, frontend and backend source changes are bind-mounted into the containers. TypeScript backend changes restart automatically, and backend prompt markdown under `backend/prompts/` is re-read on each request in development without a container restart.
 
-By default the Docker stack publishes the app on port 3000, the API on port 8080, and Postgres on port 5432. To run more than one local stack, set `RADIOSO_FRONTEND_PORT`, `RADIOSO_BACKEND_PORT`, and `RADIOSO_POSTGRES_PORT` before running `./run-dev.sh`. In Conductor workspaces, `./run-dev.sh` uses the workspace `CONDUCTOR_PORT` allocation automatically.
+By default the Docker stack uses the Compose project name `radioso` and publishes the app on port 3000, the API on port 8080, and Postgres on port 5432. To run more than one local stack, set a distinct `COMPOSE_PROJECT_NAME` together with `RADIOSO_FRONTEND_PORT`, `RADIOSO_BACKEND_PORT`, and `RADIOSO_POSTGRES_PORT` before running `./run-dev.sh`. In Conductor workspaces, `./run-dev.sh` uses the workspace `CONDUCTOR_PORT` allocation automatically.
 
 For Enterprise Edition embed development, run:
 

@@ -110,8 +110,10 @@ export class AssistantReplyComposer {
 
   /**
    * Streams the reply token-by-token via the gateway's streaming API. On a blank
-   * reply it falls back to a graceful no-answer reply (one chunk). Returns the reply
-   * as the no-context presentation so the host finalizes it as a non-grounded turn.
+   * reply it falls back to a graceful no-answer reply (one chunk). Owns its own
+   * presentation and returns it as `finalPresentation`; its question suggestions
+   * are already settled on that presentation, so it signals `presentation`-sourced
+   * suggestions and the host does not re-expand planned suggestions for it.
    */
   async *streamAnswer(
     session: PreparedSession,
@@ -137,10 +139,8 @@ export class AssistantReplyComposer {
     const answer = streamedAnswer.trim();
     if (answer) {
       return {
-        rawAnswer: answer,
-        plannedSuggestions: [],
-        answerGrounding: "grounded",
-        noContextPresentation: this.presentReply(answer),
+        finalPresentation: this.presentReply(answer),
+        suggestions: { mode: "presentation" },
         hasStreamedAnswer: true,
         streamedAnswer,
       };
@@ -157,10 +157,8 @@ export class AssistantReplyComposer {
     });
     yield miss;
     return {
-      rawAnswer: miss,
-      plannedSuggestions: [],
-      answerGrounding: "grounded",
-      noContextPresentation: this.chatAnswerPresenter.presentGroundedMissAnswer(miss),
+      finalPresentation: this.chatAnswerPresenter.presentGroundedMissAnswer(miss),
+      suggestions: { mode: "presentation" },
       hasStreamedAnswer: true,
       streamedAnswer: streamedAnswer + miss,
     };

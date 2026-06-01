@@ -17,6 +17,7 @@ import {
   toConversationTrace,
   toPreparedStagedContext,
 } from "../../src/modules/chat/services/conversationContractMappers.js";
+import { ChatTurnSkillSelector } from "../../src/modules/chat/services/turnSkillSelector.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 
 const conversation = (): ConversationRecord => ({
@@ -179,11 +180,12 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     };
 
     const { engine, dispatched, selectorCalls } = drivingEngine();
+    const turnSkills = [retrievalSkill];
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine,
       session: session(),
-      selectionStrategy: new DefaultTurnSelectionStrategy(),
-      turnSkills: [retrievalSkill],
+      turnSkillSelector: new ChatTurnSkillSelector(turnSkills, new DefaultTurnSelectionStrategy()),
+      turnSkills,
       query: "Where is my order?",
     });
 
@@ -233,11 +235,12 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     };
 
     const { engine, dispatched } = drivingEngine();
+    const turnSkills = [bookingSkill];
     const { presentation } = await runPreparedChatTurnWithConversationEngine({
       engine,
       session: session(),
-      selectionStrategy: new DefaultTurnSelectionStrategy(),
-      turnSkills: [bookingSkill],
+      turnSkillSelector: new ChatTurnSkillSelector(turnSkills, new DefaultTurnSelectionStrategy()),
+      turnSkills,
       query: "Book me a slot",
     });
 

@@ -1,5 +1,5 @@
 import { findCitationAnchorGroups, stripResidualCitationSyntax } from "./citationAnchorParser.js";
-import { removeDetachedPunctuationSpacing } from "./citationTextNormalization.js";
+import { STRANDABLE_PUNCTUATION } from "./citationTextNormalization.js";
 import type {
   AnswerSegment,
   ChatCitation,
@@ -182,7 +182,17 @@ export class AnswerPresentationService {
       const citationIndices = resolveCitationIndices(anchorGroup.resultNumbers);
       const match = currentText.match(/^(.*?)(\s*)$/s);
       const coreText = match?.[1] ?? currentText;
-      const trailingWhitespace = match?.[2] ?? "";
+      let trailingWhitespace = match?.[2] ?? "";
+
+      // The model sometimes detaches an anchor onto its own line just before the
+      // punctuation that closes the claim (`claim\n\n[[1]].`). Removing the anchor would
+      // otherwise strand that punctuation on a new line, so when the whitespace before
+      // the anchor spans a line break and the text after it opens with sentence
+      // punctuation, drop the break so the punctuation rejoins the claim. Scoped to the
+      // anchor seam — newlines elsewhere in the answer are never touched.
+      if (/\n/.test(trailingWhitespace) && STRANDABLE_PUNCTUATION.test(answer.slice(anchorGroup.end))) {
+        trailingWhitespace = "";
+      }
 
       if (citationIndices.length > 0 && coreText.length > 0) {
         pushSegment(coreText, citationIndices);
@@ -197,20 +207,10 @@ export class AnswerPresentationService {
     currentText += stripResidualCitationSyntax(answer.slice(lastIndex));
     pushSegment(currentText);
 
-    // A removed anchor can strand its trailing punctuation or link list at the start
-    // of the following segment (`...consistently` | `\n\n.\n\nAnanda`). Reflow each
-    // finalized segment so that punctuation rejoins the prior line, then rebuild the
-    // flat answer from the reflowed segments so both representations stay in sync.
-    const reflowedSegments = answerSegments.map((segment) =>
-      segment.citationIndices && segment.citationIndices.length > 0
-        ? { text: removeDetachedPunctuationSpacing(segment.text), citationIndices: segment.citationIndices }
-        : { text: removeDetachedPunctuationSpacing(segment.text) },
-    );
-
     return {
-      answer: reflowedSegments.map((segment) => segment.text).join(""),
+      answer: answerText,
       citationEvidence: visibleCitations,
-      answerSegments: reflowedSegments,
+      answerSegments,
     };
   }
 }

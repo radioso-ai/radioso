@@ -60,6 +60,33 @@ describe("citation anchor sanitizer", () => {
     );
   });
 
+  it("collapses a detached anchor whose punctuation arrives in the same chunk", () => {
+    const sanitizer = new CitationAnchorSanitizer();
+
+    const chunks = [
+      sanitizer.push("It is a science when practiced consistently\n\n[[1]]. Ananda Europe teaches Kriya."),
+      sanitizer.flush(),
+    ];
+
+    expect(chunks.join("")).toBe(
+      "It is a science when practiced consistently. Ananda Europe teaches Kriya.",
+    );
+  });
+
+  it("leaves line-leading punctuation that no anchor detached intact across chunks", () => {
+    const sanitizer = new CitationAnchorSanitizer();
+
+    // No citation anchor is involved, so the line break before `:hover` is real answer
+    // content (a CSS selector) and must be preserved, not collapsed.
+    const chunks = [
+      sanitizer.push("Use this selector:\n\n"),
+      sanitizer.push(":hover { color: red; }"),
+      sanitizer.flush(),
+    ];
+
+    expect(chunks.join("")).toBe("Use this selector:\n\n:hover { color: red; }");
+  });
+
   it("preserves natural single-bracket numeric text in streamed output", () => {
     const sanitizer = new CitationAnchorSanitizer();
 

@@ -436,6 +436,30 @@ describe("answer presentation service", () => {
     );
   });
 
+  it("leaves a line-leading punctuation that no anchor detached intact", () => {
+    const service = new AnswerPresentationService();
+
+    // The reflow must be scoped to the anchor seam: ordinary answer content that
+    // starts a line with `:` or `.` (CSS selectors, filenames) must survive even when
+    // a citation anchor elsewhere drives the citation-presentation path.
+    const result = service.present({
+      answer:
+        "Style the link with this rule[[1]]:\n\n:hover { color: blue; }\n\nSave it as\n\n.env in the project root.",
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Styling guide",
+          content: "Style the link with this rule.",
+        },
+      ],
+    });
+
+    expect(result.answer).toBe(
+      "Style the link with this rule:\n\n:hover { color: blue; }\n\nSave it as\n\n.env in the project root.",
+    );
+  });
+
   it("present() preserves sourceUrl on emitted citations", () => {
     const service = new AnswerPresentationService();
 

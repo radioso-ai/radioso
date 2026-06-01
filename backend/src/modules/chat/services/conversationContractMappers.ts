@@ -81,16 +81,18 @@ export const toConversationTrace = (trace: ActivityTrace | undefined): Conversat
   };
 };
 
-// Stages the prepared session's retrieval result for the terminal skill. `kind`
-// describes the staged data shape (a retrieval pipeline result, skipped or not);
-// `source` is the owning skill — a social or identity turn carries its own
-// skill name here, never "retrieval.answer".
+// Stages the prepared session's retrieval result. `kind` describes the staged
+// data shape (a retrieval pipeline result, skipped or not). `source` is the owning
+// skill — a social or identity turn carries its own skill name here, never
+// "retrieval.answer". `source` is optional because the preparer stages the result
+// before a skill is selected (A1, issue #482); `buildPreparedTurnOutcome` stamps
+// the dispatching skill name at dispatch time.
 export const toPreparedStagedContext = (
   retrieval: RetrievalPipelineResult,
-  source: string,
+  source?: string,
 ): StagedContext => ({
   kind: "retrieval",
-  source,
+  ...(source !== undefined ? { source } : {}),
   data: retrieval,
   metadata: {
     contextCount: retrieval.contexts.length,

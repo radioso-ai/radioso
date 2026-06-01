@@ -66,6 +66,8 @@ const buildSession = (): PreparedSession => {
     } as PreparedSession["retrieval"],
     turnRoute: "retrieval" as PreparedSession["turnRoute"],
     userMessage,
+    stagedContext: [],
+    turnTrace: { traceId: "trace-1", startedAt: new Date(0).toISOString(), stages: [] },
   };
 };
 

@@ -4945,4 +4945,218 @@ describe("chat service streaming", () => {
     expect(observedPrompt).toContain("Say that you are the assistant that can answer the user's questions.");
   });
 
+  describe("engine-on vs engine-off streaming parity", () => {
+    // #513: streaming routes through the conversation engine when it is wired and
+    // through the same selection seam directly otherwise. Both paths wrap the
+    // identical terminal-skill streamRender and share getUnstreamedFinalAnswerRemainder,
+    // so a turn must stream and finalize byte-identically regardless of the
+    // RADIOSO_CONVERSATION_ENGINE_ENABLED flag. These cases pin that invariant —
+    // the gate for flipping the flag on in production — across the distinct
+    // streaming shapes: a non-retrieval skill, a cited retrieval answer, and a
+    // grounded miss that triggers the skill's post-stream reconcile.
+    interface ParityCase {
+      name: string;
+      query: string;
+      build: () => {
+        retrievalTurn: ChatServiceOptions["retrievalTurn"];
+        chatGateway: ChatGateway;
+      };
+    }
+
+    const groundedRetrievalResult = (content: string) => ({
+      rewrittenQuery: "query",
+      contexts: [
+        {
+          chunkId: "chunk-1",
+          documentId: "doc-1",
+          title: "Source",
+          content,
+        },
+      ],
+      prompt: "prompt text",
+      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Source" }],
+      diagnostics: {
+        rewriteStatus: "skipped",
+        rerankStatus: "skipped",
+        originalCandidateCount: 1,
+        rewrittenCandidateCount: 0,
+        lexicalCandidateCount: 1,
+        normalizedCandidateCount: 1,
+        finalContextCount: 1,
+        candidateFallbackApplied: false,
+        fallbackApplied: false,
+        parsedQuery: {
+          semanticQuery: "query",
+          lexicalQuery: "query",
+          constraints: [],
+        },
+      },
+      responseSettings: {
+        citationDisplayEnabled: true,
+      },
+    });
+
+    const chunkTextsOf = (events: ChatStreamEvent[]): string[] =>
+      events
+        .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
+        .map((event) => event.text);
+
+    const stableDoneOf = (events: ChatStreamEvent[]) => {
+      const done = events.find(
+        (event): event is Extract<ChatStreamEvent, { type: "done" }> => event.type === "done",
+      );
+      if (!done) {
+        throw new Error("stream produced no done event");
+      }
+      // Content-bearing fields only — conversationId / assistantMessageId are freshly
+      // generated per run and must not be compared across configs.
+      return {
+        answer: done.answer,
+        citations: done.citations,
+        answerSegments: done.answerSegments,
+        suggestions: done.suggestions,
+        route: done.route,
+      };
+    };
+
+    const runStreamedTurn = async (engineOn: boolean, parityCase: ParityCase) => {
+      const conversationRepository = new InMemoryConversationRepository();
+      const messageRepository = new InMemoryMessageRepository();
+      const auditService = createAuditService();
+      const { retrievalTurn, chatGateway } = parityCase.build();
+      const service = makeChatService(
+        conversationRepository,
+        messageRepository,
+        retrievalTurn,
+        chatGateway,
+        auditService,
+        fallbackReplyComposer,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        engineOn ? createConversationEngine() : undefined,
+      );
+
+      const events: ChatStreamEvent[] = [];
+      let conversationId = "";
+      for await (const event of service.streamAnswer({
+        workspaceId: "workspace-1",
+        query: parityCase.query,
+        stream: true,
+      })) {
+        events.push(event);
+        if (event.type === "conversation") {
+          conversationId = event.conversationId;
+        }
+      }
+      const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
+      return {
+        chunks: chunkTextsOf(events),
+        done: stableDoneOf(events),
+        persisted: persisted.map((message) => ({ role: message.role, content: message.content })),
+      };
+    };
+
+    const parityCases: ParityCase[] = [
+      {
+        name: "non-retrieval social turn",
+        query: "Hi there",
+        build: () => ({
+          retrievalTurn: new RetrievalTurnController(
+            asChatActivityPipeline(
+              createIntentRoutedNoContextPipeline({
+                query: "Hi there",
+                responseIntent: "social_only",
+              }),
+            ) as never,
+          ),
+          chatGateway: {
+            async answer() {
+              return "Hello there! How can I help?";
+            },
+            async *streamAnswer() {
+              yield "Hello there! ";
+              yield "How can I help?";
+            },
+          },
+        }),
+      },
+      {
+        name: "retrieval cited multi-chunk answer",
+        query: "How should I start meditating?",
+        build: () => ({
+          retrievalTurn: new RetrievalTurnController(
+            asChatActivityPipeline({
+              async run() {
+                return groundedRetrievalResult(
+                  "Keep meditation practice short and simple. Begin with a few minutes each day. Consistency matters more than duration.",
+                );
+              },
+            }) as never,
+          ),
+          chatGateway: {
+            async answer() {
+              return "Keep meditation practice short and simple[[1]]. Begin with a few minutes each day. Consistency matters more than duration.";
+            },
+            async *streamAnswer() {
+              yield "Keep meditation practice short and simple[[1]]. ";
+              yield "Begin with a few minutes each day. ";
+              yield "Consistency matters more than duration.";
+              yield `\n${SUGGESTIONS_SENTINEL}\n[]`;
+            },
+          },
+        }),
+      },
+      {
+        name: "retrieval grounded miss reconcile",
+        query: "What time does the museum open?",
+        build: () => ({
+          retrievalTurn: new RetrievalTurnController(
+            asChatActivityPipeline({
+              async run() {
+                return groundedRetrievalResult("Alpha beta gamma delta epsilon zeta eta theta.");
+              },
+            }) as never,
+          ),
+          // Streams prose that matches no retrieved context and carries no citation
+          // anchor, so the skill's post-stream reconcile swaps in the grounded-miss
+          // reply. Both configs must reach that swap identically.
+          chatGateway: {
+            async answer() {
+              return "Completely unrelated prose that cites nothing at all.";
+            },
+            async *streamAnswer() {
+              yield "Completely unrelated prose ";
+              yield "that cites nothing at all.";
+            },
+          },
+        }),
+      },
+    ];
+
+    for (const parityCase of parityCases) {
+      it(`streams and finalizes identically with and without the engine: ${parityCase.name}`, async () => {
+        const withoutEngine = await runStreamedTurn(false, parityCase);
+        const withEngine = await runStreamedTurn(true, parityCase);
+
+        expect(withEngine.chunks).toEqual(withoutEngine.chunks);
+        expect(withEngine.done).toEqual(withoutEngine.done);
+        expect(withEngine.persisted).toEqual(withoutEngine.persisted);
+
+        // Guard against a vacuous pass: the turn must have produced a real answer and
+        // persisted the assistant message.
+        expect(withoutEngine.done.answer).toBeTruthy();
+        expect(withoutEngine.persisted).toContainEqual(
+          expect.objectContaining({ role: "assistant" }),
+        );
+      });
+    }
+  });
+
 });

@@ -118,13 +118,17 @@ describe("default answer directives", () => {
     expect(conciseReadableFormattingDirective.action).toContain("Do not add headings unless");
     expect(conciseReadableFormattingDirective.action).toContain("Do not use tables unless");
     expect(inlineSupportedLinksDirective.action).toContain("link it inline with Markdown");
-    expect(inlineSupportedLinksDirective.action).toContain("every time you mention such a resource");
-    expect(inlineSupportedLinksDirective.action).toContain("Provide ample inline links");
+    expect(inlineSupportedLinksDirective.action).toContain("within the sentence that mentions it");
+    expect(inlineSupportedLinksDirective.action).toContain("Prefer linking each named resource");
     expect(inlineSupportedLinksDirective.action).toContain("If the user asks for a link");
     expect(inlineSupportedLinksDirective.action).toContain("human-readable link text");
     expect(inlineSupportedLinksDirective.action).toContain("Never print a bare/raw URL");
-    expect(inlineSupportedLinksDirective.action).toContain("Do not collect links in a separate reference list");
-    expect(inlineSupportedLinksDirective.action).toContain("For resource lists or closing paths");
+    // Reconciled link rules: inline-only, never a trailing/semicolon list or a block
+    // following a citation marker, and never a link or marker alone on its own line.
+    expect(inlineSupportedLinksDirective.action).toContain("Never gather links into a trailing list");
+    expect(inlineSupportedLinksDirective.action).toContain("separated by semicolons");
+    expect(inlineSupportedLinksDirective.action).toContain("follows a citation marker");
+    expect(inlineSupportedLinksDirective.action).toContain("alone on its own line");
   });
 });
 

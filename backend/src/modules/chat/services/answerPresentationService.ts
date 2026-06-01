@@ -1,4 +1,5 @@
 import { findCitationAnchorGroups, stripResidualCitationSyntax } from "./citationAnchorParser.js";
+import { STRANDABLE_PUNCTUATION } from "./citationTextNormalization.js";
 import type {
   AnswerSegment,
   ChatCitation,
@@ -181,7 +182,17 @@ export class AnswerPresentationService {
       const citationIndices = resolveCitationIndices(anchorGroup.resultNumbers);
       const match = currentText.match(/^(.*?)(\s*)$/s);
       const coreText = match?.[1] ?? currentText;
-      const trailingWhitespace = match?.[2] ?? "";
+      let trailingWhitespace = match?.[2] ?? "";
+
+      // The model sometimes detaches an anchor onto its own line just before the
+      // punctuation that closes the claim (`claim\n\n[[1]].`). Removing the anchor would
+      // otherwise strand that punctuation on a new line, so when the whitespace before
+      // the anchor spans a line break and the text after it opens with sentence
+      // punctuation, drop the break so the punctuation rejoins the claim. Scoped to the
+      // anchor seam — newlines elsewhere in the answer are never touched.
+      if (/\n/.test(trailingWhitespace) && STRANDABLE_PUNCTUATION.test(answer.slice(anchorGroup.end))) {
+        trailingWhitespace = "";
+      }
 
       if (citationIndices.length > 0 && coreText.length > 0) {
         pushSegment(coreText, citationIndices);

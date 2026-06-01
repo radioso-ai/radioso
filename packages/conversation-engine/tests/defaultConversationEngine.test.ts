@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { DefaultConversationEngine } from "../src/index.js";
 import type {
   ConversationEvent,
+  ProcessTurnStreamEvent,
+  ProcessTurnStreamInput,
   ProcessTurnInput,
   TurnOutcome,
 } from "@radioso/conversation-contract";
@@ -164,5 +166,50 @@ describe("DefaultConversationEngine", () => {
         expect.objectContaining({ kind: "skill_dispatch", status: "failed" }),
       ]),
     );
+  });
+
+  it("streams a turn through the same gather-select-dispatch stages and yields a final result", async () => {
+    const input: ProcessTurnStreamInput = {
+      ...createInput(),
+      composer: {
+        compose: vi.fn(),
+        async *stream({ outcomes }) {
+          yield { type: "delta", text: "Your order " };
+          yield { type: "delta", text: "ships tomorrow." };
+          yield {
+            type: "final",
+            response: {
+              answer: outcomes[0]?.outcome.answer ?? "",
+              metadata: { streamed: true },
+            },
+          };
+        },
+      },
+    };
+
+    const events: ProcessTurnStreamEvent[] = [];
+    for await (const event of new DefaultConversationEngine().processTurnStream(input)) {
+      events.push(event);
+    }
+
+    expect(events.map((event) => event.type)).toEqual(["delta", "delta", "final"]);
+    expect(events[0]).toMatchObject({ type: "delta", text: "Your order " });
+    const final = events.at(-1);
+    expect(final).toMatchObject({
+      type: "final",
+      result: {
+        sessionId: "session_1",
+        response: { answer: "Your order ships tomorrow." },
+      },
+    });
+    expect(input.stores.appendEvent).toHaveBeenCalledTimes(2);
+    expect(input.composer.compose).not.toHaveBeenCalled();
+    expect(final?.type === "final" ? final.result.trace.stages.map((stage) => stage.kind) : []).toEqual([
+      "gather",
+      "directive_match",
+      "skill_selection",
+      "skill_dispatch",
+      "compose",
+    ]);
   });
 });

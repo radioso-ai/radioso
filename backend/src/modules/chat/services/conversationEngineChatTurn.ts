@@ -1,13 +1,23 @@
 import type {
   ConversationEngine,
+  ConversationTrace,
   ProcessTurnResult,
   RenderableTurn,
 } from "@radioso/conversation-contract";
 
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
-import { createChatProcessTurnInput } from "./conversationProcessTurnInput.js";
-import { buildTurnRendererRegistry, type TurnSkill } from "./turnOutcome.js";
+import {
+  createChatProcessTurnInput,
+  createChatProcessTurnStreamInput,
+} from "./conversationProcessTurnInput.js";
+import {
+  buildTurnRendererRegistry,
+  getUnstreamedFinalAnswerRemainder,
+  type TurnSkill,
+  type TurnStreamResult,
+  type TurnStreamSuggestions,
+} from "./turnOutcome.js";
 import type { ChatTurnSkillSelector } from "./turnSkillSelector.js";
 
 export interface RunPreparedChatTurnWithConversationEngineInput {
@@ -28,6 +38,16 @@ export interface RunPreparedChatTurnWithConversationEngineResult {
   /** The engine's turn result — its selection/dispatch trace and events. */
   result: ProcessTurnResult;
 }
+
+export type RunPreparedChatTurnStreamWithConversationEngineEvent =
+  | { type: "chunk"; text: string }
+  | {
+      type: "final";
+      presentation: ChatPresentedAnswer;
+      suggestions: TurnStreamSuggestions;
+      result: ProcessTurnResult;
+      engineTrace: ConversationTrace;
+    };
 
 const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => ({
   answer: presentation.answer,
@@ -107,4 +127,84 @@ export const runPreparedChatTurnWithConversationEngine = async (
     throw new Error("conversation_engine_rendered_no_chat_presentation");
   }
   return { presentation: rendered, result };
+};
+
+export const runPreparedChatTurnStreamWithConversationEngine = async function* (
+  input: RunPreparedChatTurnWithConversationEngineInput,
+): AsyncIterable<RunPreparedChatTurnStreamWithConversationEngineEvent> {
+  const skillsByName = new Map(input.turnSkills.map((skill) => [skill.definition.name, skill]));
+  const { decision } = input.turnSkillSelector.select(input.session);
+  const streamState: { result?: TurnStreamResult } = {};
+
+  const processTurnInput = createChatProcessTurnStreamInput({
+    session: input.session,
+    skills: input.turnSkills.map((skill) => skill.definition),
+    selector: {
+      async select() {
+        return decision;
+      },
+    },
+    dispatcher: {
+      async dispatch({ skill }) {
+        const turnSkill = skillsByName.get(skill.name);
+        if (!turnSkill) {
+          throw new Error(`conversation_engine_no_turn_skill_for_${skill.name}`);
+        }
+        return turnSkill.dispatch(input.session);
+      },
+    },
+    composer: {
+      async compose() {
+        throw new Error("conversation_engine_stream_used_non_streaming_compose");
+      },
+      async *stream({ outcomes }) {
+        const outcome = outcomes[0];
+        if (!outcome) {
+          throw new Error("conversation_engine_dispatched_no_outcome");
+        }
+        const turnSkill = skillsByName.get(outcome.skillName);
+        if (!turnSkill?.streamRender) {
+          throw new Error("chat_no_streamable_turn_skill");
+        }
+        const answerStream = turnSkill.streamRender({
+          session: input.session,
+          query: input.query,
+          userExpectedLocale: input.userExpectedLocale,
+          accountId: input.accountId,
+        });
+        let streamStep = await answerStream.next();
+        while (!streamStep.done) {
+          yield { type: "delta", text: streamStep.value };
+          streamStep = await answerStream.next();
+        }
+        streamState.result = streamStep.value;
+        const remainingAnswer = getUnstreamedFinalAnswerRemainder(streamState.result);
+        if (remainingAnswer) {
+          yield { type: "delta", text: remainingAnswer };
+        }
+        yield {
+          type: "final",
+          response: toRenderableTurn(streamState.result.finalPresentation),
+        };
+      },
+    },
+  });
+
+  for await (const event of input.engine.processTurnStream(processTurnInput)) {
+    if (event.type === "delta") {
+      yield { type: "chunk", text: event.text };
+      continue;
+    }
+    const streamResult = streamState.result;
+    if (!streamResult) {
+      throw new Error("conversation_engine_stream_missing_chat_result");
+    }
+    yield {
+      type: "final",
+      presentation: streamResult.finalPresentation,
+      suggestions: streamResult.suggestions,
+      result: event.result,
+      engineTrace: event.result.trace,
+    };
+  }
 };

@@ -4,9 +4,11 @@ import type {
   ConversationSkillDispatcher,
   ConversationSkillSelector,
   ConversationTurnComposer,
+  ConversationTurnStreamComposer,
   Directive,
   DirectiveMatch,
   ProcessTurnInput,
+  ProcessTurnStreamInput,
   SkillDefinition,
 } from "@radioso/conversation-contract";
 
@@ -32,6 +34,10 @@ export interface ChatProcessTurnInputOptions {
   composer: ConversationTurnComposer;
   modelGateway?: ConversationModelGateway;
   appendEvent?: (event: ConversationEvent) => Promise<void>;
+}
+
+export interface ChatProcessTurnStreamInputOptions extends Omit<ChatProcessTurnInputOptions, "composer"> {
+  composer: ConversationTurnStreamComposer;
 }
 
 const directiveMatchesForSession = (session: PreparedSession): DirectiveMatch[] =>
@@ -63,4 +69,11 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
       return directiveMatchesForSession(options.session);
     },
   },
+});
+
+export const createChatProcessTurnStreamInput = (
+  options: ChatProcessTurnStreamInputOptions,
+): ProcessTurnStreamInput => ({
+  ...createChatProcessTurnInput(options),
+  composer: options.composer,
 });

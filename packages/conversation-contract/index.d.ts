@@ -327,10 +327,31 @@ export interface RoutineNextStepDecision {
   rationale?: string;
 }
 
+/** The result of dispatching a Routine skill (tool) step. */
+export interface RoutineSkillResult {
+  status: SkillOutcomeStatus;
+  outputs?: Record<string, unknown>;
+  answer?: string;
+}
+
+/**
+ * Dispatches a Routine skill (tool) step's skill. The host implements it over the
+ * existing skill-executor registry; the runner advances past the step on its result.
+ */
+export interface ConversationRoutineSkillDispatcher {
+  dispatch(input: {
+    skillName: string;
+    state: RoutineState;
+    turn: TurnContext;
+  }): Promise<RoutineSkillResult>;
+}
+
 /**
  * Advances an active Routine: given the current step and its outgoing transitions,
  * decide which step the turn lands on and capture any slot variables. Slice 3
- * provides the LLM implementation; the runner consumes it through this port.
+ * provides the LLM implementation; the runner consumes it through this port. When a
+ * skill step just ran, its `skillResult` is passed so the selector can read the
+ * outcome (e.g. to choose a success vs. failure edge).
  */
 export interface ConversationRoutineNextStepSelector {
   select(input: {
@@ -339,6 +360,7 @@ export interface ConversationRoutineNextStepSelector {
     currentStep: RoutineStep;
     transitions: RoutineTransition[];
     turn: TurnContext;
+    skillResult?: RoutineSkillResult;
   }): Promise<RoutineNextStepDecision>;
 }
 

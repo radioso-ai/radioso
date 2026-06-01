@@ -116,3 +116,71 @@ describe("DefaultRoutineRunner", () => {
     await expect(runner.resume({ turn, state: state(["ask_email"]) })).rejects.toThrow("routine_not_found:contact");
   });
 });
+
+describe("DefaultRoutineRunner skill (tool) steps", () => {
+  const singleEdge: Routine = {
+    id: "contact",
+    rootStepId: "ask_message",
+    steps: [
+      { id: "ask_message", kind: "chat", action: "Ask for the message." },
+      { id: "submit", kind: "skill", skillName: "human_contact.request" },
+      { id: "done", kind: "terminal", action: "Confirm the request was sent." },
+    ],
+    transitions: [
+      { from: "ask_message", to: "submit", condition: "a message was provided" },
+      { from: "submit", to: "done", condition: "the submission completed" },
+    ],
+  };
+  const multiEdge: Routine = {
+    ...singleEdge,
+    steps: [...singleEdge.steps, { id: "failed", kind: "terminal", action: "Apologize; it failed." }],
+    transitions: [
+      ...singleEdge.transitions,
+      { from: "submit", to: "failed", condition: "the submission failed" },
+    ],
+  };
+  const atMessage = (routineId = "contact"): RoutineState => ({
+    sessionId: "session_1", routineId, path: ["ask_message"], variables: { message: "hi" }, status: "active",
+  });
+
+  it("auto-advances past a single-edge skill step without calling the selector again", async () => {
+    const select = vi.fn(async () => ({ nextStepId: "submit" }));
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner([singleEdge], { select }, { render: vi.fn(echoRenderer.render) }, { dispatch });
+
+    const result = await runner.resume({ turn, state: atMessage() });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ skillName: "human_contact.request" }));
+    // Selector ran once (to land on the skill step); the post-skill hop was deterministic.
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(result.response.answer).toContain("done");
+    expect(result.nextState).toBeNull();
+  });
+
+  it("defers a multi-edge skill step's follow-up to the selector, passing the skill result", async () => {
+    const select = vi.fn(async ({ currentStep }) =>
+      currentStep.id === "ask_message" ? { nextStepId: "submit" } : { nextStepId: "done" },
+    );
+    const dispatch = vi.fn(async () => ({ status: "completed" as const, outputs: { requestId: "r1" } }));
+    const runner = new DefaultRoutineRunner([multiEdge], { select }, { render: vi.fn(echoRenderer.render) }, { dispatch });
+
+    const result = await runner.resume({ turn, state: atMessage() });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(select).toHaveBeenLastCalledWith(expect.objectContaining({
+      currentStep: expect.objectContaining({ id: "submit" }),
+      skillResult: expect.objectContaining({ status: "completed" }),
+    }));
+    expect(result.response.answer).toContain("done");
+  });
+
+  it("throws when a skill step is reached without a dispatcher", async () => {
+    const runner = new DefaultRoutineRunner(
+      [singleEdge],
+      { select: vi.fn(async () => ({ nextStepId: "submit" })) },
+      { render: vi.fn() },
+    );
+    await expect(runner.resume({ turn, state: atMessage() })).rejects.toThrow("routine_skill_dispatcher_missing");
+  });
+});

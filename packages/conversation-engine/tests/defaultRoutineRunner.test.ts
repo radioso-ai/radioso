@@ -115,6 +115,76 @@ describe("DefaultRoutineRunner", () => {
     const runner = new DefaultRoutineRunner([], { select: vi.fn() }, { render: vi.fn() });
     await expect(runner.resume({ turn, state: state(["ask_email"]) })).rejects.toThrow("routine_not_found:contact");
   });
+
+  it("resumes from the last step in a multi-element path, not the root", async () => {
+    const select = vi.fn(async () => ({ nextStepId: "done" }));
+    const runner = new DefaultRoutineRunner([routine], { select }, { render: vi.fn(echoRenderer.render) });
+
+    await runner.resume({ turn, state: state(["ask_email", "ask_message"]) });
+
+    expect(select).toHaveBeenCalledWith(expect.objectContaining({
+      currentStep: expect.objectContaining({ id: "ask_message" }),
+      transitions: [expect.objectContaining({ from: "ask_message", to: "done" })],
+    }));
+  });
+
+  it("merges newly captured variables onto the ones already collected", async () => {
+    const runner = new DefaultRoutineRunner(
+      [routine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_message", variables: { message: "hi" } })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"], { email: "a@b.c" }) });
+
+    expect(result.nextState?.variables).toEqual({ email: "a@b.c", message: "hi" });
+  });
+
+  it("treats a selector choice that is not a declared successor as staying put", async () => {
+    // "done" is not an outgoing target of ask_email (only ask_message is) — the runner
+    // must not let the selector jump the turn to an arbitrary step.
+    const runner = new DefaultRoutineRunner(
+      [routine],
+      { select: vi.fn(async () => ({ nextStepId: "done" })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    expect(result.nextState?.path).toEqual(["ask_email"]);
+    expect(result.response.answer).toContain("ask_email");
+  });
+
+  it("throws on a skill-step cycle instead of looping forever (or re-dispatching the skill)", async () => {
+    const cyclic: Routine = {
+      id: "loop",
+      rootStepId: "a",
+      steps: [
+        { id: "a", kind: "chat", action: "start" },
+        { id: "s1", kind: "skill", skillName: "x" },
+        { id: "s2", kind: "skill", skillName: "y" },
+      ],
+      transitions: [
+        { from: "a", to: "s1", condition: "go" },
+        { from: "s1", to: "s2", condition: "next" },
+        { from: "s2", to: "s1", condition: "back" },
+      ],
+    };
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner(
+      [cyclic],
+      { select: vi.fn(async () => ({ nextStepId: "s1" })) },
+      { render: vi.fn() },
+      { dispatch },
+    );
+
+    await expect(runner.resume({
+      turn,
+      state: { sessionId: "session_1", routineId: "loop", path: ["a"], variables: {}, status: "active" },
+    })).rejects.toThrow("routine_skill_walk_exceeded");
+    // The guard fires after a bounded number of dispatches, not unboundedly.
+    expect(dispatch.mock.calls.length).toBeLessThanOrEqual(cyclic.steps.length + 1);
+  });
 });
 
 describe("DefaultRoutineRunner skill (tool) steps", () => {

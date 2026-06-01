@@ -33,15 +33,37 @@ interface ParsedDecision {
   variables: Record<string, unknown>;
 }
 
-// Tolerant extraction of the JSON object the model returns (it may wrap it in prose
-// or a code fence). Structural parsing only — no product vocabulary.
+// Extracts the first balanced { ... } object from the model output (it may wrap the
+// JSON in prose or a code fence). A balanced scan — not a greedy `{.*}` regex — so
+// trailing prose, a second object, or braces in the echoed user text don't capture
+// the wrong span. Structural parsing only — no product vocabulary.
+const extractJsonObject = (raw: string): string | null => {
+  const start = raw.indexOf("{");
+  if (start < 0) {
+    return null;
+  }
+  let depth = 0;
+  for (let index = start; index < raw.length; index += 1) {
+    const char = raw[index];
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(start, index + 1);
+      }
+    }
+  }
+  return null;
+};
+
 const parseDecision = (raw: string): ParsedDecision => {
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) {
+  const json = extractJsonObject(raw);
+  if (!json) {
     return { condition: null, variables: {} };
   }
   try {
-    const parsed = JSON.parse(match[0]) as { condition?: unknown; variables?: unknown };
+    const parsed = JSON.parse(json) as { condition?: unknown; variables?: unknown };
     const condition = typeof parsed.condition === "number" ? parsed.condition : null;
     const variables =
       parsed.variables && typeof parsed.variables === "object" && !Array.isArray(parsed.variables)

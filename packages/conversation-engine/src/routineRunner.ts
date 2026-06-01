@@ -60,6 +60,14 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       return step;
     };
     const outgoing = (stepId: string): RoutineTransition[] => routine.transitions.filter((t) => t.from === stepId);
+    // Constrain a selector's choice to the current step (stay / re-ask) or a declared
+    // successor — a selector (LLM or buggy) MUST NOT be able to jump the turn to an
+    // arbitrary step (e.g. an early terminal, dropping the routine, or into a skill
+    // cycle). Anything else falls back to staying put.
+    const landingStepId = (fromStepId: string, decision: { nextStepId: string }): string => {
+      const allowed = new Set([fromStepId, ...outgoing(fromStepId).map((t) => t.to)]);
+      return allowed.has(decision.nextStepId) ? decision.nextStepId : fromStepId;
+    };
 
     const currentStepId = state.path.at(-1) ?? routine.rootStepId;
     const currentStep = stepById(currentStepId);
@@ -72,13 +80,20 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       transitions: outgoing(currentStepId),
       turn,
     });
-    let step = decision.nextStepId === currentStepId ? currentStep : stepById(decision.nextStepId);
+    const landedId = landingStepId(currentStepId, decision);
+    let step = landedId === currentStepId ? currentStep : stepById(landedId);
     let variables = { ...state.variables, ...(decision.variables ?? {}) };
     // Append to the path only on a real advance; re-asking a step keeps it stable.
     const path = step.id === currentStepId ? [...state.path] : [...state.path, step.id];
 
-    // Run through any skill (tool) steps: dispatch, then advance past them.
+    // Run through any skill (tool) steps: dispatch, then advance past them. Bounded by
+    // the routine's step count so a misauthored cycle fails loudly instead of looping
+    // (and re-dispatching a side-effecting skill) forever.
+    let hops = 0;
     while (step.kind === "skill") {
+      if (++hops > routine.steps.length) {
+        throw new Error(`routine_skill_walk_exceeded:${routine.id}:${step.id}`);
+      }
       if (!this.skillDispatcher) {
         throw new Error(`routine_skill_dispatcher_missing:${routine.id}:${step.id}`);
       }
@@ -92,10 +107,14 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         turn,
       });
       const skillEdges = outgoing(step.id);
-      let nextStep: RoutineStep;
-      if (skillEdges.length === 1) {
-        // Single follow-up → deterministic auto-advance, no selector call.
-        nextStep = stepById(skillEdges[0]!.to);
+      let nextStepId: string;
+      if (skillEdges.length <= 1) {
+        // No follow-up → stop here (misauthored, but don't loop); single follow-up →
+        // deterministic auto-advance with no selector call.
+        if (skillEdges.length === 0) {
+          break;
+        }
+        nextStepId = skillEdges[0]!.to;
       } else {
         const skillDecision = await this.selector.select({
           routine,
@@ -106,17 +125,19 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           skillResult,
         });
         variables = { ...variables, ...(skillDecision.variables ?? {}) };
-        nextStep = stepById(skillDecision.nextStepId);
+        nextStepId = landingStepId(step.id, skillDecision);
+        // Selector declined to advance off a skill step → stop rather than re-dispatch.
+        if (nextStepId === step.id) {
+          break;
+        }
       }
-      step = nextStep;
+      step = stepById(nextStepId);
       path.push(step.id);
     }
 
     const nextState: RoutineState = { ...state, path, variables, status: "active" };
     const response = await this.renderer.render({
-      routine,
       step,
-      state: nextState,
       steering: projectStep(step),
       turn,
     });

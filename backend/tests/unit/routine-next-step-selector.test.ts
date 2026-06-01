@@ -41,6 +41,14 @@ describe("RoutineNextStepSelector", () => {
     expect(decision.nextStepId).toBe("ask_message");
   });
 
+  it("extracts the first balanced JSON object from surrounding prose with trailing text", async () => {
+    const selector = new RoutineNextStepSelector(
+      gateway('Reasoning: the user gave an email. {"condition": 1, "variables": {"email": "a@b.c"}} — done.'),
+    );
+    const decision = await selector.select({ routine, state, currentStep, transitions, turn });
+    expect(decision).toEqual({ nextStepId: "ask_message", variables: { email: "a@b.c" } });
+  });
+
   it("stays on the current step when the model returns null or unparseable output", async () => {
     for (const text of ['{"condition": null, "variables": {}}', "not json at all"]) {
       const decision = await new RoutineNextStepSelector(gateway(text)).select({ routine, state, currentStep, transitions, turn });

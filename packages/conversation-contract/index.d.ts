@@ -320,7 +320,12 @@ export interface Routine {
 }
 
 export interface RoutineNextStepDecision {
-  /** The chosen step id — a transition target, or the current step id to stay put. */
+  /**
+   * The chosen step id. It MUST be either an outgoing transition's target or the
+   * current step id (the reserved "stay / re-ask" sentinel) — the runner constrains
+   * the choice to declared successors and treats anything else as staying put, so a
+   * self-transition (`from === to`) cannot model an advance.
+   */
   nextStepId: string;
   /** Variables captured this turn (merged into routine state). */
   variables?: Record<string, unknown>;
@@ -367,19 +372,24 @@ export interface ConversationRoutineNextStepSelector {
 /**
  * Renders the reply for the routine's current step. The host implements this with
  * the Radioso composer (the projected step steering is passed in), so the pure
- * engine owns graph mechanics and the host owns generation/presentation.
+ * engine owns graph mechanics and the host owns generation/presentation. It is told
+ * only what it needs to write the message — the step and its projected steering for
+ * this turn — not the graph topology or slot state.
  */
 export interface ConversationRoutineStepRenderer {
   render(input: {
-    routine: Routine;
     step: RoutineStep;
-    state: RoutineState;
     steering: SteeringRule[];
     turn: TurnContext;
   }): Promise<RenderableTurn>;
 }
 
-/** Durable, session-scoped store for the active Routine's position + variables. */
+/**
+ * Durable, session-scoped store for the active Routine's position + variables.
+ * `loadActive` returns only an in-flight (`status: "active"`) routine — the store
+ * owns expiry/TTL (clearing or expiring stale rows), so the engine never resumes a
+ * completed or expired routine.
+ */
 export interface ConversationRoutineStore {
   loadActive(input: { sessionId: string }): Promise<RoutineState | null>;
   save(state: RoutineState): Promise<void>;
@@ -424,9 +434,10 @@ export interface ProcessTurnInput {
   selector: ConversationSkillSelector;
   composer: ConversationTurnComposer;
   /**
-   * When the store + runner are wired, the engine resumes an active routine before
-   * normal selection; with an activator also wired, it may start a new routine when
-   * no routine is active. All optional — absent leaves turn behavior unchanged.
+   * Routine machinery, all optional. `routineStore` + `routineRunner` travel together
+   * (both required to resume an active routine; wiring one without the other is inert).
+   * With `routineActivator` also wired, the engine may start a new routine when none
+   * is active. Absent leaves turn behavior unchanged.
    */
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;

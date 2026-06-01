@@ -29,7 +29,6 @@ export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] =
     vectorTopK: 20,
     similarityThreshold: 0.2,
     rerankTopK: 5,
-    citationDisplayEnabled: true,
     retrievalStrategy: "fixed",
     metadataFieldSuggestions: [],
     metadataRules: [],
@@ -86,6 +85,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   customInstruction: settings.assistant.customInstruction,
   suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
   assistantLinkUtmEnabled: true,
+  citationDisplayEnabled: true,
   theme: settings.channels.websiteEmbedTheme,
   branding: {
     hidePoweredBy: false,

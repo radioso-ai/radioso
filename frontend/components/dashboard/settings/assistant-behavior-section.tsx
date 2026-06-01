@@ -421,6 +421,27 @@ export function AssistantBehaviorSection({
         <div className="divide-y divide-border rounded-lg border border-border">
           <div className="flex items-start justify-between gap-4 p-3">
             <div className="min-w-0">
+              <Label htmlFor="citationDisplayEnabled" className="text-foreground">
+                Show source citations
+              </Label>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Show the documents an answer is grounded in on public chat and embeds. Sources appear there but are
+                never clickable — only their links are exposed. Your dashboard chat has its own display toggle.
+              </p>
+            </div>
+            <Switch
+              id="citationDisplayEnabled"
+              checked={assistantBehaviorSettings.citationDisplayEnabled}
+              onCheckedChange={(checked) =>
+                onAssistantBehaviorDraft((current) => ({
+                  ...current,
+                  citationDisplayEnabled: checked,
+                }))
+              }
+            />
+          </div>
+          <div className="flex items-start justify-between gap-4 p-3">
+            <div className="min-w-0">
               <Label htmlFor="assistantLinkUtmEnabled" className="text-foreground">
                 Assistant link attribution
               </Label>

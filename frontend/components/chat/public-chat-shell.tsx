@@ -306,6 +306,7 @@ function PublicChatCenteredIntro({
   onSuggestionSelect,
   isLoading,
   branding,
+  citationDisplayEnabled,
   children,
 }: {
   copy: ReturnType<typeof getWebsiteEmbedCopy>
@@ -317,6 +318,7 @@ function PublicChatCenteredIntro({
   onSuggestionSelect: (suggestion: ChatSuggestion, messageId: string) => void
   isLoading: boolean
   branding?: AgentBrandingSettings | null
+  citationDisplayEnabled: boolean
   children: ReactNode
 }) {
   const visibleSuggestions = greetingMessage?.suggestions ?? []
@@ -354,7 +356,8 @@ function PublicChatCenteredIntro({
                 onOpenDocument={async () => 'unavailable'}
                 theme={theme}
                 isStreaming={greetingMessage!.status === 'streaming'}
-                showCitations={false}
+                showCitations={citationDisplayEnabled}
+                documentInteractivity="link-only"
               />
             )}
           </div>
@@ -427,6 +430,7 @@ function PublicChatContent({
     workspaceName,
     assistantAvatarUrl,
     assistantLinkUtmEnabled,
+    citationDisplayEnabled,
     assistantTheme,
     branding,
     intakeActions,
@@ -786,6 +790,7 @@ function PublicChatContent({
           onSuggestionSelect={handleSuggestionSelect}
           isLoading={isLoading}
           branding={branding}
+          citationDisplayEnabled={citationDisplayEnabled}
         >
           <PublicChatBubbleComposerForm
             theme={theme}
@@ -854,7 +859,8 @@ function PublicChatContent({
                   hideFeedbackEntries
                   theme={theme}
                   themedSuggestionButtons
-                  showCitations={false}
+                  showCitations={citationDisplayEnabled}
+                  documentInteractivity="link-only"
                   conversationId={conversationId}
                   analyticsSurface={surface === 'embed' ? 'embed' : 'public_chat'}
                   onEmbedAnalyticsEvent={surface === 'embed' ? trackAnalyticsEvent : undefined}

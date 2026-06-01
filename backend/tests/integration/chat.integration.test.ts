@@ -73,7 +73,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.1,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         metadataRules: [
           {
             id: "upcoming-events",
@@ -182,7 +181,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.1,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         metadataRules: [
           {
             id: "events-only",
@@ -269,7 +267,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.1,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
       });
       const agent = await dependencies.agentService.resolve(workspaceId);
       await dependencies.agentService.update(workspaceId, agent.id, {
@@ -333,7 +330,6 @@ describe("chat integration", () => {
       vectorTopK: 20,
       similarityThreshold: 0.1,
       rerankTopK: 5,
-      citationDisplayEnabled: true,
     });
 
     const response = await request(app)
@@ -392,7 +388,6 @@ describe("chat integration", () => {
       vectorTopK: 20,
       similarityThreshold: 0.1,
       rerankTopK: 5,
-      citationDisplayEnabled: true,
     });
 
     const first = await request(app)
@@ -501,7 +496,6 @@ describe("chat integration", () => {
       vectorTopK: 20,
       similarityThreshold: 0.1,
       rerankTopK: 5,
-      citationDisplayEnabled: true,
     });
 
     const first = await request(app)
@@ -568,7 +562,6 @@ describe("chat integration", () => {
       vectorTopK: 20,
       similarityThreshold: 0.1,
       rerankTopK: 5,
-      citationDisplayEnabled: true,
     });
 
     const response = await request(app)
@@ -602,7 +595,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
 
@@ -842,7 +834,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.1,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
       });
 
     const response = await request(app)
@@ -909,7 +900,6 @@ describe("chat integration", () => {
         vectorTopK: 100,
         similarityThreshold: 0.8,
         rerankTopK: 20,
-        citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
 
@@ -931,7 +921,6 @@ describe("chat integration", () => {
         vectorTopK: 100,
         similarityThreshold: 0.2,
         rerankTopK: 20,
-        citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
 
@@ -982,7 +971,6 @@ describe("chat integration", () => {
         vectorTopK: 50,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
 
@@ -1242,7 +1230,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
 
@@ -1314,7 +1301,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
 
@@ -1385,7 +1371,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.1,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "Keep the reply warm and short.",
       })
       .expect(200);
@@ -1458,7 +1443,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.1,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "Help users with Ananda courses and booking.",
       })
       .expect(200);
@@ -1530,7 +1514,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.1,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "Keep identity replies direct.",
       })
       .expect(200);
@@ -1623,7 +1606,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.1,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "You are Vikram, the customer support assistant.",
       })
       .expect(200);
@@ -1709,7 +1691,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.1,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
       })
       .expect(200);
 
@@ -1786,7 +1767,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.1,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
       })
       .expect(200);
 
@@ -1862,7 +1842,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
 
@@ -1984,7 +1963,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
 
@@ -2093,7 +2071,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
 
@@ -2127,7 +2104,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: false,
         chunkingStrategy: "fixed_window",
       });
 
@@ -2168,7 +2144,6 @@ describe("chat integration", () => {
         vectorTopK: 50,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
 

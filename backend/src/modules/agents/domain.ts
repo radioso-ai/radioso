@@ -35,6 +35,7 @@ export type AgentSurfacePosition = (typeof agentSurfacePositions)[number];
 
 const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
 const DEFAULT_ASSISTANT_LINK_UTM_ENABLED = true;
+const DEFAULT_CITATION_DISPLAY_ENABLED = true;
 const DEFAULT_AGENT_SURFACE_POSITION: AgentSurfacePosition = "bottom-right";
 const MAX_EMBED_COPY_LOCALES = 10;
 
@@ -47,6 +48,10 @@ export interface AgentBehaviorSettings {
   customInstruction: string;
   suggestedQuestionsEnabled: boolean;
   assistantLinkUtmEnabled: boolean;
+  // Whether grounded answers expose their source citations. In public surfaces
+  // citations are still rendered non-interactively (sources are never openable
+  // there); this flag only governs whether they appear at all.
+  citationDisplayEnabled: boolean;
   retrievalEnabled: boolean;
   logo: AgentLogo | null;
   theme: AgentEmbedTheme;
@@ -564,6 +569,7 @@ export const validateAgentInput = (
     customInstruction: normalizeLongText(input.customInstruction, "customInstruction", 2000),
     suggestedQuestionsEnabled: input.suggestedQuestionsEnabled ?? DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
     assistantLinkUtmEnabled: input.assistantLinkUtmEnabled ?? DEFAULT_ASSISTANT_LINK_UTM_ENABLED,
+    citationDisplayEnabled: input.citationDisplayEnabled ?? DEFAULT_CITATION_DISPLAY_ENABLED,
     retrievalEnabled: input.retrievalEnabled ?? true,
     sourceScope: normalizeSourceScope(input.sourceScope),
     logo: normalizeAgentLogo(input.logo),

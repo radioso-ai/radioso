@@ -20,7 +20,8 @@ import type {
   ChatIntakeProviderPort,
   ContactHistoryProviderPort,
 } from "../../modules/chat/contracts/index.js";
-import type { AnswerFeedbackHistoryProviderPort } from "../../modules/chat/composition.js";
+import type { AnswerFeedbackHistoryProviderPort, TurnSelectionStrategy } from "../../modules/chat/composition.js";
+import type { DirectiveMatcherPort } from "../../modules/directives/public.js";
 import type { AppDependencies } from "../server/types.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { AuditService } from "../../modules/audit/contracts/index.js";
@@ -160,6 +161,10 @@ export interface ApplicationExtensionRegistry {
   skillDefinitions: SkillDefinition[];
   skillExecutors: SkillExecutorRegistration[];
   directiveRegistrations: ApplicationDirectiveRegistration[];
+  // Engine extension points (issue #482, part C). Both single-instance, last-wins,
+  // defaulted by composition when unregistered — mirroring `capabilityPolicy`.
+  selectionStrategy?: TurnSelectionStrategy;
+  directiveMatcher?: DirectiveMatcherPort;
   agentSurfaceExtensions: AgentSurfaceExtension[];
   chatActionSuggestionProviders: ApplicationChatActionSuggestionProviderRegistration[];
 }
@@ -188,6 +193,8 @@ export interface ApplicationModuleRegistrationContext {
   registerSkillDefinition(definition: SkillDefinition): void;
   registerSkillExecutor(registration: SkillExecutorRegistration): void;
   registerDirective(directive: Directive, options?: { routes?: string[] }): void;
+  registerSelectionStrategy(strategy: TurnSelectionStrategy): void;
+  registerDirectiveMatcher(matcher: DirectiveMatcherPort): void;
   registerAgentSurfaceExtension(extension: AgentSurfaceExtension): void;
   registerChatActionSuggestionProvider(provider: ApplicationChatActionSuggestionProviderRegistration): void;
 }
@@ -288,6 +295,12 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
     registry.directiveRegistrations.push(
       options?.routes ? { directive, routes: [...options.routes] } : { directive },
     );
+  },
+  registerSelectionStrategy(strategy) {
+    registry.selectionStrategy = strategy;
+  },
+  registerDirectiveMatcher(matcher) {
+    registry.directiveMatcher = matcher;
   },
   registerAgentSurfaceExtension(extension) {
     registry.agentSurfaceExtensions.push(extension);

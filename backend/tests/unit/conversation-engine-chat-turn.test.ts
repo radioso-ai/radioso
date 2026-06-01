@@ -13,6 +13,10 @@ import {
   buildRetrievalTurnOutcome,
 } from "../../src/modules/chat/services/retrievalTurnSkill.js";
 import { DefaultTurnSelectionStrategy } from "../../src/modules/chat/services/turnSelectionStrategy.js";
+import {
+  toConversationTrace,
+  toPreparedStagedContext,
+} from "../../src/modules/chat/services/conversationContractMappers.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 
 const conversation = (): ConversationRecord => ({
@@ -85,11 +89,8 @@ const agent = (): AgentRecord => ({
   updatedAt: new Date("2026-01-01T00:00:00.000Z"),
 });
 
-const session = (): PreparedSession => ({
-  agent: agent(),
-  conversation: conversation(),
-  history: [],
-  retrieval: {
+const retrievalResult = (): RetrievalPipelineResult =>
+  ({
     contexts: [],
     diagnostics: {},
     trace: {
@@ -98,15 +99,26 @@ const session = (): PreparedSession => ({
       stages: [],
       links: [],
     },
-  } as unknown as RetrievalPipelineResult,
-  turnRoute: "social_only",
-  userMessage: message(),
-  directiveSteering: {
-    rules: [],
-    matches: [],
-    omissions: [],
-  },
-});
+  } as unknown as RetrievalPipelineResult);
+
+const session = (): PreparedSession => {
+  const retrieval = retrievalResult();
+  return {
+    agent: agent(),
+    conversation: conversation(),
+    history: [],
+    retrieval,
+    turnRoute: "social_only",
+    userMessage: message(),
+    directiveSteering: {
+      rules: [],
+      matches: [],
+      omissions: [],
+    },
+    stagedContext: [toPreparedStagedContext(retrieval)],
+    turnTrace: toConversationTrace(retrieval.trace),
+  };
+};
 
 // A fake engine that drives the adapter's ports the way the real engine does:
 // select, dispatch the selected skill, then compose. Records what was dispatched.
@@ -185,6 +197,14 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     });
     // The adapter surfaces the engine's turn result so the host can persist its trace.
     expect(result.outcomes[0]?.skillName).toBe(RETRIEVAL_TURN_SKILL);
+    // A1 parity on the engine path: the dispatched outcome carries the prepared
+    // neutral spine — the turn trace derived from the retrieval result, and the
+    // staged context stamped with the dispatching skill name.
+    expect(result.outcomes[0]?.trace.traceId).toBe("trace_1");
+    expect(result.outcomes[0]?.stagedContext[0]).toMatchObject({
+      kind: "retrieval",
+      source: RETRIEVAL_TURN_SKILL,
+    });
   });
 
   it("dispatches and renders whatever terminal skill is registered (no retrieval coupling)", async () => {

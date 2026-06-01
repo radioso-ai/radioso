@@ -6,6 +6,9 @@ import type {
   DirectiveMatch,
   ProcessTurnInput,
   ProcessTurnResult,
+  ProcessTurnStreamEvent,
+  ProcessTurnStreamInput,
+  RenderableTurn,
   SelectionDecision,
   SkillDefinition,
   SkillTransientGuidance,
@@ -84,20 +87,55 @@ const missingSkillOutcome = (skillName: string, steering: SteeringRule[]): TurnO
   ]),
 });
 
+interface PreparedTurnRun {
+  stages: ConversationTraceStage[];
+  events: ConversationEvent[];
+  decision: SelectionDecision;
+  outcomes: TurnOutcome[];
+  composeTurn: TurnContext;
+}
+
+const createInputEvent = (input: ProcessTurnInput | ProcessTurnStreamInput): ConversationEvent => ({
+  id: input.inputEvent.id,
+  sessionId: input.sessionId,
+  kind: input.inputEvent.kind,
+  role: "user",
+  content: input.inputEvent.content,
+  metadata: input.inputEvent.metadata,
+  createdAt: nowIso(),
+});
+
+const createResponseEvent = (sessionId: string, response: RenderableTurn): ConversationEvent => ({
+  sessionId,
+  kind: "assistant.response",
+  role: "assistant",
+  content: response.answer,
+  metadata: response.metadata,
+  createdAt: nowIso(),
+});
+
+const createProcessTurnResult = (input: {
+  sessionId: string;
+  events: ConversationEvent[];
+  decision: SelectionDecision;
+  outcomes: TurnOutcome[];
+  response: RenderableTurn;
+  trace: ConversationTrace;
+}): ProcessTurnResult => ({
+  sessionId: input.sessionId,
+  events: input.events,
+  decision: input.decision,
+  outcomes: input.outcomes,
+  response: input.response,
+  trace: input.trace,
+});
+
 export class DefaultConversationEngine implements ConversationEngine {
-  async processTurn(input: ProcessTurnInput): Promise<ProcessTurnResult> {
+  private async prepareTurn(input: ProcessTurnInput | ProcessTurnStreamInput): Promise<PreparedTurnRun> {
     const stages: ConversationTraceStage[] = [];
     const events: ConversationEvent[] = [];
     const history = await input.stores.loadHistory({ sessionId: input.sessionId });
-    const inputEvent: ConversationEvent = {
-      id: input.inputEvent.id,
-      sessionId: input.sessionId,
-      kind: input.inputEvent.kind,
-      role: "user",
-      content: input.inputEvent.content,
-      metadata: input.inputEvent.metadata,
-      createdAt: nowIso(),
-    };
+    const inputEvent = createInputEvent(input);
     await input.stores.appendEvent(inputEvent);
     events.push(inputEvent);
 
@@ -193,42 +231,98 @@ export class DefaultConversationEngine implements ConversationEngine {
       stagedContext: mergeStagedContext(outcomes),
       steering: mergedSteering,
     };
-    const response = await input.composer.compose({
-      turn: composeTurn,
-      outcomes,
-      decision: {
-        ...decision,
-        steeringConsidered: mergedSteering,
-      } satisfies SelectionDecision,
-    });
-    stages.push(stage({
-      id: "compose",
-      kind: "compose",
-      status: "applied",
-      outputs: { outcomeCount: outcomes.length },
-    }));
-
-    const responseEvent: ConversationEvent = {
-      sessionId: input.sessionId,
-      kind: "assistant.response",
-      role: "assistant",
-      content: response.answer,
-      metadata: response.metadata,
-      createdAt: nowIso(),
-    };
-    await input.stores.appendEvent(responseEvent);
-    events.push(responseEvent);
-
     return {
-      sessionId: input.sessionId,
+      stages,
       events,
       decision: {
         ...decision,
         steeringConsidered: mergedSteering,
       },
       outcomes,
+      composeTurn,
+    };
+  }
+
+  async processTurn(input: ProcessTurnInput): Promise<ProcessTurnResult> {
+    const prepared = await this.prepareTurn(input);
+    const response = await input.composer.compose({
+      turn: prepared.composeTurn,
+      outcomes: prepared.outcomes,
+      decision: prepared.decision,
+    });
+    prepared.stages.push(stage({
+      id: "compose",
+      kind: "compose",
+      status: "applied",
+      outputs: { outcomeCount: prepared.outcomes.length },
+    }));
+
+    const responseEvent = createResponseEvent(input.sessionId, response);
+    await input.stores.appendEvent(responseEvent);
+    prepared.events.push(responseEvent);
+
+    return createProcessTurnResult({
+      sessionId: input.sessionId,
+      events: prepared.events,
+      decision: prepared.decision,
+      outcomes: prepared.outcomes,
       response,
-      trace: createTrace(stages),
+      trace: createTrace(prepared.stages),
+    });
+  }
+
+  async *processTurnStream(input: ProcessTurnStreamInput): AsyncIterable<ProcessTurnStreamEvent> {
+    const prepared = await this.prepareTurn(input);
+    let response: RenderableTurn | null = null;
+    let finalMetadata: Record<string, unknown> | undefined;
+
+    for await (const event of input.composer.stream({
+      turn: prepared.composeTurn,
+      outcomes: prepared.outcomes,
+      decision: prepared.decision,
+    })) {
+      if (response) {
+        throw new Error("conversation_stream_event_after_final");
+      }
+      if (event.type === "delta") {
+        yield {
+          type: "delta",
+          sessionId: input.sessionId,
+          text: event.text,
+          metadata: event.metadata,
+        };
+        continue;
+      }
+      response = event.response;
+      finalMetadata = event.metadata;
+    }
+
+    if (!response) {
+      throw new Error("conversation_stream_missing_final");
+    }
+
+    prepared.stages.push(stage({
+      id: "compose",
+      kind: "compose",
+      status: "applied",
+      outputs: { outcomeCount: prepared.outcomes.length, streamed: true },
+    }));
+
+    const responseEvent = createResponseEvent(input.sessionId, response);
+    await input.stores.appendEvent(responseEvent);
+    prepared.events.push(responseEvent);
+
+    yield {
+      type: "final",
+      result: createProcessTurnResult({
+        sessionId: input.sessionId,
+        events: prepared.events,
+        decision: prepared.decision,
+        outcomes: prepared.outcomes,
+        response,
+        trace: createTrace(prepared.stages),
+      }),
+      metadata: finalMetadata,
     };
   }
 }

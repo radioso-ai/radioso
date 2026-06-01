@@ -178,6 +178,20 @@ export interface RenderableTurn {
   metadata?: Record<string, unknown>;
 }
 
+export interface TurnStreamDelta {
+  type: "delta";
+  text: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface TurnStreamFinal {
+  type: "final";
+  response: RenderableTurn;
+  metadata?: Record<string, unknown>;
+}
+
+export type TurnStreamEvent = TurnStreamDelta | TurnStreamFinal;
+
 export interface ConversationTrace {
   traceId: string;
   startedAt: string;
@@ -247,12 +261,18 @@ export interface ConversationSkillSelector {
   }): Promise<SelectionDecision>;
 }
 
+export interface ConversationTurnComposeInput {
+  turn: TurnContext;
+  outcomes: TurnOutcome[];
+  decision: SelectionDecision;
+}
+
 export interface ConversationTurnComposer {
-  compose(input: {
-    turn: TurnContext;
-    outcomes: TurnOutcome[];
-    decision: SelectionDecision;
-  }): Promise<RenderableTurn>;
+  compose(input: ConversationTurnComposeInput): Promise<RenderableTurn>;
+}
+
+export interface ConversationTurnStreamComposer extends ConversationTurnComposer {
+  stream(input: ConversationTurnComposeInput): AsyncIterable<TurnStreamEvent>;
 }
 
 export interface ProcessTurnInput {
@@ -269,6 +289,10 @@ export interface ProcessTurnInput {
   composer: ConversationTurnComposer;
 }
 
+export interface ProcessTurnStreamInput extends Omit<ProcessTurnInput, "composer"> {
+  composer: ConversationTurnStreamComposer;
+}
+
 export interface ProcessTurnResult {
   sessionId: string;
   events: ConversationEvent[];
@@ -278,6 +302,20 @@ export interface ProcessTurnResult {
   trace: ConversationTrace;
 }
 
+export type ProcessTurnStreamEvent =
+  | {
+      type: "delta";
+      sessionId: string;
+      text: string;
+      metadata?: Record<string, unknown>;
+    }
+  | {
+      type: "final";
+      result: ProcessTurnResult;
+      metadata?: Record<string, unknown>;
+    };
+
 export interface ConversationEngine {
   processTurn(input: ProcessTurnInput): Promise<ProcessTurnResult>;
+  processTurnStream(input: ProcessTurnStreamInput): AsyncIterable<ProcessTurnStreamEvent>;
 }

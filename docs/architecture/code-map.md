@@ -118,7 +118,8 @@ Related docs and specs:
 
 Owns product-independent conversation runtime contracts: agents, input events,
 directives, steering, skills, staged context, selection decisions, turn outcomes,
-trace events, renderer outputs, and the `ConversationEngine` port.
+trace events, renderer outputs, streaming deltas/finals, and the
+`ConversationEngine` port.
 
 Should not own Radioso product behavior. It must not import backend modules,
 database repositories, HTTP types, retrieval internals, workspace/auth modules,
@@ -131,7 +132,7 @@ Public surfaces and contracts:
 
 Useful searches:
 
-- `rg "ConversationEngine|ProcessTurnInput|TurnOutcome|SelectionDecision" packages/conversation-contract backend/src`
+- `rg "ConversationEngine|ProcessTurnInput|ProcessTurnStreamInput|TurnOutcome|SelectionDecision" packages/conversation-contract backend/src`
 - `rg "@radioso/conversation-contract" .`
 
 Focused checks:
@@ -147,7 +148,8 @@ Related docs and specs:
 
 Owns the product-independent turn loop implementation over the conversation
 contracts: load history, match directives, select skills, dispatch skills, merge
-steering, compose the response, append events, and return a unified trace.
+steering, compose or stream the response, append events, and return a unified
+trace.
 
 Should not own Radioso product behavior. It may depend on
 `@radioso/conversation-contract`, but it must not import backend modules,
@@ -160,7 +162,7 @@ Public surfaces and contracts:
 
 Useful searches:
 
-- `rg "DefaultConversationEngine|createConversationEngine|processTurn" packages/conversation-engine backend/src`
+- `rg "DefaultConversationEngine|createConversationEngine|processTurn|processTurnStream" packages/conversation-engine backend/src`
 - `rg "@radioso/conversation-engine" .`
 
 Focused checks:

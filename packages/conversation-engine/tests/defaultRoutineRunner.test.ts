@@ -116,6 +116,20 @@ describe("DefaultRoutineRunner", () => {
     await expect(runner.resume({ turn, state: state(["ask_email"]) })).rejects.toThrow("routine_not_found:contact");
   });
 
+  it("yields the turn (no render, state unchanged) when the selector declines as off-topic", async () => {
+    const render = vi.fn();
+    const runner = new DefaultRoutineRunner(
+      [routine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_email", yieldTurn: true })) },
+      { render },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    expect(result.yielded).toBe(true);
+    expect(render).not.toHaveBeenCalled();
+  });
+
   it("resumes from the last step in a multi-element path, not the root", async () => {
     const select = vi.fn(async () => ({ nextStepId: "done" }));
     const runner = new DefaultRoutineRunner([routine], { select }, { render: vi.fn(echoRenderer.render) });

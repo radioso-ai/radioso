@@ -285,9 +285,18 @@ export class DefaultConversationEngine implements ConversationEngine {
         sessionId: input.sessionId,
         routineId: activation.routineId,
         path: [],
-        variables: {},
+        // Activation may seed initial variables (e.g. a returning user's email).
+        variables: activation.variables ?? {},
         status: "active",
       };
+    }
+
+    // Resume runs before any persistence: a routine may decline (yield) the turn —
+    // then the input event is left for the normal path and the routine's position is
+    // untouched, so it resumes on a later turn.
+    const result = await input.routineRunner.resume({ turn, state });
+    if (result.yielded) {
+      return null;
     }
 
     const events: ConversationEvent[] = [];
@@ -295,7 +304,6 @@ export class DefaultConversationEngine implements ConversationEngine {
     await input.stores.appendEvent(inputEvent);
     events.push(inputEvent);
 
-    const result = await input.routineRunner.resume({ turn, state });
     if (result.nextState) {
       await input.routineStore.save(result.nextState);
     } else {

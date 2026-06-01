@@ -15,6 +15,12 @@ export {
   type DirectiveRoutePolicy,
 } from "./services/routeScopedDirectiveSteering.js";
 export {
+  DefaultTurnSelectionStrategy,
+  type TurnSelectionStrategy,
+  type TurnCandidate,
+  type TurnSelectionInput,
+} from "./services/turnSelectionStrategy.js";
+export {
   SkillRetrievalTurnDispatch,
   DirectRetrievalTurnDispatch,
   RetrievalTurnController,

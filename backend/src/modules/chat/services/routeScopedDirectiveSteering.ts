@@ -2,6 +2,7 @@ import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.j
 import {
   createDirectiveSteering,
   type Directive,
+  type DirectiveMatcherPort,
   type DirectiveSteerInput,
   type DirectiveSteeringPort,
   type DirectiveSteeringResult,
@@ -40,6 +41,13 @@ export const createRouteScopedDirectiveSteering = (input: {
   capabilityPolicy: CapabilityPolicy;
   registrations: RouteScopedDirectiveRegistration[];
   defaultRoutesForDirective?: DirectiveRoutePolicy;
+  /**
+   * The directive matcher to use across all routes. Supplied by application
+   * composition (issue #482, part C); when omitted, `createDirectiveSteering`
+   * falls back to the deterministic always-match matcher. One instance is shared
+   * by every per-route service — matching is route-independent.
+   */
+  matcher?: DirectiveMatcherPort;
 }): DirectiveSteeringPort => {
   const servicesByKey = new Map<string, DirectiveSteeringPort>();
   const defaultRoutesForDirective = input.defaultRoutesForDirective ?? defaultAnswerDirectiveRoutes;
@@ -53,6 +61,7 @@ export const createRouteScopedDirectiveSteering = (input: {
         service = createDirectiveSteering({
           capabilityPolicy: input.capabilityPolicy,
           directives: directivesForRoute(input.registrations, route, defaultRoutesForDirective),
+          matcher: input.matcher,
         });
         servicesByKey.set(key, service);
       }

@@ -7,6 +7,8 @@ import {
   createDefaultWebsiteCrawlJobConsumer,
   createDefaultWebsiteCrawlJobDispatcher,
 } from "../../src/app/composition/defaultComposition.js";
+import { DefaultTurnSelectionStrategy } from "../../src/modules/chat/composition.js";
+import type { DirectiveMatcherPort } from "../../src/modules/directives/public.js";
 import { AmqpDocumentJobConsumer, AmqpDocumentJobDispatcher } from "../../src/modules/documents/infra/amqpDocumentJobQueue.js";
 import { NoopDocumentJobDispatcher } from "../../src/modules/documents/services/documentJobDispatcher.js";
 import { CloudTasksWebsiteCrawlJobDispatcher, AmqpWebsiteCrawlJobDispatcher } from "../../src/modules/websiteCrawler/jobQueue.js";
@@ -112,6 +114,58 @@ describe("default application composition", () => {
     expect(composition.directiveRegistrations.map((registration) => registration.directive.name)).toContain(
       "custom-directive",
     );
+  });
+
+  it("defaults the turn selection strategy when no module registers one", () => {
+    const composition = createDefaultApplicationComposition({
+      logger: createLogger(),
+    });
+
+    expect(composition.selectionStrategy).toBeInstanceOf(DefaultTurnSelectionStrategy);
+  });
+
+  it("applies a registered turn selection strategy through module registration", () => {
+    const strategy = new DefaultTurnSelectionStrategy();
+    const composition = createDefaultApplicationComposition({
+      logger: createLogger(),
+      modules: [
+        {
+          id: "selection-strategy-module",
+          register(context) {
+            context.registerSelectionStrategy(strategy);
+          },
+        },
+      ],
+    });
+
+    expect(composition.selectionStrategy).toBe(strategy);
+  });
+
+  it("leaves the directive matcher unset when no module registers one", () => {
+    const composition = createDefaultApplicationComposition({
+      logger: createLogger(),
+    });
+
+    expect(composition.directiveMatcher).toBeUndefined();
+  });
+
+  it("applies a registered directive matcher through module registration", () => {
+    const matcher: DirectiveMatcherPort = {
+      match: async () => [],
+    };
+    const composition = createDefaultApplicationComposition({
+      logger: createLogger(),
+      modules: [
+        {
+          id: "directive-matcher-module",
+          register(context) {
+            context.registerDirectiveMatcher(matcher);
+          },
+        },
+      ],
+    });
+
+    expect(composition.directiveMatcher).toBe(matcher);
   });
 
   it("applies optional skill catalog entries through module registration", () => {

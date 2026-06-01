@@ -777,6 +777,8 @@ export const buildChatServices = (input: {
   const directiveSteering = createRouteScopedDirectiveSteering({
     capabilityPolicy: input.composition.capabilityPolicy,
     registrations: input.composition.directiveRegistrations,
+    // Composition may register a contextual matcher; defaults to always-match.
+    matcher: input.composition.directiveMatcher,
   });
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
@@ -808,6 +810,9 @@ export const buildChatServices = (input: {
     // ModelDirectiveMatchGateway onto ModelInferencePipeline with a usage
     // context — a follow-up to land before any contextual directive ships.
     directiveSteering,
+    // Turn selection strategy comes from composition (default: the built-in
+    // skill_intake → retrieval order). Registerable so a host can swap it.
+    selectionStrategy: input.composition.selectionStrategy,
     conversationEngine: createDefaultConversationEngine(input.env),
   });
   const chatBootstrapService = new ChatBootstrapService(

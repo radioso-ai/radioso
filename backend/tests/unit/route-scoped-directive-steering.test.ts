@@ -60,6 +60,28 @@ describe("route-scoped directive steering", () => {
     expect(social.matches.map((match) => match.directive.name)).toEqual(["concise-readable-formatting"]);
   });
 
+  it("threads a composition-provided directive matcher into the per-route steering", async () => {
+    const matched: string[] = [];
+    const matcher = {
+      match: async (input: { directives: Directive[] }) => {
+        matched.push(...input.directives.map((candidate) => candidate.name));
+        // Return no matches so the result is deterministic; the assertion is that
+        // the registered matcher — not the default always-match — was consulted.
+        return [];
+      },
+    };
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [{ directive: directive("global") }],
+      matcher,
+    });
+
+    const result = await steering.steer({ workspaceId: "w1", turnContext: { route: "retrieval" } });
+
+    expect(matched).toContain("global");
+    expect(result.matches).toEqual([]);
+  });
+
   it("does not apply built-in route policy to unrelated directives with the same name", async () => {
     const customRepresentOrganization = directive(
       representOrganizationDirective.name,

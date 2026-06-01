@@ -253,4 +253,41 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     );
     await expect(runner.resume({ turn, state: atMessage() })).rejects.toThrow("routine_skill_dispatcher_missing");
   });
+
+  it("throws when a skill step has no follow-up edge (rather than parking on it)", async () => {
+    const noFollowUp: Routine = {
+      id: "contact",
+      rootStepId: "ask_message",
+      steps: [
+        { id: "ask_message", kind: "chat", action: "Ask for the message." },
+        { id: "submit", kind: "skill", skillName: "x" },
+      ],
+      transitions: [{ from: "ask_message", to: "submit", condition: "a message was provided" }],
+    };
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner(
+      [noFollowUp],
+      { select: vi.fn(async () => ({ nextStepId: "submit" })) },
+      { render: vi.fn() },
+      { dispatch },
+    );
+    await expect(runner.resume({ turn, state: atMessage() })).rejects.toThrow("routine_skill_step_no_follow_up");
+  });
+
+  it("advances along the first edge (never parks/re-dispatches) when the selector declines on a multi-edge skill step", async () => {
+    // From ask_message land on submit; on submit the selector declines (returns the
+    // current step id) → the runner advances to the first edge (done) instead of
+    // parking on the skill step and re-dispatching next turn.
+    const select = vi.fn(async ({ currentStep }: { currentStep: { id: string } }) =>
+      currentStep.id === "submit" ? { nextStepId: "submit" } : { nextStepId: "submit" },
+    );
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner([multiEdge], { select }, { render: vi.fn(echoRenderer.render) }, { dispatch });
+
+    const result = await runner.resume({ turn, state: atMessage() });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(result.response.answer).toContain("done");
+    expect(result.nextState).toBeNull();
+  });
 });

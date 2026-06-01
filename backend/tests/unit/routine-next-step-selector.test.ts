@@ -49,6 +49,13 @@ describe("RoutineNextStepSelector", () => {
     expect(decision).toEqual({ nextStepId: "ask_message", variables: { email: "a@b.c" } });
   });
 
+  it("parses a captured variable value that itself contains a closing brace", async () => {
+    // A user message with a "}" must not truncate the JSON scan and drop the decision.
+    const selector = new RoutineNextStepSelector(gateway('{"condition": 1, "variables": {"message": "thanks } bye"}}'));
+    const decision = await selector.select({ routine, state, currentStep, transitions, turn });
+    expect(decision).toEqual({ nextStepId: "ask_message", variables: { message: "thanks } bye" } });
+  });
+
   it("stays on the current step when the model returns null or unparseable output", async () => {
     for (const text of ['{"condition": null, "variables": {}}', "not json at all"]) {
       const decision = await new RoutineNextStepSelector(gateway(text)).select({ routine, state, currentStep, transitions, turn });

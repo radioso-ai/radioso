@@ -106,14 +106,15 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         state: skillStateAtStep,
         turn,
       });
+      // A skill step must advance off itself this turn: parking the resume position
+      // on a skill step would re-dispatch its (side-effecting) skill next turn.
       const skillEdges = outgoing(step.id);
+      if (skillEdges.length === 0) {
+        throw new Error(`routine_skill_step_no_follow_up:${routine.id}:${step.id}`);
+      }
       let nextStepId: string;
-      if (skillEdges.length <= 1) {
-        // No follow-up → stop here (misauthored, but don't loop); single follow-up →
-        // deterministic auto-advance with no selector call.
-        if (skillEdges.length === 0) {
-          break;
-        }
+      if (skillEdges.length === 1) {
+        // Single follow-up → deterministic auto-advance, no selector call.
         nextStepId = skillEdges[0]!.to;
       } else {
         const skillDecision = await this.selector.select({
@@ -125,11 +126,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           skillResult,
         });
         variables = { ...variables, ...(skillDecision.variables ?? {}) };
-        nextStepId = landingStepId(step.id, skillDecision);
-        // Selector declined to advance off a skill step → stop rather than re-dispatch.
-        if (nextStepId === step.id) {
-          break;
-        }
+        const chosen = landingStepId(step.id, skillDecision);
+        // If the selector declined to pick an edge, advance along the first declared
+        // one rather than parking on (and re-dispatching) the skill step.
+        nextStepId = chosen === step.id ? skillEdges[0]!.to : chosen;
       }
       step = stepById(nextStepId);
       path.push(step.id);

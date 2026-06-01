@@ -187,7 +187,6 @@ export const createTestEnv = (): Env => ({
   WEBSITE_CRAWL_JOB_LEASE_MS: 900_000,
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
   WEBSITE_CRAWLER_ENABLED: true,
-  RADIOSO_CONVERSATION_ENGINE_ENABLED: false,
   APP_BASE_URL: undefined,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
   RADIOSO_BASE_URL: undefined,

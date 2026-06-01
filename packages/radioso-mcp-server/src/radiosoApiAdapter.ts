@@ -204,7 +204,6 @@ export const createRadiosoApiAdapter = (
             vectorTopK: body.vectorTopK,
             similarityThreshold: body.similarityThreshold,
             rerankTopK: body.rerankTopK,
-            citationDisplayEnabled: body.citationDisplayEnabled,
             metadataRules: body.metadataRules,
           },
         }),

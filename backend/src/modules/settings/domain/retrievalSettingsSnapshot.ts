@@ -25,7 +25,6 @@ export interface RetrievalSettingsSnapshot {
   vectorTopK: number;
   similarityThreshold: number;
   rerankTopK: number;
-  citationDisplayEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
   retrievalStrategy?: RetrievalStrategyPreference;
@@ -43,7 +42,6 @@ export const freezeRetrievalSettings = (
   vectorTopK: record.vectorTopK,
   similarityThreshold: record.similarityThreshold,
   rerankTopK: record.rerankTopK,
-  citationDisplayEnabled: record.citationDisplayEnabled,
   metadataRules: record.metadataRules,
   customInstruction: record.customInstruction,
   retrievalStrategy: record.retrievalStrategy,

@@ -25,7 +25,7 @@ const anonymousTokenParamsSchema = z.object({
   token: z.string().min(1),
 });
 
-type PublicSessionAgent = Pick<AgentRecord, "id" | "workspaceId" | "name" | "logo" | "theme" | "branding" | "assistantLinkUtmEnabled" | "proactiveGreetingEnabled" | "surfaceSettings">;
+type PublicSessionAgent = Pick<AgentRecord, "id" | "workspaceId" | "name" | "logo" | "theme" | "branding" | "assistantLinkUtmEnabled" | "citationDisplayEnabled" | "proactiveGreetingEnabled" | "surfaceSettings">;
 
 const isLoopbackHost = (host: string | undefined) => {
   if (!host) {
@@ -121,6 +121,7 @@ const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionA
     theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
     branding: defaultAgentBrandingSettings(),
     assistantLinkUtmEnabled: true,
+    citationDisplayEnabled: true,
     proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
     surfaceSettings: {
       authenticatedChat: {
@@ -253,6 +254,7 @@ export const resolveAnonymousSession = (
       res.locals.assistantTheme = agent.theme;
       res.locals.assistantBranding = agent.branding;
       res.locals.assistantLinkUtmEnabled = agent.assistantLinkUtmEnabled;
+      res.locals.citationDisplayEnabled = agent.citationDisplayEnabled;
       next();
     } catch (error) {
       next(error);

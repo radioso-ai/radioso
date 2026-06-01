@@ -667,8 +667,6 @@ components:
         rerankTopK:
           type: integer
           minimum: 1
-        citationDisplayEnabled:
-          type: boolean
         retrievalStrategy:
           type: string
           enum: &a3
@@ -791,7 +789,6 @@ components:
         - vectorTopK
         - similarityThreshold
         - rerankTopK
-        - citationDisplayEnabled
         - retrievalStrategy
         - customInstruction
         - createdAt
@@ -819,8 +816,6 @@ components:
         rerankTopK:
           type: integer
           maximum: 50
-        citationDisplayEnabled:
-          type: boolean
         retrievalStrategy:
           type: string
           enum: *a3
@@ -897,7 +892,6 @@ components:
         - vectorTopK
         - similarityThreshold
         - rerankTopK
-        - citationDisplayEnabled
     RetrievalSettingsOverride:
       type: object
       properties:
@@ -921,8 +915,6 @@ components:
         rerankTopK:
           type: integer
           maximum: 50
-        citationDisplayEnabled:
-          type: boolean
         retrievalStrategy:
           type: string
           enum: *a3
@@ -1438,8 +1430,6 @@ components:
         rerankTopK:
           type: integer
           minimum: 1
-        citationDisplayEnabled:
-          type: boolean
         metadataRules:
           type: array
           items:
@@ -1532,7 +1522,6 @@ components:
         - vectorTopK
         - similarityThreshold
         - rerankTopK
-        - citationDisplayEnabled
         - retrievalStrategy
     PlatformChannelsSettingsSection:
       type: object
@@ -1661,8 +1650,6 @@ components:
               type: number
             rerankTopK:
               type: integer
-            citationDisplayEnabled:
-              type: boolean
             retrievalStrategy:
               type: string
               enum: *a3
@@ -2076,6 +2063,8 @@ components:
               type: boolean
             assistantLinkUtmEnabled:
               type: boolean
+            citationDisplayEnabled:
+              type: boolean
             theme:
               type: object
               properties:
@@ -2167,6 +2156,7 @@ components:
             - customInstruction
             - suggestedQuestionsEnabled
             - assistantLinkUtmEnabled
+            - citationDisplayEnabled
             - theme
             - branding
             - retrievalEnabled
@@ -2199,6 +2189,8 @@ components:
         suggestedQuestionsEnabled:
           type: boolean
         assistantLinkUtmEnabled:
+          type: boolean
+        citationDisplayEnabled:
           type: boolean
         theme:
           type: object

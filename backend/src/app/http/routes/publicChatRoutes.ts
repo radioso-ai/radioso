@@ -436,12 +436,13 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     validateBody(anonymousChatSchema),
     async (req, res, next) => {
       try {
-        const { workspaceId, agentId, anonymousSessionId, sourceChannel, sourceOrigin } = res.locals as {
+        const { workspaceId, agentId, anonymousSessionId, sourceChannel, sourceOrigin, citationDisplayEnabled } = res.locals as {
           workspaceId: string;
           agentId: string;
           anonymousSessionId: string;
           sourceChannel: string | null;
           sourceOrigin: string | null;
+          citationDisplayEnabled: boolean;
         };
 
         if (req.body.startConversation) {
@@ -460,7 +461,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
             res.status(204).end();
             return;
           }
-          res.status(200).json(stripPublicChatCitationArtifacts(bootstrap));
+          res.status(200).json(stripPublicChatCitationArtifacts(bootstrap, citationDisplayEnabled));
           return;
         }
 
@@ -479,14 +480,14 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         };
 
         if (input.stream) {
-          await sendChatSse(res, stripPublicStreamCitationArtifacts(dependencies.assistantChatService.streamAnswer(input)));
+          await sendChatSse(res, stripPublicStreamCitationArtifacts(dependencies.assistantChatService.streamAnswer(input), citationDisplayEnabled));
         } else {
           const result = await dependencies.assistantChatService.answer(input);
           if (!result) {
             res.status(204).end();
             return;
           }
-          res.status(200).json(stripPublicChatCitationArtifacts(result));
+          res.status(200).json(stripPublicChatCitationArtifacts(result, citationDisplayEnabled));
         }
       } catch (error) {
         next(error);
@@ -523,6 +524,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         theme: (res.locals as { assistantTheme?: unknown }).assistantTheme,
         branding: (res.locals as { assistantBranding?: unknown }).assistantBranding,
         assistantLinkUtmEnabled: Boolean((res.locals as { assistantLinkUtmEnabled?: boolean }).assistantLinkUtmEnabled ?? true),
+        citationDisplayEnabled: Boolean((res.locals as { citationDisplayEnabled?: boolean }).citationDisplayEnabled ?? true),
         assistantBootstrapActive: Boolean((res.locals as { assistantBootstrapActive?: boolean }).assistantBootstrapActive),
         intakeActions: await resolvePublicIntakeActions({
           workspaceId,
@@ -539,7 +541,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   // GET /api/v1/public/chat/:token/history/:conversationId — get conversation detail
   router.get("/:token/history/:conversationId", sessionMiddleware, async (req, res, next) => {
     try {
-      const { agentId, anonymousSessionId } = res.locals as { agentId: string; anonymousSessionId: string };
+      const { agentId, anonymousSessionId, citationDisplayEnabled } = res.locals as { agentId: string; anonymousSessionId: string; citationDisplayEnabled: boolean };
       const parsedParams = publicConversationParamsSchema.safeParse(req.params);
       if (!parsedParams.success) {
         next(badRequest("Invalid request params", parsedParams.error.flatten()));
@@ -570,7 +572,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         parsedQuery.data,
         { includeAnswerFeedback: true },
       );
-      res.status(200).json(stripPublicConversationCitationArtifacts(detail, anonymousSessionId));
+      res.status(200).json(stripPublicConversationCitationArtifacts(detail, anonymousSessionId, citationDisplayEnabled));
     } catch (error) {
       next(error);
     }

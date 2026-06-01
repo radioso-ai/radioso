@@ -23,6 +23,7 @@ export interface AgentSnapshot {
   assistantDefaultLocale: string | null;
   retrievalEnabled: boolean;
   suggestedQuestionsEnabled: boolean;
+  citationDisplayEnabled: boolean;
   sourceScope: AgentSourceScope;
   chatModelOverride: AgentChatModelOverride | null;
 }
@@ -35,6 +36,7 @@ export const freezeAgent = (agent: ConversationAgent): AgentSnapshot => ({
   assistantDefaultLocale: agent.assistantDefaultLocale,
   retrievalEnabled: agent.retrievalEnabled,
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
+  citationDisplayEnabled: agent.citationDisplayEnabled,
   sourceScope: agent.sourceScope,
   chatModelOverride: agent.chatModelOverride,
 });

@@ -265,6 +265,35 @@ describe('AssistantMessageContent', () => {
     expect(html).toContain('Local file')
   })
 
+  it('renders an interactive citation marker that can open the source by default', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Handbook' }]}
+        answerSegments={[{ text: 'Grounded', citationIndices: [0] }, { text: '.' }]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('aria-label="Open source 1: Handbook"')
+  })
+
+  it('renders citation markers as non-clickable in link-only mode', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: '', chunkId: '', title: 'Handbook', sourceUrl: 'https://example.com/h' }]}
+        answerSegments={[{ text: 'Grounded', citationIndices: [0] }, { text: '.' }]}
+        onOpenDocument={async () => 'unavailable'}
+        documentInteractivity="link-only"
+      />,
+    )
+
+    // The grounding marker is still shown, but never offers to open the document.
+    expect(html).toContain('data-citation-index="1"')
+    expect(html).not.toContain('aria-label="Open source 1')
+  })
+
   it('absorbs a leading period of a multi-paragraph segment into the prior marker line', async () => {
     const html = renderToStaticMarkup(
       <AssistantMessageContent

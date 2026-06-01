@@ -28,6 +28,7 @@ const agent = (overrides: Partial<AgentRecord> = {}): AgentRecord => ({
   customInstruction: "Answer in a practical tone.",
   suggestedQuestionsEnabled: true,
   assistantLinkUtmEnabled: true,
+  citationDisplayEnabled: true,
   retrievalEnabled: true,
   sourceScope: { mode: "all" },
   logo: null,

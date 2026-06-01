@@ -33,7 +33,6 @@ describe("settings contract", () => {
         vectorTopK: 15,
         similarityThreshold: expect.any(Number),
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         metadataRules: [],
         metadataFieldSuggestions: [],
       },
@@ -116,7 +115,6 @@ describe("settings contract", () => {
 
     expect(response.status).toBe(200);
     expect(Object.keys(response.body).sort()).toEqual([
-      "citationDisplayEnabled",
       "createdAt",
       "customInstruction",
       "lexicalRewriteInstructions",
@@ -134,7 +132,6 @@ describe("settings contract", () => {
       "workspaceId",
     ]);
     expect(response.body.vectorTopK).toBe(15);
-    expect(response.body.citationDisplayEnabled).toBe(true);
     expect(response.body.customInstruction).toBe("");
     expect(response.body.semanticRewriteInstructions).toEqual(expect.any(String));
     expect(response.body.lexicalRewriteInstructions).toEqual(expect.any(String));
@@ -170,7 +167,6 @@ describe("settings contract", () => {
         vectorTopK: 12,
         similarityThreshold: 0.4,
         rerankTopK: 6,
-        citationDisplayEnabled: false,
         customInstruction: "Always cite the paragraph number from the Immigration Act.",
         metadataRules: [
           {
@@ -195,7 +191,6 @@ describe("settings contract", () => {
       vectorTopK: 12,
       similarityThreshold: 0.4,
       rerankTopK: 6,
-      citationDisplayEnabled: false,
       customInstruction: "Always cite the paragraph number from the Immigration Act.",
       metadataRules: [
         {
@@ -228,7 +223,6 @@ describe("settings contract", () => {
         vectorTopK: 15,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [
           {
@@ -297,7 +291,6 @@ describe("settings contract", () => {
         vectorTopK: 12,
         similarityThreshold: 0.4,
         rerankTopK: 6,
-        citationDisplayEnabled: false,
         customInstruction: "Cite paragraph numbers.",
         metadataRules: [
           {
@@ -321,7 +314,6 @@ describe("settings contract", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        citationDisplayEnabled: true,
       });
 
     expect(firstUpdate.status).toBe(200);

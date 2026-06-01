@@ -532,6 +532,7 @@ describe("AgenticRetrievalPipelineService", () => {
           suggestedQuestionsEnabled: false,
           suggestedQuestionsCount: 1,
           customInstruction: "override",
+          citationDisplayEnabled: false,
         },
       }),
     );
@@ -539,6 +540,6 @@ describe("AgenticRetrievalPipelineService", () => {
     expect(result.responseSettings.suggestedQuestionsEnabled).toBe(false);
     expect(result.responseSettings.suggestedQuestionsCount).toBe(1);
     expect(result.responseSettings.customInstruction).toBe("override");
-    expect(result.responseSettings.citationDisplayEnabled).toBe(true);
+    expect(result.responseSettings.citationDisplayEnabled).toBe(false);
   });
 });

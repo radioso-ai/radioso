@@ -30,7 +30,7 @@ export interface ConversationInputEvent {
   metadata?: Record<string, unknown>;
 }
 
-export type SteeringSource = "directive" | "skill";
+export type SteeringSource = "directive" | "skill" | "routine";
 
 export type SteeringLifespan = "response" | "session";
 
@@ -287,6 +287,74 @@ export interface RoutineState {
   variables: Record<string, unknown>;
   status: "active" | "completed" | "expired";
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * A Routine is an authored graph of steps connected by conditional transitions.
+ * A `chat` step's `action` is projected into a steering rule (it steers the reply);
+ * a `skill` step dispatches `skillName`; a `terminal` step ends the routine.
+ */
+export interface RoutineStep {
+  id: string;
+  kind: "chat" | "skill" | "terminal";
+  /** Instruction projected into steering for a `chat`/`terminal` step. */
+  action?: string;
+  /** The skill a `skill` step dispatches. */
+  skillName?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RoutineTransition {
+  from: string;
+  to: string;
+  /** Condition the next-step selector evaluates to decide whether this edge fires. */
+  condition: string;
+}
+
+export interface Routine {
+  id: string;
+  rootStepId: string;
+  steps: RoutineStep[];
+  transitions: RoutineTransition[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface RoutineNextStepDecision {
+  /** The chosen step id — a transition target, or the current step id to stay put. */
+  nextStepId: string;
+  /** Variables captured this turn (merged into routine state). */
+  variables?: Record<string, unknown>;
+  rationale?: string;
+}
+
+/**
+ * Advances an active Routine: given the current step and its outgoing transitions,
+ * decide which step the turn lands on and capture any slot variables. Slice 3
+ * provides the LLM implementation; the runner consumes it through this port.
+ */
+export interface ConversationRoutineNextStepSelector {
+  select(input: {
+    routine: Routine;
+    state: RoutineState;
+    currentStep: RoutineStep;
+    transitions: RoutineTransition[];
+    turn: TurnContext;
+  }): Promise<RoutineNextStepDecision>;
+}
+
+/**
+ * Renders the reply for the routine's current step. The host implements this with
+ * the Radioso composer (the projected step steering is passed in), so the pure
+ * engine owns graph mechanics and the host owns generation/presentation.
+ */
+export interface ConversationRoutineStepRenderer {
+  render(input: {
+    routine: Routine;
+    step: RoutineStep;
+    state: RoutineState;
+    steering: SteeringRule[];
+    turn: TurnContext;
+  }): Promise<RenderableTurn>;
 }
 
 /** Durable, session-scoped store for the active Routine's position + variables. */

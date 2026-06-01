@@ -41,24 +41,22 @@ The current chat adapter entry points are
 a prepared chat session into reusable contract values without moving persistence,
 billing, or rendering into the pure engine.
 
-Backend application composition can inject the default engine into chat when
-`RADIOSO_CONVERSATION_ENGINE_ENABLED=true`. The flag is disabled by default so
-operators can validate the adapter path before routing production chat through
-the reusable engine.
-
-When the flag is enabled, the engine performs the real turn work for the
-grounded/direct answer: its selector consults the existing `TurnSelectionStrategy`
+Backend application composition wires the reusable engine into chat in every
+environment (`createConversationEngine()` in `dependencyBuilders.ts`). The engine
+drives both the non-streaming turn (`processTurn`) and the streamed turn
+(`processTurnStream`): its selector consults the existing `TurnSelectionStrategy`
 and its dispatcher builds the `retrieval.answer` outcome from the prepared
 session, instead of receiving an already-built outcome from `ChatService`. The
 composer still renders through the Radioso `TurnOutcomeRendererRegistry`, and
 `ChatService` continues to own session prep, the skill-intake path, lifecycle,
-persistence, audit, and billing. Behavior is identical with the flag on or off.
+persistence, audit, and billing. `ChatService` keeps an engine-less fallback path
+for tests, but production always runs the engine.
 
 The engine's turn trace (its gather/directive/selection/dispatch/compose stages)
 is recorded on the `chat.answer` success audit event under
 `metadata.conversationEngine.trace`, alongside the retrieval-derived
-`activityTrace`. This is audit-only observability present only on the engine
-path; the user-facing answer and activity trace are unchanged.
+`activityTrace`. This is audit-only observability; the user-facing answer and
+activity trace are unchanged.
 
 ## Skills are dispatched, not called
 

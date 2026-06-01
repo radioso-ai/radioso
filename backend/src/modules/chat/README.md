@@ -45,11 +45,12 @@ imports from `services/`.
   chat stream adapters. Each terminal skill's `streamRender` owns its full
   post-stream reconcile (grounded-miss safety net included) and returns a
   `TurnStreamResult` (`turnOutcome.ts`) carrying the final presentation plus how
-  the host should source question suggestions. When the conversation engine is
-  wired, `processTurnStream` drives terminal selection, dispatch, streaming
-  composition, final event append, and trace assembly. Chat still owns Radioso
-  presentation, suggestions, persistence, billing, and HTTP stream events, and
-  never pushes retrieval-specific policy into the reusable engine.
+  the host should source question suggestions. Composition always wires the
+  conversation engine, so `processTurnStream` drives terminal selection, dispatch,
+  streaming composition, final event append, and trace assembly (an engine-less
+  fallback path remains for tests). Chat still owns Radioso presentation,
+  suggestions, persistence, billing, and HTTP stream events, and never pushes
+  retrieval-specific policy into the reusable engine.
 - Citations: `citation*`, `implicitCitationSupport.ts`,
   `chatAnswerPresenter.ts`.
 - Suggestions and skill intake: `chatIntakeProvider.ts`,

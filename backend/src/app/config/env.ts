@@ -115,7 +115,6 @@ const envSchema = z.object({
   WEBSITE_CRAWL_JOB_LEASE_MS: z.coerce.number().int().positive().default(900_000),
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
   WEBSITE_CRAWLER_ENABLED: booleanish(true),
-  RADIOSO_CONVERSATION_ENGINE_ENABLED: booleanish(false),
   APP_BASE_URL: emptyStringToUndefined(z.string().url()),
   PUBLIC_CHAT_BASE_URL: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_WIDGET_ORIGIN: emptyStringToUndefined(z.string().min(1)),

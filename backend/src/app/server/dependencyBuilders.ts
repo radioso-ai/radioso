@@ -3,7 +3,6 @@ import { AccountMembershipRepository } from "../../db/repositories/accountMember
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
-import type { ConversationEngine } from "@radioso/conversation-contract";
 import type { AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
@@ -638,12 +637,6 @@ export const buildWorkspaceServices = (input: {
   };
 };
 
-export const createDefaultConversationEngine = (
-  env: Pick<Env, "RADIOSO_CONVERSATION_ENGINE_ENABLED">,
-): ConversationEngine | undefined =>
-  env.RADIOSO_CONVERSATION_ENGINE_ENABLED
-    ? createConversationEngine()
-    : undefined;
 
 export const buildChatServices = (input: {
   agentService: AgentService;
@@ -813,7 +806,10 @@ export const buildChatServices = (input: {
     // Turn selection strategy comes from composition (default: the built-in
     // skill_intake → retrieval order). Registerable so a host can swap it.
     selectionStrategy: input.composition.selectionStrategy,
-    conversationEngine: createDefaultConversationEngine(input.env),
+    // The reusable conversation engine is the chat turn spine in every
+    // environment. ChatService keeps an engine-less path for tests, but
+    // composition always wires it.
+    conversationEngine: createConversationEngine(),
   });
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,

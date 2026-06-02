@@ -20,7 +20,7 @@ import type {
   ChatIntakeProviderPort,
   ContactHistoryProviderPort,
 } from "../../modules/chat/contracts/index.js";
-import type { AnswerFeedbackHistoryProviderPort, TurnSelectionStrategy } from "../../modules/chat/composition.js";
+import type { AnswerFeedbackHistoryProviderPort, RoutineRegistration, TurnSelectionStrategy } from "../../modules/chat/composition.js";
 import type { DirectiveMatcherPort } from "../../modules/directives/public.js";
 import type { AppDependencies } from "../server/types.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
@@ -155,6 +155,7 @@ export interface ApplicationExtensionRegistry {
   chunkingProvider?: TextChunkingProviderPort;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
   chatIntakeProviderRegistrations: ApplicationChatIntakeProviderRegistration[];
+  routineRegistrations: RoutineRegistration[];
   contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
   answerFeedbackHistoryProviderRegistration?: ApplicationAnswerFeedbackHistoryProviderRegistration;
   skillCatalogEntries: SkillCatalogEntryDefinition[];
@@ -190,6 +191,7 @@ export interface ApplicationModuleRegistrationContext {
   registerChunkingProvider(provider: TextChunkingProviderPort): void;
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
   registerChatIntakeProvider(provider: ApplicationChatIntakeProviderRegistration): void;
+  registerRoutine(registration: RoutineRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillCatalogEntry(entry: SkillCatalogEntryDefinition): void;
@@ -219,6 +221,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   routeMounts: [],
   accountCreatedHooks: [],
   chatIntakeProviderRegistrations: [],
+  routineRegistrations: [],
   skillCatalogEntries: [],
   skillDefinitions: [],
   skillExecutors: [],
@@ -278,6 +281,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerChatIntakeProvider(provider) {
     registry.chatIntakeProviderRegistrations.push(provider);
+  },
+  registerRoutine(registration) {
+    registry.routineRegistrations.push(registration);
   },
   registerContactHistoryProvider(provider) {
     registry.contactHistoryProviderRegistration = provider;

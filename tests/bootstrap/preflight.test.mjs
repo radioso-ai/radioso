@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { classifyEnvState } from "../../scripts/bootstrap/env-file.mjs";
 import { getComposeArgs, runPreflightChecks } from "../../scripts/bootstrap/preflight.mjs";
 
-test("classifyEnvState marks missing required provider key as partial", () => {
+test("classifyEnvState marks an env missing core required keys as partial", () => {
   const state = classifyEnvState({
     LLM_PROVIDER: "openai",
     SESSION_COOKIE_SECRET: "secret-secret-secret",
@@ -12,6 +12,33 @@ test("classifyEnvState marks missing required provider key as partial", () => {
   });
 
   assert.equal(state, "partial");
+});
+
+test("classifyEnvState treats a complete env without a provider API key as valid", () => {
+  const state = classifyEnvState({
+    PORT: "8080",
+    NODE_ENV: "development",
+    DATABASE_URL: "postgres://db",
+    INTEGRATION_DATABASE_URL: "postgres://db",
+    OPENAI_CHAT_MODEL: "gpt-test",
+    OPENAI_RERANK_MODEL: "gpt-rerank",
+    OPENAI_VECTOR_MODEL: "text-embedding-test",
+    LLM_PROVIDER: "openai",
+    SESSION_COOKIE_NAME: "radioso_session",
+    SESSION_COOKIE_SECRET: "secret-secret-secret",
+    WORKSPACE_TOKEN_SECRET: "workspace-secret-secret",
+    PUBLIC_CHAT_SESSION_SECRET: "public-session-secret",
+    SESSION_TTL_HOURS: "168",
+    CONNECTOR_ENCRYPTION_KEY: "secret-secret-secret",
+    DOCUMENT_STORAGE_DRIVER: "local",
+    DOCUMENT_STORAGE_LOCAL_PATH: "../.context/document-storage",
+    DOCUMENT_UPLOAD_MAX_BYTES: "10485760",
+    WORKER_DISPATCH_DRIVER: "noop",
+    DOCUMENT_PROCESSING_JOB_LEASE_MS: "300000",
+    PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
+  });
+
+  assert.equal(state, "valid");
 });
 
 test("classifyEnvState marks legacy gcs storage config without a driver as partial", () => {

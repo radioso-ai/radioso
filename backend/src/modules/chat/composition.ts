@@ -31,6 +31,18 @@ export { AnswerPresentationService } from "./services/answerPresentationService.
 export { resolveCitationArtifacts } from "./services/implicitCitationSupport.js";
 export { createSkillOutcomeCapabilityProvider } from "./services/chatAnswerPresenter.js";
 export { RoutineRegistry, type RoutineRegistration } from "./services/routines/routineRegistry.js";
+export {
+  ActionDispatcher,
+  ActionHandlerRegistry,
+  type ActionHandler,
+  type ActionHandlerContext,
+  type ActionOutboxConsumerPort,
+} from "./services/actions/actionDispatcher.js";
+export {
+  ActionDispatchWorker,
+  type ActionDispatchPort,
+  type ActionDispatchWorkerOptions,
+} from "./services/actions/actionDispatchWorker.js";
 export type { ChatGateway, ChatStreamEvent } from "./contracts/index.js";
 export { ChatHistoryService } from "./services/chatHistoryService.js";
 export {

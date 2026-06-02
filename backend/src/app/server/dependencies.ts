@@ -302,6 +302,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     assistantHistoryService: chat.assistantHistoryService,
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,
+    actionDispatchWorker: chat.actionDispatchWorker,
     evalSnapshotService,
     evalCaseService,
     evalRunService,

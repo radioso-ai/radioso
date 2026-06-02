@@ -78,6 +78,7 @@ export interface ApplicationComposition {
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
   usageEventRecorderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageEventRecorderRegistration"];
   chatIntakeProviderRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["chatIntakeProviderRegistrations"];
+  actionHandlerRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["actionHandlerRegistrations"];
   contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
   answerFeedbackHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["answerFeedbackHistoryProviderRegistration"];
   agentSurfaceExtensions: ReturnType<typeof createApplicationExtensionRegistry>["agentSurfaceExtensions"];
@@ -129,6 +130,7 @@ export const createDefaultApplicationComposition = (options: {
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
     usageEventRecorderRegistration: registry.usageEventRecorderRegistration,
     chatIntakeProviderRegistrations: registry.chatIntakeProviderRegistrations,
+    actionHandlerRegistrations: registry.actionHandlerRegistrations,
     contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
     answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,
     agentSurfaceExtensions: registry.agentSurfaceExtensions,

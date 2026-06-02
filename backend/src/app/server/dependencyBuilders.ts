@@ -1,6 +1,7 @@
 import { AccountInvitationRepository } from "../../db/repositories/accountInvitationRepository.js";
 import { AccountMembershipRepository } from "../../db/repositories/accountMembershipRepository.js";
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
+import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
 import type { AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
@@ -31,6 +32,9 @@ import { EmailVerificationService } from "../../modules/auth/services/emailVerif
 import { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import {
+  ActionDispatcher,
+  ActionDispatchWorker,
+  ActionHandlerRegistry,
   AssistantChatService,
   AssistantHistoryService,
   AnswerPresentationService,
@@ -773,6 +777,24 @@ export const buildChatServices = (input: {
     // Composition may register a contextual matcher; defaults to always-match.
     matcher: input.composition.directiveMatcher,
   });
+  // Async conversation actions (spec 070). A routine action step enqueues an intent to
+  // the outbox during the turn (`actionOutbox`); the worker drains and routes it to a
+  // registered handler out of band (`actionDispatchWorker`). The two share one repository
+  // so the same table backs the enqueue and the drain.
+  const actionOutbox = new ActionRequestRepository(input.database);
+  const actionHandlerRegistry = new ActionHandlerRegistry(
+    input.composition.actionHandlerRegistrations.map((registration) => ({
+      type: registration.type,
+      handler:
+        typeof registration.handler === "function"
+          ? registration.handler({ database: input.database, logger: input.logger })
+          : registration.handler,
+    })),
+  );
+  const actionDispatchWorker = new ActionDispatchWorker(
+    new ActionDispatcher(actionOutbox, actionHandlerRegistry),
+    { logger: input.logger },
+  );
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -810,6 +832,9 @@ export const buildChatServices = (input: {
     // environment. ChatService keeps an engine-less path for tests, but
     // composition always wires it.
     conversationEngine: createConversationEngine(),
+    // Turn-emitted action intents land here, persisted to the outbox and
+    // dispatched out of band by `actionDispatchWorker` in the worker process.
+    actionOutbox,
   });
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,
@@ -848,6 +873,7 @@ export const buildChatServices = (input: {
     chatService,
     contactHistoryProvider,
     retrievalAnswerService,
+    actionDispatchWorker,
   };
 };
 

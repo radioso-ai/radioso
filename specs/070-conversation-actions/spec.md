@@ -98,9 +98,9 @@ No new public REST endpoints; the assistant chat surfaces are unchanged. The dis
 
 ## Delivery Split
 
-1. **Action step + intent on the turn result** (engine + contract): the routine action-step kind; the runner emits intents; the result carries them. No persistence.
-2. **Outbox + transactional emit** (host): the `routine_action_requests` table + persisting emitted intents in the turn's unit of work.
-3. **Dispatcher + registry** (worker): `registerActionHandler`, the worker that drains the outbox and routes by type with retries/idempotency.
+1. **Action step + intent on the turn result** (engine + contract) — _done_: the routine action-step kind; the runner emits intents; the result carries them. No persistence.
+2. **Outbox + transactional emit** (host) — _done_: the `routine_action_requests` table + persisting emitted intents at turn completion (idempotent enqueue keyed on conversation+type+payload).
+3. **Dispatcher + registry** (worker) — _done_: `registerActionHandler` on the application module surface, the `ActionHandlerRegistry` + `ActionDispatcher` that routes by type (unregistered → recorded failed, never dropped), and the `ActionDispatchWorker` poll loop wired into the worker runtime. The outbox repository backs both the enqueue (chat) and the drain (worker).
 4. **First handler + routine**: a `contact.send`-style handler + a chat-only contact routine that gathers email/message and emits the action — the first end-to-end consumer. (This also completes the live routine wiring from #520.)
 
 ## Assumptions

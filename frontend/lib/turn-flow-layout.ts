@@ -19,7 +19,7 @@ export interface NodeBox {
  */
 export const layoutTurnFlow = (graph: TurnFlowGraph): Map<string, NodeBox> => {
   const g = new dagre.graphlib.Graph()
-  g.setGraph({ rankdir: 'LR', nodesep: 26, ranksep: 72, marginx: 28, marginy: 28 })
+  g.setGraph({ rankdir: 'LR', nodesep: 24, ranksep: 52, marginx: 24, marginy: 24 })
   g.setDefaultEdgeLabel(() => ({}))
 
   for (const node of graph.nodes) {

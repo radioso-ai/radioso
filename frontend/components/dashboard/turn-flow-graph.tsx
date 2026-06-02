@@ -14,6 +14,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 
+import { useTheme } from '@/components/theme-provider'
 import type { FlowStatus, TurnFlowGraph, TurnFlowNode } from '@/lib/turn-flow'
 import { FLOW_NODE_HEIGHT, FLOW_NODE_WIDTH, layoutTurnFlow } from '@/lib/turn-flow-layout'
 
@@ -99,6 +100,9 @@ export function TurnFlowGraph({
   onSelectNode: (node: TurnFlowNode) => void
   showMiniMap?: boolean
 }) {
+  // Follow the app's resolved theme, not the OS — React Flow's "system" colorMode
+  // would render a dark pane while the dashboard is in light mode (or vice versa).
+  const { resolvedTheme } = useTheme()
   const byId = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes])
 
   const { nodes, edges } = useMemo(() => {
@@ -173,9 +177,9 @@ export function TurnFlowGraph({
       nodes={nodes}
       edges={edges}
       nodeTypes={nodeTypes}
-      colorMode="system"
+      colorMode={resolvedTheme}
       fitView
-      fitViewOptions={{ padding: 0.2 }}
+      fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
       minZoom={0.2}
       maxZoom={1.75}
       nodesDraggable={false}

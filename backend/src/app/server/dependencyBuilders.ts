@@ -3,7 +3,8 @@ import { AccountMembershipRepository } from "../../db/repositories/accountMember
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
-import { createConversationEngine } from "@radioso/conversation-engine";
+import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
+import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import type { AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
@@ -43,6 +44,7 @@ import {
   ChatBootstrapService,
   ChatHistoryService,
   ChatService,
+  type ChatRoutineProvider,
   ChainedChatIntakeProvider,
   buildChatTurnRuntime,
   createRouteScopedDirectiveSteering,
@@ -52,6 +54,9 @@ import {
   NoopContactHistoryProvider,
   resolveCitationArtifacts,
   RetrievalTurnController,
+  RoutineRegistry,
+  RoutineNextStepSelector,
+  RoutineStepRenderer,
   SkillRetrievalTurnDispatch,
 } from "../../modules/chat/composition.js";
 import {
@@ -795,6 +800,24 @@ export const buildChatServices = (input: {
     new ActionDispatcher(actionOutbox, actionHandlerRegistry),
     { logger: input.logger },
   );
+  // Routine machinery (spec 070 / #520). The store + provider are passed to ChatService
+  // only when a host registered routines; with none registered the provider is absent,
+  // so the engine routine ports stay unwired and turns are unchanged (no store load).
+  // Composition owns the engine runner + LLM-adapter assembly so ChatService stays
+  // free of engine internals — it just supplies the per-turn model gateway.
+  const routineRegistry = new RoutineRegistry(input.composition.routineRegistrations);
+  const routineProvider: ChatRoutineProvider | undefined = routineRegistry.isEmpty
+    ? undefined
+    : {
+        isEmpty: false,
+        activator: () => routineRegistry.activator(),
+        createRunner: (modelGateway) =>
+          new DefaultRoutineRunner(
+            routineRegistry.routines,
+            new RoutineNextStepSelector(modelGateway),
+            new RoutineStepRenderer(modelGateway),
+          ),
+      };
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -835,6 +858,9 @@ export const buildChatServices = (input: {
     // Turn-emitted action intents land here, persisted to the outbox and
     // dispatched out of band by `actionDispatchWorker` in the worker process.
     actionOutbox,
+    // Routine resume/activate per turn — present only when routines are registered.
+    routineStore: new RoutineStateRepository(input.database),
+    routineProvider,
   });
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,

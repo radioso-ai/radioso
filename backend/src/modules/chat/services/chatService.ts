@@ -1,5 +1,14 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
-import type { ConversationEngine, ConversationTrace, RoutineActionRequest } from "@radioso/conversation-contract";
+import type {
+  ConversationEngine,
+  ConversationModelGateway,
+  ConversationRoutineActivator,
+  ConversationRoutineRunner,
+  ConversationRoutineStore,
+  ConversationTrace,
+  RenderableTurn,
+  RoutineActionRequest,
+} from "@radioso/conversation-contract";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AuditService } from "../../audit/contracts/index.js";
@@ -43,6 +52,8 @@ import type {
 } from "./chatAnswerPresenter.js";
 import { ChatTurnLifecycle, type ChatActionOutboxPort } from "./chatTurnLifecycle.js";
 import { BlankChatAnswerError } from "./chatAnswerErrors.js";
+import { ChatAnswerSupport } from "./chatAnswerSupport.js";
+import { RoutineChatModelGateway } from "./routines/routineChatModelGateway.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -213,6 +224,19 @@ const buildSkillStreamPayload = (
 });
 
 /**
+ * The registered routines this turn may resume or activate. Composition assembles it
+ * (the concrete `RoutineRegistry` plus a runner factory); ChatService only builds the
+ * per-turn model gateway and asks for a runner, the activator, and whether anything is
+ * registered. Empty → routine machinery stays off (no per-turn store load), and the
+ * engine runner stays a composition concern rather than something ChatService news up.
+ */
+export interface ChatRoutineProvider {
+  readonly isEmpty: boolean;
+  activator(): ConversationRoutineActivator;
+  createRunner(modelGateway: ConversationModelGateway): ConversationRoutineRunner;
+}
+
+/**
  * Everything ChatService needs to run a turn. The turn runtime (presenter +
  * registered skills) is assembled by composition via {@link buildChatTurnRuntime}
  * and injected — registration lives in the wiring layer, never inline here.
@@ -235,6 +259,10 @@ export interface ChatServiceOptions {
   conversationEngine: ConversationEngine;
   /** Optional: when wired, routine-emitted fire-and-forget actions are enqueued to the outbox. */
   actionOutbox?: ChatActionOutboxPort;
+  /** Optional: durable per-session routine state store (with {@link routineProvider}). */
+  routineStore?: ConversationRoutineStore;
+  /** Optional: registered routines + activation. Empty/absent leaves turns unchanged. */
+  routineProvider?: ChatRoutineProvider;
 }
 
 export class ChatService {
@@ -249,6 +277,9 @@ export class ChatService {
   private readonly chatTurnLifecycle: ChatTurnLifecycle;
   private readonly turnSkills: TurnSkill[];
   private readonly turnSkillSelector: ChatTurnSkillSelector;
+  private readonly answerSupport = new ChatAnswerSupport();
+  private readonly routineStore?: ConversationRoutineStore;
+  private readonly routineProvider?: ChatRoutineProvider;
 
   constructor(options: ChatServiceOptions) {
     const {
@@ -267,7 +298,11 @@ export class ChatService {
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       conversationEngine,
       actionOutbox,
+      routineStore,
+      routineProvider,
     } = options;
+    this.routineStore = routineStore;
+    this.routineProvider = routineProvider;
     this.chatGateway = chatGateway;
     this.auditService = auditService;
     this.usageLimitPolicy = usageLimitPolicy;
@@ -298,6 +333,38 @@ export class ChatService {
   }
 
   /**
+   * Assembles this turn's routine machinery, or `{}` when no routines are registered
+   * (the engine ports stay unwired and turn behavior is unchanged). The next-step
+   * selector and step renderer generate through a model gateway bound to this turn's
+   * usage + workspace context, which is why the runner is built per turn rather than
+   * once at construction.
+   */
+  private routineTurnPorts(
+    session: PreparedSession,
+    accountId: string | undefined,
+  ): {
+    routineStore?: ConversationRoutineStore;
+    routineRunner?: ConversationRoutineRunner;
+    routineActivator?: ConversationRoutineActivator;
+    presentRoutineReply?: (response: RenderableTurn) => ChatPresentedAnswer;
+  } {
+    if (!this.routineStore || !this.routineProvider || this.routineProvider.isEmpty) {
+      return {};
+    }
+    const modelGateway = new RoutineChatModelGateway(this.chatGateway, {
+      workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
+      usageContext: this.answerSupport.buildChatUsageContext(session, accountId, "routine_turn"),
+    });
+    return {
+      routineStore: this.routineStore,
+      routineRunner: this.routineProvider.createRunner(modelGateway),
+      routineActivator: this.routineProvider.activator(),
+      presentRoutineReply: (response) =>
+        this.chatAnswerPresenter.presentNonRetrievalAnswer(response.answer),
+    };
+  }
+
+  /**
    * Produces the answer for a prepared turn. The conversation engine drives
    * selection + dispatch and renders the outcome through the shared registry,
    * returning its turn trace for audit (`engineTrace`).
@@ -314,6 +381,7 @@ export class ChatService {
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
+      ...this.routineTurnPorts(session, input.accountId),
     });
     return { presentation, engineTrace: result.trace, actions: result.actions };
   }
@@ -330,6 +398,7 @@ export class ChatService {
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
+      ...this.routineTurnPorts(session, input.accountId),
     })) {
       if (event.type === "chunk") {
         yield event;

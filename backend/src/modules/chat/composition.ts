@@ -3,7 +3,24 @@ export { AssistantHistoryService } from "./services/assistantHistoryService.js";
 export { ChatBootstrapService } from "./services/chatBootstrapService.js";
 export {
   ChatService,
+  type ChatRoutineProvider,
 } from "./services/chatService.js";
+export { RoutineNextStepSelector } from "./services/routines/routineNextStepSelector.js";
+export { RoutineStepRenderer } from "./services/routines/routineStepRenderer.js";
+export {
+  RoutineChatModelGateway,
+  type RoutineModelTurnContext,
+} from "./services/routines/routineChatModelGateway.js";
+export {
+  ContactSendActionHandler,
+  type ContactNotificationMailer,
+  type ContactRecipientResolver,
+} from "./services/actions/contactSendActionHandler.js";
+export {
+  contactRoutine,
+  CONTACT_ROUTINE_ID,
+  CONTACT_SEND_ACTION_TYPE,
+} from "./services/routines/contactRoutine.js";
 export {
   buildChatTurnRuntime,
   type ChatTurnRuntime,

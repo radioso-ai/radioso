@@ -31,24 +31,26 @@ const skillResultBlock = (skillResult?: RoutineSkillResult): string => {
 
 interface ParsedDecision {
   condition: number | null;
+  offTopic: boolean;
   variables: Record<string, unknown>;
 }
 
 const parseDecision = (raw: string): ParsedDecision => {
   const json = extractFirstJsonObject(raw.trim());
   if (!json) {
-    return { condition: null, variables: {} };
+    return { condition: null, offTopic: false, variables: {} };
   }
   try {
-    const parsed = JSON.parse(json) as { condition?: unknown; variables?: unknown };
+    const parsed = JSON.parse(json) as { condition?: unknown; offTopic?: unknown; variables?: unknown };
     const condition = typeof parsed.condition === "number" ? parsed.condition : null;
+    const offTopic = parsed.offTopic === true;
     const variables =
       parsed.variables && typeof parsed.variables === "object" && !Array.isArray(parsed.variables)
         ? (parsed.variables as Record<string, unknown>)
         : {};
-    return { condition, variables };
+    return { condition, offTopic, variables };
   } catch {
-    return { condition: null, variables: {} };
+    return { condition: null, offTopic: false, variables: {} };
   }
 };
 
@@ -91,14 +93,27 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     });
     const decision = parseDecision(text);
 
-    // Out of range / null → stay on the current step (a re-ask), keeping any captured
-    // variables so partial progress is not lost.
-    if (decision.condition === null || decision.condition < 1 || decision.condition > input.transitions.length) {
-      return { nextStepId: input.currentStep.id, variables: decision.variables };
+    const conditionMatched =
+      decision.condition !== null && decision.condition >= 1 && decision.condition <= input.transitions.length;
+
+    // A matched transition advances regardless of anything else (the user supplied what
+    // the step asked for, possibly alongside a question).
+    if (conditionMatched) {
+      return {
+        nextStepId: input.transitions[decision.condition! - 1]!.to,
+        variables: decision.variables,
+      };
     }
-    return {
-      nextStepId: input.transitions[decision.condition - 1]!.to,
-      variables: decision.variables,
-    };
+
+    // No transition matched, but the user asked something unrelated → yield the turn so
+    // normal answering handles it; the routine stays parked here to resume later. This
+    // is what stops the routine from blindly re-asking when the user changes the subject.
+    if (decision.offTopic) {
+      return { nextStepId: input.currentStep.id, yieldTurn: true };
+    }
+
+    // Otherwise the user is still on this step but hasn't satisfied it → stay (a re-ask),
+    // keeping any captured variables so partial progress is not lost.
+    return { nextStepId: input.currentStep.id, variables: decision.variables };
   }
 }

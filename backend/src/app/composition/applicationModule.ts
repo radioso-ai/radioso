@@ -41,7 +41,7 @@ import type {
 } from "../../modules/skills/public.js";
 import type { Directive } from "../../modules/directives/public.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
-import type { AgentSurfaceExtension } from "../../modules/agents/public.js";
+import type { AgentService, AgentSurfaceExtension } from "../../modules/agents/public.js";
 import type { TextChunkingProviderPort } from "../../modules/retrieval/public.js";
 import type { ChatActionSuggestionProvider } from "../../modules/chat/services/actionSuggestions/chatActionSuggestionProvider.js";
 
@@ -116,6 +116,7 @@ export type ApplicationChatIntakeProviderRegistration =
       dashboardBaseUrl: string | null;
       assertPublicWebsiteUrl: (url: string) => Promise<void>;
       skillExecutorRegistry: SkillExecutorRegistry;
+      agentService: Pick<AgentService, "resolve">;
     }) => ChatIntakeProviderPort);
 
 export type ApplicationContactHistoryProviderRegistration =

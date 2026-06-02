@@ -55,6 +55,7 @@ const agent = (): AgentRecord => ({
   suggestedQuestionsEnabled: true,
   assistantLinkUtmEnabled: true,
   citationDisplayEnabled: true,
+  contactRequestsEnabled: false,
   retrievalEnabled: true,
   sourceScope: { mode: "all" },
   logo: null,

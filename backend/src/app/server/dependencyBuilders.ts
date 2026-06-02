@@ -700,6 +700,7 @@ export const buildChatServices = (input: {
     dashboardBaseUrl: input.env.APP_BASE_URL ?? null,
     assertPublicWebsiteUrl: input.assertPublicWebsiteUrl,
     skillExecutorRegistry: input.composition.skillExecutorRegistry,
+    agentService: input.agentService,
   };
   // Register retrieval.answer as a dispatchable skill (spec 066 slice 1). The
   // chat path does not consume it yet; the loop re-seam (slice 2) routes through

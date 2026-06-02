@@ -36,6 +36,9 @@ export type AgentSurfacePosition = (typeof agentSurfacePositions)[number];
 const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
 const DEFAULT_ASSISTANT_LINK_UTM_ENABLED = true;
 const DEFAULT_CITATION_DISPLAY_ENABLED = true;
+// Contact requests are opt-in per assistant — off until an operator enables the
+// capability in the assistant's Skills settings.
+const DEFAULT_CONTACT_REQUESTS_ENABLED = false;
 const DEFAULT_AGENT_SURFACE_POSITION: AgentSurfacePosition = "bottom-right";
 const MAX_EMBED_COPY_LOCALES = 10;
 
@@ -52,6 +55,9 @@ export interface AgentBehaviorSettings {
   // citations are still rendered non-interactively (sources are never openable
   // there); this flag only governs whether they appear at all.
   citationDisplayEnabled: boolean;
+  // Whether this assistant offers the "contact a human" capability: surfaces the
+  // public-chat contact button and lets the contact routine activate. Opt-in.
+  contactRequestsEnabled: boolean;
   retrievalEnabled: boolean;
   logo: AgentLogo | null;
   theme: AgentEmbedTheme;
@@ -570,6 +576,7 @@ export const validateAgentInput = (
     suggestedQuestionsEnabled: input.suggestedQuestionsEnabled ?? DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
     assistantLinkUtmEnabled: input.assistantLinkUtmEnabled ?? DEFAULT_ASSISTANT_LINK_UTM_ENABLED,
     citationDisplayEnabled: input.citationDisplayEnabled ?? DEFAULT_CITATION_DISPLAY_ENABLED,
+    contactRequestsEnabled: input.contactRequestsEnabled ?? DEFAULT_CONTACT_REQUESTS_ENABLED,
     retrievalEnabled: input.retrievalEnabled ?? true,
     sourceScope: normalizeSourceScope(input.sourceScope),
     logo: normalizeAgentLogo(input.logo),

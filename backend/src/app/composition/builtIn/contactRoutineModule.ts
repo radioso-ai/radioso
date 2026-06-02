@@ -14,26 +14,47 @@ import { WorkspaceRepository } from "../../../db/repositories/workspaceRepositor
 import { AccountMembershipRepository } from "../../../db/repositories/accountMembershipRepository.js";
 import type { ApplicationModule } from "../applicationModule.js";
 
+/** Reads the per-agent contact-requests flag for the advertiser. */
+interface AgentContactFlagLookup {
+  resolve(workspaceId: string, agentId?: string | null): Promise<{ contactRequestsEnabled: boolean }>;
+}
+
 /**
  * Surfaces the "contact a human" affordance to the public chat UI (the existing button
- * is gated on this advertised action) but never claims the turn — `handle` returns null
- * so the turn falls through to the engine, where the contact routine activates on the
- * `intent_click`. In an EE deployment the EE human-contact intake claims the turn first
- * (it runs pre-engine), so the routine stays dormant there; the advertised action is
- * de-duplicated by the chained intake provider.
+ * is gated on this advertised action) — but only for agents that enabled contact
+ * requests, and it never claims the turn: `handle` returns null so the turn falls
+ * through to the engine, where the contact routine activates on the `intent_click`. In
+ * an EE deployment the EE human-contact intake claims the turn first (it runs
+ * pre-engine), so the routine stays dormant there; the advertised action de-duplicates.
  */
 class ContactIntakeActionAdvertiser implements ChatIntakeProviderPort {
+  constructor(private readonly agents: AgentContactFlagLookup) {}
+
   async handle(): Promise<null> {
     return null;
   }
 
-  async getPublicIntakeActions(): Promise<PublicChatIntakeAction[]> {
-    return [{ skillName: CONTACT_INTENT_SKILL_NAME, intentName: CONTACT_INTENT_NAME }];
+  async getPublicIntakeActions(input: {
+    workspaceId: string;
+    agentId?: string | null;
+  }): Promise<PublicChatIntakeAction[]> {
+    const agent = await this.agents.resolve(input.workspaceId, input.agentId ?? null);
+    return agent.contactRequestsEnabled
+      ? [{ skillName: CONTACT_INTENT_SKILL_NAME, intentName: CONTACT_INTENT_NAME }]
+      : [];
   }
 }
 
-/** Starts the contact routine when a turn carries the explicit "contact a human" intent. */
+/**
+ * Starts the contact routine when an agent that enabled contact requests receives a
+ * turn carrying the explicit "contact a human" intent. The per-agent flag is gated
+ * here too (not just at the advertiser) so a crafted request can't start the flow on
+ * an assistant that has the capability turned off.
+ */
 const activatesOnContactIntent = async ({ turn }: { turn: TurnContext }) => {
+  if (turn.agent.metadata?.contactRequestsEnabled !== true) {
+    return null;
+  }
   const metadata = turn.inputEvent.metadata;
   const intent = metadata?.intent as { skillName?: string } | undefined;
   const claimed = metadata?.method === "intent_click" && intent?.skillName === CONTACT_INTENT_SKILL_NAME;
@@ -64,6 +85,8 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           logger,
         ),
     });
-    context.registerChatIntakeProvider(new ContactIntakeActionAdvertiser());
+    context.registerChatIntakeProvider(
+      ({ agentService }) => new ContactIntakeActionAdvertiser(agentService),
+    );
   },
 });

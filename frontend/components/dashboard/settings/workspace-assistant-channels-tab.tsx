@@ -668,6 +668,7 @@ export function WorkspaceAssistantChannelsTab({
           assistantBehaviorSettings.suggestedQuestionsEnabled !== savedAssistantBehaviorSettings.suggestedQuestionsEnabled ||
           assistantBehaviorSettings.assistantLinkUtmEnabled !== savedAssistantBehaviorSettings.assistantLinkUtmEnabled ||
           assistantBehaviorSettings.citationDisplayEnabled !== savedAssistantBehaviorSettings.citationDisplayEnabled ||
+          assistantBehaviorSettings.contactRequestsEnabled !== savedAssistantBehaviorSettings.contactRequestsEnabled ||
           getAssistantBehaviorSourceScopeKey(assistantBehaviorSettings) !==
             getAssistantBehaviorSourceScopeKey(savedAssistantBehaviorSettings) ||
           JSON.stringify(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) !==
@@ -1163,13 +1164,14 @@ export function WorkspaceAssistantChannelsTab({
           </section>
           ) : null}
 
-          {editionController.canUseHumanContact() && mode === 'assistant' && showSection('skills') ? (
+          {mode === 'assistant' && showSection('skills') ? (
           <section id="assistant-skills" className="space-y-6 scroll-mt-24">
             <SettingsCard
               icon={<Wrench className="h-5 w-5 text-primary" />}
               title="Skills"
               description="Capabilities the assistant can use during a chat."
             >
+            {editionController.canUseHumanContact() ? (
             <div id="human-contact" className="scroll-mt-24 space-y-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex min-w-0 gap-3">
@@ -1363,6 +1365,33 @@ export function WorkspaceAssistantChannelsTab({
                 </div>
               )}
             </div>
+            ) : (
+            <div id="contact-requests" className="scroll-mt-24">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex min-w-0 gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
+                    <UserRound className="h-5 w-5 text-primary" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-medium text-foreground">Contact requests</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Show a &ldquo;contact a human&rdquo; option in chat. The assistant collects the visitor&rsquo;s
+                      email and message, and emails the request to the workspace owner.
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  id="contactRequestsToggle"
+                  checked={assistantBehaviorSettings?.contactRequestsEnabled ?? false}
+                  onCheckedChange={(checked) =>
+                    updateAssistantBehaviorDraft((current) => ({ ...current, contactRequestsEnabled: checked }))
+                  }
+                  disabled={!assistantBehaviorSettings}
+                  className="sm:mt-3"
+                />
+              </div>
+            </div>
+            )}
             </SettingsCard>
           </section>
           ) : null}

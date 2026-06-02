@@ -3178,6 +3178,9 @@
               "citationDisplayEnabled": {
                 "type": "boolean"
               },
+              "contactRequestsEnabled": {
+                "type": "boolean"
+              },
               "theme": {
                 "type": "object",
                 "properties": {
@@ -3310,6 +3313,7 @@
               "suggestedQuestionsEnabled",
               "assistantLinkUtmEnabled",
               "citationDisplayEnabled",
+              "contactRequestsEnabled",
               "theme",
               "branding",
               "retrievalEnabled",
@@ -3357,6 +3361,9 @@
             "type": "boolean"
           },
           "citationDisplayEnabled": {
+            "type": "boolean"
+          },
+          "contactRequestsEnabled": {
             "type": "boolean"
           },
           "theme": {

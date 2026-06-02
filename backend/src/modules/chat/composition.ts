@@ -30,6 +30,7 @@ export {
 export { AnswerPresentationService } from "./services/answerPresentationService.js";
 export { resolveCitationArtifacts } from "./services/implicitCitationSupport.js";
 export { createSkillOutcomeCapabilityProvider } from "./services/chatAnswerPresenter.js";
+export { RoutineRegistry, type RoutineRegistration } from "./services/routines/routineRegistry.js";
 export type { ChatGateway, ChatStreamEvent } from "./contracts/index.js";
 export { ChatHistoryService } from "./services/chatHistoryService.js";
 export {

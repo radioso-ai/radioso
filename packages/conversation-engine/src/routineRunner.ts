@@ -5,6 +5,7 @@ import type {
   ConversationRoutineSkillDispatcher,
   ConversationRoutineStepRenderer,
   Routine,
+  RoutineActionRequest,
   RoutineSkillResult,
   RoutineState,
   RoutineStep,
@@ -92,14 +93,35 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // Append to the path only on a real advance; re-asking a step keeps it stable.
     const path = step.id === currentStepId ? [...state.path] : [...state.path, step.id];
 
-    // Run through any skill (tool) steps: dispatch, then advance past them. Bounded by
-    // the routine's step count so a misauthored cycle fails loudly instead of looping
-    // (and re-dispatching a side-effecting skill) forever.
+    // Run through any transit steps — skill (dispatch a tool) and action (emit a
+    // fire-and-forget request) — advancing off each this turn, until a chat/terminal
+    // step renders. Bounded by the routine's step count so a misauthored cycle fails
+    // loudly instead of looping (and re-firing a side effect) forever. Neither kind is
+    // ever left as the resume position.
+    const actions: RoutineActionRequest[] = [];
     let hops = 0;
-    while (step.kind === "skill") {
+    while (step.kind === "skill" || step.kind === "action") {
       if (++hops > routine.steps.length) {
-        throw new Error(`routine_skill_walk_exceeded:${routine.id}:${step.id}`);
+        throw new Error(`routine_walk_exceeded:${routine.id}:${step.id}`);
       }
+
+      if (step.kind === "action") {
+        if (!step.actionType) {
+          throw new Error(`routine_action_step_missing_type:${routine.id}:${step.id}`);
+        }
+        const actionEdges = outgoing(step.id);
+        if (actionEdges.length === 0) {
+          throw new Error(`routine_action_step_no_follow_up:${routine.id}:${step.id}`);
+        }
+        // Fire-and-forget: record the request (authored type + the routine's variables)
+        // and auto-advance — there is no result to branch on.
+        actions.push({ type: step.actionType, payload: { ...variables } });
+        step = stepById(actionEdges[0]!.to);
+        path.push(step.id);
+        continue;
+      }
+
+      // skill step: dispatch, then advance off it.
       if (!this.skillDispatcher) {
         throw new Error(`routine_skill_dispatcher_missing:${routine.id}:${step.id}`);
       }
@@ -112,8 +134,6 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         state: skillStateAtStep,
         turn,
       });
-      // A skill step must advance off itself this turn: parking the resume position
-      // on a skill step would re-dispatch its (side-effecting) skill next turn.
       const skillEdges = outgoing(step.id);
       if (skillEdges.length === 0) {
         throw new Error(`routine_skill_step_no_follow_up:${routine.id}:${step.id}`);
@@ -152,6 +172,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       response,
       // A terminal step ends the routine — clear its state.
       nextState: step.kind === "terminal" ? null : nextState,
+      ...(actions.length > 0 ? { actions } : {}),
     };
   }
 }

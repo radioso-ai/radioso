@@ -9,6 +9,7 @@ import type {
   ProcessTurnStreamEvent,
   ProcessTurnStreamInput,
   RenderableTurn,
+  RoutineActionRequest,
   SelectionDecision,
   SkillDefinition,
   SkillTransientGuidance,
@@ -121,6 +122,7 @@ const createProcessTurnResult = (input: {
   outcomes: TurnOutcome[];
   response: RenderableTurn;
   trace: ConversationTrace;
+  actions?: RoutineActionRequest[];
 }): ProcessTurnResult => ({
   sessionId: input.sessionId,
   events: input.events,
@@ -128,6 +130,7 @@ const createProcessTurnResult = (input: {
   outcomes: input.outcomes,
   response: input.response,
   trace: input.trace,
+  ...(input.actions && input.actions.length > 0 ? { actions: input.actions } : {}),
 });
 
 export class DefaultConversationEngine implements ConversationEngine {
@@ -336,6 +339,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       },
       outcomes: result.outcomes ?? [],
       response: result.response,
+      actions: result.actions,
       trace: createTrace([gatherStage, routineStage]),
     });
   }

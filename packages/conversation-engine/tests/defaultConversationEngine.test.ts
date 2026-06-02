@@ -396,4 +396,18 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       state: expect.objectContaining({ routineId: "contact", path: [], variables: { email: "a@b.c" } }),
     });
   });
+
+  it("surfaces routine action requests on the turn result for the host to persist", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({
+        response: { answer: "Your request has been received." },
+        nextState: null,
+        actions: [{ type: "contact.send", payload: { email: "a@b.c", message: "hi" } }],
+      })),
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.actions).toEqual([{ type: "contact.send", payload: { email: "a@b.c", message: "hi" } }]);
+  });
 });

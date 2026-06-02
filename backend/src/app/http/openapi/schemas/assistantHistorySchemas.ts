@@ -96,6 +96,57 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const CapabilitySubTraceSchema = registry.register(
+    "CapabilitySubTrace",
+    z.object({
+      namespace: z.string().openapi({
+        description: "Capability that produced this sub-trace; the renderer keys on it (e.g. retrieval, skill-intake).",
+      }),
+      version: z.number(),
+      payload: z.unknown().openapi({
+        description: "Opaque capability-owned trace payload (e.g. an ActivityTrace). Shape varies by namespace/version.",
+      }),
+    }),
+  );
+
+  const ConversationTraceStageSchema = registry.register(
+    "ConversationTraceStage",
+    z.object({
+      id: z.string(),
+      kind: z.string(),
+      status: z.enum(["applied", "skipped", "fallback", "rejected", "unavailable", "failed"]),
+      startedAt: z.string().optional(),
+      completedAt: z.string().optional(),
+      inputs: z.record(z.unknown()).optional(),
+      outputs: z.record(z.unknown()).optional(),
+      metrics: z.record(z.number()).optional(),
+      subTrace: CapabilitySubTraceSchema.optional(),
+    }),
+  );
+
+  const ConversationTraceSchema = registry.register(
+    "ConversationTrace",
+    z.object({
+      traceId: z.string(),
+      startedAt: z.string(),
+      completedAt: z.string().optional(),
+      stages: z.array(ConversationTraceStageSchema),
+      links: z.array(z.object({ from: z.string(), to: z.string(), kind: z.string() })).optional(),
+      summary: z.record(z.unknown()).optional(),
+    }),
+  );
+
+  const TurnTraceEnvelopeSchema = registry.register(
+    "TurnTraceEnvelope",
+    z.object({
+      version: z.number().openapi({
+        description: "Envelope generation marker. 0 = synthesized from a legacy turn; >=1 = engine-emitted spine.",
+      }),
+      spine: ConversationTraceSchema,
+      summary: z.record(z.unknown()).optional(),
+    }),
+  );
+
   const chatResponseCoreShape = {
     agentId: z.string().uuid().optional(),
     agentName: z.string().optional(),
@@ -111,6 +162,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       route: AssistantRouteSchema,
       activitySummary: schemas.ActivitySummarySchema,
       activityTrace: schemas.ActivityTraceSchema,
+      turnTrace: TurnTraceEnvelopeSchema.optional(),
     }),
   );
 
@@ -250,6 +302,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       route: AssistantRouteDiagnosticsSchema.optional(),
       activitySummary: schemas.ActivitySummarySchema.optional(),
       activityTrace: schemas.ActivityTraceSchema.optional(),
+      turnTrace: TurnTraceEnvelopeSchema.optional(),
       errorMessage: z.string().nullable().optional(),
     }),
   );
@@ -385,6 +438,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ChatSuggestionSchema,
     AssistantRouteSchema,
     AssistantRouteDiagnosticsSchema,
+    CapabilitySubTraceSchema,
+    ConversationTraceStageSchema,
+    ConversationTraceSchema,
+    TurnTraceEnvelopeSchema,
     AssistantChatDebugSchema,
     ChatResponseSchema,
     ChatBootstrapResponseSchema,

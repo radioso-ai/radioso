@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { stdin as input, stdout as output } from "node:process";
 
 import { formatMessage } from "./terminal-theme.mjs";
-import { getEnvContract, getProviderRequiredKeys } from "./support/env-contract.mjs";
+import { getEnvContract, getProviderCredentialKeys, getProviderRequiredKeys } from "./support/env-contract.mjs";
 
 export const planQuestions = (existingValues = {}, contract = getEnvContract(), options = {}) => {
   const reconfigure = Boolean(options.reconfigure);
@@ -23,15 +23,23 @@ export const planQuestions = (existingValues = {}, contract = getEnvContract(), 
   }
 
   const providerValue = reconfigure ? provider : existingValues.LLM_PROVIDER || provider;
+  const providerCredentialKeys = getProviderCredentialKeys(providerValue);
   const providerRequiredKeys = getProviderRequiredKeys(providerValue);
 
-  for (const key of providerRequiredKeys) {
+  for (const key of providerCredentialKeys) {
     if (reconfigure || !existingValues[key]) {
+      const required = providerRequiredKeys.includes(key);
+      const prompt = key === "OPENAI_COMPATIBLE_BASE_URL"
+        ? "OpenAI-compatible base URL"
+        : required
+          ? `Enter ${key}`
+          : `Enter ${key} (optional — add later in the app under Settings → Credentials)`;
       questions.push({
         key,
-        prompt: key === "OPENAI_COMPATIBLE_BASE_URL" ? "OpenAI-compatible base URL" : `Enter ${key}`,
+        prompt,
         defaultValue: existingValues[key] || contract.defaults[key] || "",
         secret: key.includes("KEY"),
+        required,
       });
     }
   }
@@ -75,7 +83,7 @@ const validateAnswer = (question, value) => {
   if (question.key.endsWith("_BASE_URL") && value && !/^https?:\/\//.test(value)) {
     return "Enter a full URL starting with http:// or https://";
   }
-  if (question.key.includes("KEY") && !value) {
+  if (question.required && !value) {
     return "This value is required.";
   }
   if (question.key === "DOCUMENT_STORAGE_BUCKET" && !value) {

@@ -9,7 +9,7 @@ import {
 import { buildEnvValues, renderEnvFile, writeEnvFileAtomic } from "./env-file.mjs";
 import { collectAnswers, planQuestions } from "./prompt-flow.mjs";
 import { detectEnvState, runPreflightChecks } from "./preflight.mjs";
-import { getEnvContract, getProviderRequiredKeys } from "./support/env-contract.mjs";
+import { getEnvContract, getProviderCredentialKeys, getProviderRequiredKeys } from "./support/env-contract.mjs";
 import { detectAnsiSupport } from "./support/ansi-capabilities.mjs";
 import { formatMessage, renderHeader } from "./terminal-theme.mjs";
 
@@ -69,6 +69,13 @@ const validateProviderConfig = (values, contract = getEnvContract()) => {
 
 const isInteractiveTerminal = () => Boolean(process.stdin.isTTY && process.stdout.isTTY);
 
+const hasProviderApiKey = (values) => {
+  const provider = values.LLM_PROVIDER || "openai";
+  return getProviderCredentialKeys(provider)
+    .filter((key) => key.includes("KEY"))
+    .some((key) => typeof values[key] === "string" && values[key].trim().length > 0);
+};
+
 const printConfigurationSummary = (values, ansi, out = process.stdout) => {
   out.write(`${formatMessage("helper", "\nConfiguration summary:\n", ansi)}`);
   out.write(`${formatMessage("helper", `- AI provider: ${values.LLM_PROVIDER}\n`, ansi)}`);
@@ -82,7 +89,13 @@ const printConfigurationSummary = (values, ansi, out = process.stdout) => {
     )}`,
   );
   out.write(
-    `${formatMessage("helper", "- Document processing and chat will use the configured provider credentials.\n", ansi)}`,
+    `${formatMessage(
+      "helper",
+      hasProviderApiKey(values)
+        ? "- Document processing and chat will use the configured provider credentials.\n"
+        : "- No provider API key set yet. Add one in the app under Settings -> Credentials to enable chat and document processing.\n",
+      ansi,
+    )}`,
   );
 };
 

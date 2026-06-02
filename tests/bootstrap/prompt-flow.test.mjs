@@ -18,6 +18,33 @@ test("planQuestions asks for the selected provider requirements", () => {
   assert.ok(compatibleQuestions.some((question) => question.key === "OPENAI_COMPATIBLE_BASE_URL"));
 });
 
+test("planQuestions marks the provider API key optional", () => {
+  const questions = planQuestions({});
+  const keyQuestion = questions.find((question) => question.key === "OPENAI_API_KEY");
+
+  assert.ok(keyQuestion);
+  assert.ok(!keyQuestion.required);
+});
+
+test("planQuestions keeps the OpenAI-compatible base URL required while its key stays optional", () => {
+  const questions = planQuestions({ LLM_PROVIDER: "openai-compatible" }, undefined, { reconfigure: true });
+  const baseUrl = questions.find((question) => question.key === "OPENAI_COMPATIBLE_BASE_URL");
+  const apiKey = questions.find((question) => question.key === "OPENAI_COMPATIBLE_API_KEY");
+
+  assert.ok(baseUrl?.required);
+  assert.ok(apiKey && !apiKey.required);
+});
+
+test("collectAnswers allows skipping an optional provider key", async () => {
+  const answers = await collectAnswers(
+    [{ key: "OPENAI_API_KEY", prompt: "Enter OPENAI_API_KEY", defaultValue: "", secret: true, required: false }],
+    false,
+    { ask: async () => "" },
+  );
+
+  assert.equal(answers.OPENAI_API_KEY, "");
+});
+
 test("planQuestions defaults legacy bucket-only storage config to gcs", () => {
   const questions = planQuestions({
     LLM_PROVIDER: "openai",

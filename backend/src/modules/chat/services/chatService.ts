@@ -232,7 +232,7 @@ const buildSkillStreamPayload = (
  */
 export interface ChatRoutineProvider {
   readonly isEmpty: boolean;
-  activator(): ConversationRoutineActivator;
+  activator(modelGateway: ConversationModelGateway): ConversationRoutineActivator;
   createRunner(modelGateway: ConversationModelGateway): ConversationRoutineRunner;
 }
 
@@ -358,7 +358,7 @@ export class ChatService {
     return {
       routineStore: this.routineStore,
       routineRunner: this.routineProvider.createRunner(modelGateway),
-      routineActivator: this.routineProvider.activator(),
+      routineActivator: this.routineProvider.activator(modelGateway),
       presentRoutineReply: (response) =>
         this.chatAnswerPresenter.presentNonRetrievalAnswer(response.answer),
     };

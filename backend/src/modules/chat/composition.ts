@@ -7,6 +7,7 @@ export {
 } from "./services/chatService.js";
 export { RoutineNextStepSelector } from "./services/routines/routineNextStepSelector.js";
 export { RoutineStepRenderer } from "./services/routines/routineStepRenderer.js";
+export { classifyContactIntent } from "./services/routines/contactActivationClassifier.js";
 export {
   RoutineChatModelGateway,
   type RoutineModelTurnContext,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TurnContext } from "@radioso/conversation-contract";
+import type { ConversationModelGateway, TurnContext } from "@radioso/conversation-contract";
 
 import {
   ApplicationModuleCoordinator,
@@ -31,6 +31,13 @@ const agentServiceWith = (contactRequestsEnabled: boolean) => ({
   resolve: async () => ({ contactRequestsEnabled }),
 });
 
+const gatewayReturning = (text: string): ConversationModelGateway => ({ complete: async () => ({ text }) });
+const failingGateway: ConversationModelGateway = {
+  complete: async () => {
+    throw new Error("model gateway should not be called");
+  },
+};
+
 const applyModule = () => {
   const registry = createApplicationExtensionRegistry();
   new ApplicationModuleCoordinator({
@@ -49,18 +56,27 @@ describe("contact routine application module", () => {
     expect(registry.chatIntakeProviderRegistrations).toHaveLength(1);
   });
 
-  it("activates the routine on the contact intent_click only when the agent enabled it", async () => {
+  it("activates on the explicit contact pill click (fast path, no LLM call)", async () => {
     const { activates } = applyModule().routineRegistrations[0]!;
 
-    expect(await activates({ turn: turnWith(intentClick, true) })).toEqual({});
-    // Same intent, but the agent has contact requests disabled → no activation.
-    expect(await activates({ turn: turnWith(intentClick, false) })).toBeNull();
-    // Enabled agent, but not the contact intent → no activation.
+    // Enabled agent + the contact intent → activate without touching the model.
+    expect(await activates({ turn: turnWith(intentClick, true), modelGateway: failingGateway })).toEqual({});
+    // Same intent, but the agent has contact requests disabled → no activation, no LLM.
+    expect(await activates({ turn: turnWith(intentClick, false), modelGateway: failingGateway })).toBeNull();
+  });
+
+  it("activates on a typed message only when the model judges contact intent, and only for enabled agents", async () => {
+    const { activates } = applyModule().routineRegistrations[0]!;
+    const typed = { method: "typed" };
+
     expect(
-      await activates({ turn: turnWith({ method: "intent_click", intent: { skillName: "something.else" } }, true) }),
+      await activates({ turn: turnWith(typed, true), modelGateway: gatewayReturning('{"wantsContact": true}') }),
+    ).toEqual({});
+    expect(
+      await activates({ turn: turnWith(typed, true), modelGateway: gatewayReturning('{"wantsContact": false}') }),
     ).toBeNull();
-    expect(await activates({ turn: turnWith({ method: "suggestion_click" }, true) })).toBeNull();
-    expect(await activates({ turn: turnWith(undefined, true) })).toBeNull();
+    // Disabled agent → declines without calling the model.
+    expect(await activates({ turn: turnWith(typed, false), modelGateway: failingGateway })).toBeNull();
   });
 
   it("advertises the contact action only when the agent enabled it, and never claims the turn", async () => {

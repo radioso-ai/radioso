@@ -815,7 +815,7 @@ export const buildChatServices = (input: {
     ? undefined
     : {
         isEmpty: false,
-        activator: () => routineRegistry.activator(),
+        activator: (modelGateway) => routineRegistry.activator(modelGateway),
         createRunner: (modelGateway) =>
           new DefaultRoutineRunner(
             routineRegistry.routines,

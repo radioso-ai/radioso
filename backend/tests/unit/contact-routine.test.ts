@@ -87,7 +87,7 @@ const buildInput = (content: string, store: ConversationRoutineStore, events: Co
   composer: { compose: vi.fn(async () => ({ answer: "normal answer" })) },
   routineStore: store,
   routineRunner: new DefaultRoutineRunner([contactRoutine], scriptedSelector, echoRenderer),
-  routineActivator: registry.activator(),
+  routineActivator: registry.activator({ complete: vi.fn(async () => ({ text: "" })) }),
 });
 
 describe("contact routine — end-to-end through the engine (action emission)", () => {

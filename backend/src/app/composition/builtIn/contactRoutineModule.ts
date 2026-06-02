@@ -1,4 +1,4 @@
-import type { TurnContext } from "@radioso/conversation-contract";
+import type { ConversationModelGateway, TurnContext } from "@radioso/conversation-contract";
 
 import {
   contactRoutine,
@@ -7,6 +7,7 @@ import {
   CONTACT_INTENT_NAME,
   ContactSendActionHandler,
   WorkspaceOwnerContactRecipientResolver,
+  classifyContactIntent,
   type ChatIntakeProviderPort,
   type PublicChatIntakeAction,
 } from "../../../modules/chat/composition.js";
@@ -46,19 +47,29 @@ class ContactIntakeActionAdvertiser implements ChatIntakeProviderPort {
 }
 
 /**
- * Starts the contact routine when an agent that enabled contact requests receives a
- * turn carrying the explicit "contact a human" intent. The per-agent flag is gated
- * here too (not just at the advertiser) so a crafted request can't start the flow on
- * an assistant that has the capability turned off.
+ * Starts the contact routine for an agent that enabled contact requests, on either
+ * trigger: the explicit "contact a human" pill click (fast path, no LLM), or — for a
+ * typed message — an LLM judgement that the user wants a human to follow up. The
+ * per-agent flag is gated here (not just at the advertiser) so a crafted request can't
+ * start the flow on an assistant that has the capability turned off, and so the LLM
+ * intent check only runs for opted-in assistants.
  */
-const activatesOnContactIntent = async ({ turn }: { turn: TurnContext }) => {
+const activatesOnContactIntent = async ({
+  turn,
+  modelGateway,
+}: {
+  turn: TurnContext;
+  modelGateway: ConversationModelGateway;
+}) => {
   if (turn.agent.metadata?.contactRequestsEnabled !== true) {
     return null;
   }
   const metadata = turn.inputEvent.metadata;
   const intent = metadata?.intent as { skillName?: string } | undefined;
-  const claimed = metadata?.method === "intent_click" && intent?.skillName === CONTACT_INTENT_SKILL_NAME;
-  return claimed ? {} : null;
+  if (metadata?.method === "intent_click" && intent?.skillName === CONTACT_INTENT_SKILL_NAME) {
+    return {};
+  }
+  return (await classifyContactIntent(modelGateway, turn)) ? {} : null;
 };
 
 /**

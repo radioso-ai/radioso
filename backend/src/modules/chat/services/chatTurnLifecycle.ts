@@ -1,4 +1,6 @@
-import type { ConversationTrace } from "@radioso/conversation-contract";
+import { createHash } from "node:crypto";
+
+import type { ConversationTrace, RoutineActionRequest } from "@radioso/conversation-contract";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -49,6 +51,27 @@ export interface CompletedAssistantTurn {
   assistantMessageId: string;
 }
 
+/** The narrow slice of the action outbox the turn lifecycle needs (idempotent enqueue). */
+export interface ChatActionOutboxPort {
+  enqueue(input: {
+    type: string;
+    payload: Record<string, unknown>;
+    workspaceId?: string | null;
+    accountId?: string | null;
+    conversationId?: string | null;
+    idempotencyKey?: string | null;
+  }): Promise<{ id: string; duplicate: boolean }>;
+}
+
+// Content-addressed idempotency key so a retried turn that re-emits the same request
+// (same conversation + action type + payload) enqueues it once.
+const actionIdempotencyKey = (
+  conversationId: string,
+  type: string,
+  payload: Record<string, unknown>,
+): string =>
+  `routine-action:${conversationId}:${type}:${createHash("sha256").update(JSON.stringify(payload)).digest("hex")}`;
+
 const toPresentationSkillTurnOutcome = (presentation: ChatPresentedAnswer): SkillTurnOutcome => ({
   skillName: presentation.skillName,
   outcome: presentation.skillOutcome,
@@ -70,7 +93,32 @@ export class ChatTurnLifecycle {
     private readonly messageRepository: MessageRepositoryPort,
     private readonly auditService: AuditService,
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
+    // Optional: when wired, fire-and-forget routine actions emitted this turn are
+    // enqueued to the outbox at turn completion. Absent leaves turns unchanged.
+    private readonly actionOutbox?: ChatActionOutboxPort,
   ) {}
+
+  /** Enqueue routine-emitted fire-and-forget actions to the outbox (idempotent). */
+  private async enqueueTurnActions(input: {
+    actions: RoutineActionRequest[] | undefined;
+    workspaceId: string;
+    accountId?: string;
+    conversationId: string;
+  }): Promise<void> {
+    if (!this.actionOutbox || !input.actions?.length) {
+      return;
+    }
+    for (const action of input.actions) {
+      await this.actionOutbox.enqueue({
+        type: action.type,
+        payload: action.payload,
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        conversationId: input.conversationId,
+        idempotencyKey: actionIdempotencyKey(input.conversationId, action.type, action.payload),
+      });
+    }
+  }
 
   async completeAssistantTurn(input: {
     workspaceId: string;
@@ -85,6 +133,8 @@ export class ChatTurnLifecycle {
      * retrieval-derived activity trace; it does not change the user-facing reply.
      */
     engineTrace?: ConversationTrace;
+    /** Fire-and-forget actions a routine emitted this turn; enqueued at completion. */
+    actions?: RoutineActionRequest[];
   }): Promise<CompletedAssistantTurn> {
     const route = getChatTurnRoute(input.session);
     const skillTurnOutcome = toPresentationSkillTurnOutcome(input.presentation);
@@ -169,6 +219,13 @@ export class ChatTurnLifecycle {
       engineTrace: input.engineTrace,
       route,
       stream: input.stream,
+    });
+
+    await this.enqueueTurnActions({
+      actions: input.actions,
+      workspaceId: input.workspaceId,
+      accountId: input.accountId,
+      conversationId: input.session.conversation.id,
     });
 
     return {

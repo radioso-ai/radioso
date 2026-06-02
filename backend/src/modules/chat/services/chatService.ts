@@ -1,5 +1,5 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
-import type { ConversationEngine, ConversationTrace } from "@radioso/conversation-contract";
+import type { ConversationEngine, ConversationTrace, RoutineActionRequest } from "@radioso/conversation-contract";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AuditService } from "../../audit/contracts/index.js";
@@ -41,7 +41,7 @@ import type {
   ChatAnswerPresenter,
   ChatPresentedAnswer,
 } from "./chatAnswerPresenter.js";
-import { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
+import { ChatTurnLifecycle, type ChatActionOutboxPort } from "./chatTurnLifecycle.js";
 import { BlankChatAnswerError } from "./chatAnswerErrors.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
@@ -90,6 +90,7 @@ type PreparedChatStreamTurnEvent =
       finalPresentation: ChatPresentedAnswer;
       suggestions: TurnStreamSuggestions;
       engineTrace?: ConversationTrace;
+      actions?: RoutineActionRequest[];
     };
 
 const SKILL_CHIP_TAG_PATTERN = /<skill_chip>([\s\S]*?)<\/skill_chip>\s*/i;
@@ -232,6 +233,8 @@ export interface ChatServiceOptions {
   selectionStrategy?: TurnSelectionStrategy;
   /** The reusable conversation engine drives every chat turn; composition always wires it. */
   conversationEngine: ConversationEngine;
+  /** Optional: when wired, routine-emitted fire-and-forget actions are enqueued to the outbox. */
+  actionOutbox?: ChatActionOutboxPort;
 }
 
 export class ChatService {
@@ -263,6 +266,7 @@ export class ChatService {
       directiveSteering = noopDirectiveSteering,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       conversationEngine,
+      actionOutbox,
     } = options;
     this.chatGateway = chatGateway;
     this.auditService = auditService;
@@ -277,6 +281,7 @@ export class ChatService {
       messageRepository,
       auditService,
       productAnalyticsService,
+      actionOutbox,
     );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
@@ -300,7 +305,7 @@ export class ChatService {
   private async renderTurn(
     session: PreparedSession,
     input: { query: string; userExpectedLocale?: string | null; accountId?: string },
-  ): Promise<{ presentation: ChatPresentedAnswer; engineTrace?: ConversationTrace }> {
+  ): Promise<{ presentation: ChatPresentedAnswer; engineTrace?: ConversationTrace; actions?: RoutineActionRequest[] }> {
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine: this.conversationEngine,
       session,
@@ -310,7 +315,7 @@ export class ChatService {
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
     });
-    return { presentation, engineTrace: result.trace };
+    return { presentation, engineTrace: result.trace, actions: result.actions };
   }
 
   private async *streamTurn(
@@ -335,6 +340,7 @@ export class ChatService {
         finalPresentation: event.presentation,
         suggestions: event.suggestions,
         engineTrace: event.engineTrace,
+        actions: event.result.actions,
       };
     }
   }
@@ -400,7 +406,7 @@ export class ChatService {
         ? await this.chatSessionPreparer.prepareRetrieval(input, session)
         : await this.chatSessionPreparer.prepareDirect(input, session);
       const answerStartedAt = Date.now();
-      const { presentation, engineTrace } = await this.renderTurn(session, input);
+      const { presentation, engineTrace, actions } = await this.renderTurn(session, input);
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
@@ -409,6 +415,7 @@ export class ChatService {
         answerStartedAt,
         stream: input.stream,
         engineTrace,
+        actions,
       });
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();
@@ -535,6 +542,7 @@ export class ChatService {
       let finalPresentation: ChatPresentedAnswer | null = null;
       let suggestions: TurnStreamSuggestions | null = null;
       let engineTrace: ConversationTrace | undefined;
+      let actions: RoutineActionRequest[] | undefined;
       for await (const event of this.streamTurn(session, input)) {
         if (event.type === "chunk") {
           yield {
@@ -546,6 +554,7 @@ export class ChatService {
         finalPresentation = event.finalPresentation;
         suggestions = event.suggestions;
         engineTrace = event.engineTrace;
+        actions = event.actions;
       }
       if (!finalPresentation || !suggestions) {
         throw new Error("chat_stream_missing_final_presentation");
@@ -575,6 +584,7 @@ export class ChatService {
         answerStartedAt,
         stream: input.stream,
         engineTrace,
+        actions,
       });
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();

@@ -46,6 +46,7 @@ import { createWebsiteEmbedApplicationModule } from "./builtIn/websiteEmbedModul
 import { createAgentWizardApplicationModule } from "./builtIn/agentWizardModule.js";
 import { createQualityApplicationModule } from "./builtIn/qualityModule.js";
 import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirectivesModule.js";
+import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineModule.js";
 import {
   createDefaultSkillCatalogRegistry,
   SkillExecutorRegistry,
@@ -111,6 +112,7 @@ export const createDefaultApplicationComposition = (options: {
     createWebsiteEmbedApplicationModule({ widgetOrigin: options.widgetOrigin }),
     createAgentWizardApplicationModule(),
     createQualityApplicationModule(),
+    createContactRoutineApplicationModule(),
     ...(options.modules ?? []),
   ]);
 

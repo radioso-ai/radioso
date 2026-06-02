@@ -18,6 +18,41 @@ export interface ContactRecipientResolver {
   resolve(context: ActionHandlerContext): Promise<string | null>;
 }
 
+/** Narrow lookups the workspace-owner resolver needs (a `WorkspaceRepository` satisfies it). */
+export interface ContactWorkspaceLookup {
+  findById(workspaceId: string): Promise<{ accountId: string } | null>;
+}
+/** Narrow lookup for an account's active members (an `AccountMembershipRepository` satisfies it). */
+export interface ContactMembershipLookup {
+  listActiveByAccount(accountId: string): Promise<{ role: string; email: string }[]>;
+}
+
+/**
+ * The default generic recipient: the workspace owner's email (falling back to an admin).
+ * A sensible destination with no extra configuration — a host that wants a dedicated
+ * contact inbox registers its own {@link ContactRecipientResolver} instead.
+ */
+export class WorkspaceOwnerContactRecipientResolver implements ContactRecipientResolver {
+  constructor(
+    private readonly workspaces: ContactWorkspaceLookup,
+    private readonly members: ContactMembershipLookup,
+  ) {}
+
+  async resolve(context: ActionHandlerContext): Promise<string | null> {
+    if (!context.workspaceId) {
+      return null;
+    }
+    const workspace = await this.workspaces.findById(context.workspaceId);
+    if (!workspace) {
+      return null;
+    }
+    const active = await this.members.listActiveByAccount(workspace.accountId);
+    const owner = active.find((member) => member.role === "owner")
+      ?? active.find((member) => member.role === "admin");
+    return owner?.email ?? null;
+  }
+}
+
 const asString = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 

@@ -13,13 +13,18 @@ export {
 } from "./services/routines/routineChatModelGateway.js";
 export {
   ContactSendActionHandler,
+  WorkspaceOwnerContactRecipientResolver,
   type ContactNotificationMailer,
   type ContactRecipientResolver,
+  type ContactWorkspaceLookup,
+  type ContactMembershipLookup,
 } from "./services/actions/contactSendActionHandler.js";
 export {
   contactRoutine,
   CONTACT_ROUTINE_ID,
   CONTACT_SEND_ACTION_TYPE,
+  CONTACT_INTENT_SKILL_NAME,
+  CONTACT_INTENT_NAME,
 } from "./services/routines/contactRoutine.js";
 export {
   buildChatTurnRuntime,
@@ -68,6 +73,7 @@ export {
   type ChatIntakeProviderPort,
   type ChatIntakeResult,
   type ChatIntakeStatus,
+  type PublicChatIntakeAction,
 } from "./services/chatIntakeProvider.js";
 export {
   ConfiguredSkillIntakeProvider,

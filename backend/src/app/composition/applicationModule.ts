@@ -11,6 +11,7 @@ import type {
   DocumentStoragePort,
 } from "../../modules/documents/contracts/index.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import type { Database } from "../../shared/infra/database.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
@@ -146,7 +147,14 @@ export interface ApplicationActionHandlerRegistration {
   type: string;
   handler:
     | ActionHandler
-    | ((context: { database: ApplicationDatabasePort; logger: AppLogger }) => ActionHandler);
+    | ((context: {
+        // Handlers run in the worker and may perform real persistence/lookups, so they
+        // receive the full Database (not the query-only ApplicationDatabasePort) to
+        // construct whatever repositories they need.
+        database: Database;
+        logger: AppLogger;
+        mailService: MailTransportPort;
+      }) => ActionHandler);
 }
 
 export type ApplicationAccountCreatedHook = (context: {

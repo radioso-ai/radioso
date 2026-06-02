@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   ContactSendActionHandler,
+  WorkspaceOwnerContactRecipientResolver,
   type ContactNotificationMailer,
 } from "../../src/modules/chat/services/actions/contactSendActionHandler.js";
 
@@ -51,5 +52,48 @@ describe("ContactSendActionHandler", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0]!.replyTo).toBeNull();
+  });
+});
+
+describe("WorkspaceOwnerContactRecipientResolver", () => {
+  const resolver = (members: { role: string; email: string }[]) =>
+    new WorkspaceOwnerContactRecipientResolver(
+      { findById: async () => ({ accountId: "acc_1" }) },
+      { listActiveByAccount: async () => members },
+    );
+
+  it("resolves the workspace owner's email", async () => {
+    const result = await resolver([
+      { role: "member", email: "m@x.com" },
+      { role: "owner", email: "owner@x.com" },
+    ]).resolve({ workspaceId: "ws_1", accountId: null, conversationId: "c" });
+    expect(result).toBe("owner@x.com");
+  });
+
+  it("falls back to an admin when there is no owner", async () => {
+    const result = await resolver([
+      { role: "member", email: "m@x.com" },
+      { role: "admin", email: "admin@x.com" },
+    ]).resolve({ workspaceId: "ws_1", accountId: null, conversationId: "c" });
+    expect(result).toBe("admin@x.com");
+  });
+
+  it("returns null when no workspaceId, no workspace, or no owner/admin", async () => {
+    expect(
+      await resolver([]).resolve({ workspaceId: null, accountId: null, conversationId: "c" }),
+    ).toBeNull();
+    expect(
+      await new WorkspaceOwnerContactRecipientResolver(
+        { findById: async () => null },
+        { listActiveByAccount: async () => [] },
+      ).resolve({ workspaceId: "ws_1", accountId: null, conversationId: "c" }),
+    ).toBeNull();
+    expect(
+      await resolver([{ role: "member", email: "m@x.com" }]).resolve({
+        workspaceId: "ws_1",
+        accountId: null,
+        conversationId: "c",
+      }),
+    ).toBeNull();
   });
 });

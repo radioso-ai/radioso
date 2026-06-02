@@ -3,8 +3,18 @@ import type { Routine } from "@radioso/conversation-contract";
 /** The action type the contact routine emits; the registered handler dispatches it. */
 export const CONTACT_SEND_ACTION_TYPE = "contact.send";
 
-/** The routine id, and the intent name that activates it (see the registration). */
+/** The routine id. */
 export const CONTACT_ROUTINE_ID = "contact.request";
+
+/**
+ * The explicit intent that activates the routine. These match the public chat UI's
+ * "contact a human" affordance (`frontend/components/chat/public-chat-shell.tsx`), so
+ * the existing button starts the routine — the routine consumes the existing signal
+ * rather than inventing a new one. The intake advertiser surfaces this same action so
+ * the button renders; the activator starts the routine when a turn carries it.
+ */
+export const CONTACT_INTENT_SKILL_NAME = "human_contact.request";
+export const CONTACT_INTENT_NAME = "explicit_contact_request";
 
 /**
  * A chat-only contact routine: it gathers an email and a message through chat steps,

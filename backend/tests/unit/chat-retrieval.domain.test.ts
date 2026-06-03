@@ -938,6 +938,7 @@ describe("chat retrieval domain", () => {
 
     const result = await gateway.rerank({
       query: "Who is Narayani?",
+      today: "2026-01-01",
       contexts: [
         { chunkId: "a", documentId: "d1", title: "A", content: "", retrievalText: "A", similarity: 0.2 },
         { chunkId: "b", documentId: "d2", title: "B", content: "", retrievalText: "B", similarity: 0.1 },
@@ -968,6 +969,7 @@ describe("chat retrieval domain", () => {
 
     const result = await gateway.rerank({
       query: "Who is Narayani?",
+      today: "2026-01-01",
       contexts: [
         { chunkId: "a", documentId: "d1", title: "A", content: "", retrievalText: "A", similarity: 0.2 },
         { chunkId: "b", documentId: "d2", title: "B", content: "", retrievalText: "B", similarity: 0.1 },
@@ -1028,6 +1030,7 @@ describe("chat retrieval domain", () => {
 
     await gateway.rerank({
       query: "summer retreat",
+      today: "2026-01-01",
       contexts: [
         {
           chunkId: "c1",

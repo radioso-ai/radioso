@@ -230,6 +230,10 @@ export type AppliedConstraintInfo = ApiSchemas['AppliedConstraint']
 export type ActivityStage = ApiSchemas['ActivityStage']
 export type ActivityLink = ApiSchemas['ActivityLink']
 export type ActivityTrace = ApiSchemas['ActivityTrace']
+export type TurnTraceEnvelope = ApiSchemas['TurnTraceEnvelope']
+export type ConversationTrace = ApiSchemas['ConversationTrace']
+export type ConversationTraceStage = ApiSchemas['ConversationTraceStage']
+export type CapabilitySubTrace = ApiSchemas['CapabilitySubTrace']
 export type ChatResponse = RelaxedAssistantChatResponse<ApiSchemas['AssistantChatResponse']>
 
 export type AnswerFeedbackValue = 'up' | 'down'

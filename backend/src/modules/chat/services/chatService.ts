@@ -630,6 +630,7 @@ export class ChatService {
           suggestions: response.suggestions,
           activitySummary: response.activitySummary,
           activityTrace: response.activityTrace,
+          turnTrace: response.turnTrace,
           skill,
         };
         return;

@@ -3055,10 +3055,58 @@ export interface components {
             routeReason: "assistant_identity" | "conversation_start" | "evidence_required" | "social_only";
             retrievalInvoked: boolean;
         };
+        CapabilitySubTrace: {
+            /** @description Capability that produced this sub-trace; the renderer keys on it (e.g. retrieval, skill-intake). */
+            namespace: string;
+            version: number;
+            /** @description Opaque capability-owned trace payload (e.g. an ActivityTrace). Shape varies by namespace/version. */
+            payload?: unknown;
+        };
+        ConversationTraceStage: {
+            id: string;
+            kind: string;
+            /** @enum {string} */
+            status: "applied" | "skipped" | "fallback" | "rejected" | "unavailable" | "failed";
+            startedAt?: string;
+            completedAt?: string;
+            inputs?: {
+                [key: string]: unknown;
+            };
+            outputs?: {
+                [key: string]: unknown;
+            };
+            metrics?: {
+                [key: string]: number;
+            };
+            subTrace?: components["schemas"]["CapabilitySubTrace"];
+        };
+        ConversationTrace: {
+            traceId: string;
+            startedAt: string;
+            completedAt?: string;
+            stages: components["schemas"]["ConversationTraceStage"][];
+            links?: {
+                from: string;
+                to: string;
+                kind: string;
+            }[];
+            summary?: {
+                [key: string]: unknown;
+            };
+        };
+        TurnTraceEnvelope: {
+            /** @description Envelope generation marker. 0 = synthesized from a legacy turn; >=1 = engine-emitted spine. */
+            version: number;
+            spine: components["schemas"]["ConversationTrace"];
+            summary?: {
+                [key: string]: unknown;
+            };
+        };
         AssistantChatDebug: {
             route: components["schemas"]["AssistantRoute"];
             activitySummary: components["schemas"]["ActivitySummary"];
             activityTrace: components["schemas"]["ActivityTrace"];
+            turnTrace?: components["schemas"]["TurnTraceEnvelope"];
         };
         ChatResponse: {
             /** Format: uuid */
@@ -3229,6 +3277,7 @@ export interface components {
             route?: components["schemas"]["AssistantRouteDiagnostics"];
             activitySummary?: components["schemas"]["ActivitySummary"];
             activityTrace?: components["schemas"]["ActivityTrace"];
+            turnTrace?: components["schemas"]["TurnTraceEnvelope"];
             errorMessage?: string | null;
         };
         AnswerFeedbackEntry: {

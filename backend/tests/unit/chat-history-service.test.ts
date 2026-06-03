@@ -210,6 +210,67 @@ describe("chat history service", () => {
       }),
     ]);
     expect(debug).not.toHaveProperty("validation");
+
+    // Legacy turn (no persisted envelope): synthesize a version-0 envelope wrapping
+    // the activity trace as a retrieval leaf so the renderer receives an envelope.
+    expect(debug?.turnTrace?.version).toBe(0);
+    const legacyStage = debug?.turnTrace?.spine.stages[0];
+    expect(legacyStage?.kind).toBe("skill_dispatch");
+    expect(legacyStage?.id).toBe("dispatch:retrieval.answer");
+    expect(legacyStage?.subTrace?.namespace).toBe("retrieval");
+    expect((legacyStage?.subTrace?.payload as { traceId?: string })?.traceId).toBe("trace-1");
+  });
+
+  it("prefers a persisted turn-trace envelope over synthesizing one", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+
+    const conversation = await conversationRepository.create("workspace-1");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Question?",
+    });
+    const assistant = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "Answer.",
+    });
+
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        assistantMessageId: assistant.id,
+        citationCount: 0,
+        turnTrace: {
+          version: 1,
+          spine: {
+            traceId: "conversation-turn-9",
+            startedAt: "2026-03-23T00:00:00.000Z",
+            stages: [
+              { id: "gather", kind: "gather", status: "applied" },
+              {
+                id: "dispatch:retrieval.answer",
+                kind: "skill_dispatch",
+                status: "applied",
+                subTrace: { namespace: "retrieval", version: 1, payload: { traceId: "persisted-trace" } },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+    const debug = detail.messages.find((message) => message.role === "assistant")?.debug;
+
+    expect(debug?.turnTrace?.version).toBe(1);
+    expect(debug?.turnTrace?.spine.traceId).toBe("conversation-turn-9");
+    expect(debug?.turnTrace?.spine.stages.map((stage) => stage.kind)).toEqual(["gather", "skill_dispatch"]);
   });
 
   it("reconstructs an activity trace for historical assistant turns that only stored retrieval diagnostics", async () => {

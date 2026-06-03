@@ -86,6 +86,7 @@ jobs:
 
       - name: Export optional Terraform secrets
         env:
+          ERROR_SINKS: ${{ vars.ERROR_SINKS }}
           MAIL_FROM_NAME: ${{ vars.MAIL_FROM_NAME }}
           METRICS_AUTH_TOKEN: ${{ secrets.METRICS_AUTH_TOKEN }}
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
@@ -101,13 +102,20 @@ jobs:
           fi
 
           if [ "${{ inputs.environment }}" = "staging" ] || [ "${{ inputs.environment }}" = "live" ]; then
-            if [ -z "${POSTHOG_API_KEY}" ]; then
-              echo "Missing required GitHub environment value: POSTHOG_API_KEY" >&2
+            if [ -n "${ERROR_SINKS}" ]; then
+              echo "TF_VAR_error_sinks=${ERROR_SINKS}" >> "$GITHUB_ENV"
+            fi
+
+            if [ -n "${POSTHOG_API_KEY}" ]; then
+              echo "TF_VAR_posthog_api_key=${POSTHOG_API_KEY}" >> "$GITHUB_ENV"
+            elif [ -z "${ERROR_SINKS}" ]; then
+              echo "TF_VAR_error_sinks=audit" >> "$GITHUB_ENV"
+            elif [[ ",${ERROR_SINKS//[[:space:]]/}," == *",posthog,"* ]]; then
+              echo "Missing required GitHub environment value: POSTHOG_API_KEY because ERROR_SINKS includes posthog" >&2
               exit 1
             fi
-            echo "TF_VAR_posthog_api_key=${POSTHOG_API_KEY}" >> "$GITHUB_ENV"
 
-            if [ -n "${POSTHOG_HOST}" ]; then
+            if [ -n "${POSTHOG_API_KEY}" ] && [ -n "${POSTHOG_HOST}" ]; then
               echo "TF_VAR_posthog_host=${POSTHOG_HOST}" >> "$GITHUB_ENV"
             fi
           fi

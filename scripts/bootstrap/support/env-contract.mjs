@@ -96,7 +96,10 @@ export const getEnvContract = () => ({
   providerOptions,
 });
 
-export const getProviderRequiredKeys = (provider) => {
+// Keys offered during bootstrap for the chosen provider. The provider API key
+// is optional here — it can be added later in the app under Settings →
+// Credentials — so these are prompted but not enforced.
+export const getProviderCredentialKeys = (provider) => {
   switch (provider) {
     case "openai-compatible":
       return ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"];
@@ -107,6 +110,20 @@ export const getProviderRequiredKeys = (provider) => {
     case "openai":
     default:
       return ["OPENAI_API_KEY"];
+  }
+};
+
+// Provider keys that must be present for the deployment to function at all.
+// API keys are intentionally excluded: a workspace can supply its own key in
+// the app, so startup does not require one. The OpenAI-compatible base URL
+// stays required because it is a deployment-level endpoint, not a per-workspace
+// credential.
+export const getProviderRequiredKeys = (provider) => {
+  switch (provider) {
+    case "openai-compatible":
+      return ["OPENAI_COMPATIBLE_BASE_URL"];
+    default:
+      return [];
   }
 };
 

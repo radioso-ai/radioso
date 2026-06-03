@@ -135,6 +135,35 @@ describe("DefaultConversationEngine", () => {
     ]);
   });
 
+  it("copies a capability sub-trace from the outcome onto its dispatch stage", async () => {
+    const subTrace = { namespace: "retrieval", version: 1, payload: { candidates: 3 } };
+    const input = createInput({
+      dispatcher: {
+        dispatch: vi.fn(async ({ skill, turn }): Promise<TurnOutcome> => ({
+          kind: "generic",
+          skillName: skill.name,
+          outcome: { status: "completed", answer: "ok" },
+          stagedContext: [],
+          steering: turn.steering,
+          trace: { traceId: "skill-trace", startedAt: new Date(0).toISOString(), stages: [] },
+          subTrace,
+        })),
+      },
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    const dispatchStage = result.trace.stages.find((stage) => stage.kind === "skill_dispatch");
+    expect(dispatchStage?.subTrace).toEqual(subTrace);
+  });
+
+  it("leaves the dispatch stage sub-trace absent when the outcome has none", async () => {
+    const result = await new DefaultConversationEngine().processTurn(createInput());
+    const dispatchStage = result.trace.stages.find((stage) => stage.kind === "skill_dispatch");
+    expect(dispatchStage).toBeDefined();
+    expect(dispatchStage?.subTrace).toBeUndefined();
+  });
+
   it("records a failed outcome when selection names an unregistered skill", async () => {
     const input = createInput({
       selector: {

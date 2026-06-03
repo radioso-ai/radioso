@@ -21,9 +21,11 @@ those defaults.
 
 A Directive **steers, it never acts**: it has no executor, no `dispatch`, and no
 result channel. Skills act; Directives steer. This module depends on no other
-domain module (not skills, not retrieval, not chat). The chat module depends on
-it through the `DirectiveSteeringPort`, receiving a `SteeringRule[]` plus trace
-diagnostics — never Directives.
+domain module (not skills, not retrieval, not chat). Chat answer turns receive
+route-scoped directive candidates and the matcher through the engine input, then
+resolve the engine-produced matches through the same capability and relationship
+filtering used by `DirectiveSteeringPort`. Direct retrieval surfaces still use
+`DirectiveSteeringPort` directly.
 
 ## Public Surfaces
 
@@ -42,11 +44,13 @@ skill-emitted `SkillTransientGuidance` so the composer reads one steering set.
 - `packages/conversation-defaults/src/`: generic catalog registry, matcher
   defaults, parser, prompt, and relationship helpers.
 - `directiveSteeringService.ts`: matches the standing set, capability-filters,
-  and maps survivors to an ordered `SteeringRule[]`.
+  and maps survivors to an ordered `SteeringRule[]`; chat can also reuse its
+  filtering after the engine matcher has already produced matches.
 - `defaultAnswerDirectives.ts`: built-in answer steering registered by
   application composition.
 - `../chat/services/routeScopedDirectiveSteering.ts`: host-side route enactment
-  for composition-registered answer directives.
+  for composition-registered answer directives; it exposes the candidate catalog
+  and matcher used by the conversation engine.
 - `../chat/services/answerDirectiveRoutePolicy.ts`: chat-owned default route
   policy for built-in answer directives.
 

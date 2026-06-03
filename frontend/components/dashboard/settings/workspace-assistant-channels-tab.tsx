@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, CheckCircle2, ChevronLeft, CircleAlert, ExternalLink, FolderOpen, Globe, KeyRound, Link as LinkIcon, Mail, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook, Wrench } from 'lucide-react'
+import { Building2, ChevronLeft, ExternalLink, FolderOpen, Globe, KeyRound, Link as LinkIcon, RefreshCw, ShieldAlert, Trash2, UserRound, Wrench } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
@@ -36,22 +36,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   accountApi,
   agentsApi,
   documentsApi,
   generalSettingsApi,
-  humanContactApi,
   type AssistantBehaviorSettings,
   type AccountMembershipRole,
   type DocumentSourceListItem,
   type GeneralSettings,
-  type HumanContactAvailability,
 } from '@/lib/api'
-import { editionController } from '@/lib/edition-controller'
-import { isValidEmailAddress } from '@/lib/validation'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const getOrganizationNameCacheKey = (accountId: string) => `radioso.organizationName:${accountId}`
@@ -72,48 +67,6 @@ const writeCachedOrganizationName = (accountId: string, organizationName: string
 
   window.localStorage.setItem(getOrganizationNameCacheKey(accountId), organizationName)
 }
-
-const isValidHumanContactWebhookUrl = (value: string) => {
-  const trimmedValue = value.trim()
-  if (!trimmedValue) {
-    return false
-  }
-
-  try {
-    const url = new URL(trimmedValue)
-    return url.protocol === 'http:' || url.protocol === 'https:'
-  } catch {
-    return false
-  }
-}
-
-const parseHumanContactEmails = (value: string): string[] =>
-  value
-    .split(/[\n,;\s]+/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-
-const normalizeHumanContactEmails = (values: readonly string[] | undefined | null): string[] => {
-  const emails: string[] = []
-  const seen = new Set<string>()
-  for (const value of values ?? []) {
-    const trimmed = value.trim()
-    const key = trimmed.toLowerCase()
-    if (!trimmed || seen.has(key)) {
-      continue
-    }
-    emails.push(trimmed)
-    seen.add(key)
-  }
-  return emails
-}
-
-const getHumanContactEmailListText = (settings: HumanContactAvailability | null): string => {
-  const emails = normalizeHumanContactEmails(settings?.defaultEmails ?? (settings?.defaultEmail ? [settings.defaultEmail] : []))
-  return emails.join('\n')
-}
-
-const HUMAN_CONTACT_EMAIL_RECIPIENT_LIMIT = 5
 
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
 
@@ -189,14 +142,6 @@ export function WorkspaceAssistantChannelsTab({
   const [savedAnonSettings, setSavedAnonSettings] = useState<GeneralSettings | null>(null)
   const [isAnonLoading, setIsAnonLoading] = useState(true)
   const [isAnonSaving, setIsAnonSaving] = useState(false)
-  const [humanContactSettings, setHumanContactSettings] = useState<HumanContactAvailability | null>(null)
-  const [savedHumanContactSettings, setSavedHumanContactSettings] = useState<HumanContactAvailability | null>(null)
-  const [humanContactDefaultEmailsText, setHumanContactDefaultEmailsText] = useState('')
-  const [humanContactSigningSecret, setHumanContactSigningSecret] = useState('')
-  const [isHumanContactSecretLoading, setIsHumanContactSecretLoading] = useState(false)
-  const [isHumanContactLoading, setIsHumanContactLoading] = useState(false)
-  const [isHumanContactSaving, setIsHumanContactSaving] = useState(false)
-  const [humanContactError, setHumanContactError] = useState<string | null>(null)
   const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [sourceList, setSourceList] = useState<DocumentSourceListItem[]>([])
@@ -222,7 +167,6 @@ export function WorkspaceAssistantChannelsTab({
   const workspaceDraftVersionRef = useRef(0)
   const anonDraftVersionRef = useRef(0)
   const assistantBehaviorDraftVersionRef = useRef(0)
-  const humanContactDraftVersionRef = useRef(0)
   const canManageOrganization = currentAccountRole === 'owner' || currentAccountRole === 'admin'
   const canManageWorkspaceLifecycle = currentAccountRole === 'owner' || currentAccountRole === 'admin'
   const canReadWorkspaceTokens = Boolean(currentAccountRole)
@@ -409,53 +353,6 @@ export function WorkspaceAssistantChannelsTab({
       active = false
     }
   }, [activeWorkspaceId, agentId, isWorkspaceLoading, mode])
-
-  useEffect(() => {
-    if (!editionController.shouldLoadHumanContactSettings(mode)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Leaving channels mode clears Enterprise-only channel draft state.
-      setHumanContactSettings(null)
-      setSavedHumanContactSettings(null)
-      setHumanContactDefaultEmailsText('')
-      setHumanContactSigningSecret('')
-      setHumanContactError(null)
-      setIsHumanContactLoading(false)
-      return
-    }
-
-    if (isWorkspaceLoading || !activeWorkspaceId) {
-      setIsHumanContactLoading(true)
-      return
-    }
-
-    let active = true
-    setIsHumanContactLoading(true)
-    const loadHumanContactSettings = async () => {
-      try {
-        const settings = await humanContactApi.getSettings()
-        if (!active) return
-        setHumanContactSettings(settings)
-        setSavedHumanContactSettings(settings)
-        setHumanContactDefaultEmailsText(getHumanContactEmailListText(settings))
-        setHumanContactSigningSecret('')
-        setHumanContactError(null)
-      } catch (error) {
-        if (!active) return
-        setHumanContactSettings(null)
-        setSavedHumanContactSettings(null)
-        setHumanContactDefaultEmailsText('')
-        setHumanContactError(getApiErrorMessage(error, 'Contact handoff is not available in this build.'))
-      } finally {
-        if (active) {
-          setIsHumanContactLoading(false)
-        }
-      }
-    }
-
-    void loadHumanContactSettings()
-    return () => {
-      active = false
-    }
-  }, [activeWorkspaceId, isWorkspaceLoading, mode])
 
   const handleAnonToggle = async (enabled: boolean) => {
     setIsAnonSaving(true)
@@ -678,43 +575,6 @@ export function WorkspaceAssistantChannelsTab({
         )
       : false
 
-  const hasHumanContactChanges =
-    humanContactSettings && savedHumanContactSettings
-      ? (
-          humanContactSettings.enabled !== savedHumanContactSettings.enabled ||
-          Boolean(humanContactSettings.emailEnabled) !== Boolean(savedHumanContactSettings.emailEnabled) ||
-          normalizeHumanContactEmails(parseHumanContactEmails(humanContactDefaultEmailsText)).join('\n') !==
-            getHumanContactEmailListText(savedHumanContactSettings) ||
-          Boolean(humanContactSettings.webhookEnabled) !== Boolean(savedHumanContactSettings.webhookEnabled) ||
-          (humanContactSettings.webhookUrl ?? '') !== (savedHumanContactSettings.webhookUrl ?? '')
-        )
-      : false
-
-  const humanContactEmailEnabled = Boolean(humanContactSettings?.emailEnabled)
-  const humanContactDefaultEmails = useMemo(
-    () => normalizeHumanContactEmails(parseHumanContactEmails(humanContactDefaultEmailsText)),
-    [humanContactDefaultEmailsText],
-  )
-  const invalidHumanContactDefaultEmails = humanContactDefaultEmails.filter((email) => !isValidEmailAddress(email))
-  const humanContactDefaultEmailInvalid = invalidHumanContactDefaultEmails.length > 0
-  const humanContactDefaultEmailTooMany = humanContactDefaultEmails.length > HUMAN_CONTACT_EMAIL_RECIPIENT_LIMIT
-  const humanContactMissingEmail =
-    Boolean(humanContactSettings?.enabled) && humanContactEmailEnabled && humanContactDefaultEmails.length === 0
-  const humanContactWebhookEnabled = Boolean(humanContactSettings?.webhookEnabled)
-  const humanContactWebhookUrl = humanContactSettings?.webhookUrl ?? ''
-  const humanContactWebhookUrlTrimmed = humanContactWebhookUrl.trim()
-  const humanContactWebhookUrlInvalid =
-    humanContactWebhookUrlTrimmed.length > 0 && !isValidHumanContactWebhookUrl(humanContactWebhookUrlTrimmed)
-  const humanContactMissingWebhook =
-    Boolean(humanContactSettings?.enabled) && humanContactWebhookEnabled && humanContactWebhookUrlTrimmed.length === 0
-  const humanContactMissingDelivery =
-    Boolean(humanContactSettings?.enabled) && !humanContactEmailEnabled && !humanContactWebhookEnabled
-  const updateHumanContactSettingsDraft = (patch: Partial<HumanContactAvailability>) => {
-    humanContactDraftVersionRef.current += 1
-    setHumanContactError(null)
-    setHumanContactSettings((current) => (current ? { ...current, ...patch } : current))
-  }
-
   useEffect(() => {
     if (!accountId || isOrganizationLoading || !canManageOrganization) {
       return
@@ -887,132 +747,6 @@ export function WorkspaceAssistantChannelsTab({
     }
   }
 
-  useEffect(() => {
-    if (!humanContactSettings || !savedHumanContactSettings || !hasHumanContactChanges) {
-      return
-    }
-    if (
-      humanContactMissingDelivery ||
-      humanContactMissingEmail ||
-      humanContactMissingWebhook ||
-      humanContactDefaultEmailTooMany ||
-      humanContactDefaultEmailInvalid ||
-      humanContactWebhookUrlInvalid
-    ) {
-      return
-    }
-
-    const timeout = window.setTimeout(async () => {
-      const draftVersionAtRequestStart = humanContactDraftVersionRef.current
-      const saveId = saveSequenceRef.current + 1
-      saveSequenceRef.current = saveId
-      setIsHumanContactSaving(true)
-      setHumanContactError(null)
-      setSaveState('saving')
-      setSaveError(null)
-      try {
-        const updated = await humanContactApi.updateSettings({
-          enabled: humanContactSettings.enabled,
-          emailEnabled: humanContactEmailEnabled,
-          defaultEmails: humanContactEmailEnabled && humanContactDefaultEmails.length > 0 ? humanContactDefaultEmails : null,
-          webhookEnabled: humanContactWebhookEnabled,
-          webhookUrl: humanContactWebhookEnabled && humanContactWebhookUrlTrimmed ? humanContactWebhookUrlTrimmed : null,
-        })
-        if (saveSequenceRef.current !== saveId) return
-        setSavedHumanContactSettings(updated)
-        setHumanContactSigningSecret('')
-        if (humanContactDraftVersionRef.current === draftVersionAtRequestStart) {
-          setHumanContactSettings(updated)
-          setHumanContactDefaultEmailsText(getHumanContactEmailListText(updated))
-          setSaveState('saved')
-        }
-      } catch (error) {
-        if (saveSequenceRef.current !== saveId) return
-        console.error('Failed to update human contact settings:', error)
-        const message = getApiErrorMessage(error, 'Failed to save human contact settings.')
-        setHumanContactError(message)
-        setSaveState('error')
-        setSaveError(message)
-      } finally {
-        if (saveSequenceRef.current === saveId) {
-          setIsHumanContactSaving(false)
-        }
-      }
-    }, 700)
-    return () => window.clearTimeout(timeout)
-  }, [
-    hasHumanContactChanges,
-    humanContactDefaultEmails,
-    humanContactDefaultEmailInvalid,
-    humanContactDefaultEmailTooMany,
-    humanContactEmailEnabled,
-    humanContactMissingDelivery,
-    humanContactMissingEmail,
-    humanContactMissingWebhook,
-    humanContactSettings,
-    humanContactWebhookEnabled,
-    humanContactWebhookUrl,
-    humanContactWebhookUrlInvalid,
-    humanContactWebhookUrlTrimmed,
-    savedHumanContactSettings,
-    saveSequenceRef,
-    setSaveError,
-    setSaveState,
-  ])
-
-  const handleRotateHumanContactSecret = async () => {
-    if (!humanContactSettings || isHumanContactSaving) {
-      return
-    }
-
-    setIsHumanContactSaving(true)
-    setHumanContactError(null)
-    setSaveState('saving')
-    setSaveError(null)
-
-    try {
-      const updated = await humanContactApi.updateSettings({
-        enabled: humanContactSettings.enabled,
-        emailEnabled: humanContactEmailEnabled,
-        defaultEmails: humanContactEmailEnabled && humanContactDefaultEmails.length > 0 ? humanContactDefaultEmails : null,
-        webhookEnabled: humanContactWebhookEnabled,
-        webhookUrl: humanContactWebhookEnabled && humanContactWebhookUrlTrimmed ? humanContactWebhookUrlTrimmed : null,
-        rotateSigningSecret: true,
-      })
-      setHumanContactSettings(updated)
-      setSavedHumanContactSettings(updated)
-      setHumanContactDefaultEmailsText(getHumanContactEmailListText(updated))
-      setHumanContactSigningSecret('')
-      setSaveState('saved')
-    } catch (error) {
-      console.error('Failed to rotate contact handoff signing token:', error)
-      const message = getApiErrorMessage(error, 'Failed to rotate the signing token.')
-      setHumanContactError(message)
-      setSaveState('error')
-      setSaveError(message)
-    } finally {
-      setIsHumanContactSaving(false)
-    }
-  }
-
-  const handleRevealHumanContactSecret = async () => {
-    if (!humanContactSettings?.signingSecretConfigured) {
-      return
-    }
-
-    setIsHumanContactSecretLoading(true)
-    setHumanContactError(null)
-    try {
-      const response = await humanContactApi.revealSigningSecret()
-      setHumanContactSigningSecret(response.signingSecret ?? '')
-    } catch (error) {
-      console.error('Failed to reveal contact handoff signing token:', error)
-      setHumanContactError(getApiErrorMessage(error, 'Failed to reveal the signing token.'))
-    } finally {
-      setIsHumanContactSecretLoading(false)
-    }
-  }
-
   return (
     <SettingsTabShell>
       <div className="space-y-8">
@@ -1171,228 +905,31 @@ export function WorkspaceAssistantChannelsTab({
               title="Skills"
               description="Capabilities the assistant can use during a chat."
             >
-            {editionController.canUseHumanContact() ? (
-            <div id="human-contact" className="scroll-mt-24 space-y-4">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex min-w-0 gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
-                    <UserRound className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-medium text-foreground">Contact handoff</h3>
-                      {humanContactSettings?.enabled && humanContactSettings.configured && !hasHumanContactChanges ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                          <CheckCircle2 className="h-3 w-3" /> Ready
-                        </span>
-                      ) : null}
+              <div id="contact-requests" className="scroll-mt-24">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
+                      <UserRound className="h-5 w-5 text-primary" />
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      Route follow-up requests through the configured delivery channel.
-                    </p>
-                  </div>
-                </div>
-                <Switch
-                  id="humanContactToggle"
-                  checked={humanContactSettings?.enabled ?? false}
-                  onCheckedChange={(checked) => updateHumanContactSettingsDraft({ enabled: checked })}
-                  disabled={isHumanContactLoading || isHumanContactSaving || !humanContactSettings}
-                  className="sm:mt-3"
-                />
-              </div>
-
-              {isHumanContactLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <LogoSpinner imageClassName="h-6 w-6" />
-                </div>
-              ) : humanContactSettings ? (
-                humanContactSettings.enabled ? (
-                  <div className="mt-5 space-y-4">
-                    <div className="rounded-lg border border-border bg-background/60 p-4">
-                      <div className="flex items-start gap-3">
-                        <Mail className="mt-0.5 h-5 w-5 text-primary" />
-                        <div className="min-w-0 flex-1 space-y-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <Label htmlFor="humanContactEmailToggle" className="text-sm font-medium text-foreground">
-                              Email
-                            </Label>
-                            <Switch
-                              id="humanContactEmailToggle"
-                              checked={humanContactEmailEnabled}
-                              onCheckedChange={(checked) => updateHumanContactSettingsDraft({ emailEnabled: checked })}
-                              disabled={isHumanContactSaving}
-                            />
-                          </div>
-                          {humanContactEmailEnabled ? (
-                            <div className="space-y-2">
-                              <Label htmlFor="humanContactDefaultEmails" className="text-foreground">Contact emails</Label>
-                              <Textarea
-                                id="humanContactDefaultEmails"
-                                value={humanContactDefaultEmailsText}
-                                onChange={(event) => {
-                                  humanContactDraftVersionRef.current += 1
-                                  setHumanContactError(null)
-                                  setHumanContactDefaultEmailsText(event.target.value)
-                                }}
-                                placeholder={'support@example.com\nescalations@example.com'}
-                                className="min-h-24"
-                                disabled={isHumanContactSaving}
-                              />
-                              {humanContactDefaultEmailTooMany ? (
-                                <p className="text-xs text-destructive">
-                                  Add no more than {HUMAN_CONTACT_EMAIL_RECIPIENT_LIMIT} contact email addresses.
-                                </p>
-                              ) : humanContactDefaultEmailInvalid ? (
-                                <p className="text-xs text-destructive">
-                                  Fix invalid addresses: {invalidHumanContactDefaultEmails.join(', ')}
-                                </p>
-                              ) : humanContactMissingEmail ? (
-                                <p className="text-xs text-destructive">Add at least one contact email address.</p>
-                              ) : (
-                                <p className="text-xs text-muted-foreground">
-                                  One email per line, or separated by commas. Requests are emailed to each
-                                  address, up to {HUMAN_CONTACT_EMAIL_RECIPIENT_LIMIT}.
-                                </p>
-                              )}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-lg border border-border bg-background/60 p-4">
-                      <div className="flex items-start gap-3">
-                        <Webhook className="mt-0.5 h-5 w-5 text-primary" />
-                        <div className="min-w-0 flex-1 space-y-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <Label htmlFor="humanContactWebhookToggle" className="text-sm font-medium text-foreground">
-                              Webhook
-                            </Label>
-                            <Switch
-                              id="humanContactWebhookToggle"
-                              checked={humanContactWebhookEnabled}
-                              onCheckedChange={(checked) => updateHumanContactSettingsDraft({ webhookEnabled: checked })}
-                              disabled={isHumanContactSaving}
-                            />
-                          </div>
-                          {humanContactWebhookEnabled ? (
-                            <div className="grid gap-4 md:grid-cols-2">
-                              <div className="space-y-2">
-                                <Label htmlFor="humanContactWebhookUrl" className="text-foreground">Webhook URL</Label>
-                                <Input
-                                  id="humanContactWebhookUrl"
-                                  type="url"
-                                  value={humanContactWebhookUrl}
-                                  onChange={(event) => updateHumanContactSettingsDraft({ webhookUrl: event.target.value })}
-                                  placeholder="https://support.example.com/radioso/contact-handoff"
-                                  disabled={isHumanContactSaving}
-                                />
-                                {humanContactWebhookUrlInvalid ? (
-                                  <p className="text-xs text-destructive">Enter a valid http(s) webhook URL.</p>
-                                ) : humanContactMissingWebhook ? (
-                                  <p className="text-xs text-destructive">Add a webhook URL.</p>
-                                ) : (
-                                  <p className="text-xs text-muted-foreground">Radioso sends each request to this endpoint.</p>
-                                )}
-                              </div>
-
-                              <div className="space-y-2">
-                                <Label className="text-foreground">Signing token</Label>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={handleRevealHumanContactSecret}
-                                    disabled={isHumanContactSaving || isHumanContactSecretLoading || !humanContactSettings.signingSecretConfigured}
-                                  >
-                                    {isHumanContactSecretLoading ? <Spinner className="mr-2 h-4 w-4" /> : null}
-                                    Reveal token
-                                  </Button>
-                                  {humanContactSigningSecret ? (
-                                    <Button size="sm" variant="ghost" onClick={() => setHumanContactSigningSecret('')}>
-                                      Hide token
-                                    </Button>
-                                  ) : null}
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={handleRotateHumanContactSecret}
-                                    disabled={
-                                      isHumanContactSaving ||
-                                      humanContactDefaultEmailInvalid ||
-                                      humanContactDefaultEmailTooMany ||
-                                      humanContactWebhookUrlInvalid ||
-                                      !humanContactSettings.signingSecretConfigured
-                                    }
-                                  >
-                                    {isHumanContactSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                                    Rotate token
-                                  </Button>
-                                </div>
-                                {humanContactSigningSecret ? (
-                                  <CopyValueField value={humanContactSigningSecret} ariaLabel="Copy signing token" className="w-full" />
-                                ) : (
-                                  <p className="text-xs text-muted-foreground">
-                                    {humanContactSettings.signingSecretConfigured
-                                      ? 'Reveal the token only when you need to verify webhook signatures.'
-                                      : 'A signing token is generated automatically once webhook setup is saved.'}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-
-                    {humanContactMissingDelivery ? (
-                      <p className="inline-flex items-center gap-1.5 text-sm text-destructive">
-                        <CircleAlert className="h-4 w-4" />
-                        Pick Email or Webhook so requests have somewhere to go.
+                    <div className="min-w-0">
+                      <h3 className="font-medium text-foreground">Contact requests</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Show a &ldquo;contact a human&rdquo; option in chat. The assistant collects the visitor&rsquo;s
+                        email and message, and emails the request to the workspace owner.
                       </p>
-                    ) : null}
-
-                    {humanContactError ? (
-                      <p className="text-sm text-destructive" role="alert">{humanContactError}</p>
-                    ) : null}
+                    </div>
                   </div>
-                ) : null
-              ) : (
-                <div className="mt-5 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-                  Contact handoff is unavailable in this build.
-                  {humanContactError ? (
-                    <p className="mt-2 text-destructive" role="alert">{humanContactError}</p>
-                  ) : null}
+                  <Switch
+                    id="contactRequestsToggle"
+                    checked={assistantBehaviorSettings?.contactRequestsEnabled ?? false}
+                    onCheckedChange={(checked) =>
+                      updateAssistantBehaviorDraft((current) => ({ ...current, contactRequestsEnabled: checked }))
+                    }
+                    disabled={!assistantBehaviorSettings}
+                    className="sm:mt-3"
+                  />
                 </div>
-              )}
-            </div>
-            ) : (
-            <div id="contact-requests" className="scroll-mt-24">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex min-w-0 gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
-                    <UserRound className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-medium text-foreground">Contact requests</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Show a &ldquo;contact a human&rdquo; option in chat. The assistant collects the visitor&rsquo;s
-                      email and message, and emails the request to the workspace owner.
-                    </p>
-                  </div>
-                </div>
-                <Switch
-                  id="contactRequestsToggle"
-                  checked={assistantBehaviorSettings?.contactRequestsEnabled ?? false}
-                  onCheckedChange={(checked) =>
-                    updateAssistantBehaviorDraft((current) => ({ ...current, contactRequestsEnabled: checked }))
-                  }
-                  disabled={!assistantBehaviorSettings}
-                  className="sm:mt-3"
-                />
               </div>
-            </div>
-            )}
             </SettingsCard>
           </section>
           ) : null}

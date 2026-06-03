@@ -85,7 +85,7 @@ describe('computeSkillGroupInfo', () => {
     const messages = [
       assistant('s.one', 'active', 'Связаться'),
       user,
-      assistant('s.one', 'active', 'Contact handoff'),
+      assistant('s.one', 'active', 'Contact request'),
       user,
       assistant('s.one', 'completed'),
     ]

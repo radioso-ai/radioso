@@ -13,7 +13,14 @@ import type {
   UpdateConversationKitDirectiveInput,
   UpdateConversationKitRoutineInput,
 } from "./authoringStore.js";
+import {
+  createDirectiveCoherenceGate,
+  DirectiveCoherenceError,
+  type DirectiveCoherenceGate,
+} from "./coherence.js";
 import { createId } from "./ids.js";
+
+type MaybePromise<T> = T | Promise<T>;
 
 export interface CreateAgentInput {
   id?: string;
@@ -52,13 +59,17 @@ export interface ConversationKitClient {
   listAgents(): ConversationAgentConfig[];
   updateAgent(agentId: string, input: UpdateConversationKitAgentInput): ConversationAgentConfig | null;
   deleteAgent(agentId: string): boolean;
-  createDirective(agentId: string, directive: Directive): Directive;
+  createDirective(agentId: string, directive: Directive): MaybePromise<Directive>;
   getDirective(agentId: string, directiveId: string): Directive | null;
   listDirectives(agentId: string): Directive[];
-  updateDirective(agentId: string, directiveId: string, input: UpdateConversationKitDirectiveInput): Directive | null;
+  updateDirective(
+    agentId: string,
+    directiveId: string,
+    input: UpdateConversationKitDirectiveInput,
+  ): MaybePromise<Directive | null>;
   deleteDirective(agentId: string, directiveId: string): boolean;
-  addDirective(agentId: string, directive: Directive): Directive;
-  addDirectives(agentId: string, directives: Directive[]): Directive[];
+  addDirective(agentId: string, directive: Directive): MaybePromise<Directive>;
+  addDirectives(agentId: string, directives: Directive[]): MaybePromise<Directive[]>;
   createRoutine(routine: Routine): Routine;
   getRoutine(routineId: string): Routine | null;
   listRoutines(): Routine[];
@@ -73,11 +84,15 @@ export interface ConversationKitClient {
 class InMemoryConversationKitClient implements ConversationKitClient {
   private readonly kit: ConversationKit;
   private readonly authoringStore: ConversationKitAuthoringStore;
+  private readonly directiveCoherence?: DirectiveCoherenceGate;
   private readonly sessions = new Map<string, ConversationKitSession>();
 
   constructor(options: CreateConversationKitClientOptions) {
     this.kit = options.kit ?? createConversationKit(options);
     this.authoringStore = options.authoringStore ?? this.kit.authoringStore;
+    this.directiveCoherence = options.directiveCoherence?.enabled === false
+      ? undefined
+      : this.kit.directiveCoherence ?? createDirectiveCoherenceGate(options.directiveCoherence, this.kit.modelGateway);
   }
 
   createAgent(input: CreateAgentInput): ConversationAgentConfig {
@@ -107,12 +122,16 @@ class InMemoryConversationKitClient implements ConversationKitClient {
     return this.authoringStore.deleteAgent(agentId);
   }
 
-  createDirective(agentId: string, directive: Directive): Directive {
-    this.requireAgent(agentId);
-    return this.authoringStore.createDirective(agentId, {
+  createDirective(agentId: string, directive: Directive): MaybePromise<Directive> {
+    const candidate: Directive = {
       ...directive,
       id: directive.id ?? createId("directive"),
-    });
+    };
+    if (!this.directiveCoherence) {
+      this.requireAgent(agentId);
+      return this.authoringStore.createDirective(agentId, candidate);
+    }
+    return this.createDirectiveWithGate(agentId, candidate);
   }
 
   getDirective(agentId: string, directiveId: string): Directive | null {
@@ -123,20 +142,35 @@ class InMemoryConversationKitClient implements ConversationKitClient {
     return this.authoringStore.listDirectives(agentId);
   }
 
-  updateDirective(agentId: string, directiveId: string, input: UpdateConversationKitDirectiveInput): Directive | null {
-    return this.authoringStore.updateDirective(agentId, directiveId, input);
+  updateDirective(
+    agentId: string,
+    directiveId: string,
+    input: UpdateConversationKitDirectiveInput,
+  ): MaybePromise<Directive | null> {
+    const existing = this.authoringStore.getDirective(agentId, directiveId);
+    if (!existing) {
+      return null;
+    }
+    const candidate: Directive = { ...existing, ...input, id: directiveId };
+    if (!this.directiveCoherence) {
+      return this.authoringStore.updateDirective(agentId, directiveId, input);
+    }
+    return this.updateDirectiveWithGate(agentId, directiveId, candidate);
   }
 
   deleteDirective(agentId: string, directiveId: string): boolean {
     return this.authoringStore.deleteDirective(agentId, directiveId);
   }
 
-  addDirective(agentId: string, directive: Directive): Directive {
+  addDirective(agentId: string, directive: Directive): MaybePromise<Directive> {
     return this.createDirective(agentId, directive);
   }
 
-  addDirectives(agentId: string, directives: Directive[]): Directive[] {
-    return directives.map((directive) => this.addDirective(agentId, directive));
+  addDirectives(agentId: string, directives: Directive[]): MaybePromise<Directive[]> {
+    if (!this.directiveCoherence) {
+      return directives.map((directive) => this.addDirective(agentId, directive) as Directive);
+    }
+    return this.addDirectivesWithGate(agentId, directives);
   }
 
   createRoutine(routine: Routine): Routine {
@@ -202,6 +236,52 @@ class InMemoryConversationKitClient implements ConversationKitClient {
       throw new Error(`conversation_kit_agent_not_found:${agentId}`);
     }
     return agent;
+  }
+
+  private async createDirectiveWithGate(agentId: string, candidate: Directive): Promise<Directive> {
+    this.requireAgent(agentId);
+    await this.requireDirectiveCoherence(agentId, candidate);
+    return this.authoringStore.createDirective(agentId, candidate);
+  }
+
+  private async updateDirectiveWithGate(
+    agentId: string,
+    directiveId: string,
+    candidate: Directive,
+  ): Promise<Directive | null> {
+    this.requireAgent(agentId);
+    await this.requireDirectiveCoherence(agentId, candidate, directiveId);
+    return this.authoringStore.updateDirective(agentId, directiveId, candidate);
+  }
+
+  private async addDirectivesWithGate(agentId: string, directives: Directive[]): Promise<Directive[]> {
+    const created: Directive[] = [];
+    for (const directive of directives) {
+      created.push(await this.createDirective(agentId, directive));
+    }
+    return created;
+  }
+
+  private async requireDirectiveCoherence(
+    agentId: string,
+    candidate: Directive,
+    replacingDirectiveId?: string,
+  ): Promise<void> {
+    if (!this.directiveCoherence) {
+      return;
+    }
+    const agent = this.requireAgent(agentId);
+    const existingDirectives = this.authoringStore
+      .listDirectives(agentId)
+      .filter((directive) => directive.id !== replacingDirectiveId);
+    const verdict = await this.directiveCoherence.checker.check({
+      agent,
+      candidate,
+      existingDirectives,
+    });
+    if (!verdict.coherent) {
+      throw new DirectiveCoherenceError(verdict);
+    }
   }
 }
 

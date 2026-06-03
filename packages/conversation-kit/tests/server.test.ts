@@ -152,4 +152,74 @@ describe("conversation kit HTTP server", () => {
     });
     expect(deleteRoutineResponse.status).toBe(204);
   });
+
+  it("rejects conflicting authored directives over HTTP when coherence is enabled", async () => {
+    const gateway: ConversationModelGateway = {
+      complete: vi.fn(async () => ({
+        text: JSON.stringify({
+          verdict: "conflict",
+          conflicts: [{
+            directiveId: "directive_formal",
+            directiveName: "formal-greeting",
+            reason: "The candidate forbids the greeting behavior that the existing directive requires.",
+          }],
+          rationale: "The candidate contradicts an active greeting directive.",
+        }),
+      })),
+    };
+    const server = createConversationKitServer({
+      kitOptions: {
+        modelGateway: gateway,
+        directiveCoherence: { enabled: true },
+      },
+    });
+    servers.push(server);
+    const address = await server.listen({ port: 0, host: "127.0.0.1" });
+
+    const agentResponse = await fetch(`${address.url}/agents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "agent_coherent", name: "Coherent Agent" }),
+    });
+    expect(agentResponse.status).toBe(201);
+
+    const existingResponse = await fetch(`${address.url}/agents/agent_coherent/directives`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "directive_formal",
+        name: "formal-greeting",
+        condition: { kind: "always" },
+        action: "Always greet formally.",
+      }),
+    });
+    expect(existingResponse.status).toBe(201);
+
+    const conflictResponse = await fetch(`${address.url}/agents/agent_coherent/directives`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "directive_terse",
+        name: "terse-no-greeting",
+        condition: { kind: "always" },
+        action: "Never greet; be terse.",
+      }),
+    });
+
+    expect(conflictResponse.status).toBe(409);
+    await expect(conflictResponse.json()).resolves.toMatchObject({
+      error: "conversation_kit_directive_coherence_conflict",
+      coherent: false,
+      conflicts: [{
+        directiveId: "directive_formal",
+        directiveName: "formal-greeting",
+      }],
+      rationale: "The candidate contradicts an active greeting directive.",
+    });
+
+    const listResponse = await fetch(`${address.url}/agents/agent_coherent/directives`);
+    await expect(listResponse.json()).resolves.toMatchObject({
+      directives: [{ id: "directive_formal" }],
+    });
+  });
 });

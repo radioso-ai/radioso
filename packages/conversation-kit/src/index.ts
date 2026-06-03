@@ -35,6 +35,21 @@ export {
   type ConversationKitModelGatewayOptions,
 } from "./modelGateway.js";
 export {
+  createDirectiveCoherenceChecker,
+  createDirectiveCoherenceGate,
+  DEFAULT_DIRECTIVE_COHERENCE_PROMPT,
+  DirectiveCoherenceError,
+  ModelDirectiveCoherenceChecker,
+  type CreateDirectiveCoherenceCheckerOptions,
+  type DirectiveCoherenceCheckInput,
+  type DirectiveCoherenceChecker,
+  type DirectiveCoherenceConflict,
+  type DirectiveCoherenceGate,
+  type DirectiveCoherenceGateOptions,
+  type DirectiveCoherenceMode,
+  type DirectiveCoherenceVerdict,
+} from "./coherence.js";
+export {
   createDefaultConversationDirectiveMatcher,
   createDefaultConversationSkillDispatcher,
   createDefaultConversationSkillSelector,

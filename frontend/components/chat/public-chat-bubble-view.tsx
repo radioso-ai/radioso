@@ -178,21 +178,23 @@ export function PublicChatBubbleDisclaimer({
   }
 
   return (
-    <div
-      className="mx-auto mt-1.5 flex max-w-3xl flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-2 text-[11px] leading-tight"
-      style={{ color: theme.mutedForeground }}
-    >
-      <p className="min-w-0 flex-1 text-left">{disclaimer}</p>
-      {rightItems.length > 0 ? (
-        <p className="flex shrink-0 flex-wrap items-center justify-end gap-x-2 gap-y-0.5">
-          {rightItems.map((item, index) => (
-            <span key={index} className="inline-flex items-center gap-x-2">
-              {index > 0 ? <span aria-hidden="true" className="opacity-60">·</span> : null}
-              {item}
-            </span>
-          ))}
-        </p>
-      ) : null}
+    <div className="@container mx-auto mt-1.5 max-w-3xl px-2">
+      <div
+        className="flex flex-col items-center gap-y-1 text-[11px] leading-tight @sm:flex-row @sm:justify-between @sm:gap-x-3"
+        style={{ color: theme.mutedForeground }}
+      >
+        <p className="min-w-0 text-center @sm:flex-1 @sm:text-left">{disclaimer}</p>
+        {rightItems.length > 0 ? (
+          <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 @sm:shrink-0 @sm:justify-end">
+            {rightItems.map((item, index) => (
+              <span key={index} className="inline-flex items-center gap-x-2">
+                {index > 0 ? <span aria-hidden="true" className="opacity-60">·</span> : null}
+                {item}
+              </span>
+            ))}
+          </p>
+        ) : null}
+      </div>
     </div>
   )
 }

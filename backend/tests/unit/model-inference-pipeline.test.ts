@@ -15,6 +15,27 @@ const usageContext = {
   attemptKey: "attempt-1",
 } as const;
 
+const estimateOldByteTokens = (text: string): number => Math.max(1, Math.ceil(Buffer.byteLength(text, "utf8") / 4));
+
+type BudgetErrorDetails = {
+  estimatedInputTokens: number;
+  maxInputTokens: number;
+  maxOutputTokens?: number;
+  estimatedTotalTokens?: number;
+  surface: string;
+  operation: string;
+};
+
+const expectAppError = async (promise: Promise<unknown>): Promise<AppError> => {
+  try {
+    await promise;
+  } catch (error: unknown) {
+    expect(error).toBeInstanceOf(AppError);
+    return error as AppError;
+  }
+  throw new Error("Expected AppError");
+};
+
 describe("ModelInferencePipelineService", () => {
   it("rejects oversized non-streaming prompts before calling the provider", async () => {
     const complete = vi.fn(async () => textResult("Answer"));
@@ -102,6 +123,110 @@ describe("ModelInferencePipelineService", () => {
         operation: usageContext,
         prompt,
         maxInputTokens: AGENT_STEP_MAX_INPUT_TOKENS,
+      }),
+    ).resolves.toMatchObject({ text: "Answer" });
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a conservative input-budget estimate for CJK prompts", async () => {
+    const complete = vi.fn(async () => textResult("Answer"));
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      complete,
+      stream: vi.fn(() => streamResult(["Answer"])),
+    };
+    const pipeline = new ModelInferencePipelineService(client);
+    const prompt = "界".repeat(80);
+    const oldByteEstimate = estimateOldByteTokens(`\n${prompt}`);
+
+    const error = await expectAppError(
+      pipeline.complete({
+        operation: usageContext,
+        prompt,
+        maxInputTokens: oldByteEstimate,
+      }),
+    );
+
+    expect(error).toMatchObject({
+      statusCode: 413,
+      code: "payload_too_large",
+    } satisfies Partial<AppError>);
+    expect(complete).not.toHaveBeenCalled();
+    const details = error.details as BudgetErrorDetails;
+    expect(details.estimatedInputTokens).toBeGreaterThan(oldByteEstimate);
+  });
+
+  it("keeps pure-ASCII budget estimates close to byte-based token estimates", async () => {
+    const complete = vi.fn(async () => textResult("Answer"));
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      complete,
+      stream: vi.fn(() => streamResult(["Answer"])),
+    };
+    const pipeline = new ModelInferencePipelineService(client);
+    const prompt = "x".repeat(400);
+    const oldByteEstimate = estimateOldByteTokens(`\n${prompt}`);
+
+    const error = await expectAppError(
+      pipeline.complete({
+        operation: usageContext,
+        prompt,
+        maxInputTokens: oldByteEstimate - 1,
+      }),
+    );
+
+    expect(error).toMatchObject({
+      statusCode: 413,
+      code: "payload_too_large",
+    } satisfies Partial<AppError>);
+    expect(complete).not.toHaveBeenCalled();
+    const details = error.details as BudgetErrorDetails;
+    expect(details.estimatedInputTokens).toBeLessThanOrEqual(Math.ceil(oldByteEstimate * 1.1));
+  });
+
+  it("reserves requested output tokens when enforcing the input budget", async () => {
+    const complete = vi.fn(async () => textResult("Answer"));
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      complete,
+      stream: vi.fn(() => streamResult(["Answer"])),
+    };
+    const pipeline = new ModelInferencePipelineService(client);
+
+    await expect(
+      pipeline.complete({
+        operation: usageContext,
+        prompt: "x".repeat(76),
+        maxInputTokens: 25,
+        maxOutputTokens: 10,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 413,
+      code: "payload_too_large",
+      details: {
+        estimatedInputTokens: 20,
+        maxInputTokens: 25,
+        maxOutputTokens: 10,
+        estimatedTotalTokens: 30,
+      },
+    } satisfies Partial<AppError>);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("keeps input-only budget behavior when no max output token request is set", async () => {
+    const complete = vi.fn(async () => textResult("Answer"));
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      complete,
+      stream: vi.fn(() => streamResult(["Answer"])),
+    };
+    const pipeline = new ModelInferencePipelineService(client);
+
+    await expect(
+      pipeline.complete({
+        operation: usageContext,
+        prompt: "x".repeat(76),
+        maxInputTokens: 20,
       }),
     ).resolves.toMatchObject({ text: "Answer" });
     expect(complete).toHaveBeenCalledTimes(1);

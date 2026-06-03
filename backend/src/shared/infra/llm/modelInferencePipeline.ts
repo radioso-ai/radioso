@@ -29,8 +29,34 @@ export interface ModelInferencePipeline {
 
 const estimateTokens = (bytes: number): number => Math.max(1, Math.ceil(bytes / 4));
 
+const ASCII_CHARS_PER_BUDGET_TOKEN = 4;
+const NON_ASCII_CODE_POINTS_PER_BUDGET_TOKEN = 1;
+
+const estimateBudgetInputTokens = (text: string): number => {
+  let asciiCharacters = 0;
+  let nonAsciiCodePoints = 0;
+  for (const character of text) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && codePoint <= 0x7f) {
+      asciiCharacters += 1;
+    } else {
+      nonAsciiCodePoints += 1;
+    }
+  }
+
+  // Usage accounting keeps the legacy bytes/4 estimate. The guard needs a
+  // language-aware upper bound: English remains near 4 chars/token, while CJK
+  // and other non-ASCII scripts are treated as roughly one token per code point
+  // so multilingual prompts cannot slip through an ASCII-biased byte estimate.
+  return Math.max(
+    1,
+    Math.ceil(asciiCharacters / ASCII_CHARS_PER_BUDGET_TOKEN) +
+      Math.ceil(nonAsciiCodePoints / NON_ASCII_CODE_POINTS_PER_BUDGET_TOKEN),
+  );
+};
+
 const estimateRequestInputTokens = (request: TextGenerationRequest): number =>
-  estimateTokens(Buffer.byteLength(`${request.systemPrompt ?? ""}\n${request.prompt}`, "utf8"));
+  estimateBudgetInputTokens(`${request.systemPrompt ?? ""}\n${request.prompt}`);
 
 const usageErrorCode = (error: unknown): string => {
   if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
@@ -203,10 +229,15 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
   private enforceInputBudget(input: ModelInferenceRequest, request: TextGenerationRequest): void {
     const maxInputTokens = input.maxInputTokens ?? LLM_DEFAULTS.textGenerationMaxInputTokens;
     const estimatedInputTokens = estimateRequestInputTokens(request);
-    if (estimatedInputTokens > maxInputTokens) {
+    const estimatedTotalTokens =
+      request.maxOutputTokens === undefined ? estimatedInputTokens : estimatedInputTokens + request.maxOutputTokens;
+    if (estimatedTotalTokens > maxInputTokens) {
       throw payloadTooLarge("LLM prompt exceeds maximum input token budget", {
         estimatedInputTokens,
         maxInputTokens,
+        ...(request.maxOutputTokens === undefined
+          ? {}
+          : { maxOutputTokens: request.maxOutputTokens, estimatedTotalTokens }),
         surface: input.operation.surface,
         operation: input.operation.operation,
       });

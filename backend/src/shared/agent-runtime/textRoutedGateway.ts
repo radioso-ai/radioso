@@ -3,13 +3,14 @@ import { z, type ZodTypeAny } from "zod";
 
 import type { ModelCallUsageContext } from "../domain/modelCallUsageContext.js";
 import type { ModelInferencePipeline } from "../infra/llm/modelInferencePipeline.js";
-import type {
-  ModelToolCall,
-  ModelToolCallRequest,
-  ModelToolCallResponse,
-  ModelToolCallingGateway,
-  ModelTranscriptEntry,
-  ToolSchema,
+import {
+  AGENT_STEP_MAX_INPUT_TOKENS,
+  type ModelToolCall,
+  type ModelToolCallRequest,
+  type ModelToolCallResponse,
+  type ModelToolCallingGateway,
+  type ModelTranscriptEntry,
+  type ToolSchema,
 } from "./types.js";
 
 const PROTOCOL_INSTRUCTIONS = `Respond with EXACTLY one JSON object — no prose, no markdown fences:
@@ -55,6 +56,12 @@ export class TextRoutedToolCallingGateway implements ModelToolCallingGateway {
       systemPrompt,
       temperature: this.options.temperature,
       maxOutputTokens: this.options.maxOutputTokens,
+      // Agent steps accumulate uncompacted recent tool results (bounded by the
+      // tool-result ceiling) plus fixed prompt overhead, which can exceed the
+      // pipeline's protective 32k global default. Use the larger explicit
+      // agent-step budget so a legitimate deep-retrieval turn is not aborted
+      // mid-run with payloadTooLarge(413).
+      maxInputTokens: AGENT_STEP_MAX_INPUT_TOKENS,
     });
     return parseModelResponse(result.text);
   }

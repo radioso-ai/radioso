@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { chatMessageSchema } from "./textInputLimits.js";
+
 const localeHintSchema = z.string().trim().max(35);
 
 const userInputMetadataSchema = z.object({
@@ -34,7 +36,7 @@ const sourceContextSchema = z.object({
 export const assistantChatSchema = z.object({
   agentId: z.string().uuid().optional(),
   conversationId: z.string().uuid().optional(),
-  message: z.string().min(1).optional(),
+  message: chatMessageSchema.optional(),
   startConversation: z.boolean().optional().default(false),
   stream: z.boolean().default(false),
   includeDebug: z.boolean().optional().default(false),

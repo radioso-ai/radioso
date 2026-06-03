@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createReadToolDefinitions } from "../src/tools/readTools.js";
+import { createReadToolDefinitions, MCP_RETRIEVAL_QUERY_MAX_LENGTH } from "../src/tools/readTools.js";
 import type { RadiosoApiAdapter } from "../src/radiosoApiAdapter.js";
 import type { ToolExecutionContext } from "../src/types.js";
+
+const oversizedQueryMessage = `Query must be ${MCP_RETRIEVAL_QUERY_MAX_LENGTH} characters or fewer.`;
 
 const createAdapter = (): RadiosoApiAdapter => ({
   answerGrounded: vi.fn().mockResolvedValue({ answer: "Grounded answer", citations: [{ text: "Citation" }] }),
@@ -67,5 +69,29 @@ describe("createReadToolDefinitions", () => {
       }),
       writeTools: expect.arrayContaining(["create_document", "update_retrieval_settings"]),
     });
+  });
+
+  it("rejects oversized search_documents queries before calling the adapter", async () => {
+    const adapter = createAdapter();
+    const searchDocuments = createReadToolDefinitions().find((tool) => tool.name === "search_documents");
+    const oversizedQuery = "a".repeat(MCP_RETRIEVAL_QUERY_MAX_LENGTH + 1);
+
+    expect(searchDocuments).toBeDefined();
+    await expect(searchDocuments!.execute({ query: oversizedQuery }, createToolContext(adapter))).rejects.toThrow(
+      oversizedQueryMessage,
+    );
+    expect(adapter.searchDocuments).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized answer_grounded queries before calling the adapter", async () => {
+    const adapter = createAdapter();
+    const answerGrounded = createReadToolDefinitions().find((tool) => tool.name === "answer_grounded");
+    const oversizedQuery = "a".repeat(MCP_RETRIEVAL_QUERY_MAX_LENGTH + 1);
+
+    expect(answerGrounded).toBeDefined();
+    await expect(answerGrounded!.execute({ query: oversizedQuery }, createToolContext(adapter))).rejects.toThrow(
+      oversizedQueryMessage,
+    );
+    expect(adapter.answerGrounded).not.toHaveBeenCalled();
   });
 });

@@ -3,7 +3,13 @@ import { z } from "zod";
 import type { GenericToolDefinition } from "./common.js";
 import { metadataRecordSchema } from "./common.js";
 
+export const MCP_RETRIEVAL_QUERY_MAX_LENGTH = 4000;
+
 const emptySchema = z.object({});
+const retrievalQuerySchema = z
+  .string()
+  .min(1)
+  .max(MCP_RETRIEVAL_QUERY_MAX_LENGTH, `Query must be ${MCP_RETRIEVAL_QUERY_MAX_LENGTH} characters or fewer.`);
 const listDocumentsSchema = z.object({
   cursor: z.string().min(1).optional(),
   limit: z.number().int().min(1).max(100).optional(),
@@ -14,7 +20,7 @@ const getDocumentSchema = z.object({
 });
 const searchDocumentsSchema = z.object({
   metadataFilter: metadataRecordSchema.optional(),
-  query: z.string().min(1),
+  query: retrievalQuerySchema,
 });
 const answerGroundedSchema = z.object({
   conversationContext: z.object({
@@ -23,7 +29,7 @@ const answerGroundedSchema = z.object({
     followUpToMessageId: z.string().optional(),
   }).optional(),
   metadataFilter: z.record(z.string(), z.unknown()).optional(),
-  query: z.string().min(1),
+  query: retrievalQuerySchema,
 });
 
 const capabilityNames = {

@@ -49,6 +49,14 @@ export const registerRetrievalSearchPaths = (
           },
         },
       },
+      429: {
+        description: "Expensive authenticated request rate limit exceeded",
+        content: {
+          "application/json": {
+            schema: schemas.RateLimitExceededSchema,
+          },
+        },
+      },
     },
   });
 };
@@ -97,6 +105,14 @@ export const registerRetrievalAnswerPaths = (
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      429: {
+        description: "Expensive authenticated request rate limit exceeded",
+        content: {
+          "application/json": {
+            schema: schemas.RateLimitExceededSchema,
           },
         },
       },

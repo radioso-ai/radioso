@@ -1,4 +1,5 @@
 export const LLM_DEFAULTS = {
+  textGenerationMaxInputTokens: 32_000,
   textGenerationMaxOutputTokens: 1536,
 } as const;
 
@@ -22,6 +23,16 @@ export const CHAT_BEHAVIOR = {
     // than the medium default. Ignored by non-reasoning models and non-OpenAI
     // providers.
     reasoningEffort: "low",
+    // Dedicated chat-answer ceiling — deliberately NOT the generic 1536 default.
+    // On gpt-5-family reasoning models this maps to max_completion_tokens, the
+    // TOTAL budget covering hidden reasoning + visible text. At "low" effort the
+    // reasoning pass can consume a meaningful share, so 1536 truncated long
+    // answers (or returned empty text, tripping BlankChatAnswerError). 4096
+    // leaves ample room for low-effort hidden reasoning plus a full multi-
+    // paragraph grounded answer while still being a real, bounded ceiling
+    // (~3k visible tokens after reasoning headroom). Ignored by non-reasoning
+    // models and non-OpenAI providers.
+    maxOutputTokens: 4_096,
   },
   groundedMiss: {
     temperature: 0,

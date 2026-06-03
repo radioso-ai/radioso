@@ -79,6 +79,7 @@ export class ModelChatGateway implements ChatGateway {
       operation: input.usageContext,
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
+      maxOutputTokens: CHAT_BEHAVIOR.answer.maxOutputTokens,
       reasoningEffort: CHAT_BEHAVIOR.answer.reasoningEffort,
       validateResult(result) {
         if (!result.text?.trim()) {
@@ -94,6 +95,7 @@ export class ModelChatGateway implements ChatGateway {
       operation: input.usageContext,
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
+      maxOutputTokens: CHAT_BEHAVIOR.answer.maxOutputTokens,
       reasoningEffort: CHAT_BEHAVIOR.answer.reasoningEffort,
     });
     for await (const chunk of textStream) {

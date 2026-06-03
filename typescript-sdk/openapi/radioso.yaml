@@ -3651,6 +3651,7 @@ components:
         query:
           type: string
           minLength: 1
+          maxLength: 4000
         metadataFilter:
           type: object
           additionalProperties: {}
@@ -3669,6 +3670,7 @@ components:
         query:
           type: string
           minLength: 1
+          maxLength: 4000
         conversationContext:
           type: object
           properties:
@@ -4615,6 +4617,7 @@ components:
         message:
           type: string
           minLength: 1
+          maxLength: 4000
         startConversation:
           type: boolean
           default: false
@@ -4678,6 +4681,7 @@ components:
         message:
           type: string
           minLength: 1
+          maxLength: 4000
         stream:
           type: boolean
           default: false
@@ -7353,6 +7357,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Expensive authenticated request rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitExceededResponse"
   /api/v1/skills:
     get:
       tags:
@@ -7445,6 +7455,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Expensive authenticated request rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitExceededResponse"
   /api/v1/document/search:
     post:
       tags:
@@ -8365,6 +8381,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Expensive authenticated request rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitExceededResponse"
   /api/v1/answer-feedback/messages/{assistantMessageId}:
     put:
       tags:

@@ -18,7 +18,8 @@
       "properties": {
         "query": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 4000
         },
         "conversationContext": {
           "type": "object",
@@ -63,7 +64,8 @@
       "properties": {
         "query": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 4000
         },
         "metadataFilter": {
           "type": "object",

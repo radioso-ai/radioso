@@ -5,6 +5,8 @@ import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
+import { expensiveAuthenticatedRateLimiter } from "../middleware/expensiveAuthenticatedRateLimiter.js";
+import { retrievalQuerySchema } from "../schemas/textInputLimits.js";
 import type { RetrievalExecutionSurface } from "../../../modules/retrieval/public.js";
 
 const metadataFilterSchema = z.record(z.unknown()).optional().refine(
@@ -13,14 +15,14 @@ const metadataFilterSchema = z.record(z.unknown()).optional().refine(
 );
 
 export const retrievalSearchSchema = z.object({
-  query: z.string().min(1),
+  query: retrievalQuerySchema,
   metadataFilter: metadataFilterSchema,
   topK: z.number().int().min(1).max(100).optional(),
   includeDebug: z.boolean().optional().default(false),
 });
 
 export const retrievalAnswerSchema = z.object({
-  query: z.string().min(1),
+  query: retrievalQuerySchema,
   conversationContext: z.object({
     previousUserMessages: z.array(z.string().max(4000)).max(20).optional(),
     previousAssistantMessages: z.array(z.string().max(4000)).max(20).optional(),
@@ -68,48 +70,63 @@ const presentRetrievalAnswerResult = <T extends {
 
 type RetrievalRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
-  "retrievalAnswerService" | "retrievalSearchService"
+  "retrievalAnswerService" | "retrievalSearchService" | "abuseControlService" | "auditService"
 >;
 
 export const createRetrievalRoutes = (dependencies: RetrievalRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const rateLimitExpensiveAuthenticatedRequest = expensiveAuthenticatedRateLimiter(dependencies);
 
-  router.post("/search", workspaceSession, requireWorkspacePermission(dependencies, "workspace.retrieval.query"), validateBody(retrievalSearchSchema), async (req, res, next) => {
-    try {
-      const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
-      const result = await dependencies.retrievalSearchService.search({
-        workspaceId,
-        accountId: accountId ?? null,
-        requestId: resolveRequestId((req as { id?: unknown }).id),
-        query: req.body.query,
-        metadataFilter: req.body.metadataFilter,
-        topK: req.body.topK,
-        executionSurface: resolveCapabilitySurface(req.header("x-radioso-capability-client")),
-      });
-      res.status(200).json(presentRetrievalSearchResult(result, req.body.includeDebug));
-    } catch (error) {
-      next(error);
-    }
-  });
+  router.post(
+    "/search",
+    workspaceSession,
+    requireWorkspacePermission(dependencies, "workspace.retrieval.query"),
+    validateBody(retrievalSearchSchema),
+    rateLimitExpensiveAuthenticatedRequest,
+    async (req, res, next) => {
+      try {
+        const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
+        const result = await dependencies.retrievalSearchService.search({
+          workspaceId,
+          accountId: accountId ?? null,
+          requestId: resolveRequestId((req as { id?: unknown }).id),
+          query: req.body.query,
+          metadataFilter: req.body.metadataFilter,
+          topK: req.body.topK,
+          executionSurface: resolveCapabilitySurface(req.header("x-radioso-capability-client")),
+        });
+        res.status(200).json(presentRetrievalSearchResult(result, req.body.includeDebug));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
-  router.post("/answer", workspaceSession, requireWorkspacePermission(dependencies, "workspace.retrieval.query"), validateBody(retrievalAnswerSchema), async (req, res, next) => {
-    try {
-      const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
-      const result = await dependencies.retrievalAnswerService.answer({
-        workspaceId,
-        accountId: accountId ?? null,
-        requestId: resolveRequestId((req as { id?: unknown }).id),
-        query: req.body.query,
-        conversationContext: req.body.conversationContext,
-        metadataFilter: req.body.metadataFilter,
-        executionSurface: resolveCapabilitySurface(req.header("x-radioso-capability-client")),
-      });
-      res.status(200).json(presentRetrievalAnswerResult(result, req.body.includeDebug));
-    } catch (error) {
-      next(error);
-    }
-  });
+  router.post(
+    "/answer",
+    workspaceSession,
+    requireWorkspacePermission(dependencies, "workspace.retrieval.query"),
+    validateBody(retrievalAnswerSchema),
+    rateLimitExpensiveAuthenticatedRequest,
+    async (req, res, next) => {
+      try {
+        const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
+        const result = await dependencies.retrievalAnswerService.answer({
+          workspaceId,
+          accountId: accountId ?? null,
+          requestId: resolveRequestId((req as { id?: unknown }).id),
+          query: req.body.query,
+          conversationContext: req.body.conversationContext,
+          metadataFilter: req.body.metadataFilter,
+          executionSurface: resolveCapabilitySurface(req.header("x-radioso-capability-client")),
+        });
+        res.status(200).json(presentRetrievalAnswerResult(result, req.body.includeDebug));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   return router;
 };

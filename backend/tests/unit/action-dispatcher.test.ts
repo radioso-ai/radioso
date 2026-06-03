@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ActionRequestRecord } from "../../src/db/repositories/actionRequestRepository.js";
+import type {
+  ActionFailureOutcome,
+  ActionRequestRecord,
+} from "../../src/db/repositories/actionRequestRepository.js";
 import {
   ActionDispatcher,
   ActionHandlerRegistry,
@@ -21,13 +24,17 @@ const request = (overrides: Partial<ActionRequestRecord> = {}): ActionRequestRec
   ...overrides,
 });
 
-const outbox = (pending: ActionRequestRecord[]): ActionOutboxConsumerPort & {
+const outbox = (
+  pending: ActionRequestRecord[],
+  failureOutcome: ActionFailureOutcome = "failed",
+): ActionOutboxConsumerPort & {
+  claimPending: ReturnType<typeof vi.fn>;
   markDispatched: ReturnType<typeof vi.fn>;
-  markFailed: ReturnType<typeof vi.fn>;
+  recordFailure: ReturnType<typeof vi.fn>;
 } => ({
   claimPending: vi.fn(async () => pending),
   markDispatched: vi.fn(async () => {}),
-  markFailed: vi.fn(async () => {}),
+  recordFailure: vi.fn(async () => failureOutcome),
 });
 
 describe("ActionHandlerRegistry", () => {
@@ -42,34 +49,42 @@ describe("ActionHandlerRegistry", () => {
 });
 
 describe("ActionDispatcher", () => {
-  it("routes a pending request to its handler (with payload + context) and marks it dispatched", async () => {
+  it("claims with the lease, routes to the handler (payload + context), and marks dispatched", async () => {
     const handle = vi.fn(async () => {});
     const store = outbox([request()]);
-    const dispatcher = new ActionDispatcher(store, new ActionHandlerRegistry([{ type: "contact.send", handler: { handle } }]));
+    const dispatcher = new ActionDispatcher(
+      store,
+      new ActionHandlerRegistry([{ type: "contact.send", handler: { handle } }]),
+      { leaseSeconds: 300 },
+    );
 
     const result = await dispatcher.dispatchPending();
 
+    expect(store.claimPending).toHaveBeenCalledWith(20, 300);
     expect(handle).toHaveBeenCalledWith({
       payload: { email: "x@y.z" },
       context: { workspaceId: "ws_1", accountId: null, conversationId: "conv_1" },
     });
     expect(store.markDispatched).toHaveBeenCalledWith("r1");
-    expect(store.markFailed).not.toHaveBeenCalled();
-    expect(result).toEqual({ dispatched: 1, failed: 0 });
+    expect(store.recordFailure).not.toHaveBeenCalled();
+    expect(result).toEqual({ dispatched: 1, retried: 0, failed: 0 });
   });
 
-  it("marks a request failed (never dropped) when no handler is registered for its type", async () => {
-    const store = outbox([request({ type: "unknown.action" })]);
-    const dispatcher = new ActionDispatcher(store, new ActionHandlerRegistry());
+  it("records a failure (never dropped) when no handler is registered for its type", async () => {
+    const store = outbox([request({ type: "unknown.action" })], "failed");
+    const dispatcher = new ActionDispatcher(store, new ActionHandlerRegistry(), {
+      maxAttempts: 5,
+      retryBackoffSeconds: 60,
+    });
 
     const result = await dispatcher.dispatchPending();
 
-    expect(store.markFailed).toHaveBeenCalledWith("r1", "no_handler_for_type:unknown.action");
-    expect(result).toEqual({ dispatched: 0, failed: 1 });
+    expect(store.recordFailure).toHaveBeenCalledWith("r1", "no_handler_for_type:unknown.action", 5, 60);
+    expect(result).toEqual({ dispatched: 0, retried: 0, failed: 1 });
   });
 
-  it("marks a request failed with the error when the handler throws", async () => {
-    const store = outbox([request()]);
+  it("counts a within-budget handler failure as a retry, not a terminal failure", async () => {
+    const store = outbox([request()], "retry");
     const dispatcher = new ActionDispatcher(
       store,
       new ActionHandlerRegistry([{ type: "contact.send", handler: { handle: vi.fn(async () => { throw new Error("smtp down"); }) } }]),
@@ -77,8 +92,20 @@ describe("ActionDispatcher", () => {
 
     const result = await dispatcher.dispatchPending();
 
-    expect(store.markFailed).toHaveBeenCalledWith("r1", "smtp down");
+    expect(store.recordFailure).toHaveBeenCalledWith("r1", "smtp down", expect.any(Number), expect.any(Number));
     expect(store.markDispatched).not.toHaveBeenCalled();
-    expect(result).toEqual({ dispatched: 0, failed: 1 });
+    expect(result).toEqual({ dispatched: 0, retried: 1, failed: 0 });
+  });
+
+  it("counts a budget-exhausted handler failure as a terminal failure", async () => {
+    const store = outbox([request()], "failed");
+    const dispatcher = new ActionDispatcher(
+      store,
+      new ActionHandlerRegistry([{ type: "contact.send", handler: { handle: vi.fn(async () => { throw new Error("smtp down"); }) } }]),
+    );
+
+    const result = await dispatcher.dispatchPending();
+
+    expect(result).toEqual({ dispatched: 0, retried: 0, failed: 1 });
   });
 });

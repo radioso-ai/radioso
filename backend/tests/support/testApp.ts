@@ -688,7 +688,7 @@ export const createTestDependencies = (overrides: {
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
   // The action outbox drain never runs in tests; a no-op dispatcher satisfies the shape.
   const actionDispatchWorker = new ActionDispatchWorker(
-    { dispatchPending: async () => ({ dispatched: 0, failed: 0 }) },
+    { dispatchPending: async () => ({ dispatched: 0, retried: 0, failed: 0 }) },
     { logger },
   );
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);

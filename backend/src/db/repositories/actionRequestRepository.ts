@@ -1,6 +1,9 @@
 import type { Database } from "../../shared/infra/database.js";
 
-export type ActionRequestStatus = "pending" | "dispatched" | "failed";
+export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "failed";
+
+/** The terminal outcome of recording a dispatch failure. */
+export type ActionFailureOutcome = "retry" | "failed";
 
 export interface ActionRequestRecord {
   id: string;
@@ -83,32 +86,66 @@ export class ActionRequestRepository {
     return { id: existing.id, duplicate: true };
   }
 
-  /** Claim the oldest pending requests for dispatch. */
-  async claimPending(limit: number): Promise<ActionRequestRecord[]> {
+  /**
+   * Atomically claim up to `limit` due requests for dispatch: each is moved
+   * `pending` → `in_progress` (incrementing `attempts`) in a single `UPDATE … WHERE id
+   * IN (SELECT … FOR UPDATE SKIP LOCKED)`, so two workers (or two overlapping drains)
+   * never claim the same row — the cause of double-dispatch. Reclaims `in_progress`
+   * rows whose lease (`leaseSeconds` since the last update) has expired, so a crashed
+   * worker's row is retried rather than stranded. Pending rows are due only once
+   * `next_attempt_at` (the retry backoff) has passed.
+   */
+  async claimPending(limit: number, leaseSeconds: number): Promise<ActionRequestRecord[]> {
     const rows = await this.database.query<ActionRequestRow>(
-      `SELECT id, type, payload, workspace_id, account_id, conversation_id, idempotency_key, status, attempts
-         FROM routine_action_requests
-        WHERE status = 'pending'
-        ORDER BY created_at ASC
-        LIMIT $1`,
-      [limit],
+      `UPDATE routine_action_requests
+          SET status = 'in_progress', attempts = attempts + 1, updated_at = now()
+        WHERE id IN (
+          SELECT id
+            FROM routine_action_requests
+           WHERE (status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= now()))
+              OR (status = 'in_progress' AND updated_at < now() - make_interval(secs => $2))
+           ORDER BY created_at ASC
+           LIMIT $1
+           FOR UPDATE SKIP LOCKED
+        )
+        RETURNING id, type, payload, workspace_id, account_id, conversation_id, idempotency_key, status, attempts`,
+      [limit, leaseSeconds],
     );
     return rows.map(mapRecord);
   }
 
+  /** Mark a claimed (in-progress) request dispatched. No-op if it was already reclaimed. */
   async markDispatched(id: string): Promise<void> {
     await this.database.execute(
-      `UPDATE routine_action_requests SET status = 'dispatched', updated_at = now() WHERE id = $1`,
+      `UPDATE routine_action_requests
+          SET status = 'dispatched', updated_at = now()
+        WHERE id = $1 AND status = 'in_progress'`,
       [id],
     );
   }
 
-  async markFailed(id: string, error: string): Promise<void> {
-    await this.database.execute(
+  /**
+   * Record a dispatch failure. Within the retry budget (`attempts < maxAttempts`,
+   * counting the attempt just made) the row returns to `pending` with a `next_attempt_at`
+   * backoff so a transient outage is retried; once the budget is spent it becomes
+   * terminal `failed`. Returns which happened.
+   */
+  async recordFailure(
+    id: string,
+    error: string,
+    maxAttempts: number,
+    retryBackoffSeconds: number,
+  ): Promise<ActionFailureOutcome> {
+    const row = await this.database.queryOne<{ status: string }>(
       `UPDATE routine_action_requests
-          SET status = 'failed', last_error = $2, attempts = attempts + 1, updated_at = now()
-        WHERE id = $1`,
-      [id, error],
+          SET status = CASE WHEN attempts >= $3 THEN 'failed' ELSE 'pending' END,
+              next_attempt_at = CASE WHEN attempts >= $3 THEN NULL ELSE now() + make_interval(secs => $4) END,
+              last_error = $2,
+              updated_at = now()
+        WHERE id = $1
+        RETURNING status`,
+      [id, error, maxAttempts, retryBackoffSeconds],
     );
+    return row.status === "failed" ? "failed" : "retry";
   }
 }

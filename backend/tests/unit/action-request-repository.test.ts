@@ -49,30 +49,46 @@ describe("ActionRequestRepository", () => {
     expect(db.queryOne.mock.calls[0]![1]).toEqual(["k1"]);
   });
 
-  it("claims the oldest pending requests for dispatch", async () => {
+  it("atomically claims due requests (in_progress, attempts++, lease + SKIP LOCKED)", async () => {
     const db = mockDatabase();
     db.query.mockResolvedValue([
-      { id: "r1", type: "contact.send", payload: { a: 1 }, workspace_id: "ws", account_id: null, conversation_id: "c", idempotency_key: "k", status: "pending", attempts: 0 },
+      { id: "r1", type: "contact.send", payload: { a: 1 }, workspace_id: "ws", account_id: null, conversation_id: "c", idempotency_key: "k", status: "in_progress", attempts: 1 },
     ]);
 
-    const claimed = await new ActionRequestRepository(db).claimPending(10);
+    const claimed = await new ActionRequestRepository(db).claimPending(10, 300);
 
     expect(claimed).toEqual([
-      { id: "r1", type: "contact.send", payload: { a: 1 }, workspaceId: "ws", accountId: null, conversationId: "c", idempotencyKey: "k", status: "pending", attempts: 0 },
+      { id: "r1", type: "contact.send", payload: { a: 1 }, workspaceId: "ws", accountId: null, conversationId: "c", idempotencyKey: "k", status: "in_progress", attempts: 1 },
     ]);
     const [sql, params] = db.query.mock.calls[0]!;
-    expect(sql).toContain("status = 'pending'");
-    expect(sql).toContain("ORDER BY created_at ASC");
-    expect(params).toEqual([10]);
+    expect(sql).toContain("UPDATE routine_action_requests");
+    expect(sql).toContain("SET status = 'in_progress', attempts = attempts + 1");
+    expect(sql).toContain("FOR UPDATE SKIP LOCKED");
+    expect(sql).toContain("status = 'in_progress' AND updated_at < now() - make_interval(secs => $2)");
+    expect(params).toEqual([10, 300]);
   });
 
-  it("marks a request dispatched and a request failed (incrementing attempts)", async () => {
+  it("marks a claimed request dispatched only while it is still in_progress", async () => {
+    const db = mockDatabase();
+    await new ActionRequestRepository(db).markDispatched("r1");
+    expect(db.execute.mock.calls[0]![0]).toContain("status = 'dispatched'");
+    expect(db.execute.mock.calls[0]![0]).toContain("status = 'in_progress'");
+    expect(db.execute.mock.calls[0]![1]).toEqual(["r1"]);
+  });
+
+  it("retries a within-budget failure (back to pending + backoff) and fails terminally when spent", async () => {
     const db = mockDatabase();
     const repo = new ActionRequestRepository(db);
-    await repo.markDispatched("r1");
-    await repo.markFailed("r2", "boom");
-    expect(db.execute.mock.calls[0]![0]).toContain("status = 'dispatched'");
-    expect(db.execute.mock.calls[1]![0]).toContain("attempts = attempts + 1");
-    expect(db.execute.mock.calls[1]![1]).toEqual(["r2", "boom"]);
+
+    db.queryOne.mockResolvedValueOnce({ status: "pending" });
+    expect(await repo.recordFailure("r1", "smtp down", 5, 60)).toBe("retry");
+
+    db.queryOne.mockResolvedValueOnce({ status: "failed" });
+    expect(await repo.recordFailure("r2", "smtp down", 5, 60)).toBe("failed");
+
+    const [sql, params] = db.queryOne.mock.calls[0]!;
+    expect(sql).toContain("WHEN attempts >= $3 THEN 'failed' ELSE 'pending'");
+    expect(sql).toContain("now() + make_interval(secs => $4)");
+    expect(params).toEqual(["r1", "smtp down", 5, 60]);
   });
 });

@@ -2,7 +2,7 @@ import type { AppLogger } from "../../../../shared/observability/logger.js";
 
 /** The drain surface the worker polls — satisfied by {@link ActionDispatcher}. */
 export interface ActionDispatchPort {
-  dispatchPending(limit?: number): Promise<{ dispatched: number; failed: number }>;
+  dispatchPending(limit?: number): Promise<{ dispatched: number; retried: number; failed: number }>;
 }
 
 export interface ActionDispatchWorkerOptions {
@@ -55,7 +55,7 @@ export class ActionDispatchWorker {
     this.draining = true;
     try {
       const result = await this.dispatcher.dispatchPending(this.options.batchSize ?? 20);
-      if (result.dispatched > 0 || result.failed > 0) {
+      if (result.dispatched > 0 || result.retried > 0 || result.failed > 0) {
         this.options.logger.debug({ ...result }, "Action dispatch drain completed");
       }
       return result;

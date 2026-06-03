@@ -1,4 +1,7 @@
-import type { ActionRequestRecord } from "../../../../db/repositories/actionRequestRepository.js";
+import type {
+  ActionFailureOutcome,
+  ActionRequestRecord,
+} from "../../../../db/repositories/actionRequestRepository.js";
 
 /** The context a handler receives alongside the action payload. */
 export interface ActionHandlerContext {
@@ -17,10 +20,30 @@ export interface ActionHandler {
 
 /** The narrow slice of the outbox the dispatcher drains. */
 export interface ActionOutboxConsumerPort {
-  claimPending(limit: number): Promise<ActionRequestRecord[]>;
+  claimPending(limit: number, leaseSeconds: number): Promise<ActionRequestRecord[]>;
   markDispatched(id: string): Promise<void>;
-  markFailed(id: string, error: string): Promise<void>;
+  recordFailure(
+    id: string,
+    error: string,
+    maxAttempts: number,
+    retryBackoffSeconds: number,
+  ): Promise<ActionFailureOutcome>;
 }
+
+export interface ActionDispatchOptions {
+  /** A claimed row is reclaimable after this long without progress (crashed worker). */
+  leaseSeconds: number;
+  /** Total dispatch attempts before a failing request becomes terminal `failed`. */
+  maxAttempts: number;
+  /** Backoff before a failed-but-retryable request is eligible again. */
+  retryBackoffSeconds: number;
+}
+
+const DEFAULT_DISPATCH_OPTIONS: ActionDispatchOptions = {
+  leaseSeconds: 300,
+  maxAttempts: 5,
+  retryBackoffSeconds: 60,
+};
 
 /** Resolves an {@link ActionHandler} by action `type`. */
 export class ActionHandlerRegistry {
@@ -55,21 +78,40 @@ export class ActionHandlerRegistry {
  * this. An unregistered type is recorded `failed` (never silently dropped).
  */
 export class ActionDispatcher {
+  private readonly options: ActionDispatchOptions;
+
   constructor(
     private readonly outbox: ActionOutboxConsumerPort,
     private readonly registry: ActionHandlerRegistry,
-  ) {}
+    options: Partial<ActionDispatchOptions> = {},
+  ) {
+    this.options = { ...DEFAULT_DISPATCH_OPTIONS, ...options };
+  }
 
-  async dispatchPending(limit = 20): Promise<{ dispatched: number; failed: number }> {
-    const pending = await this.outbox.claimPending(limit);
+  async dispatchPending(limit = 20): Promise<{ dispatched: number; retried: number; failed: number }> {
+    const claimed = await this.outbox.claimPending(limit, this.options.leaseSeconds);
     let dispatched = 0;
+    let retried = 0;
     let failed = 0;
 
-    for (const request of pending) {
+    const onFailure = async (id: string, error: string): Promise<void> => {
+      const outcome = await this.outbox.recordFailure(
+        id,
+        error,
+        this.options.maxAttempts,
+        this.options.retryBackoffSeconds,
+      );
+      if (outcome === "failed") {
+        failed += 1;
+      } else {
+        retried += 1;
+      }
+    };
+
+    for (const request of claimed) {
       const handler = this.registry.resolve(request.type);
       if (!handler) {
-        await this.outbox.markFailed(request.id, `no_handler_for_type:${request.type}`);
-        failed += 1;
+        await onFailure(request.id, `no_handler_for_type:${request.type}`);
         continue;
       }
       try {
@@ -84,11 +126,10 @@ export class ActionDispatcher {
         await this.outbox.markDispatched(request.id);
         dispatched += 1;
       } catch (error) {
-        await this.outbox.markFailed(request.id, error instanceof Error ? error.message : String(error));
-        failed += 1;
+        await onFailure(request.id, error instanceof Error ? error.message : String(error));
       }
     }
 
-    return { dispatched, failed };
+    return { dispatched, retried, failed };
   }
 }

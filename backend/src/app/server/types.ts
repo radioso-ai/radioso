@@ -1,4 +1,5 @@
 import type {
+  ActionDispatchWorker,
   AssistantChatService,
   AssistantHistoryService,
   ChatBootstrapService,
@@ -111,6 +112,9 @@ export interface AppDependencies {
   documentDeletionService: DocumentDeletionService;
   documentStorage: DocumentStoragePort;
   chatService: ChatService;
+  // Worker-process drain loop for the async conversation-action outbox (spec 070).
+  // Present in every dependency build; only the worker runtime calls start/stop.
+  actionDispatchWorker: ActionDispatchWorker;
   chatBootstrapService: ChatBootstrapService;
   chatHistoryService: ChatHistoryService;
   assistantChatService: AssistantChatService;

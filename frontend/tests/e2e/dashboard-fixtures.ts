@@ -86,6 +86,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
   assistantLinkUtmEnabled: true,
   citationDisplayEnabled: true,
+  contactRequestsEnabled: false,
   theme: settings.channels.websiteEmbedTheme,
   branding: {
     hidePoweredBy: false,

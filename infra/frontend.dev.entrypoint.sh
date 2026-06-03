@@ -101,6 +101,31 @@ next_cache_looks_incomplete() {
     return 0
   fi
 
+  if next_cache_has_missing_vendor_chunk; then
+    return 0
+  fi
+
+  return 1
+}
+
+next_cache_has_missing_vendor_chunk() {
+  missing_vendor_chunk="$(
+    if [ -d frontend/.next/dev/server/app ]; then
+      find frontend/.next/dev/server/app -type f -name '*.js' | while IFS= read -r page_bundle; do
+        grep -hEo 'vendor-chunks/[^",]+' "$page_bundle" || true
+      done | sort -u | while IFS= read -r chunk; do
+        if [ -n "$chunk" ] && [ ! -f "frontend/.next/dev/server/$chunk.js" ]; then
+          printf '%s\n' "$chunk"
+          break
+        fi
+      done
+    fi
+  )"
+  if [ -n "$missing_vendor_chunk" ]; then
+    echo "Detected incomplete Next.js dev cache: missing server/$missing_vendor_chunk.js"
+    return 0
+  fi
+
   return 1
 }
 
@@ -214,5 +239,40 @@ if ! next_cache_ready; then
   mark_next_cache_ready
 fi
 
-cd frontend
-exec node_modules/.bin/next dev --webpack -H 0.0.0.0 -p 3000
+start_next_dev() {
+  (cd frontend && exec node_modules/.bin/next dev --webpack -H 0.0.0.0 -p 3000) &
+  NEXT_PID="$!"
+}
+
+stop_next_dev() {
+  if [ -n "${NEXT_PID:-}" ] && kill -0 "$NEXT_PID" 2>/dev/null; then
+    kill "$NEXT_PID" 2>/dev/null || true
+    wait "$NEXT_PID" 2>/dev/null || true
+  fi
+}
+
+handle_shutdown() {
+  stop_next_dev
+  exit 0
+}
+
+trap handle_shutdown INT TERM
+
+start_next_dev
+
+while kill -0 "$NEXT_PID" 2>/dev/null; do
+  sleep 5
+
+  if next_cache_has_missing_vendor_chunk; then
+    sleep 1
+    if next_cache_has_missing_vendor_chunk; then
+      echo "Restarting frontend Next.js dev server after incomplete cache."
+      stop_next_dev
+      clear_next_cache
+      mark_next_cache_ready
+      start_next_dev
+    fi
+  fi
+done
+
+wait "$NEXT_PID"

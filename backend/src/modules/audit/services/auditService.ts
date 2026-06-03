@@ -22,6 +22,10 @@ export class AuditService {
       metadata: event.metadata,
     });
 
+    this.logRecorded(event);
+  }
+
+  logRecorded(event: AuditEventInput): void {
     this.logger.info(
       {
         audit: event,

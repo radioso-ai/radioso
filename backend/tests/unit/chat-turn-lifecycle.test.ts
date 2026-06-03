@@ -5,7 +5,10 @@ import type { ConversationTrace } from "@radioso/conversation-contract";
 import type { AuditService } from "../../src/modules/audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
-import { ChatTurnLifecycle } from "../../src/modules/chat/services/chatTurnLifecycle.js";
+import {
+  ChatTurnLifecycle,
+  type AssistantTurnPersistencePort,
+} from "../../src/modules/chat/services/chatTurnLifecycle.js";
 import type { ChatIntakeResult } from "../../src/modules/chat/services/chatIntakeProvider.js";
 import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
@@ -82,6 +85,75 @@ const engineTrace = (): ConversationTrace => ({
 });
 
 describe("ChatTurnLifecycle — engine turn envelope", () => {
+  it("uses the transaction port for assistant message, action outbox, routine state, touch, and success audit", async () => {
+    const records: RecordedAudit[] = [];
+    const auditService = {
+      record: vi.fn(async (event: RecordedAudit) => {
+        records.push(event);
+      }),
+      logRecorded: vi.fn((event: RecordedAudit) => {
+        records.push(event);
+      }),
+      updateChatAnswerSuggestions: vi.fn(async () => {}),
+    } as unknown as AuditService;
+    const conversationRepository = {
+      touch: vi.fn(async () => {}),
+    } as unknown as ConversationRepositoryPort;
+    const messageRepository = {
+      create: vi.fn(async () => ({ id: "assistant_msg_separate_write" })),
+    } as unknown as MessageRepositoryPort;
+    const actionOutbox = {
+      enqueue: vi.fn(async () => ({ id: "action_1", duplicate: false })),
+    };
+    const assistantTurnPersistence: AssistantTurnPersistencePort = {
+      completeAssistantTurn: vi.fn(async (input) => ({
+        id: input.assistantMessage.id!,
+        conversationId: input.assistantMessage.conversationId,
+        workspaceId: input.assistantMessage.workspaceId,
+        role: "assistant" as const,
+        content: input.assistantMessage.content,
+        metadata: input.assistantMessage.metadata,
+        skillName: input.assistantMessage.skillName,
+        skillOutcome: input.assistantMessage.skillOutcome,
+        skillStatus: input.assistantMessage.skillStatus,
+        createdAt: new Date(),
+      })),
+    };
+    const lifecycle = new ChatTurnLifecycle(
+      conversationRepository,
+      messageRepository,
+      auditService,
+      undefined,
+      actionOutbox,
+      assistantTurnPersistence,
+    );
+
+    await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      accountId: "account_1",
+      session: session(),
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+      actions: [{ type: "contact.send", payload: { email: "alex@example.com" } }],
+      routineStateTransition: { kind: "clear", sessionId: "conv_1" },
+      commitRoutineState: vi.fn(async () => {}),
+    });
+
+    expect(actionOutbox.enqueue).not.toHaveBeenCalled();
+    expect(messageRepository.create).not.toHaveBeenCalled();
+    expect(conversationRepository.touch).not.toHaveBeenCalled();
+    expect(auditService.record).not.toHaveBeenCalled();
+    expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    expect(persisted.actions).toEqual([{ type: "contact.send", payload: { email: "alex@example.com" } }]);
+    expect(persisted.routineStateTransition).toEqual({ kind: "clear", sessionId: "conv_1" });
+    expect(persisted.assistantMessage.id).toEqual(expect.any(String));
+    expect(persisted.auditEvent.metadata?.assistantMessageId).toBe(persisted.assistantMessage.id);
+    expect(records[0]).toBe(persisted.auditEvent);
+  });
+
   it("persists a turnTrace envelope with the retrieval activity trace as a leaf on the dispatch stage", async () => {
     const { lifecycle, records } = harness();
 

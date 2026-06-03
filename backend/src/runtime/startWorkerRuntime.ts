@@ -25,6 +25,8 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
   await dependencies.applicationModules.initializeAll();
   await dependencies.documentProcessingWorker.start();
   await dependencies.documentJobConsumer?.start();
+  // Drain the async conversation-action outbox (spec 070) out of band from the turn.
+  dependencies.actionDispatchWorker.start();
 
   let shuttingDown = false;
 
@@ -35,6 +37,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
       }
       shuttingDown = true;
       dependencies.logger.info({ role: "worker", signal }, "Radioso document worker shutting down");
+      await dependencies.actionDispatchWorker.stop();
       await dependencies.documentJobConsumer?.stop();
       await dependencies.documentProcessingWorker.stop();
       await dependencies.applicationModules.shutdownAll();

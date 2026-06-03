@@ -1,4 +1,5 @@
 import type {
+  ConversationModelGateway,
   ConversationRoutineActivator,
   Routine,
   TurnContext,
@@ -9,11 +10,15 @@ import type {
  * when no routine is active for the session; returning a (possibly empty) object
  * starts the routine — optionally seeding its initial variables — and null declines.
  * Activation logic (an explicit intent click, an LLM intent check, etc.) lives in the
- * registration, not in the engine.
+ * registration, not in the engine. The per-turn `modelGateway` lets a registration run
+ * an LLM intent check (e.g. natural-language "I want to contact a human").
  */
 export interface RoutineRegistration {
   routine: Routine;
-  activates(input: { turn: TurnContext }): Promise<{ variables?: Record<string, unknown> } | null>;
+  activates(input: {
+    turn: TurnContext;
+    modelGateway: ConversationModelGateway;
+  }): Promise<{ variables?: Record<string, unknown> } | null>;
 }
 
 /**
@@ -33,11 +38,11 @@ export class RoutineRegistry {
     return this.registrations.length === 0;
   }
 
-  activator(): ConversationRoutineActivator {
+  activator(modelGateway: ConversationModelGateway): ConversationRoutineActivator {
     return {
       activate: async ({ turn }: { turn: TurnContext }) => {
         for (const registration of this.registrations) {
-          const decision = await registration.activates({ turn });
+          const decision = await registration.activates({ turn, modelGateway });
           if (decision) {
             return { routineId: registration.routine.id, variables: decision.variables };
           }

@@ -1,0 +1,111 @@
+import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
+
+/**
+ * Narrow mail port this handler needs — a host adapts its real mail transport to it.
+ * Kept local so the handler depends on what it uses, not the app-wide transport type.
+ */
+export interface ContactNotificationMailer {
+  send(message: {
+    to: string;
+    replyTo?: string | null;
+    subject: string;
+    text: string;
+    idempotencyKey?: string | null;
+  }): Promise<void>;
+}
+
+/**
+ * Resolves where a workspace's contact notifications go. Injected because the
+ * destination is host/product policy (workspace owner, a configured inbox, …), not
+ * something this generic handler should hard-code. Returning null means "no recipient
+ * configured" — the handler then no-ops rather than failing the request.
+ */
+export interface ContactRecipientResolver {
+  resolve(context: ActionHandlerContext): Promise<string | null>;
+}
+
+/** Narrow lookups the workspace-owner resolver needs (a `WorkspaceRepository` satisfies it). */
+export interface ContactWorkspaceLookup {
+  findById(workspaceId: string): Promise<{ accountId: string } | null>;
+}
+/** Narrow lookup for an account's active members (an `AccountMembershipRepository` satisfies it). */
+export interface ContactMembershipLookup {
+  listActiveByAccount(accountId: string): Promise<{ role: string; email: string }[]>;
+}
+
+/**
+ * The default generic recipient: the workspace owner's email (falling back to an admin).
+ * A sensible destination with no extra configuration — a host that wants a dedicated
+ * contact inbox registers its own {@link ContactRecipientResolver} instead.
+ */
+export class WorkspaceOwnerContactRecipientResolver implements ContactRecipientResolver {
+  constructor(
+    private readonly workspaces: ContactWorkspaceLookup,
+    private readonly members: ContactMembershipLookup,
+  ) {}
+
+  async resolve(context: ActionHandlerContext): Promise<string | null> {
+    if (!context.workspaceId) {
+      return null;
+    }
+    const workspace = await this.workspaces.findById(context.workspaceId);
+    if (!workspace) {
+      return null;
+    }
+    const active = await this.members.listActiveByAccount(workspace.accountId);
+    const owner = active.find((member) => member.role === "owner")
+      ?? active.find((member) => member.role === "admin");
+    return owner?.email ?? null;
+  }
+}
+
+const asString = (value: unknown): string | null =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+
+/**
+ * The reference action handler for `contact.send`: emails a gathered contact request
+ * (collected by the chat-only contact routine) to the workspace's resolved recipient.
+ * Generic and self-contained — it reads the routine's variables off the payload and
+ * sends through an injected mailer; it knows nothing about routines or the engine.
+ *
+   * Dispatch supplies the outbox idempotency key and the mail transport forwards it to
+   * providers that support send de-duplication. With no recipient configured it no-ops
+   * (a missing destination is not a failure to retry).
+ */
+export class ContactSendActionHandler implements ActionHandler {
+  constructor(
+    private readonly mailer: ContactNotificationMailer,
+    private readonly recipients: ContactRecipientResolver,
+    private readonly logger?: { warn(payload: Record<string, unknown>, message: string): void },
+  ) {}
+
+  async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
+    const to = await this.recipients.resolve(input.context);
+    if (!to) {
+      this.logger?.warn(
+        { workspaceId: input.context.workspaceId, conversationId: input.context.conversationId },
+        "contact.send: no recipient configured for workspace; skipping",
+      );
+      return;
+    }
+
+    const email = asString(input.payload.email);
+    const message = asString(input.payload.message) ?? "";
+    const name = asString(input.payload.name);
+
+    const lines = [
+      name ? `Name: ${name}` : null,
+      email ? `Email: ${email}` : null,
+      "",
+      message,
+    ].filter((line): line is string => line !== null);
+
+    await this.mailer.send({
+      to,
+      replyTo: email,
+      subject: "New contact request",
+      text: lines.join("\n"),
+      idempotencyKey: input.context.idempotencyKey ?? input.context.requestId,
+    });
+  }
+}

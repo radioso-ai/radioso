@@ -20,7 +20,7 @@ const mapState = (row: RoutineStateRow): RoutineState => ({
   status: (row.status as RoutineState["status"]) ?? "active",
 });
 
-const DEFAULT_TTL_MS = 30 * 60 * 1000;
+export const DEFAULT_ROUTINE_STATE_TTL_MS = 30 * 60 * 1000;
 
 /**
  * Generic DB-backed {@link ConversationRoutineStore}: at most one in-flight routine
@@ -32,7 +32,7 @@ const DEFAULT_TTL_MS = 30 * 60 * 1000;
 export class RoutineStateRepository implements ConversationRoutineStore {
   constructor(
     private readonly database: Database,
-    private readonly ttlMs: number = DEFAULT_TTL_MS,
+    private readonly ttlMs: number = DEFAULT_ROUTINE_STATE_TTL_MS,
   ) {}
 
   async loadActive(input: { sessionId: string }): Promise<RoutineState | null> {

@@ -11,6 +11,7 @@ import type {
   DocumentStoragePort,
 } from "../../modules/documents/contracts/index.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import type { Database } from "../../shared/infra/database.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
@@ -20,7 +21,12 @@ import type {
   ChatIntakeProviderPort,
   ContactHistoryProviderPort,
 } from "../../modules/chat/contracts/index.js";
-import type { AnswerFeedbackHistoryProviderPort, RoutineRegistration, TurnSelectionStrategy } from "../../modules/chat/composition.js";
+import type {
+  ActionHandler,
+  AnswerFeedbackHistoryProviderPort,
+  RoutineRegistration,
+  TurnSelectionStrategy,
+} from "../../modules/chat/composition.js";
 import type { DirectiveMatcherPort } from "../../modules/directives/public.js";
 import type { AppDependencies } from "../server/types.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
@@ -35,7 +41,7 @@ import type {
 } from "../../modules/skills/public.js";
 import type { Directive } from "../../modules/directives/public.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
-import type { AgentSurfaceExtension } from "../../modules/agents/public.js";
+import type { AgentService, AgentSurfaceExtension } from "../../modules/agents/public.js";
 import type { TextChunkingProviderPort } from "../../modules/retrieval/public.js";
 import type { ChatActionSuggestionProvider } from "../../modules/chat/services/actionSuggestions/chatActionSuggestionProvider.js";
 
@@ -110,6 +116,7 @@ export type ApplicationChatIntakeProviderRegistration =
       dashboardBaseUrl: string | null;
       assertPublicWebsiteUrl: (url: string) => Promise<void>;
       skillExecutorRegistry: SkillExecutorRegistry;
+      agentService: Pick<AgentService, "resolve">;
     }) => ChatIntakeProviderPort);
 
 export type ApplicationContactHistoryProviderRegistration =
@@ -129,6 +136,26 @@ export type ApplicationAnswerFeedbackHistoryProviderRegistration =
 export interface ApplicationDirectiveRegistration {
   directive: Directive;
   routes?: string[];
+}
+
+/**
+ * Registers an {@link ActionHandler} for one action `type` emitted by a routine. The
+ * worker dispatcher routes outbox rows to the handler by exact type match. The handler
+ * may be supplied directly or as a factory resolved at dependency-build time with a
+ * minimal context, mirroring the other host-supplied provider registrations.
+ */
+export interface ApplicationActionHandlerRegistration {
+  type: string;
+  handler:
+    | ActionHandler
+    | ((context: {
+        // Handlers run in the worker and may perform real persistence/lookups, so they
+        // receive the full Database (not the query-only ApplicationDatabasePort) to
+        // construct whatever repositories they need.
+        database: Database;
+        logger: AppLogger;
+        mailService: MailTransportPort;
+      }) => ActionHandler);
 }
 
 export type ApplicationAccountCreatedHook = (context: {
@@ -156,6 +183,7 @@ export interface ApplicationExtensionRegistry {
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
   chatIntakeProviderRegistrations: ApplicationChatIntakeProviderRegistration[];
   routineRegistrations: RoutineRegistration[];
+  actionHandlerRegistrations: ApplicationActionHandlerRegistration[];
   contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
   answerFeedbackHistoryProviderRegistration?: ApplicationAnswerFeedbackHistoryProviderRegistration;
   skillCatalogEntries: SkillCatalogEntryDefinition[];
@@ -192,6 +220,7 @@ export interface ApplicationModuleRegistrationContext {
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
   registerChatIntakeProvider(provider: ApplicationChatIntakeProviderRegistration): void;
   registerRoutine(registration: RoutineRegistration): void;
+  registerActionHandler(registration: ApplicationActionHandlerRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillCatalogEntry(entry: SkillCatalogEntryDefinition): void;
@@ -222,6 +251,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   accountCreatedHooks: [],
   chatIntakeProviderRegistrations: [],
   routineRegistrations: [],
+  actionHandlerRegistrations: [],
   skillCatalogEntries: [],
   skillDefinitions: [],
   skillExecutors: [],
@@ -284,6 +314,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerRoutine(registration) {
     registry.routineRegistrations.push(registration);
+  },
+  registerActionHandler(registration) {
+    registry.actionHandlerRegistrations.push(registration);
   },
   registerContactHistoryProvider(provider) {
     registry.contactHistoryProviderRegistration = provider;

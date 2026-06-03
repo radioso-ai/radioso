@@ -1,8 +1,10 @@
 import { AccountInvitationRepository } from "../../db/repositories/accountInvitationRepository.js";
 import { AccountMembershipRepository } from "../../db/repositories/accountMembershipRepository.js";
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
+import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
-import { createConversationEngine } from "@radioso/conversation-engine";
+import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
+import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import type { AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
@@ -22,6 +24,7 @@ import { WebsiteCrawlJobRepository } from "../../db/repositories/websiteCrawlJob
 import { WorkspaceGrantRepository } from "../../db/repositories/workspaceGrantRepository.js";
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
+import { PostgresAssistantTurnPersistence } from "../../modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { AccountAccessService, AccountInvitationService } from "../../modules/account/public.js";
 import { AgentService } from "../../modules/agents/public.js";
 import { AuditService } from "../../modules/audit/composition.js";
@@ -31,6 +34,9 @@ import { EmailVerificationService } from "../../modules/auth/services/emailVerif
 import { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import {
+  ActionDispatcher,
+  ActionDispatchWorker,
+  ActionHandlerRegistry,
   AssistantChatService,
   AssistantHistoryService,
   AnswerPresentationService,
@@ -39,6 +45,7 @@ import {
   ChatBootstrapService,
   ChatHistoryService,
   ChatService,
+  type ChatRoutineProvider,
   ChainedChatIntakeProvider,
   buildChatTurnRuntime,
   createRouteScopedDirectiveSteering,
@@ -48,6 +55,9 @@ import {
   NoopContactHistoryProvider,
   resolveCitationArtifacts,
   RetrievalTurnController,
+  RoutineRegistry,
+  RoutineNextStepSelector,
+  RoutineStepRenderer,
   SkillRetrievalTurnDispatch,
 } from "../../modules/chat/composition.js";
 import {
@@ -691,6 +701,7 @@ export const buildChatServices = (input: {
     dashboardBaseUrl: input.env.APP_BASE_URL ?? null,
     assertPublicWebsiteUrl: input.assertPublicWebsiteUrl,
     skillExecutorRegistry: input.composition.skillExecutorRegistry,
+    agentService: input.agentService,
   };
   // Register retrieval.answer as a dispatchable skill (spec 066 slice 1). The
   // chat path does not consume it yet; the loop re-seam (slice 2) routes through
@@ -773,6 +784,46 @@ export const buildChatServices = (input: {
     // Composition may register a contextual matcher; defaults to always-match.
     matcher: input.composition.directiveMatcher,
   });
+  // Async conversation actions (spec 070). A routine action step enqueues an intent to
+  // the outbox during the turn (`actionOutbox`); the worker drains and routes it to a
+  // registered handler out of band (`actionDispatchWorker`). The two share one repository
+  // so the same table backs the enqueue and the drain.
+  const actionOutbox = new ActionRequestRepository(input.database);
+  const actionHandlerRegistry = new ActionHandlerRegistry(
+    input.composition.actionHandlerRegistrations.map((registration) => ({
+      type: registration.type,
+      handler:
+        typeof registration.handler === "function"
+          ? registration.handler({
+              database: input.database,
+              logger: input.logger,
+              mailService: input.mailService,
+            })
+          : registration.handler,
+    })),
+  );
+  const actionDispatchWorker = new ActionDispatchWorker(
+    new ActionDispatcher(actionOutbox, actionHandlerRegistry),
+    { logger: input.logger },
+  );
+  // Routine machinery (spec 070 / #520). The store + provider are passed to ChatService
+  // only when a host registered routines; with none registered the provider is absent,
+  // so the engine routine ports stay unwired and turns are unchanged (no store load).
+  // Composition owns the engine runner + LLM-adapter assembly so ChatService stays
+  // free of engine internals — it just supplies the per-turn model gateway.
+  const routineRegistry = new RoutineRegistry(input.composition.routineRegistrations);
+  const routineProvider: ChatRoutineProvider | undefined = routineRegistry.isEmpty
+    ? undefined
+    : {
+        isEmpty: false,
+        activator: (modelGateway) => routineRegistry.activator(modelGateway),
+        createRunner: (modelGateway) =>
+          new DefaultRoutineRunner(
+            routineRegistry.routines,
+            new RoutineNextStepSelector(modelGateway),
+            new RoutineStepRenderer(modelGateway),
+          ),
+      };
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -810,6 +861,13 @@ export const buildChatServices = (input: {
     // environment. ChatService keeps an engine-less path for tests, but
     // composition always wires it.
     conversationEngine: createConversationEngine(),
+    // Turn-emitted action intents land here, persisted to the outbox and
+    // dispatched out of band by `actionDispatchWorker` in the worker process.
+    actionOutbox,
+    assistantTurnPersistence: new PostgresAssistantTurnPersistence(input.database),
+    // Routine resume/activate per turn — present only when routines are registered.
+    routineStore: new RoutineStateRepository(input.database),
+    routineProvider,
   });
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,
@@ -848,6 +906,7 @@ export const buildChatServices = (input: {
     chatService,
     contactHistoryProvider,
     retrievalAnswerService,
+    actionDispatchWorker,
   };
 };
 

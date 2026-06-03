@@ -29,6 +29,7 @@ const agent = (overrides: Partial<AgentRecord> = {}): AgentRecord => ({
   suggestedQuestionsEnabled: true,
   assistantLinkUtmEnabled: true,
   citationDisplayEnabled: true,
+  contactRequestsEnabled: false,
   retrievalEnabled: true,
   sourceScope: { mode: "all" },
   logo: null,
@@ -106,6 +107,7 @@ describe("conversation contract mappers", () => {
       metadata: {
         workspaceId: "workspace_1",
         retrievalEnabled: true,
+        contactRequestsEnabled: false,
       },
     });
   });

@@ -1,6 +1,9 @@
 import type {
   ConversationEvent,
   ConversationModelGateway,
+  ConversationRoutineActivator,
+  ConversationRoutineRunner,
+  ConversationRoutineStore,
   ConversationSkillDispatcher,
   ConversationSkillSelector,
   ConversationTurnComposer,
@@ -34,6 +37,11 @@ export interface ChatProcessTurnInputOptions {
   composer: ConversationTurnComposer;
   modelGateway?: ConversationModelGateway;
   appendEvent?: (event: ConversationEvent) => Promise<void>;
+  // Routine machinery (optional, all three travel together). Present only when the
+  // host registered routines for this turn; absent leaves turn behavior unchanged.
+  routineStore?: ConversationRoutineStore;
+  routineRunner?: ConversationRoutineRunner;
+  routineActivator?: ConversationRoutineActivator;
 }
 
 export interface ChatProcessTurnStreamInputOptions extends Omit<ChatProcessTurnInputOptions, "composer"> {
@@ -69,6 +77,9 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
       return directiveMatchesForSession(options.session);
     },
   },
+  ...(options.routineStore ? { routineStore: options.routineStore } : {}),
+  ...(options.routineRunner ? { routineRunner: options.routineRunner } : {}),
+  ...(options.routineActivator ? { routineActivator: options.routineActivator } : {}),
 });
 
 export const createChatProcessTurnStreamInput = (

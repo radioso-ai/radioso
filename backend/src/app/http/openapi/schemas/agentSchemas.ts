@@ -66,6 +66,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       suggestedQuestionsEnabled: z.boolean(),
       assistantLinkUtmEnabled: z.boolean(),
       citationDisplayEnabled: z.boolean(),
+      contactRequestsEnabled: z.boolean(),
       theme: z.object({
         brand: z.string(),
         brandText: z.string(),
@@ -106,6 +107,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       suggestedQuestionsEnabled: z.boolean().optional(),
       assistantLinkUtmEnabled: z.boolean().optional(),
       citationDisplayEnabled: z.boolean().optional(),
+      contactRequestsEnabled: z.boolean().optional(),
       theme: z.object({
         brand: z.string().optional(),
         brandText: z.string().optional(),

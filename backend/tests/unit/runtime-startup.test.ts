@@ -119,6 +119,10 @@ const createDependencies = () =>
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
     },
+    actionDispatchWorker: {
+      start: vi.fn(),
+      stop: vi.fn().mockResolvedValue(undefined),
+    },
     websiteCrawlWorker: {
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
@@ -207,12 +211,14 @@ describe("runtime startup", () => {
     expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.actionDispatchWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.runMigrations).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.initializeAll).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.actionDispatchWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
   });

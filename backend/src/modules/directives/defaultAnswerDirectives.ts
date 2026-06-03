@@ -35,8 +35,9 @@ export const inlineSupportedLinksDirective: Directive = {
   criticality: "high",
   description: "Use available source URLs as inline links in grounded answers.",
   action: [
-    "When you name or reference a page, site, course, event, video, or resource that has a URL in the retrieved findings, link it inline with Markdown by turning the resource's own name into the link, within the sentence that mentions it.",
+    "When you name or reference a page, site, course, event, video, or resource that has a URL in the retrieved findings, link it inline with Markdown by turning the resource's own name into the link, within the sentence that mentions it. Never invent links.",
     "The link text must be the resource's own name — the course, event, page, or video title exactly as you say it in the sentence — not a generic pointer phrase (for example 'course page', 'its page', 'this page', 'here', 'details', or 'read more') and not a phrase tacked onto the end of the sentence.",
+    "Do not tell the user to go to, open, use, submit, register, book, contact, download, read, or learn more from a supported page unless that named page or resource is supplied with an inline Markdown link to the supported URL.",
     "Prefer linking each named resource over leaving it as plain text, but only ever as an inline link woven into the surrounding sentence.",
     "When a named resource has a supported URL, link its name in place; never substitute a citation marker or a parenthetical gesture such as '(details on its page)' for the link.",
     "Never gather links into a trailing list, a closing line, a sources or read-more block, a run of links separated by semicolons or commas, or any group that follows a citation marker — even when several resources are relevant, link each one in place instead.",

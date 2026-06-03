@@ -2154,6 +2154,7 @@ export interface components {
             suggestedQuestionsEnabled: boolean;
             assistantLinkUtmEnabled: boolean;
             citationDisplayEnabled: boolean;
+            contactRequestsEnabled: boolean;
             theme: {
                 brand: string;
                 brandText: string;
@@ -2194,6 +2195,7 @@ export interface components {
             suggestedQuestionsEnabled?: boolean;
             assistantLinkUtmEnabled?: boolean;
             citationDisplayEnabled?: boolean;
+            contactRequestsEnabled?: boolean;
             theme?: {
                 brand?: string;
                 brandText?: string;

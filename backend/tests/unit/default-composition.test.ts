@@ -55,6 +55,7 @@ describe("default application composition", () => {
       "radioso-website-embed",
       "radioso-agent-wizard",
       "radioso-quality",
+      "radioso-contact-routine",
     ]);
     expect(composition.directiveRegistrations.map((registration) => registration.directive.name)).toEqual([
       "concise-readable-formatting",
@@ -90,6 +91,7 @@ describe("default application composition", () => {
       "radioso-website-embed",
       "radioso-agent-wizard",
       "radioso-quality",
+      "radioso-contact-routine",
       "connector-module",
     ]);
   });

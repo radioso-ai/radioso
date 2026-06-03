@@ -36,6 +36,7 @@ describe("settings services", () => {
     suggestedQuestionsEnabled: true,
     assistantLinkUtmEnabled: true,
     citationDisplayEnabled: true,
+    contactRequestsEnabled: false,
     customInstruction: "",
     retrievalEnabled: true,
     sourceScope: { mode: "all" },

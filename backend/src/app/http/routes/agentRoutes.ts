@@ -70,6 +70,7 @@ const agentBodySchema = z.object({
   suggestedQuestionsEnabled: z.boolean().optional(),
   assistantLinkUtmEnabled: z.boolean().optional(),
   citationDisplayEnabled: z.boolean().optional(),
+  contactRequestsEnabled: z.boolean().optional(),
   theme: assistantThemeSchema.optional(),
   branding: brandingSchema,
   retrievalEnabled: z.boolean().optional(),

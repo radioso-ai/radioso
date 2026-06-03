@@ -19,6 +19,9 @@ on:
       - ee/**
       - packages/connector-api/**
       - packages/crawler/**
+      - packages/conversation-contract/**
+      - packages/conversation-defaults/**
+      - packages/conversation-engine/**
       - packages/document-parser/**
       - scripts/sync-ee-frontend-routes.mjs
   workflow_dispatch:

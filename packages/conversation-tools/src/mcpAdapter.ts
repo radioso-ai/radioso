@@ -1,6 +1,11 @@
 import type { ConversationToolDefinition, ToolCallInput, ToolCallResult, ToolService } from "./types.js";
 import { isRecord, recordFromUnknown } from "./typeGuards.js";
 
+/**
+ * JSON-RPC transport port for MCP tools. This package includes an HTTP JSON-RPC
+ * implementation only; stdio is intentionally outside this package and callers
+ * that need it should supply their own transport implementation.
+ */
 export interface McpJsonRpcTransport {
   request<Result>(method: string, params?: Record<string, unknown>): Promise<Result>;
 }
@@ -42,6 +47,57 @@ interface JsonRpcResponse<Result> {
   };
 }
 
+const previewBody = (body: string): string => {
+  const trimmed = body.trim();
+  return trimmed.length > 200 ? `${trimmed.slice(0, 200)}...` : trimmed;
+};
+
+export class McpHttpTransportError extends Error {
+  readonly status: number;
+  readonly body: string;
+
+  constructor(method: string, status: number, body: string) {
+    const preview = previewBody(body);
+    super(`MCP HTTP transport returned HTTP ${status} for "${method}"${preview ? `: ${preview}` : ""}`);
+    this.name = "McpHttpTransportError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+export class McpJsonParseError extends Error {
+  readonly status: number;
+  readonly body?: string;
+
+  constructor(method: string, status: number, body?: string, cause?: unknown) {
+    const preview = body ? previewBody(body) : "";
+    super(
+      `MCP HTTP transport returned a non-JSON response for "${method}" with HTTP ${status}${
+        preview ? `: ${preview}` : ""
+      }`,
+      { cause },
+    );
+    this.name = "McpJsonParseError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+const parseJsonRpcResponse = async <Result>(
+  method: string,
+  response: ToolFetchResponse,
+): Promise<JsonRpcResponse<Result>> => {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType && !contentType.includes("json")) {
+    throw new McpJsonParseError(method, response.status, await response.text());
+  }
+  try {
+    return await response.json() as JsonRpcResponse<Result>;
+  } catch (error) {
+    throw new McpJsonParseError(method, response.status, undefined, error);
+  }
+};
+
 export class HttpMcpJsonRpcTransport implements McpJsonRpcTransport {
   private nextId = 1;
   private readonly fetchImpl: ToolFetch;
@@ -65,7 +121,10 @@ export class HttpMcpJsonRpcTransport implements McpJsonRpcTransport {
         params,
       }),
     });
-    const payload = await response.json() as JsonRpcResponse<Result>;
+    if (!response.ok) {
+      throw new McpHttpTransportError(method, response.status, await response.text());
+    }
+    const payload = await parseJsonRpcResponse<Result>(method, response);
     if (payload.error) {
       throw new Error(payload.error.message ?? `MCP JSON-RPC error ${payload.error.code ?? "unknown"}`);
     }
@@ -171,5 +230,10 @@ export class McpToolService implements ToolService {
 export const createMcpToolService = (transport: McpJsonRpcTransport): McpToolService =>
   new McpToolService(transport);
 
+/**
+ * Creates an MCP tool service backed by the package's HTTP JSON-RPC transport.
+ * Stdio MCP transport is not bundled here; pass a custom McpJsonRpcTransport to
+ * createMcpToolService when another transport is required.
+ */
 export const createHttpMcpToolService = (options: HttpMcpTransportOptions): McpToolService =>
   new McpToolService(new HttpMcpJsonRpcTransport(options));

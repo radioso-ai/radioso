@@ -8,6 +8,8 @@ export {
   createHttpMcpToolService,
   createMcpToolService,
   HttpMcpJsonRpcTransport,
+  McpHttpTransportError,
+  McpJsonParseError,
   McpToolService,
   type HttpMcpTransportOptions,
   type McpJsonRpcTransport,

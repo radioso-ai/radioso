@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { ToolCallInput, ToolService } from "../src/index.js";
 import {
@@ -107,5 +107,32 @@ describe("tool skill bridge", () => {
       status: "failed",
       error: { code: "tool_call_failed", message: "unavailable" },
     });
+  });
+
+  it("keeps non-terminal outcomes applied and emits unique trace IDs", async () => {
+    const dispatcher = createToolSkillDispatcher({
+      async listTools() {
+        return [];
+      },
+      async callTool() {
+        return { status: "awaiting_tool" };
+      },
+    });
+    const skill = toolToSkillDefinition({ name: "lookup" });
+
+    const first = await dispatcher.dispatch({
+      skill,
+      turn,
+      selected: { skillName: "lookup" },
+    });
+    const second = await dispatcher.dispatch({
+      skill,
+      turn,
+      selected: { skillName: "lookup" },
+    });
+
+    expect(first.trace.stages[0]?.status).toBe("applied");
+    expect(second.trace.stages[0]?.status).toBe("applied");
+    expect(first.trace.traceId).not.toBe(second.trace.traceId);
   });
 });

@@ -35,6 +35,7 @@ const SKILL_OUTCOME_STATUSES: ReadonlySet<string> = new Set<SkillOutcomeStatus>(
 ]);
 
 const nowIso = (): string => new Date().toISOString();
+let traceCounter = 0;
 
 const stage = (input: Omit<ConversationTraceStage, "startedAt" | "completedAt">): ConversationTraceStage => {
   const timestamp = nowIso();
@@ -48,11 +49,21 @@ const stage = (input: Omit<ConversationTraceStage, "startedAt" | "completedAt">)
 const createTrace = (stages: ConversationTraceStage[]): ConversationTrace => {
   const startedAt = stages[0]?.startedAt ?? nowIso();
   return {
-    traceId: `conversation-tool-${startedAt}`,
+    traceId: `conversation-tool-${startedAt}-${traceCounter++}`,
     startedAt,
     completedAt: stages.at(-1)?.completedAt ?? startedAt,
     stages,
   };
+};
+
+const traceStatusForOutcome = (status: SkillOutcomeStatus): ConversationTraceStage["status"] => {
+  if (status === "failed") {
+    return "failed";
+  }
+  if (status === "cancelled" || status === "expired") {
+    return "fallback";
+  }
+  return "applied";
 };
 
 const isSkillOutcomeStatus = (value: unknown): value is SkillOutcomeStatus =>
@@ -191,9 +202,7 @@ export class ToolSkillBridge {
         },
       });
       outcome = normalizeToolResult(rawResult);
-      if (outcome.status !== "completed") {
-        status = outcome.status === "failed" ? "failed" : "fallback";
-      }
+      status = traceStatusForOutcome(outcome.status);
     } catch (error) {
       rawResult = {};
       outcome = failedOutcome(toolName, error);
@@ -256,6 +265,8 @@ export const createToolSkillExecutor = (
     async dispatch(invocation: ToolSkillInvocation): Promise<ToolSkillDispatchResult> {
       return {
         disposition: "settled",
+        // SkillDispatchResult can carry only the settled outcome here. Use the
+        // full dispatch path when stagedContext, steering, or subTrace is needed.
         outcome: await bridge.dispatchOutcome(invocation),
       };
     },

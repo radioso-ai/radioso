@@ -34,13 +34,6 @@ jobs:
       CITATION_BASE_URL: https://docs.radioso.dev
 
     steps:
-      - name: Require workspace token
-        run: |
-          if [ -z "${RADIOSO_API_TOKEN}" ]; then
-            echo "Missing required secret: RADIOSO_DOCS_API_TOKEN" >&2
-            exit 1
-          fi
-
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Enable pnpm
@@ -57,6 +50,10 @@ jobs:
 
       - name: Import docs into Radioso
         run: |
+          if [ -z "${RADIOSO_API_TOKEN}" ]; then
+            echo "::notice::Skipping docs import because RADIOSO_DOCS_API_TOKEN is not configured."
+            exit 0
+          fi
           PRUNE_FLAG="--prune"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.prune }}" != "true" ]; then
             PRUNE_FLAG=""

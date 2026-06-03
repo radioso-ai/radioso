@@ -1,7 +1,7 @@
 {
   "projects": {
-    "default": "radioso-live",
-    "live": "radioso-live",
+    "default": "radioso-494120",
+    "live": "radioso-494120",
     "staging": "radioso-staging"
   }
 }

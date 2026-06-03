@@ -143,21 +143,18 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         throw badRequest("This website is not approved to host the embedded assistant.");
       }
 
-      // Ask the website-embed extension for a built-in translation pack
-      // matching the visitor's Accept-Language. Operator's per-locale packs
-      // still win because they're merged AFTER under the locale's own key.
-      const extension = dependencies.agentSurfaceExtensions.get("websiteEmbed");
-      const localizedDefault = extension?.resolveCopyForAcceptLanguage?.(req.header("accept-language") ?? null);
-      const copyResponse = localizedDefault
-        ? { ...websiteEmbed.copy, default: localizedDefault.pack }
-        : websiteEmbed.copy;
-
+      // Cacheable per origin: the response varies only by the allow-listed origin
+      // (declared via Vary so a CDN keys on it) and not by Accept-Language —
+      // built-in locale packs are resolved client-side in the launcher, so `copy`
+      // carries only the operator's per-locale packs.
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Cache-Control", "public, max-age=300");
       res.status(200).json({
         launcherLabel: websiteEmbed.launcherLabel,
         launcherPosition: websiteEmbed.launcherPosition,
         theme: agent.theme,
         branding: agent.branding,
-        copy: copyResponse,
+        copy: websiteEmbed.copy,
         expertOverrides: websiteEmbed.expertOverrides,
         assistantLogoUrl: buildAssistantLogoUrl(req, launchToken, Boolean(agent.logo)),
         proactiveGreetingEnabled: agent.proactiveGreetingEnabled,

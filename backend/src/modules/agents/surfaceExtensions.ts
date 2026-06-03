@@ -38,17 +38,6 @@ export interface AgentSurfaceExtension<TSettings = unknown> {
    */
   parse(raw: unknown): TSettings;
 
-  /**
-   * Optional: resolve a localized copy pack for the visitor's preferred
-   * language. Used by OSS routes that need to serve localized strings without
-   * knowing the extension's own locale bundle (e.g. the embed-config endpoint).
-   * Return `null` to indicate no match — callers fall back to their own
-   * defaults. The shape of the pack is opaque to OSS.
-   */
-  resolveCopyForAcceptLanguage?(acceptLanguage: string | undefined | null): {
-    locale: string;
-    pack: Record<string, string>;
-  } | null;
 }
 
 export class AgentSurfaceExtensionRegistry {

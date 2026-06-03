@@ -1,0 +1,33 @@
+{
+  "name": "@radioso/conversation-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pretest": "pnpm --dir ../conversation-engine run build && pnpm --dir ../conversation-defaults run build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@radioso/conversation-contract": "workspace:*"
+  },
+  "devDependencies": {
+    "@radioso/conversation-defaults": "workspace:*",
+    "@radioso/conversation-engine": "workspace:*",
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

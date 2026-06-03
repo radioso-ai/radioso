@@ -456,8 +456,6 @@ export function HistoryList({
                     : 'Load content first, then ask one question. Conversation activity will appear here after that.'
                   : activeFilter === 'search'
                     ? 'Document searches will appear here after someone runs a search.'
-                    : editionController.canUseHumanContact() && activeFilter === 'contact'
-                      ? 'Contact requests will appear here after follow-up is requested.'
                     : onboarding.hasReadyDocuments
                       ? 'Your workspace is ready. Ask the first question or run a document search to start building activity.'
                       : 'Load content first, then ask one question or run a document search. Activity will appear here after that.'}
@@ -642,7 +640,7 @@ export function HistoryList({
                 />
               </DashboardPaginatedContent>
             ) : null}
-            {editionController.canUseHumanContact() && activeFilter === 'contact' ? (
+            {activeFilter === 'contact' ? (
               <DashboardPaginatedContent
                 as="section"
                 className="space-y-3"

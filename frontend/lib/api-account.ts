@@ -16,36 +16,12 @@ import type {
   AssignableAccountRole,
   AccessibleAccountsResponse,
   CreateAccountInvitationResponse,
-  HumanContactAvailability,
-  HumanContactSettingsUpdate,
-  HumanContactSigningSecretResponse,
   LoginResponse,
   RenameOrganizationResponse,
   WorkspaceGrantRole,
   WorkspaceGrantSummary,
   WorkspaceTokenResponse,
 } from './api-types'
-
-export const humanContactApi = {
-  async getSettings(): Promise<HumanContactAvailability> {
-    return request<HumanContactAvailability>('/ee/contact/settings', {
-      method: 'GET',
-    }, { withApiToken: true })
-  },
-
-  async revealSigningSecret(): Promise<HumanContactSigningSecretResponse> {
-    return request<HumanContactSigningSecretResponse>('/ee/contact/settings/signing-secret', {
-      method: 'GET',
-    }, { withApiToken: true })
-  },
-
-  async updateSettings(input: HumanContactSettingsUpdate): Promise<HumanContactAvailability> {
-    return request<HumanContactAvailability>('/ee/contact/settings', {
-      method: 'PUT',
-      body: JSON.stringify(input),
-    }, { withApiToken: true })
-  },
-}
 
 export const enterpriseUsageApi = {
   async getAccountUsage(input?: { period?: string }): Promise<AccountUsageSummary> {

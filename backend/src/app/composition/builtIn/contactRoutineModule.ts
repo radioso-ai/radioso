@@ -24,9 +24,7 @@ interface AgentContactFlagLookup {
  * Surfaces the "contact a human" affordance to the public chat UI (the existing button
  * is gated on this advertised action) — but only for agents that enabled contact
  * requests, and it never claims the turn: `handle` returns null so the turn falls
- * through to the engine, where the contact routine activates on the `intent_click`. In
- * an EE deployment the EE human-contact intake claims the turn first (it runs
- * pre-engine), so the routine stays dormant there; the advertised action de-duplicates.
+ * through to the engine, where the contact routine activates on the `intent_click`.
  */
 class ContactIntakeActionAdvertiser implements ChatIntakeProviderPort {
   constructor(private readonly agents: AgentContactFlagLookup) {}

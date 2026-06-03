@@ -89,73 +89,12 @@ session-scoped endpoint:
 GET /api/v1/ee/usage-limits/me
 ```
 
-## Talk to a human
+## Contact requests
 
-The Enterprise backend module adds workspace-level "Talk to a human" requests
-through the chat skill intake runtime.
+Enterprise builds use the shared backend contact request routine. Operators
+enable contact requests per assistant from the Skills tab.
 
-Operators configure it with:
-
-- an enabled flag
-- optional email delivery with one or more default recipients
-- optional webhook delivery with a webhook URL
-- an auto-generated signing token for webhook signatures
-
-When enabled and fully configured, a user can ask for human follow-up in chat.
-The contact skill intake collects the required email address, builds the request
-from the conversation context, stores it, and dispatches delivery in the
-background.
-
-Routes are mounted by the Enterprise backend module:
-
-```text
-GET  /api/v1/ee/contact/settings
-GET  /api/v1/ee/contact/settings/signing-secret
-PUT  /api/v1/ee/contact/settings
-```
-
-The legacy direct submission endpoints are retired:
-
-```text
-POST /api/v1/ee/contact/draft
-POST /api/v1/ee/contact/submit
-POST /api/v1/ee/contact/public/chat/{token}/draft
-POST /api/v1/ee/contact/public/chat/{token}/submit
-```
-
-Integrations should send normal chat messages that express the human-contact
-intent. The assistant skill intake then collects required fields and submits the
-request through the same durable delivery pipeline.
-
-The module stores configuration in `ee_contact_settings`. Durable contact
-requests are stored as `human_contact.request` rows in `skill_submissions`.
-
-Webhook requests are `POST` JSON payloads with:
-
-```json
-{
-  "requestId": "uuid",
-  "accountId": "uuid-or-null",
-  "workspaceId": "uuid",
-  "conversationId": "uuid",
-  "assistantMessageId": "uuid-or-null",
-  "sourceChannel": "authenticated_chat",
-  "sourceOrigin": null,
-  "email": "visitor@example.com",
-  "message": "Conversation summary or user-provided follow-up request",
-  "triggerSource": "explicit_user_request",
-  "triggerReason": "The user completed a human-contact chat intake.",
-  "createdAt": "2026-05-04T12:00:00.000Z"
-}
-```
-
-Each payload includes:
-
-```text
-x-radioso-event: human_contact.requested
-x-radioso-signature: sha256=<hex hmac>
-```
-
-The HMAC is computed over the raw JSON body with the workspace signing token.
-Failed email or webhook delivery retries with exponential backoff for up to 8
-attempts, then the request is marked failed with the final delivery error.
+When enabled, the public chat "contact a human" action starts the contact
+routine. The assistant collects the visitor's email address and message, then
+sends the request to the workspace owner or an admin through the shared mail
+pipeline.

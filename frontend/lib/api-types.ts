@@ -194,33 +194,6 @@ export type ChatSuggestion = Omit<ApiSchemas['ChatSuggestion'], 'kind'> & {
   kind?: ChatSuggestionKind
 }
 
-export interface HumanContactAvailability {
-  enabled: boolean
-  configured: boolean
-  emailEnabled?: boolean
-  defaultEmail?: string | null
-  defaultEmails?: string[]
-  webhookEnabled?: boolean
-  webhookUrl?: string | null
-  signingSecretConfigured?: boolean
-  updatedAt?: string | null
-}
-
-export interface HumanContactSettingsUpdate {
-  enabled: boolean
-  emailEnabled?: boolean
-  defaultEmail?: string | null
-  defaultEmails?: string[] | null
-  webhookEnabled?: boolean
-  webhookUrl?: string | null
-  signingSecret?: string | null
-  rotateSigningSecret?: boolean
-}
-
-export interface HumanContactSigningSecretResponse {
-  signingSecret: string | null
-}
-
 export type ActivitySummary = ApiSchemas['ActivitySummary']
 export type SkillDiagnostic = NonNullable<ApiSchemas['ActivitySummary']['skillDiagnostic']>
 export type ParsedQueryInfo = ApiSchemas['ParsedQuery']

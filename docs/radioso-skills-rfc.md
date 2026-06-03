@@ -62,7 +62,7 @@ Radioso already has several proto-skills:
 - retrieval search
 - retrieval answer
 - assistant chat
-- human contact handoff
+- contact request routines
 - password reset email delivery
 - document ingestion
 - MCP capability discovery and tool execution
@@ -178,7 +178,7 @@ The first catalog includes these built-in entries:
 
 These entries are discovery metadata. Callers still use the listed existing contracts to perform work.
 
-When the Enterprise backend module is installed, the catalog can also include `human_contact.request`. That skill is owned by the contact module and describes the contact intake mechanics: availability check, intent evaluation, draft build, request submit, delivery dispatch, and audit record. The OSS catalog does not advertise it unless the EE module registers the definition.
+Contact requests are handled by the built-in chat routine and `contact.send` action handler. The public chat button still uses `human_contact.request` as its intake action identifier, but that identifier is not an Enterprise skill catalog entry.
 
 ## Skill Definitions
 
@@ -186,31 +186,32 @@ A skill definition is data, not an executor. It contains stable catalog metadata
 
 For `retrieval.answer`, the retrieval pipeline still owns query interpretation, candidate retrieval, context selection, prompt assembly, and diagnostics. The skill definition only describes those steps and the shape-specific clauses. For example, `definition_lookup` overrides the `context_selection` step so rerank is disabled and lexical bias is preferred; the context-selection stage reads that resolved clause instead of checking the shape name directly.
 
-For `human_contact.request`, the EE contact service still owns settings, intake state, submit, delivery, and audit behavior. The skill definition makes that work discoverable and diagnosable without adding a generic `POST /skills/{name}/execute` surface.
+For contact requests, the chat routine owns field collection and emits a durable `contact.send` action. The action handler owns delivery. This keeps the flow inside the normal turn spine without adding a generic `POST /skills/{name}/execute` surface.
 
 The direct contact draft and submit routes are intentionally retired. Human
-contact now enters through normal chat messages and the `human_contact.request`
-intake provider.
+contact now enters through normal chat messages or the public chat
+`human_contact.request` intent click, then the built-in contact routine collects
+the required fields and emits `contact.send`.
 
 A chat suggestion may now carry an optional `action`. When `action.kind` is
-`"start_intent"`, the suggestion is an entry chip for a registered skill intake
+`"start_intent"`, the suggestion is an entry chip for a structured workflow
 rather than a free-text follow-up question. Clients activate the chip by sending
 the chip text with `inputMetadata.method = "intent_click"` and the `intent`
-object verbatim; the corresponding skill intake provider receives the structured
-trigger and runs its own intake state machine.
+object verbatim; the registered routine or intake provider receives the
+structured trigger and runs through the normal chat turn spine.
 
-Action chips do not own execution. The chip is a hint surface that opens a
-skill intake; all validation, permissions, state, side effects, and audit
-remain with the intake provider. Modules contribute chips by registering a
-`ChatActionSuggestionProvider`, which is evaluated against the skill-owned turn
-outcome (for example, `retrieval.answer` with `no_context`) and normalized
-status, then returns at most one chip per turn.
+Action chips do not own execution. The chip is a hint surface that starts a
+workflow; all validation, permissions, state, side effects, and audit remain
+with the routine, action handler, or intake provider. Modules contribute chips
+by registering a `ChatActionSuggestionProvider`, which is evaluated against the
+skill-owned turn outcome (for example, `retrieval.answer` with `no_context`) and
+normalized status, then returns at most one chip per turn.
 
 ## Skill Intake And Execution
 
 Some skills can be started from natural chat and need the assistant surface to collect typed inputs before execution. These skills may declare an optional `intake` block alongside their catalog metadata.
 
-A skill definition uses the same interface for retrieval, contact handoff, webhooks, and future integrations:
+A skill definition uses the same interface for retrieval, webhooks, and future integrations:
 
 - `intake` describes fields that must be available before execution, how interruption should work, and whether confirmation is required.
 - `execution` describes the adapter that runs after required intake is valid, such as an internal retrieval adapter, a webhook, or a durable delivery pipeline.

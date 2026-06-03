@@ -522,6 +522,74 @@ describe("chat service streaming", () => {
     expect(order).toEqual(["enqueue"]);
   });
 
+  it("streams the routine confirmation only after the action is durably enqueued", async () => {
+    const order: string[] = [];
+    const { routineStore, routineProvider } = emittingRoutine(order);
+    const actionOutbox: NonNullable<ChatServiceOptions["actionOutbox"]> = {
+      enqueue: async () => {
+        order.push("enqueue");
+        return { id: "a1", duplicate: false };
+      },
+    };
+    const service = makeChatService(
+      new InMemoryConversationRepository(),
+      new InMemoryMessageRepository(),
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "x"; }, async *streamAnswer() { yield "x"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider, actionOutbox },
+    );
+
+    for await (const event of service.streamAnswer({ workspaceId: "workspace-1", query: "contact me", stream: true })) {
+      if (event.type === "chunk") {
+        order.push("chunk");
+      }
+    }
+
+    // The confirmation chunk is streamed only after enqueue + routine-state advance.
+    expect(order).toEqual(["enqueue", "clear", "chunk"]);
+  });
+
+  it("never streams the routine confirmation when the action enqueue fails", async () => {
+    const order: string[] = [];
+    const { routineStore, routineProvider } = emittingRoutine(order);
+    const actionOutbox: NonNullable<ChatServiceOptions["actionOutbox"]> = {
+      enqueue: async () => {
+        order.push("enqueue");
+        throw new Error("outbox unavailable");
+      },
+    };
+    const service = makeChatService(
+      new InMemoryConversationRepository(),
+      new InMemoryMessageRepository(),
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "x"; }, async *streamAnswer() { yield "x"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider, actionOutbox },
+    );
+
+    const streamedChunk = { value: false };
+    await expect(
+      (async () => {
+        for await (const event of service.streamAnswer({ workspaceId: "workspace-1", query: "contact me", stream: true })) {
+          if (event.type === "chunk") {
+            streamedChunk.value = true;
+          }
+        }
+      })(),
+    ).rejects.toThrow();
+
+    // The visitor never saw a "sent" confirmation, and the routine was not advanced.
+    expect(streamedChunk.value).toBe(false);
+    expect(order).toEqual(["enqueue"]);
+  });
+
   it("applies LLM-emitted skill_receipt overrides onto the captured receipt and strips the tag", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

@@ -640,9 +640,11 @@ export class ChatService {
       const routineStartedAt = Date.now();
       const routineTurn = await this.attemptRoutineTurn(session, input.accountId);
       if (routineTurn) {
-        if (routineTurn.presentation.answer) {
-          yield { type: "chunk", text: routineTurn.presentation.answer };
-        }
+        // Durably enqueue the action + advance routine state + persist the reply BEFORE
+        // streaming the confirmation. The routine reply is rendered whole (not token-
+        // streamed), so delaying the chunk costs nothing — but it means the visitor only
+        // sees the "sent" confirmation once the request is actually in the outbox; if the
+        // enqueue fails this throws before any chunk and the routine stays recoverable.
         const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
           workspaceId: input.workspaceId,
           accountId: input.accountId,
@@ -657,6 +659,9 @@ export class ChatService {
         assistantMessageId = completedTurn.assistantMessageId;
         await usageReservation.commit();
         usageReservationCommitted = true;
+        if (routineTurn.presentation.answer) {
+          yield { type: "chunk", text: routineTurn.presentation.answer };
+        }
         yield { type: "done", ...completedTurn.response };
         return;
       }

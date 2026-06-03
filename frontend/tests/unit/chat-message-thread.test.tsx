@@ -479,7 +479,7 @@ describe('ChatMessageThread', () => {
         skillCatalog={[
           {
             name: 'human_contact.request',
-            displayName: 'Contact handoff request',
+            displayName: 'Contact request',
             display: {
               icon: 'handshake',
               title: 'Contact us',

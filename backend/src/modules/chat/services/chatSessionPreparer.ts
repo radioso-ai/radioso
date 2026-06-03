@@ -237,6 +237,7 @@ export class ChatSessionPreparer {
         citationDisplayEnabled: agent.citationDisplayEnabled,
       },
       responseBehaviorEnabled: true,
+      agentSkillSettings: agent.skillSettings,
       metadataFilter: input.metadataFilter,
       sourceScope: agent.sourceScope,
       usageContext: {
@@ -358,6 +359,7 @@ export class ChatSessionPreparer {
         contactRequestsEnabled: false,
         retrievalEnabled: true,
         sourceScope: { mode: "all" },
+        skillSettings: {},
         logo: null,
         // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
         theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
@@ -407,6 +409,7 @@ export class ChatSessionPreparer {
       contactRequestsEnabled: false,
       retrievalEnabled: true,
       sourceScope: { mode: "all" },
+      skillSettings: {},
       logo: null,
       // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
       theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,

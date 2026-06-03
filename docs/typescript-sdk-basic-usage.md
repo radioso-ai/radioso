@@ -200,7 +200,7 @@ const response = await client.chat.create({
 });
 ```
 
-Agents with `retrievalEnabled: true` can use the workspace retrieval pipeline. Direct-only agents answer from their own instructions and return retrieval diagnostics with `retrievalInvoked: false`.
+Agents with `retrievalEnabled: true` can use the retrieval pipeline. Workspace retrieval settings provide defaults; set `skillSettings["retrieval.answer"]` on an agent to override retrieval behavior for that agent. Direct-only agents answer from their own instructions and return retrieval diagnostics with `retrievalInvoked: false`.
 
 ## Non-Streaming Chat
 

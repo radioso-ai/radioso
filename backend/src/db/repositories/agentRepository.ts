@@ -13,6 +13,7 @@ import {
   type AgentLogo,
   type AgentEmbedTheme,
   type AgentSurfaceExtensionRegistry,
+  type AgentSkillSettingsRegistry,
   type AgentSurfacePosition,
   type NormalizedAgentInput,
 } from "../../modules/agents/public.js";
@@ -29,6 +30,7 @@ interface AgentRow {
   behavior_settings: unknown;
   greeting_settings: unknown;
   output_modes: unknown;
+  skill_settings: unknown;
   chat_provider: LlmProviderName | null;
   chat_model: string | null;
   created_at: Date;
@@ -55,6 +57,7 @@ const agentColumns = `
   behavior_settings,
   greeting_settings,
   output_modes,
+  skill_settings,
   chat_provider,
   chat_model,
   created_at,
@@ -139,12 +142,18 @@ const toOutputModes = (agent: NormalizedAgentInput): Record<string, unknown> => 
   extensions: agent.surfaceSettings.extensions,
 });
 
+const toSkillSettings = (agent: NormalizedAgentInput): Record<string, unknown> => agent.skillSettings;
+
 const persistableSourceIds = (sourceScope: NormalizedAgentInput["sourceScope"]): Array<string | null> =>
   sourceScope.mode === "selected"
     ? sourceScope.sourceIds.map((sourceId) => sourceId === MANUALLY_ADDED_DOCUMENTS_SOURCE_ID ? null : sourceId)
     : [];
 
-const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegistry): AgentRecord => {
+const mapAgent = (
+  row: AgentRow,
+  surfaceExtensions?: AgentSurfaceExtensionRegistry,
+  skillSettings?: AgentSkillSettingsRegistry,
+): AgentRecord => {
   const behavior = asRecord(row.behavior_settings);
   const greeting = asRecord(row.greeting_settings);
   const outputModes = asRecord(row.output_modes);
@@ -172,6 +181,7 @@ const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegist
     sourceScope: row.source_scope_mode === "selected"
       ? { mode: "selected", sourceIds: row.source_ids ?? [] }
       : { mode: "all" },
+    skillSettings: asRecord(row.skill_settings),
     logo: (behavior.logo ?? websiteEmbedSource.logo) as AgentLogo | null | undefined,
     theme: (behavior.theme ?? websiteEmbedSource.theme) as AgentEmbedTheme | undefined,
     branding: behavior.branding as AgentBrandingSettings | undefined,
@@ -199,7 +209,7 @@ const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegist
       },
       extensions,
     },
-  });
+  }, { skillSettings });
 
   return {
     id: row.id,
@@ -227,10 +237,14 @@ export class AgentRepository implements AgentRepositoryPort {
   constructor(
     private readonly database: Database,
     private readonly surfaceExtensions?: AgentSurfaceExtensionRegistry,
+    private readonly skillSettings?: AgentSkillSettingsRegistry,
   ) {}
 
   async create(workspaceId: string, input: AgentInput): Promise<AgentRecord> {
-    const normalized = validateAgentInput(input, { extensions: this.surfaceExtensions });
+    const normalized = validateAgentInput(input, {
+      extensions: this.surfaceExtensions,
+      skillSettings: this.skillSettings,
+    });
     return this.database.withTransaction(async (client) => {
       const agentId = randomUUID();
       const result = await client.query<AgentRow>(
@@ -243,10 +257,11 @@ export class AgentRepository implements AgentRepositoryPort {
            behavior_settings,
            greeting_settings,
            output_modes,
+           skill_settings,
            chat_provider,
            chat_model
          )
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11)
          RETURNING ${agentColumns}`,
         [
           agentId,
@@ -257,6 +272,7 @@ export class AgentRepository implements AgentRepositoryPort {
           JSON.stringify(toBehaviorSettings(normalized)),
           JSON.stringify(toGreetingSettings(normalized)),
           JSON.stringify(toOutputModes(normalized)),
+          JSON.stringify(toSkillSettings(normalized)),
           normalized.chatModelOverride?.provider ?? null,
           normalized.chatModelOverride?.model ?? null,
         ],
@@ -269,7 +285,7 @@ export class AgentRepository implements AgentRepositoryPort {
       return mapAgent({
         ...row,
         source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
-      }, this.surfaceExtensions);
+      }, this.surfaceExtensions, this.skillSettings);
     });
   }
 
@@ -278,7 +294,7 @@ export class AgentRepository implements AgentRepositoryPort {
       `SELECT ${agentColumns} FROM agents WHERE id = $1 AND workspace_id = $2`,
       [agentId, workspaceId],
     );
-    return row ? mapAgent(row, this.surfaceExtensions) : null;
+    return row ? mapAgent(row, this.surfaceExtensions, this.skillSettings) : null;
   }
 
   async findDefaultByWorkspaceId(workspaceId: string): Promise<AgentRecord | null> {
@@ -289,7 +305,7 @@ export class AgentRepository implements AgentRepositoryPort {
          AND workspace_id = $1`,
       [workspaceId],
     );
-    return row ? mapAgent(row, this.surfaceExtensions) : null;
+    return row ? mapAgent(row, this.surfaceExtensions, this.skillSettings) : null;
   }
 
   async findByAnonymousChatToken(token: string): Promise<AgentRecord | null> {
@@ -299,7 +315,7 @@ export class AgentRepository implements AgentRepositoryPort {
        WHERE output_modes #>> '{anonymousChat,token}' = $1`,
       [token],
     );
-    return row ? mapAgent(row, this.surfaceExtensions) : null;
+    return row ? mapAgent(row, this.surfaceExtensions, this.skillSettings) : null;
   }
 
   async findByWebsiteEmbedToken(token: string): Promise<AgentRecord | null> {
@@ -309,7 +325,7 @@ export class AgentRepository implements AgentRepositoryPort {
        WHERE output_modes #>> '{websiteEmbed,token}' = $1`,
       [token],
     );
-    return row ? mapAgent(row, this.surfaceExtensions) : null;
+    return row ? mapAgent(row, this.surfaceExtensions, this.skillSettings) : null;
   }
 
   async listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]> {
@@ -320,7 +336,7 @@ export class AgentRepository implements AgentRepositoryPort {
        ORDER BY created_at ASC, id ASC`,
       [workspaceId],
     );
-    return rows.map((row) => mapAgent(row, this.surfaceExtensions));
+    return rows.map((row) => mapAgent(row, this.surfaceExtensions, this.skillSettings));
   }
 
   async update(agentId: string, workspaceId: string, input: AgentInput): Promise<AgentRecord> {
@@ -334,7 +350,7 @@ export class AgentRepository implements AgentRepositoryPort {
         ...input,
         surfaceSettings: mergeAgentSurfaceSettings(current.surfaceSettings, input.surfaceSettings),
       },
-      { extensions: this.surfaceExtensions },
+      { extensions: this.surfaceExtensions, skillSettings: this.skillSettings },
     );
     return this.database.withTransaction(async (client) => {
       const result = await client.query<AgentRow>(
@@ -345,11 +361,12 @@ export class AgentRepository implements AgentRepositoryPort {
              behavior_settings = $4::jsonb,
              greeting_settings = $5::jsonb,
              output_modes = $6::jsonb,
-             chat_provider = $7,
-             chat_model = $8,
+             skill_settings = $7::jsonb,
+             chat_provider = $8,
+             chat_model = $9,
              updated_at = NOW()
-         WHERE id = $9
-           AND workspace_id = $10
+         WHERE id = $10
+           AND workspace_id = $11
          RETURNING ${agentColumns}`,
         [
           normalized.name,
@@ -358,6 +375,7 @@ export class AgentRepository implements AgentRepositoryPort {
           JSON.stringify(toBehaviorSettings(normalized)),
           JSON.stringify(toGreetingSettings(normalized)),
           JSON.stringify(toOutputModes(normalized)),
+          JSON.stringify(toSkillSettings(normalized)),
           normalized.chatModelOverride?.provider ?? null,
           normalized.chatModelOverride?.model ?? null,
           agentId,
@@ -372,7 +390,7 @@ export class AgentRepository implements AgentRepositoryPort {
       return mapAgent({
         ...row,
         source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
-      }, this.surfaceExtensions);
+      }, this.surfaceExtensions, this.skillSettings);
     });
   }
 

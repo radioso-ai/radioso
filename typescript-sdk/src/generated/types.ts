@@ -2184,6 +2184,9 @@ export interface components {
                 provider: "openai" | "openai-compatible" | "gemini" | "claude";
                 model: string;
             } | null;
+            skillSettings: {
+                [key: string]: unknown;
+            };
             surfaceSettings: components["schemas"]["ConversationAgentSurfaceSettings"];
         };
         AgentListResponse: {
@@ -2222,6 +2225,9 @@ export interface components {
                 /** @enum {string} */
                 provider: "openai" | "openai-compatible" | "gemini" | "claude";
                 model: string;
+            };
+            skillSettings?: {
+                [key: string]: unknown;
             };
             surfaceSettings?: {
                 authenticatedChat?: {

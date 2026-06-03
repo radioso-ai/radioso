@@ -1,0 +1,2 @@
+ALTER TABLE agents
+  ADD COLUMN IF NOT EXISTS skill_settings JSONB NOT NULL DEFAULT '{}'::jsonb;

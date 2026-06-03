@@ -3303,6 +3303,10 @@
                   "model"
                 ]
               },
+              "skillSettings": {
+                "type": "object",
+                "additionalProperties": {}
+              },
               "surfaceSettings": {
                 "$ref": "#/components/schemas/ConversationAgentSurfaceSettings"
               }
@@ -3324,6 +3328,7 @@
               "proactiveGreetingEnabled",
               "assistantBootstrapActive",
               "chatModelOverride",
+              "skillSettings",
               "surfaceSettings"
             ]
           }
@@ -3488,6 +3493,10 @@
                 "type": "null"
               }
             ]
+          },
+          "skillSettings": {
+            "type": "object",
+            "additionalProperties": {}
           },
           "surfaceSettings": {
             "type": "object",

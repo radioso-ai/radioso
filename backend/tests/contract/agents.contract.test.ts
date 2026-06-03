@@ -137,6 +137,64 @@ describe("agents contract", () => {
       .expect(400);
   });
 
+  it("accepts and returns per-agent skill settings", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-skill-settings@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const created = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({
+        name: "Retrieval tuned",
+        skillSettings: {
+          "retrieval.answer": {
+            queryRewriteEnabled: false,
+            vectorTopK: 7,
+          },
+          "custom.skill": {
+            enabled: true,
+          },
+        },
+      })
+      .expect(201);
+
+    expect(created.body.skillSettings).toEqual({
+      "retrieval.answer": {
+        queryRewriteEnabled: false,
+        vectorTopK: 7,
+      },
+      "custom.skill": {
+        enabled: true,
+      },
+    });
+
+    const updated = await request(app)
+      .put(`/api/v1/agents/${created.body.id}`)
+      .set("Authorization", authorization)
+      .send({
+        skillSettings: {
+          "retrieval.answer": {
+            rerankEnabled: true,
+          },
+        },
+      })
+      .expect(200);
+
+    expect(updated.body.skillSettings).toEqual({
+      "retrieval.answer": {
+        rerankEnabled: true,
+      },
+    });
+
+    const fetched = await request(app)
+      .get(`/api/v1/agents/${created.body.id}`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(fetched.body.skillSettings).toEqual(updated.body.skillSettings);
+  });
+
   it("persists manually added documents in selected source scope", async () => {
     const { app } = createTestApp();
     const { token } = await issueTestToken(app, "agents-manual-source-scope@example.com");

@@ -80,6 +80,7 @@ describe("freezeAgent", () => {
       assistantDefaultLocale: "en",
       proactiveGreetingEnabled: true,
       sourceScope: { mode: "all" },
+      skillSettings: {},
       surfaceSettings: {} as never,
       chatModelOverride: null,
     };

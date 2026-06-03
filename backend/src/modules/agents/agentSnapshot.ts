@@ -25,6 +25,7 @@ export interface AgentSnapshot {
   suggestedQuestionsEnabled: boolean;
   citationDisplayEnabled: boolean;
   sourceScope: AgentSourceScope;
+  skillSettings: Record<string, unknown>;
   chatModelOverride: AgentChatModelOverride | null;
 }
 
@@ -38,5 +39,6 @@ export const freezeAgent = (agent: ConversationAgent): AgentSnapshot => ({
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
   citationDisplayEnabled: agent.citationDisplayEnabled,
   sourceScope: agent.sourceScope,
+  skillSettings: agent.skillSettings,
   chatModelOverride: agent.chatModelOverride,
 });

@@ -2151,6 +2151,9 @@ components:
               required:
                 - provider
                 - model
+            skillSettings:
+              type: object
+              additionalProperties: {}
             surfaceSettings:
               $ref: "#/components/schemas/ConversationAgentSurfaceSettings"
           required:
@@ -2170,6 +2173,7 @@ components:
             - proactiveGreetingEnabled
             - assistantBootstrapActive
             - chatModelOverride
+            - skillSettings
             - surfaceSettings
     AgentListResponse:
       type: object
@@ -2275,6 +2279,9 @@ components:
                 - provider
                 - model
             - type: "null"
+        skillSettings:
+          type: object
+          additionalProperties: {}
         surfaceSettings:
           type: object
           properties:

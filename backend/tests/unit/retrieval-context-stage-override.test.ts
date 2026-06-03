@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { RetrievalContextStageService } from "../../src/modules/retrieval/services/retrievalContextStage.js";
 import type { RetrievalSettingsRecord } from "../../src/modules/settings/contracts/retrieval.js";
+import { createRetrievalSkillSettingsResolver } from "../../src/app/composition/skillSettingsResolver.js";
 
 const baseSettings = (workspaceId: string): RetrievalSettingsRecord => ({
   workspaceId,
@@ -108,5 +109,86 @@ describe("RetrievalContextStageService retrievalSettingsOverride", () => {
     });
 
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("resolves agent retrieval skill settings over workspace defaults", async () => {
+    const stage = new RetrievalContextStageService(
+      { async getForWorkspace(id: string) { return baseSettings(id); } } as never,
+      new ConversationContextService(),
+      createRetrievalSkillSettingsResolver(),
+    );
+
+    const result = await stage.execute({
+      workspaceId: "ws-1",
+      query: "q",
+      history: [],
+      agentSkillSettings: {
+        "retrieval.answer": {
+          queryRewriteEnabled: false,
+          vectorTopK: 7,
+        },
+      },
+    });
+
+    expect(result.settings.queryRewriteEnabled).toBe(false);
+    expect(result.settings.vectorTopK).toBe(7);
+    expect(result.settings.rerankTopK).toBe(5);
+  });
+
+  it("keeps empty agent skill settings at today's workspace-default behavior", async () => {
+    const defaults = baseSettings("ws-1");
+    const stage = new RetrievalContextStageService(
+      { async getForWorkspace() { return defaults; } } as never,
+      new ConversationContextService(),
+      createRetrievalSkillSettingsResolver(),
+    );
+
+    const withoutSkillSettings = await stage.execute({
+      workspaceId: "ws-1",
+      query: "q",
+      history: [],
+    });
+    const withEmptySkillSettings = await stage.execute({
+      workspaceId: "ws-1",
+      query: "q",
+      history: [],
+      agentSkillSettings: {},
+    });
+
+    expect(withEmptySkillSettings.settings).toEqual(withoutSkillSettings.settings);
+  });
+});
+
+describe("SkillSettingsResolver", () => {
+  it("inherits absent fields and preserves explicit overrides across default changes", () => {
+    const resolver = createRetrievalSkillSettingsResolver();
+    const firstDefaults = baseSettings("ws-1");
+    const agentOverride = {
+      vectorTopK: 7,
+    };
+
+    const first = resolver.resolve("retrieval.answer", firstDefaults, agentOverride);
+    const second = resolver.resolve("retrieval.answer", {
+      ...firstDefaults,
+      queryRewriteEnabled: false,
+      vectorTopK: 30,
+      rerankTopK: 9,
+    }, agentOverride);
+
+    expect(first.vectorTopK).toBe(7);
+    expect(first.queryRewriteEnabled).toBe(true);
+    expect(second.vectorTopK).toBe(7);
+    expect(second.queryRewriteEnabled).toBe(false);
+    expect(second.rerankTopK).toBe(9);
+  });
+
+  it("rejects invalid retrieval overrides through the retrieval skill settings schema", () => {
+    const resolver = createRetrievalSkillSettingsResolver();
+
+    expect(() =>
+      resolver.resolve("retrieval.answer", baseSettings("ws-1"), {
+        vectorTopK: 0,
+      }),
+    ).toThrow(/vectorTopK/);
   });
 });

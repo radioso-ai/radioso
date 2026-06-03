@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { validateAgentInput } from "../../src/modules/agents/public.js";
+import { AgentSkillSettingsRegistry, validateAgentInput } from "../../src/modules/agents/public.js";
 
 describe("agent branding normalization", () => {
   it("defaults branding to false / null when input omits it", () => {
@@ -46,5 +46,64 @@ describe("agent branding normalization", () => {
         branding: { hidePoweredBy: false, privacyPolicyUrl: "not a url" },
       }),
     ).toThrow(/valid URL/);
+  });
+});
+
+describe("agent skill settings normalization", () => {
+  it("passes unknown skill keys through opaquely", () => {
+    const normalized = validateAgentInput({
+      name: "Agent",
+      skillSettings: {
+        "custom.skill": { enabled: true, nested: { value: 1 } },
+      },
+    });
+
+    expect(normalized.skillSettings).toEqual({
+      "custom.skill": { enabled: true, nested: { value: 1 } },
+    });
+  });
+
+  it("normalizes known skill settings through the owning schema", () => {
+    const registry = new AgentSkillSettingsRegistry();
+    registry.register({
+      skillName: "retrieval.answer",
+      normalize(input) {
+        const record = input as Record<string, unknown>;
+        if (typeof record.vectorTopK !== "number") {
+          throw new Error("vectorTopK must be a number");
+        }
+        return { vectorTopK: Math.trunc(record.vectorTopK) };
+      },
+    });
+
+    const normalized = validateAgentInput({
+      name: "Agent",
+      skillSettings: {
+        "retrieval.answer": { vectorTopK: 4.8 },
+      },
+    }, { skillSettings: registry });
+
+    expect(normalized.skillSettings).toEqual({
+      "retrieval.answer": { vectorTopK: 4 },
+    });
+  });
+
+  it("rejects invalid known skill settings", () => {
+    const registry = new AgentSkillSettingsRegistry();
+    registry.register({
+      skillName: "retrieval.answer",
+      normalize() {
+        throw new Error("retrieval.answer settings are invalid");
+      },
+    });
+
+    expect(() =>
+      validateAgentInput({
+        name: "Agent",
+        skillSettings: {
+          "retrieval.answer": { vectorTopK: "large" },
+        },
+      }, { skillSettings: registry }),
+    ).toThrow(/retrieval\.answer settings are invalid/);
   });
 });

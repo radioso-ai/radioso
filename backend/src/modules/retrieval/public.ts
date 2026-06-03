@@ -149,6 +149,7 @@ export interface RetrievalPipelineRequest {
   metadataFilter?: Record<string, unknown>;
   sourceScope?: RetrievalSourceScope;
   usageContext?: Omit<ModelCallUsageContext, "operation">;
+  agentSkillSettings?: Record<string, unknown>;
   // When set, the retrieval pipeline runs against these settings instead of
   // reading the workspace's persisted retrieval settings. The override is
   // applied as a shallow merge over the workspace record and MUST NOT cause

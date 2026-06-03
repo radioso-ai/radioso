@@ -53,6 +53,7 @@ const agent = (): AgentRecord => ({
   contactRequestsEnabled: false,
   retrievalEnabled: true,
   sourceScope: { mode: "all" },
+  skillSettings: {},
   logo: null,
   theme: {
     brand: "#000000",

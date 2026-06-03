@@ -1,6 +1,7 @@
 export { createDefaultSkillCatalogRegistry, builtInSkillCatalogEntries } from "./defaultCatalog.js";
-export { SkillCatalogRegistry } from "./skillCatalogRegistry.js";
+export type { SkillCatalogEntryDefinition } from "./domain.js";
 export {
+  SkillCatalogRegistry,
   SkillExecutorRegistry,
   noopSkillEmitPort,
   type SkillDeferralTicket,
@@ -13,4 +14,4 @@ export {
   type SkillOutcome,
   type SkillOutcomeControl,
   type SkillTransientGuidance,
-} from "./skillExecutorRegistry.js";
+} from "@radioso/conversation-defaults";

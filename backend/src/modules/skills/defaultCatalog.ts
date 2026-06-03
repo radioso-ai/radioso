@@ -1,3 +1,4 @@
+import { SkillCatalogRegistry } from "@radioso/conversation-defaults";
 import { type SkillCatalogEntryDefinition } from "./domain.js";
 import { assistantChatSkillDefinition } from "./definitions/assistant.chat.js";
 import { retrievalSearchSkillDefinition } from "./definitions/retrieval.search.js";
@@ -8,7 +9,6 @@ import { documentsIngestSkillDefinition } from "./definitions/documents.ingest.j
 import { documentsSearchSkillDefinition } from "./definitions/documents.search.js";
 import { documentsDeleteSkillDefinition } from "./definitions/documents.delete.js";
 import { mcpDescribeCapabilitiesSkillDefinition } from "./definitions/mcp.describe_capabilities.js";
-import { SkillCatalogRegistry } from "./skillCatalogRegistry.js";
 
 // Every built-in skill is a declarative `skill.json` under `definitions/`, loaded
 // via `loadSkillDefinition`. The catalog assembles them; it owns no skill data.
@@ -26,5 +26,5 @@ export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
 
 export const createDefaultSkillCatalogRegistry = (
   additionalEntries: SkillCatalogEntryDefinition[] = [],
-): SkillCatalogRegistry =>
+): SkillCatalogRegistry<SkillCatalogEntryDefinition> =>
   new SkillCatalogRegistry([...builtInSkillCatalogEntries, ...additionalEntries]);

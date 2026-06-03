@@ -134,6 +134,12 @@ variable "frontend_max_instances" {
   default     = 2
 }
 
+variable "frontend_cdn_domain" {
+  description = "Domain to serve the frontend behind an external HTTPS load balancer with Cloud CDN for the website-embed assets (e.g. \"radioso.dev\"). Leave empty to keep serving Cloud Run directly with no load balancer or CDN."
+  type        = string
+  default     = ""
+}
+
 variable "worker_task_queue_name" {
   description = "Cloud Tasks queue name used to dispatch document processing jobs."
   type        = string

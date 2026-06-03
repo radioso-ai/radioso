@@ -25,6 +25,11 @@ import {
   type LocalSkillRegistry,
 } from "./defaultPorts.js";
 import {
+  createDirectiveCoherenceGate,
+  type DirectiveCoherenceGate,
+  type DirectiveCoherenceGateOptions,
+} from "./coherence.js";
+import {
   TransientConversationKitAuthoringStore,
   type ConversationKitAuthoringStore,
 } from "./authoringStore.js";
@@ -48,6 +53,7 @@ export interface ConversationKit {
   readonly skills: readonly SkillDefinition[];
   readonly stores: ConversationStores;
   readonly modelGateway: ConversationModelGateway;
+  readonly directiveCoherence?: DirectiveCoherenceGate;
   runTurn(input: RunConversationTurnInput): Promise<ProcessTurnResult>;
   listEvents(sessionId: string): ConversationEvent[];
 }
@@ -65,6 +71,7 @@ export interface CreateConversationKitOptions extends ConversationKitModelGatewa
   selector?: ConversationSkillSelector;
   dispatcher?: ConversationSkillDispatcher;
   composer?: ConversationTurnComposer;
+  directiveCoherence?: DirectiveCoherenceGateOptions;
 }
 
 const defaultAgent = (): ConversationAgentConfig => ({
@@ -114,6 +121,7 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
   const selector = options.selector ?? createDefaultConversationSkillSelector();
   const dispatcher = options.dispatcher ?? createDefaultConversationSkillDispatcher(options.localSkills);
   const composer = options.composer ?? createModelBackedConversationComposer(modelGateway);
+  const directiveCoherence = createDirectiveCoherenceGate(options.directiveCoherence, modelGateway);
 
   return {
     get agent() {
@@ -129,6 +137,7 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
     skills,
     stores,
     modelGateway,
+    directiveCoherence,
     async runTurn(input): Promise<ProcessTurnResult> {
       const turnAgent = input.agent ?? authoringStore.getAgent(agent.id) ?? agent;
       const inputEvent: ConversationInputEvent = {

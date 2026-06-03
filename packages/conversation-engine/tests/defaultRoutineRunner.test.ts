@@ -195,7 +195,7 @@ describe("DefaultRoutineRunner", () => {
     await expect(runner.resume({
       turn,
       state: { sessionId: "session_1", routineId: "loop", path: ["a"], variables: {}, status: "active" },
-    })).rejects.toThrow("routine_skill_walk_exceeded");
+    })).rejects.toThrow("routine_walk_exceeded");
     // The guard fires after a bounded number of dispatches, not unboundedly.
     expect(dispatch.mock.calls.length).toBeLessThanOrEqual(cyclic.steps.length + 1);
   });
@@ -301,5 +301,65 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(result.response.answer).toContain("done");
     expect(result.nextState).toBeNull();
+  });
+});
+
+describe("DefaultRoutineRunner action (fire-and-forget) steps", () => {
+  const actionRoutine: Routine = {
+    id: "contact",
+    rootStepId: "ask_message",
+    steps: [
+      { id: "ask_message", kind: "chat", action: "Ask for the message." },
+      { id: "submit", kind: "action", actionType: "contact.send" },
+      { id: "done", kind: "terminal", action: "Confirm the request was sent." },
+    ],
+    transitions: [
+      { from: "ask_message", to: "submit", condition: "a message was provided" },
+      { from: "submit", to: "done", condition: "after emitting" },
+    ],
+  };
+  const atMessage = (variables: Record<string, unknown> = {}): RoutineState => ({
+    sessionId: "session_1", routineId: "contact", path: ["ask_message"], variables, status: "active",
+  });
+
+  it("emits an action request (authored type + the routine variables as payload) and auto-advances", async () => {
+    const select = vi.fn(async () => ({ nextStepId: "submit" }));
+    const runner = new DefaultRoutineRunner([actionRoutine], { select }, { render: vi.fn(echoRenderer.render) });
+
+    const result = await runner.resume({ turn, state: atMessage({ email: "a@b.c", message: "hi" }) });
+
+    expect(result.actions).toEqual([{ type: "contact.send", payload: { email: "a@b.c", message: "hi" } }]);
+    // Advanced past the action step to the confirmation/terminal step and cleared state.
+    expect(result.response.answer).toContain("done");
+    expect(result.nextState).toBeNull();
+    // No selector call for the action step's hop (auto-advance), and no skill dispatcher needed.
+    expect(select).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws when an action step has no follow-up edge", async () => {
+    const noFollowUp: Routine = {
+      id: "contact",
+      rootStepId: "ask_message",
+      steps: [
+        { id: "ask_message", kind: "chat", action: "Ask." },
+        { id: "submit", kind: "action", actionType: "contact.send" },
+      ],
+      transitions: [{ from: "ask_message", to: "submit", condition: "a message was provided" }],
+    };
+    const runner = new DefaultRoutineRunner([noFollowUp], { select: vi.fn(async () => ({ nextStepId: "submit" })) }, { render: vi.fn() });
+    await expect(runner.resume({ turn, state: atMessage() })).rejects.toThrow("routine_action_step_no_follow_up");
+  });
+
+  it("throws when an action step declares no actionType", async () => {
+    const noType: Routine = {
+      ...actionRoutine,
+      steps: [
+        { id: "ask_message", kind: "chat", action: "Ask." },
+        { id: "submit", kind: "action" },
+        { id: "done", kind: "terminal", action: "Confirm." },
+      ],
+    };
+    const runner = new DefaultRoutineRunner([noType], { select: vi.fn(async () => ({ nextStepId: "submit" })) }, { render: vi.fn() });
+    await expect(runner.resume({ turn, state: atMessage() })).rejects.toThrow("routine_action_step_missing_type");
   });
 });

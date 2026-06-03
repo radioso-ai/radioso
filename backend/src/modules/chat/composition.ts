@@ -3,7 +3,30 @@ export { AssistantHistoryService } from "./services/assistantHistoryService.js";
 export { ChatBootstrapService } from "./services/chatBootstrapService.js";
 export {
   ChatService,
+  type ChatRoutineProvider,
 } from "./services/chatService.js";
+export { RoutineNextStepSelector } from "./services/routines/routineNextStepSelector.js";
+export { RoutineStepRenderer } from "./services/routines/routineStepRenderer.js";
+export { classifyContactIntent } from "./services/routines/contactActivationClassifier.js";
+export {
+  RoutineChatModelGateway,
+  type RoutineModelTurnContext,
+} from "./services/routines/routineChatModelGateway.js";
+export {
+  ContactSendActionHandler,
+  WorkspaceOwnerContactRecipientResolver,
+  type ContactNotificationMailer,
+  type ContactRecipientResolver,
+  type ContactWorkspaceLookup,
+  type ContactMembershipLookup,
+} from "./services/actions/contactSendActionHandler.js";
+export {
+  contactRoutine,
+  CONTACT_ROUTINE_ID,
+  CONTACT_SEND_ACTION_TYPE,
+  CONTACT_INTENT_SKILL_NAME,
+  CONTACT_INTENT_NAME,
+} from "./services/routines/contactRoutine.js";
 export {
   buildChatTurnRuntime,
   type ChatTurnRuntime,
@@ -31,6 +54,18 @@ export { AnswerPresentationService } from "./services/answerPresentationService.
 export { resolveCitationArtifacts } from "./services/implicitCitationSupport.js";
 export { createSkillOutcomeCapabilityProvider } from "./services/chatAnswerPresenter.js";
 export { RoutineRegistry, type RoutineRegistration } from "./services/routines/routineRegistry.js";
+export {
+  ActionDispatcher,
+  ActionHandlerRegistry,
+  type ActionHandler,
+  type ActionHandlerContext,
+  type ActionOutboxConsumerPort,
+} from "./services/actions/actionDispatcher.js";
+export {
+  ActionDispatchWorker,
+  type ActionDispatchPort,
+  type ActionDispatchWorkerOptions,
+} from "./services/actions/actionDispatchWorker.js";
 export type { ChatGateway, ChatStreamEvent } from "./contracts/index.js";
 export { ChatHistoryService } from "./services/chatHistoryService.js";
 export {
@@ -39,6 +74,7 @@ export {
   type ChatIntakeProviderPort,
   type ChatIntakeResult,
   type ChatIntakeStatus,
+  type PublicChatIntakeAction,
 } from "./services/chatIntakeProvider.js";
 export {
   ConfiguredSkillIntakeProvider,

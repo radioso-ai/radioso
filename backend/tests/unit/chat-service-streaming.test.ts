@@ -72,6 +72,11 @@ const makeChatService = (
   // The engine is the only turn path now; default to a real one so every streaming
   // test exercises it, matching production composition.
   conversationEngine: ChatServiceOptions["conversationEngine"] = createConversationEngine(),
+  routine?: {
+    routineStore: ChatServiceOptions["routineStore"];
+    routineProvider: ChatServiceOptions["routineProvider"];
+    actionOutbox?: ChatServiceOptions["actionOutbox"];
+  },
 ): ChatService =>
   new ChatService({
     conversationRepository,
@@ -93,6 +98,9 @@ const makeChatService = (
     directiveSteering,
     selectionStrategy,
     conversationEngine,
+    routineStore: routine?.routineStore,
+    routineProvider: routine?.routineProvider,
+    actionOutbox: routine?.actionOutbox,
   });
 
 const asChatActivityPipeline = (pipeline: Record<string, unknown>) => {
@@ -361,6 +369,225 @@ describe("chat service streaming", () => {
     expect(interpretCalls).toBe(0);
     const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
     expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("attempts the routine before retrieval and skips grounding when it claims the turn", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    let interpretCalls = 0;
+    const retrievalPipeline = {
+      async interpret() {
+        interpretCalls += 1;
+        throw new Error("retrieval should not run for a routine turn");
+      },
+      async runInterpreted() {
+        throw new Error("runInterpreted should not run for a routine turn");
+      },
+      async runWithoutRetrieval() {
+        throw new Error("runWithoutRetrieval should not run for a routine turn");
+      },
+    };
+    // A routine that claims the turn, rendering its own reply (no skill / no retrieval).
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => null,
+      save: async () => {},
+      clear: async () => {},
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      isEmpty: false,
+      activator: () => ({ activate: async () => ({ routineId: "contact.request" }) }),
+      createRunner: () => ({
+        resume: async () => ({
+          response: { answer: "What is your email?" },
+          nextState: { sessionId: "s", routineId: "contact.request", path: ["ask_email"], variables: {}, status: "active" },
+        }),
+      }),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
+      {
+        async answer() {
+          return "Normal answer.";
+        },
+        async *streamAnswer() {
+          yield "Normal answer.";
+        },
+      },
+      auditService,
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider },
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "Ma soovin kellegagi ühendust võtta.",
+      stream: false,
+    });
+
+    expect(response.answer).toContain("What is your email?");
+    // The routine claimed the turn before grounding — retrieval was never attempted.
+    expect(interpretCalls).toBe(0);
+    const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
+  // A routine that emits an action and reaches a terminal step (clears its state).
+  const emittingRoutine = (order: string[]) => {
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => null,
+      save: async () => { order.push("save"); },
+      clear: async () => { order.push("clear"); },
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      isEmpty: false,
+      activator: () => ({ activate: async () => ({ routineId: "contact.request" }) }),
+      createRunner: () => ({
+        resume: async () => ({
+          response: { answer: "Got it — someone will be in touch." },
+          nextState: null,
+          actions: [{ type: "contact.send", payload: { email: "a@b.c" } }],
+        }),
+      }),
+    };
+    return { routineStore, routineProvider };
+  };
+
+  it("enqueues the routine's action before advancing routine state (recoverable until enqueued)", async () => {
+    const order: string[] = [];
+    const { routineStore, routineProvider } = emittingRoutine(order);
+    const actionOutbox: NonNullable<ChatServiceOptions["actionOutbox"]> = {
+      enqueue: async () => {
+        order.push("enqueue");
+        return { id: "a1", duplicate: false };
+      },
+    };
+    const service = makeChatService(
+      new InMemoryConversationRepository(),
+      new InMemoryMessageRepository(),
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "x"; }, async *streamAnswer() { yield "x"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider, actionOutbox },
+    );
+
+    await service.answer({ workspaceId: "workspace-1", query: "contact me", stream: false });
+
+    // The action is durably enqueued first; only then is the routine state cleared.
+    expect(order).toEqual(["enqueue", "clear"]);
+  });
+
+  it("does not advance routine state when the action enqueue fails (so the request is not lost)", async () => {
+    const order: string[] = [];
+    const { routineStore, routineProvider } = emittingRoutine(order);
+    const actionOutbox: NonNullable<ChatServiceOptions["actionOutbox"]> = {
+      enqueue: async () => {
+        order.push("enqueue");
+        throw new Error("outbox unavailable");
+      },
+    };
+    const messageRepository = new InMemoryMessageRepository();
+    const service = makeChatService(
+      new InMemoryConversationRepository(),
+      messageRepository,
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "x"; }, async *streamAnswer() { yield "x"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider, actionOutbox },
+    );
+
+    await expect(
+      service.answer({ workspaceId: "workspace-1", query: "contact me", stream: false }),
+    ).rejects.toThrow();
+
+    // Enqueue was attempted, but the routine was never advanced — it resumes next turn.
+    expect(order).toEqual(["enqueue"]);
+  });
+
+  it("streams the routine confirmation only after the action is durably enqueued", async () => {
+    const order: string[] = [];
+    const { routineStore, routineProvider } = emittingRoutine(order);
+    const actionOutbox: NonNullable<ChatServiceOptions["actionOutbox"]> = {
+      enqueue: async () => {
+        order.push("enqueue");
+        return { id: "a1", duplicate: false };
+      },
+    };
+    const service = makeChatService(
+      new InMemoryConversationRepository(),
+      new InMemoryMessageRepository(),
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "x"; }, async *streamAnswer() { yield "x"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider, actionOutbox },
+    );
+
+    for await (const event of service.streamAnswer({ workspaceId: "workspace-1", query: "contact me", stream: true })) {
+      if (event.type === "chunk") {
+        order.push("chunk");
+      }
+    }
+
+    // The confirmation chunk is streamed only after enqueue + routine-state advance.
+    expect(order).toEqual(["enqueue", "clear", "chunk"]);
+  });
+
+  it("never streams the routine confirmation when the action enqueue fails", async () => {
+    const order: string[] = [];
+    const { routineStore, routineProvider } = emittingRoutine(order);
+    const actionOutbox: NonNullable<ChatServiceOptions["actionOutbox"]> = {
+      enqueue: async () => {
+        order.push("enqueue");
+        throw new Error("outbox unavailable");
+      },
+    };
+    const service = makeChatService(
+      new InMemoryConversationRepository(),
+      new InMemoryMessageRepository(),
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "x"; }, async *streamAnswer() { yield "x"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider, actionOutbox },
+    );
+
+    const streamedChunk = { value: false };
+    await expect(
+      (async () => {
+        for await (const event of service.streamAnswer({ workspaceId: "workspace-1", query: "contact me", stream: true })) {
+          if (event.type === "chunk") {
+            streamedChunk.value = true;
+          }
+        }
+      })(),
+    ).rejects.toThrow();
+
+    // The visitor never saw a "sent" confirmation, and the routine was not advanced.
+    expect(streamedChunk.value).toBe(false);
+    expect(order).toEqual(["enqueue"]);
   });
 
   it("applies LLM-emitted skill_receipt overrides onto the captured receipt and strips the tag", async () => {
@@ -687,6 +914,9 @@ describe("chat service streaming", () => {
     };
     let processedSessionId: string | null = null;
     const conversationEngine: ConversationEngine = {
+      async attemptRoutine() {
+        return null;
+      },
       async processTurn(input) {
         processedSessionId = input.sessionId;
         const history = await input.stores.loadHistory({ sessionId: input.sessionId });

@@ -2736,28 +2736,29 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
   }
 
   async create(input: {
+    id?: string;
     conversationId: string;
     workspaceId: string;
-	    role: "user" | "assistant" | "system";
-	    content: string;
-	    inputMetadata?: MessageRecord["inputMetadata"];
-	    metadata?: Record<string, unknown>;
-	    skillName?: string;
-	    skillOutcome?: string;
-	    skillStatus?: string;
-	  }): Promise<MessageRecord> {
+    role: "user" | "assistant" | "system";
+    content: string;
+    inputMetadata?: MessageRecord["inputMetadata"];
+    metadata?: Record<string, unknown>;
+    skillName?: string;
+    skillOutcome?: string;
+    skillStatus?: string;
+  }): Promise<MessageRecord> {
     const record: MessageRecord = {
-      id: randomUUID(),
+      id: input.id ?? randomUUID(),
       conversationId: input.conversationId,
       workspaceId: input.workspaceId,
-	      role: input.role,
-	      content: input.content,
-	      metadata: input.metadata ?? (input.inputMetadata ? { ...input.inputMetadata } : undefined),
-	      inputMetadata: input.inputMetadata,
-	      skillName: input.skillName,
-	      skillOutcome: input.skillOutcome,
-	      skillStatus: input.skillStatus,
-	      createdAt: new Date(),
+      role: input.role,
+      content: input.content,
+      metadata: input.metadata ?? (input.inputMetadata ? { ...input.inputMetadata } : undefined),
+      inputMetadata: input.inputMetadata,
+      skillName: input.skillName,
+      skillOutcome: input.skillOutcome,
+      skillStatus: input.skillStatus,
+      createdAt: new Date(),
     };
     const items = this.items.get(input.conversationId) ?? [];
     items.push(record);

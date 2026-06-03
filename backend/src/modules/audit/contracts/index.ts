@@ -22,6 +22,7 @@ export interface ChatAnswerAuditMetadata extends AuditEventMetadata {
 
 export interface AuditPort {
   record(event: AuditEventInput): Promise<void>;
+  logRecorded?(event: AuditEventInput): void;
   getLatestSuccessfulChatAnswerMetadata(input: {
     workspaceId: string;
     conversationId: string;

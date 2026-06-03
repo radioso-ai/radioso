@@ -1,5 +1,14 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
-import type { ConversationEngine, ConversationTrace } from "@radioso/conversation-contract";
+import type {
+  ConversationEngine,
+  ConversationModelGateway,
+  ConversationRoutineActivator,
+  ConversationRoutineRunner,
+  ConversationRoutineStore,
+  ConversationTrace,
+  RenderableTurn,
+  RoutineActionRequest,
+} from "@radioso/conversation-contract";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AuditService } from "../../audit/contracts/index.js";
@@ -22,6 +31,7 @@ import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/dom
 import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import {
+  attemptRoutineTurnWithConversationEngine,
   runPreparedChatTurnStreamWithConversationEngine,
   runPreparedChatTurnWithConversationEngine,
 } from "./conversationEngineChatTurn.js";
@@ -41,8 +51,18 @@ import type {
   ChatAnswerPresenter,
   ChatPresentedAnswer,
 } from "./chatAnswerPresenter.js";
-import { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
+import {
+  ChatTurnLifecycle,
+  type AssistantTurnPersistencePort,
+  type ChatActionOutboxPort,
+} from "./chatTurnLifecycle.js";
 import { BlankChatAnswerError } from "./chatAnswerErrors.js";
+import { ChatAnswerSupport } from "./chatAnswerSupport.js";
+import { RoutineChatModelGateway } from "./routines/routineChatModelGateway.js";
+import {
+  DeferredRoutineStore,
+  type CapturedRoutineTransition,
+} from "./routines/deferredRoutineStore.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -90,6 +110,7 @@ type PreparedChatStreamTurnEvent =
       finalPresentation: ChatPresentedAnswer;
       suggestions: TurnStreamSuggestions;
       engineTrace?: ConversationTrace;
+      actions?: RoutineActionRequest[];
     };
 
 const SKILL_CHIP_TAG_PATTERN = /<skill_chip>([\s\S]*?)<\/skill_chip>\s*/i;
@@ -212,6 +233,19 @@ const buildSkillStreamPayload = (
 });
 
 /**
+ * The registered routines this turn may resume or activate. Composition assembles it
+ * (the concrete `RoutineRegistry` plus a runner factory); ChatService only builds the
+ * per-turn model gateway and asks for a runner, the activator, and whether anything is
+ * registered. Empty → routine machinery stays off (no per-turn store load), and the
+ * engine runner stays a composition concern rather than something ChatService news up.
+ */
+export interface ChatRoutineProvider {
+  readonly isEmpty: boolean;
+  activator(modelGateway: ConversationModelGateway): ConversationRoutineActivator;
+  createRunner(modelGateway: ConversationModelGateway): ConversationRoutineRunner;
+}
+
+/**
  * Everything ChatService needs to run a turn. The turn runtime (presenter +
  * registered skills) is assembled by composition via {@link buildChatTurnRuntime}
  * and injected — registration lives in the wiring layer, never inline here.
@@ -232,6 +266,13 @@ export interface ChatServiceOptions {
   selectionStrategy?: TurnSelectionStrategy;
   /** The reusable conversation engine drives every chat turn; composition always wires it. */
   conversationEngine: ConversationEngine;
+  /** Optional: when wired, routine-emitted fire-and-forget actions are enqueued to the outbox. */
+  actionOutbox?: ChatActionOutboxPort;
+  assistantTurnPersistence?: AssistantTurnPersistencePort;
+  /** Optional: durable per-session routine state store (with {@link routineProvider}). */
+  routineStore?: ConversationRoutineStore;
+  /** Optional: registered routines + activation. Empty/absent leaves turns unchanged. */
+  routineProvider?: ChatRoutineProvider;
 }
 
 export class ChatService {
@@ -246,6 +287,9 @@ export class ChatService {
   private readonly chatTurnLifecycle: ChatTurnLifecycle;
   private readonly turnSkills: TurnSkill[];
   private readonly turnSkillSelector: ChatTurnSkillSelector;
+  private readonly answerSupport = new ChatAnswerSupport();
+  private readonly routineStore?: ConversationRoutineStore;
+  private readonly routineProvider?: ChatRoutineProvider;
 
   constructor(options: ChatServiceOptions) {
     const {
@@ -263,7 +307,13 @@ export class ChatService {
       directiveSteering = noopDirectiveSteering,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       conversationEngine,
+      actionOutbox,
+      assistantTurnPersistence,
+      routineStore,
+      routineProvider,
     } = options;
+    this.routineStore = routineStore;
+    this.routineProvider = routineProvider;
     this.chatGateway = chatGateway;
     this.auditService = auditService;
     this.usageLimitPolicy = usageLimitPolicy;
@@ -277,6 +327,8 @@ export class ChatService {
       messageRepository,
       auditService,
       productAnalyticsService,
+      actionOutbox,
+      assistantTurnPersistence,
     );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
@@ -293,6 +345,56 @@ export class ChatService {
   }
 
   /**
+   * Attempts the registered routines for this turn — a multi-turn skill selected *before*
+   * grounding. Returns the routine's rendered reply when it claims the turn (so the host
+   * persists it and skips retrieval), or null when no routines are registered, none is
+   * active/activates, or the active routine yields the turn (off-topic) — in which case
+   * the host falls through to normal selection + grounding. The next-step selector and
+   * renderer generate through a model gateway bound to this turn's usage + workspace
+   * context, so the runner is built per turn.
+   */
+  private async attemptRoutineTurn(
+    session: PreparedSession,
+    accountId: string | undefined,
+  ): Promise<{
+    presentation: ChatPresentedAnswer;
+    engineTrace?: ConversationTrace;
+    actions?: RoutineActionRequest[];
+    routineStateTransition?: CapturedRoutineTransition | null;
+    // Flushes the routine-state transition the engine made this turn. Called by the
+    // lifecycle only after the turn's actions are durably enqueued, so a crash before
+    // enqueue leaves the routine recoverable rather than advanced past a lost action.
+    commitRoutineState: () => Promise<void>;
+  } | null> {
+    if (!this.routineStore || !this.routineProvider || this.routineProvider.isEmpty) {
+      return null;
+    }
+    const modelGateway = new RoutineChatModelGateway(this.chatGateway, {
+      workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
+      usageContext: this.answerSupport.buildChatUsageContext(session, accountId, "routine_turn"),
+    });
+    const deferredStore = new DeferredRoutineStore(this.routineStore);
+    const outcome = await attemptRoutineTurnWithConversationEngine({
+      engine: this.conversationEngine,
+      session,
+      routineStore: deferredStore,
+      routineRunner: this.routineProvider.createRunner(modelGateway),
+      routineActivator: this.routineProvider.activator(modelGateway),
+      presentRoutineReply: (response) => this.chatAnswerPresenter.presentNonRetrievalAnswer(response.answer),
+    });
+    if (!outcome) {
+      return null;
+    }
+    return {
+      presentation: outcome.presentation,
+      engineTrace: outcome.result.trace,
+      actions: outcome.result.actions,
+      routineStateTransition: deferredStore.getTransition(),
+      commitRoutineState: () => deferredStore.commit(),
+    };
+  }
+
+  /**
    * Produces the answer for a prepared turn. The conversation engine drives
    * selection + dispatch and renders the outcome through the shared registry,
    * returning its turn trace for audit (`engineTrace`).
@@ -300,7 +402,7 @@ export class ChatService {
   private async renderTurn(
     session: PreparedSession,
     input: { query: string; userExpectedLocale?: string | null; accountId?: string },
-  ): Promise<{ presentation: ChatPresentedAnswer; engineTrace?: ConversationTrace }> {
+  ): Promise<{ presentation: ChatPresentedAnswer; engineTrace?: ConversationTrace; actions?: RoutineActionRequest[] }> {
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine: this.conversationEngine,
       session,
@@ -310,7 +412,7 @@ export class ChatService {
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
     });
-    return { presentation, engineTrace: result.trace };
+    return { presentation, engineTrace: result.trace, actions: result.actions };
   }
 
   private async *streamTurn(
@@ -335,6 +437,7 @@ export class ChatService {
         finalPresentation: event.presentation,
         suggestions: event.suggestions,
         engineTrace: event.engineTrace,
+        actions: event.result.actions,
       };
     }
   }
@@ -394,13 +497,35 @@ export class ChatService {
           return response;
         }
       }
+      // A routine is a multi-turn skill: attempt it before grounding. If it claims the
+      // turn, there is no retrieval — the routine renders its own reply.
+      const routineStartedAt = Date.now();
+      const routineTurn = await this.attemptRoutineTurn(session, input.accountId);
+      if (routineTurn) {
+        const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
+          workspaceId: input.workspaceId,
+          accountId: input.accountId,
+          session,
+          presentation: routineTurn.presentation,
+          answerStartedAt: routineStartedAt,
+          stream: input.stream,
+          engineTrace: routineTurn.engineTrace,
+          actions: routineTurn.actions,
+          routineStateTransition: routineTurn.routineStateTransition,
+          commitRoutineState: routineTurn.commitRoutineState,
+        });
+        assistantMessageId = completedTurn.assistantMessageId;
+        await usageReservation.commit();
+        return completedTurn.response;
+      }
+
       // Selection is authoritative: ground only if the strategy selected
       // retrieval; otherwise answer directly (no forced fallthrough to retrieval).
       session = candidates.includes("retrieval")
         ? await this.chatSessionPreparer.prepareRetrieval(input, session)
         : await this.chatSessionPreparer.prepareDirect(input, session);
       const answerStartedAt = Date.now();
-      const { presentation, engineTrace } = await this.renderTurn(session, input);
+      const { presentation, engineTrace, actions } = await this.renderTurn(session, input);
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
@@ -409,6 +534,7 @@ export class ChatService {
         answerStartedAt,
         stream: input.stream,
         engineTrace,
+        actions,
       });
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();
@@ -523,6 +649,38 @@ export class ChatService {
         return;
       }
 
+      // A routine is a multi-turn skill: attempt it before grounding. If it claims the
+      // turn, stream its rendered reply and finish — no retrieval.
+      const routineStartedAt = Date.now();
+      const routineTurn = await this.attemptRoutineTurn(session, input.accountId);
+      if (routineTurn) {
+        // Durably enqueue the action + advance routine state + persist the reply BEFORE
+        // streaming the confirmation. The routine reply is rendered whole (not token-
+        // streamed), so delaying the chunk costs nothing — but it means the visitor only
+        // sees the "sent" confirmation once the request is actually in the outbox; if the
+        // enqueue fails this throws before any chunk and the routine stays recoverable.
+        const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
+          workspaceId: input.workspaceId,
+          accountId: input.accountId,
+          session,
+          presentation: routineTurn.presentation,
+          answerStartedAt: routineStartedAt,
+          stream: input.stream,
+          engineTrace: routineTurn.engineTrace,
+          actions: routineTurn.actions,
+          routineStateTransition: routineTurn.routineStateTransition,
+          commitRoutineState: routineTurn.commitRoutineState,
+        });
+        assistantMessageId = completedTurn.assistantMessageId;
+        await usageReservation.commit();
+        usageReservationCommitted = true;
+        if (routineTurn.presentation.answer) {
+          yield { type: "chunk", text: routineTurn.presentation.answer };
+        }
+        yield { type: "done", ...completedTurn.response };
+        return;
+      }
+
       // Selection is authoritative: ground only if the strategy selected
       // retrieval; otherwise answer directly (no forced fallthrough to retrieval).
       session = candidates.includes("retrieval")
@@ -536,6 +694,7 @@ export class ChatService {
       let finalPresentation: ChatPresentedAnswer | null = null;
       let suggestions: TurnStreamSuggestions | null = null;
       let engineTrace: ConversationTrace | undefined;
+      let actions: RoutineActionRequest[] | undefined;
       for await (const event of this.streamTurn(session, input)) {
         if (event.type === "chunk") {
           yield {
@@ -547,6 +706,7 @@ export class ChatService {
         finalPresentation = event.finalPresentation;
         suggestions = event.suggestions;
         engineTrace = event.engineTrace;
+        actions = event.actions;
       }
       if (!finalPresentation || !suggestions) {
         throw new Error("chat_stream_missing_final_presentation");
@@ -576,6 +736,7 @@ export class ChatService {
         answerStartedAt,
         stream: input.stream,
         engineTrace,
+        actions,
       });
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();

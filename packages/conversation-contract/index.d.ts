@@ -319,12 +319,25 @@ export interface RoutineState {
  */
 export interface RoutineStep {
   id: string;
-  kind: "chat" | "skill" | "terminal";
+  kind: "chat" | "skill" | "action" | "terminal";
   /** Instruction projected into steering for a `chat`/`terminal` step. */
   action?: string;
   /** The skill a `skill` step dispatches. */
   skillName?: string;
+  /**
+   * The action an `action` step emits (fire-and-forget): the engine records an
+   * {@link RoutineActionRequest} with this `type` and the routine's variables as the
+   * payload, then auto-advances. The `type` is authored here — never chosen by the
+   * model — so an emitted action can't be redirected by user/payload text.
+   */
+  actionType?: string;
   metadata?: Record<string, unknown>;
+}
+
+/** A fire-and-forget side effect a routine requested: an authored `type` + payload. */
+export interface RoutineActionRequest {
+  type: string;
+  payload: Record<string, unknown>;
 }
 
 export interface RoutineTransition {
@@ -431,6 +444,8 @@ export interface ConversationRoutineResumeResult {
   /** The next state to persist; `null` clears it (the routine reached a terminal step). */
   nextState: RoutineState | null;
   outcomes?: TurnOutcome[];
+  /** Fire-and-forget side effects the routine emitted this turn, for the host to persist. */
+  actions?: RoutineActionRequest[];
   /**
    * When true, the routine *declined* this turn: the user's message was off-topic for
    * the routine, so the engine yields to normal answering and leaves the routine's
@@ -492,6 +507,12 @@ export interface ProcessTurnResult {
   outcomes: TurnOutcome[];
   response: RenderableTurn;
   trace: ConversationTrace;
+  /**
+   * Fire-and-forget action requests a routine emitted this turn. The host persists
+   * these to its outbox (transactionally with the turn) and a worker dispatches them;
+   * the engine only declares them.
+   */
+  actions?: RoutineActionRequest[];
 }
 
 export type ProcessTurnStreamEvent =
@@ -510,4 +531,12 @@ export type ProcessTurnStreamEvent =
 export interface ConversationEngine {
   processTurn(input: ProcessTurnInput): Promise<ProcessTurnResult>;
   processTurnStream(input: ProcessTurnStreamInput): AsyncIterable<ProcessTurnStreamEvent>;
+  /**
+   * Attempt to resume or activate a routine for this turn, without running normal
+   * selection/dispatch/compose. Returns the routine's turn result when a routine claims
+   * the turn, or null when no routine machinery is wired, none is active/activates, or
+   * the active routine yields the turn (off-topic) — so the host can treat the routine
+   * as a multi-turn skill selected before grounding, and only ground when it returns null.
+   */
+  attemptRoutine(input: ProcessTurnInput): Promise<ProcessTurnResult | null>;
 }

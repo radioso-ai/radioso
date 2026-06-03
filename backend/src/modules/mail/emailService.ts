@@ -11,6 +11,7 @@ export interface EmailMessage {
   text: string;
   html?: string;
   metadata?: Record<string, string>;
+  idempotencyKey?: string | null;
 }
 
 export interface EmailDriver {
@@ -66,6 +67,7 @@ export class LogEmailDriver implements EmailDriver {
       subject: message.subject,
       text: message.text,
       metadata: redactSensitiveEmailMetadata(message.metadata),
+      idempotencyKey: message.idempotencyKey ?? null,
     });
   }
 }

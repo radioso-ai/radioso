@@ -276,6 +276,7 @@ export const agentsApi = {
       customInstruction: data.customInstruction,
       assistantLinkUtmEnabled: data.assistantLinkUtmEnabled,
       citationDisplayEnabled: data.citationDisplayEnabled,
+      contactRequestsEnabled: data.contactRequestsEnabled,
       theme: data.theme,
       branding: data.branding,
       sourceScope: data.sourceScope,

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ConversationModelGateway, TurnContext } from "@radioso/conversation-contract";
 
-import { RoutineStepRenderer } from "../../src/modules/chat/services/routines/routineStepRenderer.js";
+import { RoutineStepRenderer } from "@radioso/conversation-defaults";
 
 const turn: TurnContext = {
   agent: { id: "a", name: "Assistant" },

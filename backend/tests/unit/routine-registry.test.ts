@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Routine, TurnContext } from "@radioso/conversation-contract";
 
-import { RoutineRegistry } from "../../src/modules/chat/services/routines/routineRegistry.js";
+import { RoutineRegistry } from "@radioso/conversation-defaults";
 
 const routine = (id: string): Routine => ({ id, rootStepId: "s", steps: [], transitions: [] });
 const turn = { sessionId: "conv_1", inputEvent: { kind: "message", content: "hi" } } as unknown as TurnContext;

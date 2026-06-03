@@ -1,8 +1,7 @@
+import type { DirectiveCatalogRegistry, DirectiveMatcherPort } from "@radioso/conversation-defaults";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import { orderSteeringRules, type SteeringRule } from "../../shared/domain/steeringRule.js";
 
-import type { DirectiveCatalogRegistry } from "./directiveCatalogRegistry.js";
-import type { DirectiveMatcherPort } from "./directiveMatcher.js";
 import {
   directiveToSteeringRule,
   resolveDirectiveRelationships,

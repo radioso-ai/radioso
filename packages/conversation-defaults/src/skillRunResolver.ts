@@ -1,11 +1,11 @@
 import type {
+  ResolvableSkillDefinition,
   ResolvedSkillRun,
   ResolvedSkillStep,
-  SkillDefinition,
   SkillShapeDefinition,
   SkillStepClauses,
   SkillStepOverride,
-} from "./domain.js";
+} from "./skillTypes.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -43,7 +43,7 @@ const mergeClauses = (
 
 export class SkillRunResolver {
   resolve(input: {
-    skill: SkillDefinition;
+    skill: ResolvableSkillDefinition;
     shapeName?: string;
     fallbackShapeName?: string;
   }): ResolvedSkillRun {
@@ -73,7 +73,7 @@ export class SkillRunResolver {
     };
   }
 
-  private findShape(skill: SkillDefinition, shapeName?: string): SkillShapeDefinition | undefined {
+  private findShape(skill: ResolvableSkillDefinition, shapeName?: string): SkillShapeDefinition | undefined {
     if (!shapeName) {
       return undefined;
     }

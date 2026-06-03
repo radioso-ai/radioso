@@ -6,10 +6,12 @@ import {
   CompositeDirectiveMatcher,
   ModelDirectiveMatchGateway,
   ProbabilisticDirectiveMatcher,
+  createDirectiveMatcher,
   parseDirectiveClassifications,
   type Directive,
   type DirectiveMatchGateway,
 } from "../../src/modules/directives/public.js";
+import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 
 const directive = (overrides: Partial<Directive> & Pick<Directive, "name" | "action">): Directive => ({
   condition: { kind: "always" },
@@ -124,5 +126,25 @@ describe("ModelDirectiveMatchGateway", () => {
     expect(request.systemPrompt).toBeTruthy();
     expect(request.prompt).toContain("escalate");
     expect(request.prompt).toContain("customer demands a refund");
+  });
+});
+
+describe("createDirectiveMatcher", () => {
+  const metadata: LlmProviderMetadata = { provider: "openai", model: "test" } as LlmProviderMetadata;
+
+  it("injects the backend directive-match prompt file into the default model gateway", async () => {
+    const complete = vi.fn().mockResolvedValue({ text: '[{"name":"escalate","confidence":0.7}]' });
+    const client: TextGenerationClient = {
+      metadata,
+      complete,
+      stream: () => ({ textStream: (async function* () {})(), usage: Promise.resolve(undefined) }),
+    };
+
+    await createDirectiveMatcher({ textGenerationClient: client, confidenceThreshold: 0.5 }).match({
+      turnContext: { query: "I want a refund now" },
+      directives: [contextual("escalate", "customer demands a refund")],
+    });
+
+    expect(complete.mock.calls[0]![0].systemPrompt).toBe(loadPromptTemplate("chat/directive-match.md"));
   });
 });

@@ -820,8 +820,12 @@ export const buildChatServices = (input: {
         createRunner: (modelGateway) =>
           new DefaultRoutineRunner(
             routineRegistry.routines,
-            new RoutineNextStepSelector(modelGateway),
-            new RoutineStepRenderer(modelGateway),
+            new RoutineNextStepSelector(modelGateway, {
+              promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
+            }),
+            new RoutineStepRenderer(modelGateway, {
+              promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+            }),
           ),
       };
   const chatService = new ChatService({

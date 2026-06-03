@@ -1,6 +1,6 @@
-import type { SteeringRule } from "../../shared/domain/steeringRule.js";
+import type { SkillDefinition } from "@radioso/conversation-contract";
 
-import type { SkillDefinition, SkillExecution, SkillOutcomeStatus } from "./domain.js";
+import type { SkillExecution, SkillOutcome } from "./skillTypes.js";
 
 /**
  * Narrow, per-turn channel handed to a skill executor so it can append
@@ -32,47 +32,6 @@ export interface SkillInvocation {
   emit: SkillEmitPort;
   /** Cancels in-flight work when the turn is abandoned (new input, shutdown). */
   signal?: AbortSignal;
-}
-
-/** Control bits a skill returns to steer the rest of the turn or the session. */
-export interface SkillOutcomeControl {
-  /** Flip the session between AI-managed and human-managed (handoff). */
-  sessionMode?: "automatic" | "manual";
-  /** Whether the outcome is valid for this response only or the whole session. */
-  lifespan?: "response" | "session";
-}
-
-/**
- * Transient, single-turn steering a skill can inject (condition/action pair).
- * This is a {@link SteeringRule} without the loop-assigned provenance fields:
- * the executor emits the bare rule and the turn loop tags `source`/`lifespan`
- * when it merges skill-emitted guidance with authored Directives into one set.
- */
-export type SkillTransientGuidance = Omit<SteeringRule, "source" | "lifespan">;
-
-// Compile-time guard: fails the build if the skill-emitted guidance shape ever
-// drifts from SteeringRule's authored fields. Authored Directives and skill
-// guidance MUST stay one shape.
-type _GuidanceMatchesSteering = SkillTransientGuidance extends Omit<SteeringRule, "source" | "lifespan">
-  ? Omit<SteeringRule, "source" | "lifespan"> extends SkillTransientGuidance
-    ? true
-    : never
-  : never;
-const _guidanceMatchesSteering: _GuidanceMatchesSteering = true;
-void _guidanceMatchesSteering;
-
-/**
- * The outcome of a skill dispatch: a steering envelope, not a bare answer.
- * `answer` and `outputs` are seen by the model; `metadata` is frontend-only and
- * not shown to the model.
- */
-export interface SkillOutcome {
-  status: SkillOutcomeStatus;
-  answer?: string;
-  outputs?: Record<string, unknown>;
-  control?: SkillOutcomeControl;
-  guidance?: SkillTransientGuidance[];
-  metadata?: Record<string, unknown>;
 }
 
 /**

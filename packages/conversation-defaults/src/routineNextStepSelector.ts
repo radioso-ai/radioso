@@ -11,10 +11,41 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 
-import { renderPromptTemplate } from "../../../../shared/infra/prompts/promptLoader.js";
-import { extractFirstJsonObject } from "./jsonScan.js";
+import { renderPromptTemplate } from "./promptTemplate.js";
 
-const NEXT_STEP_PROMPT = "chat/routine-next-step.md";
+export const DEFAULT_ROUTINE_NEXT_STEP_PROMPT = `You are guiding a user through a structured, multi-step routine. Decide what should
+happen next, based on what the user just said.
+
+The current step's instruction to the user was:
+{{currentStep}}
+
+{{skillResult}}
+
+The possible next steps are numbered below. Each has a condition describing when it
+applies. A condition may be written in any language and the conversation may be in
+any language — judge by meaning, not by matching words.
+
+{{conditions}}
+
+Return a JSON object:
+
+{"condition": <number or null>, "offTopic": <true or false>, "variables": {"<name>": "<value the user provided this turn>"}}
+
+Rules:
+
+- "condition": the number of exactly one condition that clearly holds, or null to stay
+  on the current step (for example, the user has not yet provided what was asked).
+- If a condition says the user declined, cancelled, refused, or wants to stop the
+  routine, choose that condition when the latest user message has that meaning, instead
+  of returning null to re-ask the current step.
+- "offTopic": true when the user's latest message is a *different* question or request
+  that deserves its own answer right now (for example they changed the subject or asked
+  about something unrelated to the current step), instead of trying to provide what the
+  step asked for. Otherwise false. When you return a condition number, "offTopic" must
+  be false.
+- "variables": only values the user actually provided this turn (for example an email
+  address or a message). Use an empty object {} when there are none.
+- Return only the JSON object, with no other text.`;
 
 const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,
@@ -35,8 +66,44 @@ interface ParsedDecision {
   variables: Record<string, unknown>;
 }
 
+// Extracts the first balanced { ... } object from the model output. Structural
+// parsing only; no product vocabulary.
+const extractJsonObject = (raw: string): string | null => {
+  const start = raw.indexOf("{");
+  if (start < 0) {
+    return null;
+  }
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < raw.length; index += 1) {
+    const char = raw[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+    } else if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(start, index + 1);
+      }
+    }
+  }
+  return null;
+};
+
 const parseDecision = (raw: string): ParsedDecision => {
-  const json = extractFirstJsonObject(raw.trim());
+  const json = extractJsonObject(raw.trim());
   if (!json) {
     return { condition: null, offTopic: false, variables: {} };
   }
@@ -59,11 +126,17 @@ const parseDecision = (raw: string): ParsedDecision => {
  * transition's condition holds, capturing any slot variables — the host-side
  * `ConversationRoutineNextStepSelector` the engine's runner calls. The decision is
  * an LLM-returned structured choice over the transition conditions (judged by
- * meaning, not keywords), never an English keyword list; the prompt lives under
- * `backend/prompts/`.
+ * meaning, not keywords), never an English keyword list.
  */
 export class RoutineNextStepSelector implements ConversationRoutineNextStepSelector {
-  constructor(private readonly modelGateway: ConversationModelGateway) {}
+  private readonly promptTemplate: string;
+
+  constructor(
+    private readonly modelGateway: ConversationModelGateway,
+    options: { promptTemplate?: string } = {},
+  ) {
+    this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_PROMPT;
+  }
 
   async select(input: {
     routine: Routine;
@@ -81,7 +154,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     const conditions = input.transitions
       .map((transition, index) => `${index + 1}. ${transition.condition}`)
       .join("\n");
-    const systemPrompt = renderPromptTemplate(NEXT_STEP_PROMPT, {
+    const systemPrompt = renderPromptTemplate("chat/routine-next-step.md", this.promptTemplate, {
       currentStep: input.currentStep.action ?? input.currentStep.id,
       skillResult: skillResultBlock(input.skillResult),
       conditions,
@@ -106,8 +179,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     }
 
     // No transition matched, but the user asked something unrelated → yield the turn so
-    // normal answering handles it; the routine stays parked here to resume later. This
-    // is what stops the routine from blindly re-asking when the user changes the subject.
+    // normal answering handles it; the routine stays parked here to resume later.
     if (decision.offTopic) {
       return { nextStepId: input.currentStep.id, yieldTurn: true };
     }

@@ -47,8 +47,7 @@ export { retrievalAnswerSkillDefinition } from "./definitions/retrieval.answer.j
 export { builtInSkillCatalogEntries, createDefaultSkillCatalogRegistry } from "./defaultCatalog.js";
 export { socialAnswerSkillDefinition } from "./definitions/social_only.js";
 export { assistantIdentityAnswerSkillDefinition } from "./definitions/assistant_identity.js";
-export { SkillRunResolver } from "./skillRunResolver.js";
-export { SkillCatalogRegistry } from "./skillCatalogRegistry.js";
+export { SkillCatalogRegistry, SkillRunResolver } from "@radioso/conversation-defaults";
 export { SkillCatalogService, type SkillCatalogContext } from "./skillCatalogService.js";
 export {
   SkillExecutorRegistry,
@@ -63,4 +62,4 @@ export {
   type SkillOutcome,
   type SkillOutcomeControl,
   type SkillTransientGuidance,
-} from "./skillExecutorRegistry.js";
+} from "@radioso/conversation-defaults";

@@ -5,8 +5,12 @@ export {
   ChatService,
   type ChatRoutineProvider,
 } from "./services/chatService.js";
-export { RoutineNextStepSelector } from "./services/routines/routineNextStepSelector.js";
-export { RoutineStepRenderer } from "./services/routines/routineStepRenderer.js";
+export {
+  RoutineNextStepSelector,
+  RoutineRegistry,
+  RoutineStepRenderer,
+  type RoutineRegistration,
+} from "@radioso/conversation-defaults";
 export { classifyContactIntent } from "./services/routines/contactActivationClassifier.js";
 export {
   RoutineChatModelGateway,
@@ -53,7 +57,6 @@ export {
 export { AnswerPresentationService } from "./services/answerPresentationService.js";
 export { resolveCitationArtifacts } from "./services/implicitCitationSupport.js";
 export { createSkillOutcomeCapabilityProvider } from "./services/chatAnswerPresenter.js";
-export { RoutineRegistry, type RoutineRegistration } from "./services/routines/routineRegistry.js";
 export {
   ActionDispatcher,
   ActionHandlerRegistry,

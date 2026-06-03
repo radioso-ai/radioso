@@ -13,8 +13,11 @@ The design rationale lives in `specs/067-conversational-directives/`.
 
 ## Boundaries
 
-Directives know about `condition → action` rules, per-turn matching, and mapping
-matched rules to the shared `SteeringRule` value type.
+The generic directive defaults now live in `@radioso/conversation-defaults`:
+catalog registration, deterministic/contextual matching, prompt construction,
+classification parsing, relationship resolution, and steering-rule mapping.
+This backend module owns Radioso product content and host composition around
+those defaults.
 
 A Directive **steers, it never acts**: it has no executor, no `dispatch`, and no
 result channel. Skills act; Directives steer. This module depends on no other
@@ -24,9 +27,9 @@ diagnostics — never Directives.
 
 ## Public Surfaces
 
-- `public.ts`: the `Directive` contract, the catalog registry, the matcher port,
-  the `DirectiveSteeringPort`, and the `createDirectiveSteering` composition
-  helper.
+- `public.ts`: the `Directive` contract, package re-exports for the catalog and
+  matcher defaults, the `DirectiveSteeringPort`, and the
+  `createDirectiveSteering` composition helper.
 
 `SteeringRule` itself is a shared value type in
 `shared/domain/steeringRule.ts` — it unifies authored Directives with
@@ -34,12 +37,10 @@ skill-emitted `SkillTransientGuidance` so the composer reads one steering set.
 
 ## Read First
 
-- `domain.ts`: the `Directive` / `DirectiveCondition` / `DirectiveMatch` types
-  and `directiveToSteeringRule`.
-- `directiveMatcher.ts`: `DirectiveMatcherPort` and the deterministic
-  `AlwaysMatchDirectiveMatcher`.
-- `probabilisticDirectiveMatcher.ts`: the optional LLM-backed contextual
-  matcher, enabled by composition when a text-generation client is supplied.
+- `domain.ts`: the Radioso-facing `Directive` / `DirectiveCondition` /
+  `DirectiveMatch` types and steering helpers retained for backend callers.
+- `packages/conversation-defaults/src/`: generic catalog registry, matcher
+  defaults, parser, prompt, and relationship helpers.
 - `directiveSteeringService.ts`: matches the standing set, capability-filters,
   and maps survivors to an ordered `SteeringRule[]`.
 - `defaultAnswerDirectives.ts`: built-in answer steering registered by

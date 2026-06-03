@@ -7,12 +7,21 @@ export {
   type DirectiveOmission,
   type DirectiveSelectionMode,
 } from "./domain.js";
-export { DirectiveCatalogRegistry } from "./directiveCatalogRegistry.js";
 export {
   AlwaysMatchDirectiveMatcher,
+  CompositeDirectiveMatcher,
+  DirectiveCatalogRegistry,
+  ModelDirectiveMatchGateway,
+  ProbabilisticDirectiveMatcher,
+  buildDirectiveMatchPrompt,
+  getDirectiveMatchSystemPrompt,
+  parseDirectiveClassifications,
+  type DirectiveClassification,
+  type DirectiveMatchGateway,
   type DirectiveMatcherPort,
   type DirectiveMatchInput,
-} from "./directiveMatcher.js";
+  type DirectiveTextGenerationClient,
+} from "@radioso/conversation-defaults";
 export {
   DirectiveSteeringService,
   noopDirectiveSteering,
@@ -20,15 +29,6 @@ export {
   type DirectiveSteeringPort,
   type DirectiveSteeringResult,
 } from "./directiveSteeringService.js";
-export {
-  ModelDirectiveMatchGateway,
-  ProbabilisticDirectiveMatcher,
-  type DirectiveClassification,
-  type DirectiveMatchGateway,
-} from "./probabilisticDirectiveMatcher.js";
-export { CompositeDirectiveMatcher } from "./compositeDirectiveMatcher.js";
-export { parseDirectiveClassifications } from "./directiveMatchParser.js";
-export { buildDirectiveMatchPrompt, getDirectiveMatchSystemPrompt } from "./directiveMatchPrompt.js";
 export {
   conciseReadableFormattingDirective,
   defaultAnswerDirectives,

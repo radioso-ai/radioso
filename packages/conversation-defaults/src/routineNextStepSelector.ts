@@ -11,9 +11,40 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 
-import { renderPromptTemplate } from "../../../../shared/infra/prompts/promptLoader.js";
+export const DEFAULT_ROUTINE_NEXT_STEP_PROMPT = `You are guiding a user through a structured, multi-step routine. Decide which step
+the conversation should move to next, based on what the user just said.
 
-const NEXT_STEP_PROMPT = "chat/routine-next-step.md";
+The current step's instruction to the user was:
+{{currentStep}}
+
+{{skillResult}}
+
+The possible next steps are numbered below. Each has a condition describing when it
+applies. A condition may be written in any language and the conversation may be in
+any language — judge by meaning, not by matching words.
+
+{{conditions}}
+
+Return a JSON object:
+
+{"condition": <the number of the one condition that holds, or null if none holds yet>, "variables": {"<name>": "<value the user provided this turn>"}}
+
+Rules:
+
+- Return the number of exactly one condition that clearly holds. Return null to stay
+  on the current step (for example, the user has not yet provided what was asked, or
+  asked something unrelated).
+- Put into "variables" only values the user actually provided this turn (for example
+  an email address or a message). Use an empty object {} when there are none.
+- Return only the JSON object, with no other text.`;
+
+const renderPromptTemplate = (template: string, values: Record<string, string>): string => {
+  let rendered = template;
+  for (const [key, value] of Object.entries(values)) {
+    rendered = rendered.replaceAll(`{{${key}}}`, value);
+  }
+  return rendered;
+};
 
 const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,
@@ -95,11 +126,17 @@ const parseDecision = (raw: string): ParsedDecision => {
  * transition's condition holds, capturing any slot variables — the host-side
  * `ConversationRoutineNextStepSelector` the engine's runner calls. The decision is
  * an LLM-returned structured choice over the transition conditions (judged by
- * meaning, not keywords), never an English keyword list; the prompt lives under
- * `backend/prompts/`.
+ * meaning, not keywords), never an English keyword list.
  */
 export class RoutineNextStepSelector implements ConversationRoutineNextStepSelector {
-  constructor(private readonly modelGateway: ConversationModelGateway) {}
+  private readonly promptTemplate: string;
+
+  constructor(
+    private readonly modelGateway: ConversationModelGateway,
+    options: { promptTemplate?: string } = {},
+  ) {
+    this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_PROMPT;
+  }
 
   async select(input: {
     routine: Routine;
@@ -117,7 +154,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     const conditions = input.transitions
       .map((transition, index) => `${index + 1}. ${transition.condition}`)
       .join("\n");
-    const systemPrompt = renderPromptTemplate(NEXT_STEP_PROMPT, {
+    const systemPrompt = renderPromptTemplate(this.promptTemplate, {
       currentStep: input.currentStep.action ?? input.currentStep.id,
       skillResult: skillResultBlock(input.skillResult),
       conditions,

@@ -49,6 +49,7 @@ import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirecti
 import {
   createDefaultSkillCatalogRegistry,
   SkillExecutorRegistry,
+  type SkillCatalogEntryDefinition,
   type SkillCatalogRegistry,
 } from "../../modules/skills/composition.js";
 import {
@@ -84,7 +85,7 @@ export interface ApplicationComposition {
   directiveRegistrations: ApplicationDirectiveRegistration[];
   selectionStrategy: TurnSelectionStrategy;
   directiveMatcher?: DirectiveMatcherPort;
-  skillCatalogRegistry: SkillCatalogRegistry;
+  skillCatalogRegistry: SkillCatalogRegistry<SkillCatalogEntryDefinition>;
   skillExecutorRegistry: SkillExecutorRegistry;
   chatActionSuggestionProviders: ReturnType<typeof createApplicationExtensionRegistry>["chatActionSuggestionProviders"];
   lifecycle: ApplicationModuleCoordinator;

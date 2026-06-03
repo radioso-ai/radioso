@@ -481,6 +481,8 @@ export class ChatService {
         session,
         directives: session.directiveSteering?.matches ?? [],
       });
+      // `skill_intake` intentionally remains a pre-engine short-circuit until
+      // #517/#527 move intake onto the generic engine turn spine.
       for (const candidate of candidates) {
         if (candidate !== "skill_intake") {
           break;
@@ -602,6 +604,8 @@ export class ChatService {
         session,
         directives: session.directiveSteering?.matches ?? [],
       });
+      // `skill_intake` intentionally remains a pre-engine short-circuit until
+      // #517/#527 move intake onto the generic engine turn spine.
       for (const candidate of candidates) {
         if (candidate !== "skill_intake") {
           break;

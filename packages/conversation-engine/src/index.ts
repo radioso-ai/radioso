@@ -223,6 +223,8 @@ export class DefaultConversationEngine implements ConversationEngine {
           outcomeStatus: outcome.outcome.status,
           guidanceCount: skillGuidance.length,
         },
+        // A capability's domain trace rides through opaquely; the engine never inspects it.
+        ...(outcome.subTrace ? { subTrace: outcome.subTrace } : {}),
       }));
     }
 

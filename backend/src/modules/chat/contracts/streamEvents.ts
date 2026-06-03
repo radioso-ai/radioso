@@ -3,6 +3,7 @@ import type { SkillDisplayMetadata } from "../../skills/public.js";
 import type { AnswerSegment, ChatCitation } from "./answerTypes.js";
 import type { ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
 import type { ChatIntakeReceipt } from "../services/chatIntakeProvider.js";
+import type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
 
 export type SkillStreamPhase = "active" | "completed" | "failed";
 
@@ -38,6 +39,7 @@ export type ChatStreamEvent =
       suggestions?: ChatSuggestion[];
       activitySummary: ActivitySummary;
       activityTrace: ActivityTrace;
+      turnTrace?: TurnTraceEnvelope;
       route: ChatRoute;
       skill?: SkillStreamPayload;
     };

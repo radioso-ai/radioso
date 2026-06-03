@@ -808,13 +808,12 @@ describe("chat service streaming", () => {
     expect(answerEvent).toBeDefined();
     const metadata = answerEvent?.metadata as {
       activityTrace?: unknown;
-      conversationEngine?: {
-        trace?: { stages?: Array<{ kind: string; outputs?: Record<string, unknown> }> };
-      };
+      turnTrace?: { spine?: { stages?: Array<{ kind: string; outputs?: Record<string, unknown> }> } };
     };
     // The retrieval-derived activity trace stays unchanged (behavior-preserving).
     expect(metadata.activityTrace).toBeDefined();
-    const engineTrace = metadata.conversationEngine?.trace;
+    // The engine's selection/dispatch trace is now the envelope spine.
+    const engineTrace = metadata.turnTrace?.spine;
     expect(engineTrace).toBeDefined();
     const selectionStage = engineTrace?.stages?.find((stage) => stage.kind === "skill_selection");
     // The engine routes on the turn's intent: a social_only turn selects the social
@@ -875,11 +874,9 @@ describe("chat service streaming", () => {
       (event) => event.eventType === "chat.answer" && event.eventStatus === "success",
     );
     const metadata = answerEvent?.metadata as {
-      conversationEngine?: {
-        trace?: { stages?: Array<{ kind: string; outputs?: Record<string, unknown> }> };
-      };
+      turnTrace?: { spine?: { stages?: Array<{ kind: string; outputs?: Record<string, unknown> }> } };
     };
-    const engineTrace = metadata.conversationEngine?.trace;
+    const engineTrace = metadata.turnTrace?.spine;
     expect(engineTrace).toBeDefined();
     expect(engineTrace?.stages?.find((stage) => stage.kind === "skill_selection")?.outputs?.selectedSkills)
       .toContain("social_only.answer");
@@ -1006,6 +1003,17 @@ describe("chat service streaming", () => {
             status: "applied",
           }),
         ]),
+      }),
+      turnTrace: expect.objectContaining({
+        version: 1,
+        spine: expect.objectContaining({
+          stages: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "skill_dispatch",
+              subTrace: expect.objectContaining({ namespace: "retrieval" }),
+            }),
+          ]),
+        }),
       }),
     });
 
@@ -2386,6 +2394,17 @@ describe("chat service streaming", () => {
             status: "applied",
           }),
         ]),
+      }),
+      turnTrace: expect.objectContaining({
+        version: 1,
+        spine: expect.objectContaining({
+          stages: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "skill_dispatch",
+              subTrace: expect.objectContaining({ namespace: "retrieval" }),
+            }),
+          ]),
+        }),
       }),
     });
 

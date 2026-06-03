@@ -20,12 +20,21 @@ import {
   RETRIEVAL_TURN_SKILL,
   buildRetrievalTurnOutcome,
 } from "../../src/modules/chat/services/retrievalTurnSkill.js";
-import { DefaultTurnSelectionStrategy } from "../../src/modules/chat/services/turnSelectionStrategy.js";
+import {
+  DefaultTurnSelectionStrategy,
+  type TurnSelectionStrategy,
+} from "../../src/modules/chat/services/turnSelectionStrategy.js";
 import {
   toConversationTrace,
   toPreparedStagedContext,
 } from "../../src/modules/chat/services/conversationContractMappers.js";
 import { ChatTurnSkillSelector } from "../../src/modules/chat/services/turnSkillSelector.js";
+import type { RouteScopedDirectiveRuntime } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
+import type {
+  Directive,
+  DirectiveSteerInput,
+  DirectiveSteeringResult,
+} from "../../src/modules/directives/public.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 
 const conversation = (): ConversationRecord => ({
@@ -312,6 +321,98 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
 
     expect(dispatched).toEqual(["booking.create"]);
     expect(presentation).toMatchObject({ answer: "Booked.", skillName: "booking.create" });
+  });
+
+  it("runs directive matching and terminal skill selection inside the engine loop", async () => {
+    const directive: Directive = {
+      name: "brief",
+      condition: { kind: "always" },
+      action: "Keep it brief.",
+      priority: 10,
+    };
+    const matched: Array<{ turnContext: Record<string, unknown>; directives: string[] }> = [];
+    const directiveRuntime: RouteScopedDirectiveRuntime = {
+      directivesFor() {
+        return [directive];
+      },
+      matcher: {
+        async match(input) {
+          matched.push({
+            turnContext: input.turnContext,
+            directives: input.directives.map((candidate) => candidate.name),
+          });
+          return [{
+            directive,
+            selectionMode: "deterministic",
+            selectionReason: "Directive condition is unconditional (always).",
+          }];
+        },
+      },
+      async resolveMatches(_input: DirectiveSteerInput, matches): Promise<DirectiveSteeringResult> {
+        return {
+          rules: matches.map((match) => ({
+            action: match.directive.action,
+            priority: match.directive.priority,
+            source: "directive",
+            lifespan: "response",
+          })),
+          matches,
+          omissions: [],
+        };
+      },
+      async steer(): Promise<DirectiveSteeringResult> {
+        throw new Error("steer should not pre-resolve chat engine directives");
+      },
+    };
+    const selectedDirectiveSets: string[][] = [];
+    const strategy: TurnSelectionStrategy = {
+      select(input) {
+        selectedDirectiveSets.push(input.directives.map((match) => match.directive.name));
+        return ["retrieval"];
+      },
+    };
+    const retrievalSkill: TurnSkill = {
+      definition: { name: RETRIEVAL_TURN_SKILL, outcomeKinds: [RETRIEVAL_OUTCOME_KIND] },
+      selects: () => true,
+      dispatch: (s) => buildRetrievalTurnOutcome(s),
+      renderer: {
+        supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
+        render: async (_outcome, ctx) => ({
+          answer: ctx.session.directiveSteering?.rules.map((rule) => rule.action).join(" ") ?? "",
+          skillName: RETRIEVAL_TURN_SKILL,
+          skillOutcome: "completed",
+          skillStatus: "completed",
+        }),
+      },
+    };
+    const prepared = session();
+    prepared.directiveSteering = undefined;
+
+    const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: prepared,
+      directiveRuntime,
+      turnSkillSelector: new ChatTurnSkillSelector([retrievalSkill], strategy),
+      turnSkills: [retrievalSkill],
+      query: "Where is my order?",
+    });
+
+    expect(matched).toEqual([{
+      turnContext: { query: "Where is my order?", route: "social_only" },
+      directives: ["brief"],
+    }]);
+    expect(selectedDirectiveSets).toEqual([["brief"]]);
+    expect(presentation.answer).toBe("Keep it brief.");
+    expect(result.outcomes[0]?.steering).toEqual([
+      expect.objectContaining({ action: "Keep it brief.", source: "directive", lifespan: "response" }),
+    ]);
+    expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "gather",
+      "directive_match",
+      "skill_selection",
+      "skill_dispatch",
+      "compose",
+    ]);
   });
 
   it("lets the engine drive streamed turn selection and emits any final unstreamed remainder", async () => {

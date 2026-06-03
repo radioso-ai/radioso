@@ -5,13 +5,20 @@ import type {
   ConversationSkillDispatcher,
   ConversationSkillSelector,
   ConversationTurnComposer,
+  DirectiveMatch,
 } from "@radioso/conversation-contract";
 import type { ConversationRecord } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import type { AgentRecord } from "../../src/modules/agents/public.js";
 import { createChatProcessTurnInput } from "../../src/modules/chat/services/conversationProcessTurnInput.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
+import type { RouteScopedDirectiveRuntime } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
+import type {
+  Directive,
+  DirectiveSteerInput,
+  DirectiveSteeringResult,
+} from "../../src/modules/directives/public.js";
 
 const conversation = (): ConversationRecord => ({
   id: "conv_1",
@@ -132,6 +139,45 @@ const composer: ConversationTurnComposer = {
   compose: vi.fn(),
 };
 
+const routeScopedDirectiveRuntime = (directives: Directive[]): {
+  runtime: RouteScopedDirectiveRuntime;
+  matchedTurnContexts: Record<string, unknown>[];
+} => {
+  const matchedTurnContexts: Record<string, unknown>[] = [];
+  return {
+    matchedTurnContexts,
+    runtime: {
+      directivesFor() {
+        return directives;
+      },
+      matcher: {
+        async match(input: { turnContext: Record<string, unknown>; directives: Directive[] }): Promise<DirectiveMatch[]> {
+          matchedTurnContexts.push(input.turnContext);
+          return input.directives.map((directive) => ({
+            directive,
+            selectionMode: "deterministic",
+            selectionReason: "test matcher",
+          }));
+        },
+      },
+      async resolveMatches(_input: DirectiveSteerInput, matches: DirectiveMatch[]): Promise<DirectiveSteeringResult> {
+        return {
+          rules: matches.map((match) => ({
+            action: match.directive.action,
+            source: "directive",
+            lifespan: "response",
+          })),
+          matches,
+          omissions: [],
+        };
+      },
+      async steer(): Promise<DirectiveSteeringResult> {
+        throw new Error("steer should not pre-resolve chat engine directives");
+      },
+    },
+  };
+};
+
 describe("createChatProcessTurnInput", () => {
   it("projects a prepared chat session into reusable conversation engine input", async () => {
     const appended: ConversationEvent[] = [];
@@ -193,6 +239,48 @@ describe("createChatProcessTurnInput", () => {
     expect(appended).toEqual([
       expect.objectContaining({ kind: "assistant.response", content: "Done" }),
     ]);
+  });
+
+  it("lets the engine invoke the route-scoped directive matcher with the candidate catalog", async () => {
+    const directive: Directive = {
+      name: "brief",
+      condition: { kind: "always" },
+      action: "Keep it brief.",
+    };
+    const session = preparedSession();
+    session.directiveSteering = undefined;
+    const { runtime, matchedTurnContexts } = routeScopedDirectiveRuntime([directive]);
+    const input = createChatProcessTurnInput({
+      session,
+      directiveRuntime: runtime,
+      dispatcher,
+      selector,
+      composer,
+    });
+
+    expect(input.directives).toEqual([directive]);
+    await expect(input.directiveMatcher.match({
+      turn: {
+        agent: input.agent,
+        sessionId: input.sessionId,
+        inputEvent: input.inputEvent,
+        history: [],
+        stagedContext: [],
+        steering: [],
+      },
+      directives: input.directives,
+    })).resolves.toEqual([
+      expect.objectContaining({
+        directive,
+        selectionReason: "test matcher",
+      }),
+    ]);
+    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "social_only" }]);
+    expect(session.directiveSteering).toMatchObject({
+      rules: [{ action: "Keep it brief.", source: "directive", lifespan: "response" }],
+      matches: [expect.objectContaining({ directive })],
+      omissions: [],
+    });
   });
 
   it("fails closed when a caller tries to use the placeholder model gateway", async () => {

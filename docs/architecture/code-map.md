@@ -327,8 +327,11 @@ they never act — no executor, no dispatch, no outputs. Distinct from Skills,
 which act.
 
 Should not depend on any other domain module (not chat, skills, or retrieval).
-Chat consumes it through `DirectiveSteeringPort`, receiving a `SteeringRule[]`
-plus trace diagnostics, never Directives.
+Chat answer turns pass route-scoped directive candidates and the configured
+matcher into the conversation engine. After the engine matches directives, chat
+resolves those matches through the same capability and relationship filtering
+used by `DirectiveSteeringPort`. Direct retrieval surfaces still consume
+`DirectiveSteeringPort` directly.
 
 Public surfaces and contracts:
 

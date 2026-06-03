@@ -11,6 +11,8 @@ import {
 } from "../../settings/contracts/retrieval.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
+// Keep this aligned with the retrieval.answer manifest's RetrievalSettingsOverride.
+// Per-agent policy intentionally excludes similarityThreshold because it is model-coupled.
 export const retrievalSkillSettingsOverrideSchema = z.object({
   queryRewriteEnabled: z.boolean().optional(),
   semanticRewriteInstructions: z.string().max(2000).optional(),

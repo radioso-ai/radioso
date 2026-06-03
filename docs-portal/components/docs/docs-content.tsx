@@ -68,7 +68,7 @@ export function DocsContent() {
         <Image
           src="/radioso-lockup.svg"
           alt="Radioso"
-          width={983}
+          width={1173}
           height={300}
           priority
           className="h-auto w-full max-w-[420px]"

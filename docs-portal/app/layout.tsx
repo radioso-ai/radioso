@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     description: site.description,
     url: site.docsUrl,
     siteName: site.name,
-    images: [{ url: '/radioso-lockup.svg', width: 983, height: 300, alt: 'Radioso' }],
+    images: [{ url: '/radioso-lockup.svg', width: 1173, height: 300, alt: 'Radioso' }],
   },
   icons: {
     icon: '/radioso-icon.svg',

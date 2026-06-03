@@ -15,16 +15,16 @@ export function AuthPage() {
           <Image
             src="/radioso-lockup-stacked.svg"
             alt="radioso logo"
-            width={300}
-            height={409}
+            width={360}
+            height={422}
             className="mx-auto mb-4 h-28 w-auto object-contain dark:hidden"
             priority
           />
           <Image
             src="/radioso-lockup-stacked-dark.svg"
             alt="radioso logo"
-            width={300}
-            height={409}
+            width={360}
+            height={422}
             className="mx-auto mb-4 hidden h-28 w-auto object-contain dark:block"
             priority
           />

@@ -4,6 +4,7 @@ import { once } from "node:events";
 import type { ConversationAgentConfig, Directive, Routine } from "@radioso/conversation-contract";
 
 import { createConversationKit, type ConversationKit, type CreateConversationKitOptions } from "./composition.js";
+import { DirectiveCoherenceError } from "./coherence.js";
 import { parseTurnRequestBody, isRecord, type TurnResponseBody } from "./httpTypes.js";
 import { createConversationKitClient, type ConversationKitClient } from "./sdk.js";
 
@@ -165,6 +166,20 @@ const isBadRequest = (message: string): boolean =>
   message === "invalid_directive_request" ||
   message === "invalid_routine_request";
 
+const sendError = (response: ServerResponse, error: unknown): void => {
+  if (error instanceof DirectiveCoherenceError) {
+    sendJson(response, 409, {
+      error: error.code,
+      coherent: error.verdict.coherent,
+      conflicts: error.verdict.conflicts,
+      rationale: error.verdict.rationale,
+    });
+    return;
+  }
+  const message = error instanceof Error ? error.message : "unknown_error";
+  sendJson(response, isBadRequest(message) ? 400 : 500, { error: message });
+};
+
 export const createConversationKitServer = (
   options: CreateConversationKitServerOptions,
 ): ConversationKitServer => {
@@ -250,7 +265,7 @@ export const createConversationKitServer = (
           return;
         }
         if (request.method === "POST") {
-          const directive = client.createDirective(agentId, parseDirectiveInput(await readJsonBody(request)));
+          const directive = await client.createDirective(agentId, parseDirectiveInput(await readJsonBody(request)));
           sendJson(response, 201, { directive });
           return;
         }
@@ -264,7 +279,7 @@ export const createConversationKitServer = (
           return;
         }
         if (request.method === "PATCH" || request.method === "PUT") {
-          const directive = client.updateDirective(agentId, directiveId, parseDirectiveInput(await readJsonBody(request)));
+          const directive = await client.updateDirective(agentId, directiveId, parseDirectiveInput(await readJsonBody(request)));
           sendJson(response, directive ? 200 : 404, directive ? { directive } : { error: "not_found" });
           return;
         }
@@ -311,8 +326,7 @@ export const createConversationKitServer = (
       }
       sendJson(response, 404, { error: "not_found" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "unknown_error";
-      sendJson(response, isBadRequest(message) ? 400 : 500, { error: message });
+      sendError(response, error);
     }
   });
 

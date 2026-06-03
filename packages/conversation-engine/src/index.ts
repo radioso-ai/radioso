@@ -140,6 +140,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     const events: ConversationEvent[] = [];
     const history = await input.stores.loadHistory({ sessionId: input.sessionId });
     const inputEvent = createInputEvent(input);
+    // Store calls declare ordered transitions; host adapters own durability/commit semantics.
     await input.stores.appendEvent(inputEvent);
     events.push(inputEvent);
 
@@ -307,9 +308,11 @@ export class DefaultConversationEngine implements ConversationEngine {
 
     const events: ConversationEvent[] = [];
     const inputEvent = createInputEvent(input);
+    // Store calls declare ordered transitions; host adapters own durability/commit semantics.
     await input.stores.appendEvent(inputEvent);
     events.push(inputEvent);
 
+    // Routine store calls may be captured by the host and committed with turn persistence.
     if (result.nextState) {
       await input.routineStore.save(result.nextState);
     } else {
@@ -317,6 +320,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     }
 
     const responseEvent = createResponseEvent(input.sessionId, result.response);
+    // Store calls declare ordered transitions; host adapters own durability/commit semantics.
     await input.stores.appendEvent(responseEvent);
     events.push(responseEvent);
 
@@ -366,6 +370,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     }));
 
     const responseEvent = createResponseEvent(input.sessionId, response);
+    // Store calls declare ordered transitions; host adapters own durability/commit semantics.
     await input.stores.appendEvent(responseEvent);
     prepared.events.push(responseEvent);
 
@@ -425,6 +430,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     }));
 
     const responseEvent = createResponseEvent(input.sessionId, response);
+    // Store calls declare ordered transitions; host adapters own durability/commit semantics.
     await input.stores.appendEvent(responseEvent);
     prepared.events.push(responseEvent);
 

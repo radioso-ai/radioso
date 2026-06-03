@@ -44,6 +44,22 @@ export const AGENT_BUDGET_CEILINGS: AgentBudgets = {
   maxWallTimeMs: 120_000,
 };
 
+/**
+ * Per-call input-token budget for agent-step model calls, set comfortably above
+ * the accumulated-input worst case so a legitimate deep-retrieval turn is never
+ * aborted mid-run by the pipeline's protective global default (32k).
+ *
+ * A single agent step's prompt = system prompt + the compacted transcript. The
+ * transcript keeps the most recent steps' tool results uncompacted, so its size
+ * is bounded by {@link AGENT_BUDGET_CEILINGS}.maxToolResultTokens (32k). Adding
+ * the fixed system-prompt/protocol/tool-catalog overhead plus the JSON framing
+ * of prior tool calls, that worst case can edge over 32k — exactly the global
+ * default. We budget the tool-result ceiling plus generous headroom (16k) so the
+ * agentic surface has room for overhead the global guard would otherwise reject,
+ * while the global default stays protective for the cheap chat/retrieval surfaces.
+ */
+export const AGENT_STEP_MAX_INPUT_TOKENS: number = AGENT_BUDGET_CEILINGS.maxToolResultTokens + 16_000;
+
 export interface AgentRunInput {
   readonly systemPrompt: string;
   readonly userMessage: string;

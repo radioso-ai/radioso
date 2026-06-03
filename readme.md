@@ -346,6 +346,12 @@ Public chat and website embed rate limits are configured by operators, not works
 
 Older workspace-level `anonymousRateLimit` and `messagesPerMinute` settings are ignored. Operators with custom public-chat limits should set the environment variables above.
 
+### Authenticated LLM request limits
+
+Authenticated assistant chat and retrieval answer/search routes share a durable rate limit because they can trigger model or retrieval work. Operators can tune it with `EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS` and `EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS`. The default is 60 requests per 60 seconds.
+
+The limit is scoped by account and workspace for browser sessions. Workspace API tokens get separate token-specific buckets within the same account and workspace.
+
 ---
 
 ## Docs

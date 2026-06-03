@@ -454,9 +454,8 @@ function PublicChatContent({
   const resolvedThemeOverrides = assistantTheme ?? themeOverrides
   const theme = getWebsiteEmbedTheme(resolvedThemeOverrides)
   // The contact button follows the backend-advertised intake action, which the host
-  // surfaces only when the agent enabled contact requests (per-agent, OSS) or the EE
-  // human-contact feature is configured. No edition gate here: the advertisement is the
-  // gate, so the button works in OSS when an operator turns the capability on.
+  // surfaces only when the agent enabled contact requests. No edition gate here: the
+  // advertisement is the gate.
   const contactAvailable =
     intakeActions.some((action) => action.skillName === HUMAN_CONTACT_SKILL_NAME)
   const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages

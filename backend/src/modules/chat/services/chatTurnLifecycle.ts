@@ -17,7 +17,7 @@ import {
   type SkillTurnOutcome,
   legacyAnswerOutcomeForSkillTurnOutcome,
 } from "./assistantTurnOutcomeTypes.js";
-import type { ChatIntakeResult } from "./chatIntakeProvider.js";
+import type { ChatIntakeResult } from "./publicChatActionAdvertiser.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { buildRewriteContinuityState } from "./rewriteContinuityState.js";
 import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";

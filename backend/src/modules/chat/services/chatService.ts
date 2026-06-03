@@ -28,7 +28,7 @@ import {
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
-import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
+import { NoopPublicChatActionAdvertiser, type PublicChatActionAdvertiserPort, type ChatIntakeResult } from "./publicChatActionAdvertiser.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import {
   attemptRoutineTurnWithConversationEngine,
@@ -266,7 +266,7 @@ export interface ChatServiceOptions {
   workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">;
   usageLimitPolicy?: UsageLimitPolicy;
   agentService?: Pick<AgentService, "resolve">;
-  chatIntakeProvider?: ChatIntakeProviderPort;
+  publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   directiveSteering?: RouteScopedDirectiveRuntime;
   selectionStrategy?: TurnSelectionStrategy;
   /** The reusable conversation engine drives every chat turn; composition always wires it. */
@@ -284,7 +284,7 @@ export class ChatService {
   private readonly chatGateway: ChatGateway;
   private readonly auditService: AuditService;
   private readonly usageLimitPolicy: UsageLimitPolicy;
-  private readonly chatIntakeProvider: ChatIntakeProviderPort;
+  private readonly publicChatActionAdvertiser: PublicChatActionAdvertiserPort;
   private readonly selectionStrategy: TurnSelectionStrategy;
   private readonly conversationEngine: ConversationEngine;
   private readonly chatAnswerPresenter: ChatAnswerPresenter;
@@ -309,7 +309,7 @@ export class ChatService {
       workspaceRepository,
       usageLimitPolicy = new NoopUsageLimitPolicy(),
       agentService,
-      chatIntakeProvider = new NoopChatIntakeProvider(),
+      publicChatActionAdvertiser = new NoopPublicChatActionAdvertiser(),
       directiveSteering = noopRouteScopedDirectiveRuntime,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       conversationEngine,
@@ -323,7 +323,7 @@ export class ChatService {
     this.chatGateway = chatGateway;
     this.auditService = auditService;
     this.usageLimitPolicy = usageLimitPolicy;
-    this.chatIntakeProvider = chatIntakeProvider;
+    this.publicChatActionAdvertiser = publicChatActionAdvertiser;
     this.selectionStrategy = selectionStrategy;
     this.conversationEngine = conversationEngine;
     this.directiveRuntime = directiveSteering;
@@ -832,7 +832,7 @@ export class ChatService {
     session: PreparedSession,
   ): Promise<ChatIntakeResult | null> {
     try {
-      return await this.chatIntakeProvider.handle({
+      return await this.publicChatActionAdvertiser.handle({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         agentId: session.agent.id,

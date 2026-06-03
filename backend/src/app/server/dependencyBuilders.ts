@@ -46,12 +46,12 @@ import {
   ChatHistoryService,
   ChatService,
   type ChatRoutineProvider,
-  ChainedChatIntakeProvider,
+  ChainedPublicChatActionAdvertiser,
   buildChatTurnRuntime,
   createRouteScopedDirectiveSteering,
   createSkillOutcomeCapabilityProvider,
   NoopAnswerFeedbackHistoryProvider,
-  NoopChatIntakeProvider,
+  NoopPublicChatActionAdvertiser,
   NoopContactHistoryProvider,
   resolveCitationArtifacts,
   RetrievalTurnController,
@@ -677,7 +677,7 @@ export const buildChatServices = (input: {
     resolveCitationArtifacts,
   };
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database));
-  const intakeProviderContext = {
+  const publicChatActionAdvertiserContext = {
     database: input.database,
     chatGateway,
     logger: input.logger,
@@ -713,14 +713,14 @@ export const buildChatServices = (input: {
       executor: new RetrievalAnswerSkillExecutor(input.retrievalPipeline),
     });
   }
-  const chatIntakeProviders = input.composition.chatIntakeProviderRegistrations.map((registration) =>
-    typeof registration === "function" ? registration(intakeProviderContext) : registration,
+  const publicChatActionAdvertisers = input.composition.publicChatActionAdvertiserRegistrations.map((registration) =>
+    typeof registration === "function" ? registration(publicChatActionAdvertiserContext) : registration,
   );
-  const chatIntakeProvider = chatIntakeProviders.length === 0
-    ? new NoopChatIntakeProvider()
-    : chatIntakeProviders.length === 1
-      ? chatIntakeProviders[0]!
-      : new ChainedChatIntakeProvider(chatIntakeProviders);
+  const publicChatActionAdvertiser = publicChatActionAdvertisers.length === 0
+    ? new NoopPublicChatActionAdvertiser()
+    : publicChatActionAdvertisers.length === 1
+      ? publicChatActionAdvertisers[0]!
+      : new ChainedPublicChatActionAdvertiser(publicChatActionAdvertisers);
   const contactHistoryProvider = !input.composition.contactHistoryProviderRegistration
     ? new NoopContactHistoryProvider()
     : typeof input.composition.contactHistoryProviderRegistration === "function"
@@ -849,7 +849,7 @@ export const buildChatServices = (input: {
     workspaceRepository: input.workspaceRepository,
     usageLimitPolicy: input.usageLimitPolicy,
     agentService: input.agentService,
-    chatIntakeProvider,
+    publicChatActionAdvertiser,
     // 067: behavioral steering. The standing set is supplied by application
     // composition; default answer behavior is registered by a built-in module.
     // The probabilistic (contextual) matcher is intentionally not wired here: the
@@ -903,7 +903,7 @@ export const buildChatServices = (input: {
     answerPresentation,
     assistantChatService: new AssistantChatService(chatService, chatBootstrapService),
     assistantHistoryService: new AssistantHistoryService(chatHistoryService),
-    chatIntakeProvider,
+    publicChatActionAdvertiser,
     chatBootstrapService,
     chatGateway,
     chatHistoryService,

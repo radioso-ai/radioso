@@ -8,10 +8,8 @@ export type {
   PresentedAnswer,
 } from "./answerTypes.js";
 export type {
-  ChatIntakeProviderPort,
-  ChatIntakeResult,
-  ChatIntakeStatus,
-} from "../services/chatIntakeProvider.js";
+  PublicChatActionAdvertiserPort,
+} from "../services/publicChatActionAdvertiser.js";
 export type { ChatGateway } from "./chatGateway.js";
 export type { AssistantTurnOutcome } from "../services/assistantTurnOutcomeTypes.js";
 export { ASSISTANT_TURN_OUTCOME } from "../services/assistantTurnOutcomeTypes.js";
@@ -23,7 +21,7 @@ export type {
   ContactHistoryProviderPort,
   ContactHistorySummary,
 } from "../services/contactHistoryProvider.js";
-export type { PublicChatIntakeAction } from "../services/chatIntakeProvider.js";
+export type { PublicChatIntakeAction } from "../services/publicChatActionAdvertiser.js";
 export type {
   ChatBootstrapResponse,
   ChatResponse,

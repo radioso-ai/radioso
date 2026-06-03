@@ -2,17 +2,25 @@ import type { ActivitySummary, ActivityTrace } from "../../retrieval/public.js";
 import type { SkillDisplayMetadata } from "../../skills/public.js";
 import type { AnswerSegment, ChatCitation } from "./answerTypes.js";
 import type { ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
-import type { ChatIntakeReceipt } from "../services/chatIntakeProvider.js";
 import type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
 
 export type SkillStreamPhase = "active" | "completed" | "failed";
+
+export interface SkillStreamReceipt {
+  fields: Array<{
+    name: string;
+    displayName: string;
+    value: string;
+  }>;
+  statusLabel?: string;
+}
 
 export interface SkillStreamPayload {
   skillName: string;
   phase: SkillStreamPhase;
   display?: SkillDisplayMetadata;
   localizedTitle?: string;
-  receipt?: ChatIntakeReceipt;
+  receipt?: SkillStreamReceipt;
 }
 
 export type ChatStreamEvent =

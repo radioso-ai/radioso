@@ -41,7 +41,7 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "agentSurfaceExtensions"
   | "assistantChatService"
   | "auditService"
-  | "chatIntakeProvider"
+  | "publicChatActionAdvertiser"
   | "chatHistoryService"
   | "conversationRepository"
   | "documentStorage"
@@ -96,7 +96,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     sourceChannel?: string | null;
   }) => {
     try {
-      const actions = await dependencies.chatIntakeProvider.getPublicIntakeActions?.(input);
+      const actions = await dependencies.publicChatActionAdvertiser.getPublicIntakeActions(input);
       return actions && actions.length > 0 ? actions : undefined;
     } catch (error) {
       dependencies.logger.warn?.(

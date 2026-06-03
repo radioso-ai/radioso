@@ -53,7 +53,7 @@ imports from `services/`.
   reusable engine.
 - Citations: `citation*`, `implicitCitationSupport.ts`,
   `chatAnswerPresenter.ts`.
-- Suggestions and skill intake: `chatIntakeProvider.ts`,
+- Suggestions and skill intake: `publicChatActionAdvertiser.ts`,
   `configuredSkillIntakeProvider.ts`, `chat-action` tests.
 - History: `assistantHistoryService.ts`, `chatHistoryService.ts`,
   `historyItemPresenter.ts`.

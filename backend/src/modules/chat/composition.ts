@@ -72,13 +72,11 @@ export {
 export type { ChatGateway, ChatStreamEvent } from "./contracts/index.js";
 export { ChatHistoryService } from "./services/chatHistoryService.js";
 export {
-  ChainedChatIntakeProvider,
-  NoopChatIntakeProvider,
-  type ChatIntakeProviderPort,
-  type ChatIntakeResult,
-  type ChatIntakeStatus,
+  ChainedPublicChatActionAdvertiser,
+  NoopPublicChatActionAdvertiser,
+  type PublicChatActionAdvertiserPort,
   type PublicChatIntakeAction,
-} from "./services/chatIntakeProvider.js";
+} from "./services/publicChatActionAdvertiser.js";
 export {
   NoopContactHistoryProvider,
   type ContactHistoryProviderPort,

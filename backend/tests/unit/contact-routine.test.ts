@@ -42,6 +42,11 @@ const inMemoryStore = (): ConversationRoutineStore & { rows: Map<string, Routine
 const scriptedSelector: ConversationRoutineNextStepSelector = {
   async select({ currentStep, transitions, turn }) {
     const text = turn.inputEvent.content.trim();
+    const normalized = text.replace(/[.!?]+$/u, "").trim();
+    const declined = /^(no|no thanks|stop|cancel|i don't want|i do not want|не хочу|я не хочу)$/i.test(normalized);
+    if (declined) {
+      return { nextStepId: transitions.find((transition) => transition.to === "cancelled")?.to ?? currentStep.id };
+    }
     if (currentStep.id === "ask_email") {
       return /\S+@\S+\.\S+/.test(text)
         ? { nextStepId: "ask_message", variables: { email: text } }
@@ -125,6 +130,47 @@ describe("contact routine — end-to-end through the engine (action emission)", 
       },
     ]);
     expect(t3.response.answer).toContain("done");
+    expect(store.rows.get("conv_1")).toBeUndefined();
+  });
+
+  it("cancels the contact routine when the user declines before giving an email", async () => {
+    const store = inMemoryStore();
+    const engine = createConversationEngine();
+    const events: ConversationEvent[] = [];
+    const run = (content: string, metadata?: Record<string, unknown>) => {
+      const input = buildInput(content, store, events);
+      if (metadata) {
+        input.inputEvent.metadata = metadata;
+      }
+      return engine.processTurn(input);
+    };
+
+    await run("I want to contact you", { method: "intent_click" });
+    const declined = await run("Не хочу.");
+
+    expect(declined.actions ?? []).toEqual([]);
+    expect(declined.response.answer).toContain("cancelled");
+    expect(store.rows.get("conv_1")).toBeUndefined();
+  });
+
+  it("cancels the contact routine when the user declines before giving a message", async () => {
+    const store = inMemoryStore();
+    const engine = createConversationEngine();
+    const events: ConversationEvent[] = [];
+    const run = (content: string, metadata?: Record<string, unknown>) => {
+      const input = buildInput(content, store, events);
+      if (metadata) {
+        input.inputEvent.metadata = metadata;
+      }
+      return engine.processTurn(input);
+    };
+
+    await run("I want to contact you", { method: "intent_click" });
+    await run("alex@example.com");
+    const declined = await run("I don't want");
+
+    expect(declined.actions ?? []).toEqual([]);
+    expect(declined.response.answer).toContain("cancelled");
     expect(store.rows.get("conv_1")).toBeUndefined();
   });
 });

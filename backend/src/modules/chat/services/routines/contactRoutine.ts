@@ -31,10 +31,13 @@ export const contactRoutine: Routine = {
     { id: "ask_message", kind: "chat", action: "Ask the user for the message they would like to send." },
     { id: "send", kind: "action", actionType: CONTACT_SEND_ACTION_TYPE },
     { id: "done", kind: "terminal", action: "Confirm their request was sent and that someone will follow up." },
+    { id: "cancelled", kind: "terminal", action: "Acknowledge that the contact request was cancelled and that they do not need to provide anything else." },
   ],
   transitions: [
-    { from: "ask_email", to: "ask_message", condition: "the user provided a valid email address" },
-    { from: "ask_message", to: "send", condition: "the user provided the message they want to send" },
+    { from: "ask_email", to: "cancelled", condition: "the user declined, cancelled, refused, or said they no longer want to continue the contact request" },
+    { from: "ask_email", to: "ask_message", condition: "the user provided a valid email address and did not decline or cancel the contact request" },
+    { from: "ask_message", to: "cancelled", condition: "the user declined, cancelled, refused, or said they no longer want to continue the contact request" },
+    { from: "ask_message", to: "send", condition: "the user provided the message they want to send and did not decline or cancel the contact request" },
     { from: "send", to: "done", condition: "the contact request was emitted" },
   ],
 };

@@ -40,10 +40,6 @@ export interface AgentSurfaceExtension<TSettings = unknown> {
   normalize(input: unknown): TSettings;
   serialize(settings: TSettings): unknown;
   parse(raw: unknown): TSettings;
-  resolveCopyForAcceptLanguage?(acceptLanguage: string | undefined | null): {
-    locale: string;
-    pack: Record<string, string>;
-  } | null;
 }
 
 export type ApplicationAccountCreatedHandler = (context: {

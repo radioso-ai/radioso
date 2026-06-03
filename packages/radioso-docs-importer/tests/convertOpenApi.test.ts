@@ -98,4 +98,188 @@ describe("convertOpenApiToDocuments", () => {
     expect(authDoc?.markdown).toContain("Exchange token");
     expect(authDoc?.markdown).not.toContain("Create a document");
   });
+
+  it("merges allOf schema properties and required fields before rendering", () => {
+    const docs = convertOpenApiToDocuments(
+      {
+        tags: [{ name: "Documents" }],
+        paths: {
+          "/api/v1/document/{documentId}": {
+            get: {
+              tags: ["Documents"],
+              responses: {
+                "200": {
+                  description: "OK",
+                  content: {
+                    "application/json": {
+                      schema: { $ref: "#/components/schemas/DocumentDetails" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        components: {
+          schemas: {
+            DocumentBase: {
+              type: "object",
+              required: ["id"],
+              properties: { id: { type: "string" }, title: { type: "string" } },
+            },
+            DocumentDetails: {
+              allOf: [
+                { $ref: "#/components/schemas/DocumentBase" },
+                {
+                  type: "object",
+                  required: ["chunks"],
+                  properties: { chunks: { type: "array", items: { type: "string" } } },
+                },
+              ],
+            },
+          },
+        },
+      },
+      { citationBase: CITATION_BASE },
+    );
+
+    const documentsDoc = docs.find((doc) => doc.tag === "Documents");
+    expect(documentsDoc?.markdown).toContain("`id` (string, required)");
+    expect(documentsDoc?.markdown).toContain("`title` (string)");
+    expect(documentsDoc?.markdown).toContain("`chunks` (array<string>, required)");
+    expect(documentsDoc?.markdown).not.toContain("- type: object");
+  });
+
+  it("merges nested allOf schemas through refs", () => {
+    const docs = convertOpenApiToDocuments(
+      {
+        tags: [{ name: "Auth" }],
+        paths: {
+          "/api/v1/auth/password-reset/confirm": {
+            post: {
+              tags: ["Auth"],
+              responses: {
+                "200": {
+                  description: "OK",
+                  content: {
+                    "application/json": {
+                      schema: { $ref: "#/components/schemas/PasswordResetConfirmResponse" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        components: {
+          schemas: {
+            TokenEnvelope: {
+              allOf: [
+                {
+                  type: "object",
+                  required: ["accessToken"],
+                  properties: { accessToken: { type: "string" } },
+                },
+                { $ref: "#/components/schemas/SessionDetails" },
+              ],
+            },
+            SessionDetails: {
+              type: "object",
+              required: ["expiresAt"],
+              properties: { expiresAt: { type: "string", format: "date-time" } },
+            },
+            PasswordResetConfirmResponse: {
+              allOf: [
+                { $ref: "#/components/schemas/TokenEnvelope" },
+                {
+                  type: "object",
+                  required: ["email"],
+                  properties: { email: { type: "string" } },
+                },
+              ],
+            },
+          },
+        },
+      },
+      { citationBase: CITATION_BASE },
+    );
+
+    const authDoc = docs.find((doc) => doc.tag === "Auth");
+    expect(authDoc?.markdown).toContain("`accessToken` (string, required)");
+    expect(authDoc?.markdown).toContain("`expiresAt` (string<date-time>, required)");
+    expect(authDoc?.markdown).toContain("`email` (string, required)");
+  });
+
+  it("renders operation auth requirements", () => {
+    const docs = convertOpenApiToDocuments(
+      {
+        tags: [{ name: "Documents" }],
+        paths: {
+          "/api/v1/document/": {
+            get: {
+              tags: ["Documents"],
+              security: [{ bearerAuth: [], workspaceSelection: [] }, { sessionCookie: [] }],
+              responses: { "200": { description: "OK" } },
+            },
+          },
+        },
+      },
+      { citationBase: CITATION_BASE },
+    );
+
+    const documentsDoc = docs.find((doc) => doc.tag === "Documents");
+    expect(documentsDoc?.markdown).toContain("Auth: bearerAuth + workspaceSelection or sessionCookie");
+  });
+
+  it("renders missing operation auth as none", () => {
+    const documentsDoc = convert().find((doc) => doc.tag === "Documents");
+    expect(documentsDoc?.markdown).toContain("Auth: none");
+  });
+
+  it("renders additionalProperties schemas as map value types", () => {
+    const docs = convertOpenApiToDocuments(
+      {
+        tags: [{ name: "Search" }],
+        paths: {
+          "/api/v1/search": {
+            get: {
+              tags: ["Search"],
+              responses: {
+                "200": {
+                  description: "OK",
+                  content: {
+                    "application/json": {
+                      schema: {
+                        type: "object",
+                        properties: {
+                          buckets: {
+                            type: "object",
+                            additionalProperties: { $ref: "#/components/schemas/DocumentSearchResult" },
+                          },
+                          metadata: { type: "object", additionalProperties: true },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        components: {
+          schemas: {
+            DocumentSearchResult: {
+              type: "object",
+              properties: { documentId: { type: "string" } },
+            },
+          },
+        },
+      },
+      { citationBase: CITATION_BASE },
+    );
+
+    const searchDoc = docs.find((doc) => doc.tag === "Search");
+    expect(searchDoc?.markdown).toContain("`buckets` (map<DocumentSearchResult>)");
+    expect(searchDoc?.markdown).toContain("`metadata` (map<unknown>)");
+  });
 });

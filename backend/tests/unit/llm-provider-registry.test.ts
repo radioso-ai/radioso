@@ -295,7 +295,7 @@ describe("OpenAISemanticRerankGateway", () => {
       "gpt-5-nano",
     );
 
-    await gateway.rerank({ query: "retreats", contexts: [context], usageContext });
+    await gateway.rerank({ query: "retreats", today: "2026-01-01", contexts: [context], usageContext });
 
     expect(request).toMatchObject({ model: "gpt-5-nano", reasoning: { effort: "minimal" } });
     expect(request).not.toHaveProperty("temperature");
@@ -315,7 +315,7 @@ describe("OpenAISemanticRerankGateway", () => {
       "gpt-4.1-mini",
     );
 
-    await gateway.rerank({ query: "retreats", contexts: [context], usageContext });
+    await gateway.rerank({ query: "retreats", today: "2026-01-01", contexts: [context], usageContext });
 
     expect(request).toMatchObject({ model: "gpt-4.1-mini", temperature: 0.2 });
     expect(request).not.toHaveProperty("reasoning");
@@ -342,7 +342,7 @@ describe("OpenAISemanticRerankGateway", () => {
       "gpt-5.4-nano-rerank-test",
     );
 
-    const result = await gateway.rerank({ query: "retreats", contexts: [context], usageContext });
+    const result = await gateway.rerank({ query: "retreats", today: "2026-01-01", contexts: [context], usageContext });
 
     // First attempt sends reasoning; on rejection it retries without it and still
     // reranks (rather than throwing through to the similarity fallback).
@@ -369,6 +369,7 @@ describe("ModelRerankGateway", () => {
 
     await gateway.rerank({
       query: "retreats",
+      today: "2026-01-01",
       contexts: [{
         chunkId: "chunk-1",
         documentId: "doc-1",

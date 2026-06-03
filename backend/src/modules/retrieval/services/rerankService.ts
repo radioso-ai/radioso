@@ -11,6 +11,7 @@ import {
   markReasoningEffortUnsupported,
 } from "../../../shared/infra/llm/reasoningEffortSupport.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { RetrievedCandidate, RerankedCandidate, RerankStatus } from "../domain/retrievalPipelineTypes.js";
@@ -18,6 +19,8 @@ import type { RetrievedCandidate, RerankedCandidate, RerankStatus } from "../dom
 export interface RerankGatewayInput {
   query: string;
   contexts: RetrievedCandidate[];
+  /** Reference date (UTC `YYYY-MM-DD`) the model uses to judge event recency. */
+  today: string;
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext?: ModelCallUsageContext;
 }
@@ -26,7 +29,7 @@ export interface RerankGateway {
   rerank(input: RerankGatewayInput): Promise<Array<{ chunkId: string; relevanceScore: number }>>;
 }
 
-const buildRerankPrompt = (input: { query: string; candidates: string }): string =>
+const buildRerankPrompt = (input: { query: string; candidates: string; today: string }): string =>
   renderPromptTemplate("retrieval/rerank.md", input);
 
 type RerankSamplingParams = { temperature?: number; reasoning?: { effort: ReasoningEffort } };
@@ -57,7 +60,7 @@ export class ModelRerankGateway implements RerankGateway {
 
     const { text: content } = await this.client.complete({
       operation: input.usageContext ?? fallbackRerankOperation(input.workspaceContext?.workspaceId),
-      prompt: buildRerankPrompt({ query: input.query, candidates }),
+      prompt: buildRerankPrompt({ query: input.query, candidates, today: input.today }),
       temperature: RETRIEVAL_BEHAVIOR.rerank.temperature,
       reasoningEffort: RETRIEVAL_BEHAVIOR.rerank.reasoningEffort,
       maxOutputTokens: RETRIEVAL_BEHAVIOR.rerank.modelMaxCompletionTokens,
@@ -152,7 +155,7 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
       ),
     );
 
-    const prompt = buildRerankPrompt({ query: input.query, candidates });
+    const prompt = buildRerankPrompt({ query: input.query, candidates, today: input.today });
     const operation = input.usageContext ?? fallbackRerankOperation(input.workspaceContext?.workspaceId);
     const sampling = buildRerankResponsesSamplingParams(this.model);
     const createRerank = (params: RerankSamplingParams) =>
@@ -262,6 +265,7 @@ export class RerankService {
   constructor(
     private readonly gateway?: RerankGateway,
     private readonly logger?: AppLogger,
+    private readonly clock: Clock = systemClock,
   ) {}
 
   async rerank(input: {
@@ -280,12 +284,14 @@ export class RerankService {
     }
 
     try {
+      const today = formatIsoDateUtc(this.clock());
       const rerankBatches = chunkContexts(input.contexts, RETRIEVAL_BEHAVIOR.rerank.maxBatchSize);
       const batchScores = await Promise.all(
         rerankBatches.map((contexts, batchIndex) =>
           this.gateway?.rerank({
             query: input.query,
             contexts,
+            today,
             workspaceContext: input.workspaceContext,
             usageContext: {
               ...(input.usageContext ?? fallbackUsageContext(input.workspaceContext?.workspaceId)),

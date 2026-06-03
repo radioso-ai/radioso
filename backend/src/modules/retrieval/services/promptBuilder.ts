@@ -1,4 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
@@ -14,6 +15,7 @@ export interface PromptBuildResult {
 export class PromptBuilder {
   constructor(
     private readonly sharedAnswerInstructionBuilder = new SharedAnswerInstructionBuilder(),
+    private readonly clock: Clock = systemClock,
   ) {}
 
   build(input: {
@@ -61,6 +63,7 @@ export class PromptBuilder {
         conversation_mode_instruction_block: "",
         response_language_instruction: answerInstructionBlocks.responseLanguageInstruction,
         intent_topic: input.intentTopic || "not provided",
+        today: formatIsoDateUtc(this.clock()),
       }),
       prompt: renderPromptTemplate("retrieval/answer-user.md", {
         history_section: historySection || "No prior history",

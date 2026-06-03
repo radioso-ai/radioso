@@ -151,7 +151,7 @@ describe("ContextualRerankGateway", () => {
       fallback,
     );
 
-    await gateway.rerank({ query: "q", contexts: [] });
+    await gateway.rerank({ query: "q", today: "2026-01-01", contexts: [] });
 
     expect(fallback.calls).toBe(1);
   });

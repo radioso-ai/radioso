@@ -33,4 +33,31 @@ describe("conversation kit SDK facade", () => {
     expect(client.getSession(session.id)?.agentId).toBe(agent.id);
     expect(client.listEvents(session.id).map((event) => event.role)).toEqual(["user", "assistant"]);
   });
+
+  it("applies directives created through SDK authoring on the next turn", async () => {
+    const gateway: ConversationModelGateway = {
+      complete: vi.fn(async ({ systemPrompt }) => ({
+        text: "reply",
+        metadata: {
+          sawDirective: systemPrompt?.includes("Mention restart survival.") ?? false,
+        },
+      })),
+    };
+    const client = createConversationKitClient({ modelGateway: gateway });
+    const agent = client.createAgent({ name: "Editable Agent" });
+    const session = client.createSession({ agentId: agent.id });
+
+    client.createDirective(agent.id, {
+      name: "restart",
+      condition: { kind: "always" },
+      action: "Mention restart survival.",
+    });
+
+    const reply = await client.sendMessage({
+      sessionId: session.id,
+      message: "What changed?",
+    });
+
+    expect(reply.metadata).toMatchObject({ sawDirective: true });
+  });
 });

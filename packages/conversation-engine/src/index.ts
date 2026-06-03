@@ -9,6 +9,7 @@ import type {
   ProcessTurnStreamEvent,
   ProcessTurnStreamInput,
   RenderableTurn,
+  RoutineAttemptInput,
   RoutineActionRequest,
   SelectionDecision,
   SkillDefinition,
@@ -96,7 +97,7 @@ interface PreparedTurnRun {
   composeTurn: TurnContext;
 }
 
-const createInputEvent = (input: ProcessTurnInput | ProcessTurnStreamInput): ConversationEvent => ({
+const createInputEvent = (input: ProcessTurnInput | ProcessTurnStreamInput | RoutineAttemptInput): ConversationEvent => ({
   id: input.inputEvent.id,
   sessionId: input.sessionId,
   kind: input.inputEvent.kind,
@@ -259,7 +260,7 @@ export class DefaultConversationEngine implements ConversationEngine {
    * so a non-claiming activation check leaves the normal path to append it.
    */
   async attemptRoutine(
-    input: ProcessTurnInput | ProcessTurnStreamInput,
+    input: RoutineAttemptInput,
   ): Promise<ProcessTurnResult | null> {
     if (!input.routineStore || !input.routineRunner) {
       return null;

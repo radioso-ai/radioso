@@ -12,6 +12,7 @@ import type {
   DirectiveMatch,
   ProcessTurnInput,
   ProcessTurnStreamInput,
+  RoutineAttemptInput,
   SkillDefinition,
   TurnContext,
 } from "@radioso/conversation-contract";
@@ -51,6 +52,14 @@ export interface ChatProcessTurnStreamInputOptions extends Omit<ChatProcessTurnI
   composer: ConversationTurnStreamComposer;
 }
 
+export interface ChatRoutineAttemptInputOptions {
+  session: PreparedSession;
+  appendEvent?: (event: ConversationEvent) => Promise<void>;
+  routineStore: ConversationRoutineStore;
+  routineRunner: ConversationRoutineRunner;
+  routineActivator: ConversationRoutineActivator;
+}
+
 const directiveMatchesForSession = (session: PreparedSession): DirectiveMatch[] =>
   session.directiveSteering?.matches ?? [];
 
@@ -68,6 +77,18 @@ const directiveSteerInputForSession = (
   },
 });
 
+const createChatConversationStores = (
+  session: PreparedSession,
+  appendEvent?: (event: ConversationEvent) => Promise<void>,
+): RoutineAttemptInput["stores"] => ({
+  async loadHistory() {
+    return toConversationMessages(session.history);
+  },
+  async appendEvent(event) {
+    await appendEvent?.(event);
+  },
+});
+
 export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions): ProcessTurnInput => {
   const directiveSteerInput = directiveSteerInputForSession(options.session);
   return {
@@ -77,14 +98,7 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
     skills: options.skills ?? [],
     directives: options.directives ?? options.directiveRuntime?.directivesFor(directiveSteerInput) ??
       directivesForSession(options.session),
-    stores: {
-      async loadHistory() {
-        return toConversationMessages(options.session.history);
-      },
-      async appendEvent(event) {
-        await options.appendEvent?.(event);
-      },
-    },
+    stores: createChatConversationStores(options.session, options.appendEvent),
     modelGateway: options.modelGateway ?? missingModelGateway,
     dispatcher: options.dispatcher,
     selector: options.selector,
@@ -116,4 +130,16 @@ export const createChatProcessTurnStreamInput = (
 ): ProcessTurnStreamInput => ({
   ...createChatProcessTurnInput(options),
   composer: options.composer,
+});
+
+export const createChatRoutineAttemptInput = (
+  options: ChatRoutineAttemptInputOptions,
+): RoutineAttemptInput => ({
+  agent: toConversationAgentConfig(options.session.agent),
+  sessionId: options.session.conversation.id,
+  inputEvent: toConversationInputEvent(options.session.userMessage),
+  stores: createChatConversationStores(options.session, options.appendEvent),
+  routineStore: options.routineStore,
+  routineRunner: options.routineRunner,
+  routineActivator: options.routineActivator,
 });

@@ -15,6 +15,10 @@ const withNextra = nextra({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Static export: the portal is pure SSG (Nextra MDX + a client-side Stoplight
+  // widget reading /openapi.json), so it ships as static files to a CDN host
+  // (Firebase Hosting) instead of an always-on server.
+  output: 'export',
   outputFileTracingRoot: docsPortalRoot,
   transpilePackages: ['@radioso/ui'],
   turbopack: {

@@ -1,3 +1,4 @@
 .next/
+out/
 next-env.d.ts
 public/openapi.json

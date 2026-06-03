@@ -134,6 +134,142 @@ describe("candidate retrieval branches", () => {
     expect(result.lexicalContexts).toHaveLength(2);
   });
 
+  it("caps distinct semantic searches while still running every lexical branch", async () => {
+    const embeddedTexts: string[][] = [];
+    const vectorQueries: number[] = [];
+    const lexicalQueries: string[] = [];
+    const stage = new CandidateRetrievalStageService(
+      new EmbeddingService({
+        async embedTexts(texts) {
+          embeddedTexts.push(texts);
+          return texts.map((_, index) => [index + 1]);
+        },
+      }),
+      {
+        async search(input) {
+          vectorQueries.push(Number(input.queryEmbedding[0]));
+          return [
+            {
+              chunkId: `semantic-${input.queryEmbedding[0]}`,
+              documentId: `doc-semantic-${input.queryEmbedding[0]}`,
+              title: "topic",
+              content: "profile",
+              similarity: 0.9,
+            },
+          ];
+        },
+      },
+      {
+        async search(input) {
+          lexicalQueries.push(input.query);
+          return [
+            {
+              chunkId: `lexical-${input.query}`,
+              documentId: `doc-lexical-${input.query}`,
+              title: input.query,
+              content: "profile",
+              similarity: 0.8,
+            },
+          ];
+        },
+      },
+    );
+
+    const subqueries = [
+      { id: "subquery_1", label: "Alpha", semanticQuery: "who is alpha", lexicalQuery: "alpha" },
+      { id: "subquery_2", label: "Beta", semanticQuery: "who is beta", lexicalQuery: "beta" },
+      { id: "subquery_3", label: "Gamma", semanticQuery: "who is gamma", lexicalQuery: "gamma" },
+      { id: "subquery_4", label: "Delta", semanticQuery: "who is delta", lexicalQuery: "delta" },
+    ];
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "w1",
+        query: "alpha beta gamma delta?",
+        history: [],
+      },
+      settings: {
+        workspaceId: "w1",
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        metadataRules: [],
+        customInstruction: "",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+      originalParsedQuery: {
+        originalQuery: "alpha beta gamma delta?",
+        semanticQuery: "alpha beta gamma delta?",
+        lexicalQuery: "alpha beta gamma delta?",
+        constraints: [],
+      },
+      originalPreparedQuery: {
+        originalQuery: "alpha beta gamma delta?",
+        semanticQuery: "alpha beta gamma delta?",
+        lexicalQuery: "alpha beta gamma delta?",
+        constraints: [],
+      },
+      rewrittenQuery: {
+        originalQuery: "alpha beta gamma delta?",
+        rewrittenQuery: "alpha beta gamma delta?",
+        effectiveQuery: "alpha beta gamma delta?",
+        semanticQuery: "alpha beta gamma delta?",
+        lexicalQuery: "alpha beta gamma delta?",
+        responseIntent: "retrieval",
+        retrievalSubqueries: subqueries,
+        rewriteApplied: true,
+        retrievalEligible: true,
+        status: "applied",
+        confidence: 0.9,
+      },
+      responseIntent: "retrieval",
+      activeQuery: "alpha beta gamma delta?",
+      activeParsedQuery: {
+        originalQuery: "alpha beta gamma delta?",
+        semanticQuery: "alpha beta gamma delta?",
+        lexicalQuery: "alpha beta gamma delta?",
+        constraints: [],
+      },
+      activeSemanticQuery: "alpha beta gamma delta?",
+      activeRetrievalSubqueries: subqueries,
+      triggerAnalysis: {
+        status: "skipped_not_configured",
+        consideredRules: [],
+        matchedRuleIds: [],
+        unmatchedRuleIds: [],
+        matchCount: 0,
+        matcherVersion: "test",
+      },
+      promptHistory: [],
+      promptHistoryReset: false,
+      continuityDecision: "updated",
+    });
+
+    // Semantic is the expensive side: only the first two distinct queries embed and search.
+    expect(embeddedTexts).toEqual([["who is alpha", "who is beta"]]);
+    expect(vectorQueries).toEqual([1, 2]);
+    // Lexical is cheap: every branch still runs its own lexical search.
+    expect(lexicalQueries).toEqual(["alpha", "beta", "gamma", "delta"]);
+    expect(result.retrievalBranches).toHaveLength(4);
+    expect(result.lexicalContexts).toHaveLength(4);
+    // The two overflow branches contribute lexical-only (no extra semantic searches).
+    expect(result.rewrittenContexts).toHaveLength(2);
+    expect(result.retrievalBranches[2]?.semanticContexts).toEqual([]);
+    expect(result.retrievalBranches[3]?.semanticContexts).toEqual([]);
+  });
+
   it("uses the active workspace embedding model for semantic query embeddings", async () => {
     const seenModels: Array<string | undefined> = [];
     const seenVectorModels: Array<string | undefined> = [];

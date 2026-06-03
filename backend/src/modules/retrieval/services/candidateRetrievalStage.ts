@@ -22,7 +22,12 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     const embeddingStartedAt = Date.now();
     const sourceFilter = input.request.sourceFilter;
     const semanticQueries = input.activeRetrievalSubqueries.map((subquery) => subquery.semanticQuery);
-    const uniqueSemanticQueries = [...new Set(semanticQueries)];
+    // Lexical fan-out stays per-branch (cheap); distinct semantic searches are
+    // capped because each costs an embedding + a concurrent pgvector search.
+    // Branches whose semantic query falls outside the cap resolve to empty
+    // semantic contexts below and contribute lexical-only.
+    const uniqueSemanticQueries = [...new Set(semanticQueries)].slice(0, RETRIEVAL_BEHAVIOR.maxSemanticBranches);
+    const searchedSemanticQueries = new Set(uniqueSemanticQueries);
     const ingestionSettings = await this.ingestionSettingsService?.getForWorkspace(input.request.workspaceId);
     const embeddingModel = ingestionSettings?.embeddingModel;
     const embeddings = await this.embeddingService.embedChunks(uniqueSemanticQueries, {
@@ -57,8 +62,15 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     );
     const retrievalBranches = await Promise.all(
       input.activeRetrievalSubqueries.map(async (subquery) => {
+        // A branch outside the semantic cap (searchedSemanticQueries) is lexical-only
+        // by design — its empty semantic result is not a vector fallback, so it must
+        // not raise vectorFallbackApplied for the turn.
+        const semanticSearched = searchedSemanticQueries.has(subquery.semanticQuery);
+        const semanticSearchForBranch = semanticSearched
+          ? semanticSearchByQuery.get(subquery.semanticQuery)
+          : Promise.resolve({ contexts: [], fallbackApplied: false });
         const [semanticSearch, lexicalContexts] = await Promise.all([
-          semanticSearchByQuery.get(subquery.semanticQuery) ?? Promise.resolve({ contexts: [], fallbackApplied: true }),
+          semanticSearchForBranch ?? Promise.resolve({ contexts: [], fallbackApplied: false }),
           this.lexicalSearch.search({
             workspaceId: input.request.workspaceId,
             query: subquery.lexicalQuery,
@@ -77,6 +89,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           reason: subquery.reason,
           responseLanguagePolicy: subquery.responseLanguagePolicy,
           source: input.rewrittenQuery.retrievalEligible ? ("rewritten" as const) : ("original" as const),
+          semanticSearched,
           semanticContexts: semanticSearch.contexts,
           lexicalContexts,
           fallbackApplied: semanticSearch.fallbackApplied,

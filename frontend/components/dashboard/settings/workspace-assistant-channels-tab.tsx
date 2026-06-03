@@ -113,7 +113,7 @@ const getHumanContactEmailListText = (settings: HumanContactAvailability | null)
   return emails.join('\n')
 }
 
-const HUMAN_CONTACT_EMAIL_RECIPIENT_LIMIT = 25
+const HUMAN_CONTACT_EMAIL_RECIPIENT_LIMIT = 5
 
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
 
@@ -1250,7 +1250,8 @@ export function WorkspaceAssistantChannelsTab({
                                 <p className="text-xs text-destructive">Add at least one contact email address.</p>
                               ) : (
                                 <p className="text-xs text-muted-foreground">
-                                  Requests are emailed to each address, up to {HUMAN_CONTACT_EMAIL_RECIPIENT_LIMIT}.
+                                  One email per line, or separated by commas. Requests are emailed to each
+                                  address, up to {HUMAN_CONTACT_EMAIL_RECIPIENT_LIMIT}.
                                 </p>
                               )}
                             </div>

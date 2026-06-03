@@ -17,6 +17,7 @@ import {
   type HistoryItem,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { getPrimaryLeaf } from '@/lib/turn-trace'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { editionController } from '@/lib/edition-controller'
 import type { CitationOpenResult } from '@/components/dashboard/chat-citations'
@@ -407,6 +408,7 @@ export function useHistoryDetailState({
   const [selectedThreadMessageId, setSelectedThreadMessageId] = useState<string | null>(null)
   const [selectedAssistantMessageId, setSelectedAssistantMessageId] = useState<string | null>(null)
   const [selectedStageId, setSelectedStageId] = useState<string | undefined>(undefined)
+  const [selectedSpineStageId, setSelectedSpineStageId] = useState<string | undefined>(undefined)
   const [showGraph, setShowGraph] = useState(false)
 
   useEffect(() => {
@@ -558,23 +560,41 @@ export function useHistoryDetailState({
 
   const selectedDiagnosticsDebug =
     selectedDiagnosticsAssistantMessage?.role === 'assistant' ? selectedDiagnosticsAssistantMessage.debug : undefined
-  const selectedDiagnosticsTrace = selectedDiagnosticsDebug?.activityTrace
   const contactTrace = contactDetail?.contact.activityTrace
-  const activeTrace = selectedItem?.kind === 'contact'
-    ? contactTrace ?? selectedDiagnosticsTrace
-    : selectedItem?.kind === 'chat'
-      ? selectedDiagnosticsTrace
-      : searchDetail?.activityTrace
+
+  // Search is retrieval-only and has no conversation spine. Chat/contact turns
+  // carry the turn-trace envelope (spine + capability leaves); prefer it, and
+  // derive the legacy `activeTrace` from its primary retrieval leaf so the
+  // outcome/run-parameter presenters keep working off the spine.
+  const activeEnvelope = selectedItem?.kind === 'search' ? undefined : selectedDiagnosticsDebug?.turnTrace
+  const envelopePrimaryLeaf = activeEnvelope ? getPrimaryLeaf(activeEnvelope.spine) : undefined
+  const envelopePrimaryTrace = envelopePrimaryLeaf?.trace
+  const selectedDiagnosticsTrace = envelopePrimaryTrace ?? selectedDiagnosticsDebug?.activityTrace
+  const activeTrace = selectedItem?.kind === 'search'
+    ? searchDetail?.activityTrace
+    : selectedItem?.kind === 'contact'
+      ? selectedDiagnosticsTrace ?? contactTrace
+      : selectedDiagnosticsTrace
   const activeTraceId = activeTrace?.traceId
   const activeInitialStageId = activeTrace?.stages[0]?.stageId
   const activeSummary = selectedItem?.kind === 'contact'
     ? contactDetail?.contact.activitySummary ?? selectedDiagnosticsDebug?.activitySummary
     : selectedDiagnosticsDebug?.activitySummary
 
+  // The spine stage selected by default: the dispatch stage that ran the primary
+  // capability (so the rich retrieval leaf is front-and-center), else the first.
+  const activeEnvelopeId = activeEnvelope?.spine.traceId
+  const initialSpineStageId = envelopePrimaryLeaf?.stageId ?? activeEnvelope?.spine.stages[0]?.id
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Active trace changes reset the selected diagnostics stage.
     setSelectedStageId(activeInitialStageId)
   }, [activeTraceId, activeInitialStageId])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Switching turns resets the selected spine stage.
+    setSelectedSpineStageId(initialSpineStageId)
+  }, [activeEnvelopeId, initialSpineStageId])
 
   const handleSelectThreadMessage = useCallback(
     (messageId: string) => {
@@ -658,10 +678,13 @@ export function useHistoryDetailState({
     selectedDiagnosticsAssistantMessage: selectedDiagnosticsAssistantMessage as ChatConversationTurn | null,
     selectedDiagnosticsTrace,
     activeTrace,
+    activeEnvelope,
     activeSummary,
     activeInitialStageId,
     selectedStageId,
     setSelectedStageId,
+    selectedSpineStageId,
+    setSelectedSpineStageId,
     showGraph,
     setShowGraph,
     handleSelectThreadMessage,

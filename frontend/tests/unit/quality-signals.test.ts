@@ -5,7 +5,9 @@ import {
   ACTIVE_TRIAGE_STATES,
   activeQualitySignal,
   groundingGapActions,
+  SKILL_FAILURE_STATUSES,
   SLOW_RESPONSE_LATENCY_BUCKET,
+  type AppliedQualityFilters,
 } from '@/lib/quality-signals'
 
 type Outcome = NonNullable<SkillCatalogEntry['outcomes']>[number]
@@ -60,110 +62,82 @@ describe('activeQualitySignal', () => {
     { skillName: 'retrieval.answer', outcome: 'degraded' },
   ]
 
+  const applied = (overrides: Partial<AppliedQualityFilters>): AppliedQualityFilters => ({
+    feedback: [],
+    actions: [],
+    statuses: [],
+    triageStates: [...ACTIVE_TRIAGE_STATES],
+    latency: null,
+    ...overrides,
+  })
+
   it('matches the negative-feedback preset', () => {
-    expect(
-      activeQualitySignal(
-        { feedback: ['down'], actions: [], triageStates: [...ACTIVE_TRIAGE_STATES], latency: null },
-        grounding,
-      ),
-    ).toBe('negative_feedback')
+    expect(activeQualitySignal(applied({ feedback: ['down'] }), grounding)).toBe('negative_feedback')
   })
 
   it('matches the slow-responses preset', () => {
-    expect(
-      activeQualitySignal(
-        {
-          feedback: [],
-          actions: [],
-          triageStates: [...ACTIVE_TRIAGE_STATES],
-          latency: SLOW_RESPONSE_LATENCY_BUCKET,
-        },
-        grounding,
-      ),
-    ).toBe('slow_responses')
+    expect(activeQualitySignal(applied({ latency: SLOW_RESPONSE_LATENCY_BUCKET }), grounding)).toBe(
+      'slow_responses',
+    )
   })
 
   it('matches the grounding-gaps preset regardless of action order', () => {
     expect(
       activeQualitySignal(
-        {
-          feedback: [],
+        applied({
           actions: [
             { skillName: 'retrieval.answer', outcome: 'degraded' },
             { skillName: 'retrieval.answer', outcome: 'no_context' },
           ],
-          triageStates: [...ACTIVE_TRIAGE_STATES],
-          latency: null,
-        },
+        }),
         grounding,
       ),
     ).toBe('grounding_gaps')
   })
 
+  it('matches the skill-failures preset', () => {
+    expect(activeQualitySignal(applied({ statuses: [...SKILL_FAILURE_STATUSES] }), grounding)).toBe(
+      'skill_failures',
+    )
+  })
+
   it('does not light a tile for thumbs-up-only feedback', () => {
-    expect(
-      activeQualitySignal(
-        { feedback: ['up'], actions: [], triageStates: [...ACTIVE_TRIAGE_STATES], latency: null },
-        grounding,
-      ),
-    ).toBeNull()
+    expect(activeQualitySignal(applied({ feedback: ['up'] }), grounding)).toBeNull()
   })
 
   it('does not light a tile for a different latency band', () => {
-    expect(
-      activeQualitySignal(
-        { feedback: [], actions: [], triageStates: [...ACTIVE_TRIAGE_STATES], latency: '2s_5s' },
-        grounding,
-      ),
-    ).toBeNull()
+    expect(activeQualitySignal(applied({ latency: '2s_5s' }), grounding)).toBeNull()
+  })
+
+  it('does not light a tile for a non-failure status filter', () => {
+    expect(activeQualitySignal(applied({ statuses: ['completed'] }), grounding)).toBeNull()
   })
 
   it('does not light a tile when filters mix multiple dimensions', () => {
+    expect(activeQualitySignal(applied({ feedback: ['down'], actions: grounding }), grounding)).toBeNull()
+  })
+
+  it('does not light skill failures when a status filter is mixed with feedback', () => {
     expect(
-      activeQualitySignal(
-        {
-          feedback: ['down'],
-          actions: grounding,
-          triageStates: [...ACTIVE_TRIAGE_STATES],
-          latency: null,
-        },
-        grounding,
-      ),
+      activeQualitySignal(applied({ feedback: ['down'], statuses: [...SKILL_FAILURE_STATUSES] }), grounding),
     ).toBeNull()
   })
 
   it('does not light grounding gaps for a partial action set', () => {
-    expect(
-      activeQualitySignal(
-        {
-          feedback: [],
-          actions: [grounding[0]],
-          triageStates: [...ACTIVE_TRIAGE_STATES],
-          latency: null,
-        },
-        grounding,
-      ),
-    ).toBeNull()
+    expect(activeQualitySignal(applied({ actions: [grounding[0]] }), grounding)).toBeNull()
   })
 
   it('does not light a tile when the triage filter is missing', () => {
-    expect(
-      activeQualitySignal({ feedback: ['down'], actions: [], triageStates: [], latency: null }, grounding),
-    ).toBeNull()
+    expect(activeQualitySignal(applied({ feedback: ['down'], triageStates: [] }), grounding)).toBeNull()
   })
 
   it('does not light a tile when the triage filter includes closed states', () => {
     expect(
-      activeQualitySignal(
-        { feedback: ['down'], actions: [], triageStates: ['resolved'], latency: null },
-        grounding,
-      ),
+      activeQualitySignal(applied({ feedback: ['down'], triageStates: ['resolved'] }), grounding),
     ).toBeNull()
   })
 
   it('returns null when no filters are applied', () => {
-    expect(
-      activeQualitySignal({ feedback: [], actions: [], triageStates: [], latency: null }, grounding),
-    ).toBeNull()
+    expect(activeQualitySignal(applied({ triageStates: [] }), grounding)).toBeNull()
   })
 })

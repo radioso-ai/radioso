@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ChevronDown,
+  CircleX,
   Clock,
   FileSearch,
   MessageSquareWarning,
@@ -67,6 +68,7 @@ import {
   activeQualitySignal,
   groundingGapActions,
   ACTIVE_TRIAGE_STATES,
+  SKILL_FAILURE_STATUSES,
   SLOW_RESPONSE_LATENCY_BUCKET,
   type QualitySignalId,
 } from '@/lib/quality-signals'
@@ -358,6 +360,13 @@ const QUALITY_SIGNALS: ReadonlyArray<QualitySignalDefinition> = [
     icon: Clock,
     iconClass: 'text-muted-foreground',
   },
+  {
+    id: 'skill_failures',
+    label: 'Skill failures',
+    description: 'The turn’s skill ended in failure',
+    icon: CircleX,
+    iconClass: 'text-destructive',
+  },
 ]
 
 function QualitySignalTile({
@@ -515,6 +524,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     negative_feedback: null,
     grounding_gaps: null,
     slow_responses: null,
+    skill_failures: null,
   })
   const [pendingTriageId, setPendingTriageId] = useState<string | null>(null)
   // Bumped after a triage change so the active-backlog signal counts refetch.
@@ -573,10 +583,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const activeSignal = useMemo(
     () =>
       activeQualitySignal(
-        { feedback, actions: decodedActions, triageStates, latency: latency ?? null },
+        { feedback, actions: decodedActions, statuses, triageStates, latency: latency ?? null },
         groundingActions,
       ),
-    [feedback, decodedActions, triageStates, latency, groundingActions],
+    [feedback, decodedActions, statuses, triageStates, latency, groundingActions],
   )
 
   // Stable dependency for the count effect: groundingActions is a fresh array
@@ -607,7 +617,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     // Only count the active backlog so resolved/dismissed turns drain out.
     const triageStatesFilter = [...ACTIVE_TRIAGE_STATES]
     const loadSignalCounts = async () => {
-      const [negative, grounding, slow] = await Promise.all([
+      const [negative, grounding, slow, failures] = await Promise.all([
         countFor({ feedback: ['down'], triageStates: triageStatesFilter }),
         groundingActions.length > 0
           ? countFor({ actions: groundingActions, triageStates: triageStatesFilter })
@@ -616,12 +626,14 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           minTotalLatencyMs: LATENCY_BUCKETS[SLOW_RESPONSE_LATENCY_BUCKET].minTotalLatencyMs,
           triageStates: triageStatesFilter,
         }),
+        countFor({ statuses: [...SKILL_FAILURE_STATUSES], triageStates: triageStatesFilter }),
       ])
       if (!cancelled) {
         setSignalCounts({
           negative_feedback: negative,
           grounding_gaps: grounding,
           slow_responses: slow,
+          skill_failures: failures,
         })
       }
     }
@@ -868,7 +880,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       qualityFeedback: signalId === 'negative_feedback' ? ['down'] : undefined,
       qualityActions: signalId === 'grounding_gaps' ? groundingActions : undefined,
       qualityLatency: signalId === 'slow_responses' ? SLOW_RESPONSE_LATENCY_BUCKET : undefined,
-      qualityStatuses: undefined,
+      qualityStatuses: signalId === 'skill_failures' ? [...SKILL_FAILURE_STATUSES] : undefined,
       qualityTriageStates: signalId ? [...ACTIVE_TRIAGE_STATES] : undefined,
       qualityHasComment: undefined,
       qualityPage: undefined,

@@ -8,11 +8,15 @@ import type {
   ChatSuggestion,
 } from "../../../modules/chat/contracts/index.js";
 import type { ActivitySummary, ActivityTrace } from "../../../modules/retrieval/public.js";
+import type { TurnTraceEnvelope } from "../../../modules/chat/services/turnTraceEnvelope.js";
 
 interface ChatDiagnosticPayload {
   route: ChatRoute;
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;
+  // Conversation spine as the root span with capability traces as typed leaves.
+  // Optional during transition (turns answered before the envelope existed omit it).
+  turnTrace?: TurnTraceEnvelope;
 }
 
 type ChatPayload = {
@@ -27,23 +31,26 @@ type ChatPayload = {
   suggestions?: ChatSuggestion[];
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;
+  turnTrace?: TurnTraceEnvelope;
 };
 
-export type PresentedChatPayload = Omit<ChatPayload, "route" | "activitySummary" | "activityTrace"> & {
-  debug?: ChatDiagnosticPayload;
-};
+export type PresentedChatPayload =
+  Omit<ChatPayload, "route" | "activitySummary" | "activityTrace" | "turnTrace"> & {
+    debug?: ChatDiagnosticPayload;
+  };
 
 export const presentChatPayload = (payload: ChatPayload, options: { includeDebug?: boolean } = {}): PresentedChatPayload => {
   const {
     route,
     activitySummary,
     activityTrace,
+    turnTrace,
     ...publicPayload
   } = payload;
 
   return {
     ...publicPayload,
-    ...(options.includeDebug ? { debug: { route, activitySummary, activityTrace } } : {}),
+    ...(options.includeDebug ? { debug: { route, activitySummary, activityTrace, turnTrace } } : {}),
   };
 };
 
@@ -125,6 +132,7 @@ export const sendChatSse = (
       suggestions: event.suggestions,
       activitySummary: event.activitySummary,
       activityTrace: event.activityTrace,
+      turnTrace: event.turnTrace,
     }, options);
     res.write("event: done\n");
     res.write(`data: ${JSON.stringify({

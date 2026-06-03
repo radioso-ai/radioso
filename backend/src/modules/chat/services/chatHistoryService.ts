@@ -25,6 +25,13 @@ import { skillDisplayMetadataSchema, skillOutcomeStatusSchema, type SkillDisplay
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
 import {
+  LEGACY_TURN_TRACE_ENVELOPE_VERSION,
+  buildTurnTraceEnvelope,
+  synthesizeDispatchSpine,
+  type TurnTraceEnvelope,
+} from "./turnTraceEnvelope.js";
+import { RETRIEVAL_TRACE_LEAF, capabilitySubTrace } from "./chatTraceLeaves.js";
+import {
   NoopContactHistoryProvider,
   type ContactHistoryDetail,
   type ContactHistoryPage,
@@ -63,6 +70,9 @@ export interface ChatConversationTurnDebug {
   skillStatus?: SkillTurnOutcome["status"];
   activitySummary?: ActivitySummary;
   activityTrace?: ActivityTrace;
+  // Conversation spine as the root span with capability traces as typed leaves.
+  // Preferred from persisted metadata; synthesized (version 0) for legacy turns.
+  turnTrace?: TurnTraceEnvelope;
   errorMessage?: string | null;
   route?: {
     generator: string;
@@ -173,6 +183,7 @@ interface ChatAuditMetadata {
   suggestions?: unknown[];
   retrieval?: unknown;
   activityTrace?: ActivityTrace;
+  turnTrace?: TurnTraceEnvelope;
   errorMessage?: string;
   route?: {
     generator?: unknown;
@@ -434,6 +445,30 @@ const toRetrievalExecutionPath = (
     path: route.routeType === "direct" ? "assistant_direct" : "assistant_retrieval",
     retrievalInvoked: route.retrievalInvoked,
   };
+};
+
+/**
+ * Wrap a legacy turn's (reconstructed) activity trace in a version-0 envelope so
+ * the renderer treats old turns like new ones. The spine is a single synthetic
+ * dispatch stage — there was no engine spine when these turns were recorded.
+ */
+const synthesizeLegacyTurnTrace = (input: {
+  activityTrace: ActivityTrace | undefined;
+  skillName: string | undefined;
+  startedAt: string;
+}): TurnTraceEnvelope | undefined => {
+  if (!input.activityTrace) {
+    return undefined;
+  }
+  return buildTurnTraceEnvelope({
+    version: LEGACY_TURN_TRACE_ENVELOPE_VERSION,
+    spine: synthesizeDispatchSpine({
+      skillName: input.skillName ?? "assistant",
+      startedAt: input.activityTrace.startedAt ?? input.startedAt,
+      completedAt: input.activityTrace.completedAt,
+      subTrace: capabilitySubTrace(RETRIEVAL_TRACE_LEAF, input.activityTrace),
+    }),
+  });
 };
 
 const reconstructActivityTrace = (input: {
@@ -838,6 +873,15 @@ export class ChatHistoryService {
               })
             : undefined
         );
+      // Prefer the persisted envelope; for turns recorded before it existed,
+      // synthesize a legacy (version 0) one wrapping the reconstructed activity
+      // trace as a retrieval leaf so the renderer always receives an envelope.
+      const turnTrace = metadata.turnTrace
+        ?? synthesizeLegacyTurnTrace({
+          activityTrace,
+          skillName: skillTurnOutcome?.skillName,
+          startedAt: toIsoString(event.createdAt),
+        });
       index.set(metadata.assistantMessageId, {
         eventStatus: event.eventStatus === "failure" ? "failure" : "success",
         recordedAt: toIsoString(event.createdAt),
@@ -853,6 +897,7 @@ export class ChatHistoryService {
           : {}),
         activitySummary,
         activityTrace,
+        turnTrace,
         errorMessage: metadata.errorMessage ?? null,
         route,
       });

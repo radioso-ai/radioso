@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useState, type ReactNode } from 'react'
-import { Bug, Check, Copy, Search, X } from 'lucide-react'
+import { Bug, Check, Copy, Search, Workflow, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
@@ -16,6 +16,7 @@ import {
 import { LogoSpinner } from '@/components/ui/spinner'
 import { ActivityTraceDetail } from './activity-trace-detail'
 import { ActivityTraceGraph } from './activity-trace-graph'
+import { TurnFlowOverlay } from './turn-flow-overlay'
 import { ChatMessageThread } from './chat-message-thread'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
@@ -28,6 +29,7 @@ import {
   type ChatConversationTurn,
   type ContactHistoryDetail,
   type DocumentSearchResponse,
+  type TurnTraceEnvelope,
 } from '@/lib/api'
 import { formatConversationSource } from '@/lib/history-source'
 import {
@@ -155,15 +157,17 @@ function DiagnosticPresentationSection({
 function ChatDiagnosticsPanel({
   selectedMessage,
   diagnosticsMessage,
+  activeEnvelope,
   activityTrace,
   selectedStageId,
-  graphPane,
+  onSelectLeafStage,
 }: {
   selectedMessage: ChatConversationTurn | null
   diagnosticsMessage: ChatConversationTurn | null
+  activeEnvelope?: TurnTraceEnvelope
   activityTrace?: NonNullable<ChatConversationTurn['debug']>['activityTrace']
   selectedStageId?: string
-  graphPane: ReactNode
+  onSelectLeafStage: (stageId: string) => void
 }) {
   if (!selectedMessage) {
     return (
@@ -198,17 +202,33 @@ function ChatDiagnosticsPanel({
         <DiagnosticPresentationSection label="Run parameters" presentation={runParameters} />
       ) : null}
 
-      <div className="grid grid-cols-[minmax(180px,220px)_1fr] gap-4">
-        <div className="sticky top-0 self-start overflow-y-auto rounded-lg border border-border/50 bg-muted/20 p-2">
-          {graphPane}
+      {/* The turn flow opens full-screen from the header (envelope turns). Legacy
+          turns without an envelope keep the inline flat activity trace explorer. */}
+      {activeEnvelope ? (
+        <p className="text-xs text-muted-foreground">
+          Open <span className="font-medium text-foreground">Flow</span> to explore this turn as a graph —
+          inputs flow into the engine, which selects a skill and its retrieval path, leading to the outcome.
+        </p>
+      ) : (
+        <div className="grid grid-cols-[minmax(200px,260px)_1fr] gap-4">
+          <div className="sticky top-0 self-start overflow-y-auto rounded-lg border border-border/50 bg-muted/20 p-2">
+            {resolvedActivityTrace ? (
+              <ActivityTraceGraph
+                activityTrace={resolvedActivityTrace}
+                selectedStageId={selectedStageId ?? resolvedActivityTrace.stages[0]?.stageId ?? ''}
+                onSelectStage={onSelectLeafStage}
+              />
+            ) : (
+              <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
+                Activity trace unavailable for this turn.
+              </div>
+            )}
+          </div>
+          <div className="min-h-0">
+            <ActivityTraceDetail activityTrace={resolvedActivityTrace} selectedStageId={selectedStageId} />
+          </div>
         </div>
-        <div className="min-h-0">
-          <ActivityTraceDetail
-            activityTrace={resolvedActivityTrace}
-            selectedStageId={selectedStageId}
-          />
-        </div>
-      </div>
+      )}
     </div>
   )
 }
@@ -286,6 +306,7 @@ export function ConversationDrawer({
     selectedThreadMessageId,
     selectedDiagnosticsAssistantMessage,
     activeTrace,
+    activeEnvelope,
     activeInitialStageId,
     selectedStageId,
     setSelectedStageId,
@@ -309,6 +330,8 @@ export function ConversationDrawer({
     handleDocumentDialogOpenChange,
   } = useHistoryDocumentDialogState()
 
+  const [flowOpen, setFlowOpen] = useState(false)
+
   return (
     <>
       <Drawer
@@ -317,6 +340,7 @@ export function ConversationDrawer({
           if (!open) {
             onSelectedItemChange(null)
             setShowGraph(false)
+            setFlowOpen(false)
             onAfterClose?.()
           }
         }}
@@ -354,6 +378,18 @@ export function ConversationDrawer({
                 })() : null}
               </div>
               <div className="flex items-center gap-2">
+                {showGraph && activeEnvelope ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={() => setFlowOpen(true)}
+                  >
+                    <Workflow className="h-3.5 w-3.5" />
+                    Flow
+                  </Button>
+                ) : null}
                 {activeTrace ? (
                   <Button
                     type="button"
@@ -363,6 +399,7 @@ export function ConversationDrawer({
                     onClick={() => {
                       if (showGraph) {
                         setShowGraph(false)
+                        setFlowOpen(false)
                         setSelectedStageId(activeInitialStageId)
                       } else {
                         setShowGraph(true)
@@ -435,21 +472,10 @@ export function ConversationDrawer({
                     <ChatDiagnosticsPanel
                       selectedMessage={selectedThreadMessage}
                       diagnosticsMessage={selectedDiagnosticsAssistantMessage}
+                      activeEnvelope={activeEnvelope}
                       activityTrace={activeTrace}
                       selectedStageId={selectedStageId}
-                      graphPane={
-                        activeTrace ? (
-                          <ActivityTraceGraph
-                            activityTrace={activeTrace}
-                            selectedStageId={selectedStageId ?? activeTrace?.stages[0]?.stageId ?? ''}
-                            onSelectStage={setSelectedStageId}
-                          />
-                        ) : (
-                          <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-                            Activity trace unavailable for this turn.
-                          </div>
-                        )
-                      }
+                      onSelectLeafStage={setSelectedStageId}
                     />
                   </div>
                 ) : null}
@@ -523,6 +549,16 @@ export function ConversationDrawer({
               </div>
             )}
           </div>
+
+          {showGraph && activeEnvelope ? (
+            <TurnFlowOverlay
+              key={activeEnvelope.spine.traceId}
+              open={flowOpen}
+              envelope={activeEnvelope}
+              leafTrace={activeTrace}
+              onClose={() => setFlowOpen(false)}
+            />
+          ) : null}
         </DrawerContent>
       </Drawer>
 

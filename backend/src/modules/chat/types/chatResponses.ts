@@ -1,6 +1,7 @@
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import type { ActivitySummary, ActivityTrace } from "../../retrieval/public.js";
 import type { SkillDisplayMetadata } from "../../skills/public.js";
+import type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
 
 export type ChatSuggestionKind = string;
 
@@ -39,6 +40,13 @@ export interface ChatResponse {
   suggestions?: ChatSuggestion[];
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;
+  /**
+   * Turn-trace envelope: conversation spine as the root span with capability
+   * traces as typed leaves. Surfaced under `debug` (operator-only); the legacy
+   * `activitySummary`/`activityTrace` fields above stay until the frontend and
+   * read path consume the envelope, then drop.
+   */
+  turnTrace?: TurnTraceEnvelope;
 }
 
 export type ChatBootstrapResponse = Omit<ChatResponse, "conversationId" | "assistantMessageId"> & {

@@ -27,6 +27,43 @@ import type { ChatResponse, ChatRoute, ChatSuggestion } from "../types/chatRespo
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { appendDirectiveSteeringStage } from "./directiveTracePresenter.js";
+import {
+  attachCapabilitySubTrace,
+  buildTurnTraceEnvelope,
+  synthesizeDispatchSpine,
+  type TurnTraceEnvelope,
+} from "./turnTraceEnvelope.js";
+import {
+  RETRIEVAL_TRACE_LEAF,
+  SKILL_INTAKE_TRACE_LEAF,
+  capabilitySubTrace,
+} from "./chatTraceLeaves.js";
+
+const DISPATCH_STAGE_ID_PREFIX = "dispatch:";
+
+/**
+ * Hang the retrieval activity trace on the engine spine's terminal dispatch stage.
+ * The stage is found by kind (an assistant turn dispatches one terminal skill), so
+ * this is robust to the presentation skill name being reclassified (grounded-miss).
+ */
+const attachRetrievalActivityTrace = (
+  spine: ConversationTrace,
+  activityTrace: ActivityTrace,
+): ConversationTrace => {
+  const dispatchStage = spine.stages.find((stage) => stage.kind === "skill_dispatch");
+  if (!dispatchStage) {
+    return spine;
+  }
+  const skillName = typeof dispatchStage.outputs?.skillName === "string"
+    ? dispatchStage.outputs.skillName
+    : dispatchStage.id.startsWith(DISPATCH_STAGE_ID_PREFIX)
+      ? dispatchStage.id.slice(DISPATCH_STAGE_ID_PREFIX.length)
+      : dispatchStage.id;
+  return attachCapabilitySubTrace(spine, {
+    skillName,
+    subTrace: capabilitySubTrace(RETRIEVAL_TRACE_LEAF, activityTrace),
+  });
+};
 
 export const getChatTurnRoute = (session: PreparedSession): ChatRoute => {
   if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
@@ -114,6 +151,14 @@ export class ChatTurnLifecycle {
       input.session.directiveSteering,
     );
     const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
+    // The conversation spine is the root span; retrieval rides as a typed leaf on
+    // its dispatch stage. Engine always runs the assistant turn, so engineTrace is
+    // present — but stay defensive: no spine means no envelope this turn.
+    const turnTrace = input.engineTrace
+      ? buildTurnTraceEnvelope({
+          spine: attachRetrievalActivityTrace(input.engineTrace, activityTrace),
+        })
+      : undefined;
 
     const assistantMessage = await this.messageRepository.create({
       conversationId: input.session.conversation.id,
@@ -166,7 +211,7 @@ export class ChatTurnLifecycle {
       priorRewriteContinuityState: input.session.priorRewriteContinuityState,
       diagnostics: input.session.retrieval.diagnostics,
       activityTrace,
-      engineTrace: input.engineTrace,
+      turnTrace,
       route,
       stream: input.stream,
     });
@@ -185,6 +230,7 @@ export class ChatTurnLifecycle {
         suggestions: input.presentation.suggestions,
         activitySummary: resolvedActivitySummary,
         activityTrace,
+        turnTrace,
       },
     };
   }
@@ -201,6 +247,19 @@ export class ChatTurnLifecycle {
       reason: "social_only",
     };
     const skillTurnOutcome = toIntakeSkillTurnOutcome(input.intakeResult);
+    // Intake is a pre-engine short-circuit with no spine, so synthesize a minimal
+    // one carrying its activity trace as a leaf — the renderer treats it like an
+    // engine turn. (When intake later routes through the engine it produces a real
+    // spine and this synthesis falls away; the envelope shape is unchanged.)
+    const turnTrace = buildTurnTraceEnvelope({
+      spine: synthesizeDispatchSpine({
+        skillName: input.intakeResult.skillName,
+        status: input.intakeResult.status === "failed" ? "failed" : "applied",
+        startedAt: input.intakeResult.activityTrace.startedAt,
+        completedAt: input.intakeResult.activityTrace.completedAt,
+        subTrace: capabilitySubTrace(SKILL_INTAKE_TRACE_LEAF, input.intakeResult.activityTrace),
+      }),
+    });
     const assistantMessage = await this.messageRepository.create({
       conversationId: input.session.conversation.id,
       workspaceId: input.workspaceId,
@@ -234,6 +293,7 @@ export class ChatTurnLifecycle {
       priorRewriteContinuityState: input.session.priorRewriteContinuityState,
       diagnostics: input.session.retrieval.diagnostics,
       activityTrace: input.intakeResult.activityTrace,
+      turnTrace,
       route,
       stream: input.stream,
       skillIntake: {
@@ -256,6 +316,7 @@ export class ChatTurnLifecycle {
       suggestions: undefined,
       activitySummary: input.intakeResult.activitySummary,
       activityTrace: input.intakeResult.activityTrace,
+      turnTrace,
     };
   }
 
@@ -353,7 +414,7 @@ export class ChatTurnLifecycle {
     priorRewriteContinuityState?: RewriteContinuityState;
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
     activityTrace: ActivityTrace;
-    engineTrace?: ConversationTrace;
+    turnTrace?: TurnTraceEnvelope;
     route: ChatRoute;
     stream: boolean;
     skillIntake?: {
@@ -396,10 +457,13 @@ export class ChatTurnLifecycle {
           citations: input.citations,
         }),
         retrieval: input.diagnostics,
+        // Legacy flat trace, still read by the history path and the live frontend's
+        // textual diagnostics. Retained until those consume the envelope's leaf.
         activityTrace: input.activityTrace,
-        // Engine-native turns record their selection/dispatch trace as
-        // observability; absent on the legacy (engine-off) path.
-        ...(input.engineTrace ? { conversationEngine: { trace: input.engineTrace } } : {}),
+        // Turn-trace envelope: conversation spine (root span) with capability traces
+        // as typed leaves. The spine supersedes the old `conversationEngine.trace`
+        // audit key (which nothing read), so that key is no longer written.
+        ...(input.turnTrace ? { turnTrace: input.turnTrace } : {}),
       },
     });
     try {

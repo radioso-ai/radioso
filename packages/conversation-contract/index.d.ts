@@ -169,6 +169,12 @@ export interface TurnOutcome {
   stagedContext: StagedContext[];
   steering: SteeringRule[];
   trace: ConversationTrace;
+  /**
+   * Optional capability sub-trace the engine copies onto the dispatch stage for
+   * this skill. Capabilities whose domain trace is ready at dispatch time set it
+   * here; capabilities finalized later (e.g. retrieval) attach it downstream.
+   */
+  subTrace?: CapabilitySubTrace;
 }
 
 export interface RenderableTurn {
@@ -210,6 +216,23 @@ export interface ConversationTraceStage {
   inputs?: Record<string, unknown>;
   outputs?: Record<string, unknown>;
   metrics?: Record<string, number>;
+  /**
+   * A capability's own domain trace, hung off the dispatch stage that ran it.
+   * Opaque to the engine: it is copied through verbatim and never inspected.
+   * The renderer dispatches on `namespace` to a per-capability detail view.
+   */
+  subTrace?: CapabilitySubTrace;
+}
+
+/**
+ * A namespaced, versioned sub-trace produced by a capability (e.g. retrieval).
+ * The conversation spine carries it opaquely so the generic engine stays
+ * ignorant of any capability-specific trace shape.
+ */
+export interface CapabilitySubTrace {
+  namespace: string;
+  version: number;
+  payload: unknown;
 }
 
 export interface ConversationTraceLink {

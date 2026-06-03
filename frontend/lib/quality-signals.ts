@@ -1,6 +1,6 @@
 import type { FeedbackValue, QualityActionFilter, QualityTriageState } from '@/lib/api'
 import type { SkillCatalogEntry } from '@/lib/api'
-import type { QualityLatencyFilter } from '@/lib/dashboard-routes'
+import type { QualityLatencyFilter, QualityStatusFilter } from '@/lib/dashboard-routes'
 
 /**
  * Triage states still in the active backlog. The signal tiles count only these
@@ -17,9 +17,18 @@ export type QualitySignalId =
   | 'negative_feedback'
   | 'grounding_gaps'
   | 'slow_responses'
+  | 'skill_failures'
 
 /** Latency band used by the "slow responses" signal (10 seconds or more). */
 export const SLOW_RESPONSE_LATENCY_BUCKET: QualityLatencyFilter = 'gte_10s'
+
+/**
+ * Skill-status preset for the "skill failures" signal. Any turn whose dispatched
+ * skill ended in `failed` — capability-agnostic, so it surfaces failures from the
+ * whole engine surface, not just retrieval. Reuses the persisted `skill_status`,
+ * so no spine query is needed.
+ */
+export const SKILL_FAILURE_STATUSES: readonly QualityStatusFilter[] = ['failed']
 
 /**
  * Grounding-gap outcomes are the ones the skill catalog marks as not producing
@@ -45,6 +54,7 @@ export function groundingGapActions(
 export interface AppliedQualityFilters {
   feedback: FeedbackValue[]
   actions: QualityActionFilter[]
+  statuses: QualityStatusFilter[]
   triageStates: QualityTriageState[]
   latency: QualityLatencyFilter | null
 }
@@ -89,6 +99,7 @@ export function activeQualitySignal(
 ): QualitySignalId | null {
   const hasFeedback = applied.feedback.length > 0
   const hasActions = applied.actions.length > 0
+  const hasStatuses = applied.statuses.length > 0
   const hasLatency = applied.latency != null
   const hasActiveTriage = hasActiveTriagePreset(applied.triageStates)
 
@@ -96,6 +107,7 @@ export function activeQualitySignal(
     hasActiveTriage &&
     hasFeedback &&
     !hasActions &&
+    !hasStatuses &&
     !hasLatency &&
     applied.feedback.length === 1 &&
     applied.feedback[0] === 'down'
@@ -108,6 +120,7 @@ export function activeQualitySignal(
     hasLatency &&
     !hasFeedback &&
     !hasActions &&
+    !hasStatuses &&
     applied.latency === SLOW_RESPONSE_LATENCY_BUCKET
   ) {
     return 'slow_responses'
@@ -117,11 +130,23 @@ export function activeQualitySignal(
     hasActiveTriage &&
     hasActions &&
     !hasFeedback &&
+    !hasStatuses &&
     !hasLatency &&
     groundingActions.length > 0 &&
     sameActionSet(applied.actions, groundingActions)
   ) {
     return 'grounding_gaps'
+  }
+
+  if (
+    hasActiveTriage &&
+    hasStatuses &&
+    !hasFeedback &&
+    !hasActions &&
+    !hasLatency &&
+    sameStringSet(applied.statuses, SKILL_FAILURE_STATUSES)
+  ) {
+    return 'skill_failures'
   }
 
   return null

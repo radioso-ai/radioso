@@ -1,17 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createConnectorIngestionPort } from "../../../src/modules/connectors/services/connectorIngestionPort.js";
+import {
+  createConnectorIngestionPort,
+  type HtmlContentNormalizer,
+} from "../../../src/modules/connectors/services/connectorIngestionPort.js";
+
+type ExtractTextFromHtmlMock = ReturnType<typeof vi.fn<HtmlContentNormalizer["extractTextFromHtml"]>>;
 
 interface BuildPortOptions {
   ingest?: ReturnType<typeof vi.fn>;
   resolveSource?: ReturnType<typeof vi.fn>;
   delete?: ReturnType<typeof vi.fn>;
   findByExternalDocumentId?: ReturnType<typeof vi.fn>;
-  extractTextFromHtml?: ReturnType<typeof vi.fn>;
+  extractTextFromHtml?: ExtractTextFromHtmlMock;
 }
 
 const buildPort = (overrides: BuildPortOptions = {}) => {
-  const extractTextFromHtml = overrides.extractTextFromHtml ?? vi.fn(async (html: string) => html);
+  const extractTextFromHtml =
+    overrides.extractTextFromHtml ?? vi.fn<HtmlContentNormalizer["extractTextFromHtml"]>(async (html) => html);
   return {
     extractTextFromHtml,
     port: createConnectorIngestionPort({
@@ -54,7 +60,7 @@ describe("createConnectorIngestionPort", () => {
 
   it("runs HTML content through the normalizer before handing it to the ingestion service", async () => {
     const ingest = vi.fn(async () => ({ documentId: "doc-1", status: "queued" }));
-    const extractTextFromHtml = vi.fn(async () => "clean text");
+    const extractTextFromHtml = vi.fn<HtmlContentNormalizer["extractTextFromHtml"]>(async () => "clean text");
     const { port } = buildPort({ ingest, extractTextFromHtml });
 
     await port.ingest({

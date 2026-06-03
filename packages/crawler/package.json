@@ -17,7 +17,7 @@
   "devDependencies": {
     "@types/node": "^24.3.0",
     "typescript": "^5.8.2",
-    "vitest": "^2.1.5"
+    "vitest": "^4.1.8"
   },
   "dependencies": {
     "cheerio": "1.2.0",

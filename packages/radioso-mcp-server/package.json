@@ -28,7 +28,7 @@
     "smoke:redis": "node --import tsx ./scripts/smokeRedis.ts",
     "token:exchange": "node --import tsx ./scripts/exchangeAccessToken.ts",
     "sync:openapi": "node ./scripts/sync-openapi-types.mjs",
-    "test": "pnpm run sync:openapi && vitest run"
+    "test": "pnpm --dir ../conversation-engine run build && pnpm --dir ../conversation-defaults run build && pnpm run build && vitest run"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
@@ -41,6 +41,6 @@
     "openapi-typescript": "^7.10.1",
     "tsx": "^4.22.1",
     "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.8"
   }
 }

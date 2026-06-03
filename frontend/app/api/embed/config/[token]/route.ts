@@ -5,52 +5,28 @@ const BACKEND_BASE =
   process.env.RADIOSO_API_INTERNAL_URL ??
   process.env.BACKEND_INTERNAL_URL ??
   'http://localhost:8080'
+
+// Public, non-credentialed embed config. Wildcard origin (no per-site variance)
+// and no Accept-Language dependency, so a CDN can cache a single object per
+// token. The origin allowlist is still enforced at session creation.
 const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'OPTIONS, GET',
   'Access-Control-Allow-Headers': 'Content-Type',
-  Vary: 'Origin',
 }
 
-const withCorsHeaders = (
-  origin: string | null,
-  headers?: HeadersInit,
-  options: { allowOrigin?: boolean } = {},
-) => {
-  const nextHeaders = new Headers(headers)
-  Object.entries(CORS_HEADERS).forEach(([key, value]) => nextHeaders.set(key, value))
-  const allowOrigin = options.allowOrigin ?? true
-  if (origin && allowOrigin) {
-    nextHeaders.set('Access-Control-Allow-Origin', origin)
-  }
-  return nextHeaders
-}
+// Short browser TTL, longer shared/edge TTL, serve-stale while revalidating.
+const CDN_CACHE_CONTROL = 'public, max-age=60, s-maxage=300, stale-while-revalidate=86400'
 
-const resolveOrigin = (value: string | null) => {
-  if (!value) {
-    return null
-  }
-
-  try {
-    return new URL(value).origin
-  } catch {
-    return null
-  }
-}
-
-export async function OPTIONS(request: Request) {
-  const origin = resolveOrigin(request.headers.get('origin'))
-  return new Response(null, {
-    status: 204,
-    headers: withCorsHeaders(origin),
-  })
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS_HEADERS })
 }
 
 export async function GET(
-  request: Request,
+  _request: Request,
   context: { params: Promise<{ token: string }> },
 ) {
   const { token } = await context.params
-  const requestOrigin = resolveOrigin(request.headers.get('origin'))
 
   try {
     const upstream = await fetch(`${BACKEND_BASE}/api/v1/public/chat/${encodeURIComponent(token)}/embed-config`, {
@@ -58,21 +34,17 @@ export async function GET(
       cache: 'no-store',
       headers: {
         'X-Forwarded-Prefix': '/backend',
-        ...(requestOrigin ? { Origin: requestOrigin } : {}),
       },
     })
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
 
     return new Response(upstream.body, {
       status: upstream.status,
-      headers: withCorsHeaders(
-        requestOrigin,
-        {
-          'Content-Type': contentType,
-          'Cache-Control': 'no-store',
-        },
-        { allowOrigin: upstream.ok },
-      ),
+      headers: {
+        ...CORS_HEADERS,
+        'Content-Type': contentType,
+        'Cache-Control': upstream.ok ? CDN_CACHE_CONTROL : 'no-store',
+      },
     })
   } catch (error) {
     const message =
@@ -87,7 +59,7 @@ export async function GET(
           message,
         },
       },
-      { status: 503, headers: withCorsHeaders(requestOrigin, undefined, { allowOrigin: false }) },
+      { status: 503, headers: { ...CORS_HEADERS, 'Cache-Control': 'no-store' } },
     )
   }
 }

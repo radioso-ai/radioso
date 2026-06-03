@@ -738,4 +738,51 @@ describe("agents contract", () => {
     expect(config.body.launcherLabel).toBe("");
     expect(config.body.launcherLabel).not.toBe("Claudio");
   });
+
+  it("serves a cacheable, origin-independent website embed config", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-embed-config-cache@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const list = await request(app)
+      .get("/api/v1/agents")
+      .set("Authorization", authorization)
+      .expect(200);
+    const agentId = list.body.agents[0].id as string;
+
+    await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({
+        surfaceSettings: {
+          websiteEmbed: {
+            enabled: true,
+            allowedOrigins: ["https://host.example.com"],
+          },
+        },
+      })
+      .expect(200);
+
+    const tokenResponse = await request(app)
+      .post(`/api/v1/agents/${agentId}/website-embed-token/rotate`)
+      .set("Authorization", authorization)
+      .expect(200);
+    const embedToken = tokenResponse.body.surfaceSettings.websiteEmbed.token as string;
+
+    // Cacheable, and identical regardless of the requesting origin or
+    // Accept-Language: a non-allowlisted origin and a French visitor get the
+    // same 200 body, so a CDN can cache one object per token.
+    const fromAllowed = await request(app)
+      .get(`/api/v1/public/chat/${embedToken}/embed-config`)
+      .set("Origin", "https://host.example.com")
+      .set("Accept-Language", "fr-FR")
+      .expect(200);
+    expect(fromAllowed.headers["cache-control"]).toContain("public");
+
+    const fromStranger = await request(app)
+      .get(`/api/v1/public/chat/${embedToken}/embed-config`)
+      .set("Origin", "https://not-allowed.example.com")
+      .expect(200);
+    expect(fromStranger.body).toEqual(fromAllowed.body);
+  });
 });

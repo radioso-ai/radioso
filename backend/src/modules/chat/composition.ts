@@ -80,14 +80,6 @@ export {
   type PublicChatIntakeAction,
 } from "./services/chatIntakeProvider.js";
 export {
-  ConfiguredSkillIntakeProvider,
-  DatabaseSkillIntakeStateStore,
-  InMemorySkillIntakeStateStore,
-  type ConfiguredSkillIntakeAdapter,
-  type SkillIntakeStateStore,
-  type SkillIntakeExecutionResult,
-} from "./services/configuredSkillIntakeProvider.js";
-export {
   NoopContactHistoryProvider,
   type ContactHistoryProviderPort,
 } from "./services/contactHistoryProvider.js";

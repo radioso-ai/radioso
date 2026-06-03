@@ -54,7 +54,8 @@ imports from `services/`.
 - Citations: `citation*`, `implicitCitationSupport.ts`,
   `chatAnswerPresenter.ts`.
 - Suggestions and skill intake: `chatIntakeProvider.ts`,
-  `configuredSkillIntakeProvider.ts`, `chat-action` tests.
+  `configuredSkillIntakeProvider.ts`, `chat-action` tests. Intake remains a
+  pre-engine short-circuit until #517/#527 move it onto the engine spine.
 - History: `assistantHistoryService.ts`, `chatHistoryService.ts`,
   `historyItemPresenter.ts`.
 - Bootstrap and public chat: `chatBootstrapService.ts`,

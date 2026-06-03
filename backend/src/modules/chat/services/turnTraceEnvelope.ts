@@ -68,7 +68,8 @@ export const attachCapabilitySubTrace = (
  * Build a minimal spine for a turn that did not run through the engine's
  * select/dispatch loop (e.g. a pre-engine intake turn, or an old persisted turn
  * read back without a spine). The single `dispatch:<skillName>` stage carries the
- * capability's sub-trace so the renderer treats it identically to an engine turn.
+ * capability's sub-trace so the renderer treats it identically to an engine turn;
+ * #517/#527 track moving intake onto the engine spine so this synthesis falls away.
  */
 export const synthesizeDispatchSpine = (input: {
   skillName: string;

@@ -379,7 +379,7 @@ export class ChatTurnLifecycle {
     // Intake is a pre-engine short-circuit with no spine, so synthesize a minimal
     // one carrying its activity trace as a leaf — the renderer treats it like an
     // engine turn. (When intake later routes through the engine it produces a real
-    // spine and this synthesis falls away; the envelope shape is unchanged.)
+    // spine and this synthesis falls away; #517/#527 track that migration.)
     const turnTrace = buildTurnTraceEnvelope({
       spine: synthesizeDispatchSpine({
         skillName: input.intakeResult.skillName,

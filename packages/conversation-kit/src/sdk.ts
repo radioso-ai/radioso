@@ -3,9 +3,16 @@ import type {
   ConversationEvent,
   Directive,
   RenderableTurn,
+  Routine,
 } from "@radioso/conversation-contract";
 
-import { createConversationKit, type CreateConversationKitOptions } from "./composition.js";
+import { createConversationKit, type ConversationKit, type CreateConversationKitOptions } from "./composition.js";
+import type {
+  ConversationKitAuthoringStore,
+  UpdateConversationKitAgentInput,
+  UpdateConversationKitDirectiveInput,
+  UpdateConversationKitRoutineInput,
+} from "./authoringStore.js";
 import { createId } from "./ids.js";
 
 export interface CreateAgentInput {
@@ -35,10 +42,28 @@ export interface SendMessageInput {
   metadata?: Record<string, unknown>;
 }
 
+export interface CreateConversationKitClientOptions extends CreateConversationKitOptions {
+  kit?: ConversationKit;
+}
+
 export interface ConversationKitClient {
   createAgent(input: CreateAgentInput): ConversationAgentConfig;
+  getAgent(agentId: string): ConversationAgentConfig | null;
+  listAgents(): ConversationAgentConfig[];
+  updateAgent(agentId: string, input: UpdateConversationKitAgentInput): ConversationAgentConfig | null;
+  deleteAgent(agentId: string): boolean;
+  createDirective(agentId: string, directive: Directive): Directive;
+  getDirective(agentId: string, directiveId: string): Directive | null;
+  listDirectives(agentId: string): Directive[];
+  updateDirective(agentId: string, directiveId: string, input: UpdateConversationKitDirectiveInput): Directive | null;
+  deleteDirective(agentId: string, directiveId: string): boolean;
   addDirective(agentId: string, directive: Directive): Directive;
   addDirectives(agentId: string, directives: Directive[]): Directive[];
+  createRoutine(routine: Routine): Routine;
+  getRoutine(routineId: string): Routine | null;
+  listRoutines(): Routine[];
+  updateRoutine(routineId: string, input: UpdateConversationKitRoutineInput): Routine | null;
+  deleteRoutine(routineId: string): boolean;
   createSession(input: CreateSessionInput): ConversationKitSession;
   getSession(sessionId: string): ConversationKitSession | null;
   sendMessage(input: SendMessageInput): Promise<RenderableTurn>;
@@ -46,13 +71,13 @@ export interface ConversationKitClient {
 }
 
 class InMemoryConversationKitClient implements ConversationKitClient {
-  private readonly kit;
-  private readonly agents = new Map<string, ConversationAgentConfig>();
-  private readonly directivesByAgent = new Map<string, Directive[]>();
+  private readonly kit: ConversationKit;
+  private readonly authoringStore: ConversationKitAuthoringStore;
   private readonly sessions = new Map<string, ConversationKitSession>();
 
-  constructor(options: CreateConversationKitOptions) {
-    this.kit = createConversationKit(options);
+  constructor(options: CreateConversationKitClientOptions) {
+    this.kit = options.kit ?? createConversationKit(options);
+    this.authoringStore = options.authoringStore ?? this.kit.authoringStore;
   }
 
   createAgent(input: CreateAgentInput): ConversationAgentConfig {
@@ -63,20 +88,75 @@ class InMemoryConversationKitClient implements ConversationKitClient {
       defaultLocale: input.defaultLocale,
       metadata: input.metadata,
     };
-    this.agents.set(agent.id, agent);
-    return agent;
+    return this.authoringStore.createAgent(agent);
+  }
+
+  getAgent(agentId: string): ConversationAgentConfig | null {
+    return this.authoringStore.getAgent(agentId);
+  }
+
+  listAgents(): ConversationAgentConfig[] {
+    return this.authoringStore.listAgents();
+  }
+
+  updateAgent(agentId: string, input: UpdateConversationKitAgentInput): ConversationAgentConfig | null {
+    return this.authoringStore.updateAgent(agentId, input);
+  }
+
+  deleteAgent(agentId: string): boolean {
+    return this.authoringStore.deleteAgent(agentId);
+  }
+
+  createDirective(agentId: string, directive: Directive): Directive {
+    this.requireAgent(agentId);
+    return this.authoringStore.createDirective(agentId, {
+      ...directive,
+      id: directive.id ?? createId("directive"),
+    });
+  }
+
+  getDirective(agentId: string, directiveId: string): Directive | null {
+    return this.authoringStore.getDirective(agentId, directiveId);
+  }
+
+  listDirectives(agentId: string): Directive[] {
+    return this.authoringStore.listDirectives(agentId);
+  }
+
+  updateDirective(agentId: string, directiveId: string, input: UpdateConversationKitDirectiveInput): Directive | null {
+    return this.authoringStore.updateDirective(agentId, directiveId, input);
+  }
+
+  deleteDirective(agentId: string, directiveId: string): boolean {
+    return this.authoringStore.deleteDirective(agentId, directiveId);
   }
 
   addDirective(agentId: string, directive: Directive): Directive {
-    this.requireAgent(agentId);
-    const directives = this.directivesByAgent.get(agentId) ?? [];
-    directives.push(directive);
-    this.directivesByAgent.set(agentId, directives);
-    return directive;
+    return this.createDirective(agentId, directive);
   }
 
   addDirectives(agentId: string, directives: Directive[]): Directive[] {
     return directives.map((directive) => this.addDirective(agentId, directive));
+  }
+
+  createRoutine(routine: Routine): Routine {
+    return this.authoringStore.createRoutine(routine);
+  }
+
+  getRoutine(routineId: string): Routine | null {
+    return this.authoringStore.getRoutine(routineId);
+  }
+
+  listRoutines(): Routine[] {
+    return this.authoringStore.listRoutines();
+  }
+
+  updateRoutine(routineId: string, input: UpdateConversationKitRoutineInput): Routine | null {
+    return this.authoringStore.updateRoutine(routineId, input);
+  }
+
+  deleteRoutine(routineId: string): boolean {
+    return this.authoringStore.deleteRoutine(routineId);
   }
 
   createSession(input: CreateSessionInput): ConversationKitSession {
@@ -101,10 +181,11 @@ class InMemoryConversationKitClient implements ConversationKitClient {
       throw new Error(`conversation_kit_session_not_found:${input.sessionId}`);
     }
     const agent = this.requireAgent(session.agentId);
+    const directives = this.authoringStore.listDirectives(agent.id);
     const result = await this.kit.runTurn({
       sessionId: session.id,
       agent,
-      directives: this.directivesByAgent.get(agent.id) ?? [],
+      directives,
       message: input.message,
       metadata: input.metadata,
     });
@@ -116,7 +197,7 @@ class InMemoryConversationKitClient implements ConversationKitClient {
   }
 
   private requireAgent(agentId: string): ConversationAgentConfig {
-    const agent = this.agents.get(agentId);
+    const agent = this.authoringStore.getAgent(agentId);
     if (!agent) {
       throw new Error(`conversation_kit_agent_not_found:${agentId}`);
     }
@@ -125,5 +206,5 @@ class InMemoryConversationKitClient implements ConversationKitClient {
 }
 
 export const createConversationKitClient = (
-  options: CreateConversationKitOptions = {},
+  options: CreateConversationKitClientOptions = {},
 ): ConversationKitClient => new InMemoryConversationKitClient(options);

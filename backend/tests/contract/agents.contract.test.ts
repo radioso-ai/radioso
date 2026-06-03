@@ -739,7 +739,7 @@ describe("agents contract", () => {
     expect(config.body.launcherLabel).not.toBe("Claudio");
   });
 
-  it("serves a cacheable, origin-independent website embed config", async () => {
+  it("serves a cacheable, per-origin website embed config and rejects strangers", async () => {
     const { app } = createTestApp();
     const { token } = await issueTestToken(app, "agents-embed-config-cache@example.com");
     const authorization = `Bearer ${token}`;
@@ -769,20 +769,28 @@ describe("agents contract", () => {
       .expect(200);
     const embedToken = tokenResponse.body.surfaceSettings.websiteEmbed.token as string;
 
-    // Cacheable, and identical regardless of the requesting origin or
-    // Accept-Language: a non-allowlisted origin and a French visitor get the
-    // same 200 body, so a CDN can cache one object per token.
+    // An allow-listed origin gets a cacheable response that declares it varies
+    // by Origin, so a CDN keys the cache per origin. The body is independent of
+    // Accept-Language (locale packs are resolved client-side).
     const fromAllowed = await request(app)
       .get(`/api/v1/public/chat/${embedToken}/embed-config`)
       .set("Origin", "https://host.example.com")
       .set("Accept-Language", "fr-FR")
       .expect(200);
     expect(fromAllowed.headers["cache-control"]).toContain("public");
+    expect(fromAllowed.headers["vary"]).toContain("Origin");
 
-    const fromStranger = await request(app)
+    const fromAllowedEnglish = await request(app)
+      .get(`/api/v1/public/chat/${embedToken}/embed-config`)
+      .set("Origin", "https://host.example.com")
+      .set("Accept-Language", "en-US")
+      .expect(200);
+    expect(fromAllowedEnglish.body).toEqual(fromAllowed.body);
+
+    // A non-allow-listed origin is rejected, not served — the cache gate holds.
+    await request(app)
       .get(`/api/v1/public/chat/${embedToken}/embed-config`)
       .set("Origin", "https://not-allowed.example.com")
-      .expect(200);
-    expect(fromStranger.body).toEqual(fromAllowed.body);
+      .expect(400);
   });
 });

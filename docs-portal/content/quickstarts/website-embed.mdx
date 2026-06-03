@@ -95,7 +95,7 @@ If your site already runs PostHog, add a listener that forwards Radioso events i
 
 The origin check is a safety guard for production pages with multiple embedded frames. The example derives it from the installed Radioso script, so you do not need to hard-code the widget host.
 
-The `embed-config` response is the same for every visitor and every origin, so it can be served from a CDN. It carries no visitor or session data, and the origin allowlist is still enforced when a chat session is created. The launcher fetches this config once on page load; caching it keeps that request off your origin. After an operator changes embed settings, the change appears once the cached copy expires (or after a cache purge).
+The `embed-config` response can be served from a CDN. It is the same for every visitor on a given site, regardless of browser language, so a CDN caches it per allow-listed origin. The origin allowlist still applies: a site that is not allow-listed is rejected and never cached. The launcher fetches this config once on page load; caching it keeps that request off your origin. After an operator changes embed settings, invalidate the cached config so the change appears immediately; otherwise it appears once the cached copy expires.
 
 Current embed analytics events:
 

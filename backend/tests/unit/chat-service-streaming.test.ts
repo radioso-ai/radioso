@@ -72,6 +72,7 @@ const makeChatService = (
   // The engine is the only turn path now; default to a real one so every streaming
   // test exercises it, matching production composition.
   conversationEngine: ChatServiceOptions["conversationEngine"] = createConversationEngine(),
+  routine?: { routineStore: ChatServiceOptions["routineStore"]; routineProvider: ChatServiceOptions["routineProvider"] },
 ): ChatService =>
   new ChatService({
     conversationRepository,
@@ -93,6 +94,8 @@ const makeChatService = (
     directiveSteering,
     selectionStrategy,
     conversationEngine,
+    routineStore: routine?.routineStore,
+    routineProvider: routine?.routineProvider,
   });
 
 const asChatActivityPipeline = (pipeline: Record<string, unknown>) => {
@@ -358,6 +361,79 @@ describe("chat service streaming", () => {
     });
 
     expect(response.answer).toBe("Received.");
+    expect(interpretCalls).toBe(0);
+    const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("attempts the routine before retrieval and skips grounding when it claims the turn", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    let interpretCalls = 0;
+    const retrievalPipeline = {
+      async interpret() {
+        interpretCalls += 1;
+        throw new Error("retrieval should not run for a routine turn");
+      },
+      async runInterpreted() {
+        throw new Error("runInterpreted should not run for a routine turn");
+      },
+      async runWithoutRetrieval() {
+        throw new Error("runWithoutRetrieval should not run for a routine turn");
+      },
+    };
+    // A routine that claims the turn, rendering its own reply (no skill / no retrieval).
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => null,
+      save: async () => {},
+      clear: async () => {},
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      isEmpty: false,
+      activator: () => ({ activate: async () => ({ routineId: "contact.request" }) }),
+      createRunner: () => ({
+        resume: async () => ({
+          response: { answer: "What is your email?" },
+          nextState: { sessionId: "s", routineId: "contact.request", path: ["ask_email"], variables: {}, status: "active" },
+        }),
+      }),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
+      {
+        async answer() {
+          return "Normal answer.";
+        },
+        async *streamAnswer() {
+          yield "Normal answer.";
+        },
+      },
+      auditService,
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider },
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "Ma soovin kellegagi ühendust võtta.",
+      stream: false,
+    });
+
+    expect(response.answer).toContain("What is your email?");
+    // The routine claimed the turn before grounding — retrieval was never attempted.
     expect(interpretCalls).toBe(0);
     const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
     expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
@@ -687,6 +763,9 @@ describe("chat service streaming", () => {
     };
     let processedSessionId: string | null = null;
     const conversationEngine: ConversationEngine = {
+      async attemptRoutine() {
+        return null;
+      },
       async processTurn(input) {
         processedSessionId = input.sessionId;
         const history = await input.stores.loadHistory({ sessionId: input.sessionId });

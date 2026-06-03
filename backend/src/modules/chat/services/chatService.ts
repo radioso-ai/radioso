@@ -31,6 +31,7 @@ import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/dom
 import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import {
+  attemptRoutineTurnWithConversationEngine,
   runPreparedChatTurnStreamWithConversationEngine,
   runPreparedChatTurnWithConversationEngine,
 } from "./conversationEngineChatTurn.js";
@@ -333,35 +334,37 @@ export class ChatService {
   }
 
   /**
-   * Assembles this turn's routine machinery, or `{}` when no routines are registered
-   * (the engine ports stay unwired and turn behavior is unchanged). The next-step
-   * selector and step renderer generate through a model gateway bound to this turn's
-   * usage + workspace context, which is why the runner is built per turn rather than
-   * once at construction.
+   * Attempts the registered routines for this turn — a multi-turn skill selected *before*
+   * grounding. Returns the routine's rendered reply when it claims the turn (so the host
+   * persists it and skips retrieval), or null when no routines are registered, none is
+   * active/activates, or the active routine yields the turn (off-topic) — in which case
+   * the host falls through to normal selection + grounding. The next-step selector and
+   * renderer generate through a model gateway bound to this turn's usage + workspace
+   * context, so the runner is built per turn.
    */
-  private routineTurnPorts(
+  private async attemptRoutineTurn(
     session: PreparedSession,
     accountId: string | undefined,
-  ): {
-    routineStore?: ConversationRoutineStore;
-    routineRunner?: ConversationRoutineRunner;
-    routineActivator?: ConversationRoutineActivator;
-    presentRoutineReply?: (response: RenderableTurn) => ChatPresentedAnswer;
-  } {
+  ): Promise<{ presentation: ChatPresentedAnswer; engineTrace?: ConversationTrace; actions?: RoutineActionRequest[] } | null> {
     if (!this.routineStore || !this.routineProvider || this.routineProvider.isEmpty) {
-      return {};
+      return null;
     }
     const modelGateway = new RoutineChatModelGateway(this.chatGateway, {
       workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
       usageContext: this.answerSupport.buildChatUsageContext(session, accountId, "routine_turn"),
     });
-    return {
+    const outcome = await attemptRoutineTurnWithConversationEngine({
+      engine: this.conversationEngine,
+      session,
       routineStore: this.routineStore,
       routineRunner: this.routineProvider.createRunner(modelGateway),
       routineActivator: this.routineProvider.activator(modelGateway),
-      presentRoutineReply: (response) =>
-        this.chatAnswerPresenter.presentNonRetrievalAnswer(response.answer),
-    };
+      presentRoutineReply: (response) => this.chatAnswerPresenter.presentNonRetrievalAnswer(response.answer),
+    });
+    if (!outcome) {
+      return null;
+    }
+    return { presentation: outcome.presentation, engineTrace: outcome.result.trace, actions: outcome.result.actions };
   }
 
   /**
@@ -381,7 +384,6 @@ export class ChatService {
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
-      ...this.routineTurnPorts(session, input.accountId),
     });
     return { presentation, engineTrace: result.trace, actions: result.actions };
   }
@@ -398,7 +400,6 @@ export class ChatService {
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
-      ...this.routineTurnPorts(session, input.accountId),
     })) {
       if (event.type === "chunk") {
         yield event;
@@ -469,6 +470,26 @@ export class ChatService {
           return response;
         }
       }
+      // A routine is a multi-turn skill: attempt it before grounding. If it claims the
+      // turn, there is no retrieval — the routine renders its own reply.
+      const routineStartedAt = Date.now();
+      const routineTurn = await this.attemptRoutineTurn(session, input.accountId);
+      if (routineTurn) {
+        const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
+          workspaceId: input.workspaceId,
+          accountId: input.accountId,
+          session,
+          presentation: routineTurn.presentation,
+          answerStartedAt: routineStartedAt,
+          stream: input.stream,
+          engineTrace: routineTurn.engineTrace,
+          actions: routineTurn.actions,
+        });
+        assistantMessageId = completedTurn.assistantMessageId;
+        await usageReservation.commit();
+        return completedTurn.response;
+      }
+
       // Selection is authoritative: ground only if the strategy selected
       // retrieval; otherwise answer directly (no forced fallthrough to retrieval).
       session = candidates.includes("retrieval")
@@ -595,6 +616,31 @@ export class ChatService {
           activityTrace: response.activityTrace,
           skill,
         };
+        return;
+      }
+
+      // A routine is a multi-turn skill: attempt it before grounding. If it claims the
+      // turn, stream its rendered reply and finish — no retrieval.
+      const routineStartedAt = Date.now();
+      const routineTurn = await this.attemptRoutineTurn(session, input.accountId);
+      if (routineTurn) {
+        if (routineTurn.presentation.answer) {
+          yield { type: "chunk", text: routineTurn.presentation.answer };
+        }
+        const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
+          workspaceId: input.workspaceId,
+          accountId: input.accountId,
+          session,
+          presentation: routineTurn.presentation,
+          answerStartedAt: routineStartedAt,
+          stream: input.stream,
+          engineTrace: routineTurn.engineTrace,
+          actions: routineTurn.actions,
+        });
+        assistantMessageId = completedTurn.assistantMessageId;
+        await usageReservation.commit();
+        usageReservationCommitted = true;
+        yield { type: "done", ...completedTurn.response };
         return;
       }
 

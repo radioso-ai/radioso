@@ -33,16 +33,6 @@ export interface RunPreparedChatTurnWithConversationEngineInput {
   query: string;
   userExpectedLocale?: string | null;
   accountId?: string;
-  /**
-   * Routine machinery for this turn (optional, all travel together). When wired and a
-   * routine resumes/activates, the engine skips normal selection/dispatch/compose and
-   * the routine's rendered reply is presented via {@link presentRoutineReply}.
-   */
-  routineStore?: ConversationRoutineStore;
-  routineRunner?: ConversationRoutineRunner;
-  routineActivator?: ConversationRoutineActivator;
-  /** Presents a routine-rendered reply as a chat answer (required when routines wired). */
-  presentRoutineReply?: (response: RenderableTurn) => ChatPresentedAnswer;
 }
 
 export interface RunPreparedChatTurnWithConversationEngineResult {
@@ -61,13 +51,6 @@ export type RunPreparedChatTurnStreamWithConversationEngineEvent =
       result: ProcessTurnResult;
       engineTrace: ConversationTrace;
     };
-
-/** The routine ports for this turn, spread into the process-turn input only when wired. */
-const routinePorts = (input: RunPreparedChatTurnWithConversationEngineInput) => ({
-  ...(input.routineStore ? { routineStore: input.routineStore } : {}),
-  ...(input.routineRunner ? { routineRunner: input.routineRunner } : {}),
-  ...(input.routineActivator ? { routineActivator: input.routineActivator } : {}),
-});
 
 const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => ({
   answer: presentation.answer,
@@ -140,15 +123,10 @@ export const runPreparedChatTurnWithConversationEngine = async (
         return toRenderableTurn(rendered);
       },
     },
-    ...routinePorts(input),
   });
 
   const result = await input.engine.processTurn(processTurnInput);
-  // A routine claimed the turn → the engine skipped compose; present its rendered reply.
   if (!rendered) {
-    if (input.presentRoutineReply) {
-      return { presentation: input.presentRoutineReply(result.response), result };
-    }
     throw new Error("conversation_engine_rendered_no_chat_presentation");
   }
   return { presentation: rendered, result };
@@ -213,7 +191,6 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
         };
       },
     },
-    ...routinePorts(input),
   });
 
   for await (const event of input.engine.processTurnStream(processTurnInput)) {
@@ -223,17 +200,6 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     }
     const streamResult = streamState.result;
     if (!streamResult) {
-      // A routine claimed the turn → no skill stream ran; present its rendered reply.
-      if (input.presentRoutineReply) {
-        yield {
-          type: "final",
-          presentation: input.presentRoutineReply(event.result.response),
-          suggestions: { mode: "presentation" },
-          result: event.result,
-          engineTrace: event.result.trace,
-        };
-        continue;
-      }
       throw new Error("conversation_engine_stream_missing_chat_result");
     }
     yield {
@@ -244,4 +210,40 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
       engineTrace: event.result.trace,
     };
   }
+};
+
+const throwingTurnPort = (operation: string) => () => {
+  throw new Error(`conversation_engine_routine_attempt_${operation}`);
+};
+
+/**
+ * Attempts a routine for this turn *before* grounding — the routine is a multi-turn
+ * skill selected ahead of retrieval. Returns the routine's rendered reply when it
+ * claims the turn, or null when no routine is active/activates or it yields (off-topic),
+ * so ChatService can fall through to grounding. The selection/dispatch/compose ports are
+ * never reached (the engine returns from the routine stage first), so they throw.
+ */
+export const attemptRoutineTurnWithConversationEngine = async (input: {
+  engine: ConversationEngine;
+  session: PreparedSession;
+  routineStore: ConversationRoutineStore;
+  routineRunner: ConversationRoutineRunner;
+  routineActivator: ConversationRoutineActivator;
+  presentRoutineReply: (response: RenderableTurn) => ChatPresentedAnswer;
+}): Promise<RunPreparedChatTurnWithConversationEngineResult | null> => {
+  const processTurnInput = createChatProcessTurnInput({
+    session: input.session,
+    selector: { select: throwingTurnPort("no_selection") },
+    dispatcher: { dispatch: throwingTurnPort("no_dispatch") },
+    composer: { compose: throwingTurnPort("no_compose") },
+    routineStore: input.routineStore,
+    routineRunner: input.routineRunner,
+    routineActivator: input.routineActivator,
+  });
+
+  const result = await input.engine.attemptRoutine(processTurnInput);
+  if (!result) {
+    return null;
+  }
+  return { presentation: input.presentRoutineReply(result.response), result };
 };

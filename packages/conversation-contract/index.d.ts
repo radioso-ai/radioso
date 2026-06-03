@@ -508,4 +508,12 @@ export type ProcessTurnStreamEvent =
 export interface ConversationEngine {
   processTurn(input: ProcessTurnInput): Promise<ProcessTurnResult>;
   processTurnStream(input: ProcessTurnStreamInput): AsyncIterable<ProcessTurnStreamEvent>;
+  /**
+   * Attempt to resume or activate a routine for this turn, without running normal
+   * selection/dispatch/compose. Returns the routine's turn result when a routine claims
+   * the turn, or null when no routine machinery is wired, none is active/activates, or
+   * the active routine yields the turn (off-topic) — so the host can treat the routine
+   * as a multi-turn skill selected before grounding, and only ground when it returns null.
+   */
+  attemptRoutine(input: ProcessTurnInput): Promise<ProcessTurnResult | null>;
 }

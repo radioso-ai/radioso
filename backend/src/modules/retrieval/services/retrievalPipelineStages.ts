@@ -65,6 +65,12 @@ export interface RetrievalBranchResult {
   reason?: string;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   source: "original" | "rewritten";
+  // Whether a semantic search ran for this branch's semantic query this turn.
+  // False only for branches dropped by the per-turn distinct-semantic cap, which
+  // are lexical-only. Branches that share an already-searched semantic query are
+  // true and reuse that search's contexts (the trace deduplicates by query). The
+  // trace uses this to avoid reporting a semantic search that did not happen.
+  semanticSearched: boolean;
   semanticContexts: RetrievedChunk[];
   lexicalContexts: RetrievedChunk[];
 }

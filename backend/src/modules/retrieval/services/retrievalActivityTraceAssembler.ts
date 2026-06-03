@@ -90,13 +90,27 @@ export class ActivityTraceAssembler {
     const { prompt, diagnostics, timings } = input;
     const rewriteReason = prompt.rewrittenQuery.rejectionReason ?? prompt.rewrittenQuery.fallbackReason;
     const semanticKind = prompt.rewrittenQuery.retrievalEligible ? "semantic_rewritten" : "semantic_original";
-    const semanticBranches = prompt.retrievalBranches.map((branch, index) => ({
+    // Semantic search runs once per distinct semantic query (and is capped per turn),
+    // while lexical search runs once per branch. Reflect that asymmetry in the trace:
+    // collapse the semantic side to the queries actually searched so a single shared
+    // (or capped) semantic search is not reported as several. `semanticSearched` is
+    // owned by the retrieval stage; absence is treated as searched for older traces.
+    const searchedSemanticBranches: typeof prompt.retrievalBranches = [];
+    const seenSemanticQueries = new Set<string>();
+    for (const branch of prompt.retrievalBranches) {
+      if (branch.semanticSearched === false || seenSemanticQueries.has(branch.semanticQuery)) {
+        continue;
+      }
+      seenSemanticQueries.add(branch.semanticQuery);
+      searchedSemanticBranches.push(branch);
+    }
+    const semanticBranches = searchedSemanticBranches.map((branch, index) => ({
       stageId:
-        prompt.retrievalBranches.length === 1
+        searchedSemanticBranches.length === 1
           ? semanticKind
           : `${semanticKind}_${index + 1}_${toSafeStageId(branch.label || branch.subqueryId)}`,
       kind: semanticKind,
-      label: prompt.retrievalBranches.length === 1 ? "Semantic retrieval" : `Semantic retrieval: ${branch.label}`,
+      label: searchedSemanticBranches.length === 1 ? "Semantic retrieval" : `Semantic retrieval: ${branch.label}`,
       query: branch.semanticQuery,
       reason: branch.reason,
       responseLanguagePolicy: branch.responseLanguagePolicy,

@@ -5,8 +5,6 @@ import {
 } from "../domain.js";
 import type { AgentSurfaceExtension } from "../surfaceExtensions.js";
 
-import { resolveCopyForAcceptLanguage } from "./websiteEmbed/localeCopy.js";
-
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
@@ -30,8 +28,5 @@ export const createWebsiteEmbedSurfaceExtension = (): AgentSurfaceExtension<Webs
     } catch {
       return defaultWebsiteEmbedSurfaceSettings();
     }
-  },
-  resolveCopyForAcceptLanguage(acceptLanguage) {
-    return resolveCopyForAcceptLanguage(acceptLanguage);
   },
 });

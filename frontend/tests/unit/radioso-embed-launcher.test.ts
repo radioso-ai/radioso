@@ -242,6 +242,7 @@ describe('radioso embed launcher', () => {
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
     script.dataset.radiosoToken = 'embed-token'
+    script.dataset.radiosoInitialState = 'open' // mount the iframe eagerly so we can read its copy param
 
     const head = new FakeElement('head')
     const body = new FakeElement('body')

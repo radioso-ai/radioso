@@ -130,6 +130,14 @@ export const registerAssistantAuthenticatedChatPaths = (
           },
         },
       },
+      429: {
+        description: "Expensive authenticated request rate limit exceeded",
+        content: {
+          "application/json": {
+            schema: schemas.RateLimitExceededSchema,
+          },
+        },
+      },
     },
   });
 };

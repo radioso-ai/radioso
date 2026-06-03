@@ -1,4 +1,6 @@
 import type { ModelCallUsageContext } from "../../domain/modelCallUsageContext.js";
+import { LLM_DEFAULTS } from "../../domain/behaviorConfig.js";
+import { payloadTooLarge } from "../../domain/errors.js";
 import {
   NoopUsageEventRecorder,
   type UsageEventRecorder,
@@ -15,6 +17,7 @@ import type {
 
 export interface ModelInferenceRequest extends TextGenerationRequest {
   operation: ModelCallUsageContext;
+  maxInputTokens?: number;
   validateResult?: (result: TextGenerationResult) => void;
 }
 
@@ -25,6 +28,9 @@ export interface ModelInferencePipeline {
 }
 
 const estimateTokens = (bytes: number): number => Math.max(1, Math.ceil(bytes / 4));
+
+const estimateRequestInputTokens = (request: TextGenerationRequest): number =>
+  estimateTokens(Buffer.byteLength(`${request.systemPrompt ?? ""}\n${request.prompt}`, "utf8"));
 
 const usageErrorCode = (error: unknown): string => {
   if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
@@ -75,6 +81,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
 
   async complete(input: ModelInferenceRequest): Promise<TextGenerationResult> {
     const request = stripOperation(input);
+    this.enforceInputBudget(input, request);
     let result: TextGenerationResult;
     try {
       result = await this.delegate.complete(request);
@@ -115,6 +122,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
 
   stream(input: ModelInferenceRequest): TextGenerationStreamResult {
     const request = stripOperation(input);
+    this.enforceInputBudget(input, request);
     const result = this.delegate.stream(request);
     let outputText = "";
     const readUsage = async (): Promise<ProviderUsage | undefined> => {
@@ -190,5 +198,18 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     }).catch(() => {
       // Usage accounting is observational; model results remain authoritative.
     });
+  }
+
+  private enforceInputBudget(input: ModelInferenceRequest, request: TextGenerationRequest): void {
+    const maxInputTokens = input.maxInputTokens ?? LLM_DEFAULTS.textGenerationMaxInputTokens;
+    const estimatedInputTokens = estimateRequestInputTokens(request);
+    if (estimatedInputTokens > maxInputTokens) {
+      throw payloadTooLarge("LLM prompt exceeds maximum input token budget", {
+        estimatedInputTokens,
+        maxInputTokens,
+        surface: input.operation.surface,
+        operation: input.operation.operation,
+      });
+    }
   }
 }

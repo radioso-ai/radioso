@@ -849,7 +849,6 @@ export const buildChatServices = (input: {
     workspaceRepository: input.workspaceRepository,
     usageLimitPolicy: input.usageLimitPolicy,
     agentService: input.agentService,
-    publicChatActionAdvertiser,
     // 067: behavioral steering. The standing set is supplied by application
     // composition; default answer behavior is registered by a built-in module.
     // The probabilistic (contextual) matcher is intentionally not wired here: the
@@ -858,8 +857,8 @@ export const buildChatServices = (input: {
     // ModelDirectiveMatchGateway onto ModelInferencePipeline with a usage
     // context — a follow-up to land before any contextual directive ships.
     directiveSteering,
-    // Turn selection strategy comes from composition (default: the built-in
-    // skill_intake → retrieval order). Registerable so a host can swap it.
+    // Turn selection strategy comes from composition (default: retrieval/direct
+    // terminal turn). Registerable so a host can swap it.
     selectionStrategy: input.composition.selectionStrategy,
     // The reusable conversation engine is the chat turn spine in every
     // environment. ChatService keeps an engine-less path for tests, but

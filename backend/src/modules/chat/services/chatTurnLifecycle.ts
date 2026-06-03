@@ -12,12 +12,10 @@ import {
 } from "../../retrieval/public.js";
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import {
-  ASSISTANT_TURN_OUTCOME,
   type AssistantTurnOutcome,
   type SkillTurnOutcome,
   legacyAnswerOutcomeForSkillTurnOutcome,
 } from "./assistantTurnOutcomeTypes.js";
-import type { ChatIntakeResult } from "./publicChatActionAdvertiser.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { buildRewriteContinuityState } from "./rewriteContinuityState.js";
 import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
@@ -32,12 +30,10 @@ import { appendDirectiveSteeringStage } from "./directiveTracePresenter.js";
 import {
   attachCapabilitySubTrace,
   buildTurnTraceEnvelope,
-  synthesizeDispatchSpine,
   type TurnTraceEnvelope,
 } from "./turnTraceEnvelope.js";
 import {
   RETRIEVAL_TRACE_LEAF,
-  SKILL_INTAKE_TRACE_LEAF,
   capabilitySubTrace,
 } from "./chatTraceLeaves.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
@@ -116,12 +112,6 @@ const toPresentationSkillTurnOutcome = (presentation: ChatPresentedAnswer): Skil
   status: presentation.skillStatus,
 });
 
-const toIntakeSkillTurnOutcome = (intakeResult: ChatIntakeResult): SkillTurnOutcome => ({
-  skillName: intakeResult.skillName,
-  outcome: intakeResult.skillOutcome ?? "unknown",
-  status: intakeResult.status,
-});
-
 type MessageCreateInput = Parameters<MessageRepositoryPort["create"]>[0];
 
 export interface AssistantTurnPersistencePort {
@@ -153,12 +143,6 @@ interface AssistantTurnSuccessInput {
   turnTrace?: TurnTraceEnvelope;
   route: ChatRoute;
   stream: boolean;
-  skillIntake?: {
-    skillName: string;
-    status: ChatIntakeResult["status"];
-    skillOutcome?: string;
-    stateId?: string;
-  };
 }
 
 export class ChatTurnLifecycle {
@@ -364,91 +348,6 @@ export class ChatTurnLifecycle {
     };
   }
 
-  async completeSkillIntakeTurn(input: {
-    workspaceId: string;
-    accountId?: string;
-    session: PreparedSession;
-    intakeResult: ChatIntakeResult;
-    stream: boolean;
-  }): Promise<ChatResponse> {
-    const route: ChatRoute = {
-      type: "direct",
-      reason: "social_only",
-    };
-    const skillTurnOutcome = toIntakeSkillTurnOutcome(input.intakeResult);
-    // Intake is a pre-engine short-circuit with no spine, so synthesize a minimal
-    // one carrying its activity trace as a leaf — the renderer treats it like an
-    // engine turn. (When intake later routes through the engine it produces a real
-    // spine and this synthesis falls away; the envelope shape is unchanged.)
-    const turnTrace = buildTurnTraceEnvelope({
-      spine: synthesizeDispatchSpine({
-        skillName: input.intakeResult.skillName,
-        status: input.intakeResult.status === "failed" ? "failed" : "applied",
-        startedAt: input.intakeResult.activityTrace.startedAt,
-        completedAt: input.intakeResult.activityTrace.completedAt,
-        subTrace: capabilitySubTrace(SKILL_INTAKE_TRACE_LEAF, input.intakeResult.activityTrace),
-      }),
-    });
-    const assistantMessage = await this.messageRepository.create({
-      conversationId: input.session.conversation.id,
-      workspaceId: input.workspaceId,
-      role: "assistant",
-      content: input.intakeResult.answer,
-      skillName: skillTurnOutcome.skillName,
-      skillOutcome: skillTurnOutcome.outcome,
-      skillStatus: skillTurnOutcome.status,
-      metadata: {
-        skillTurn: skillTurnOutcome,
-        skillIntake: {
-          skillName: input.intakeResult.skillName,
-          status: input.intakeResult.status,
-          skillOutcome: input.intakeResult.skillOutcome,
-          stateId: input.intakeResult.stateId,
-        },
-        activityTrace: input.intakeResult.activityTrace,
-      },
-    });
-    await this.finalizeAssistantTurn({
-      workspaceId: input.workspaceId,
-      accountId: input.accountId,
-      conversationId: input.session.conversation.id,
-      userMessageId: input.session.userMessage.id,
-      assistantMessageId: assistantMessage.id,
-      skillTurnOutcome,
-      answerOutcome: ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE,
-      citations: [],
-      answerSegments: undefined,
-      suggestions: undefined,
-      priorRewriteContinuityState: input.session.priorRewriteContinuityState,
-      diagnostics: input.session.retrieval.diagnostics,
-      activityTrace: input.intakeResult.activityTrace,
-      turnTrace,
-      route,
-      stream: input.stream,
-      skillIntake: {
-        skillName: input.intakeResult.skillName,
-        status: input.intakeResult.status,
-        skillOutcome: input.intakeResult.skillOutcome,
-        stateId: input.intakeResult.stateId,
-      },
-    });
-
-    return {
-      conversationId: input.session.conversation.id,
-      agentId: input.session.agent.id,
-      agentName: input.session.agent.name,
-      assistantMessageId: assistantMessage.id,
-      route,
-      answer: input.intakeResult.answer,
-      citations: [],
-      answerSegments: undefined,
-      suggestions: undefined,
-      activitySummary: input.intakeResult.activitySummary,
-      activityTrace: input.intakeResult.activityTrace,
-      turnTrace,
-    };
-  }
-
   async updateSuggestions(input: {
     workspaceId: string;
     conversationId: string;
@@ -555,7 +454,6 @@ export class ChatTurnLifecycle {
         citations: input.citations,
         answerSegments: input.answerSegments,
         suggestions: input.suggestions,
-        skillIntake: input.skillIntake,
         rewriteContinuityState: buildRewriteContinuityState({
           previousState: input.priorRewriteContinuityState,
           diagnostics: input.diagnostics,

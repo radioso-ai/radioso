@@ -19,8 +19,9 @@ const request = (overrides: Partial<ActionRequestRecord> = {}): ActionRequestRec
   accountId: null,
   conversationId: "conv_1",
   idempotencyKey: "k1",
-  status: "pending",
-  attempts: 0,
+  // A claimed row, as claimPending returns it: in_progress with its attempt version.
+  status: "in_progress",
+  attempts: 1,
   ...overrides,
 });
 
@@ -65,7 +66,7 @@ describe("ActionDispatcher", () => {
       payload: { email: "x@y.z" },
       context: { workspaceId: "ws_1", accountId: null, conversationId: "conv_1" },
     });
-    expect(store.markDispatched).toHaveBeenCalledWith("r1");
+    expect(store.markDispatched).toHaveBeenCalledWith("r1", 1);
     expect(store.recordFailure).not.toHaveBeenCalled();
     expect(result).toEqual({ dispatched: 1, retried: 0, failed: 0 });
   });
@@ -79,7 +80,7 @@ describe("ActionDispatcher", () => {
 
     const result = await dispatcher.dispatchPending();
 
-    expect(store.recordFailure).toHaveBeenCalledWith("r1", "no_handler_for_type:unknown.action", 5, 60);
+    expect(store.recordFailure).toHaveBeenCalledWith("r1", "no_handler_for_type:unknown.action", 1, 5, 60);
     expect(result).toEqual({ dispatched: 0, retried: 0, failed: 1 });
   });
 
@@ -92,9 +93,21 @@ describe("ActionDispatcher", () => {
 
     const result = await dispatcher.dispatchPending();
 
-    expect(store.recordFailure).toHaveBeenCalledWith("r1", "smtp down", expect.any(Number), expect.any(Number));
+    expect(store.recordFailure).toHaveBeenCalledWith("r1", "smtp down", 1, expect.any(Number), expect.any(Number));
     expect(store.markDispatched).not.toHaveBeenCalled();
     expect(result).toEqual({ dispatched: 0, retried: 1, failed: 0 });
+  });
+
+  it("ignores a superseded claim's result (another worker reclaimed the row)", async () => {
+    const store = outbox([request()], "superseded");
+    const dispatcher = new ActionDispatcher(
+      store,
+      new ActionHandlerRegistry([{ type: "contact.send", handler: { handle: vi.fn(async () => { throw new Error("slow"); }) } }]),
+    );
+
+    const result = await dispatcher.dispatchPending();
+
+    expect(result).toEqual({ dispatched: 0, retried: 0, failed: 0 });
   });
 
   it("counts a budget-exhausted handler failure as a terminal failure", async () => {

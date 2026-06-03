@@ -21,10 +21,11 @@ export interface ActionHandler {
 /** The narrow slice of the outbox the dispatcher drains. */
 export interface ActionOutboxConsumerPort {
   claimPending(limit: number, leaseSeconds: number): Promise<ActionRequestRecord[]>;
-  markDispatched(id: string): Promise<void>;
+  markDispatched(id: string, attempt: number): Promise<void>;
   recordFailure(
     id: string,
     error: string,
+    attempt: number,
     maxAttempts: number,
     retryBackoffSeconds: number,
   ): Promise<ActionFailureOutcome>;
@@ -94,24 +95,26 @@ export class ActionDispatcher {
     let retried = 0;
     let failed = 0;
 
-    const onFailure = async (id: string, error: string): Promise<void> => {
+    const onFailure = async (request: ActionRequestRecord, error: string): Promise<void> => {
       const outcome = await this.outbox.recordFailure(
-        id,
+        request.id,
         error,
+        request.attempts,
         this.options.maxAttempts,
         this.options.retryBackoffSeconds,
       );
       if (outcome === "failed") {
         failed += 1;
-      } else {
+      } else if (outcome === "retry") {
         retried += 1;
       }
+      // `superseded` → another worker reclaimed this row; its result is authoritative.
     };
 
     for (const request of claimed) {
       const handler = this.registry.resolve(request.type);
       if (!handler) {
-        await onFailure(request.id, `no_handler_for_type:${request.type}`);
+        await onFailure(request, `no_handler_for_type:${request.type}`);
         continue;
       }
       try {
@@ -123,10 +126,10 @@ export class ActionDispatcher {
             conversationId: request.conversationId,
           },
         });
-        await this.outbox.markDispatched(request.id);
+        await this.outbox.markDispatched(request.id, request.attempts);
         dispatched += 1;
       } catch (error) {
-        await onFailure(request.id, error instanceof Error ? error.message : String(error));
+        await onFailure(request, error instanceof Error ? error.message : String(error));
       }
     }
 

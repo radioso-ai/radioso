@@ -68,27 +68,32 @@ describe("ActionRequestRepository", () => {
     expect(params).toEqual([10, 300]);
   });
 
-  it("marks a claimed request dispatched only while it is still in_progress", async () => {
+  it("marks dispatched only this exact claim (guarded on attempts + in_progress)", async () => {
     const db = mockDatabase();
-    await new ActionRequestRepository(db).markDispatched("r1");
+    await new ActionRequestRepository(db).markDispatched("r1", 2);
     expect(db.execute.mock.calls[0]![0]).toContain("status = 'dispatched'");
-    expect(db.execute.mock.calls[0]![0]).toContain("status = 'in_progress'");
-    expect(db.execute.mock.calls[0]![1]).toEqual(["r1"]);
+    expect(db.execute.mock.calls[0]![0]).toContain("id = $1 AND attempts = $2 AND status = 'in_progress'");
+    expect(db.execute.mock.calls[0]![1]).toEqual(["r1", 2]);
   });
 
-  it("retries a within-budget failure (back to pending + backoff) and fails terminally when spent", async () => {
+  it("retries within budget, fails terminally when spent, and supersedes a reclaimed row", async () => {
     const db = mockDatabase();
     const repo = new ActionRequestRepository(db);
 
-    db.queryOne.mockResolvedValueOnce({ status: "pending" });
-    expect(await repo.recordFailure("r1", "smtp down", 5, 60)).toBe("retry");
+    db.queryOptional.mockResolvedValueOnce({ status: "pending" });
+    expect(await repo.recordFailure("r1", "smtp down", 1, 5, 60)).toBe("retry");
 
-    db.queryOne.mockResolvedValueOnce({ status: "failed" });
-    expect(await repo.recordFailure("r2", "smtp down", 5, 60)).toBe("failed");
+    db.queryOptional.mockResolvedValueOnce({ status: "failed" });
+    expect(await repo.recordFailure("r2", "smtp down", 5, 5, 60)).toBe("failed");
 
-    const [sql, params] = db.queryOne.mock.calls[0]!;
-    expect(sql).toContain("WHEN attempts >= $3 THEN 'failed' ELSE 'pending'");
-    expect(sql).toContain("now() + make_interval(secs => $4)");
-    expect(params).toEqual(["r1", "smtp down", 5, 60]);
+    // No row matched the (id, attempt) guard → another worker reclaimed it.
+    db.queryOptional.mockResolvedValueOnce(null);
+    expect(await repo.recordFailure("r3", "smtp down", 1, 5, 60)).toBe("superseded");
+
+    const [sql, params] = db.queryOptional.mock.calls[0]!;
+    expect(sql).toContain("WHEN attempts >= $4 THEN 'failed' ELSE 'pending'");
+    expect(sql).toContain("now() + make_interval(secs => $5)");
+    expect(sql).toContain("WHERE id = $1 AND attempts = $3 AND status = 'in_progress'");
+    expect(params).toEqual(["r1", "smtp down", 1, 5, 60]);
   });
 });

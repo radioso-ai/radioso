@@ -2,8 +2,11 @@ import type { Database } from "../../shared/infra/database.js";
 
 export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "failed";
 
-/** The terminal outcome of recording a dispatch failure. */
-export type ActionFailureOutcome = "retry" | "failed";
+/**
+ * The outcome of recording a dispatch failure. `superseded` means this worker's claim
+ * was already reclaimed by another (its lease expired), so its result was ignored.
+ */
+export type ActionFailureOutcome = "retry" | "failed" | "superseded";
 
 export interface ActionRequestRecord {
   id: string;
@@ -114,38 +117,48 @@ export class ActionRequestRepository {
     return rows.map(mapRecord);
   }
 
-  /** Mark a claimed (in-progress) request dispatched. No-op if it was already reclaimed. */
-  async markDispatched(id: string): Promise<void> {
+  /**
+   * Mark a claimed request dispatched — but only *this* claim. The guard on `attempt`
+   * (the `attempts` value `claimPending` returned) means a stale worker whose lease
+   * expired and whose row was reclaimed by another worker (now a higher `attempts`)
+   * cannot mark that newer claim dispatched. No-op when the claim was superseded.
+   */
+  async markDispatched(id: string, attempt: number): Promise<void> {
     await this.database.execute(
       `UPDATE routine_action_requests
           SET status = 'dispatched', updated_at = now()
-        WHERE id = $1 AND status = 'in_progress'`,
-      [id],
+        WHERE id = $1 AND attempts = $2 AND status = 'in_progress'`,
+      [id, attempt],
     );
   }
 
   /**
-   * Record a dispatch failure. Within the retry budget (`attempts < maxAttempts`,
-   * counting the attempt just made) the row returns to `pending` with a `next_attempt_at`
-   * backoff so a transient outage is retried; once the budget is spent it becomes
-   * terminal `failed`. Returns which happened.
+   * Record a dispatch failure for *this* claim (guarded on `attempt`, so a stale worker
+   * can't reset a reclaimed row). Within the retry budget (`attempts < maxAttempts`) the
+   * row returns to `pending` with a `next_attempt_at` backoff so a transient outage is
+   * retried; once spent it becomes terminal `failed`. Returns which happened, or
+   * `superseded` when the claim was already reclaimed by another worker.
    */
   async recordFailure(
     id: string,
     error: string,
+    attempt: number,
     maxAttempts: number,
     retryBackoffSeconds: number,
   ): Promise<ActionFailureOutcome> {
-    const row = await this.database.queryOne<{ status: string }>(
+    const row = await this.database.queryOptional<{ status: string }>(
       `UPDATE routine_action_requests
-          SET status = CASE WHEN attempts >= $3 THEN 'failed' ELSE 'pending' END,
-              next_attempt_at = CASE WHEN attempts >= $3 THEN NULL ELSE now() + make_interval(secs => $4) END,
+          SET status = CASE WHEN attempts >= $4 THEN 'failed' ELSE 'pending' END,
+              next_attempt_at = CASE WHEN attempts >= $4 THEN NULL ELSE now() + make_interval(secs => $5) END,
               last_error = $2,
               updated_at = now()
-        WHERE id = $1
+        WHERE id = $1 AND attempts = $3 AND status = 'in_progress'
         RETURNING status`,
-      [id, error, maxAttempts, retryBackoffSeconds],
+      [id, error, attempt, maxAttempts, retryBackoffSeconds],
     );
+    if (!row) {
+      return "superseded";
+    }
     return row.status === "failed" ? "failed" : "retry";
   }
 }

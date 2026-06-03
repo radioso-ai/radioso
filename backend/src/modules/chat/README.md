@@ -62,6 +62,12 @@ imports from `services/`.
 - Reusable turn engine: `conversationContractMappers.ts`,
   `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`, and
   application composition in `src/app/server/dependencyBuilders.ts`.
+  `conversationProcessTurnInput.ts` passes the route-scoped directive catalog to
+  the engine and adapts the real directive matcher into the engine's
+  `directiveMatcher` port; `chatSessionPreparer.ts` does not pre-resolve
+  directive matches for terminal answer turns. The adapter writes the resolved
+  steering back onto the prepared session before dispatch/render so Radioso-owned
+  composers and lifecycle traces keep reading the same steering shape.
   `turnOutcome.ts` holds only the capability-neutral turn machinery (`TurnSkill`,
   renderer registry); the engine adapter names no specific skill and only takes
   skill-shaped input. Each terminal answer capability is its own skill, selected by

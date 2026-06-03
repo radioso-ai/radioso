@@ -10,7 +10,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import { contactRoutine, CONTACT_SEND_ACTION_TYPE } from "../../src/modules/chat/services/routines/contactRoutine.js";
-import { RoutineRegistry } from "../../src/modules/chat/services/routines/routineRegistry.js";
+import { RoutineRegistry } from "@radioso/conversation-defaults";
 
 /**
  * End-to-end proof for the chat-only contact routine (#520 slice 4): drives the real

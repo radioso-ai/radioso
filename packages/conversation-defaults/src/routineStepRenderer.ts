@@ -8,9 +8,16 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 
-import { renderPromptTemplate } from "../../../../shared/infra/prompts/promptLoader.js";
+import { renderPromptTemplate } from "./promptTemplate.js";
 
-const REPLY_PROMPT = "chat/routine-step-reply.md";
+export const DEFAULT_ROUTINE_STEP_REPLY_PROMPT = `You are the assistant, guiding the user through a structured routine one step at a
+time. Write your next message to the user by following the step instruction(s)
+below. Acknowledge the request in a friendly manner, then keep it natural, brief, and in the user's language.
+
+Step instruction(s):
+{{instructions}}
+
+Write only the message to the user — no preamble, labels, or quotation marks.`;
 
 const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,
@@ -35,14 +42,21 @@ const instructionsBlock = (step: RoutineStep, steering: SteeringRule[]): string 
  * the wording stays LLM-owned and multilingual.
  */
 export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
-  constructor(private readonly modelGateway: ConversationModelGateway) {}
+  private readonly promptTemplate: string;
+
+  constructor(
+    private readonly modelGateway: ConversationModelGateway,
+    options: { promptTemplate?: string } = {},
+  ) {
+    this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_STEP_REPLY_PROMPT;
+  }
 
   async render(input: {
     step: RoutineStep;
     steering: SteeringRule[];
     turn: TurnContext;
   }): Promise<RenderableTurn> {
-    const systemPrompt = renderPromptTemplate(REPLY_PROMPT, {
+    const systemPrompt = renderPromptTemplate("chat/routine-step-reply.md", this.promptTemplate, {
       instructions: instructionsBlock(input.step, input.steering),
     });
     const { text } = await this.modelGateway.complete({

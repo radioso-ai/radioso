@@ -9,7 +9,7 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 
-import { RoutineNextStepSelector } from "../../src/modules/chat/services/routines/routineNextStepSelector.js";
+import { RoutineNextStepSelector } from "@radioso/conversation-defaults";
 
 const turn: TurnContext = {
   agent: { id: "a", name: "Assistant" },

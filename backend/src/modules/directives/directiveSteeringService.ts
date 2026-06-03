@@ -1,11 +1,11 @@
+import type { DirectiveCatalogRegistry, DirectiveMatcherPort } from "@radioso/conversation-defaults";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import { orderSteeringRules, type SteeringRule } from "../../shared/domain/steeringRule.js";
 
-import type { DirectiveCatalogRegistry } from "./directiveCatalogRegistry.js";
-import type { DirectiveMatcherPort } from "./directiveMatcher.js";
 import {
   directiveToSteeringRule,
   resolveDirectiveRelationships,
+  type Directive,
   type DirectiveMatch,
   type DirectiveOmission,
 } from "./domain.js";
@@ -60,12 +60,22 @@ export class DirectiveSteeringService implements DirectiveSteeringPort {
 
   async steer(input: DirectiveSteerInput): Promise<DirectiveSteeringResult> {
     const turnContext = input.turnContext ?? {};
-    const directives = this.registry.list();
+    const directives = this.listDirectives();
     const candidates = await this.matcher.match({
       turnContext,
       directives,
     });
+    return this.resolveMatches(input, candidates);
+  }
 
+  listDirectives(): Directive[] {
+    return this.registry.list();
+  }
+
+  async resolveMatches(
+    input: DirectiveSteerInput,
+    candidates: DirectiveMatch[],
+  ): Promise<DirectiveSteeringResult> {
     const allowed: DirectiveMatch[] = [];
     const omissions: DirectiveOmission[] = [];
     for (const candidate of candidates) {

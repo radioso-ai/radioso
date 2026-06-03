@@ -591,7 +591,6 @@
       const response = await fetch(new URL(`/api/embed/config/${encodeURIComponent(token)}`, scriptUrl).toString(), {
         method: 'GET',
         mode: 'cors',
-        cache: 'no-store',
       })
       if (!response.ok) {
         return {}

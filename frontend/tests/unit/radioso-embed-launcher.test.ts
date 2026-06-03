@@ -219,6 +219,8 @@ describe('radioso embed launcher', () => {
 
     const iframes = collectElements(body, (element) => element.tagName === 'IFRAME')
     expect(iframes).toHaveLength(1)
+    expect(fetch.mock.calls[0]?.[1]).toMatchObject({ method: 'GET', mode: 'cors' })
+    expect(fetch.mock.calls[0]?.[1]).not.toHaveProperty('cache')
 
     const iframeUrl = new URL(iframes[0].src)
     expect(iframeUrl.origin).toBe('https://app.example.com')

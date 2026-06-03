@@ -28,14 +28,15 @@ jobs:
       group: deploy-docs
       cancel-in-progress: false
     env:
-      FIREBASE_PROJECT: radioso-live
+      FIREBASE_PROJECT: ${{ vars.GCP_PROJECT_ID }}
       GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
 
     steps:
       - name: Require configured GitHub environment variables
         run: |
-          for key in GCP_DEPLOY_SERVICE_ACCOUNT GCP_WORKLOAD_IDENTITY_PROVIDER; do
+          for key in GCP_DEPLOY_SERVICE_ACCOUNT GCP_PROJECT_ID GCP_WORKLOAD_IDENTITY_PROVIDER; do
             if [ -z "${!key}" ]; then
               echo "Missing required GitHub environment variable: $key" >&2
               exit 1

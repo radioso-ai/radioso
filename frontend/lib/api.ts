@@ -23,7 +23,7 @@ export {
   storePublicSessionToken,
 } from './api-client'
 
-export { accountApi, answerFeedbackApi, enterpriseUsageApi, humanContactApi } from './api-account'
+export { accountApi, answerFeedbackApi, enterpriseUsageApi } from './api-account'
 export { authApi } from './api-auth'
 export { chatApi } from './api-chat'
 export { qualityApi } from './api-quality'

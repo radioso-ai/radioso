@@ -46,6 +46,7 @@ import { createWebsiteEmbedApplicationModule } from "./builtIn/websiteEmbedModul
 import { createAgentWizardApplicationModule } from "./builtIn/agentWizardModule.js";
 import { createQualityApplicationModule } from "./builtIn/qualityModule.js";
 import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirectivesModule.js";
+import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineModule.js";
 import {
   createDefaultSkillCatalogRegistry,
   SkillExecutorRegistry,
@@ -79,6 +80,8 @@ export interface ApplicationComposition {
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
   usageEventRecorderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageEventRecorderRegistration"];
   chatIntakeProviderRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["chatIntakeProviderRegistrations"];
+  routineRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["routineRegistrations"];
+  actionHandlerRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["actionHandlerRegistrations"];
   contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
   answerFeedbackHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["answerFeedbackHistoryProviderRegistration"];
   agentSurfaceExtensions: ReturnType<typeof createApplicationExtensionRegistry>["agentSurfaceExtensions"];
@@ -110,6 +113,7 @@ export const createDefaultApplicationComposition = (options: {
     createWebsiteEmbedApplicationModule({ widgetOrigin: options.widgetOrigin }),
     createAgentWizardApplicationModule(),
     createQualityApplicationModule(),
+    createContactRoutineApplicationModule(),
     ...(options.modules ?? []),
   ]);
 
@@ -130,6 +134,8 @@ export const createDefaultApplicationComposition = (options: {
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
     usageEventRecorderRegistration: registry.usageEventRecorderRegistration,
     chatIntakeProviderRegistrations: registry.chatIntakeProviderRegistrations,
+    routineRegistrations: registry.routineRegistrations,
+    actionHandlerRegistrations: registry.actionHandlerRegistrations,
     contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
     answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,
     agentSurfaceExtensions: registry.agentSurfaceExtensions,

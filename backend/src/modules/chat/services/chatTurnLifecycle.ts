@@ -1,7 +1,9 @@
-import type { ConversationTrace } from "@radioso/conversation-contract";
-import type { AuditService } from "../../audit/contracts/index.js";
+import { createHash, randomUUID } from "node:crypto";
+
+import type { ConversationTrace, RoutineActionRequest } from "@radioso/conversation-contract";
+import type { AuditEventInput, AuditService } from "../../audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
-import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
+import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import {
   ActivitySummaryPresenter,
   ActivityTracePresenter,
@@ -38,6 +40,7 @@ import {
   SKILL_INTAKE_TRACE_LEAF,
   capabilitySubTrace,
 } from "./chatTraceLeaves.js";
+import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 
 const DISPATCH_STAGE_ID_PREFIX = "dispatch:";
 
@@ -86,6 +89,27 @@ export interface CompletedAssistantTurn {
   assistantMessageId: string;
 }
 
+/** The narrow slice of the action outbox the turn lifecycle needs (idempotent enqueue). */
+export interface ChatActionOutboxPort {
+  enqueue(input: {
+    type: string;
+    payload: Record<string, unknown>;
+    workspaceId?: string | null;
+    accountId?: string | null;
+    conversationId?: string | null;
+    idempotencyKey?: string | null;
+  }): Promise<{ id: string; duplicate: boolean }>;
+}
+
+// Content-addressed idempotency key so a retried turn that re-emits the same request
+// (same conversation + action type + payload) enqueues it once.
+export const actionIdempotencyKey = (
+  conversationId: string,
+  type: string,
+  payload: Record<string, unknown>,
+): string =>
+  `routine-action:${conversationId}:${type}:${createHash("sha256").update(JSON.stringify(payload)).digest("hex")}`;
+
 const toPresentationSkillTurnOutcome = (presentation: ChatPresentedAnswer): SkillTurnOutcome => ({
   skillName: presentation.skillName,
   outcome: presentation.skillOutcome,
@@ -98,6 +122,45 @@ const toIntakeSkillTurnOutcome = (intakeResult: ChatIntakeResult): SkillTurnOutc
   status: intakeResult.status,
 });
 
+type MessageCreateInput = Parameters<MessageRepositoryPort["create"]>[0];
+
+export interface AssistantTurnPersistencePort {
+  completeAssistantTurn(input: {
+    workspaceId: string;
+    accountId?: string | null;
+    conversationId: string;
+    actions?: RoutineActionRequest[];
+    routineStateTransition?: CapturedRoutineTransition | null;
+    assistantMessage: MessageCreateInput;
+    auditEvent: AuditEventInput;
+  }): Promise<MessageRecord>;
+}
+
+interface AssistantTurnSuccessInput {
+  workspaceId: string;
+  accountId?: string;
+  conversationId: string;
+  userMessageId: string;
+  assistantMessageId: string;
+  skillTurnOutcome: SkillTurnOutcome;
+  answerOutcome?: AssistantTurnOutcome;
+  citations: ChatCitation[];
+  answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
+  priorRewriteContinuityState?: RewriteContinuityState;
+  diagnostics: PreparedSession["retrieval"]["diagnostics"];
+  activityTrace: ActivityTrace;
+  turnTrace?: TurnTraceEnvelope;
+  route: ChatRoute;
+  stream: boolean;
+  skillIntake?: {
+    skillName: string;
+    status: ChatIntakeResult["status"];
+    skillOutcome?: string;
+    stateId?: string;
+  };
+}
+
 export class ChatTurnLifecycle {
   private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
   private readonly activityTracePresenter = new ActivityTracePresenter();
@@ -107,7 +170,33 @@ export class ChatTurnLifecycle {
     private readonly messageRepository: MessageRepositoryPort,
     private readonly auditService: AuditService,
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
+    // Optional: when wired, fire-and-forget routine actions emitted this turn are
+    // enqueued to the outbox at turn completion. Absent leaves turns unchanged.
+    private readonly actionOutbox?: ChatActionOutboxPort,
+    private readonly assistantTurnPersistence?: AssistantTurnPersistencePort,
   ) {}
+
+  /** Enqueue routine-emitted fire-and-forget actions to the outbox (idempotent). */
+  private async enqueueTurnActions(input: {
+    actions: RoutineActionRequest[] | undefined;
+    workspaceId: string;
+    accountId?: string;
+    conversationId: string;
+  }): Promise<void> {
+    if (!this.actionOutbox || !input.actions?.length) {
+      return;
+    }
+    for (const action of input.actions) {
+      await this.actionOutbox.enqueue({
+        type: action.type,
+        payload: action.payload,
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        conversationId: input.conversationId,
+        idempotencyKey: actionIdempotencyKey(input.conversationId, action.type, action.payload),
+      });
+    }
+  }
 
   async completeAssistantTurn(input: {
     workspaceId: string;
@@ -122,6 +211,16 @@ export class ChatTurnLifecycle {
      * retrieval-derived activity trace; it does not change the user-facing reply.
      */
     engineTrace?: ConversationTrace;
+    /** Fire-and-forget actions a routine emitted this turn; enqueued at completion. */
+    actions?: RoutineActionRequest[];
+    /**
+     * Flushes the routine-state transition this turn made. Invoked only after the
+     * actions are enqueued, so the routine stays recoverable (un-advanced) if the
+     * enqueue fails — the turn message, routine advance, and enqueue are then ordered
+     * so the user is never told a request was sent without a durable outbox row.
+     */
+    commitRoutineState?: () => Promise<void>;
+    routineStateTransition?: CapturedRoutineTransition | null;
   }): Promise<CompletedAssistantTurn> {
     const route = getChatTurnRoute(input.session);
     const skillTurnOutcome = toPresentationSkillTurnOutcome(input.presentation);
@@ -160,7 +259,9 @@ export class ChatTurnLifecycle {
         })
       : undefined;
 
-    const assistantMessage = await this.messageRepository.create({
+    const assistantMessageId = randomUUID();
+    const assistantMessageInput: MessageCreateInput = {
+      id: assistantMessageId,
       conversationId: input.session.conversation.id,
       workspaceId: input.workspaceId,
       role: "assistant",
@@ -196,13 +297,13 @@ export class ChatTurnLifecycle {
         // grounded-miss path reclassifies the skill outcome.
         groundingVerdict: input.presentation.grounding,
       },
-    });
-    await this.finalizeAssistantTurn({
+    };
+    const successInput: AssistantTurnSuccessInput = {
       workspaceId: input.workspaceId,
       accountId: input.accountId,
       conversationId: input.session.conversation.id,
       userMessageId: input.session.userMessage.id,
-      assistantMessageId: assistantMessage.id,
+      assistantMessageId,
       skillTurnOutcome,
       answerOutcome: input.presentation.answerOutcome,
       citations: input.presentation.citations ?? [],
@@ -214,7 +315,35 @@ export class ChatTurnLifecycle {
       turnTrace,
       route,
       stream: input.stream,
-    });
+    };
+
+    let assistantMessage: MessageRecord;
+    const successAuditEvent = this.buildAssistantTurnSuccessAuditEvent(successInput);
+    if (this.assistantTurnPersistence) {
+      assistantMessage = await this.assistantTurnPersistence.completeAssistantTurn({
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        conversationId: input.session.conversation.id,
+        actions: input.actions,
+        routineStateTransition: input.routineStateTransition,
+        assistantMessage: assistantMessageInput,
+        auditEvent: successAuditEvent,
+      });
+      this.auditService.logRecorded?.(successAuditEvent);
+      await this.trackAssistantTurnCompleted(successInput);
+    } else {
+      // Fallback for tests and non-DB hosts. Production wires a transaction port so
+      // outbox enqueue, routine state, assistant message, touch, and audit commit together.
+      await this.enqueueTurnActions({
+        actions: input.actions,
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        conversationId: input.session.conversation.id,
+      });
+      await input.commitRoutineState?.();
+      assistantMessage = await this.messageRepository.create(assistantMessageInput);
+      await this.finalizeAssistantTurn(successInput);
+    }
 
     return {
       assistantMessageId: assistantMessage.id,
@@ -400,33 +529,9 @@ export class ChatTurnLifecycle {
     }
   }
 
-  private async finalizeAssistantTurn(input: {
-    workspaceId: string;
-    accountId?: string;
-    conversationId: string;
-    userMessageId: string;
-    assistantMessageId: string;
-    skillTurnOutcome: SkillTurnOutcome;
-    answerOutcome?: AssistantTurnOutcome;
-    citations: ChatCitation[];
-    answerSegments?: AnswerSegment[];
-    suggestions?: ChatSuggestion[];
-    priorRewriteContinuityState?: RewriteContinuityState;
-    diagnostics: PreparedSession["retrieval"]["diagnostics"];
-    activityTrace: ActivityTrace;
-    turnTrace?: TurnTraceEnvelope;
-    route: ChatRoute;
-    stream: boolean;
-    skillIntake?: {
-      skillName: string;
-      status: ChatIntakeResult["status"];
-      skillOutcome?: string;
-      stateId?: string;
-    };
-  }): Promise<void> {
+  private buildAssistantTurnSuccessAuditEvent(input: AssistantTurnSuccessInput): AuditEventInput {
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
-    await this.conversationRepository.touch(input.conversationId, input.workspaceId);
-    await this.auditService.record({
+    return {
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       eventType: "chat.answer",
@@ -465,7 +570,16 @@ export class ChatTurnLifecycle {
         // audit key (which nothing read), so that key is no longer written.
         ...(input.turnTrace ? { turnTrace: input.turnTrace } : {}),
       },
-    });
+    };
+  }
+
+  private async finalizeAssistantTurn(input: AssistantTurnSuccessInput): Promise<void> {
+    await this.conversationRepository.touch(input.conversationId, input.workspaceId);
+    await this.auditService.record(this.buildAssistantTurnSuccessAuditEvent(input));
+    await this.trackAssistantTurnCompleted(input);
+  }
+
+  private async trackAssistantTurnCompleted(input: AssistantTurnSuccessInput): Promise<void> {
     try {
       await this.productAnalyticsService.track({
         eventName: "chat.completed",

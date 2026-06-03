@@ -11,8 +11,8 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 
-export const DEFAULT_ROUTINE_NEXT_STEP_PROMPT = `You are guiding a user through a structured, multi-step routine. Decide which step
-the conversation should move to next, based on what the user just said.
+export const DEFAULT_ROUTINE_NEXT_STEP_PROMPT = `You are guiding a user through a structured, multi-step routine. Decide what should
+happen next, based on what the user just said.
 
 The current step's instruction to the user was:
 {{currentStep}}
@@ -27,15 +27,22 @@ any language — judge by meaning, not by matching words.
 
 Return a JSON object:
 
-{"condition": <the number of the one condition that holds, or null if none holds yet>, "variables": {"<name>": "<value the user provided this turn>"}}
+{"condition": <number or null>, "offTopic": <true or false>, "variables": {"<name>": "<value the user provided this turn>"}}
 
 Rules:
 
-- Return the number of exactly one condition that clearly holds. Return null to stay
-  on the current step (for example, the user has not yet provided what was asked, or
-  asked something unrelated).
-- Put into "variables" only values the user actually provided this turn (for example
-  an email address or a message). Use an empty object {} when there are none.
+- "condition": the number of exactly one condition that clearly holds, or null to stay
+  on the current step (for example, the user has not yet provided what was asked).
+- If a condition says the user declined, cancelled, refused, or wants to stop the
+  routine, choose that condition when the latest user message has that meaning, instead
+  of returning null to re-ask the current step.
+- "offTopic": true when the user's latest message is a *different* question or request
+  that deserves its own answer right now (for example they changed the subject or asked
+  about something unrelated to the current step), instead of trying to provide what the
+  step asked for. Otherwise false. When you return a condition number, "offTopic" must
+  be false.
+- "variables": only values the user actually provided this turn (for example an email
+  address or a message). Use an empty object {} when there are none.
 - Return only the JSON object, with no other text.`;
 
 const renderPromptTemplate = (template: string, values: Record<string, string>): string => {
@@ -61,14 +68,12 @@ const skillResultBlock = (skillResult?: RoutineSkillResult): string => {
 
 interface ParsedDecision {
   condition: number | null;
+  offTopic: boolean;
   variables: Record<string, unknown>;
 }
 
-// Extracts the first balanced { ... } object from the model output (it may wrap the
-// JSON in prose or a code fence). A string-aware balanced scan — not a greedy `{.*}`
-// regex — so trailing prose, a second object, nested braces, and braces *inside a
-// captured value* (e.g. a user message containing "}") don't truncate or capture the
-// wrong span. Structural parsing only — no product vocabulary.
+// Extracts the first balanced { ... } object from the model output. Structural
+// parsing only; no product vocabulary.
 const extractJsonObject = (raw: string): string | null => {
   const start = raw.indexOf("{");
   if (start < 0) {
@@ -106,18 +111,19 @@ const extractJsonObject = (raw: string): string | null => {
 const parseDecision = (raw: string): ParsedDecision => {
   const json = extractJsonObject(raw.trim());
   if (!json) {
-    return { condition: null, variables: {} };
+    return { condition: null, offTopic: false, variables: {} };
   }
   try {
-    const parsed = JSON.parse(json) as { condition?: unknown; variables?: unknown };
+    const parsed = JSON.parse(json) as { condition?: unknown; offTopic?: unknown; variables?: unknown };
     const condition = typeof parsed.condition === "number" ? parsed.condition : null;
+    const offTopic = parsed.offTopic === true;
     const variables =
       parsed.variables && typeof parsed.variables === "object" && !Array.isArray(parsed.variables)
         ? (parsed.variables as Record<string, unknown>)
         : {};
-    return { condition, variables };
+    return { condition, offTopic, variables };
   } catch {
-    return { condition: null, variables: {} };
+    return { condition: null, offTopic: false, variables: {} };
   }
 };
 
@@ -166,14 +172,26 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     });
     const decision = parseDecision(text);
 
-    // Out of range / null → stay on the current step (a re-ask), keeping any captured
-    // variables so partial progress is not lost.
-    if (decision.condition === null || decision.condition < 1 || decision.condition > input.transitions.length) {
-      return { nextStepId: input.currentStep.id, variables: decision.variables };
+    const conditionMatched =
+      decision.condition !== null && decision.condition >= 1 && decision.condition <= input.transitions.length;
+
+    // A matched transition advances regardless of anything else (the user supplied what
+    // the step asked for, possibly alongside a question).
+    if (conditionMatched) {
+      return {
+        nextStepId: input.transitions[decision.condition! - 1]!.to,
+        variables: decision.variables,
+      };
     }
-    return {
-      nextStepId: input.transitions[decision.condition - 1]!.to,
-      variables: decision.variables,
-    };
+
+    // No transition matched, but the user asked something unrelated → yield the turn so
+    // normal answering handles it; the routine stays parked here to resume later.
+    if (decision.offTopic) {
+      return { nextStepId: input.currentStep.id, yieldTurn: true };
+    }
+
+    // Otherwise the user is still on this step but hasn't satisfied it → stay (a re-ask),
+    // keeping any captured variables so partial progress is not lost.
+    return { nextStepId: input.currentStep.id, variables: decision.variables };
   }
 }

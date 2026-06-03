@@ -69,6 +69,20 @@ describe("RoutineNextStepSelector", () => {
     expect(decision.nextStepId).toBe("ask_email");
   });
 
+  it("yields the turn (instead of re-asking) when the user asks something off-topic", async () => {
+    const selector = new RoutineNextStepSelector(gateway('{"condition": null, "offTopic": true, "variables": {}}'));
+    const decision = await selector.select({ routine, state, currentStep, transitions, turn });
+    expect(decision).toEqual({ nextStepId: "ask_email", yieldTurn: true });
+  });
+
+  it("advances rather than yielding when a condition also matched (the answer wins)", async () => {
+    const selector = new RoutineNextStepSelector(
+      gateway('{"condition": 1, "offTopic": true, "variables": {"email": "a@b.c"}}'),
+    );
+    const decision = await selector.select({ routine, state, currentStep, transitions, turn });
+    expect(decision).toEqual({ nextStepId: "ask_message", variables: { email: "a@b.c" } });
+  });
+
   it("stays put without calling the model when there are no outgoing transitions", async () => {
     const gw = gateway("{}");
     const decision = await new RoutineNextStepSelector(gw).select({ routine, state, currentStep, transitions: [], turn });
@@ -84,6 +98,8 @@ describe("RoutineNextStepSelector", () => {
     });
     const call = vi.mocked(gw.complete).mock.calls[0]![0];
     expect(call.systemPrompt).toContain("a valid email was provided");
+    expect(call.systemPrompt).toContain("declined, cancelled, refused, or wants to stop");
+    expect(call.systemPrompt).toContain("deserves its own answer");
     expect(call.systemPrompt).toContain("completed");
     expect(call.systemPrompt).toContain("requestId");
     expect(call.messages.at(-1)).toEqual({ role: "user", content: "alex@example.com" });

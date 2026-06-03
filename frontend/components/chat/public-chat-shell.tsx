@@ -453,8 +453,10 @@ function PublicChatContent({
   const resolvedAvatarUrl = assistantAvatarUrl ?? avatarUrl
   const resolvedThemeOverrides = assistantTheme ?? themeOverrides
   const theme = getWebsiteEmbedTheme(resolvedThemeOverrides)
+  // The contact button follows the backend-advertised intake action, which the host
+  // surfaces only when the agent enabled contact requests. No edition gate here: the
+  // advertisement is the gate.
   const contactAvailable =
-    editionController.canUseHumanContact() &&
     intakeActions.some((action) => action.skillName === HUMAN_CONTACT_SKILL_NAME)
   const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages
   const clearDisabled = isLoading || isHydrating || isLoadingOlderMessages

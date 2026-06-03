@@ -12,35 +12,28 @@ export const editionController = {
 
   canUseEnterpriseUsageLimits: () => isEnterprise,
   canHideAssistantBranding: () => isEnterprise,
-  canUseHumanContact: () => isEnterprise,
   canUseAssistantAnswerFeedback: () => true,
   canUseAgentCreationExtensions: () => true,
-
-  shouldLoadHumanContactSettings: (mode: 'workspace' | 'assistant' | 'channels') =>
-    isEnterprise && mode === 'assistant',
 
   shouldRenderWebsiteEmbedSettings: (mode: 'workspace' | 'assistant' | 'channels') =>
     mode === 'channels',
 
   getActivityDescription: () =>
-    isEnterprise
-      ? 'Review past chats, searches, and contact requests. Retrieval diagnostics live here.'
-      : 'Review past chats and searches. Retrieval diagnostics live here.',
+    'Review past chats and searches. Retrieval diagnostics live here.',
 
   getActivityFilterOptions: () =>
     [
       { value: 'all' as const, label: 'All' },
       { value: 'chat' as const, label: 'Chats' },
       { value: 'search' as const, label: 'Searches' },
-      ...(isEnterprise ? [{ value: 'contact' as const, label: 'Human' }] : []),
     ],
 
   normalizeHistoryFilter: (filter: HistoryFilter): HistoryFilter =>
-    !isEnterprise && filter === 'contact' ? 'all' : filter,
+    filter === 'contact' ? 'all' : filter,
 
   normalizeHistorySelection: <T extends { kind: string } | null>(item: T): T | null =>
-    !isEnterprise && item?.kind === 'contact' ? null : item,
+    item?.kind === 'contact' ? null : item,
 
   filterActivityItems: <T extends { kind: string }>(items: readonly T[]): T[] =>
-    isEnterprise ? [...items] : items.filter((item) => item.kind !== 'contact'),
+    items.filter((item) => item.kind !== 'contact'),
 }

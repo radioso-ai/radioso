@@ -7,10 +7,13 @@ import type { MessageRecord } from "../../src/db/repositories/messageRepository.
 import type { AgentRecord } from "../../src/modules/agents/public.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import {
+  attemptRoutineTurnWithConversationEngine,
   type RunPreparedChatTurnStreamWithConversationEngineEvent,
   runPreparedChatTurnStreamWithConversationEngine,
   runPreparedChatTurnWithConversationEngine,
 } from "../../src/modules/chat/services/conversationEngineChatTurn.js";
+import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
+import type { ProcessTurnResult } from "@radioso/conversation-contract";
 import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import {
   RETRIEVAL_OUTCOME_KIND,
@@ -55,6 +58,7 @@ const agent = (): AgentRecord => ({
   suggestedQuestionsEnabled: true,
   assistantLinkUtmEnabled: true,
   citationDisplayEnabled: true,
+  contactRequestsEnabled: false,
   retrievalEnabled: true,
   sourceScope: { mode: "all" },
   logo: null,
@@ -127,12 +131,64 @@ const session = (): PreparedSession => {
   };
 };
 
+describe("attemptRoutineTurnWithConversationEngine", () => {
+  const routinePorts = {
+    routineStore: { loadActive: async () => null, save: async () => {}, clear: async () => {} },
+    routineRunner: { resume: async () => ({ response: { answer: "" }, nextState: null }) },
+    routineActivator: { activate: async () => null },
+    presentRoutineReply: (response: { answer: string }): ChatPresentedAnswer =>
+      ({ answer: response.answer, skillName: "routine", skillOutcome: "routine", skillStatus: "completed" }) as ChatPresentedAnswer,
+  };
+  const engineWith = (result: ProcessTurnResult | null): ConversationEngine =>
+    ({
+      attemptRoutine: async () => result,
+      processTurn: async () => {
+        throw new Error("processTurn should not run when attempting a routine");
+      },
+      // eslint-disable-next-line require-yield
+      processTurnStream: async function* () {
+        throw new Error("processTurnStream should not run when attempting a routine");
+      },
+    }) as ConversationEngine;
+
+  it("presents the routine reply when the engine claims the turn", async () => {
+    const result = {
+      sessionId: "conv_1",
+      events: [],
+      decision: { selected: [], reason: "routine_activated:contact.request" },
+      outcomes: [],
+      response: { answer: "What is your email?" },
+      trace: { traceId: "t", startedAt: "x", stages: [] },
+      actions: [{ type: "contact.send", payload: { email: "a@b.c" } }],
+    } as unknown as ProcessTurnResult;
+    const outcome = await attemptRoutineTurnWithConversationEngine({
+      engine: engineWith(result),
+      session: session(),
+      ...routinePorts,
+    });
+    expect(outcome?.presentation.answer).toBe("What is your email?");
+    expect(outcome?.result.actions).toEqual([{ type: "contact.send", payload: { email: "a@b.c" } }]);
+  });
+
+  it("returns null when no routine claims the turn (so the host falls through to grounding)", async () => {
+    const outcome = await attemptRoutineTurnWithConversationEngine({
+      engine: engineWith(null),
+      session: session(),
+      ...routinePorts,
+    });
+    expect(outcome).toBeNull();
+  });
+});
+
 // A fake engine that drives the adapter's ports the way the real engine does:
 // select, dispatch the selected skill, then compose. Records what was dispatched.
 const drivingEngine = (): { engine: ConversationEngine; dispatched: string[]; selectorCalls: number[] } => {
   const dispatched: string[] = [];
   const selectorCalls: number[] = [];
   const engine: ConversationEngine = {
+    async attemptRoutine() {
+      return null;
+    },
     async processTurn(input) {
       const history = await input.stores.loadHistory({ sessionId: input.sessionId });
       const turn = {

@@ -13,6 +13,7 @@ import { EmailVerificationService } from "../../src/modules/auth/services/emailV
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { ActionDispatchWorker } from "../../src/modules/chat/services/actions/actionDispatchWorker.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
@@ -685,6 +686,11 @@ export const createTestDependencies = (overrides: {
     agentService,
   );
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
+  // The action outbox drain never runs in tests; a no-op dispatcher satisfies the shape.
+  const actionDispatchWorker = new ActionDispatchWorker(
+    { dispatchPending: async () => ({ dispatched: 0, retried: 0, failed: 0 }) },
+    { logger },
+  );
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
   const retrievalAnswerService = new RetrievalAnswerService({
@@ -788,6 +794,7 @@ export const createTestDependencies = (overrides: {
     documentDeletionService,
     documentStorage,
     chatService,
+    actionDispatchWorker,
     chatBootstrapService,
     chatHistoryService,
     assistantChatService,

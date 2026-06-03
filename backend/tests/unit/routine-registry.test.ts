@@ -6,6 +6,7 @@ import { RoutineRegistry } from "@radioso/conversation-defaults";
 
 const routine = (id: string): Routine => ({ id, rootStepId: "s", steps: [], transitions: [] });
 const turn = { sessionId: "conv_1", inputEvent: { kind: "message", content: "hi" } } as unknown as TurnContext;
+const modelGateway = { complete: vi.fn(async () => ({ text: "" })) };
 
 describe("RoutineRegistry", () => {
   it("exposes the registered routines for the runner", () => {
@@ -24,21 +25,21 @@ describe("RoutineRegistry", () => {
       { routine: routine("b"), activates: vi.fn(async () => ({ variables: { email: "x@y.z" } })) },
     ]);
 
-    const decision = await registry.activator().activate({ turn });
+    const decision = await registry.activator(modelGateway).activate({ turn });
 
     expect(decision).toEqual({ routineId: "b", variables: { email: "x@y.z" } });
-    expect(aActivates).toHaveBeenCalledWith({ turn });
+    expect(aActivates).toHaveBeenCalledWith({ turn, modelGateway });
   });
 
   it("declines when no registration claims the turn", async () => {
     const registry = new RoutineRegistry([{ routine: routine("a"), activates: vi.fn(async () => null) }]);
-    expect(await registry.activator().activate({ turn })).toBeNull();
+    expect(await registry.activator(modelGateway).activate({ turn })).toBeNull();
   });
 
   it("is empty (and activates nothing) with no registrations", async () => {
     const registry = new RoutineRegistry([]);
     expect(registry.isEmpty).toBe(true);
     expect(registry.routines).toEqual([]);
-    expect(await registry.activator().activate({ turn })).toBeNull();
+    expect(await registry.activator(modelGateway).activate({ turn })).toBeNull();
   });
 });

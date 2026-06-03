@@ -299,7 +299,7 @@ const encodeAction = (skillName: string, outcome: string) => `${skillName}:${out
 const ACTION_GROUP_META: Record<SkillOwner | 'other', { id: string; label: string; order: number }> = {
   assistant: { id: 'action-assistant', label: 'Assistant response', order: 0 },
   retrieval: { id: 'action-retrieval', label: 'Retrieval outcome', order: 1 },
-  contact: { id: 'action-contact', label: 'Contact handoff', order: 2 },
+  contact: { id: 'action-contact', label: 'Contact request', order: 2 },
   documents: { id: 'action-documents', label: 'Document action', order: 3 },
   mcp: { id: 'action-mcp', label: 'MCP action', order: 4 },
   platform: { id: 'action-platform', label: 'Platform action', order: 5 },

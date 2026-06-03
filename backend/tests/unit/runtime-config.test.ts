@@ -125,6 +125,15 @@ describe("runtime configuration", () => {
     expect(entrypoint).toContain("backend/node_modules/@radioso/conversation-engine");
   });
 
+  it("clears incomplete frontend Next dev caches with missing vendor chunks", async () => {
+    const entrypoint = await readFile(new URL("../../../infra/frontend.dev.entrypoint.sh", import.meta.url), "utf8");
+
+    expect(entrypoint).toContain("find frontend/.next/dev/server/app");
+    expect(entrypoint).toContain("vendor-chunks/[^\",]+");
+    expect(entrypoint).toContain("missing server/$missing_vendor_chunk.js");
+    expect(entrypoint).toContain("Restarting frontend Next.js dev server after incomplete cache.");
+  });
+
   it("provides default observability configuration without extra vendor settings", () => {
     const env = getEnv({
       ...baseEnv,

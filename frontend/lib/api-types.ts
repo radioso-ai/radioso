@@ -44,6 +44,9 @@ export type AssistantBehaviorSettings = Pick<
 > & {
   assistantLinkUtmEnabled: boolean
   citationDisplayEnabled: boolean
+  // Per-agent "contact a human" capability. Only meaningful in the per-agent
+  // (assistant) settings; the workspace-level mapping leaves it undefined.
+  contactRequestsEnabled?: boolean
   theme: WebsiteEmbedThemeSettings
   branding?: AgentBrandingSettings
   sourceScope?: AgentSourceScope
@@ -189,33 +192,6 @@ export type AnswerSegment = ApiSchemas['AnswerSegment']
 export type ChatSuggestionKind = ApiSchemas['ChatSuggestion']['kind']
 export type ChatSuggestion = Omit<ApiSchemas['ChatSuggestion'], 'kind'> & {
   kind?: ChatSuggestionKind
-}
-
-export interface HumanContactAvailability {
-  enabled: boolean
-  configured: boolean
-  emailEnabled?: boolean
-  defaultEmail?: string | null
-  defaultEmails?: string[]
-  webhookEnabled?: boolean
-  webhookUrl?: string | null
-  signingSecretConfigured?: boolean
-  updatedAt?: string | null
-}
-
-export interface HumanContactSettingsUpdate {
-  enabled: boolean
-  emailEnabled?: boolean
-  defaultEmail?: string | null
-  defaultEmails?: string[] | null
-  webhookEnabled?: boolean
-  webhookUrl?: string | null
-  signingSecret?: string | null
-  rotateSigningSecret?: boolean
-}
-
-export interface HumanContactSigningSecretResponse {
-  signingSecret: string | null
 }
 
 export type ActivitySummary = ApiSchemas['ActivitySummary']
@@ -520,6 +496,7 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
   customInstruction: agent.customInstruction,
   assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
   citationDisplayEnabled: agent.citationDisplayEnabled,
+  contactRequestsEnabled: agent.contactRequestsEnabled,
   theme: agent.theme,
   branding: agent.branding,
   sourceScope: agent.sourceScope,

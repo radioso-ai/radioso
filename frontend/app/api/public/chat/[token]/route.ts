@@ -7,6 +7,42 @@ const BACKEND_BASE = process.env.BACKEND_INTERNAL_URL ?? 'http://localhost:8080'
 const ANONYMOUS_SESSION_HEADER = 'x-radioso-anonymous-session'
 const PUBLIC_SESSION_HEADER = 'x-radioso-public-session'
 
+// Allow headless callers on approved origins (e.g. the marketing site) to reach the
+// public chat endpoint cross-origin, mirroring the embed config/session routes. The
+// origin is only reflected for successful upstream responses; the backend remains the
+// authority on which origins a token permits.
+const CORS_HEADERS = {
+  'Access-Control-Allow-Methods': 'OPTIONS, POST',
+  'Access-Control-Allow-Headers': `Content-Type, ${PUBLIC_SESSION_HEADER}, ${ANONYMOUS_SESSION_HEADER}`,
+  Vary: 'Origin',
+}
+
+const withCorsHeaders = (
+  origin: string | null,
+  headers?: HeadersInit,
+  options: { allowOrigin?: boolean } = {},
+) => {
+  const nextHeaders = new Headers(headers)
+  Object.entries(CORS_HEADERS).forEach(([key, value]) => nextHeaders.set(key, value))
+  const allowOrigin = options.allowOrigin ?? true
+  if (origin && allowOrigin) {
+    nextHeaders.set('Access-Control-Allow-Origin', origin)
+  }
+  return nextHeaders
+}
+
+const resolveOrigin = (value: string | null) => {
+  if (!value) {
+    return null
+  }
+
+  try {
+    return new URL(value).origin
+  } catch {
+    return null
+  }
+}
+
 type PublicChatRequest = components['schemas']['PublicChatRequest']
 
 type PublicChatProxyRequestBody = Partial<PublicChatRequest> & {
@@ -14,11 +50,20 @@ type PublicChatProxyRequestBody = Partial<PublicChatRequest> & {
   bootstrapGreeting?: boolean
 }
 
+export async function OPTIONS(request: Request) {
+  const origin = resolveOrigin(request.headers.get('origin'))
+  return new Response(null, {
+    status: 204,
+    headers: withCorsHeaders(origin),
+  })
+}
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ token: string }> },
 ) {
   const { token } = await context.params
+  const requestOrigin = resolveOrigin(request.headers.get('origin'))
   const cookie = request.headers.get('cookie')
   const anonymousSession = request.headers.get(ANONYMOUS_SESSION_HEADER)
   const publicSession = request.headers.get(PUBLIC_SESSION_HEADER)
@@ -48,11 +93,15 @@ export async function POST(
       cache: 'no-store',
     })
 
-    const headers = new Headers({
-      'Content-Type': upstream.headers.get('content-type') ?? 'application/json',
-      'Cache-Control': upstream.headers.get('cache-control') ?? 'no-cache',
-      'X-Accel-Buffering': upstream.headers.get('x-accel-buffering') ?? 'no',
-    })
+    const headers = withCorsHeaders(
+      requestOrigin,
+      {
+        'Content-Type': upstream.headers.get('content-type') ?? 'application/json',
+        'Cache-Control': upstream.headers.get('cache-control') ?? 'no-cache',
+        'X-Accel-Buffering': upstream.headers.get('x-accel-buffering') ?? 'no',
+      },
+      { allowOrigin: upstream.ok },
+    )
 
     const anonymousSessionResponse = upstream.headers.get('x-radioso-anonymous-session')
     if (anonymousSessionResponse) {
@@ -81,7 +130,7 @@ export async function POST(
           message,
         },
       },
-      { status: 503 },
+      { status: 503, headers: withCorsHeaders(requestOrigin) },
     )
   }
 }

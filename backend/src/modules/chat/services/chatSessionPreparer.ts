@@ -20,11 +20,7 @@ import type { AssistantPageContext } from "../types/assistantApi.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
-import {
-  noopDirectiveSteering,
-  type DirectiveSteeringPort,
-  type DirectiveSteeringResult,
-} from "../../directives/public.js";
+import type { DirectiveSteeringResult } from "../../directives/public.js";
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -81,7 +77,6 @@ export class ChatSessionPreparer {
     private readonly auditService: AuditService,
     private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly agentService?: Pick<AgentService, "resolve">,
-    private readonly directiveSteering: DirectiveSteeringPort = noopDirectiveSteering,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -142,8 +137,6 @@ export class ChatSessionPreparer {
           ...this.stagedSpineFor(directOnlyTurn.retrieval),
         });
 
-    const directiveSteering = await this.resolveDirectiveSteering(input, turnRoute);
-
     return {
       agent,
       conversation: persistedConversation,
@@ -153,7 +146,6 @@ export class ChatSessionPreparer {
       userMessage,
       pageContext: input.pageContext ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
-      directiveSteering,
       ...this.stagedSpineFor(retrieval),
     };
   }
@@ -183,7 +175,6 @@ export class ChatSessionPreparer {
       ...session,
       retrieval,
       turnRoute,
-      directiveSteering: await this.resolveDirectiveSteering(input, turnRoute),
       ...this.stagedSpineFor(retrieval),
     };
   }
@@ -203,7 +194,6 @@ export class ChatSessionPreparer {
         ...session,
         retrieval,
         turnRoute,
-        directiveSteering: await this.resolveDirectiveSteering(input, turnRoute),
         ...this.stagedSpineFor(retrieval),
       };
     }
@@ -224,19 +214,8 @@ export class ChatSessionPreparer {
       ...session,
       retrieval,
       turnRoute: CHAT_TURN_ROUTE.SOCIAL_ONLY,
-      directiveSteering: await this.resolveDirectiveSteering(input, CHAT_TURN_ROUTE.SOCIAL_ONLY),
       ...this.stagedSpineFor(retrieval),
     };
-  }
-
-  private async resolveDirectiveSteering(
-    input: PrepareChatSessionInput,
-    turnRoute: ChatTurnRoute,
-  ): Promise<DirectiveSteeringResult> {
-    return this.directiveSteering.steer({
-      workspaceId: input.workspaceId,
-      turnContext: { query: input.query, route: turnRoute },
-    });
   }
 
   private buildPipelineInput(

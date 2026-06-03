@@ -14,6 +14,7 @@ import {
   createChatProcessTurnInput,
   createChatProcessTurnStreamInput,
 } from "./conversationProcessTurnInput.js";
+import type { RouteScopedDirectiveRuntime } from "./routeScopedDirectiveSteering.js";
 import {
   buildTurnRendererRegistry,
   getUnstreamedFinalAnswerRemainder,
@@ -30,6 +31,8 @@ export interface RunPreparedChatTurnWithConversationEngineInput {
   turnSkillSelector: ChatTurnSkillSelector;
   /** The registered turn skills the engine selects, dispatches, and renders. */
   turnSkills: TurnSkill[];
+  /** Route-scoped directive catalog + matcher used by the engine's directive port. */
+  directiveRuntime?: RouteScopedDirectiveRuntime;
   query: string;
   userExpectedLocale?: string | null;
   accountId?: string;
@@ -84,18 +87,13 @@ export const runPreparedChatTurnWithConversationEngine = async (
   let rendered: ChatPresentedAnswer | null = null;
   const skillsByName = new Map(input.turnSkills.map((skill) => [skill.definition.name, skill]));
   const renderers = buildTurnRendererRegistry(input.turnSkills);
-  // The selection decision for this prepared turn, resolved through the shared seam
-  // the host streaming path also uses (so streamed and non-streamed turns select
-  // identically). Intake candidates were already resolved by ChatService before the
-  // engine runs, and retrieval-vs-direct is resolved during session prep, so the
-  // seam picks whichever registered skill claims this turn.
-  const { decision } = input.turnSkillSelector.select(input.session);
-
   const processTurnInput = createChatProcessTurnInput({
     session: input.session,
     skills: input.turnSkills.map((skill) => skill.definition),
+    directiveRuntime: input.directiveRuntime,
     selector: {
       async select() {
+        const { decision } = input.turnSkillSelector.select(input.session);
         return decision;
       },
     },
@@ -136,14 +134,15 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
   input: RunPreparedChatTurnWithConversationEngineInput,
 ): AsyncIterable<RunPreparedChatTurnStreamWithConversationEngineEvent> {
   const skillsByName = new Map(input.turnSkills.map((skill) => [skill.definition.name, skill]));
-  const { decision } = input.turnSkillSelector.select(input.session);
   const streamState: { result?: TurnStreamResult } = {};
 
   const processTurnInput = createChatProcessTurnStreamInput({
     session: input.session,
     skills: input.turnSkills.map((skill) => skill.definition),
+    directiveRuntime: input.directiveRuntime,
     selector: {
       async select() {
+        const { decision } = input.turnSkillSelector.select(input.session);
         return decision;
       },
     },

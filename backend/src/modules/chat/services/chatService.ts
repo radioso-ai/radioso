@@ -36,7 +36,10 @@ import {
   runPreparedChatTurnWithConversationEngine,
 } from "./conversationEngineChatTurn.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
-import { noopDirectiveSteering, type DirectiveSteeringPort } from "../../directives/public.js";
+import {
+  noopRouteScopedDirectiveRuntime,
+  type RouteScopedDirectiveRuntime,
+} from "./routeScopedDirectiveSteering.js";
 import {
   type TurnSkill,
   type TurnStreamSuggestions,
@@ -262,7 +265,7 @@ export interface ChatServiceOptions {
   usageLimitPolicy?: UsageLimitPolicy;
   agentService?: Pick<AgentService, "resolve">;
   chatIntakeProvider?: ChatIntakeProviderPort;
-  directiveSteering?: DirectiveSteeringPort;
+  directiveSteering?: RouteScopedDirectiveRuntime;
   selectionStrategy?: TurnSelectionStrategy;
   /** The reusable conversation engine drives every chat turn; composition always wires it. */
   conversationEngine: ConversationEngine;
@@ -287,6 +290,7 @@ export class ChatService {
   private readonly chatTurnLifecycle: ChatTurnLifecycle;
   private readonly turnSkills: TurnSkill[];
   private readonly turnSkillSelector: ChatTurnSkillSelector;
+  private readonly directiveRuntime: RouteScopedDirectiveRuntime;
   private readonly answerSupport = new ChatAnswerSupport();
   private readonly routineStore?: ConversationRoutineStore;
   private readonly routineProvider?: ChatRoutineProvider;
@@ -304,7 +308,7 @@ export class ChatService {
       usageLimitPolicy = new NoopUsageLimitPolicy(),
       agentService,
       chatIntakeProvider = new NoopChatIntakeProvider(),
-      directiveSteering = noopDirectiveSteering,
+      directiveSteering = noopRouteScopedDirectiveRuntime,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       conversationEngine,
       actionOutbox,
@@ -320,6 +324,7 @@ export class ChatService {
     this.chatIntakeProvider = chatIntakeProvider;
     this.selectionStrategy = selectionStrategy;
     this.conversationEngine = conversationEngine;
+    this.directiveRuntime = directiveSteering;
     this.chatAnswerPresenter = turnRuntime.chatAnswerPresenter;
     this.turnSkills = turnRuntime.turnSkills;
     this.chatTurnLifecycle = new ChatTurnLifecycle(
@@ -337,7 +342,6 @@ export class ChatService {
       auditService,
       workspaceRepository,
       agentService,
-      directiveSteering,
     );
     // One selection seam shared by the engine turn and the host streaming path, so
     // streamed and non-streamed turns resolve the terminal skill identically.
@@ -408,6 +412,7 @@ export class ChatService {
       session,
       turnSkillSelector: this.turnSkillSelector,
       turnSkills: this.turnSkills,
+      directiveRuntime: this.directiveRuntime,
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
@@ -424,6 +429,7 @@ export class ChatService {
       session,
       turnSkillSelector: this.turnSkillSelector,
       turnSkills: this.turnSkills,
+      directiveRuntime: this.directiveRuntime,
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,

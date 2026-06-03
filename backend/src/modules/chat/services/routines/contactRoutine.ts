@@ -30,7 +30,7 @@ export const contactRoutine: Routine = {
     { id: "ask_email", kind: "chat", action: "Ask the user for the email address where they can be reached." },
     { id: "ask_message", kind: "chat", action: "Ask the user for the message they would like to send." },
     { id: "send", kind: "action", actionType: CONTACT_SEND_ACTION_TYPE },
-    { id: "done", kind: "terminal", action: "Confirm their request was sent and that someone will follow up." },
+    { id: "done", kind: "terminal", action: "Confirm their request was sent and that someone will follow up. Ask what you can help with next." },
     { id: "cancelled", kind: "terminal", action: "Acknowledge that the contact request was cancelled and that they do not need to provide anything else." },
   ],
   transitions: [

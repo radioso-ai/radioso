@@ -5,9 +5,12 @@ import type {
 
 /** The context a handler receives alongside the action payload. */
 export interface ActionHandlerContext {
+  requestId: string;
   workspaceId: string | null;
   accountId: string | null;
   conversationId: string | null;
+  idempotencyKey: string | null;
+  attempt: number;
 }
 
 /**
@@ -121,9 +124,12 @@ export class ActionDispatcher {
         await handler.handle({
           payload: request.payload,
           context: {
+            requestId: request.id,
             workspaceId: request.workspaceId,
             accountId: request.accountId,
             conversationId: request.conversationId,
+            idempotencyKey: request.idempotencyKey,
+            attempt: request.attempts,
           },
         });
         await this.outbox.markDispatched(request.id, request.attempts);

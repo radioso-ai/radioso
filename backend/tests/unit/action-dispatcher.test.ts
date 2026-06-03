@@ -64,7 +64,14 @@ describe("ActionDispatcher", () => {
     expect(store.claimPending).toHaveBeenCalledWith(20, 300);
     expect(handle).toHaveBeenCalledWith({
       payload: { email: "x@y.z" },
-      context: { workspaceId: "ws_1", accountId: null, conversationId: "conv_1" },
+      context: {
+        requestId: "r1",
+        workspaceId: "ws_1",
+        accountId: null,
+        conversationId: "conv_1",
+        idempotencyKey: "k1",
+        attempt: 1,
+      },
     });
     expect(store.markDispatched).toHaveBeenCalledWith("r1", 1);
     expect(store.recordFailure).not.toHaveBeenCalled();

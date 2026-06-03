@@ -6,7 +6,14 @@ import {
   type ContactNotificationMailer,
 } from "../../src/modules/chat/services/actions/contactSendActionHandler.js";
 
-const context = { workspaceId: "ws_1", accountId: null, conversationId: "conv_1" };
+const context = {
+  requestId: "request_1",
+  workspaceId: "ws_1",
+  accountId: null,
+  conversationId: "conv_1",
+  idempotencyKey: "routine-action:conv_1:contact.send:hash",
+  attempt: 1,
+};
 
 type SentMessage = Parameters<ContactNotificationMailer["send"]>[0];
 
@@ -28,6 +35,7 @@ describe("ContactSendActionHandler", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.to).toBe("owner@business.example");
     expect(sent[0]!.replyTo).toBe("alex@example.com");
+    expect(sent[0]!.idempotencyKey).toBe("routine-action:conv_1:contact.send:hash");
     expect(sent[0]!.text).toContain("Alex");
     expect(sent[0]!.text).toContain("alex@example.com");
     expect(sent[0]!.text).toContain("Please call me about pricing.");
@@ -66,7 +74,7 @@ describe("WorkspaceOwnerContactRecipientResolver", () => {
     const result = await resolver([
       { role: "member", email: "m@x.com" },
       { role: "owner", email: "owner@x.com" },
-    ]).resolve({ workspaceId: "ws_1", accountId: null, conversationId: "c" });
+    ]).resolve({ ...context, workspaceId: "ws_1", conversationId: "c" });
     expect(result).toBe("owner@x.com");
   });
 
@@ -74,24 +82,24 @@ describe("WorkspaceOwnerContactRecipientResolver", () => {
     const result = await resolver([
       { role: "member", email: "m@x.com" },
       { role: "admin", email: "admin@x.com" },
-    ]).resolve({ workspaceId: "ws_1", accountId: null, conversationId: "c" });
+    ]).resolve({ ...context, workspaceId: "ws_1", conversationId: "c" });
     expect(result).toBe("admin@x.com");
   });
 
   it("returns null when no workspaceId, no workspace, or no owner/admin", async () => {
     expect(
-      await resolver([]).resolve({ workspaceId: null, accountId: null, conversationId: "c" }),
+      await resolver([]).resolve({ ...context, workspaceId: null, conversationId: "c" }),
     ).toBeNull();
     expect(
       await new WorkspaceOwnerContactRecipientResolver(
         { findById: async () => null },
         { listActiveByAccount: async () => [] },
-      ).resolve({ workspaceId: "ws_1", accountId: null, conversationId: "c" }),
+      ).resolve({ ...context, workspaceId: "ws_1", conversationId: "c" }),
     ).toBeNull();
     expect(
       await resolver([{ role: "member", email: "m@x.com" }]).resolve({
+        ...context,
         workspaceId: "ws_1",
-        accountId: null,
         conversationId: "c",
       }),
     ).toBeNull();

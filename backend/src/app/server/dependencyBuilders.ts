@@ -24,6 +24,7 @@ import { WebsiteCrawlJobRepository } from "../../db/repositories/websiteCrawlJob
 import { WorkspaceGrantRepository } from "../../db/repositories/workspaceGrantRepository.js";
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
+import { PostgresAssistantTurnPersistence } from "../../modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { AccountAccessService, AccountInvitationService } from "../../modules/account/public.js";
 import { AgentService } from "../../modules/agents/public.js";
 import { AuditService } from "../../modules/audit/composition.js";
@@ -863,6 +864,7 @@ export const buildChatServices = (input: {
     // Turn-emitted action intents land here, persisted to the outbox and
     // dispatched out of band by `actionDispatchWorker` in the worker process.
     actionOutbox,
+    assistantTurnPersistence: new PostgresAssistantTurnPersistence(input.database),
     // Routine resume/activate per turn — present only when routines are registered.
     routineStore: new RoutineStateRepository(input.database),
     routineProvider,

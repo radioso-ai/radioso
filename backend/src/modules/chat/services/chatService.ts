@@ -51,11 +51,18 @@ import type {
   ChatAnswerPresenter,
   ChatPresentedAnswer,
 } from "./chatAnswerPresenter.js";
-import { ChatTurnLifecycle, type ChatActionOutboxPort } from "./chatTurnLifecycle.js";
+import {
+  ChatTurnLifecycle,
+  type AssistantTurnPersistencePort,
+  type ChatActionOutboxPort,
+} from "./chatTurnLifecycle.js";
 import { BlankChatAnswerError } from "./chatAnswerErrors.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import { RoutineChatModelGateway } from "./routines/routineChatModelGateway.js";
-import { DeferredRoutineStore } from "./routines/deferredRoutineStore.js";
+import {
+  DeferredRoutineStore,
+  type CapturedRoutineTransition,
+} from "./routines/deferredRoutineStore.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -261,6 +268,7 @@ export interface ChatServiceOptions {
   conversationEngine: ConversationEngine;
   /** Optional: when wired, routine-emitted fire-and-forget actions are enqueued to the outbox. */
   actionOutbox?: ChatActionOutboxPort;
+  assistantTurnPersistence?: AssistantTurnPersistencePort;
   /** Optional: durable per-session routine state store (with {@link routineProvider}). */
   routineStore?: ConversationRoutineStore;
   /** Optional: registered routines + activation. Empty/absent leaves turns unchanged. */
@@ -300,6 +308,7 @@ export class ChatService {
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       conversationEngine,
       actionOutbox,
+      assistantTurnPersistence,
       routineStore,
       routineProvider,
     } = options;
@@ -319,6 +328,7 @@ export class ChatService {
       auditService,
       productAnalyticsService,
       actionOutbox,
+      assistantTurnPersistence,
     );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
@@ -350,6 +360,7 @@ export class ChatService {
     presentation: ChatPresentedAnswer;
     engineTrace?: ConversationTrace;
     actions?: RoutineActionRequest[];
+    routineStateTransition?: CapturedRoutineTransition | null;
     // Flushes the routine-state transition the engine made this turn. Called by the
     // lifecycle only after the turn's actions are durably enqueued, so a crash before
     // enqueue leaves the routine recoverable rather than advanced past a lost action.
@@ -378,6 +389,7 @@ export class ChatService {
       presentation: outcome.presentation,
       engineTrace: outcome.result.trace,
       actions: outcome.result.actions,
+      routineStateTransition: deferredStore.getTransition(),
       commitRoutineState: () => deferredStore.commit(),
     };
   }
@@ -499,6 +511,7 @@ export class ChatService {
           stream: input.stream,
           engineTrace: routineTurn.engineTrace,
           actions: routineTurn.actions,
+          routineStateTransition: routineTurn.routineStateTransition,
           commitRoutineState: routineTurn.commitRoutineState,
         });
         assistantMessageId = completedTurn.assistantMessageId;
@@ -655,6 +668,7 @@ export class ChatService {
           stream: input.stream,
           engineTrace: routineTurn.engineTrace,
           actions: routineTurn.actions,
+          routineStateTransition: routineTurn.routineStateTransition,
           commitRoutineState: routineTurn.commitRoutineState,
         });
         assistantMessageId = completedTurn.assistantMessageId;

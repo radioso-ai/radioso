@@ -1,6 +1,6 @@
 import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
 
-type CapturedTransition =
+export type CapturedRoutineTransition =
   | { kind: "save"; state: RoutineState }
   | { kind: "clear"; sessionId: string };
 
@@ -14,7 +14,7 @@ type CapturedTransition =
  * the outbox recoverable without a cross-layer transaction.
  */
 export class DeferredRoutineStore implements ConversationRoutineStore {
-  private transition: CapturedTransition | null = null;
+  private transition: CapturedRoutineTransition | null = null;
 
   constructor(private readonly inner: ConversationRoutineStore) {}
 
@@ -30,13 +30,22 @@ export class DeferredRoutineStore implements ConversationRoutineStore {
     this.transition = { kind: "clear", sessionId: input.sessionId };
   }
 
+  getTransition(): CapturedRoutineTransition | null {
+    return this.transition;
+  }
+
+  consumeTransition(): CapturedRoutineTransition | null {
+    const transition = this.transition;
+    this.transition = null;
+    return transition;
+  }
+
   /** Flush the captured routine-state transition (if any) to the underlying store. */
   async commit(): Promise<void> {
-    const transition = this.transition;
+    const transition = this.consumeTransition();
     if (!transition) {
       return;
     }
-    this.transition = null;
     if (transition.kind === "save") {
       await this.inner.save(transition.state);
     } else {

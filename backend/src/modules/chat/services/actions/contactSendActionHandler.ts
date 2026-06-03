@@ -5,7 +5,13 @@ import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js"
  * Kept local so the handler depends on what it uses, not the app-wide transport type.
  */
 export interface ContactNotificationMailer {
-  send(message: { to: string; replyTo?: string | null; subject: string; text: string }): Promise<void>;
+  send(message: {
+    to: string;
+    replyTo?: string | null;
+    subject: string;
+    text: string;
+    idempotencyKey?: string | null;
+  }): Promise<void>;
 }
 
 /**
@@ -62,9 +68,9 @@ const asString = (value: unknown): string | null =>
  * Generic and self-contained — it reads the routine's variables off the payload and
  * sends through an injected mailer; it knows nothing about routines or the engine.
  *
- * Idempotent in practice: dispatch is keyed by the outbox idempotency key, so a
- * redelivered request with the same payload sends the same notification once. With no
- * recipient configured it no-ops (a missing destination is not a failure to retry).
+   * Dispatch supplies the outbox idempotency key and the mail transport forwards it to
+   * providers that support send de-duplication. With no recipient configured it no-ops
+   * (a missing destination is not a failure to retry).
  */
 export class ContactSendActionHandler implements ActionHandler {
   constructor(
@@ -99,6 +105,7 @@ export class ContactSendActionHandler implements ActionHandler {
       replyTo: email,
       subject: "New contact request",
       text: lines.join("\n"),
+      idempotencyKey: input.context.idempotencyKey ?? input.context.requestId,
     });
   }
 }

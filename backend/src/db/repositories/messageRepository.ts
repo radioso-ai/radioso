@@ -48,6 +48,7 @@ export interface MessageRepositoryPort {
     conversationIds: string[],
   ): Promise<Map<string, ConversationMessageSummary>>;
   create(input: {
+    id?: string;
     conversationId: string;
     workspaceId: string;
     role: "user" | "assistant" | "system";
@@ -272,6 +273,7 @@ export class MessageRepository implements MessageRepositoryPort {
   }
 
   async create(input: {
+    id?: string;
     conversationId: string;
     workspaceId: string;
     role: "user" | "assistant" | "system";
@@ -287,7 +289,7 @@ export class MessageRepository implements MessageRepositoryPort {
        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
        RETURNING id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at`,
       [
-        randomUUID(),
+        input.id ?? randomUUID(),
         input.conversationId,
         input.workspaceId,
         input.role,

@@ -132,32 +132,25 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   router.get("/:token/embed-config", requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"), async (req, res, next) => {
     try {
       const launchToken = String(req.params.token);
-      const origin = resolveOrigin(req.header("origin"));
       const agent = await dependencies.agentRepository.findByWebsiteEmbedToken(launchToken);
       const websiteEmbed = agent ? getWebsiteEmbedSurfaceSettings(agent) : null;
       if (!agent || !websiteEmbed?.enabled) {
         next(notFound("Not found"));
         return;
       }
-      if (origin && !isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, origin)) {
-        throw badRequest("This website is not approved to host the embedded assistant.");
-      }
 
-      // Ask the website-embed extension for a built-in translation pack
-      // matching the visitor's Accept-Language. Operator's per-locale packs
-      // still win because they're merged AFTER under the locale's own key.
-      const extension = dependencies.agentSurfaceExtensions.get("websiteEmbed");
-      const localizedDefault = extension?.resolveCopyForAcceptLanguage?.(req.header("accept-language") ?? null);
-      const copyResponse = localizedDefault
-        ? { ...websiteEmbed.copy, default: localizedDefault.pack }
-        : websiteEmbed.copy;
-
+      // This response is intentionally origin- and Accept-Language-independent so
+      // it can be edge-cached as a single object per token. Built-in locale packs
+      // are resolved client-side in the launcher script; `copy` carries only the
+      // operator's per-locale packs. The origin allowlist is enforced (with audit
+      // logging) at session creation, not here.
+      res.setHeader("Cache-Control", "public, max-age=300");
       res.status(200).json({
         launcherLabel: websiteEmbed.launcherLabel,
         launcherPosition: websiteEmbed.launcherPosition,
         theme: agent.theme,
         branding: agent.branding,
-        copy: copyResponse,
+        copy: websiteEmbed.copy,
         expertOverrides: websiteEmbed.expertOverrides,
         assistantLogoUrl: buildAssistantLogoUrl(req, launchToken, Boolean(agent.logo)),
         proactiveGreetingEnabled: agent.proactiveGreetingEnabled,

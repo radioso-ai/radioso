@@ -44,7 +44,6 @@ describe("OpenAIConversationModelGateway", () => {
         { role: "user", content: "Hi" },
         { role: "assistant", content: "Hello." },
       ],
-      reasoning_effort: "low",
     });
     expect(result).toEqual({
       text: "Hello from OpenAI.",
@@ -61,7 +60,7 @@ describe("OpenAIConversationModelGateway", () => {
     });
   });
 
-  it("flows configurable model and reasoning effort through each request", async () => {
+  it("omits reasoning effort unless the model capability is enabled", async () => {
     const client = mockClient({
       model: "gpt-5-mini",
       choices: [{ message: { content: "ok" } }],
@@ -79,8 +78,117 @@ describe("OpenAIConversationModelGateway", () => {
     expect(client.chat.completions.create).toHaveBeenCalledWith({
       model: "gpt-5-mini",
       messages: [{ role: "user", content: "Classify this." }],
+    });
+  });
+
+  it("includes reasoning effort when the model capability is enabled", async () => {
+    const client = mockClient({
+      model: "gpt-5-mini",
+      choices: [{ message: { content: "ok" } }],
+    });
+    const gateway = new OpenAIConversationModelGateway({
+      client,
+      model: "gpt-5-mini",
+      reasoningEffort: "high",
+      supportsReasoningEffort: true,
+    });
+
+    await gateway.complete({
+      messages: [{ role: "user", content: "Classify this." }],
+    });
+
+    expect(client.chat.completions.create).toHaveBeenCalledWith({
+      model: "gpt-5-mini",
+      messages: [{ role: "user", content: "Classify this." }],
       reasoning_effort: "high",
     });
+  });
+
+  it("throws instead of fabricating a tool_call_id for unsupported tool-role messages", async () => {
+    const client = mockClient({
+      model: "gpt-test",
+      choices: [{ message: { content: "ok" } }],
+    });
+    const gateway = new OpenAIConversationModelGateway({ client, model: "gpt-test" });
+
+    await expect(gateway.complete({
+      messages: [{ role: "tool", content: "Tool output without provider id" }],
+    }))
+      .rejects
+      .toThrow(
+        "openai_tool_role_unsupported: tool-role messages require a tool_call_id; not yet supported",
+      );
+    expect(client.chat.completions.create).not.toHaveBeenCalled();
+  });
+
+  it("maps a tool-role message when metadata carries the provider tool_call_id", async () => {
+    const client = mockClient({
+      model: "gpt-test",
+      choices: [{ message: { content: "ok" } }],
+    });
+    const gateway = new OpenAIConversationModelGateway({ client, model: "gpt-test" });
+
+    await gateway.complete({
+      messages: [
+        {
+          role: "tool",
+          content: "Tool output with provider id",
+          metadata: { toolCallId: "call_123" },
+        },
+      ],
+    });
+
+    expect(client.chat.completions.create).toHaveBeenCalledWith({
+      model: "gpt-test",
+      messages: [
+        {
+          role: "tool",
+          content: "Tool output with provider id",
+          tool_call_id: "call_123",
+        },
+      ],
+    });
+  });
+
+  it("surfaces provider refusals when text content is empty", async () => {
+    const client = mockClient({
+      model: "gpt-test",
+      choices: [
+        {
+          finish_reason: "stop",
+          message: { content: null, refusal: "I cannot help with that request." },
+        },
+      ],
+    });
+    const gateway = new OpenAIConversationModelGateway({ client, model: "gpt-test" });
+
+    await expect(gateway.complete({ messages: [{ role: "user", content: "Hi" }] }))
+      .rejects
+      .toThrow("openai_chat_completion_refusal: I cannot help with that request.");
+  });
+
+  it("surfaces length truncation when text content is empty", async () => {
+    const client = mockClient({
+      model: "gpt-test",
+      choices: [{ finish_reason: "length", message: { content: "" } }],
+    });
+    const gateway = new OpenAIConversationModelGateway({ client, model: "gpt-test" });
+
+    await expect(gateway.complete({ messages: [{ role: "user", content: "Hi" }] }))
+      .rejects
+      .toThrow("openai_chat_completion_truncated: finish_reason=length");
+  });
+
+  it("throws a distinct error when the provider returns no choices", async () => {
+    const client = mockClient({
+      model: "gpt-test",
+      choices: [],
+    });
+    const gateway = new OpenAIConversationModelGateway({ client, model: "gpt-test" });
+
+    await expect(gateway.complete({ messages: [{ role: "user", content: "Hi" }] }))
+      .rejects
+      .toThrow("openai_chat_completion_missing_choice");
   });
 
   it("throws when the provider response has no text content", async () => {

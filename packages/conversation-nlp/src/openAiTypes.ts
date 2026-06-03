@@ -24,8 +24,10 @@ export interface OpenAIChatCompletionResponse {
   id?: string;
   model?: string;
   choices: Array<{
+    finish_reason?: string | null;
     message?: {
       content?: string | null;
+      refusal?: string | null;
     };
   }>;
   usage?: OpenAIChatUsage;
@@ -44,4 +46,5 @@ export interface OpenAIConversationModelGatewayOptions {
   apiKey?: string;
   model: string;
   reasoningEffort?: OpenAIReasoningEffort;
+  supportsReasoningEffort?: boolean;
 }

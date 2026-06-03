@@ -72,6 +72,7 @@ describe("conversation-nlp kit wiring", () => {
       client: provider,
       model: "gpt-e2e",
       reasoningEffort: "medium",
+      supportsReasoningEffort: true,
     });
     const stores = new InMemoryConversationStores();
     const selector: ConversationSkillSelector = {

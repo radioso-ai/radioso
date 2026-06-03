@@ -938,6 +938,11 @@
           "suggestedQuestionsEnabled": {
             "type": "boolean"
           },
+          "suggestedQuestionsCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
+          },
           "rerankEnabled": {
             "type": "boolean"
           },
@@ -1132,6 +1137,7 @@
           "semanticRewriteInstructions",
           "lexicalRewriteInstructions",
           "suggestedQuestionsEnabled",
+          "suggestedQuestionsCount",
           "rerankEnabled",
           "vectorTopK",
           "similarityThreshold",
@@ -1158,6 +1164,11 @@
           },
           "suggestedQuestionsEnabled": {
             "type": "boolean"
+          },
+          "suggestedQuestionsCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
           },
           "rerankEnabled": {
             "type": "boolean"
@@ -1332,6 +1343,11 @@
           },
           "suggestedQuestionsEnabled": {
             "type": "boolean"
+          },
+          "suggestedQuestionsCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
           },
           "rerankEnabled": {
             "type": "boolean"
@@ -2491,6 +2507,11 @@
               "lexicalRewriteInstructions": {
                 "type": "string",
                 "maxLength": 2000
+              },
+              "suggestedQuestionsCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4
               },
               "rerankEnabled": {
                 "type": "boolean"

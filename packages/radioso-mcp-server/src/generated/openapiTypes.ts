@@ -1615,6 +1615,7 @@ export interface components {
             semanticRewriteInstructions: string;
             lexicalRewriteInstructions: string;
             suggestedQuestionsEnabled: boolean;
+            suggestedQuestionsCount: number;
             rerankEnabled: boolean;
             vectorTopK: number;
             similarityThreshold: number;
@@ -1669,6 +1670,7 @@ export interface components {
             semanticRewriteInstructions?: string;
             lexicalRewriteInstructions?: string;
             suggestedQuestionsEnabled?: boolean;
+            suggestedQuestionsCount?: number;
             rerankEnabled: boolean;
             vectorTopK: number;
             similarityThreshold: number;
@@ -1708,6 +1710,7 @@ export interface components {
             semanticRewriteInstructions?: string;
             lexicalRewriteInstructions?: string;
             suggestedQuestionsEnabled?: boolean;
+            suggestedQuestionsCount?: number;
             rerankEnabled?: boolean;
             vectorTopK?: number;
             similarityThreshold?: number;
@@ -1990,6 +1993,7 @@ export interface components {
                 queryRewriteEnabled?: boolean;
                 semanticRewriteInstructions?: string;
                 lexicalRewriteInstructions?: string;
+                suggestedQuestionsCount?: number;
                 rerankEnabled?: boolean;
                 vectorTopK?: number;
                 similarityThreshold?: number;

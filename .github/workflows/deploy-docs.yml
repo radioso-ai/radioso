@@ -1,0 +1,70 @@
+name: Deploy Docs Portal
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - docs-portal/**
+      - packages/ui/**
+      - backend/openapi.json
+      - firebase.json
+      - .firebaserc
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/deploy-docs.yml
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy docs to Firebase Hosting
+    runs-on: ubuntu-latest
+    environment: live
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-docs
+      cancel-in-progress: false
+    env:
+      FIREBASE_PROJECT: radioso-live
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+
+    steps:
+      - name: Require configured GitHub environment variables
+        run: |
+          for key in GCP_DEPLOY_SERVICE_ACCOUNT GCP_WORKLOAD_IDENTITY_PROVIDER; do
+            if [ -z "${!key}" ]; then
+              echo "Missing required GitHub environment variable: $key" >&2
+              exit 1
+            fi
+          done
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install docs portal dependencies
+        run: pnpm install --frozen-lockfile --filter radioso-docs-portal...
+
+      - name: Build static export
+        working-directory: docs-portal
+        run: pnpm run build
+
+      - id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Deploy to Firebase Hosting
+        run: npx --yes firebase-tools@13 deploy --only hosting --project "${FIREBASE_PROJECT}" --non-interactive

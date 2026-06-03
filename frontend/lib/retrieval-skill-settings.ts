@@ -35,8 +35,6 @@ const retrievalStrategies = new Set<RetrievalStrategy>(['fixed', 'reasoning', 'a
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-const hasOwn = (value: Record<string, unknown>, key: string) => Object.prototype.hasOwnProperty.call(value, key)
-
 export const readRetrievalSkillSettingsOverride = (
   skillSettings: AgentSkillSettingsMap | undefined,
 ): RetrievalSkillSettingsOverride => {
@@ -63,19 +61,28 @@ export const readRetrievalSkillSettingsOverride = (
   return next
 }
 
-export const isEmptyRetrievalSkillSettingsOverride = (override: RetrievalSkillSettingsOverride): boolean =>
-  knownRetrievalSkillFields.every((field) => !hasOwn(override as Record<string, unknown>, field))
-
 export const writeRetrievalSkillSettingsOverride = (
   skillSettings: AgentSkillSettingsMap | undefined,
   override: RetrievalSkillSettingsOverride,
 ): AgentSkillSettingsMap => {
   const next: AgentSkillSettingsMap = { ...(skillSettings ?? {}) }
-  if (isEmptyRetrievalSkillSettingsOverride(override)) {
+  const existing = next[RETRIEVAL_ANSWER_SKILL_NAME]
+  const retrievalAnswer = isRecord(existing) ? { ...existing } : {}
+
+  for (const field of knownRetrievalSkillFields) {
+    delete retrievalAnswer[field]
+  }
+
+  const merged = {
+    ...retrievalAnswer,
+    ...override,
+  }
+
+  if (Object.keys(merged).length === 0) {
     delete next[RETRIEVAL_ANSWER_SKILL_NAME]
     return next
   }
 
-  next[RETRIEVAL_ANSWER_SKILL_NAME] = override
+  next[RETRIEVAL_ANSWER_SKILL_NAME] = merged
   return next
 }

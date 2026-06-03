@@ -106,7 +106,7 @@ test("agent skills tab saves and clears retrieval skill overrides", async ({ pag
     agentUpdates,
   });
 
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=skills`);
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
   const retrievalSection = page.locator("#retrieval-skill-settings");
   await expect(retrievalSection).toBeVisible();
   await expect(retrievalSection).toContainText("Inherited from default");

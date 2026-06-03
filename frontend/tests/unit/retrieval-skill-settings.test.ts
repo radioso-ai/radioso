@@ -37,6 +37,54 @@ describe('retrieval skill settings adapter', () => {
     })
   })
 
+  it('preserves sibling retrieval.answer fields when saving a behavioral override', () => {
+    const metadataRules = [
+      {
+        id: 'rule-1',
+        field: 'region',
+        operator: 'equals',
+        value: 'eu',
+        effect: 'boost',
+      },
+    ]
+
+    expect(writeRetrievalSkillSettingsOverride({
+      [RETRIEVAL_ANSWER_SKILL_NAME]: {
+        metadataRules,
+      },
+    }, {
+      customInstruction: 'Prefer release notes.',
+    })).toEqual({
+      [RETRIEVAL_ANSWER_SKILL_NAME]: {
+        metadataRules,
+        customInstruction: 'Prefer release notes.',
+      },
+    })
+  })
+
+  it('keeps retrieval.answer when clearing UI-managed fields leaves preserved fields behind', () => {
+    const metadataRules = [
+      {
+        id: 'rule-1',
+        field: 'region',
+        operator: 'equals',
+        value: 'eu',
+        effect: 'boost',
+      },
+    ]
+
+    expect(writeRetrievalSkillSettingsOverride({
+      [RETRIEVAL_ANSWER_SKILL_NAME]: {
+        metadataRules,
+        customInstruction: 'Prefer release notes.',
+      },
+    }, {})).toEqual({
+      [RETRIEVAL_ANSWER_SKILL_NAME]: {
+        metadataRules,
+      },
+    })
+  })
+
   it('removes retrieval.answer when all field overrides are cleared', () => {
     expect(writeRetrievalSkillSettingsOverride({
       'human_contact.request': { enabled: true },

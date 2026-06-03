@@ -29,7 +29,7 @@ jobs:
       group: sync-docs-to-radioso
       cancel-in-progress: false
     env:
-      RADIOSO_BASE_URL: https://platform.radioso.dev
+      RADIOSO_BASE_URL: https://platform.radioso.dev/backend
       RADIOSO_API_TOKEN: ${{ secrets.RADIOSO_DOCS_API_TOKEN }}
       CITATION_BASE_URL: https://docs.radioso.dev
 

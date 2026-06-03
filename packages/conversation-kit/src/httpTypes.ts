@@ -2,6 +2,7 @@ import type { ConversationAgentConfig, Directive } from "@radioso/conversation-c
 
 export interface TurnRequestBody {
   sessionId?: string;
+  agentId?: string;
   message: string;
   agent?: ConversationAgentConfig;
   directives?: Directive[];
@@ -54,6 +55,7 @@ export const parseTurnRequestBody = (value: unknown): TurnRequestBody => {
   return {
     message: value.message,
     sessionId: typeof value.sessionId === "string" ? value.sessionId : undefined,
+    agentId: typeof value.agentId === "string" ? value.agentId : undefined,
     agent: parseAgent(value.agent),
     directives: isDirectiveArray(value.directives) ? value.directives : undefined,
     metadata: isRecord(value.metadata) ? value.metadata : undefined,

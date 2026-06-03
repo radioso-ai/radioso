@@ -8,10 +8,20 @@ export {
   createConversationKitClient,
   type ConversationKitClient,
   type ConversationKitSession,
+  type CreateConversationKitClientOptions,
   type CreateAgentInput,
   type CreateSessionInput,
   type SendMessageInput,
 } from "./sdk.js";
+export {
+  FileConversationKitAuthoringStore,
+  TransientConversationKitAuthoringStore,
+  type ConversationKitAuthoringStore,
+  type FileConversationKitAuthoringStoreOptions,
+  type UpdateConversationKitAgentInput,
+  type UpdateConversationKitDirectiveInput,
+  type UpdateConversationKitRoutineInput,
+} from "./authoringStore.js";
 export {
   createConversationKitServer,
   type ConversationKitListenAddress,

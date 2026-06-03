@@ -135,6 +135,13 @@ export class ChatTurnLifecycle {
     engineTrace?: ConversationTrace;
     /** Fire-and-forget actions a routine emitted this turn; enqueued at completion. */
     actions?: RoutineActionRequest[];
+    /**
+     * Flushes the routine-state transition this turn made. Invoked only after the
+     * actions are enqueued, so the routine stays recoverable (un-advanced) if the
+     * enqueue fails — the turn message, routine advance, and enqueue are then ordered
+     * so the user is never told a request was sent without a durable outbox row.
+     */
+    commitRoutineState?: () => Promise<void>;
   }): Promise<CompletedAssistantTurn> {
     const route = getChatTurnRoute(input.session);
     const skillTurnOutcome = toPresentationSkillTurnOutcome(input.presentation);
@@ -164,6 +171,18 @@ export class ChatTurnLifecycle {
       input.session.directiveSteering,
     );
     const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
+
+    // Order matters for the outbox (#520): durably enqueue the turn's actions FIRST,
+    // then advance/clear the routine state, then persist the assistant message and
+    // record success. The routine stays recoverable until the action is enqueued, so a
+    // crash never leaves the user told a request was sent with no outbox row.
+    await this.enqueueTurnActions({
+      actions: input.actions,
+      workspaceId: input.workspaceId,
+      accountId: input.accountId,
+      conversationId: input.session.conversation.id,
+    });
+    await input.commitRoutineState?.();
 
     const assistantMessage = await this.messageRepository.create({
       conversationId: input.session.conversation.id,
@@ -219,13 +238,6 @@ export class ChatTurnLifecycle {
       engineTrace: input.engineTrace,
       route,
       stream: input.stream,
-    });
-
-    await this.enqueueTurnActions({
-      actions: input.actions,
-      workspaceId: input.workspaceId,
-      accountId: input.accountId,
-      conversationId: input.session.conversation.id,
     });
 
     return {

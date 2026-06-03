@@ -55,6 +55,7 @@ import { ChatTurnLifecycle, type ChatActionOutboxPort } from "./chatTurnLifecycl
 import { BlankChatAnswerError } from "./chatAnswerErrors.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import { RoutineChatModelGateway } from "./routines/routineChatModelGateway.js";
+import { DeferredRoutineStore } from "./routines/deferredRoutineStore.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -345,7 +346,15 @@ export class ChatService {
   private async attemptRoutineTurn(
     session: PreparedSession,
     accountId: string | undefined,
-  ): Promise<{ presentation: ChatPresentedAnswer; engineTrace?: ConversationTrace; actions?: RoutineActionRequest[] } | null> {
+  ): Promise<{
+    presentation: ChatPresentedAnswer;
+    engineTrace?: ConversationTrace;
+    actions?: RoutineActionRequest[];
+    // Flushes the routine-state transition the engine made this turn. Called by the
+    // lifecycle only after the turn's actions are durably enqueued, so a crash before
+    // enqueue leaves the routine recoverable rather than advanced past a lost action.
+    commitRoutineState: () => Promise<void>;
+  } | null> {
     if (!this.routineStore || !this.routineProvider || this.routineProvider.isEmpty) {
       return null;
     }
@@ -353,10 +362,11 @@ export class ChatService {
       workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
       usageContext: this.answerSupport.buildChatUsageContext(session, accountId, "routine_turn"),
     });
+    const deferredStore = new DeferredRoutineStore(this.routineStore);
     const outcome = await attemptRoutineTurnWithConversationEngine({
       engine: this.conversationEngine,
       session,
-      routineStore: this.routineStore,
+      routineStore: deferredStore,
       routineRunner: this.routineProvider.createRunner(modelGateway),
       routineActivator: this.routineProvider.activator(modelGateway),
       presentRoutineReply: (response) => this.chatAnswerPresenter.presentNonRetrievalAnswer(response.answer),
@@ -364,7 +374,12 @@ export class ChatService {
     if (!outcome) {
       return null;
     }
-    return { presentation: outcome.presentation, engineTrace: outcome.result.trace, actions: outcome.result.actions };
+    return {
+      presentation: outcome.presentation,
+      engineTrace: outcome.result.trace,
+      actions: outcome.result.actions,
+      commitRoutineState: () => deferredStore.commit(),
+    };
   }
 
   /**
@@ -484,6 +499,7 @@ export class ChatService {
           stream: input.stream,
           engineTrace: routineTurn.engineTrace,
           actions: routineTurn.actions,
+          commitRoutineState: routineTurn.commitRoutineState,
         });
         assistantMessageId = completedTurn.assistantMessageId;
         await usageReservation.commit();
@@ -636,6 +652,7 @@ export class ChatService {
           stream: input.stream,
           engineTrace: routineTurn.engineTrace,
           actions: routineTurn.actions,
+          commitRoutineState: routineTurn.commitRoutineState,
         });
         assistantMessageId = completedTurn.assistantMessageId;
         await usageReservation.commit();

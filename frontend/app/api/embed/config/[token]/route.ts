@@ -6,27 +6,52 @@ const BACKEND_BASE =
   process.env.BACKEND_INTERNAL_URL ??
   'http://localhost:8080'
 
-// Public, non-credentialed embed config. Wildcard origin (no per-site variance)
-// and no Accept-Language dependency, so a CDN can cache a single object per
-// token. The origin allowlist is still enforced at session creation.
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
+// Embed config is cacheable but gated per origin: the backend only returns it to
+// allow-listed sites, and the response is reflected back to the requesting
+// origin. A CDN must therefore include `Origin` in its cache key (see infra
+// cdn_policy). The response no longer depends on Accept-Language — built-in
+// locale packs are resolved client-side in the launcher.
+const BASE_CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'OPTIONS, GET',
   'Access-Control-Allow-Headers': 'Content-Type',
+  Vary: 'Origin',
 }
 
-// Short browser TTL, longer shared/edge TTL, serve-stale while revalidating.
-const CDN_CACHE_CONTROL = 'public, max-age=60, s-maxage=300, stale-while-revalidate=86400'
+// Short browser TTL, modest shared/edge TTL. Operator settings changes propagate
+// immediately via CDN cache invalidation on save, so we don't need a long
+// serve-stale window here.
+const CDN_CACHE_CONTROL = 'public, max-age=60, s-maxage=300'
 
-export async function OPTIONS() {
-  return new Response(null, { status: 204, headers: CORS_HEADERS })
+const resolveOrigin = (value: string | null) => {
+  if (!value) {
+    return null
+  }
+  try {
+    return new URL(value).origin
+  } catch {
+    return null
+  }
+}
+
+const corsHeaders = (origin: string | null, extra?: Record<string, string>) => {
+  const headers: Record<string, string> = { ...BASE_CORS_HEADERS, ...extra }
+  if (origin) {
+    headers['Access-Control-Allow-Origin'] = origin
+  }
+  return headers
+}
+
+export async function OPTIONS(request: Request) {
+  const origin = resolveOrigin(request.headers.get('origin'))
+  return new Response(null, { status: 204, headers: corsHeaders(origin) })
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ token: string }> },
 ) {
   const { token } = await context.params
+  const requestOrigin = resolveOrigin(request.headers.get('origin'))
 
   try {
     const upstream = await fetch(`${BACKEND_BASE}/api/v1/public/chat/${encodeURIComponent(token)}/embed-config`, {
@@ -34,17 +59,20 @@ export async function GET(
       cache: 'no-store',
       headers: {
         'X-Forwarded-Prefix': '/backend',
+        ...(requestOrigin ? { Origin: requestOrigin } : {}),
       },
     })
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
 
     return new Response(upstream.body, {
       status: upstream.status,
-      headers: {
-        ...CORS_HEADERS,
+      // Only reflect the origin (and allow caching) when the backend accepted
+      // it. A rejected origin gets no `Access-Control-Allow-Origin` and is never
+      // cached.
+      headers: corsHeaders(upstream.ok ? requestOrigin : null, {
         'Content-Type': contentType,
         'Cache-Control': upstream.ok ? CDN_CACHE_CONTROL : 'no-store',
-      },
+      }),
     })
   } catch (error) {
     const message =
@@ -59,7 +87,7 @@ export async function GET(
           message,
         },
       },
-      { status: 503, headers: { ...CORS_HEADERS, 'Cache-Control': 'no-store' } },
+      { status: 503, headers: corsHeaders(null, { 'Cache-Control': 'no-store' }) },
     )
   }
 }

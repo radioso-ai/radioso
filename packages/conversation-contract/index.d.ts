@@ -243,6 +243,11 @@ export interface ConversationTraceLink {
 
 export interface ConversationStores {
   loadHistory(input: { sessionId: string; limit?: number }): Promise<ConversationMessage[]>;
+  /**
+   * Declares an ordered event transition for the turn. The host owns durability
+   * and may capture or ignore this call in an adapter, then commit the event
+   * transactionally with related persistence such as outbox or assistant message writes.
+   */
   appendEvent(event: ConversationEvent): Promise<void>;
 }
 
@@ -435,7 +440,17 @@ export interface ConversationRoutineStepRenderer {
  */
 export interface ConversationRoutineStore {
   loadActive(input: { sessionId: string }): Promise<RoutineState | null>;
+  /**
+   * Declares the routine state transition for this turn. The host owns durability
+   * and may defer/capture this command for transactional commit with related turn
+   * persistence.
+   */
   save(state: RoutineState): Promise<void>;
+  /**
+   * Declares that the active routine state should be cleared. The host owns durability
+   * and may defer/capture this command for transactional commit with related turn
+   * persistence.
+   */
   clear(input: { sessionId: string }): Promise<void>;
 }
 

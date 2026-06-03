@@ -3,6 +3,11 @@ output "frontend_url" {
   value       = try(google_cloud_run_v2_service.frontend[0].uri, null)
 }
 
+output "frontend_cdn_ip" {
+  description = "Global IP of the frontend HTTPS load balancer. Point the frontend domain's A record here. Null when frontend_cdn_domain is unset."
+  value       = try(google_compute_global_address.frontend[0].address, null)
+}
+
 output "frontend_service_name" {
   description = "Cloud Run service name for the Radioso frontend"
   value       = try(google_cloud_run_v2_service.frontend[0].name, null)

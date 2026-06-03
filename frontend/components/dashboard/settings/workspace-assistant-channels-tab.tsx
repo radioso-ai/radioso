@@ -8,6 +8,7 @@ import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
 import { AssistantIdentityAppearanceSection } from '@/components/dashboard/settings/assistant-identity-appearance-section'
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
+import { AssistantRetrievalSkillSettingsSection } from '@/components/dashboard/settings/assistant-retrieval-skill-settings-section'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
 import { type AgentSectionId } from '@/lib/dashboard-areas'
@@ -42,10 +43,12 @@ import {
   agentsApi,
   documentsApi,
   generalSettingsApi,
+  settingsApi,
   type AssistantBehaviorSettings,
   type AccountMembershipRole,
   type DocumentSourceListItem,
   type GeneralSettings,
+  type RetrievalSettings,
 } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
 
@@ -144,6 +147,8 @@ export function WorkspaceAssistantChannelsTab({
   const [isAnonSaving, setIsAnonSaving] = useState(false)
   const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
+  const [retrievalDefaults, setRetrievalDefaults] = useState<RetrievalSettings | null>(null)
+  const [isRetrievalDefaultsLoading, setIsRetrievalDefaultsLoading] = useState(mode === 'assistant')
   const [sourceList, setSourceList] = useState<DocumentSourceListItem[]>([])
   const [sourceListError, setSourceListError] = useState<string | null>(null)
   const [isSourceListLoading, setIsSourceListLoading] = useState(false)
@@ -285,23 +290,31 @@ export function WorkspaceAssistantChannelsTab({
       setAssistantBehaviorSettings(null)
       setSavedAssistantBehaviorSettings(null)
       setIsAssistantBehaviorLoading(false)
+      setRetrievalDefaults(null)
+      setIsRetrievalDefaultsLoading(false)
       return
     }
 
     if (isWorkspaceLoading || !activeWorkspaceId) {
       setIsAssistantBehaviorLoading(true)
+      setIsRetrievalDefaultsLoading(true)
       return
     }
 
     let active = true
     setIsAssistantBehaviorLoading(true)
+    setIsRetrievalDefaultsLoading(true)
     const loadAssistantBehaviorSettingsEffect = async () => {
       try {
-        const data = await loadAssistantBehaviorSettings()
+        const [data, defaults] = await Promise.all([
+          loadAssistantBehaviorSettings(),
+          settingsApi.getRetrievalSettings({ auth: 'session' }),
+        ])
         if (!active) return
         const normalized = normalizeAssistantBehaviorSettingsByAgent(agentId, data)
         setAssistantBehaviorSettings(normalized)
         setSavedAssistantBehaviorSettings(normalized)
+        setRetrievalDefaults(defaults)
         setAssistantSettingsError(null)
       } catch (error) {
         if (!active) return
@@ -310,6 +323,7 @@ export function WorkspaceAssistantChannelsTab({
       } finally {
         if (active) {
           setIsAssistantBehaviorLoading(false)
+          setIsRetrievalDefaultsLoading(false)
         }
       }
     }
@@ -566,6 +580,9 @@ export function WorkspaceAssistantChannelsTab({
           assistantBehaviorSettings.assistantLinkUtmEnabled !== savedAssistantBehaviorSettings.assistantLinkUtmEnabled ||
           assistantBehaviorSettings.citationDisplayEnabled !== savedAssistantBehaviorSettings.citationDisplayEnabled ||
           assistantBehaviorSettings.contactRequestsEnabled !== savedAssistantBehaviorSettings.contactRequestsEnabled ||
+          assistantBehaviorSettings.retrievalEnabled !== savedAssistantBehaviorSettings.retrievalEnabled ||
+          JSON.stringify(assistantBehaviorSettings.retrievalSkillSettings ?? {}) !==
+            JSON.stringify(savedAssistantBehaviorSettings.retrievalSkillSettings ?? {}) ||
           getAssistantBehaviorSourceScopeKey(assistantBehaviorSettings) !==
             getAssistantBehaviorSourceScopeKey(savedAssistantBehaviorSettings) ||
           JSON.stringify(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) !==
@@ -905,6 +922,7 @@ export function WorkspaceAssistantChannelsTab({
               title="Skills"
               description="Capabilities the assistant can use during a chat."
             >
+              <div className="space-y-5">
               <div id="contact-requests" className="scroll-mt-24">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex min-w-0 gap-3">
@@ -929,6 +947,29 @@ export function WorkspaceAssistantChannelsTab({
                     className="sm:mt-3"
                   />
                 </div>
+              </div>
+              {isAssistantBehaviorLoading || isRetrievalDefaultsLoading ? (
+                <div className="flex items-center gap-2 border-t border-border pt-5 text-sm text-muted-foreground">
+                  <Spinner className="h-4 w-4" />
+                  Loading retrieval settings...
+                </div>
+              ) : assistantBehaviorSettings && retrievalDefaults ? (
+                <AssistantRetrievalSkillSettingsSection
+                  defaults={retrievalDefaults}
+                  value={assistantBehaviorSettings.retrievalSkillSettings ?? {}}
+                  retrievalEnabled={assistantBehaviorSettings.retrievalEnabled ?? true}
+                  onRetrievalEnabledChange={(checked) =>
+                    updateAssistantBehaviorDraft((current) => ({ ...current, retrievalEnabled: checked }))
+                  }
+                  onChange={(next) =>
+                    updateAssistantBehaviorDraft((current) => ({ ...current, retrievalSkillSettings: next }))
+                  }
+                />
+              ) : (
+                <p className="border-t border-border pt-5 text-sm text-muted-foreground">
+                  Failed to load retrieval settings.
+                </p>
+              )}
               </div>
             </SettingsCard>
           </section>

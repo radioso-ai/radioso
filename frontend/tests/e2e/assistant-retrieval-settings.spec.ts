@@ -96,3 +96,38 @@ test("retrieval settings can switch the answering strategy to reasoning", async 
     },
   });
 });
+
+test("agent skills tab saves and clears retrieval skill overrides", async ({ page }) => {
+  const agentUpdates: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    agentUpdates,
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=skills`);
+  const retrievalSection = page.locator("#retrieval-skill-settings");
+  await expect(retrievalSection).toBeVisible();
+  await expect(retrievalSection).toContainText("Inherited from default");
+
+  await page.getByRole("button", { name: "Override answer instruction" }).click();
+  await page.getByLabel("Retrieval answer instruction").fill("Answer with release-note citations only.");
+
+  await expect.poll(() => agentUpdates.length).toBeGreaterThanOrEqual(1);
+  expect(agentUpdates.at(-1)).toMatchObject({
+    skillSettings: {
+      "retrieval.answer": {
+        customInstruction: "Answer with release-note citations only.",
+      },
+    },
+  });
+
+  await page.reload();
+  await expect(page.getByLabel("Retrieval answer instruction")).toHaveValue("Answer with release-note citations only.");
+
+  await page.getByRole("button", { name: "Clear override" }).click();
+
+  await expect.poll(() => JSON.stringify((agentUpdates.at(-1) as { skillSettings?: unknown } | undefined)?.skillSettings)).toBe("{}");
+  await expect(retrievalSection).toContainText("Inherited from default");
+});

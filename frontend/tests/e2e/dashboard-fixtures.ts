@@ -100,6 +100,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   retrievalEnabled: true,
   sourceScope: { mode: "all" },
   chatModelOverride: null,
+  skillSettings: {},
   surfaceSettings: {
     authenticatedChat: {
       enabled: true,

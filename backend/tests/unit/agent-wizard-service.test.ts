@@ -3,8 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AgentWizardError,
   AgentWizardService,
+  type AgentWizardTextGenerationPort,
   type CrawlerPort,
 } from "../../src/modules/agentWizard/service.js";
+
+type CompleteMock = ReturnType<typeof vi.fn<AgentWizardTextGenerationPort["complete"]>>;
 
 const createCrawler = (overrides: Partial<CrawlerPort> = {}): CrawlerPort => ({
   fetchPageWithScreenshot: vi.fn().mockResolvedValue({
@@ -29,12 +32,12 @@ const createCrawler = (overrides: Partial<CrawlerPort> = {}): CrawlerPort => ({
 
 const createService = (overrides: {
   crawlerProvider?: CrawlerPort;
-  complete?: ReturnType<typeof vi.fn>;
+  complete?: CompleteMock;
   fetchImpl?: typeof fetch;
   assertPublicWebsiteUrl?: (url: string) => Promise<void>;
   crawlerLimits?: { defaultLimit: number; maxLimit: number };
 } = {}) => {
-  const complete = overrides.complete ?? vi.fn().mockResolvedValue(JSON.stringify({
+  const complete = overrides.complete ?? vi.fn<AgentWizardTextGenerationPort["complete"]>().mockResolvedValue(JSON.stringify({
     agentName: "Example Support",
     customInstruction: "Help visitors understand Example's support software and deployment options.",
     greetingMessage: "Hi! I can help with questions about Example.",
@@ -107,7 +110,7 @@ describe("AgentWizardService", () => {
   });
 
   it("retries once when the LLM returns invalid JSON", async () => {
-    const complete = vi.fn()
+    const complete = vi.fn<AgentWizardTextGenerationPort["complete"]>()
       .mockResolvedValueOnce("not json")
       .mockResolvedValueOnce(JSON.stringify({
         agentName: "Retry Support",
@@ -178,7 +181,7 @@ describe("AgentWizardService", () => {
       })),
       crawlSite: vi.fn().mockResolvedValue([]),
     });
-    const complete = vi.fn();
+    const complete = vi.fn<AgentWizardTextGenerationPort["complete"]>();
     const { service } = createService({ crawlerProvider: crawler, complete });
 
     await expect(service.analyzeWebsite({
@@ -203,7 +206,7 @@ describe("AgentWizardService", () => {
       }),
       crawlSite: vi.fn().mockResolvedValue([]),
     });
-    const complete = vi.fn();
+    const complete = vi.fn<AgentWizardTextGenerationPort["complete"]>();
     const { service } = createService({ crawlerProvider: crawler, complete });
 
     const promise = service.analyzeWebsite({

@@ -38,7 +38,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          git fetch --no-tags --prune --depth=1 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          # Fetch full history (not --depth=1) so a merge base with HEAD exists;
+          # otherwise the diff below finds no common ancestor and silently reports
+          # zero changed files, skipping every CI job.
+          git fetch --no-tags --prune origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
 
           backend=false
           frontend=false
@@ -57,6 +60,14 @@ jobs:
             crawler=true
             ee=true
           }
+
+          # Fail safe: if the diff cannot be computed (e.g. no merge base), run
+          # every bucket rather than silently skipping all of them.
+          if ! changed_files="$(git diff --name-only "origin/${BASE_REF}...HEAD" 2>/dev/null)"; then
+            echo "Could not diff against origin/${BASE_REF}; running all CI buckets."
+            mark_all
+            changed_files=""
+          fi
 
           while IFS= read -r path; do
             [ -n "$path" ] || continue
@@ -108,7 +119,7 @@ jobs:
                 mark_all
                 ;;
             esac
-          done < <(git diff --name-only "origin/${BASE_REF}...HEAD")
+          done <<< "$changed_files"
 
           backend_openapi="${backend}"
           run_ci=false

@@ -1,5 +1,3 @@
-import type { TextGenerationClient } from "../../shared/infra/llm/providerTypes.js";
-
 import { buildDirectiveMatchPrompt, getDirectiveMatchSystemPrompt } from "./directiveMatchPrompt.js";
 import { parseDirectiveClassifications } from "./directiveMatchParser.js";
 import type { DirectiveMatcherPort, DirectiveMatchInput } from "./directiveMatcher.js";
@@ -20,13 +18,28 @@ export interface DirectiveMatchGateway {
   match(input: { turnContext: Record<string, unknown>; directives: Directive[] }): Promise<DirectiveClassification[]>;
 }
 
+export interface DirectiveTextGenerationClient {
+  complete(input: {
+    prompt: string;
+    systemPrompt?: string;
+    temperature?: number;
+  }): Promise<{ text: string }>;
+}
+
 /** Model-backed gateway: render the prompt, call the client, parse the result. */
 export class ModelDirectiveMatchGateway implements DirectiveMatchGateway {
-  constructor(private readonly client: TextGenerationClient) {}
+  private readonly systemPrompt?: string;
+
+  constructor(
+    private readonly client: DirectiveTextGenerationClient,
+    options: { systemPrompt?: string } = {},
+  ) {
+    this.systemPrompt = options.systemPrompt;
+  }
 
   async match(input: { turnContext: Record<string, unknown>; directives: Directive[] }): Promise<DirectiveClassification[]> {
     const { text } = await this.client.complete({
-      systemPrompt: getDirectiveMatchSystemPrompt(),
+      systemPrompt: getDirectiveMatchSystemPrompt(this.systemPrompt),
       prompt: buildDirectiveMatchPrompt(input),
       temperature: 0,
     });

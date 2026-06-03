@@ -44,6 +44,9 @@ importers:
       '@radioso/conversation-contract':
         specifier: workspace:*
         version: link:../packages/conversation-contract
+      '@radioso/conversation-defaults':
+        specifier: workspace:*
+        version: link:../packages/conversation-defaults
       '@radioso/conversation-engine':
         specifier: workspace:*
         version: link:../packages/conversation-engine
@@ -458,6 +461,25 @@ importers:
         version: 8.20.0
 
   packages/conversation-contract: {}
+
+  packages/conversation-defaults:
+    dependencies:
+      '@radioso/conversation-contract':
+        specifier: workspace:*
+        version: link:../conversation-contract
+    devDependencies:
+      '@radioso/conversation-engine':
+        specifier: workspace:*
+        version: link:../conversation-engine
+      '@types/node':
+        specifier: ^24.3.0
+        version: 24.12.4
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@24.12.4)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0)(tsx@4.22.1)(yaml@2.9.0)
 
   packages/conversation-engine:
     dependencies:

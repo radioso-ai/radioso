@@ -1,0 +1,64 @@
+name: Sync Docs to Radioso
+
+# Imports the documentation portal into the production self-docs workspace so an
+# agent can answer questions about Radioso. Idempotent: unchanged pages are
+# skipped by content hash; --prune removes only previously imported docs.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - docs-portal/content/**
+      - backend/openapi.json
+      - packages/radioso-docs-importer/**
+      - .github/workflows/sync-docs-to-radioso.yml
+  workflow_dispatch:
+    inputs:
+      prune:
+        description: Delete imported docs that are no longer present
+        type: boolean
+        default: true
+
+jobs:
+  sync:
+    name: Import docs into Radioso
+    runs-on: ubuntu-latest
+    environment: live
+    concurrency:
+      group: sync-docs-to-radioso
+      cancel-in-progress: false
+    env:
+      RADIOSO_BASE_URL: https://platform.radioso.dev
+      RADIOSO_API_TOKEN: ${{ secrets.RADIOSO_DOCS_API_TOKEN }}
+      CITATION_BASE_URL: https://docs.radioso.dev
+
+    steps:
+      - name: Require workspace token
+        run: |
+          if [ -z "${RADIOSO_API_TOKEN}" ]; then
+            echo "Missing required secret: RADIOSO_DOCS_API_TOKEN" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install docs importer dependencies
+        run: pnpm install --frozen-lockfile --filter @radioso/docs-importer...
+
+      - name: Import docs into Radioso
+        run: |
+          PRUNE_FLAG="--prune"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.prune }}" != "true" ]; then
+            PRUNE_FLAG=""
+          fi
+          pnpm --filter @radioso/docs-importer run import -- $PRUNE_FLAG

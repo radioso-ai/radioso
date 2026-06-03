@@ -5,6 +5,7 @@ import {
   type ApplicationModule,
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
+import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
 import { PlatformSettingsService } from "../../modules/settings/composition.js";
 import type { AppDependencies } from "./types.js";
 import {
@@ -151,6 +152,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories.workspaceRepository,
     settings.retrievalSettingsService,
     repositories.documentSourceRepository,
+    resolveEmbedConfigCacheInvalidator({
+      projectId: env.GOOGLE_CLOUD_PROJECT,
+      urlMap: env.RADIOSO_CDN_URL_MAP,
+      logger,
+    }),
   );
   const chat = buildChatServices({
     agentService,

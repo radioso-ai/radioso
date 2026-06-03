@@ -4,6 +4,7 @@ import type { AgentRepositoryPort } from "../../../db/repositories/agentReposito
 import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
+import type { EmbedConfigCacheInvalidator } from "./embedConfigCacheInvalidator.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import {
@@ -27,6 +28,7 @@ export class AgentService {
       DocumentSourceRepositoryPort,
       "findExistingIdsByWorkspaceId" | "countDocumentsWithoutSource"
     >,
+    private readonly embedConfigCacheInvalidator?: EmbedConfigCacheInvalidator,
   ) {}
 
   async list(workspaceId: string): Promise<AgentSettingsResource[]> {
@@ -84,6 +86,13 @@ export class AgentService {
     const updated = await this.agentRepository.update(agentId, workspaceId, input);
     if (workspace.defaultAgentId === agentId) {
       await this.syncLegacyWorkspaceDefaults(workspace, updated);
+    }
+    // Drop the CDN-cached embed config so settings changes take effect now
+    // rather than after the cache TTL. Best effort — the invalidator never
+    // throws, and most deployments wire the no-op.
+    const embedToken = getWebsiteEmbedSurfaceSettings(updated).token;
+    if (embedToken && this.embedConfigCacheInvalidator) {
+      await this.embedConfigCacheInvalidator.invalidateForToken(embedToken);
     }
     return this.present(updated, workspace.defaultAgentId);
   }

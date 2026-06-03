@@ -54,6 +54,12 @@ export const RETRIEVAL_BEHAVIOR = {
   },
   candidateMergeSecondaryWeight: 0.25,
   metadataBoostWeight: 0.2,
+  // Multi-topic query rewrites can fan out into several retrieval branches. Each
+  // branch runs a cheap lexical search, but a distinct semantic branch costs an
+  // embedding plus a concurrent pgvector search. Cap how many *distinct* semantic
+  // searches a single turn issues; branches beyond the cap contribute lexical-only
+  // (their contexts are pooled downstream regardless). Lexical fan-out is unaffected.
+  maxSemanticBranches: 2,
   hybrid: {
     lexicalTopK: 20,
     mergedCandidateCap: 50,

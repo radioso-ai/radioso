@@ -80,30 +80,30 @@ describe("application modules", () => {
     );
   });
 
-  it("collects multiple chat intake provider registrations into a list", () => {
+  it("collects multiple public chat action advertiser registrations into a list", () => {
     const logger = createLogger();
     const registry = createApplicationExtensionRegistry();
     const coordinator = new ApplicationModuleCoordinator({ logger, registry });
 
-    const firstProvider = { handle: async () => null };
-    const secondProvider = { handle: async () => null };
+    const firstProvider = { getPublicIntakeActions: async () => [] };
+    const secondProvider = { getPublicIntakeActions: async () => [] };
 
     coordinator.apply([
       {
         id: "first-module",
         register(context) {
-          context.registerChatIntakeProvider(firstProvider);
+          context.registerPublicChatActionAdvertiser(firstProvider);
         },
       },
       {
         id: "second-module",
         register(context) {
-          context.registerChatIntakeProvider(secondProvider);
+          context.registerPublicChatActionAdvertiser(secondProvider);
         },
       },
     ]);
 
-    expect(registry.chatIntakeProviderRegistrations).toEqual([firstProvider, secondProvider]);
+    expect(registry.publicChatActionAdvertiserRegistrations).toEqual([firstProvider, secondProvider]);
   });
 
   it("collects multiple skill executor registrations keyed by kind and adapter", () => {

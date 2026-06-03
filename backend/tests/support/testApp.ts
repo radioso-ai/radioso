@@ -87,10 +87,10 @@ import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import {
-  ChainedChatIntakeProvider,
-  NoopChatIntakeProvider,
-  type ChatIntakeProviderPort,
-} from "../../src/modules/chat/services/chatIntakeProvider.js";
+  ChainedPublicChatActionAdvertiser,
+  NoopPublicChatActionAdvertiser,
+  type PublicChatActionAdvertiserPort,
+} from "../../src/modules/chat/services/publicChatActionAdvertiser.js";
 import { NoopContactHistoryProvider } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { AnswerFeedbackHistoryProviderPort } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
 import {
@@ -246,7 +246,7 @@ export const createTestDependencies = (overrides: {
   fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
-  chatIntakeProvider?: ChatIntakeProviderPort;
+  publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = {
@@ -650,14 +650,14 @@ export const createTestDependencies = (overrides: {
     new NoopContactHistoryProvider(),
     overrides.answerFeedbackHistoryProvider,
   );
-  const chatIntakeProviders = [
-    ...(overrides.chatIntakeProvider ? [overrides.chatIntakeProvider] : []),
+  const publicChatActionAdvertisers = [
+    ...(overrides.publicChatActionAdvertiser ? [overrides.publicChatActionAdvertiser] : []),
   ];
-  const chatIntakeProvider = chatIntakeProviders.length === 0
-    ? new NoopChatIntakeProvider()
-    : chatIntakeProviders.length === 1
-      ? chatIntakeProviders[0]!
-      : new ChainedChatIntakeProvider(chatIntakeProviders);
+  const publicChatActionAdvertiser = publicChatActionAdvertisers.length === 0
+    ? new NoopPublicChatActionAdvertiser()
+    : publicChatActionAdvertisers.length === 1
+      ? publicChatActionAdvertisers[0]!
+      : new ChainedPublicChatActionAdvertiser(publicChatActionAdvertisers);
   const skillCatalogRegistry = createDefaultSkillCatalogRegistry();
   const fallbackReplyComposer = overrides.fallbackReplyComposer ?? new TestFallbackReplyComposer();
   const chatService = new ChatService({
@@ -675,7 +675,6 @@ export const createTestDependencies = (overrides: {
     workspaceRepository,
     usageLimitPolicy,
     agentService,
-    chatIntakeProvider,
     conversationEngine: createConversationEngine(),
   });
   const chatBootstrapService = new ChatBootstrapService(
@@ -722,7 +721,7 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     capabilityPolicy,
     usageLimitPolicy,
-    chatIntakeProvider,
+    publicChatActionAdvertiser,
     contactHistoryProvider: new NoopContactHistoryProvider(),
     applicationRouteMounts: overrides.applicationRouteMounts ?? [],
     applicationModules: new ApplicationModuleCoordinator({
@@ -892,7 +891,7 @@ export const createTestApp = (overrides: {
   fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
-  chatIntakeProvider?: ChatIntakeProviderPort;
+  publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);

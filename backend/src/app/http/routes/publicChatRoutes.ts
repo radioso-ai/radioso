@@ -132,18 +132,22 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   router.get("/:token/embed-config", requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"), async (req, res, next) => {
     try {
       const launchToken = String(req.params.token);
+      const origin = resolveOrigin(req.header("origin"));
       const agent = await dependencies.agentRepository.findByWebsiteEmbedToken(launchToken);
       const websiteEmbed = agent ? getWebsiteEmbedSurfaceSettings(agent) : null;
       if (!agent || !websiteEmbed?.enabled) {
         next(notFound("Not found"));
         return;
       }
+      if (origin && !isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, origin)) {
+        throw badRequest("This website is not approved to host the embedded assistant.");
+      }
 
-      // This response is intentionally origin- and Accept-Language-independent so
-      // it can be edge-cached as a single object per token. Built-in locale packs
-      // are resolved client-side in the launcher script; `copy` carries only the
-      // operator's per-locale packs. The origin allowlist is enforced (with audit
-      // logging) at session creation, not here.
+      // Cacheable per origin: the response varies only by the allow-listed origin
+      // (declared via Vary so a CDN keys on it) and not by Accept-Language —
+      // built-in locale packs are resolved client-side in the launcher, so `copy`
+      // carries only the operator's per-locale packs.
+      res.setHeader("Vary", "Origin");
       res.setHeader("Cache-Control", "public, max-age=300");
       res.status(200).json({
         launcherLabel: websiteEmbed.launcherLabel,

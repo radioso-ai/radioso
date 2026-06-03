@@ -95,6 +95,8 @@ If your site already runs PostHog, add a listener that forwards Radioso events i
 
 The origin check is a safety guard for production pages with multiple embedded frames. The example derives it from the installed Radioso script, so you do not need to hard-code the widget host.
 
+The `embed-config` response is the same for every visitor and every origin, so it can be served from a CDN. It carries no visitor or session data, and the origin allowlist is still enforced when a chat session is created. The launcher fetches this config once on page load; caching it keeps that request off your origin. After an operator changes embed settings, the change appears once the cached copy expires (or after a cache purge).
+
 Current embed analytics events:
 
 | Event | When it fires |
@@ -167,7 +169,7 @@ Open the blocked origin and confirm the launcher cannot establish a valid embedd
 - The launcher appears only on approved origins
 - The embedded chat can establish a session through the frontend bootstrap route
 - The backend accepts the forwarded request only when the origin is allowlisted
-- The widget uses the assistant logo plus the server-side theme, locale copy, and expert override settings
+- The widget uses the assistant logo plus the server-side theme, operator locale copy, and expert override settings. Built-in translations are bundled in the launcher script and picked from the visitor's browser language
 - Responses stay aligned with your workspace content and settings
 - Returning users can resume the same anonymous session instead of starting from scratch each time
 

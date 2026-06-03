@@ -44,6 +44,9 @@ export type AssistantBehaviorSettings = Pick<
 > & {
   assistantLinkUtmEnabled: boolean
   citationDisplayEnabled: boolean
+  // Per-agent "contact a human" capability. Only meaningful in the per-agent
+  // (assistant) settings; the workspace-level mapping leaves it undefined.
+  contactRequestsEnabled?: boolean
   theme: WebsiteEmbedThemeSettings
   branding?: AgentBrandingSettings
   sourceScope?: AgentSourceScope
@@ -520,6 +523,7 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
   customInstruction: agent.customInstruction,
   assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
   citationDisplayEnabled: agent.citationDisplayEnabled,
+  contactRequestsEnabled: agent.contactRequestsEnabled,
   theme: agent.theme,
   branding: agent.branding,
   sourceScope: agent.sourceScope,

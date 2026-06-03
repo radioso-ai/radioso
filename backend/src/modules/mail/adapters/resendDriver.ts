@@ -4,12 +4,16 @@ export class ResendEmailDriver implements EmailDriver {
   constructor(private readonly apiKey: string) {}
 
   async send(message: EmailMessage): Promise<void> {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.apiKey}`,
+      "Content-Type": "application/json",
+    };
+    if (message.idempotencyKey) {
+      headers["Idempotency-Key"] = message.idempotencyKey;
+    }
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify({
         from: message.from.name ? `${message.from.name} <${message.from.email}>` : message.from.email,
         to: message.to,

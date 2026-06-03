@@ -73,7 +73,7 @@ describe("edge cases", () => {
       contexts: [],
     });
 
-    expect(result.systemPrompt).toContain("produce content on the user's behalf");
+    expect(result.systemPrompt).toContain("Do not offer to draft, start, send");
     expect(result.systemPrompt).toContain("decline in the team's voice");
     expect(result.systemPrompt).toContain("Do not frame any decline around missing documents");
   });

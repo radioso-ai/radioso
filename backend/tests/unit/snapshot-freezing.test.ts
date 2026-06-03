@@ -71,6 +71,7 @@ describe("freezeAgent", () => {
       suggestedQuestionsEnabled: true,
       assistantLinkUtmEnabled: true,
       citationDisplayEnabled: true,
+      contactRequestsEnabled: false,
       retrievalEnabled: true,
       logo: null,
       theme: {} as never,

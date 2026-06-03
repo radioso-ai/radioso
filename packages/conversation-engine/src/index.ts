@@ -9,6 +9,7 @@ import type {
   ProcessTurnStreamEvent,
   ProcessTurnStreamInput,
   RenderableTurn,
+  RoutineActionRequest,
   SelectionDecision,
   SkillDefinition,
   SkillTransientGuidance,
@@ -121,6 +122,7 @@ const createProcessTurnResult = (input: {
   outcomes: TurnOutcome[];
   response: RenderableTurn;
   trace: ConversationTrace;
+  actions?: RoutineActionRequest[];
 }): ProcessTurnResult => ({
   sessionId: input.sessionId,
   events: input.events,
@@ -128,6 +130,7 @@ const createProcessTurnResult = (input: {
   outcomes: input.outcomes,
   response: input.response,
   trace: input.trace,
+  ...(input.actions && input.actions.length > 0 ? { actions: input.actions } : {}),
 });
 
 export class DefaultConversationEngine implements ConversationEngine {
@@ -255,7 +258,7 @@ export class DefaultConversationEngine implements ConversationEngine {
    * The user input event is appended only once the turn is committed to a routine,
    * so a non-claiming activation check leaves the normal path to append it.
    */
-  private async tryRoutineTurn(
+  async attemptRoutine(
     input: ProcessTurnInput | ProcessTurnStreamInput,
   ): Promise<ProcessTurnResult | null> {
     if (!input.routineStore || !input.routineRunner) {
@@ -338,12 +341,13 @@ export class DefaultConversationEngine implements ConversationEngine {
       },
       outcomes: result.outcomes ?? [],
       response: result.response,
+      actions: result.actions,
       trace: createTrace([gatherStage, routineStage]),
     });
   }
 
   async processTurn(input: ProcessTurnInput): Promise<ProcessTurnResult> {
-    const resumed = await this.tryRoutineTurn(input);
+    const resumed = await this.attemptRoutine(input);
     if (resumed) {
       return resumed;
     }
@@ -375,7 +379,7 @@ export class DefaultConversationEngine implements ConversationEngine {
   }
 
   async *processTurnStream(input: ProcessTurnStreamInput): AsyncIterable<ProcessTurnStreamEvent> {
-    const resumed = await this.tryRoutineTurn(input);
+    const resumed = await this.attemptRoutine(input);
     if (resumed) {
       if (resumed.response.answer) {
         yield { type: "delta", sessionId: input.sessionId, text: resumed.response.answer };

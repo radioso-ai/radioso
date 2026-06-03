@@ -29,10 +29,13 @@ interface Operation {
   tags?: string[];
   summary?: string;
   description?: string;
+  security?: SecurityRequirement[];
   parameters?: Parameter[];
   requestBody?: { description?: string; content?: Record<string, { schema?: Schema }> };
   responses?: Record<string, { description?: string; content?: Record<string, { schema?: Schema }> }>;
 }
+
+type SecurityRequirement = Record<string, string[]>;
 
 interface Parameter {
   name?: string;
@@ -49,7 +52,9 @@ interface Schema {
   enum?: unknown[];
   required?: string[];
   properties?: Record<string, Schema>;
+  additionalProperties?: Schema | boolean;
   items?: Schema;
+  allOf?: Schema[];
   anyOf?: Schema[];
   oneOf?: Schema[];
 }
@@ -119,6 +124,8 @@ function renderOperation(entry: OperationEntry, schemas: Record<string, Schema>)
     lines.push("", operation.description);
   }
 
+  lines.push("", `Auth: ${renderAuth(operation.security)}`);
+
   const params = operation.parameters ?? [];
   if (params.length > 0) {
     lines.push("", "### Parameters");
@@ -163,7 +170,7 @@ function firstSchema(content: Record<string, { schema?: Schema }> | undefined): 
 }
 
 function renderSchema(schema: Schema, schemas: Record<string, Schema>): string {
-  const resolved = resolveRef(schema, schemas);
+  const resolved = normalizeSchema(schema, schemas);
   if (resolved.properties) {
     const required = new Set(resolved.required ?? []);
     const lines = Object.entries(resolved.properties).map(([name, prop]) => {
@@ -173,6 +180,47 @@ function renderSchema(schema: Schema, schemas: Record<string, Schema>): string {
     return lines.join("\n");
   }
   return `- type: ${schemaType(resolved, schemas)}`;
+}
+
+function renderAuth(security: SecurityRequirement[] | undefined): string {
+  if (!security?.length) {
+    return "none";
+  }
+  return security.map(renderSecurityRequirement).join(" or ");
+}
+
+function renderSecurityRequirement(requirement: SecurityRequirement): string {
+  const schemes = Object.keys(requirement);
+  return schemes.length > 0 ? schemes.join(" + ") : "none";
+}
+
+function normalizeSchema(schema: Schema, schemas: Record<string, Schema>, visitedRefs: Set<string> = new Set()): Schema {
+  const resolved = resolveRef(schema, schemas, visitedRefs);
+  if (!resolved.allOf) {
+    return resolved;
+  }
+
+  const mergedProperties: Record<string, Schema> = {};
+  const mergedRequired = new Set<string>();
+
+  for (const part of resolved.allOf) {
+    const normalizedPart = normalizeSchema(part, schemas, new Set(visitedRefs));
+    Object.assign(mergedProperties, normalizedPart.properties ?? {});
+    for (const required of normalizedPart.required ?? []) {
+      mergedRequired.add(required);
+    }
+  }
+
+  Object.assign(mergedProperties, resolved.properties ?? {});
+  for (const required of resolved.required ?? []) {
+    mergedRequired.add(required);
+  }
+
+  const normalized: Schema = { ...resolved, type: resolved.type ?? "object" };
+  delete normalized.allOf;
+  normalized.properties = mergedProperties;
+  normalized.required = [...mergedRequired];
+  return normalized;
 }
 
 function schemaType(schema: Schema | undefined, schemas: Record<string, Schema>): string {
@@ -192,13 +240,30 @@ function schemaType(schema: Schema | undefined, schemas: Record<string, Schema>)
   if (schema.type === "array") {
     return `array<${schemaType(schema.items, schemas)}>`;
   }
+  if (schema.additionalProperties !== undefined && schema.additionalProperties !== false) {
+    return `map<${additionalPropertiesType(schema.additionalProperties, schemas)}>`;
+  }
   return schema.format ? `${schema.type ?? "object"}<${schema.format}>` : schema.type ?? "object";
 }
 
-function resolveRef(schema: Schema, schemas: Record<string, Schema>): Schema {
+function additionalPropertiesType(additionalProperties: Schema | true, schemas: Record<string, Schema>): string {
+  if (additionalProperties === true) {
+    return "unknown";
+  }
+  if (Object.keys(additionalProperties).length === 0) {
+    return "unknown";
+  }
+  return schemaType(additionalProperties, schemas);
+}
+
+function resolveRef(schema: Schema, schemas: Record<string, Schema>, visitedRefs: Set<string> = new Set()): Schema {
   if (!schema.$ref) {
     return schema;
   }
+  if (visitedRefs.has(schema.$ref)) {
+    return schema;
+  }
+  visitedRefs.add(schema.$ref);
   return schemas[refName(schema.$ref)] ?? schema;
 }
 

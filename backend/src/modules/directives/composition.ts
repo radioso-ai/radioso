@@ -8,6 +8,7 @@ import {
 } from "@radioso/conversation-defaults";
 import { DIRECTIVES_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import type { TextGenerationClient } from "../../shared/infra/llm/providerTypes.js";
 
 import { DirectiveSteeringService, type DirectiveSteeringPort } from "./directiveSteeringService.js";
@@ -30,7 +31,9 @@ export const createDirectiveMatcher = (input: {
   return new CompositeDirectiveMatcher([
     alwaysMatch,
     new ProbabilisticDirectiveMatcher({
-      gateway: new ModelDirectiveMatchGateway(input.textGenerationClient),
+      gateway: new ModelDirectiveMatchGateway(input.textGenerationClient, {
+        systemPrompt: loadPromptTemplate("chat/directive-match.md"),
+      }),
       confidenceThreshold: input.confidenceThreshold ?? DIRECTIVES_BEHAVIOR.contextualMatchConfidenceThreshold,
     }),
   ]);

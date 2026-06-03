@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type {
@@ -9,6 +13,9 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 import {
+  DEFAULT_DIRECTIVE_MATCH_SYSTEM_PROMPT,
+  DEFAULT_ROUTINE_NEXT_STEP_PROMPT,
+  DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
   InMemoryConversationRoutineStore,
   RoutineNextStepSelector,
   RoutineRegistry,
@@ -31,8 +38,17 @@ const transitions: RoutineTransition[] = [
 const state: RoutineState = { sessionId: "s1", routineId: "contact", path: ["ask_email"], variables: {}, status: "active" };
 
 const gateway = (text: string): ConversationModelGateway => ({ complete: vi.fn(async () => ({ text })) });
+const testDirectory = path.dirname(fileURLToPath(import.meta.url));
+const backendPrompt = (relativePath: string): string =>
+  readFileSync(path.resolve(testDirectory, "../../../backend/prompts", relativePath), "utf8").trimEnd();
 
 describe("routine defaults", () => {
+  it("keeps package fallback prompts byte-equal to the backend prompt files", () => {
+    expect(DEFAULT_DIRECTIVE_MATCH_SYSTEM_PROMPT).toBe(backendPrompt("chat/directive-match.md"));
+    expect(DEFAULT_ROUTINE_NEXT_STEP_PROMPT).toBe(backendPrompt("chat/routine-next-step.md"));
+    expect(DEFAULT_ROUTINE_STEP_REPLY_PROMPT).toBe(backendPrompt("chat/routine-step-reply.md"));
+  });
+
   it("activates the first registered routine whose registration claims the turn", async () => {
     const first = vi.fn(async () => null);
     const registry = new RoutineRegistry([
@@ -64,6 +80,44 @@ describe("routine defaults", () => {
     expect(gw.complete).not.toHaveBeenCalled();
   });
 
+  it("yields the turn when the model marks the latest message off-topic", async () => {
+    const decision = await new RoutineNextStepSelector(
+      gateway('{"condition": null, "offTopic": true, "variables": {}}'),
+    ).select({ routine, state, currentStep, transitions, turn });
+    expect(decision).toEqual({ nextStepId: "ask_email", yieldTurn: true });
+  });
+
+  it("follows a decline transition instead of yielding or re-asking", async () => {
+    const declineTransitions: RoutineTransition[] = [
+      { from: "ask_email", to: "cancelled", condition: "the user declined, cancelled, refused, or wants to stop" },
+    ];
+    const decision = await new RoutineNextStepSelector(
+      gateway('{"condition": 1, "offTopic": false, "variables": {}}'),
+    ).select({ routine, state, currentStep, transitions: declineTransitions, turn });
+    expect(decision).toEqual({ nextStepId: "cancelled", variables: {} });
+  });
+
+  it("throws when a prompt template leaves a variable unfilled", async () => {
+    const selector = new RoutineNextStepSelector(gateway("{}"), {
+      promptTemplate: "{{currentStep}}\n{{missing}}",
+    });
+
+    await expect(selector.select({ routine, state, currentStep, transitions, turn })).rejects.toThrow(
+      'Missing prompt variable "missing" for template chat/routine-next-step.md',
+    );
+  });
+
+  it("substitutes prompt variables in a single pass", async () => {
+    const gw = gateway("ok");
+    await new RoutineStepRenderer(gw, { promptTemplate: "{{instructions}}" }).render({
+      step: { ...currentStep, action: "Ask literally for {{missing}}." },
+      steering: [],
+      turn,
+    });
+
+    expect(vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt).toBe("- Ask literally for {{missing}}.");
+  });
+
   it("renders a step reply through the model gateway and trims it", async () => {
     const gw = gateway("  What's your email address?  ");
     const result = await new RoutineStepRenderer(gw).render({
@@ -83,6 +137,16 @@ describe("routine defaults", () => {
     await expect(store.loadActive({ sessionId: "s1" })).resolves.toEqual(state);
 
     now = 1050;
+    await expect(store.loadActive({ sessionId: "s1" })).resolves.toBeNull();
+  });
+
+  it("does not load completed or explicitly expired routine state", async () => {
+    const store = new InMemoryConversationRoutineStore();
+
+    await store.save({ ...state, status: "completed" });
+    await expect(store.loadActive({ sessionId: "s1" })).resolves.toBeNull();
+
+    await store.save({ ...state, status: "expired" });
     await expect(store.loadActive({ sessionId: "s1" })).resolves.toBeNull();
   });
 });

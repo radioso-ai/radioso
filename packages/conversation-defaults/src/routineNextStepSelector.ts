@@ -11,6 +11,8 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 
+import { renderPromptTemplate } from "./promptTemplate.js";
+
 export const DEFAULT_ROUTINE_NEXT_STEP_PROMPT = `You are guiding a user through a structured, multi-step routine. Decide what should
 happen next, based on what the user just said.
 
@@ -44,14 +46,6 @@ Rules:
 - "variables": only values the user actually provided this turn (for example an email
   address or a message). Use an empty object {} when there are none.
 - Return only the JSON object, with no other text.`;
-
-const renderPromptTemplate = (template: string, values: Record<string, string>): string => {
-  let rendered = template;
-  for (const [key, value] of Object.entries(values)) {
-    rendered = rendered.replaceAll(`{{${key}}}`, value);
-  }
-  return rendered;
-};
 
 const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,
@@ -160,7 +154,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     const conditions = input.transitions
       .map((transition, index) => `${index + 1}. ${transition.condition}`)
       .join("\n");
-    const systemPrompt = renderPromptTemplate(this.promptTemplate, {
+    const systemPrompt = renderPromptTemplate("chat/routine-next-step.md", this.promptTemplate, {
       currentStep: input.currentStep.action ?? input.currentStep.id,
       skillResult: skillResultBlock(input.skillResult),
       conditions,

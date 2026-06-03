@@ -123,6 +123,13 @@ describe("default answer directives", () => {
     expect(inlineSupportedLinksDirective.action).toContain("If the user asks for a link");
     expect(inlineSupportedLinksDirective.action).toContain("human-readable link text");
     expect(inlineSupportedLinksDirective.action).toContain("Never print a bare/raw URL");
+    // Link text must be the resource's own name, not a generic tail phrase, and a
+    // supported URL must never be replaced by a citation marker or parenthetical gesture.
+    expect(inlineSupportedLinksDirective.action).toContain("The link text must be the resource's own name");
+    expect(inlineSupportedLinksDirective.action).toContain("not a generic pointer phrase");
+    expect(inlineSupportedLinksDirective.action).toContain(
+      "never substitute a citation marker or a parenthetical gesture",
+    );
     // Reconciled link rules: inline-only, never a trailing/semicolon list or a block
     // following a citation marker, and never a link or marker alone on its own line.
     expect(inlineSupportedLinksDirective.action).toContain("Never gather links into a trailing list");

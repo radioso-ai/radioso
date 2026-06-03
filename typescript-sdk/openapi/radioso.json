@@ -6623,6 +6623,146 @@
           "retrievalInvoked"
         ]
       },
+      "CapabilitySubTrace": {
+        "type": "object",
+        "properties": {
+          "namespace": {
+            "type": "string",
+            "description": "Capability that produced this sub-trace; the renderer keys on it (e.g. retrieval, skill-intake)."
+          },
+          "version": {
+            "type": "number"
+          },
+          "payload": {
+            "description": "Opaque capability-owned trace payload (e.g. an ActivityTrace). Shape varies by namespace/version."
+          }
+        },
+        "required": [
+          "namespace",
+          "version"
+        ]
+      },
+      "ConversationTraceStage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "applied",
+              "skipped",
+              "fallback",
+              "rejected",
+              "unavailable",
+              "failed"
+            ]
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "outputs": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "metrics": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "subTrace": {
+            "$ref": "#/components/schemas/CapabilitySubTrace"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status"
+        ]
+      },
+      "ConversationTrace": {
+        "type": "object",
+        "properties": {
+          "traceId": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "string"
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationTraceStage"
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
+                "to",
+                "kind"
+              ]
+            }
+          },
+          "summary": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "traceId",
+          "startedAt",
+          "stages"
+        ]
+      },
+      "TurnTraceEnvelope": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "description": "Envelope generation marker. 0 = synthesized from a legacy turn; >=1 = engine-emitted spine."
+          },
+          "spine": {
+            "$ref": "#/components/schemas/ConversationTrace"
+          },
+          "summary": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "version",
+          "spine"
+        ]
+      },
       "AssistantChatDebug": {
         "type": "object",
         "properties": {
@@ -6634,6 +6774,9 @@
           },
           "activityTrace": {
             "$ref": "#/components/schemas/ActivityTrace"
+          },
+          "turnTrace": {
+            "$ref": "#/components/schemas/TurnTraceEnvelope"
           }
         },
         "required": [
@@ -7271,6 +7414,9 @@
           },
           "activityTrace": {
             "$ref": "#/components/schemas/ActivityTrace"
+          },
+          "turnTrace": {
+            "$ref": "#/components/schemas/TurnTraceEnvelope"
           },
           "errorMessage": {
             "type": [

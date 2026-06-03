@@ -30,6 +30,88 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
     nextCursor: null,
     hasMore: false,
   };
+  const activityTrace = {
+    traceId: "trace-1",
+    startedAt: nowIso,
+    completedAt: nowIso,
+    totalDurationMs: 12,
+    summary: {
+      execution: {
+        surface: "assistant",
+        path: "assistant_retrieval",
+        retrievalInvoked: true,
+      },
+      candidateCounts: { semantic: 1, lexical: 1, merged: 1, final: 1 },
+      fallbackApplied: false,
+      rerankStatus: "skipped",
+    },
+    stages: [
+      {
+        stageId: "context",
+        kind: "context",
+        label: "Context",
+        status: "applied",
+        metrics: { selectedHistoryCount: 1 },
+      },
+      {
+        stageId: "routing",
+        kind: "routing",
+        label: "Routing",
+        status: "applied",
+        outputs: {
+          responseIntent: "retrieval",
+          retrievalInvoked: true,
+          retrievalSkipped: false,
+        },
+        reason: "evidence_required",
+      },
+      {
+        stageId: "generation",
+        kind: "generation",
+        label: "Generation",
+        status: "applied",
+        metrics: { latencyMs: 12 },
+      },
+      {
+        stageId: "answer",
+        kind: "answer_outcome",
+        label: "Answer outcome",
+        status: "applied",
+        outputs: { outcome: "grounded_success" },
+      },
+    ],
+    links: [
+      { fromStageId: "context", toStageId: "routing", kind: "sequence" },
+      { fromStageId: "routing", toStageId: "generation", kind: "sequence" },
+      { fromStageId: "generation", toStageId: "answer", kind: "sequence" },
+    ],
+  };
+  const turnTrace = {
+    version: 1,
+    spine: {
+      traceId: "conversation-turn-1",
+      startedAt: nowIso,
+      completedAt: nowIso,
+      stages: [
+        { id: "gather", kind: "gather", status: "applied", outputs: { historyCount: 1 } },
+        { id: "directives", kind: "directive_match", status: "skipped", outputs: { matchCount: 0 } },
+        {
+          id: "selection",
+          kind: "skill_selection",
+          status: "applied",
+          outputs: { selectedSkills: ["retrieval.answer"], reason: "evidence_required" },
+        },
+        {
+          id: "dispatch:retrieval.answer",
+          kind: "skill_dispatch",
+          status: "applied",
+          outputs: { skillName: "retrieval.answer", outcomeStatus: "completed" },
+          subTrace: { namespace: "retrieval", version: 1, payload: activityTrace },
+        },
+        { id: "compose", kind: "compose", status: "applied", outputs: { outcomeCount: 1 } },
+      ],
+    },
+  };
   const conversationDetail = {
     conversationId,
     workspaceId,
@@ -101,67 +183,8 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
               materialDisagreement: false,
             },
           },
-          activityTrace: {
-            traceId: "trace-1",
-            startedAt: nowIso,
-            completedAt: nowIso,
-            totalDurationMs: 12,
-            summary: {
-              execution: {
-                surface: "assistant",
-                path: "assistant_retrieval",
-                retrievalInvoked: true,
-              },
-              candidateCounts: {
-                semantic: 1,
-                lexical: 1,
-                merged: 1,
-                final: 1,
-              },
-              fallbackApplied: false,
-              rerankStatus: "skipped",
-            },
-            stages: [
-              {
-                stageId: "context",
-                kind: "context",
-                label: "Context",
-                status: "applied",
-                metrics: { selectedHistoryCount: 1 },
-              },
-              {
-                stageId: "routing",
-                kind: "routing",
-                label: "Routing",
-                status: "applied",
-                outputs: {
-                  responseIntent: "retrieval",
-                  retrievalInvoked: true,
-                  retrievalSkipped: false,
-                },
-                reason: "evidence_required",
-              },
-              {
-                stageId: "generation",
-                kind: "generation",
-                label: "Generation",
-                status: "applied",
-                metrics: { latencyMs: 12 },
-              },
-              {
-                stageId: "answer",
-                kind: "answer_outcome",
-                label: "Answer outcome",
-                status: "applied",
-                outputs: { outcome: "grounded_success" },
-              },
-            ],
-            links: [
-              { fromStageId: "context", toStageId: "routing", kind: "sequence" },
-              { fromStageId: "routing", toStageId: "generation", kind: "sequence" },
-              { fromStageId: "generation", toStageId: "answer", kind: "sequence" },
-            ],
-          },
+          activityTrace,
+          turnTrace,
           route: {
             generator: "assistant",
             routeType: "retrieval",
@@ -194,11 +217,29 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
   await expect(
     page.locator("li").filter({ hasText: "Advanced techniques" }).getByRole("button", { name: /Open source 1/ }),
   ).toBeVisible();
+  // The inline Debug pane shows the textual diagnostics.
   await page.getByRole("button", { name: "Debug" }).click();
-  await expect(page.getByText("Route", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: /Context/ })).toBeVisible();
-  await expect(page.getByText("retrieval").first()).toBeVisible();
-  await expect(page.getByText("evidence needed")).toBeVisible();
+  await expect(page.getByText("Outcome summary").first()).toBeVisible();
+
+  // The full turn flow opens full-screen from the header Flow button:
+  // inputs → engine → skill path → outcome.
+  await page.getByRole("button", { name: "Flow" }).click();
+  await expect(page.getByText("Turn flow", { exact: true })).toBeVisible();
+  await expect(page.getByText("Engine", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Retrieval", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Outcome", { exact: true }).first()).toBeVisible();
+  // The retrieval capability path streams out as its own nodes.
+  await expect(page.getByText("Context", { exact: true }).first()).toBeVisible();
+
+  // The skill node is selected by default → its dispatch detail is shown.
+  await expect(page.getByText("Dispatch", { exact: true }).first()).toBeVisible();
+
+  // Selecting the engine node swaps the detail pane to the selection stage.
+  await page.getByText("Engine", { exact: true }).first().click();
+  await expect(page.getByText("Select skill", { exact: true }).first()).toBeVisible();
+
+  await page.getByRole("button", { name: "Close turn flow" }).click();
+  await expect(page.getByText("Turn flow", { exact: true })).toHaveCount(0);
 });
 
 test("activity filtered pages request one offset-backed page", async ({ page }) => {

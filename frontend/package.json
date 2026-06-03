@@ -33,8 +33,10 @@
     "@radix-ui/react-switch": "1.2.6",
     "@radix-ui/react-tabs": "1.1.13",
     "@radix-ui/react-tooltip": "1.2.8",
+    "@xyflow/react": "^12.11.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dagre": "^0.8.5",
     "lucide-react": "^0.577.0",
     "next": "16.2.6",
     "react": "19.2.6",
@@ -49,6 +51,7 @@
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.2.0",
+    "@types/dagre": "^0.7.54",
     "@types/node": "^24",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",

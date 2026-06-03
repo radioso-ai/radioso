@@ -378,7 +378,7 @@ export function ConversationDrawer({
                 })() : null}
               </div>
               <div className="flex items-center gap-2">
-                {activeEnvelope ? (
+                {showGraph && activeEnvelope ? (
                   <Button
                     type="button"
                     size="sm"
@@ -399,6 +399,7 @@ export function ConversationDrawer({
                     onClick={() => {
                       if (showGraph) {
                         setShowGraph(false)
+                        setFlowOpen(false)
                         setSelectedStageId(activeInitialStageId)
                       } else {
                         setShowGraph(true)
@@ -549,7 +550,7 @@ export function ConversationDrawer({
             )}
           </div>
 
-          {activeEnvelope ? (
+          {showGraph && activeEnvelope ? (
             <TurnFlowOverlay
               key={activeEnvelope.spine.traceId}
               open={flowOpen}

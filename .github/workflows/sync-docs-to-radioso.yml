@@ -13,6 +13,7 @@ on:
       - backend/openapi.json
       - packages/radioso-docs-importer/**
       - .github/workflows/sync-docs-to-radioso.yml
+      # README changes elsewhere do not auto-trigger; use workflow_dispatch for those imports.
   workflow_dispatch:
     inputs:
       prune:
@@ -32,6 +33,7 @@ jobs:
       RADIOSO_BASE_URL: https://platform.radioso.dev/backend
       RADIOSO_API_TOKEN: ${{ secrets.RADIOSO_DOCS_API_TOKEN }}
       CITATION_BASE_URL: https://docs.radioso.dev
+      REPO_SOURCE_BASE_URL: https://github.com/radioso-ai/radioso/blob/main
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd

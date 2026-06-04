@@ -79,7 +79,7 @@ export interface ApplicationComposition {
   websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
   usageEventRecorderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageEventRecorderRegistration"];
-  chatIntakeProviderRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["chatIntakeProviderRegistrations"];
+  publicChatActionAdvertiserRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["publicChatActionAdvertiserRegistrations"];
   routineRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["routineRegistrations"];
   actionHandlerRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["actionHandlerRegistrations"];
   contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
@@ -133,7 +133,7 @@ export const createDefaultApplicationComposition = (options: {
     websiteEmbedIntegration: registry.websiteEmbedIntegration,
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
     usageEventRecorderRegistration: registry.usageEventRecorderRegistration,
-    chatIntakeProviderRegistrations: registry.chatIntakeProviderRegistrations,
+    publicChatActionAdvertiserRegistrations: registry.publicChatActionAdvertiserRegistrations,
     routineRegistrations: registry.routineRegistrations,
     actionHandlerRegistrations: registry.actionHandlerRegistrations,
     contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,

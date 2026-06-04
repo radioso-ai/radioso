@@ -267,7 +267,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     productAnalyticsService: infrastructure.productAnalyticsService,
     capabilityPolicy: composition.capabilityPolicy,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
-    chatIntakeProvider: chat.chatIntakeProvider,
+    publicChatActionAdvertiser: chat.publicChatActionAdvertiser,
     contactHistoryProvider: chat.contactHistoryProvider,
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,

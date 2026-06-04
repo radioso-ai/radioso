@@ -2,7 +2,7 @@
 
 Chat owns assistant-facing conversation behavior. Start here when a feature
 changes chat turns, streaming, citations, suggestions, conversation history,
-assistant bootstrap, or skill intake.
+assistant bootstrap, or public chat actions.
 
 For the broader repository map, see
 [`docs/architecture/code-map.md`](../../../../docs/architecture/code-map.md).
@@ -53,8 +53,8 @@ imports from `services/`.
   reusable engine.
 - Citations: `citation*`, `implicitCitationSupport.ts`,
   `chatAnswerPresenter.ts`.
-- Suggestions and skill intake: `chatIntakeProvider.ts`,
-  `configuredSkillIntakeProvider.ts`, `chat-action` tests.
+- Suggestions and public chat actions: `publicChatActionAdvertiser.ts`,
+  `chat-action` tests.
 - History: `assistantHistoryService.ts`, `chatHistoryService.ts`,
   `historyItemPresenter.ts`.
 - Bootstrap and public chat: `chatBootstrapService.ts`,

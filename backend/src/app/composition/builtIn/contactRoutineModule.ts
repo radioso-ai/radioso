@@ -8,7 +8,7 @@ import {
   ContactSendActionHandler,
   WorkspaceOwnerContactRecipientResolver,
   classifyContactIntent,
-  type ChatIntakeProviderPort,
+  type PublicChatActionAdvertiserPort,
   type PublicChatIntakeAction,
 } from "../../../modules/chat/composition.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
@@ -22,16 +22,11 @@ interface AgentContactFlagLookup {
 
 /**
  * Surfaces the "contact a human" affordance to the public chat UI (the existing button
- * is gated on this advertised action) — but only for agents that enabled contact
- * requests, and it never claims the turn: `handle` returns null so the turn falls
- * through to the engine, where the contact routine activates on the `intent_click`.
+ * is gated on this advertised action), but only for agents that enabled contact
+ * requests. The contact routine itself owns turn handling.
  */
-class ContactIntakeActionAdvertiser implements ChatIntakeProviderPort {
+class ContactIntakeActionAdvertiser implements PublicChatActionAdvertiserPort {
   constructor(private readonly agents: AgentContactFlagLookup) {}
-
-  async handle(): Promise<null> {
-    return null;
-  }
 
   async getPublicIntakeActions(input: {
     workspaceId: string;
@@ -94,7 +89,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           logger,
         ),
     });
-    context.registerChatIntakeProvider(
+    context.registerPublicChatActionAdvertiser(
       ({ agentService }) => new ContactIntakeActionAdvertiser(agentService),
     );
   },

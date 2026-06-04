@@ -48,12 +48,12 @@ const applyModule = () => {
 };
 
 describe("contact routine application module", () => {
-  it("registers the contact routine, the contact.send handler, and the intake advertiser", () => {
+  it("registers the contact routine, the contact.send handler, and the public action advertiser", () => {
     const registry = applyModule();
 
     expect(registry.routineRegistrations.map((r) => r.routine.id)).toEqual([contactRoutine.id]);
     expect(registry.actionHandlerRegistrations.map((r) => r.type)).toEqual([CONTACT_SEND_ACTION_TYPE]);
-    expect(registry.chatIntakeProviderRegistrations).toHaveLength(1);
+    expect(registry.publicChatActionAdvertiserRegistrations).toHaveLength(1);
   });
 
   it("activates on the explicit contact pill click (fast path, no LLM call)", async () => {
@@ -79,8 +79,8 @@ describe("contact routine application module", () => {
     expect(await activates({ turn: turnWith(typed, false), modelGateway: failingGateway })).toBeNull();
   });
 
-  it("advertises the contact action only when the agent enabled it, and never claims the turn", async () => {
-    const registration = applyModule().chatIntakeProviderRegistrations[0]!;
+  it("advertises the contact action only when the agent enabled it", async () => {
+    const registration = applyModule().publicChatActionAdvertiserRegistrations[0]!;
     const build = (enabled: boolean) =>
       typeof registration === "function"
         ? registration({ agentService: agentServiceWith(enabled) } as never)
@@ -90,15 +90,6 @@ describe("contact routine application module", () => {
       { skillName: CONTACT_INTENT_SKILL_NAME, intentName: CONTACT_INTENT_NAME },
     ]);
     expect(await build(false).getPublicIntakeActions?.({ workspaceId: "ws_1", agentId: "a" })).toEqual([]);
-    // handle returns null → the turn falls through to the engine, where the routine runs.
-    expect(
-      await build(true).handle({
-        workspaceId: "ws_1",
-        conversationId: "c",
-        userMessageId: "m",
-        query: "contact",
-        history: [],
-      }),
-    ).toBeNull();
+    expect("handle" in build(true)).toBe(false);
   });
 });

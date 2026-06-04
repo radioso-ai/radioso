@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import request from "supertest";
 
 import { issuePublicChatSession } from "../../src/modules/settings/contracts/publicChatSession.js";
-import type { ChatIntakeProviderPort } from "../../src/modules/chat/services/chatIntakeProvider.js";
+import type { PublicChatActionAdvertiserPort } from "../../src/modules/chat/services/publicChatActionAdvertiser.js";
 import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
 describe("public chat session contract", () => {
@@ -57,10 +57,7 @@ describe("public chat session contract", () => {
   });
 
   it("exposes configured public intake actions on website embed sessions and conversation lists", async () => {
-    const chatIntakeProvider: ChatIntakeProviderPort = {
-      async handle() {
-        return null;
-      },
+    const publicChatActionAdvertiser: PublicChatActionAdvertiserPort = {
       async getPublicIntakeActions(input) {
         expect(input.sourceChannel).toBe("website_embed");
         return [{
@@ -69,7 +66,7 @@ describe("public chat session contract", () => {
         }];
       },
     };
-    const { app } = createTestApp({ chatIntakeProvider });
+    const { app } = createTestApp({ publicChatActionAdvertiser });
     const session = await issueTestSession(app, "public-embed-intake-actions@example.com");
 
     const token = await enableWebsiteEmbed(app, session);

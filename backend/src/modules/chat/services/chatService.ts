@@ -17,7 +17,7 @@ import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositor
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AgentService } from "../../agents/public.js";
 import type { ChatGateway, ChatGatewayInput } from "../contracts/chatGateway.js";
-import type { ChatStreamEvent, SkillStreamPayload, SkillStreamPhase } from "../contracts/streamEvents.js";
+import type { ChatStreamEvent } from "../contracts/streamEvents.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
@@ -28,7 +28,6 @@ import {
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
-import { NoopChatIntakeProvider, type ChatIntakeProviderPort, type ChatIntakeResult } from "./chatIntakeProvider.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import {
   attemptRoutineTurnWithConversationEngine,
@@ -118,125 +117,6 @@ type PreparedChatStreamTurnEvent =
       actions?: RoutineActionRequest[];
     };
 
-const SKILL_CHIP_TAG_PATTERN = /<skill_chip>([\s\S]*?)<\/skill_chip>\s*/i;
-const SKILL_RECEIPT_TAG_PATTERN = /<skill_receipt>([\s\S]*?)<\/skill_receipt>\s*/i;
-
-export interface ExtractedSkillReceiptOverrides {
-  statusLabel?: string;
-  fieldLabels?: Record<string, string>;
-}
-
-export interface ExtractedSkillTags {
-  localizedTitle?: string;
-  receiptOverrides?: ExtractedSkillReceiptOverrides;
-  cleanedAnswer: string;
-}
-
-const parseReceiptOverrides = (raw: string): ExtractedSkillReceiptOverrides | undefined => {
-  try {
-    const parsed = JSON.parse(raw.trim()) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return undefined;
-    }
-    const record = parsed as Record<string, unknown>;
-    const statusLabel = typeof record.status === "string" && record.status.trim() ? record.status.trim() : undefined;
-    let fieldLabels: Record<string, string> | undefined;
-    if (record.fields && typeof record.fields === "object" && !Array.isArray(record.fields)) {
-      fieldLabels = {};
-      for (const [name, label] of Object.entries(record.fields as Record<string, unknown>)) {
-        if (typeof label === "string" && label.trim()) {
-          fieldLabels[name] = label.trim();
-        }
-      }
-      if (Object.keys(fieldLabels).length === 0) {
-        fieldLabels = undefined;
-      }
-    }
-    if (!statusLabel && !fieldLabels) {
-      return undefined;
-    }
-    return { statusLabel, fieldLabels };
-  } catch {
-    return undefined;
-  }
-};
-
-export const extractSkillTags = (answer: string): ExtractedSkillTags => {
-  let cleanedAnswer = answer;
-  let localizedTitle: string | undefined;
-  const chipMatch = cleanedAnswer.match(SKILL_CHIP_TAG_PATTERN);
-  if (chipMatch) {
-    const candidate = chipMatch[1].trim();
-    localizedTitle = candidate || undefined;
-    cleanedAnswer = cleanedAnswer.replace(SKILL_CHIP_TAG_PATTERN, "");
-  }
-  let receiptOverrides: ExtractedSkillReceiptOverrides | undefined;
-  const receiptMatch = cleanedAnswer.match(SKILL_RECEIPT_TAG_PATTERN);
-  if (receiptMatch) {
-    receiptOverrides = parseReceiptOverrides(receiptMatch[1]);
-    cleanedAnswer = cleanedAnswer.replace(SKILL_RECEIPT_TAG_PATTERN, "");
-  }
-  const trimmed = cleanedAnswer.trimStart();
-  return {
-    localizedTitle,
-    receiptOverrides,
-    cleanedAnswer: trimmed || answer,
-  };
-};
-
-// Kept for backward compatibility with any external callers; thin wrapper around extractSkillTags.
-export const extractSkillChipTitle = (answer: string): { localizedTitle?: string; cleanedAnswer: string } => {
-  const { localizedTitle, cleanedAnswer } = extractSkillTags(answer);
-  return { localizedTitle, cleanedAnswer };
-};
-
-const intakeStatusToSkillPhase = (status: ChatIntakeResult["status"]): SkillStreamPhase => {
-  if (status === "completed") {
-    return "completed";
-  }
-  if (status === "failed" || status === "cancelled" || status === "expired") {
-    return "failed";
-  }
-  return "active";
-};
-
-const applyReceiptOverrides = (
-  receipt: ChatIntakeResult["receipt"],
-  overrides: ExtractedSkillReceiptOverrides | undefined,
-): ChatIntakeResult["receipt"] => {
-  if (!overrides) {
-    return receipt;
-  }
-  if (!receipt) {
-    return overrides.statusLabel
-      ? { fields: [], statusLabel: overrides.statusLabel }
-      : undefined;
-  }
-  const fields = overrides.fieldLabels
-    ? receipt.fields.map((field) =>
-        overrides.fieldLabels && overrides.fieldLabels[field.name]
-          ? { ...field, displayName: overrides.fieldLabels[field.name] }
-          : field,
-      )
-    : receipt.fields;
-  return {
-    ...receipt,
-    fields,
-    statusLabel: overrides.statusLabel ?? receipt.statusLabel,
-  };
-};
-
-const buildSkillStreamPayload = (
-  intakeResult: ChatIntakeResult,
-  localizedTitle: string | undefined,
-): SkillStreamPayload => ({
-  skillName: intakeResult.skillName,
-  phase: intakeStatusToSkillPhase(intakeResult.status),
-  display: intakeResult.display,
-  localizedTitle,
-  receipt: intakeResult.receipt,
-});
-
 /**
  * The registered routines this turn may resume or activate. Composition assembles it
  * (the concrete `RoutineRegistry` plus a runner factory); ChatService only builds the
@@ -266,7 +146,6 @@ export interface ChatServiceOptions {
   workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">;
   usageLimitPolicy?: UsageLimitPolicy;
   agentService?: Pick<AgentService, "resolve">;
-  chatIntakeProvider?: ChatIntakeProviderPort;
   directiveSteering?: RouteScopedDirectiveRuntime;
   selectionStrategy?: TurnSelectionStrategy;
   /** The reusable conversation engine drives every chat turn; composition always wires it. */
@@ -284,7 +163,6 @@ export class ChatService {
   private readonly chatGateway: ChatGateway;
   private readonly auditService: AuditService;
   private readonly usageLimitPolicy: UsageLimitPolicy;
-  private readonly chatIntakeProvider: ChatIntakeProviderPort;
   private readonly selectionStrategy: TurnSelectionStrategy;
   private readonly conversationEngine: ConversationEngine;
   private readonly chatAnswerPresenter: ChatAnswerPresenter;
@@ -309,7 +187,6 @@ export class ChatService {
       workspaceRepository,
       usageLimitPolicy = new NoopUsageLimitPolicy(),
       agentService,
-      chatIntakeProvider = new NoopChatIntakeProvider(),
       directiveSteering = noopRouteScopedDirectiveRuntime,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       conversationEngine,
@@ -323,7 +200,6 @@ export class ChatService {
     this.chatGateway = chatGateway;
     this.auditService = auditService;
     this.usageLimitPolicy = usageLimitPolicy;
-    this.chatIntakeProvider = chatIntakeProvider;
     this.selectionStrategy = selectionStrategy;
     this.conversationEngine = conversationEngine;
     this.directiveRuntime = directiveSteering;
@@ -476,35 +352,10 @@ export class ChatService {
 
     try {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
-      // Capability-neutral selection: attempt the strategy's candidates in
-      // order. `skill_intake` runs the intake skills (used if one matches);
-      // `retrieval` is terminal below. Default order reproduces today's behavior.
       const candidates = this.selectionStrategy.select({
         session,
         directives: session.directiveSteering?.matches ?? [],
       });
-      for (const candidate of candidates) {
-        if (candidate !== "skill_intake") {
-          break;
-        }
-        const intakeResult = await this.handleSkillIntake(input, session);
-        if (intakeResult) {
-          const { cleanedAnswer, receiptOverrides } = extractSkillTags(intakeResult.answer);
-          const response = await this.persistSkillIntakeTurn({
-            input,
-            session,
-            intakeResult: {
-              ...intakeResult,
-              answer: cleanedAnswer,
-              receipt: applyReceiptOverrides(intakeResult.receipt, receiptOverrides),
-            },
-            stream: input.stream,
-          });
-          assistantMessageId = response.assistantMessageId;
-          await usageReservation.commit();
-          return response;
-        }
-      }
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();
@@ -604,58 +455,6 @@ export class ChatService {
         session,
         directives: session.directiveSteering?.matches ?? [],
       });
-      for (const candidate of candidates) {
-        if (candidate !== "skill_intake") {
-          break;
-        }
-        const intakeResult = await this.handleSkillIntake(input, session);
-        if (!intakeResult) {
-          continue;
-        }
-        const { localizedTitle, receiptOverrides, cleanedAnswer } = extractSkillTags(intakeResult.answer);
-        const cleanedIntakeResult: ChatIntakeResult = {
-          ...intakeResult,
-          answer: cleanedAnswer,
-          receipt: applyReceiptOverrides(intakeResult.receipt, receiptOverrides),
-        };
-        const skill = buildSkillStreamPayload(cleanedIntakeResult, localizedTitle);
-        yield {
-          type: "skill",
-          conversationId: session.conversation.id,
-          ...skill,
-        };
-        yield {
-          type: "chunk",
-          text: cleanedAnswer,
-        };
-        const response = await this.persistSkillIntakeTurn({
-          input,
-          session,
-          intakeResult: cleanedIntakeResult,
-          stream: input.stream,
-        });
-        assistantMessageId = response.assistantMessageId;
-        await usageReservation.commit();
-        usageReservationCommitted = true;
-
-        yield {
-          type: "done",
-          conversationId: response.conversationId,
-          agentId: response.agentId,
-          agentName: response.agentName,
-          assistantMessageId: response.assistantMessageId,
-          route: response.route,
-          answer: response.answer,
-          citations: response.citations,
-          answerSegments: response.answerSegments,
-          suggestions: response.suggestions,
-          activitySummary: response.activitySummary,
-          activityTrace: response.activityTrace,
-          turnTrace: response.turnTrace,
-          skill,
-        };
-        return;
-      }
 
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, stream its rendered reply and finish — no retrieval.
@@ -815,74 +614,6 @@ export class ChatService {
     );
     const actionMergedSuggestions = actionSuggestionsResult.suggestions ?? [];
     return { suggestions: [...actionMergedSuggestions, ...questionSuggestions] };
-  }
-
-  private async handleSkillIntake(
-    input: {
-      workspaceId: string;
-      accountId?: string;
-      query: string;
-      stream: boolean;
-      userExpectedLocale?: string | null;
-      sourceChannel?: string | null;
-      anonymousSessionId?: string | null;
-      sourceOrigin?: string | null;
-      inputMetadata?: UserMessageInputMetadata;
-    },
-    session: PreparedSession,
-  ): Promise<ChatIntakeResult | null> {
-    try {
-      return await this.chatIntakeProvider.handle({
-        workspaceId: input.workspaceId,
-        accountId: input.accountId,
-        agentId: session.agent.id,
-        conversationId: session.conversation.id,
-        userMessageId: session.userMessage.id,
-        query: input.query,
-        history: [...session.history, session.userMessage],
-        sourceChannel: input.sourceChannel,
-        sourceOrigin: input.sourceOrigin,
-        anonymousSessionId: input.anonymousSessionId,
-        userExpectedLocale: input.userExpectedLocale,
-        inputMetadata: input.inputMetadata,
-      });
-    } catch (error) {
-      try {
-        await this.auditService.record({
-          accountId: input.accountId,
-          workspaceId: input.workspaceId,
-          eventType: "chat.skill_intake",
-          eventStatus: "failure",
-          metadata: {
-            conversationId: session.conversation.id,
-            userMessageId: session.userMessage.id,
-            stream: input.stream,
-            errorMessage: error instanceof Error ? error.message : "Unknown error",
-          },
-        });
-      } catch {
-        // Intake failure reporting is best effort; the chat turn should remain recoverable.
-      }
-      return null;
-    }
-  }
-
-  private async persistSkillIntakeTurn(input: {
-    input: {
-      workspaceId: string;
-      accountId?: string;
-    };
-    session: PreparedSession;
-    intakeResult: ChatIntakeResult;
-    stream: boolean;
-  }): Promise<ChatResponse> {
-    return this.chatTurnLifecycle.completeSkillIntakeTurn({
-      workspaceId: input.input.workspaceId,
-      accountId: input.input.accountId,
-      session: input.session,
-      intakeResult: input.intakeResult,
-      stream: input.stream,
-    });
   }
 
 }

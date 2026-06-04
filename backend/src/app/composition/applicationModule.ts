@@ -18,7 +18,7 @@ import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/contracts/websiteEmbedIntegration.js";
 import type {
   ChatGateway,
-  ChatIntakeProviderPort,
+  PublicChatActionAdvertiserPort,
   ContactHistoryProviderPort,
 } from "../../modules/chat/contracts/index.js";
 import type {
@@ -101,8 +101,8 @@ export interface MailTransportPort {
   }): Promise<void>;
 }
 
-export type ApplicationChatIntakeProviderRegistration =
-  | ChatIntakeProviderPort
+export type ApplicationPublicChatActionAdvertiserRegistration =
+  | PublicChatActionAdvertiserPort
   | ((context: {
       database: ApplicationDatabasePort;
       chatGateway: ChatGateway;
@@ -117,7 +117,7 @@ export type ApplicationChatIntakeProviderRegistration =
       assertPublicWebsiteUrl: (url: string) => Promise<void>;
       skillExecutorRegistry: SkillExecutorRegistry;
       agentService: Pick<AgentService, "resolve">;
-    }) => ChatIntakeProviderPort);
+    }) => PublicChatActionAdvertiserPort);
 
 export type ApplicationContactHistoryProviderRegistration =
   | ContactHistoryProviderPort
@@ -181,7 +181,7 @@ export interface ApplicationExtensionRegistry {
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
   chunkingProvider?: TextChunkingProviderPort;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
-  chatIntakeProviderRegistrations: ApplicationChatIntakeProviderRegistration[];
+  publicChatActionAdvertiserRegistrations: ApplicationPublicChatActionAdvertiserRegistration[];
   routineRegistrations: RoutineRegistration[];
   actionHandlerRegistrations: ApplicationActionHandlerRegistration[];
   contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
@@ -218,7 +218,7 @@ export interface ApplicationModuleRegistrationContext {
   registerWebsiteCrawlerProvider(provider: WebsiteCrawlerProvider): void;
   registerChunkingProvider(provider: TextChunkingProviderPort): void;
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
-  registerChatIntakeProvider(provider: ApplicationChatIntakeProviderRegistration): void;
+  registerPublicChatActionAdvertiser(provider: ApplicationPublicChatActionAdvertiserRegistration): void;
   registerRoutine(registration: RoutineRegistration): void;
   registerActionHandler(registration: ApplicationActionHandlerRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
@@ -249,7 +249,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   databaseMigrators: [],
   routeMounts: [],
   accountCreatedHooks: [],
-  chatIntakeProviderRegistrations: [],
+  publicChatActionAdvertiserRegistrations: [],
   routineRegistrations: [],
   actionHandlerRegistrations: [],
   skillCatalogEntries: [],
@@ -309,8 +309,8 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   registerWebsiteEmbedIntegration(provider) {
     registry.websiteEmbedIntegration = provider;
   },
-  registerChatIntakeProvider(provider) {
-    registry.chatIntakeProviderRegistrations.push(provider);
+  registerPublicChatActionAdvertiser(provider) {
+    registry.publicChatActionAdvertiserRegistrations.push(provider);
   },
   registerRoutine(registration) {
     registry.routineRegistrations.push(registration);

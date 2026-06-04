@@ -40,4 +40,9 @@ export {
 } from "./surfaceExtensions.js";
 export { freezeAgent, type AgentSnapshot } from "./agentSnapshot.js";
 export { createWebsiteEmbedSurfaceExtension } from "./services/websiteEmbedSurfaceExtension.js";
+export {
+  embedConfigCachePath,
+  noopEmbedConfigCacheInvalidator,
+  type EmbedConfigCacheInvalidator,
+} from "./services/embedConfigCacheInvalidator.js";
 export type { ValidateAgentInputOptions } from "./domain.js";

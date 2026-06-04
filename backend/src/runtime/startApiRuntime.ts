@@ -5,7 +5,7 @@ import { createApp } from "../app/server/createApp.js";
 import { buildDependencies } from "../app/server/dependencies.js";
 import type { Env } from "../app/config/env.js";
 import type { ApplicationModule } from "../app/composition/index.js";
-import { runMigrations } from "../db/runMigrations.js";
+import { runMigrations, type MigrationTimeoutOptions } from "../db/runMigrations.js";
 import { createConnectorChatPort } from "../modules/connectors/services/connectorChatPort.js";
 import { createLogger, type AppLogger } from "../shared/observability/logger.js";
 import type { AppDependencies } from "../app/server/types.js";
@@ -18,7 +18,7 @@ interface ServerLike {
 export interface StartApiRuntimeOptions {
   env: Env;
   logger?: AppLogger;
-  runMigrations?: (connectionString: string, logger: AppLogger) => Promise<void>;
+  runMigrations?: (connectionString: string, logger: AppLogger, options: MigrationTimeoutOptions) => Promise<void>;
   buildDependencies?: (env: Env) => AppDependencies;
   createApp?: (dependencies: AppDependencies) => Express;
   listen?: (app: Express, port: number, onListening: () => void) => ServerLike;
@@ -30,7 +30,27 @@ const defaultListen = (app: Express, port: number, onListening: () => void): Ser
 
 export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<RuntimeHandle> => {
   const logger = options.logger ?? createLogger();
-  await (options.runMigrations ?? runMigrations)(options.env.DATABASE_URL, logger);
+  const migrationOptions = {
+    lockTimeoutMs: options.env.DB_MIGRATION_LOCK_TIMEOUT_MS,
+    statementTimeoutMs: options.env.DB_MIGRATION_STATEMENT_TIMEOUT_MS,
+  };
+  logger.info({
+    role: "api",
+    migrationLockTimeoutMs: migrationOptions.lockTimeoutMs,
+    migrationStatementTimeoutMs: migrationOptions.statementTimeoutMs,
+  }, "Radioso API startup migrations starting");
+
+  try {
+    await (options.runMigrations ?? runMigrations)(options.env.DATABASE_URL, logger, migrationOptions);
+  } catch (error) {
+    logger.error({
+      role: "api",
+      migrationLockTimeoutMs: migrationOptions.lockTimeoutMs,
+      migrationStatementTimeoutMs: migrationOptions.statementTimeoutMs,
+      err: error,
+    }, "Radioso API startup migrations failed");
+    throw error;
+  }
 
   const dependencies = options.buildDependencies
     ? options.buildDependencies(options.env)

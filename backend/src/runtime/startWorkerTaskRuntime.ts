@@ -5,7 +5,7 @@ import type { Env } from "../app/config/env.js";
 import type { AppDependencies } from "../app/server/types.js";
 import { createWorkerTaskApp } from "../app/worker/createWorkerTaskApp.js";
 import { buildDependencies } from "../app/server/dependencies.js";
-import { ensureNoPendingMigrations } from "../db/runMigrations.js";
+import { ensureNoPendingMigrations, type MigrationTimeoutOptions } from "../db/runMigrations.js";
 import { createLogger, type AppLogger } from "../shared/observability/logger.js";
 import type { RuntimeHandle } from "./types.js";
 
@@ -16,7 +16,7 @@ interface ServerLike {
 export interface StartWorkerTaskRuntimeOptions {
   env: Env;
   logger?: AppLogger;
-  ensureNoPendingMigrations?: (connectionString: string) => Promise<void>;
+  ensureNoPendingMigrations?: (connectionString: string, options: MigrationTimeoutOptions) => Promise<void>;
   buildDependencies?: (env: Env) => AppDependencies;
   createApp?: (dependencies: AppDependencies) => Express;
   listen?: (app: Express, port: number, onListening: () => void) => ServerLike;
@@ -27,7 +27,10 @@ const defaultListen = (app: Express, port: number, onListening: () => void): Ser
 
 export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOptions): Promise<RuntimeHandle> => {
   const logger = options.logger ?? createLogger();
-  await (options.ensureNoPendingMigrations ?? ensureNoPendingMigrations)(options.env.DATABASE_URL);
+  await (options.ensureNoPendingMigrations ?? ensureNoPendingMigrations)(options.env.DATABASE_URL, {
+    lockTimeoutMs: options.env.DB_MIGRATION_LOCK_TIMEOUT_MS,
+    statementTimeoutMs: options.env.DB_MIGRATION_STATEMENT_TIMEOUT_MS,
+  });
 
   const dependencies = (options.buildDependencies ?? buildDependencies)(options.env);
   dependencies.logger.info({ role: "worker-task" }, "Radioso worker task runtime starting");

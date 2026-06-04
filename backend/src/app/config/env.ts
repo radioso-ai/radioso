@@ -44,6 +44,8 @@ const envSchema = z.object({
   DB_POOL_CONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   DB_QUERY_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
+  DB_MIGRATION_LOCK_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  DB_MIGRATION_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(25_000),
   OPENAI_API_KEY: emptyStringToUndefined(z.string().min(1)),
   OPENAI_CHAT_MODEL: emptyStringToUndefined(z.string().min(1)),
   OPENAI_RERANK_MODEL: emptyStringToUndefined(z.string().min(1)),

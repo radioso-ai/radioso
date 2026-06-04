@@ -81,6 +81,43 @@ Use this order for self-hosted upgrades:
 
 Do not auto-pull `main` into production without a backup. A failed application upgrade is usually reversible; a partially applied schema or mismatched storage restore is harder to recover.
 
+The backend runs SQL migrations during startup before it opens the HTTP port. The document worker and crawler worker only check for pending migrations. Start the backend first, then start workers after the backend has completed migrations and `/health` responds.
+
+Migration startup metadata checks have their own timeout controls:
+
+- `DB_MIGRATION_LOCK_TIMEOUT_MS`
+- `DB_MIGRATION_STATEMENT_TIMEOUT_MS`
+
+Keep these values shorter than your platform startup-probe window. That way a blocked migration metadata check appears as a clear application log instead of a silent port-listen timeout. Large migration SQL bodies, such as index builds or backfills, are not capped by these local metadata timeouts.
+
+## Migration startup incidents
+
+If a new backend revision fails before `/health` is reachable, check the backend logs first. A migration metadata lock or statement timeout should name startup migrations as the failing phase.
+
+If the worker starts but the backend does not, that is a useful signal. Workers use a read-only pending-migration check, while the backend is the runtime that applies SQL migrations.
+
+To inspect blocking sessions in PostgreSQL, use a privileged database console and check locks around the migration metadata table:
+
+```sql
+SELECT a.pid, a.state, a.wait_event_type, l.mode, l.granted, left(a.query, 140) AS query
+FROM pg_locks l
+JOIN pg_class c ON c.oid = l.relation
+JOIN pg_stat_activity a ON a.pid = l.pid
+WHERE c.relname = 'schema_migrations';
+
+SELECT pid, pg_blocking_pids(pid) AS blocked_by, state, left(query, 140) AS query
+FROM pg_stat_activity
+WHERE cardinality(pg_blocking_pids(pid)) > 0;
+```
+
+If a stale session is clearly blocking a rollout, terminate only that backend session:
+
+```sql
+SELECT pg_terminate_backend(<pid>);
+```
+
+Use this carefully. Confirm the session is stale or belongs to the failed rollout before terminating it. Restarting the database is the broader fallback when session-level recovery is not clear.
+
 ## Worker incidents
 
 If uploads succeed but new documents do not become searchable, treat it as a worker-path incident first.

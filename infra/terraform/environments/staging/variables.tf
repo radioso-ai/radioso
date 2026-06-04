@@ -1,3 +1,15 @@
+variable "project_id" {
+  description = "GCP project ID for the staging deployment."
+  type        = string
+  default     = "radioso-staging"
+}
+
+variable "environment" {
+  description = "Environment name used for resource naming and runtime config."
+  type        = string
+  default     = "staging"
+}
+
 variable "region" {
   description = "GCP region for the staging deployment."
   type        = string

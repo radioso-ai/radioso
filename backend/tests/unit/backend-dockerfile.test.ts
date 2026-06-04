@@ -36,13 +36,7 @@ describe("frontend Dockerfiles", () => {
     expect(dockerfile).toContain("COPY --from=builder /app/packages/ui ./packages/ui");
   });
 
-  it("includes shared UI and OpenAPI inputs for isolated docs portal builds", async () => {
-    const repoRoot = path.resolve(new URL("../../..", import.meta.url).pathname);
-    const dockerfile = await readFile(path.join(repoRoot, "docs-portal/Dockerfile"), "utf8");
-
-    expect(dockerfile).toContain("COPY backend/openapi.json ./backend/openapi.json");
-    expect(dockerfile).toContain("COPY packages/ui/package.json ./packages/ui/package.json");
-    expect(dockerfile).toContain("COPY packages/ui ./packages/ui");
-    expect(dockerfile).toContain("COPY --from=builder /app/packages/ui ../packages/ui");
-  });
+  // The docs portal is built as a static export and deployed to Firebase Hosting
+  // (.github/workflows/deploy-docs.yml); it has no isolated Docker build, so there
+  // is intentionally no docs-portal/Dockerfile to assert on here.
 });

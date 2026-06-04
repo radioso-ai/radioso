@@ -32,6 +32,8 @@ const createEnv = (): Env => ({
   DB_POOL_CONNECTION_TIMEOUT_MS: 5_000,
   DB_STATEMENT_TIMEOUT_MS: 15_000,
   DB_QUERY_TIMEOUT_MS: 20_000,
+  DB_MIGRATION_LOCK_TIMEOUT_MS: 10_000,
+  DB_MIGRATION_STATEMENT_TIMEOUT_MS: 25_000,
   OPENAI_API_KEY: "test-key",
   OPENAI_CHAT_MODEL: "gpt-5.2",
   OPENAI_VECTOR_MODEL: "text-embedding-3-small",
@@ -92,6 +94,11 @@ const createEnv = (): Env => ({
   RADIOSO_MCP_SERVER_NAME: "radioso-context",
   RADIOSO_MCP_WORKSPACE_POLICIES_PATH: undefined,
   RADIOSO_APPLICATION_MODULES: undefined,
+});
+
+const migrationTimeoutOptionsFor = (env: Env) => ({
+  lockTimeoutMs: env.DB_MIGRATION_LOCK_TIMEOUT_MS,
+  statementTimeoutMs: env.DB_MIGRATION_STATEMENT_TIMEOUT_MS,
 });
 
 const createLogger = () => {
@@ -167,7 +174,7 @@ describe("runtime startup", () => {
       listen,
     });
 
-    expect(runMigrations).toHaveBeenCalledWith(env.DATABASE_URL, logger);
+    expect(runMigrations).toHaveBeenCalledWith(env.DATABASE_URL, logger, migrationTimeoutOptionsFor(env));
     expect(dependencies.connectorRegistry.runMigrations).toHaveBeenCalledWith(dependencies.connectorDb);
     expect(dependencies.connectorRegistry.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
@@ -210,7 +217,7 @@ describe("runtime startup", () => {
       buildDependencies: () => dependencies,
     });
 
-    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
+    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env));
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.actionDispatchWorker.start).toHaveBeenCalledOnce();
@@ -247,7 +254,7 @@ describe("runtime startup", () => {
       listen,
     });
 
-    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
+    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env));
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
@@ -270,7 +277,7 @@ describe("runtime startup", () => {
       buildDependencies: () => dependencies,
     });
 
-    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
+    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env));
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
@@ -303,7 +310,7 @@ describe("runtime startup", () => {
       listen,
     });
 
-    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
+    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env));
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
@@ -346,12 +353,49 @@ describe("runtime startup", () => {
       listen,
     });
 
-    expect(runMigrations).toHaveBeenCalledWith(env.DATABASE_URL, expect.anything());
+    expect(runMigrations).toHaveBeenCalledWith(env.DATABASE_URL, expect.anything(), migrationTimeoutOptionsFor(env));
     expect(createAppSpy).toHaveBeenCalledWith(expect.objectContaining({
       metricsRegistry: dependencies.metricsRegistry,
     }));
 
     await runtime.shutdown("test");
+  });
+
+  it("logs startup migration failures before dependency construction", async () => {
+    const env = createEnv();
+    const dependencies = createDependencies();
+    const runMigrations = vi.fn().mockRejectedValue(new Error("canceling statement due to lock timeout"));
+    const { logger, calls } = createLogger();
+
+    await expect(startApiRuntime({
+      env,
+      logger: logger as any,
+      runMigrations,
+      buildDependencies: () => dependencies,
+      createApp: () => ({}) as any,
+      listen: vi.fn(),
+    })).rejects.toThrow("canceling statement due to lock timeout");
+
+    expect(calls.info).toContainEqual({
+      message: "Radioso API startup migrations starting",
+      payload: {
+        role: "api",
+        migrationLockTimeoutMs: env.DB_MIGRATION_LOCK_TIMEOUT_MS,
+        migrationStatementTimeoutMs: env.DB_MIGRATION_STATEMENT_TIMEOUT_MS,
+      },
+    });
+    expect(calls.error).toEqual([
+      {
+        message: "Radioso API startup migrations failed",
+        payload: expect.objectContaining({
+          role: "api",
+          migrationLockTimeoutMs: env.DB_MIGRATION_LOCK_TIMEOUT_MS,
+          migrationStatementTimeoutMs: env.DB_MIGRATION_STATEMENT_TIMEOUT_MS,
+          err: expect.any(Error),
+        }),
+      },
+    ]);
+    expect(dependencies.applicationModules.migrateAll).not.toHaveBeenCalled();
   });
 
   it("builds default dependencies with capability policy and optional connector modules", async () => {

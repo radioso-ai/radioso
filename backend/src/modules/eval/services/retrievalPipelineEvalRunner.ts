@@ -17,6 +17,7 @@ import type {
 } from "../../settings/contracts/retrieval.js";
 import { freezeRetrievalSettings } from "../../settings/contracts/retrieval.js";
 import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
+import type { SkillSettingsResolver } from "../../retrieval/services/retrievalContextStage.js";
 import type { LlmCapabilityResolver } from "../../../shared/infra/llm/capabilityResolver.js";
 import type { EvalRunModelOverride } from "../domain/types.js";
 import type { EvalReplayContext, EvalRetrievalRunnerPort } from "./evalRunner.js";
@@ -73,6 +74,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     private readonly capabilityResolver: LlmCapabilityResolver,
     private readonly retrievalSettings: RetrievalSettingsService,
     private readonly answerPresentation: EvalAnswerPresentationPort,
+    private readonly skillSettingsResolver?: SkillSettingsResolver,
   ) {}
 
   async retrieve(input: {
@@ -102,6 +104,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       })),
       resolvedSettings: await this.resolveSettingsSnapshot(
         input.workspaceId,
+        input.context?.agent?.skillSettings,
         input.retrievalSettingsOverride,
       ),
     };
@@ -205,6 +208,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       composedInstructions: pipelineResult.systemPrompt,
       resolvedSettings: await this.resolveSettingsSnapshot(
         input.workspaceId,
+        input.context?.agent?.skillSettings,
         input.retrievalSettingsOverride,
       ),
       resolvedModel: { provider: resolvedProvider, model: resolvedModel },
@@ -243,6 +247,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       responseBehavior,
       responseBehaviorEnabled: Boolean(responseBehavior),
       sourceScope: agent?.sourceScope,
+      agentSkillSettings: agent?.skillSettings,
       retrievalSettingsOverride: input.retrievalSettingsOverride,
       usageContext: input.usageContext,
     };
@@ -250,13 +255,21 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
 
   private async resolveSettingsSnapshot(
     workspaceId: string,
+    agentSkillSettings: Record<string, unknown> | undefined,
     override: Partial<RetrievalSettingsRecord> | undefined,
   ): Promise<RetrievalSettingsSnapshot | undefined> {
     try {
       const base = await this.retrievalSettings.getForWorkspace(workspaceId);
-      const merged: RetrievalSettingsRecord = override
-        ? { ...base, ...override, workspaceId: base.workspaceId }
+      const agentResolved = this.skillSettingsResolver
+        ? this.skillSettingsResolver.resolve(
+            "retrieval.answer",
+            base,
+            agentSkillSettings?.["retrieval.answer"],
+          )
         : base;
+      const merged: RetrievalSettingsRecord = override
+        ? { ...agentResolved, ...override, workspaceId: base.workspaceId }
+        : agentResolved;
       return freezeRetrievalSettings(merged);
     } catch {
       // Auditing must not break run execution. The run row will simply have

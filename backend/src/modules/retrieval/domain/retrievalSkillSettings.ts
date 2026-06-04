@@ -6,7 +6,9 @@ import {
   metadataRuleOperators,
   metadataRuleTriggerModes,
   metadataValueTypes,
+  defaultRetrievalSettings,
   normalizeMetadataRules,
+  validateRetrievalSettings,
   retrievalStrategyPreferences,
   type RetrievalSettingsRecord,
 } from "../../settings/contracts/retrieval.js";
@@ -55,8 +57,23 @@ export const retrievalSkillSettingsOverrideSchema = z.object(retrievalSkillSetti
 export type RetrievalSkillSettingsOverride = z.infer<typeof retrievalSkillSettingsOverrideSchema>;
 export type EffectiveRetrievalSkillSettings = RetrievalSettingsRecord;
 
-export const normalizeRetrievalSkillSettingsOverride = (input: unknown): RetrievalSkillSettingsOverride =>
-  retrievalSkillSettingsOverrideSchema.parse(input);
+export const normalizeRetrievalSkillSettingsOverride = (input: unknown): RetrievalSkillSettingsOverride => {
+  const parsed = retrievalSkillSettingsOverrideSchema.parse(input);
+  if (parsed.metadataRules === undefined) {
+    return parsed;
+  }
+
+  const validated = validateRetrievalSettings({
+    ...defaultRetrievalSettings("__agent_skill_settings_validation__"),
+    ...parsed,
+    metadataRules: normalizeMetadataRules(parsed.metadataRules),
+  });
+
+  return {
+    ...parsed,
+    metadataRules: validated.metadataRules,
+  };
+};
 
 export const parsePersistedRetrievalSkillSettingsOverride = (input: unknown): RetrievalSkillSettingsOverride => {
   if (!input || typeof input !== "object" || Array.isArray(input)) {

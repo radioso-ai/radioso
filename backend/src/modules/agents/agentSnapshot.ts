@@ -38,7 +38,7 @@ export const freezeAgent = (agent: ConversationAgent): AgentSnapshot => ({
   retrievalEnabled: agent.retrievalEnabled,
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
   citationDisplayEnabled: agent.citationDisplayEnabled,
-  sourceScope: agent.sourceScope,
-  skillSettings: agent.skillSettings,
-  chatModelOverride: agent.chatModelOverride,
+  sourceScope: structuredClone(agent.sourceScope),
+  skillSettings: structuredClone(agent.skillSettings),
+  chatModelOverride: agent.chatModelOverride ? structuredClone(agent.chatModelOverride) : null,
 });

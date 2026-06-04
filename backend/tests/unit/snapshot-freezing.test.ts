@@ -96,4 +96,51 @@ describe("freezeAgent", () => {
     expect(snap).not.toHaveProperty("surfaceSettings");
     expect(snap).not.toHaveProperty("createdAt");
   });
+
+  it("does not share nested skill settings or source scope references with the live agent", () => {
+    const agent: ConversationAgent = {
+      id: "agent-1",
+      workspaceId: "ws-1",
+      name: "Support Bot",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      customInstruction: "Be helpful.",
+      suggestedQuestionsEnabled: true,
+      assistantLinkUtmEnabled: true,
+      citationDisplayEnabled: true,
+      contactRequestsEnabled: false,
+      retrievalEnabled: true,
+      logo: null,
+      theme: {} as never,
+      branding: {} as never,
+      greetingInstruction: "Welcome!",
+      assistantDefaultLocale: "en",
+      proactiveGreetingEnabled: true,
+      sourceScope: { mode: "selected", sourceIds: ["source-1"] },
+      skillSettings: {
+        "retrieval.answer": {
+          vectorTopK: 7,
+          metadataRules: [{ id: "rule-1", enabled: true }],
+        },
+      },
+      surfaceSettings: {} as never,
+      chatModelOverride: null,
+    };
+
+    const snap = freezeAgent(agent);
+
+    (agent.skillSettings["retrieval.answer"] as { vectorTopK: number }).vectorTopK = 99;
+    ((agent.skillSettings["retrieval.answer"] as { metadataRules: { id: string }[] }).metadataRules[0]!).id = "mutated";
+    if (agent.sourceScope.mode === "selected") {
+      agent.sourceScope.sourceIds.push("source-2");
+    }
+
+    expect(snap.skillSettings).toEqual({
+      "retrieval.answer": {
+        vectorTopK: 7,
+        metadataRules: [{ id: "rule-1", enabled: true }],
+      },
+    });
+    expect(snap.sourceScope).toEqual({ mode: "selected", sourceIds: ["source-1"] });
+  });
 });

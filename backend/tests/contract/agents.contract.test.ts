@@ -216,6 +216,93 @@ describe("agents contract", () => {
     expect(response.body.error.message).toMatch(/vectorTopK/);
   });
 
+  it("rejects per-agent match-turn metadata rules without a trigger instruction", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-invalid-match-turn-rule@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const response = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({
+        name: "Invalid match turn rule",
+        skillSettings: {
+          "retrieval.answer": {
+            metadataRules: [
+              {
+                id: "audience-rule",
+                field: "audience",
+                valueType: "string",
+                operator: "equals",
+                value: "partner",
+                conditions: [
+                  {
+                    id: "audience-condition",
+                    field: "audience",
+                    valueType: "string",
+                    operator: "equals",
+                    value: "partner",
+                  },
+                ],
+                effect: "filter",
+                enabled: true,
+                triggerMode: "match_turn",
+              },
+            ],
+          },
+        },
+      })
+      .expect(400);
+
+    expect(response.body.error.message).toMatch(/triggerInstruction/);
+  });
+
+  it("accepts per-agent match-turn metadata rules with a trigger instruction", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-valid-match-turn-rule@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const response = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({
+        name: "Valid match turn rule",
+        skillSettings: {
+          "retrieval.answer": {
+            metadataRules: [
+              {
+                id: "audience-rule",
+                field: "audience",
+                valueType: "string",
+                operator: "equals",
+                value: "partner",
+                conditions: [
+                  {
+                    id: "audience-condition",
+                    field: "audience",
+                    valueType: "string",
+                    operator: "equals",
+                    value: "partner",
+                  },
+                ],
+                effect: "filter",
+                enabled: true,
+                triggerMode: "match_turn",
+                triggerInstruction: "Use for partner-specific questions",
+              },
+            ],
+          },
+        },
+      })
+      .expect(201);
+
+    expect(response.body.skillSettings["retrieval.answer"].metadataRules[0]).toMatchObject({
+      id: "audience-rule",
+      triggerMode: "match_turn",
+      triggerInstruction: "Use for partner-specific questions",
+    });
+  });
+
   it("persists manually added documents in selected source scope", async () => {
     const { app } = createTestApp();
     const { token } = await issueTestToken(app, "agents-manual-source-scope@example.com");

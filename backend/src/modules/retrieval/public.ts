@@ -63,6 +63,11 @@ export type {
   RetrievalSourceScope,
 } from "./domain/retrievalSourceFilter.js";
 export {
+  normalizeRetrievalSkillSettingsOverride,
+  type EffectiveRetrievalSkillSettings,
+  type RetrievalSkillSettingsOverride,
+} from "./domain/retrievalSkillSettings.js";
+export {
   RESPONSE_INTENT,
   REWRITE_STATUS,
   REWRITE_TURN_KIND,

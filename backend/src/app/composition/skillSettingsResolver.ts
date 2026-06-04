@@ -3,7 +3,7 @@ import {
   normalizeRetrievalSkillSettingsOverride,
   type EffectiveRetrievalSkillSettings,
   type RetrievalSkillSettingsOverride,
-} from "../../modules/retrieval/domain/retrievalSkillSettings.js";
+} from "../../modules/retrieval/public.js";
 import {
   normalizeMetadataRules,
   type RetrievalSettingsRecord,

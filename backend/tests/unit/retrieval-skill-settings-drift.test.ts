@@ -27,7 +27,7 @@ describe("retrieval skill settings override schema", () => {
     const delta = new Set<string>(PER_AGENT_RETRIEVAL_MANIFEST_FIELD_DELTA);
 
     expect(sorted(delta)).toEqual(["similarityThreshold"]);
-    expect(manifestFields).toEqual(expect.arrayContaining(PER_AGENT_RETRIEVAL_MANIFEST_FIELD_DELTA));
+    expect(manifestFields).toEqual(expect.arrayContaining([...PER_AGENT_RETRIEVAL_MANIFEST_FIELD_DELTA]));
     expect(sorted(perAgentFields)).toEqual(sorted(manifestFields.filter((field) => !delta.has(field))));
   });
 });

@@ -1,4 +1,5 @@
 import type {
+  AttemptRoutineInput,
   ConversationEvent,
   ConversationModelGateway,
   ConversationRoutineActivator,
@@ -116,4 +117,35 @@ export const createChatProcessTurnStreamInput = (
 ): ProcessTurnStreamInput => ({
   ...createChatProcessTurnInput(options),
   composer: options.composer,
+});
+
+export interface AttemptRoutineInputOptions {
+  session: PreparedSession;
+  appendEvent?: (event: ConversationEvent) => Promise<void>;
+  routineStore?: ConversationRoutineStore;
+  routineRunner?: ConversationRoutineRunner;
+  routineActivator?: ConversationRoutineActivator;
+}
+
+/**
+ * Builds the narrow input `engine.attemptRoutine` needs — agent, session, input event,
+ * stores, and routine machinery only. Routine resume/activation never runs selection,
+ * dispatch, or composition, so unlike {@link createChatProcessTurnInput} this wires no
+ * (stub) selector/dispatcher/composer.
+ */
+export const createAttemptRoutineInput = (options: AttemptRoutineInputOptions): AttemptRoutineInput => ({
+  agent: toConversationAgentConfig(options.session.agent),
+  sessionId: options.session.conversation.id,
+  inputEvent: toConversationInputEvent(options.session.userMessage),
+  stores: {
+    async loadHistory() {
+      return toConversationMessages(options.session.history);
+    },
+    async appendEvent(event) {
+      await options.appendEvent?.(event);
+    },
+  },
+  ...(options.routineStore ? { routineStore: options.routineStore } : {}),
+  ...(options.routineRunner ? { routineRunner: options.routineRunner } : {}),
+  ...(options.routineActivator ? { routineActivator: options.routineActivator } : {}),
 });

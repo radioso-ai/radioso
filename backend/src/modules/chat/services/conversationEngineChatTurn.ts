@@ -11,6 +11,7 @@ import type {
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import {
+  createAttemptRoutineInput,
   createChatProcessTurnInput,
   createChatProcessTurnStreamInput,
 } from "./conversationProcessTurnInput.js";
@@ -211,16 +212,13 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
   }
 };
 
-const throwingTurnPort = (operation: string) => () => {
-  throw new Error(`conversation_engine_routine_attempt_${operation}`);
-};
-
 /**
  * Attempts a routine for this turn *before* grounding — the routine is a multi-turn
  * skill selected ahead of retrieval. Returns the routine's rendered reply when it
  * claims the turn, or null when no routine is active/activates or it yields (off-topic),
- * so ChatService can fall through to grounding. The selection/dispatch/compose ports are
- * never reached (the engine returns from the routine stage first), so they throw.
+ * so ChatService can fall through to grounding. Routine resume/activation never runs
+ * selection, dispatch, or composition, so this passes only the narrow routine input —
+ * no stub selector/dispatcher/composer.
  */
 export const attemptRoutineTurnWithConversationEngine = async (input: {
   engine: ConversationEngine;
@@ -230,17 +228,14 @@ export const attemptRoutineTurnWithConversationEngine = async (input: {
   routineActivator: ConversationRoutineActivator;
   presentRoutineReply: (response: RenderableTurn) => ChatPresentedAnswer;
 }): Promise<RunPreparedChatTurnWithConversationEngineResult | null> => {
-  const processTurnInput = createChatProcessTurnInput({
-    session: input.session,
-    selector: { select: throwingTurnPort("no_selection") },
-    dispatcher: { dispatch: throwingTurnPort("no_dispatch") },
-    composer: { compose: throwingTurnPort("no_compose") },
-    routineStore: input.routineStore,
-    routineRunner: input.routineRunner,
-    routineActivator: input.routineActivator,
-  });
-
-  const result = await input.engine.attemptRoutine(processTurnInput);
+  const result = await input.engine.attemptRoutine(
+    createAttemptRoutineInput({
+      session: input.session,
+      routineStore: input.routineStore,
+      routineRunner: input.routineRunner,
+      routineActivator: input.routineActivator,
+    }),
+  );
   if (!result) {
     return null;
   }

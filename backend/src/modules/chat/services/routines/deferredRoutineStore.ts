@@ -5,6 +5,9 @@ export type CapturedRoutineTransition =
   | { kind: "clear"; sessionId: string };
 
 /**
+ * The host-side embodiment of the command-capture model documented on
+ * `ConversationStores`: the engine emits `save`/`clear` as effects, and this captures them.
+ *
  * Wraps the durable routine-state store but *defers* the engine's save/clear: `loadActive`
  * still reads through, but `save`/`clear` only capture the intended transition instead of
  * writing it. The host flushes it with {@link commit} only after the turn's emitted actions

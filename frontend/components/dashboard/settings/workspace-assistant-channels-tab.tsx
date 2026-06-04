@@ -38,6 +38,7 @@ import { Label } from '@/components/ui/label'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { resolveAssistantRetrievalSettingsViewState } from '@/lib/assistant-retrieval-settings-view-state'
 import {
   accountApi,
   agentsApi,
@@ -80,6 +81,22 @@ const CHANNEL_TITLES: Record<ChannelId, string> = {
   'website-embed': 'Website chat widget',
   'api-channel': 'API channel',
   'mcp-channel': 'MCP channel',
+}
+
+const fallbackRetrievalDefaults: RetrievalSettings = {
+  queryRewriteEnabled: false,
+  semanticRewriteInstructions: '',
+  lexicalRewriteInstructions: '',
+  suggestedQuestionsEnabled: true,
+  suggestedQuestionsCount: 3,
+  rerankEnabled: false,
+  vectorTopK: 15,
+  similarityThreshold: 0.2,
+  rerankTopK: 5,
+  retrievalStrategy: 'fixed',
+  metadataRules: [],
+  metadataFieldSuggestions: [],
+  customInstruction: '',
 }
 
 const normalizeAssistantBehaviorSettingsByAgent = (agentId: string | undefined, settings: AssistantBehaviorSettings) => ({
@@ -148,7 +165,6 @@ export function WorkspaceAssistantChannelsTab({
   const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [retrievalDefaults, setRetrievalDefaults] = useState<RetrievalSettings | null>(null)
-  const [isRetrievalDefaultsLoading, setIsRetrievalDefaultsLoading] = useState(mode === 'assistant')
   const [sourceList, setSourceList] = useState<DocumentSourceListItem[]>([])
   const [sourceListError, setSourceListError] = useState<string | null>(null)
   const [isSourceListLoading, setIsSourceListLoading] = useState(false)
@@ -291,30 +307,23 @@ export function WorkspaceAssistantChannelsTab({
       setSavedAssistantBehaviorSettings(null)
       setIsAssistantBehaviorLoading(false)
       setRetrievalDefaults(null)
-      setIsRetrievalDefaultsLoading(false)
       return
     }
 
     if (isWorkspaceLoading || !activeWorkspaceId) {
       setIsAssistantBehaviorLoading(true)
-      setIsRetrievalDefaultsLoading(true)
       return
     }
 
     let active = true
     setIsAssistantBehaviorLoading(true)
-    setIsRetrievalDefaultsLoading(true)
     const loadAssistantBehaviorSettingsEffect = async () => {
       try {
-        const [data, defaults] = await Promise.all([
-          loadAssistantBehaviorSettings(),
-          settingsApi.getRetrievalSettings({ auth: 'session' }),
-        ])
+        const data = await loadAssistantBehaviorSettings()
         if (!active) return
         const normalized = normalizeAssistantBehaviorSettingsByAgent(agentId, data)
         setAssistantBehaviorSettings(normalized)
         setSavedAssistantBehaviorSettings(normalized)
-        setRetrievalDefaults(defaults)
         setAssistantSettingsError(null)
       } catch (error) {
         if (!active) return
@@ -323,12 +332,23 @@ export function WorkspaceAssistantChannelsTab({
       } finally {
         if (active) {
           setIsAssistantBehaviorLoading(false)
-          setIsRetrievalDefaultsLoading(false)
         }
+      }
+    }
+    const loadRetrievalDefaults = async () => {
+      try {
+        const defaults = await settingsApi.getRetrievalSettings({ auth: 'session' })
+        if (!active) return
+        setRetrievalDefaults(defaults)
+      } catch (error) {
+        if (!active) return
+        console.error('Failed to load retrieval defaults:', error)
+        setRetrievalDefaults(null)
       }
     }
 
     void loadAssistantBehaviorSettingsEffect()
+    void loadRetrievalDefaults()
     return () => {
       active = false
     }
@@ -509,6 +529,11 @@ export function WorkspaceAssistantChannelsTab({
     const origin = typeof window === 'undefined' ? 'https://your-radioso-host' : window.location.origin
     return `curl ${origin}${apiBasePath}/settings/retrieval \\\n  -H "Authorization: Bearer <token>"`
   }, [])
+  const retrievalSettingsViewState = resolveAssistantRetrievalSettingsViewState({
+    isAssistantBehaviorLoading,
+    assistantBehaviorSettings,
+  })
+  const effectiveRetrievalDefaults = retrievalDefaults ?? fallbackRetrievalDefaults
 
   const handleAssistantSettingChange = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
     if (!anonSettings) return
@@ -953,14 +978,14 @@ export function WorkspaceAssistantChannelsTab({
                 />
               ) : null}
             >
-              {isAssistantBehaviorLoading || isRetrievalDefaultsLoading ? (
+              {retrievalSettingsViewState === 'loading' ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Spinner className="h-4 w-4" />
                   Loading retrieval settings...
                 </div>
-              ) : assistantBehaviorSettings && retrievalDefaults && (assistantBehaviorSettings.retrievalEnabled ?? true) ? (
+              ) : retrievalSettingsViewState === 'controls' && assistantBehaviorSettings ? (
                 <AssistantRetrievalSkillSettingsSection
-                  defaults={retrievalDefaults}
+                  defaults={effectiveRetrievalDefaults}
                   value={assistantBehaviorSettings.retrievalSkillSettings ?? {}}
                   sourceScope={assistantBehaviorSettings.sourceScope ?? { mode: 'all' }}
                   sourceList={sourceList}
@@ -973,7 +998,7 @@ export function WorkspaceAssistantChannelsTab({
                     updateAssistantBehaviorDraft((current) => ({ ...current, retrievalSkillSettings: next }))
                   }
                 />
-              ) : assistantBehaviorSettings && retrievalDefaults ? (
+              ) : retrievalSettingsViewState === 'disabled' ? (
                 null
               ) : (
                 <p className="text-sm text-muted-foreground">

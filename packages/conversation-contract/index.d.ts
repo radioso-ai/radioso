@@ -241,6 +241,18 @@ export interface ConversationTraceLink {
   kind: string;
 }
 
+/**
+ * The turn's read/write ports for conversation state.
+ *
+ * **Persistence is a captured command, not a guaranteed write.** The engine calls
+ * `appendEvent` (and, via {@link ConversationRoutineStore}, `save`/`clear`) as it runs,
+ * as if it owned persistence — but the host decides what those calls actually do. A host
+ * that persists the turn another way may make `appendEvent` a no-op (Radioso records the
+ * turn as assistant-message metadata, not as event rows), and may *capture* routine
+ * `save`/`clear` to commit them transactionally with other turn effects (e.g. an action
+ * outbox) rather than writing immediately. So treat these as effects the engine *emits*;
+ * whether/when they hit storage is the host's call.
+ */
 export interface ConversationStores {
   loadHistory(input: { sessionId: string; limit?: number }): Promise<ConversationMessage[]>;
   appendEvent(event: ConversationEvent): Promise<void>;
@@ -500,6 +512,22 @@ export interface ProcessTurnStreamInput extends Omit<ProcessTurnInput, "composer
   composer: ConversationTurnStreamComposer;
 }
 
+/**
+ * The inputs `attemptRoutine` actually uses. Routine resume/activation never runs
+ * selection, dispatch, or composition, so it does not take those ports — the host
+ * builds only this narrow shape (no stub selector/dispatcher/composer). `ProcessTurnInput`
+ * is a structural superset, so `processTurn` can pass its own input straight through.
+ */
+export interface AttemptRoutineInput {
+  agent: ConversationAgentConfig;
+  sessionId: string;
+  inputEvent: ConversationInputEvent;
+  stores: ConversationStores;
+  routineStore?: ConversationRoutineStore;
+  routineRunner?: ConversationRoutineRunner;
+  routineActivator?: ConversationRoutineActivator;
+}
+
 export interface ProcessTurnResult {
   sessionId: string;
   events: ConversationEvent[];
@@ -538,5 +566,5 @@ export interface ConversationEngine {
    * the active routine yields the turn (off-topic) — so the host can treat the routine
    * as a multi-turn skill selected before grounding, and only ground when it returns null.
    */
-  attemptRoutine(input: ProcessTurnInput): Promise<ProcessTurnResult | null>;
+  attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null>;
 }

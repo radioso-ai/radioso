@@ -1,4 +1,5 @@
 import type {
+  AttemptRoutineInput,
   ConversationEngine,
   ConversationEvent,
   ConversationTrace,
@@ -96,7 +97,7 @@ interface PreparedTurnRun {
   composeTurn: TurnContext;
 }
 
-const createInputEvent = (input: ProcessTurnInput | ProcessTurnStreamInput): ConversationEvent => ({
+const createInputEvent = (input: AttemptRoutineInput): ConversationEvent => ({
   id: input.inputEvent.id,
   sessionId: input.sessionId,
   kind: input.inputEvent.kind,
@@ -258,9 +259,7 @@ export class DefaultConversationEngine implements ConversationEngine {
    * The user input event is appended only once the turn is committed to a routine,
    * so a non-claiming activation check leaves the normal path to append it.
    */
-  async attemptRoutine(
-    input: ProcessTurnInput | ProcessTurnStreamInput,
-  ): Promise<ProcessTurnResult | null> {
+  async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
     if (!input.routineStore || !input.routineRunner) {
       return null;
     }

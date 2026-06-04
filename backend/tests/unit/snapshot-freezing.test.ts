@@ -72,6 +72,7 @@ describe("freezeAgent", () => {
       assistantLinkUtmEnabled: true,
       citationDisplayEnabled: true,
       contactRequestsEnabled: false,
+      contactRequestDelivery: { recipientEmails: [], webhook: null },
       retrievalEnabled: true,
       logo: null,
       theme: {} as never,

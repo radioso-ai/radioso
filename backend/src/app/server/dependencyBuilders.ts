@@ -796,6 +796,7 @@ export const buildChatServices = (input: {
         typeof registration.handler === "function"
           ? registration.handler({
               database: input.database,
+              env: input.env,
               logger: input.logger,
               mailService: input.mailService,
             })

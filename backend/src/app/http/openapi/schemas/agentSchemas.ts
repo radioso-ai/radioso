@@ -58,6 +58,29 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     ]),
   );
 
+  const AgentContactRequestDeliverySchema = registry.register(
+    "AgentContactRequestDelivery",
+    z.object({
+      recipientEmails: z.array(z.string()).max(5),
+      webhook: z.object({
+        url: z.string(),
+      }).nullable(),
+    }),
+  );
+
+  const AgentContactRequestDeliveryRequestSchema = registry.register(
+    "AgentContactRequestDeliveryRequest",
+    z.object({
+      recipientEmails: z.array(z.string().max(320)).max(5).optional(),
+      webhook: z.union([
+        z.null(),
+        z.object({
+          url: z.string().max(2048),
+        }),
+      ]).optional(),
+    }),
+  );
+
   const ConversationAgentSchema = registry.register(
     "ConversationAgent",
     AgentSchema.extend({
@@ -67,6 +90,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       assistantLinkUtmEnabled: z.boolean(),
       citationDisplayEnabled: z.boolean(),
       contactRequestsEnabled: z.boolean(),
+      contactRequestDelivery: AgentContactRequestDeliverySchema,
       theme: z.object({
         brand: z.string(),
         brandText: z.string(),
@@ -108,6 +132,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       assistantLinkUtmEnabled: z.boolean().optional(),
       citationDisplayEnabled: z.boolean().optional(),
       contactRequestsEnabled: z.boolean().optional(),
+      contactRequestDelivery: AgentContactRequestDeliveryRequestSchema.optional(),
       theme: z.object({
         brand: z.string().optional(),
         brandText: z.string().optional(),
@@ -217,6 +242,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
 
   Object.assign(schemas, {
     AgentSchema,
+    AgentContactRequestDeliverySchema,
+    AgentContactRequestDeliveryRequestSchema,
     ConversationAgentSurfaceSettingsSchema,
     AgentSourceScopeSchema,
     ConversationAgentSchema,

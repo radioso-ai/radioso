@@ -14,6 +14,7 @@ import {
   type AgentEmbedTheme,
   type AgentSurfaceExtensionRegistry,
   type AgentSurfacePosition,
+  type AgentContactRequestDelivery,
   type NormalizedAgentInput,
 } from "../../modules/agents/public.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
@@ -80,6 +81,11 @@ const readStringArray = (record: Record<string, unknown>, key: string): string[]
     ? (record[key] as unknown[]).filter((item): item is string => typeof item === "string")
     : undefined;
 
+const readContactRequestDelivery = (record: Record<string, unknown>): AgentContactRequestDelivery | undefined =>
+  record.contactRequestDelivery && typeof record.contactRequestDelivery === "object" && !Array.isArray(record.contactRequestDelivery)
+    ? record.contactRequestDelivery as AgentContactRequestDelivery
+    : undefined;
+
 const parseSurfaceExtensions = (
   extensions: Record<string, unknown>,
   registry?: AgentSurfaceExtensionRegistry,
@@ -107,6 +113,7 @@ const toBehaviorSettings = (agent: NormalizedAgentInput): Record<string, unknown
   assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
   citationDisplayEnabled: agent.citationDisplayEnabled,
   contactRequestsEnabled: agent.contactRequestsEnabled,
+  contactRequestDelivery: agent.contactRequestDelivery,
   logo: agent.logo,
   theme: agent.theme,
   branding: agent.branding,
@@ -168,6 +175,7 @@ const mapAgent = (row: AgentRow, surfaceExtensions?: AgentSurfaceExtensionRegist
     assistantLinkUtmEnabled: readBoolean(behavior, "assistantLinkUtmEnabled") ?? true,
     citationDisplayEnabled: readBoolean(behavior, "citationDisplayEnabled") ?? true,
     contactRequestsEnabled: readBoolean(behavior, "contactRequestsEnabled") ?? false,
+    contactRequestDelivery: readContactRequestDelivery(behavior),
     retrievalEnabled: row.retrieval_enabled,
     sourceScope: row.source_scope_mode === "selected"
       ? { mode: "selected", sourceIds: row.source_ids ?? [] }

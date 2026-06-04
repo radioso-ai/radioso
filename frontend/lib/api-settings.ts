@@ -277,6 +277,7 @@ export const agentsApi = {
       assistantLinkUtmEnabled: data.assistantLinkUtmEnabled,
       citationDisplayEnabled: data.citationDisplayEnabled,
       contactRequestsEnabled: data.contactRequestsEnabled,
+      contactRequestDelivery: data.contactRequestDelivery,
       theme: data.theme,
       branding: data.branding,
       sourceScope: data.sourceScope,

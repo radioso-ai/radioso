@@ -39,6 +39,7 @@ const DEFAULT_CITATION_DISPLAY_ENABLED = true;
 // Contact requests are opt-in per assistant — off until an operator enables the
 // capability in the assistant's Skills settings.
 const DEFAULT_CONTACT_REQUESTS_ENABLED = false;
+const MAX_CONTACT_REQUEST_RECIPIENT_EMAILS = 5;
 const DEFAULT_AGENT_SURFACE_POSITION: AgentSurfacePosition = "bottom-right";
 const MAX_EMBED_COPY_LOCALES = 10;
 
@@ -46,6 +47,20 @@ export interface AgentBrandingSettings {
   hidePoweredBy: boolean;
   privacyPolicyUrl: string | null;
 }
+
+export interface AgentContactWebhook {
+  url: string;
+}
+
+export interface AgentContactRequestDelivery {
+  recipientEmails: string[];
+  webhook: AgentContactWebhook | null;
+}
+
+export const DEFAULT_CONTACT_REQUEST_DELIVERY: AgentContactRequestDelivery = {
+  recipientEmails: [],
+  webhook: null,
+};
 
 export interface AgentBehaviorSettings {
   customInstruction: string;
@@ -58,6 +73,7 @@ export interface AgentBehaviorSettings {
   // Whether this assistant offers the "contact a human" capability: surfaces the
   // public-chat contact button and lets the contact routine activate. Opt-in.
   contactRequestsEnabled: boolean;
+  contactRequestDelivery: AgentContactRequestDelivery;
   retrievalEnabled: boolean;
   logo: AgentLogo | null;
   theme: AgentEmbedTheme;
@@ -205,6 +221,58 @@ const normalizeStringArray = (value: unknown, fieldName: string, maxItemLength: 
       }
       return item;
     });
+};
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const normalizeContactRecipientEmails = (value: unknown): string[] => {
+  const emails = normalizeStringArray(value, "contactRequestDelivery.recipientEmails", 320);
+  if (emails.length > MAX_CONTACT_REQUEST_RECIPIENT_EMAILS) {
+    throw badRequest(`contactRequestDelivery.recipientEmails must not contain more than ${MAX_CONTACT_REQUEST_RECIPIENT_EMAILS} emails`);
+  }
+  for (const email of emails) {
+    if (!EMAIL_PATTERN.test(email)) {
+      throw badRequest("contactRequestDelivery.recipientEmails contains an invalid email");
+    }
+  }
+  return emails;
+};
+
+const normalizeContactWebhook = (value: unknown): AgentContactWebhook | null => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest("contactRequestDelivery.webhook must be an object or null");
+  }
+  const url = normalizeLongText((value as Record<string, unknown>).url, "contactRequestDelivery.webhook.url", 2048);
+  if (!url) {
+    return null;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw badRequest("contactRequestDelivery.webhook.url must be a valid URL");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw badRequest("contactRequestDelivery.webhook.url must use http or https");
+  }
+  return { url };
+};
+
+const normalizeContactRequestDelivery = (value: unknown): AgentContactRequestDelivery => {
+  if (value === undefined || value === null) {
+    return { ...DEFAULT_CONTACT_REQUEST_DELIVERY };
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest("contactRequestDelivery must be an object");
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    recipientEmails: normalizeContactRecipientEmails(record.recipientEmails),
+    webhook: normalizeContactWebhook(record.webhook),
+  };
 };
 
 const normalizeWebsiteEmbedOrigin = (origin: string): string | null => {
@@ -577,6 +645,7 @@ export const validateAgentInput = (
     assistantLinkUtmEnabled: input.assistantLinkUtmEnabled ?? DEFAULT_ASSISTANT_LINK_UTM_ENABLED,
     citationDisplayEnabled: input.citationDisplayEnabled ?? DEFAULT_CITATION_DISPLAY_ENABLED,
     contactRequestsEnabled: input.contactRequestsEnabled ?? DEFAULT_CONTACT_REQUESTS_ENABLED,
+    contactRequestDelivery: normalizeContactRequestDelivery(input.contactRequestDelivery),
     retrievalEnabled: input.retrievalEnabled ?? true,
     sourceScope: normalizeSourceScope(input.sourceScope),
     logo: normalizeAgentLogo(input.logo),

@@ -30,6 +30,7 @@ const agent = (overrides: Partial<AgentRecord> = {}): AgentRecord => ({
   assistantLinkUtmEnabled: true,
   citationDisplayEnabled: true,
   contactRequestsEnabled: false,
+  contactRequestDelivery: { recipientEmails: [], webhook: null },
   retrievalEnabled: true,
   sourceScope: { mode: "all" },
   logo: null,

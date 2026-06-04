@@ -87,6 +87,10 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   assistantLinkUtmEnabled: true,
   citationDisplayEnabled: true,
   contactRequestsEnabled: false,
+  contactRequestDelivery: {
+    recipientEmails: [],
+    webhook: null,
+  },
   theme: settings.channels.websiteEmbedTheme,
   branding: {
     hidePoweredBy: false,

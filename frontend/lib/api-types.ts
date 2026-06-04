@@ -37,6 +37,7 @@ export type RetrievalSettings = PlatformRetrievalSettings &
   >
 
 export type AgentChatModelOverride = NonNullable<ApiSchemas['ConversationAgent']['chatModelOverride']>
+export type AgentContactRequestDelivery = ApiSchemas['AgentContactRequestDelivery']
 
 export type AssistantBehaviorSettings = Pick<
   RetrievalSettings,
@@ -47,6 +48,7 @@ export type AssistantBehaviorSettings = Pick<
   // Per-agent "contact a human" capability. Only meaningful in the per-agent
   // (assistant) settings; the workspace-level mapping leaves it undefined.
   contactRequestsEnabled?: boolean
+  contactRequestDelivery?: AgentContactRequestDelivery
   theme: WebsiteEmbedThemeSettings
   branding?: AgentBrandingSettings
   sourceScope?: AgentSourceScope
@@ -497,6 +499,7 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
   assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
   citationDisplayEnabled: agent.citationDisplayEnabled,
   contactRequestsEnabled: agent.contactRequestsEnabled,
+  contactRequestDelivery: agent.contactRequestDelivery,
   theme: agent.theme,
   branding: agent.branding,
   sourceScope: agent.sourceScope,

@@ -36,6 +36,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   accountApi,
@@ -47,6 +48,7 @@ import {
   type DocumentSourceListItem,
   type GeneralSettings,
 } from '@/lib/api'
+import { isValidEmailAddress } from '@/lib/validation'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const getOrganizationNameCacheKey = (accountId: string) => `radioso.organizationName:${accountId}`
@@ -79,9 +81,85 @@ const CHANNEL_TITLES: Record<ChannelId, string> = {
   'mcp-channel': 'MCP channel',
 }
 
+const CONTACT_REQUEST_EMAIL_RECIPIENT_LIMIT = 5
+
+const DEFAULT_CONTACT_REQUEST_DELIVERY = {
+  recipientEmails: [],
+  webhook: null,
+} satisfies NonNullable<AssistantBehaviorSettings['contactRequestDelivery']>
+
+const parseContactRequestEmails = (value: string): string[] =>
+  value
+    .split(/[\n,;\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+const normalizeContactRequestEmails = (values: readonly string[] | undefined | null): string[] => {
+  const emails: string[] = []
+  const seen = new Set<string>()
+  for (const value of values ?? []) {
+    const trimmed = value.trim()
+    const key = trimmed.toLowerCase()
+    if (!trimmed || seen.has(key)) {
+      continue
+    }
+    emails.push(trimmed)
+    seen.add(key)
+  }
+  return emails
+}
+
+const getContactRequestEmailsText = (settings: AssistantBehaviorSettings | null): string =>
+  normalizeContactRequestEmails(settings?.contactRequestDelivery?.recipientEmails).join('\n')
+
+const isValidContactWebhookUrl = (value: string): boolean => {
+  const trimmedValue = value.trim()
+  if (!trimmedValue) {
+    return true
+  }
+
+  try {
+    const url = new URL(trimmedValue)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+const normalizeContactRequestDelivery = (
+  settings: AssistantBehaviorSettings,
+  recipientEmailsText: string,
+): NonNullable<AssistantBehaviorSettings['contactRequestDelivery']> => {
+  const webhookUrl = settings.contactRequestDelivery?.webhook?.url.trim() ?? ''
+  return {
+    recipientEmails: normalizeContactRequestEmails(parseContactRequestEmails(recipientEmailsText)),
+    webhook: webhookUrl ? { url: webhookUrl } : null,
+  }
+}
+
+const getContactRequestDeliveryKey = (
+  settings: AssistantBehaviorSettings,
+  recipientEmailsText?: string,
+): string => {
+  const delivery = recipientEmailsText === undefined
+    ? {
+        recipientEmails: normalizeContactRequestEmails(settings.contactRequestDelivery?.recipientEmails),
+        webhook: settings.contactRequestDelivery?.webhook?.url.trim()
+          ? { url: settings.contactRequestDelivery.webhook.url.trim() }
+          : null,
+      }
+    : normalizeContactRequestDelivery(settings, recipientEmailsText)
+
+  return JSON.stringify({
+    recipientEmails: delivery.recipientEmails,
+    webhookUrl: delivery.webhook?.url ?? '',
+  })
+}
+
 const normalizeAssistantBehaviorSettingsByAgent = (agentId: string | undefined, settings: AssistantBehaviorSettings) => ({
   ...settings,
   sourceScope: agentId ? settings.sourceScope ?? { mode: 'all' } : undefined,
+  contactRequestDelivery: agentId ? settings.contactRequestDelivery ?? DEFAULT_CONTACT_REQUEST_DELIVERY : undefined,
 })
 
 const getAssistantBehaviorSourceScopeKey = (settings: AssistantBehaviorSettings) => {
@@ -144,6 +222,7 @@ export function WorkspaceAssistantChannelsTab({
   const [isAnonSaving, setIsAnonSaving] = useState(false)
   const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
+  const [contactRequestEmailsText, setContactRequestEmailsText] = useState('')
   const [sourceList, setSourceList] = useState<DocumentSourceListItem[]>([])
   const [sourceListError, setSourceListError] = useState<string | null>(null)
   const [isSourceListLoading, setIsSourceListLoading] = useState(false)
@@ -284,6 +363,7 @@ export function WorkspaceAssistantChannelsTab({
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Leaving assistant mode clears assistant-only draft state.
       setAssistantBehaviorSettings(null)
       setSavedAssistantBehaviorSettings(null)
+      setContactRequestEmailsText('')
       setIsAssistantBehaviorLoading(false)
       return
     }
@@ -302,6 +382,7 @@ export function WorkspaceAssistantChannelsTab({
         const normalized = normalizeAssistantBehaviorSettingsByAgent(agentId, data)
         setAssistantBehaviorSettings(normalized)
         setSavedAssistantBehaviorSettings(normalized)
+        setContactRequestEmailsText(getContactRequestEmailsText(normalized))
         setAssistantSettingsError(null)
       } catch (error) {
         if (!active) return
@@ -558,6 +639,18 @@ export function WorkspaceAssistantChannelsTab({
         )
       : false
 
+  const contactRequestEmails = useMemo(
+    () => normalizeContactRequestEmails(parseContactRequestEmails(contactRequestEmailsText)),
+    [contactRequestEmailsText],
+  )
+  const invalidContactRequestEmails = contactRequestEmails.filter((email) => !isValidEmailAddress(email))
+  const contactRequestEmailInvalid = invalidContactRequestEmails.length > 0
+  const contactRequestEmailTooMany = contactRequestEmails.length > CONTACT_REQUEST_EMAIL_RECIPIENT_LIMIT
+  const contactRequestWebhookUrl = assistantBehaviorSettings?.contactRequestDelivery?.webhook?.url ?? ''
+  const contactRequestWebhookUrlInvalid = !isValidContactWebhookUrl(contactRequestWebhookUrl)
+  const contactRequestDeliveryInvalid =
+    contactRequestEmailInvalid || contactRequestEmailTooMany || contactRequestWebhookUrlInvalid
+
   const hasAssistantBehaviorChanges =
     assistantBehaviorSettings && savedAssistantBehaviorSettings
       ? (
@@ -566,6 +659,8 @@ export function WorkspaceAssistantChannelsTab({
           assistantBehaviorSettings.assistantLinkUtmEnabled !== savedAssistantBehaviorSettings.assistantLinkUtmEnabled ||
           assistantBehaviorSettings.citationDisplayEnabled !== savedAssistantBehaviorSettings.citationDisplayEnabled ||
           assistantBehaviorSettings.contactRequestsEnabled !== savedAssistantBehaviorSettings.contactRequestsEnabled ||
+          getContactRequestDeliveryKey(assistantBehaviorSettings, contactRequestEmailsText) !==
+            getContactRequestDeliveryKey(savedAssistantBehaviorSettings) ||
           getAssistantBehaviorSourceScopeKey(assistantBehaviorSettings) !==
             getAssistantBehaviorSourceScopeKey(savedAssistantBehaviorSettings) ||
           JSON.stringify(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) !==
@@ -700,6 +795,9 @@ export function WorkspaceAssistantChannelsTab({
     if (!assistantBehaviorSettings || !savedAssistantBehaviorSettings || !hasAssistantBehaviorChanges) {
       return
     }
+    if (contactRequestDeliveryInvalid) {
+      return
+    }
 
     const timeout = window.setTimeout(async () => {
       const draftVersionAtRequestStart = assistantBehaviorDraftVersionRef.current
@@ -708,15 +806,22 @@ export function WorkspaceAssistantChannelsTab({
       setSaveState('saving')
       setSaveError(null)
       try {
+        const requestSettings: AssistantBehaviorSettings = {
+          ...assistantBehaviorSettings,
+          contactRequestDelivery: agentId
+            ? normalizeContactRequestDelivery(assistantBehaviorSettings, contactRequestEmailsText)
+            : undefined,
+        }
         const updated = normalizeAssistantBehaviorSettingsByAgent(
           agentId,
-          await updateAssistantBehaviorSettings(assistantBehaviorSettings),
+          await updateAssistantBehaviorSettings(requestSettings),
         )
         if (saveSequenceRef.current !== saveId) return
         setSavedAssistantBehaviorSettings(updated)
         setAssistantSettingsError(null)
         if (assistantBehaviorDraftVersionRef.current === draftVersionAtRequestStart) {
           setAssistantBehaviorSettings(updated)
+          setContactRequestEmailsText(getContactRequestEmailsText(updated))
           setSaveState('saved')
         }
       } catch (error) {
@@ -729,7 +834,18 @@ export function WorkspaceAssistantChannelsTab({
     }, 700)
 
     return () => window.clearTimeout(timeout)
-  }, [agentId, assistantBehaviorSettings, hasAssistantBehaviorChanges, saveSequenceRef, savedAssistantBehaviorSettings, setSaveError, setSaveState, updateAssistantBehaviorSettings])
+  }, [
+    agentId,
+    assistantBehaviorSettings,
+    contactRequestDeliveryInvalid,
+    contactRequestEmailsText,
+    hasAssistantBehaviorChanges,
+    saveSequenceRef,
+    savedAssistantBehaviorSettings,
+    setSaveError,
+    setSaveState,
+    updateAssistantBehaviorSettings,
+  ])
 
   const handleAnonymousChatTokenRotate = async () => {
     if (!anonSettings) return
@@ -915,7 +1031,7 @@ export function WorkspaceAssistantChannelsTab({
                       <h3 className="font-medium text-foreground">Contact requests</h3>
                       <p className="text-sm text-muted-foreground">
                         Show a &ldquo;contact a human&rdquo; option in chat. The assistant collects the visitor&rsquo;s
-                        email and message, and emails the request to the workspace owner.
+                        email and message, then sends the request to configured recipients and an optional webhook.
                       </p>
                     </div>
                   </div>
@@ -929,6 +1045,65 @@ export function WorkspaceAssistantChannelsTab({
                     className="sm:mt-3"
                   />
                 </div>
+                {assistantBehaviorSettings?.contactRequestsEnabled ? (
+                  <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="contactRequestEmails">Recipient emails</Label>
+                      <Textarea
+                        id="contactRequestEmails"
+                        value={contactRequestEmailsText}
+                        onChange={(event) => {
+                          assistantBehaviorDraftVersionRef.current += 1
+                          setAssistantSettingsError(null)
+                          setContactRequestEmailsText(event.target.value)
+                        }}
+                        placeholder={'support@example.com\nescalations@example.com'}
+                        className="min-h-24"
+                        disabled={!assistantBehaviorSettings}
+                      />
+                      {contactRequestEmailTooMany ? (
+                        <p className="text-xs text-destructive">
+                          Add no more than {CONTACT_REQUEST_EMAIL_RECIPIENT_LIMIT} recipient email addresses.
+                        </p>
+                      ) : contactRequestEmailInvalid ? (
+                        <p className="text-xs text-destructive">
+                          Fix invalid addresses: {invalidContactRequestEmails.join(', ')}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          One email per line, or separated by commas. Empty falls back to the workspace owner.
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="contactRequestWebhookUrl">Webhook URL</Label>
+                      <Input
+                        id="contactRequestWebhookUrl"
+                        type="url"
+                        value={contactRequestWebhookUrl}
+                        onChange={(event) => {
+                          const webhookUrl = event.target.value
+                          updateAssistantBehaviorDraft((current) => ({
+                            ...current,
+                            contactRequestDelivery: {
+                              ...(current.contactRequestDelivery ?? DEFAULT_CONTACT_REQUEST_DELIVERY),
+                              webhook: webhookUrl ? { url: webhookUrl } : null,
+                            },
+                          }))
+                        }}
+                        placeholder="https://support.example.com/radioso/contact-request"
+                        disabled={!assistantBehaviorSettings}
+                      />
+                      {contactRequestWebhookUrlInvalid ? (
+                        <p className="text-xs text-destructive">Enter a valid http(s) webhook URL.</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Optional. Radioso signs webhook requests server-side with the app key.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </SettingsCard>
           </section>

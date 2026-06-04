@@ -5,14 +5,20 @@ import {
   CONTACT_SEND_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
+  ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
+  ContactWebhookHmacSigner,
+  FetchContactWebhookHttpClient,
   WorkspaceOwnerContactRecipientResolver,
   classifyContactIntent,
+  deriveContactWebhookSigningKey,
   type PublicChatActionAdvertiserPort,
   type PublicChatIntakeAction,
 } from "../../../modules/chat/composition.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
 import { AccountMembershipRepository } from "../../../db/repositories/accountMembershipRepository.js";
+import { AgentRepository } from "../../../db/repositories/agentRepository.js";
+import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import type { ApplicationModule } from "../applicationModule.js";
 
 /** Reads the per-agent contact-requests flag for the advertiser. */
@@ -79,15 +85,25 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
     context.registerRoutine({ routine: contactRoutine, activates: activatesOnContactIntent });
     context.registerActionHandler({
       type: CONTACT_SEND_ACTION_TYPE,
-      handler: ({ database, logger, mailService }) =>
-        new ContactSendActionHandler(
+      handler: ({ database, env, logger, mailService }) => {
+        const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
+          new WorkspaceRepository(database),
+          new AccountMembershipRepository(database),
+        );
+        return new ContactSendActionHandler(
           mailService,
-          new WorkspaceOwnerContactRecipientResolver(
-            new WorkspaceRepository(database),
-            new AccountMembershipRepository(database),
+          new ConfiguredContactDeliveryResolver(
+            new ConversationRepository(database),
+            new AgentRepository(database),
+            ownerFallback,
           ),
           logger,
-        ),
+          new FetchContactWebhookHttpClient(),
+          env.WORKSPACE_TOKEN_SECRET
+            ? new ContactWebhookHmacSigner(deriveContactWebhookSigningKey(env.WORKSPACE_TOKEN_SECRET))
+            : undefined,
+        );
+      },
     });
     context.registerPublicChatActionAdvertiser(
       ({ agentService }) => new ContactIntakeActionAdvertiser(agentService),

@@ -4,6 +4,7 @@ import type { DocumentInput } from "../import/buildDocuments.ts";
 export interface ExistingDocument {
   id: string;
   externalDocumentId: string | null;
+  sourceId: string | null;
   metadata: Record<string, unknown> | null;
 }
 
@@ -17,6 +18,7 @@ export interface RadiosoDocsClient {
   listAll(): Promise<ExistingDocument[]>;
   create(input: DocumentInput): Promise<CreateResult>;
   delete(documentId: string): Promise<void>;
+  deleteSource(sourceId: string): Promise<void>;
 }
 
 export interface HttpClientConfig {
@@ -56,11 +58,11 @@ export function createRadiosoDocsClient(config: HttpClientConfig): RadiosoDocsCl
         }
         const response = await request("GET", `/api/v1/document/?${query.toString()}`);
         const page = (await response.json()) as {
-          documents: ExistingDocument[];
+          documents: Array<Omit<ExistingDocument, "sourceId"> & { sourceId?: string | null }>;
           nextCursor?: string | null;
           hasMore?: boolean;
         };
-        documents.push(...page.documents);
+        documents.push(...page.documents.map((document) => ({ ...document, sourceId: document.sourceId ?? null })));
         cursor = page.hasMore && page.nextCursor ? page.nextCursor : undefined;
       } while (cursor);
       return documents;
@@ -79,6 +81,10 @@ export function createRadiosoDocsClient(config: HttpClientConfig): RadiosoDocsCl
 
     async delete(documentId) {
       await request("DELETE", `/api/v1/document/${documentId}`);
+    },
+
+    async deleteSource(sourceId) {
+      await request("DELETE", `/api/v1/document/sources/${sourceId}`);
     },
   };
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { createDefaultMetadataRule } from '@/components/dashboard/settings/retrieval-rule-helpers'
 import {
   readRetrievalSkillSettingsOverride,
   RETRIEVAL_ANSWER_SKILL_NAME,
@@ -31,7 +32,6 @@ describe('retrieval skill settings adapter', () => {
       },
       'human_contact.request': { enabled: true },
     })).toEqual({
-      customInstruction: 'Prefer product docs.',
       queryRewriteEnabled: false,
       metadataRules: [
         {
@@ -75,16 +75,14 @@ describe('retrieval skill settings adapter', () => {
 
     expect(writeRetrievalSkillSettingsOverride(undefined, {
       metadataRules: [...metadataRules],
-      customInstruction: 'Prefer release notes.',
     })).toEqual({
       [RETRIEVAL_ANSWER_SKILL_NAME]: {
         metadataRules: [...metadataRules],
-        customInstruction: 'Prefer release notes.',
       },
     })
   })
 
-  it('clears managed metadataRules while preserving future sibling fields', () => {
+  it('clears managed metadataRules while preserving unmanaged sibling fields', () => {
     const metadataRules = [{
       id: 'rule-1',
       field: 'region',
@@ -105,21 +103,24 @@ describe('retrieval skill settings adapter', () => {
     }, {})).toEqual({
       [RETRIEVAL_ANSWER_SKILL_NAME]: {
         someFutureField: { enabled: true },
+        customInstruction: 'Prefer release notes.',
       },
     })
   })
 
-  it('preserves genuinely unknown retrieval.answer fields when saving managed overrides', () => {
+  it('preserves unmanaged customInstruction and future retrieval.answer fields when saving managed overrides', () => {
     expect(writeRetrievalSkillSettingsOverride({
       [RETRIEVAL_ANSWER_SKILL_NAME]: {
         someFutureField: { enabled: true },
+        customInstruction: 'Prefer release notes.',
       },
     }, {
-      customInstruction: 'Prefer release notes.',
+      vectorTopK: 12,
     })).toEqual({
       [RETRIEVAL_ANSWER_SKILL_NAME]: {
         someFutureField: { enabled: true },
         customInstruction: 'Prefer release notes.',
+        vectorTopK: 12,
       },
     })
   })
@@ -131,5 +132,29 @@ describe('retrieval skill settings adapter', () => {
     }, {})).toEqual({
       'human_contact.request': { enabled: true },
     })
+  })
+})
+
+describe('metadata rule defaults', () => {
+  it('creates the add-rule CTA rule from field suggestions', () => {
+    const rule = createDefaultMetadataRule([{ field: 'isPublic', inferredType: 'boolean' }])
+
+    expect(rule).toMatchObject({
+      field: 'isPublic',
+      valueType: 'boolean',
+      operator: 'equals',
+      value: 'true',
+      effect: 'boost',
+      enabled: true,
+      triggerMode: 'always_on',
+    })
+    expect(rule.conditions).toMatchObject([
+      {
+        field: 'isPublic',
+        valueType: 'boolean',
+        operator: 'equals',
+        value: 'true',
+      },
+    ])
   })
 })

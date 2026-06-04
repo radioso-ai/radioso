@@ -1,9 +1,10 @@
 'use client'
 
-import { ChevronDown, DatabaseZap } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 
 import { AssistantSourceScopeSelector } from '@/components/dashboard/settings/assistant-source-scope-selector'
 import { MetadataRulesEditor } from '@/components/dashboard/settings/metadata-rules-editor'
+import { createDefaultMetadataRule } from '@/components/dashboard/settings/retrieval-rule-helpers'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
@@ -15,7 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type { AgentSourceScope, DocumentSourceListItem, RetrievalSettings } from '@/lib/api'
 import type { RetrievalSkillSettingsOverride, RetrievalStrategy } from '@/lib/retrieval-skill-settings'
@@ -25,11 +25,11 @@ const hasOverride = <K extends keyof RetrievalSkillSettingsOverride>(
   field: K,
 ) => Object.prototype.hasOwnProperty.call(value, field)
 
-const inheritedLabel = (value: string | number | boolean) => `Inherited from default: ${formatValue(value)}`
+const defaultLabel = (value: string | number | boolean) => `Default: ${formatValue(value)}`
 
 const formatValue = (value: string | number | boolean) => {
   if (typeof value === 'boolean') {
-    return value ? 'On' : 'Off'
+    return value ? 'on' : 'off'
   }
   if (typeof value === 'string') {
     return value.trim().length > 0 ? value : 'None'
@@ -53,7 +53,7 @@ function FieldHeader({
       <div>
         <Label className="text-foreground">{title}</Label>
         <p className="text-xs text-muted-foreground">
-          {overridden ? 'Overridden for this agent' : inheritedLabel(inherited)}
+          {overridden ? 'Overridden for this agent' : defaultLabel(inherited)}
         </p>
       </div>
       {overridden ? (
@@ -68,9 +68,7 @@ function FieldHeader({
 export function AssistantRetrievalSkillSettingsSection({
   defaults,
   value,
-  retrievalEnabled,
   onChange,
-  onRetrievalEnabledChange,
   sourceScope,
   sourceList = [],
   isSourceListLoading = false,
@@ -79,9 +77,7 @@ export function AssistantRetrievalSkillSettingsSection({
 }: {
   defaults: RetrievalSettings
   value: RetrievalSkillSettingsOverride
-  retrievalEnabled: boolean
   onChange: (next: RetrievalSkillSettingsOverride) => void
-  onRetrievalEnabledChange: (enabled: boolean) => void
   sourceScope: AgentSourceScope
   sourceList?: DocumentSourceListItem[]
   isSourceListLoading?: boolean
@@ -109,52 +105,20 @@ export function AssistantRetrievalSkillSettingsSection({
     fallback: number,
   ) => hasOverride(value, field) ? value[field] ?? fallback : fallback
 
+  const effectiveMetadataRules = hasOverride(value, 'metadataRules')
+    ? value.metadataRules ?? []
+    : defaults.metadataRules
+  const hasMetadataRules = effectiveMetadataRules.length > 0
+  const addMetadataRule = () => {
+    setField('metadataRules', [
+      ...(hasOverride(value, 'metadataRules') ? value.metadataRules ?? [] : defaults.metadataRules),
+      createDefaultMetadataRule(defaults.metadataFieldSuggestions),
+    ])
+  }
+
   return (
-    <div id="retrieval-skill-settings" className="space-y-4 border-t border-border pt-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
-            <DatabaseZap className="h-5 w-5 text-primary" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="font-medium text-foreground">Retrieval answers</h3>
-            <p className="text-sm text-muted-foreground">
-              Ground this agent in workspace knowledge, with per-field overrides that inherit defaults until changed.
-            </p>
-          </div>
-        </div>
-        <Switch
-          id="retrievalEnabledToggle"
-          checked={retrievalEnabled}
-          onCheckedChange={onRetrievalEnabledChange}
-          className="sm:mt-3"
-        />
-      </div>
-
-      {retrievalEnabled ? (
-        <div className="space-y-4">
-          <div className="space-y-3 rounded-lg border border-border p-3">
-            <FieldHeader
-              title="Answer instruction"
-              inherited={defaults.customInstruction}
-              overridden={hasOverride(value, 'customInstruction')}
-              onClear={() => clearField('customInstruction')}
-            />
-            {hasOverride(value, 'customInstruction') ? (
-              <Textarea
-                id="retrievalCustomInstruction"
-                aria-label="Retrieval answer instruction"
-                value={value.customInstruction ?? ''}
-                onChange={(event) => setField('customInstruction', event.target.value.slice(0, 2000))}
-                rows={3}
-              />
-            ) : (
-              <Button type="button" size="sm" variant="outline" onClick={() => setField('customInstruction', defaults.customInstruction)}>
-                Override answer instruction
-              </Button>
-            )}
-          </div>
-
+    <div id="retrieval-skill-settings" className="space-y-4">
+      <div className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2 rounded-lg border border-border p-3">
               <FieldHeader
@@ -172,8 +136,8 @@ export function AssistantRetrievalSkillSettingsSection({
                 <SelectTrigger id="retrievalQueryRewrite" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherit">{inheritedLabel(defaults.queryRewriteEnabled)}</SelectItem>
+              <SelectContent>
+                  <SelectItem value="inherit">{defaultLabel(defaults.queryRewriteEnabled)}</SelectItem>
                   <SelectItem value="true">On</SelectItem>
                   <SelectItem value="false">Off</SelectItem>
                 </SelectContent>
@@ -196,8 +160,8 @@ export function AssistantRetrievalSkillSettingsSection({
                 <SelectTrigger id="agentRetrievalStrategy" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherit">{inheritedLabel(defaults.retrievalStrategy)}</SelectItem>
+              <SelectContent>
+                  <SelectItem value="inherit">{defaultLabel(defaults.retrievalStrategy)}</SelectItem>
                   <SelectItem value="fixed">Fixed</SelectItem>
                   <SelectItem value="reasoning">Reasoning</SelectItem>
                   <SelectItem value="auto">Auto</SelectItem>
@@ -225,7 +189,7 @@ export function AssistantRetrievalSkillSettingsSection({
                 <div>
                   <Label className="text-foreground">Metadata rules</Label>
                   <p className="text-xs text-muted-foreground">
-                    {hasOverride(value, 'metadataRules') ? 'Overridden for this agent' : 'Inherited from default'}
+                    {hasOverride(value, 'metadataRules') ? 'Overridden for this agent' : 'Default rules'}
                   </p>
                 </div>
                 {hasOverride(value, 'metadataRules') ? (
@@ -243,57 +207,19 @@ export function AssistantRetrievalSkillSettingsSection({
                   </Button>
                 )}
               </div>
-              <MetadataRulesEditor
-                metadataRules={hasOverride(value, 'metadataRules') ? value.metadataRules ?? [] : defaults.metadataRules}
-                metadataFieldSuggestions={defaults.metadataFieldSuggestions}
-                readOnly={!hasOverride(value, 'metadataRules')}
-                onChange={(metadataRules) => setField('metadataRules', metadataRules)}
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-3 rounded-lg border border-border p-3">
-              <FieldHeader
-                title="Semantic rewrite instructions"
-                inherited={defaults.semanticRewriteInstructions}
-                overridden={hasOverride(value, 'semanticRewriteInstructions')}
-                onClear={() => clearField('semanticRewriteInstructions')}
-              />
-              {hasOverride(value, 'semanticRewriteInstructions') ? (
-                <Textarea
-                  id="semanticRewriteInstructions"
-                  aria-label="Semantic rewrite instructions"
-                  value={value.semanticRewriteInstructions ?? ''}
-                  onChange={(event) => setField('semanticRewriteInstructions', event.target.value.slice(0, 2000))}
-                  rows={3}
+              {hasMetadataRules ? (
+                <MetadataRulesEditor
+                  metadataRules={effectiveMetadataRules}
+                  metadataFieldSuggestions={defaults.metadataFieldSuggestions}
+                  readOnly={!hasOverride(value, 'metadataRules')}
+                  onChange={(metadataRules) => setField('metadataRules', metadataRules)}
                 />
               ) : (
-                <Button type="button" size="sm" variant="outline" onClick={() => setField('semanticRewriteInstructions', defaults.semanticRewriteInstructions)}>
-                  Override semantic instructions
-                </Button>
-              )}
-            </div>
-
-            <div className="space-y-3 rounded-lg border border-border p-3">
-              <FieldHeader
-                title="Lexical rewrite instructions"
-                inherited={defaults.lexicalRewriteInstructions}
-                overridden={hasOverride(value, 'lexicalRewriteInstructions')}
-                onClear={() => clearField('lexicalRewriteInstructions')}
-              />
-              {hasOverride(value, 'lexicalRewriteInstructions') ? (
-                <Textarea
-                  id="lexicalRewriteInstructions"
-                  aria-label="Lexical rewrite instructions"
-                  value={value.lexicalRewriteInstructions ?? ''}
-                  onChange={(event) => setField('lexicalRewriteInstructions', event.target.value.slice(0, 2000))}
-                  rows={3}
-                />
-              ) : (
-                <Button type="button" size="sm" variant="outline" onClick={() => setField('lexicalRewriteInstructions', defaults.lexicalRewriteInstructions)}>
-                  Override lexical instructions
-                </Button>
+                <div className="rounded-md border border-dashed border-border p-4">
+                  <Button type="button" size="sm" variant="outline" onClick={addMetadataRule}>
+                    Add rule
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -316,7 +242,7 @@ export function AssistantRetrievalSkillSettingsSection({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="inherit">{inheritedLabel(defaults.suggestedQuestionsEnabled)}</SelectItem>
+                  <SelectItem value="inherit">{defaultLabel(defaults.suggestedQuestionsEnabled)}</SelectItem>
                   <SelectItem value="true">On</SelectItem>
                   <SelectItem value="false">Off</SelectItem>
                 </SelectContent>
@@ -357,6 +283,51 @@ export function AssistantRetrievalSkillSettingsSection({
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-4 pt-3">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-3">
+                    <FieldHeader
+                      title="Semantic rewrite instructions"
+                      inherited={defaults.semanticRewriteInstructions}
+                      overridden={hasOverride(value, 'semanticRewriteInstructions')}
+                      onClear={() => clearField('semanticRewriteInstructions')}
+                    />
+                    {hasOverride(value, 'semanticRewriteInstructions') ? (
+                      <Textarea
+                        id="semanticRewriteInstructions"
+                        aria-label="Semantic rewrite instructions"
+                        value={value.semanticRewriteInstructions ?? ''}
+                        onChange={(event) => setField('semanticRewriteInstructions', event.target.value.slice(0, 2000))}
+                        rows={3}
+                      />
+                    ) : (
+                      <Button type="button" size="sm" variant="outline" onClick={() => setField('semanticRewriteInstructions', defaults.semanticRewriteInstructions)}>
+                        Override semantic instructions
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <FieldHeader
+                      title="Lexical rewrite instructions"
+                      inherited={defaults.lexicalRewriteInstructions}
+                      overridden={hasOverride(value, 'lexicalRewriteInstructions')}
+                      onClear={() => clearField('lexicalRewriteInstructions')}
+                    />
+                    {hasOverride(value, 'lexicalRewriteInstructions') ? (
+                      <Textarea
+                        id="lexicalRewriteInstructions"
+                        aria-label="Lexical rewrite instructions"
+                        value={value.lexicalRewriteInstructions ?? ''}
+                        onChange={(event) => setField('lexicalRewriteInstructions', event.target.value.slice(0, 2000))}
+                        rows={3}
+                      />
+                    ) : (
+                      <Button type="button" size="sm" variant="outline" onClick={() => setField('lexicalRewriteInstructions', defaults.lexicalRewriteInstructions)}>
+                        Override lexical instructions
+                      </Button>
+                    )}
+                  </div>
+                </div>
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
                     <FieldHeader
@@ -398,7 +369,7 @@ export function AssistantRetrievalSkillSettingsSection({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="inherit">{inheritedLabel(defaults.rerankEnabled)}</SelectItem>
+                        <SelectItem value="inherit">{defaultLabel(defaults.rerankEnabled)}</SelectItem>
                         <SelectItem value="true">On</SelectItem>
                         <SelectItem value="false">Off</SelectItem>
                       </SelectContent>
@@ -431,8 +402,7 @@ export function AssistantRetrievalSkillSettingsSection({
               </CollapsibleContent>
             </div>
           </Collapsible>
-        </div>
-      ) : null}
+      </div>
     </div>
   )
 }

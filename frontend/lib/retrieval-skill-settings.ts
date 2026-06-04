@@ -5,7 +5,6 @@ export const RETRIEVAL_ANSWER_SKILL_NAME = 'retrieval.answer'
 export type RetrievalStrategy = 'fixed' | 'reasoning' | 'auto'
 
 export interface RetrievalSkillSettingsOverride {
-  customInstruction?: string
   queryRewriteEnabled?: boolean
   semanticRewriteInstructions?: string
   lexicalRewriteInstructions?: string
@@ -21,7 +20,6 @@ export interface RetrievalSkillSettingsOverride {
 export type AgentSkillSettingsMap = Record<string, unknown>
 
 const knownRetrievalSkillFields = [
-  'customInstruction',
   'queryRewriteEnabled',
   'semanticRewriteInstructions',
   'lexicalRewriteInstructions',
@@ -48,7 +46,6 @@ export const readRetrievalSkillSettingsOverride = (
   }
 
   const next: RetrievalSkillSettingsOverride = {}
-  if (typeof raw.customInstruction === 'string') next.customInstruction = raw.customInstruction
   if (typeof raw.queryRewriteEnabled === 'boolean') next.queryRewriteEnabled = raw.queryRewriteEnabled
   if (typeof raw.semanticRewriteInstructions === 'string') next.semanticRewriteInstructions = raw.semanticRewriteInstructions
   if (typeof raw.lexicalRewriteInstructions === 'string') next.lexicalRewriteInstructions = raw.lexicalRewriteInstructions

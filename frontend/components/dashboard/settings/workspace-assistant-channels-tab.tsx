@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, ChevronLeft, ExternalLink, FolderOpen, Globe, KeyRound, Link as LinkIcon, RefreshCw, ShieldAlert, Trash2, UserRound, Wrench } from 'lucide-react'
+import { Building2, ChevronLeft, DatabaseZap, ExternalLink, FolderOpen, Globe, KeyRound, Link as LinkIcon, RefreshCw, ShieldAlert, Trash2, UserRound, Wrench } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
@@ -921,49 +921,47 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'assistant' && showSection('skills') ? (
           <section id="assistant-skills" className="space-y-6 scroll-mt-24">
             <SettingsCard
-              icon={<Wrench className="h-5 w-5 text-primary" />}
-              title="Skills"
-              description="Capabilities the assistant can use during a chat."
+              id="contact-requests"
+              icon={<UserRound className="h-5 w-5 text-primary" />}
+              title="Contact requests"
+              description="Show a contact a human option in chat. The assistant collects the visitor's email and message, and emails the request to the workspace owner."
+              headerEnd={(
+                <Switch
+                  id="contactRequestsToggle"
+                  checked={assistantBehaviorSettings?.contactRequestsEnabled ?? false}
+                  onCheckedChange={(checked) =>
+                    updateAssistantBehaviorDraft((current) => ({ ...current, contactRequestsEnabled: checked }))
+                  }
+                  disabled={!assistantBehaviorSettings}
+                />
+              )}
             >
-              <div className="space-y-5">
-              <div id="contact-requests" className="scroll-mt-24">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
-                      <UserRound className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="font-medium text-foreground">Contact requests</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Show a &ldquo;contact a human&rdquo; option in chat. The assistant collects the visitor&rsquo;s
-                        email and message, and emails the request to the workspace owner.
-                      </p>
-                    </div>
-                  </div>
-                  <Switch
-                    id="contactRequestsToggle"
-                    checked={assistantBehaviorSettings?.contactRequestsEnabled ?? false}
-                    onCheckedChange={(checked) =>
-                      updateAssistantBehaviorDraft((current) => ({ ...current, contactRequestsEnabled: checked }))
-                    }
-                    disabled={!assistantBehaviorSettings}
-                    className="sm:mt-3"
-                  />
-                </div>
-              </div>
+              {null}
+            </SettingsCard>
+            <SettingsCard
+              id="retrieval-answers"
+              icon={<DatabaseZap className="h-5 w-5 text-primary" />}
+              title="Retrieval answers"
+              description="Ground this agent in workspace knowledge, with per-field overrides that inherit defaults until changed."
+              headerEnd={assistantBehaviorSettings ? (
+                <Switch
+                  id="retrievalEnabledToggle"
+                  checked={assistantBehaviorSettings.retrievalEnabled ?? true}
+                  onCheckedChange={(checked) =>
+                    updateAssistantBehaviorDraft((current) => ({ ...current, retrievalEnabled: checked }))
+                  }
+                />
+              ) : null}
+            >
               {isAssistantBehaviorLoading || isRetrievalDefaultsLoading ? (
-                <div className="flex items-center gap-2 border-t border-border pt-5 text-sm text-muted-foreground">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Spinner className="h-4 w-4" />
                   Loading retrieval settings...
                 </div>
-              ) : assistantBehaviorSettings && retrievalDefaults ? (
+              ) : assistantBehaviorSettings && retrievalDefaults && (assistantBehaviorSettings.retrievalEnabled ?? true) ? (
                 <AssistantRetrievalSkillSettingsSection
                   defaults={retrievalDefaults}
                   value={assistantBehaviorSettings.retrievalSkillSettings ?? {}}
-                  retrievalEnabled={assistantBehaviorSettings.retrievalEnabled ?? true}
-                  onRetrievalEnabledChange={(checked) =>
-                    updateAssistantBehaviorDraft((current) => ({ ...current, retrievalEnabled: checked }))
-                  }
                   sourceScope={assistantBehaviorSettings.sourceScope ?? { mode: 'all' }}
                   sourceList={sourceList}
                   isSourceListLoading={isSourceListLoading}
@@ -975,12 +973,13 @@ export function WorkspaceAssistantChannelsTab({
                     updateAssistantBehaviorDraft((current) => ({ ...current, retrievalSkillSettings: next }))
                   }
                 />
+              ) : assistantBehaviorSettings && retrievalDefaults ? (
+                null
               ) : (
-                <p className="border-t border-border pt-5 text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                   Failed to load retrieval settings.
                 </p>
               )}
-              </div>
             </SettingsCard>
           </section>
           ) : null}

@@ -110,27 +110,56 @@ test("agent skills tab saves and clears retrieval skill overrides", async ({ pag
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
   const retrievalSection = page.locator("#retrieval-skill-settings");
   await expect(retrievalSection).toBeVisible();
-  await expect(retrievalSection).toContainText("Inherited from default");
+  await expect(retrievalSection).toContainText("Default: off");
 
-  await page.getByRole("button", { name: "Override answer instruction" }).click();
-  await page.getByLabel("Retrieval answer instruction").fill("Answer with release-note citations only.");
+  await page.locator("#retrievalQueryRewrite").click();
+  await page.getByRole("option", { name: "On" }).click();
 
   await expect.poll(() => agentUpdates.length).toBeGreaterThanOrEqual(1);
   expect(agentUpdates.at(-1)).toMatchObject({
     skillSettings: {
       "retrieval.answer": {
-        customInstruction: "Answer with release-note citations only.",
+        queryRewriteEnabled: true,
       },
     },
   });
 
   await page.reload();
-  await expect(page.getByLabel("Retrieval answer instruction")).toHaveValue("Answer with release-note citations only.");
+  await expect(page.locator("#retrievalQueryRewrite")).toContainText("On");
 
-  await page.getByRole("button", { name: "Clear override" }).click();
+  await page.locator("#retrievalQueryRewrite").click();
+  await page.getByRole("option", { name: "Default: off" }).click();
 
   await expect.poll(() => JSON.stringify((agentUpdates.at(-1) as { skillSettings?: unknown } | undefined)?.skillSettings)).toBe("{}");
-  await expect(retrievalSection).toContainText("Inherited from default");
+  await expect(retrievalSection).toContainText("Default: off");
+});
+
+test("agent skills tab collapses retrieval settings when retrieval is off", async ({ page }) => {
+  const agentUpdates: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    agentUpdates,
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
+  const retrievalSection = page.locator("#retrieval-skill-settings");
+  await expect(retrievalSection).toBeVisible();
+  await expect(page.locator("#agent-knowledge-scope-settings")).toBeVisible();
+
+  await page.locator("#retrievalEnabledToggle").click();
+  await expect(retrievalSection).toBeHidden();
+  await expect(page.locator("#agent-knowledge-scope-settings")).toBeHidden();
+
+  await expect.poll(() => agentUpdates.length).toBeGreaterThanOrEqual(1);
+  expect(agentUpdates.at(-1)).toMatchObject({
+    retrievalEnabled: false,
+  });
+
+  await page.locator("#retrievalEnabledToggle").click();
+  await expect(retrievalSection).toBeVisible();
+  await expect(page.locator("#agent-knowledge-scope-settings")).toBeVisible();
 });
 
 test("agent skills tab saves, persists, and clears retrieval metadata rules", async ({ page }) => {
@@ -146,9 +175,9 @@ test("agent skills tab saves, persists, and clears retrieval metadata rules", as
   const retrievalSection = page.locator("#retrieval-skill-settings");
   const metadataRulesSection = page.locator("#agent-metadata-rules-settings");
   await expect(retrievalSection).toBeVisible();
-  await expect(metadataRulesSection).toContainText("Inherited from default");
+  await expect(metadataRulesSection).toContainText("Default rules");
+  await expect(metadataRulesSection.getByLabel("Field")).toHaveCount(0);
 
-  await metadataRulesSection.getByRole("button", { name: "Override metadata rules" }).click();
   await metadataRulesSection.getByRole("button", { name: "Add rule" }).click();
   await metadataRulesSection.getByLabel("Field").fill("region");
   await metadataRulesSection.getByPlaceholder("e.g. et or example.com").fill("eu");
@@ -182,7 +211,8 @@ test("agent skills tab saves, persists, and clears retrieval metadata rules", as
   await metadataRulesSection.getByRole("button", { name: "Clear override" }).click();
 
   await expect.poll(() => JSON.stringify((agentUpdates.at(-1) as { skillSettings?: unknown } | undefined)?.skillSettings)).toBe("{}");
-  await expect(metadataRulesSection).toContainText("Inherited from default");
+  await expect(metadataRulesSection).toContainText("Default rules");
+  await expect(metadataRulesSection.getByLabel("Field")).toHaveCount(0);
 });
 
 test("agent skills tab keeps source scope and metadata rules together", async ({ page }) => {

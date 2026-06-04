@@ -4,6 +4,7 @@ import { Plus, Trash2 } from 'lucide-react'
 
 import {
   createMetadataCondition,
+  createDefaultMetadataRule,
   getOperatorLabel,
   getRuleBehaviorLabel,
   getRuleConditions,
@@ -100,6 +101,13 @@ export function MetadataRulesEditor({
   onChange: (next: RetrievalMetadataRule[]) => void
   readOnly?: boolean
 }) {
+  const addMetadataRule = () => {
+    onChange([
+      ...metadataRules,
+      createDefaultMetadataRule(metadataFieldSuggestions),
+    ])
+  }
+
   const updateMetadataRule = (
     ruleId: RetrievalMetadataRule['id'],
     updates: Partial<RetrievalMetadataRule>
@@ -159,31 +167,6 @@ export function MetadataRulesEditor({
     )
 
     updateMetadataRule(ruleId, syncRuleWithConditions(currentRule, nextConditions))
-  }
-
-  const addMetadataRule = () => {
-    const suggestedField = metadataFieldSuggestions[0]
-    onChange([
-      ...metadataRules,
-      syncRuleWithConditions({
-        id: globalThis.crypto?.randomUUID?.() ?? `rule-${Date.now()}`,
-        field: suggestedField?.field ?? '',
-        valueType: suggestedField?.inferredType ?? 'string',
-        operator: 'equals',
-        value: suggestedField?.inferredType === 'boolean' ? 'true' : '',
-        combinator: 'and',
-        effect: 'boost',
-        enabled: true,
-        triggerMode: 'always_on',
-      }, [
-        createMetadataCondition({
-          field: suggestedField?.field ?? '',
-          valueType: suggestedField?.inferredType ?? 'string',
-          operator: 'equals',
-          value: suggestedField?.inferredType === 'boolean' ? 'true' : '',
-        }),
-      ]),
-    ])
   }
 
   const updateMetadataCondition = (

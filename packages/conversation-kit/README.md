@@ -66,6 +66,41 @@ client.createDirective(agent.id, {
 });
 ```
 
+## Routines
+
+Routines are stateful, multi-step flows. The kit wires the routine runner and an
+activator so authored routines actually run: pass `routineRegistrations` — each a
+routine plus a host-owned `activates` predicate that decides when it starts (an
+explicit signal, an LLM intent check, etc.; activation logic lives in your code,
+not the engine). Once a routine is active the engine resumes it across turns until
+it reaches a terminal step.
+
+```ts
+import { createConversationKit, type RoutineRegistration } from "@radioso/conversation-kit";
+
+const signup: RoutineRegistration = {
+  routine: {
+    id: "signup",
+    rootStepId: "ask_name",
+    steps: [
+      { id: "ask_name", kind: "chat", action: "Ask the user for their name." },
+      { id: "done", kind: "terminal", action: "Thank the user and end." },
+    ],
+    transitions: [{ from: "ask_name", to: "done", condition: "the user provided their name" }],
+  },
+  // Return {} (optionally with seed variables) to start, or null to decline.
+  activates: async ({ turn, modelGateway }) => {
+    const shouldStart = await detectSignupIntent(turn, modelGateway);
+    return shouldStart ? {} : null;
+  },
+};
+
+const kit = createConversationKit({
+  openAiApiKey: process.env.OPENAI_API_KEY,
+  routineRegistrations: [signup],
+});
+```
+
 ## Local Server
 
 ```bash

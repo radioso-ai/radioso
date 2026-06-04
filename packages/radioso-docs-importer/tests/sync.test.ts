@@ -166,4 +166,27 @@ describe("syncDocuments", () => {
     expect(deletedSources).toEqual(["source-legacy"]);
     expect(report.prunedSourceIds).toEqual(["source-legacy"]);
   });
+
+  it("never deletes a legacy source that still holds a document the importer does not own", async () => {
+    // A user/API document happens to share the old importer source URL. We prune our
+    // owned doc from that source but must NOT delete the source, because the backend
+    // cascade would destroy the unrelated document too.
+    const existing: ExistingDocument[] = [
+      { id: "owned", externalDocumentId: "mdx-docs:gone", sourceId: "source-shared", metadata: { section: "mdx-docs" } },
+      { id: "user-doc", externalDocumentId: "user-thing", sourceId: "source-shared", metadata: { section: "user-upload" } },
+      { id: "common", externalDocumentId: "mdx-docs:a", sourceId: "source-common", metadata: { section: "mdx-docs" } },
+    ];
+    const { client, deleted, deletedSources } = fakeClient(existing);
+
+    const report = await syncDocuments(client, [doc("mdx-docs:a")], {
+      prune: true,
+      pruneSections: new Set(["mdx-docs"]),
+    });
+
+    // Our owned doc is pruned, the unrelated user doc is left alone, and the shared
+    // source is preserved rather than cascade-deleted.
+    expect(deleted).toEqual(["owned"]);
+    expect(deletedSources).toEqual([]);
+    expect(report.prunedSourceIds).toEqual([]);
+  });
 });

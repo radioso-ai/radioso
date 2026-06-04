@@ -54,21 +54,21 @@ export async function syncDocuments(
       inPruneScope(document, options.pruneSections) &&
       (!isDesired(document, desiredIds) || (commonSourceId !== null && document.sourceId !== commonSourceId)),
   );
-  const legacySourceIds = new Set<string>();
+  const staleIds = new Set(stale.map((document) => document.id));
 
   for (const document of stale) {
     await client.delete(document.id);
     report.pruned += 1;
     report.prunedIds.push(document.id);
     log(`pruned ${document.externalDocumentId ?? document.id}`);
-    if (commonSourceId !== null && isLegacySource(document.sourceId, commonSourceId)) {
-      legacySourceIds.add(document.sourceId);
-    }
   }
 
-  // These legacy per-page sources were created only for importer-owned docs; after
-  // pruning those docs, the sources are empty and safe to remove.
-  for (const sourceId of legacySourceIds) {
+  // Remove the now-empty legacy per-page sources, but only when the listing proves
+  // every document under that source is one we just pruned. The backend source
+  // delete cascades to ALL documents under the source, so deleting a source that
+  // also holds a user/API document (one that happens to share an old importer
+  // source URL) would silently destroy content the importer does not own.
+  for (const sourceId of deletableLegacySources(existing, staleIds, commonSourceId)) {
     await client.deleteSource(sourceId);
     report.prunedSourceIds.push(sourceId);
     log(`pruned source ${sourceId}`);
@@ -110,6 +110,31 @@ function resolveCommonSourceId(
     (candidate) => candidate.externalDocumentId !== null && desiredIds.has(candidate.externalDocumentId) && candidate.sourceId,
   );
   return document?.sourceId ?? null;
+}
+
+/**
+ * Legacy per-page sources that are safe to delete: every document the listing shows
+ * under the source is in the stale set we just pruned, so the cascading source delete
+ * cannot remove a document the importer does not own. A source still holding any
+ * non-stale (e.g. user-created) document is left in place.
+ */
+function deletableLegacySources(
+  existing: ExistingDocument[],
+  staleIds: Set<string>,
+  commonSourceId: string | null,
+): string[] {
+  if (commonSourceId === null) {
+    return [];
+  }
+  const candidates = new Set<string>();
+  for (const document of existing) {
+    if (staleIds.has(document.id) && isLegacySource(document.sourceId, commonSourceId)) {
+      candidates.add(document.sourceId);
+    }
+  }
+  return [...candidates].filter((sourceId) =>
+    existing.every((document) => document.sourceId !== sourceId || staleIds.has(document.id)),
+  );
 }
 
 function isLegacySource(sourceId: string | null, commonSourceId: string): sourceId is string {

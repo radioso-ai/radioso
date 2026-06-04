@@ -13,7 +13,9 @@ on:
       - backend/openapi.json
       - packages/radioso-docs-importer/**
       - .github/workflows/sync-docs-to-radioso.yml
-      # README changes elsewhere do not auto-trigger; use workflow_dispatch for those imports.
+      # READMEs are imported as product surface, so changes to any of them re-sync.
+      - "**/README.md"
+      - "**/readme.md"
   workflow_dispatch:
     inputs:
       prune:

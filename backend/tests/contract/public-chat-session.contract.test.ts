@@ -92,6 +92,39 @@ describe("public chat session contract", () => {
     expect(response.body).toContain("event: done");
   });
 
+  it("keeps approved website embed assistant errors browser-readable", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-embed-empty-error-cors@example.com");
+    const token = await enableWebsiteEmbed(app, session);
+    const origin = "https://example.com";
+    const publicSession = await createWebsiteEmbedPublicSession(app, token, origin);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${token}`)
+      .set("Origin", origin)
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken)
+      .send({ startConversation: true, stream: false });
+
+    expect(response.status).toBe(503);
+    expect(response.headers["access-control-allow-origin"]).toBe(origin);
+    expect(response.headers.vary).toContain("Origin");
+    expect(response.body.error).toMatchObject({
+      code: "service_unavailable",
+      details: {
+        code: "public_chat_empty_response",
+      },
+    });
+
+    const denied = await request(app)
+      .post(`/api/v1/public/chat/${token}`)
+      .set("Origin", "https://not-approved.example.com")
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken)
+      .send({ startConversation: true, stream: false });
+
+    expect(denied.status).toBe(404);
+    expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
   it("does not authorize denied-origin public chat preflight requests", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-embed-preflight-denied@example.com");

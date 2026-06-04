@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { AccountAccessService, type AccountPermission } from "../../src/modules/account/services/accountAccessService.js";
+import {
+  AccountAccessService,
+  PUBLIC_CHAT_PERMISSIONS,
+  type AccountPermission,
+  type PublicChatPermission,
+} from "../../src/modules/account/services/accountAccessService.js";
 import {
   createAuditService,
   InMemoryAccountMembershipRepository,
@@ -8,12 +13,16 @@ import {
 } from "../support/fakes.js";
 
 describe("AccountAccessService", () => {
-  const publicPermissions: AccountPermission[] = [
+  const publicPermissions: PublicChatPermission[] = [
     "public_chat.turn.create",
     "public_chat.session.read.own",
     "public_chat.history.read.own",
     "public_chat.feedback.write.own",
   ];
+
+  it("defines the public chat permission set exactly", () => {
+    expect([...PUBLIC_CHAT_PERMISSIONS].sort()).toEqual([...publicPermissions].sort());
+  });
 
   it("allows public chat session principals exactly the public chat permissions", async () => {
     const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
@@ -27,7 +36,6 @@ describe("AccountAccessService", () => {
 
     for (const permission of publicPermissions) {
       await expect(service.hasPermission({
-        accountId: "account-1",
         principal,
         permission,
       })).resolves.toBe(true);
@@ -41,7 +49,6 @@ describe("AccountAccessService", () => {
       "account.users.manage",
     ] as AccountPermission[]) {
       await expect(service.hasPermission({
-        accountId: "account-1",
         principal,
         permission,
       })).resolves.toBe(false);

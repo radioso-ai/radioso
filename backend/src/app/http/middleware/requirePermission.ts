@@ -4,6 +4,7 @@ import type { AppDependencies } from "../../server/types.js";
 import type {
   AccountPermission,
   AuthenticatedPrincipal,
+  PublicChatPermission,
 } from "../../../modules/account/services/accountAccessService.js";
 
 export type PermissionDependencies = {
@@ -61,7 +62,7 @@ export const requireWorkspacePermission = (
 
 export const requirePublicChatPermission = (
   dependencies: PermissionDependencies,
-  permission: AccountPermission,
+  permission: PublicChatPermission,
 ): RequestHandler => async (_req, res, next) => {
   try {
     const { workspaceId, authPrincipal } = res.locals as {
@@ -70,7 +71,6 @@ export const requirePublicChatPermission = (
     };
     const resolvedWorkspaceId = workspaceId ?? (authPrincipal?.type === "public_chat_session" ? authPrincipal.workspaceId : undefined);
     await dependencies.accountAccessService.requirePermission({
-      accountId: `public:${resolvedWorkspaceId ?? "unknown"}`,
       workspaceId: resolvedWorkspaceId,
       principal: authPrincipal,
       permission,

@@ -233,6 +233,14 @@ export const resolveAnonymousSession = (
         return;
       }
 
+      if (publicSession.sourceChannel === "website_embed") {
+        const requestOrigin = normalizeWebsiteEmbedOrigin(req.get("origin") ?? "");
+        if (requestOrigin) {
+          res.vary("Origin");
+          res.setHeader("Access-Control-Allow-Origin", requestOrigin);
+        }
+      }
+
       const cookieName = `anon_session_${workspace.id}`;
       const rateLimitCookieName = `${ANONYMOUS_RATE_LIMIT_COOKIE_PREFIX}${workspace.id}`;
       const rateLimitIdFromCookie = verifyAnonymousRateLimitCookie(

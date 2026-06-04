@@ -34,13 +34,14 @@ const resolveOrigin = (value: string | null) => {
 const withCorsHeaders = (
   origin: string | null,
   headers?: HeadersInit,
-  options: { allowOrigin?: boolean } = {},
+  options: { allowOrigin?: boolean; responseOrigin?: string | null } = {},
 ) => {
   const nextHeaders = new Headers(headers)
   Object.entries(CORS_HEADERS).forEach(([key, value]) => nextHeaders.set(key, value))
   const allowOrigin = options.allowOrigin ?? true
-  if (origin && allowOrigin) {
-    nextHeaders.set('Access-Control-Allow-Origin', origin)
+  const responseOrigin = options.responseOrigin ?? origin
+  if (responseOrigin && allowOrigin) {
+    nextHeaders.set('Access-Control-Allow-Origin', responseOrigin)
   }
   return nextHeaders
 }
@@ -93,7 +94,10 @@ export async function POST(
       'Content-Type': upstream.headers.get('content-type') ?? 'application/json',
       'Cache-Control': upstream.headers.get('cache-control') ?? 'no-cache',
       'X-Accel-Buffering': upstream.headers.get('x-accel-buffering') ?? 'no',
-    }, { allowOrigin: upstream.ok })
+    }, {
+      allowOrigin: Boolean(upstream.headers.get('access-control-allow-origin')),
+      responseOrigin: upstream.headers.get('access-control-allow-origin'),
+    })
 
     const anonymousSessionResponse = upstream.headers.get('x-radioso-anonymous-session')
     if (anonymousSessionResponse) {

@@ -73,7 +73,6 @@ describe("requirePublicChatPermission", () => {
     await middleware(req, res, next);
 
     expect(requirePermission).toHaveBeenCalledWith({
-      accountId: "public:workspace-1",
       workspaceId: "workspace-1",
       principal,
       permission: "public_chat.turn.create",

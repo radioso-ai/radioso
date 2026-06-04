@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { AppDependencies } from "../../../app/server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../../app/http/middleware/requireWorkspaceSession.js";
 import { requirePublicChatPermission } from "../../../app/http/middleware/requirePermission.js";
-import type { AccountPermission, AuthenticatedPrincipal } from "../../account/public.js";
+import type { AuthenticatedPrincipal, Permission } from "../../account/public.js";
 import { validateBody } from "../../../app/http/middleware/validate.js";
 import { resolveAnonymousSession } from "../../../app/http/middleware/resolveAnonymousSession.js";
 import { resolvePublicChatSessionSecret } from "../../../app/http/shared/publicChatSessionSecret.js";
@@ -34,7 +34,7 @@ export interface AnswerFeedbackRouteDependencies {
       accountId: string;
       userId?: string | null;
       principal?: AuthenticatedPrincipal | null;
-      permission: AccountPermission;
+      permission: Permission;
       workspaceId?: string | null;
     }): Promise<void>;
   };

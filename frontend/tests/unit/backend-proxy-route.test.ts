@@ -236,7 +236,7 @@ describe('backend proxy route', () => {
     expect(response.headers.get('vary')).toBe('Origin')
   })
 
-  it('echoes CORS origin for successful public chat proxy responses only', async () => {
+  it('relays public chat CORS origin from upstream responses', async () => {
     vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(
@@ -245,6 +245,16 @@ describe('backend proxy route', () => {
           headers: {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
+            'Access-Control-Allow-Origin': 'https://radioso.dev',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { code: 'service_unavailable', message: 'No response' } }), {
+          status: 503,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': 'https://radioso.dev',
           },
         }),
       )
@@ -268,6 +278,18 @@ describe('backend proxy route', () => {
         'X-Radioso-Public-Session': 'session-token',
       },
       body: JSON.stringify({ message: 'Hello', stream: true }),
+    }), {
+      params: Promise.resolve({ token: 'token-1' }),
+    })
+
+    const upstreamError = await POST(new Request('https://frontend.example.com/api/public/chat/token-1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://radioso.dev',
+        'X-Radioso-Public-Session': 'session-token',
+      },
+      body: JSON.stringify({ message: 'Hello', stream: false }),
     }), {
       params: Promise.resolve({ token: 'token-1' }),
     })
@@ -296,6 +318,8 @@ describe('backend proxy route', () => {
     )
     expect(allowed.headers.get('access-control-allow-origin')).toBe('https://radioso.dev')
     expect(allowed.headers.get('access-control-allow-headers')).toBe('Content-Type, X-Radioso-Public-Session')
+    expect(upstreamError.status).toBe(503)
+    expect(upstreamError.headers.get('access-control-allow-origin')).toBe('https://radioso.dev')
     expect(denied.status).toBe(404)
     expect(denied.headers.get('access-control-allow-origin')).toBeNull()
     expect(denied.headers.get('vary')).toBe('Origin')

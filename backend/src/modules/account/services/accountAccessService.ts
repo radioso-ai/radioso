@@ -14,10 +14,6 @@ import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspace
 import type { AuditService } from "../../audit/contracts/index.js";
 
 export type AccountPermission =
-  | "public_chat.turn.create"
-  | "public_chat.session.read.own"
-  | "public_chat.history.read.own"
-  | "public_chat.feedback.write.own"
   | "account.users.manage"
   | "account.membership.remove"
   | "account.membership.role.update"
@@ -47,7 +43,13 @@ export type AccountPermission =
 
 export type WorkspaceApiTokenRole = "admin" | "member";
 
-export type PublicChatPermission = Extract<AccountPermission, `public_chat.${string}`>;
+export type PublicChatPermission =
+  | "public_chat.turn.create"
+  | "public_chat.session.read.own"
+  | "public_chat.history.read.own"
+  | "public_chat.feedback.write.own";
+
+export type Permission = AccountPermission | PublicChatPermission;
 
 export const PUBLIC_CHAT_PERMISSIONS: ReadonlySet<PublicChatPermission> = new Set([
   "public_chat.turn.create",
@@ -369,15 +371,16 @@ export class AccountAccessService {
   }
 
   async requirePermission(input: {
-    accountId: string;
+    accountId?: string;
     userId?: string | null;
     principal?: AuthenticatedPrincipal | null;
-    permission: AccountPermission;
+    permission: Permission;
     workspaceId?: string | null;
   }): Promise<void> {
     if (
       input.principal?.type !== "public_chat_session" &&
       input.workspaceId &&
+      input.accountId &&
       !(await this.workspaceBelongsToAccount(input.accountId, input.workspaceId))
     ) {
       throw notFound("Workspace not found");
@@ -403,10 +406,10 @@ export class AccountAccessService {
   }
 
   async hasPermission(input: {
-    accountId: string;
+    accountId?: string;
     userId?: string | null;
     principal?: AuthenticatedPrincipal | null;
-    permission: AccountPermission;
+    permission: Permission;
     workspaceId?: string | null;
   }): Promise<boolean> {
     if (input.principal?.type === "public_chat_session") {
@@ -419,6 +422,10 @@ export class AccountAccessService {
 
     const userId = input.principal?.type === "session_user" ? input.principal.userId : input.userId;
     if (!userId) {
+      return false;
+    }
+
+    if (!input.accountId) {
       return false;
     }
 
@@ -470,7 +477,7 @@ export class AccountAccessService {
     return Boolean(await this.workspaceRepository.findByIdAndAccountId(workspaceId, accountId));
   }
 
-  private roleAllows(role: AccountMembershipRole, permission: AccountPermission): boolean {
+  private roleAllows(role: AccountMembershipRole, permission: Permission): boolean {
     if (permission.startsWith("public_chat.")) {
       return false;
     }
@@ -500,7 +507,7 @@ export class AccountAccessService {
     ].includes(permission);
   }
 
-  private tokenRoleAllows(role: WorkspaceApiTokenRole, permission: AccountPermission): boolean {
+  private tokenRoleAllows(role: WorkspaceApiTokenRole, permission: Permission): boolean {
     if (!permission.startsWith("workspace.") || permission.startsWith("workspace.token.")) {
       return false;
     }

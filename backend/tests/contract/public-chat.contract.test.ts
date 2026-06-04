@@ -45,6 +45,32 @@ describe("public chat contract", () => {
     return response.body;
   };
 
+  it("answers a message sent together with startConversation instead of dropping it", async () => {
+    // A caller may set startConversation:true on the first user message ("start a
+    // conversation with this message"). The message must be answered, not
+    // silently dropped for an empty greeting (which 204s and looks like a failure
+    // to browser clients).
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-startconv-message@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Test Doc", content: "The answer is 42." });
+
+    const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .send({ message: "What is the answer?", startConversation: true, stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.conversationId).toBeDefined();
+    expect(response.body.answer).toBeDefined();
+  });
+
   it("POST /api/v1/public/chat/:token creates conversation and returns response", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-chat-create@example.com");

@@ -53,6 +53,11 @@ For an Enterprise website embed, call the route from an approved origin:
 }
 ```
 
+Browser clients must keep using that same approved `Origin` on later chat,
+history, and feedback requests. Radioso checks the signed public session against
+the current website embed allowlist each time, so removing an origin from the
+allowlist stops existing browser sessions from sending new messages.
+
 To resume an existing visitor session, include the previous response's `resumeToken`:
 
 ```json
@@ -79,6 +84,21 @@ The response includes `publicChatToken`, `publicSessionId`, `publicSessionToken`
 The public chat request also supports `startConversation: true` for bootstrap greeting requests, `userExpectedLocale`, and `inputMetadata`.
 
 Bootstrap greetings are not saved as conversations by themselves. A `startConversation: true` response can omit `conversationId`; use the `conversationId` returned by the first normal message when you need history or follow-up continuity.
+
+If the assistant cannot produce a public response body, the route returns a
+JSON error instead of an empty `204` response:
+
+```json
+{
+  "error": {
+    "code": "service_unavailable",
+    "message": "Public chat response is unavailable.",
+    "details": {
+      "code": "public_chat_empty_response"
+    }
+  }
+}
+```
 
 ## Chat suggestions
 
@@ -138,6 +158,7 @@ Use `GET /api/v1/public/chat/{token}/history/{conversationId}` to fetch one conv
 
 - `403` on a website embed session usually means the origin is not in the allowlist.
 - `404` usually means the public token is unknown or not active.
+- `503` on a public chat message means Radioso accepted the public session but could not produce a response body.
 - `429` on public chat means the optional server-side public chat rate limit has been reached.
 - If history appears empty, the browser or cookie jar is probably not preserving the HttpOnly anonymous session cookie.
 

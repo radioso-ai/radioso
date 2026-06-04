@@ -31,6 +31,7 @@ const createMockReqRes = (
     locals: {} as Record<string, unknown>,
     cookie: (_name: string, _value: string, _options: unknown) => {},
     setHeader: (_name: string, _value: string) => {},
+    vary: (_field: string) => res,
   } as unknown as Response;
   let nextError: unknown = undefined;
   const next: NextFunction = (err?: unknown) => {
@@ -369,6 +370,7 @@ describe("resolveAnonymousSession", () => {
       { token: "embed-token-123" },
       {},
       {
+        origin: "https://example.com",
         [PUBLIC_CHAT_SESSION_HEADER]: embedSession.token,
       },
     );
@@ -410,6 +412,7 @@ describe("resolveAnonymousSession", () => {
       { token: "legacy-anonymous-token" },
       {},
       {
+        origin: "https://example.com",
         [PUBLIC_CHAT_SESSION_HEADER]: embedSession.token,
       },
     );
@@ -475,6 +478,7 @@ describe("resolveAnonymousSession", () => {
       { token: "shared-token-123" },
       {},
       {
+        origin: "https://example.com",
         [PUBLIC_CHAT_SESSION_HEADER]: embedSession.token,
       },
     );

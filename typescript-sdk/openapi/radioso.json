@@ -14468,9 +14468,6 @@
               }
             }
           },
-          "204": {
-            "description": "Bootstrap request completed without creating a greeting"
-          },
           "400": {
             "description": "Request validation failed",
             "content": {
@@ -14497,6 +14494,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RateLimitExceededResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Public chat response is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

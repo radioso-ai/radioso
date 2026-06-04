@@ -216,6 +216,115 @@ describe('backend proxy route', () => {
     expect(response.headers.get('content-type')).toBe('text/event-stream')
   })
 
+  it('returns CORS headers for public chat preflight requests', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+
+    const { OPTIONS } = await import('@/app/api/public/chat/[token]/route')
+
+    const response = await OPTIONS(new Request('https://frontend.example.com/api/public/chat/token-1', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://radioso.dev',
+        'Access-Control-Request-Method': 'POST',
+      },
+    }))
+
+    expect(response.status).toBe(204)
+    expect(response.headers.get('access-control-allow-origin')).toBe('https://radioso.dev')
+    expect(response.headers.get('access-control-allow-methods')).toBe('OPTIONS, POST')
+    expect(response.headers.get('access-control-allow-headers')).toBe('Content-Type, X-Radioso-Public-Session')
+    expect(response.headers.get('vary')).toBe('Origin')
+  })
+
+  it('relays public chat CORS origin from upstream responses', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response('event: done\ndata: {}\n\n', {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Access-Control-Allow-Origin': 'https://radioso.dev',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { code: 'service_unavailable', message: 'No response' } }), {
+          status: 503,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': 'https://radioso.dev',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { code: 'not_found', message: 'Not found' } }), {
+          status: 404,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { POST } = await import('@/app/api/public/chat/[token]/route')
+
+    const allowed = await POST(new Request('https://frontend.example.com/api/public/chat/token-1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://radioso.dev',
+        'X-Radioso-Public-Session': 'session-token',
+      },
+      body: JSON.stringify({ message: 'Hello', stream: true }),
+    }), {
+      params: Promise.resolve({ token: 'token-1' }),
+    })
+
+    const upstreamError = await POST(new Request('https://frontend.example.com/api/public/chat/token-1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://radioso.dev',
+        'X-Radioso-Public-Session': 'session-token',
+      },
+      body: JSON.stringify({ message: 'Hello', stream: false }),
+    }), {
+      params: Promise.resolve({ token: 'token-1' }),
+    })
+
+    const denied = await POST(new Request('https://frontend.example.com/api/public/chat/token-1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://denied.example.com',
+        'X-Radioso-Public-Session': 'session-token',
+      },
+      body: JSON.stringify({ message: 'Hello', stream: true }),
+    }), {
+      params: Promise.resolve({ token: 'token-1' }),
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BACKEND_URL}/api/v1/public/chat/token-1`,
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Origin: 'https://radioso.dev',
+          'X-Radioso-Public-Session': 'session-token',
+        }),
+      }),
+    )
+    expect(allowed.headers.get('access-control-allow-origin')).toBe('https://radioso.dev')
+    expect(allowed.headers.get('access-control-allow-headers')).toBe('Content-Type, X-Radioso-Public-Session')
+    expect(upstreamError.status).toBe(503)
+    expect(upstreamError.headers.get('access-control-allow-origin')).toBe('https://radioso.dev')
+    expect(denied.status).toBe(404)
+    expect(denied.headers.get('access-control-allow-origin')).toBeNull()
+    expect(denied.headers.get('vary')).toBe('Origin')
+  })
+
   it('normalizes new authenticated chat payloads before forwarding upstream', async () => {
     vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
 

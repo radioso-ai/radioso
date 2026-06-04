@@ -357,9 +357,6 @@ export const registerAssistantPublicChatPaths = (
           },
         },
       },
-      204: {
-        description: "Bootstrap request completed without creating a greeting",
-      },
       400: {
         description: "Request validation failed",
         content: {
@@ -381,6 +378,14 @@ export const registerAssistantPublicChatPaths = (
         content: {
           "application/json": {
             schema: schemas.RateLimitExceededSchema,
+          },
+        },
+      },
+      503: {
+        description: "Public chat response is unavailable",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
           },
         },
       },

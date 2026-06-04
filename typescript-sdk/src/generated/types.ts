@@ -7728,13 +7728,6 @@ export interface operations {
                     "text/event-stream": components["schemas"]["PublicChatSseStream"];
                 };
             };
-            /** @description Bootstrap request completed without creating a greeting */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description Request validation failed */
             400: {
                 headers: {
@@ -7760,6 +7753,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RateLimitExceededResponse"];
+                };
+            };
+            /** @description Public chat response is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

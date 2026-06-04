@@ -1,7 +1,7 @@
 import express from "express";
 import type { QueryResultRow } from "pg";
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createAnswerFeedbackRoutes, type AnswerFeedbackRouteDependencies } from "../../src/modules/chat/routes/answerFeedbackRoutes.js";
 import { AnswerFeedbackService } from "../../src/modules/chat/services/answerFeedbackService.js";
@@ -95,13 +95,14 @@ const PUBLIC_SECRET = "public-secret";
 const issueSession = (
   publicChatToken = PUBLIC_TOKEN,
   sourceChannel: "anonymous" | "website_embed" = "anonymous",
+  sourceOrigin: string | null = null,
 ) => issuePublicChatSession(PUBLIC_SECRET, {
   workspaceId: WORKSPACE_ID,
   agentId: AGENT_ID,
   publicChatToken,
   publicSessionId: PUBLIC_SESSION_ID,
   sourceChannel,
-  sourceOrigin: null,
+  sourceOrigin,
 }).token;
 
 const createDependencies = (
@@ -134,6 +135,7 @@ const createDependencies = (
   },
   accountAccessService: {
     async requireActiveMembership() {},
+    async requirePermission() {},
   },
   workspaceSessionService: {
     async resolve() {
@@ -317,6 +319,33 @@ describe("answer feedback routes", () => {
       });
   });
 
+  it("checks the public feedback permission before writing public feedback", async () => {
+    const database = new FakeAnswerFeedbackRouteDatabase();
+    seedMessage(database, PUBLIC_SESSION_ID, AGENT_ID);
+    const requirePermission = vi.fn().mockResolvedValue(undefined);
+    const app = createApp(database, {
+      accountAccessService: {
+        async requireActiveMembership() {},
+        requirePermission,
+      },
+    });
+
+    await request(app)
+      .put(`/api/v1/answer-feedback/public/chat/${PUBLIC_TOKEN}/messages/${MESSAGE_ID}`)
+      .set("X-Radioso-Public-Session", issueSession())
+      .send({ value: "down" })
+      .expect(200);
+
+    expect(requirePermission).toHaveBeenCalledWith(expect.objectContaining({
+      permission: "public_chat.feedback.write.own",
+      principal: expect.objectContaining({
+        type: "public_chat_session",
+        publicSessionId: PUBLIC_SESSION_ID,
+      }),
+      workspaceId: WORKSPACE_ID,
+    }));
+  });
+
   it("accepts public chat session feedback for agent-owned website embed tokens", async () => {
     const database = new FakeAnswerFeedbackRouteDatabase();
     const embedToken = "agent-embed-token";
@@ -339,7 +368,7 @@ describe("answer feedback routes", () => {
                 surfaceSettings: {
                   authenticatedChat: { enabled: true },
                   anonymousChat: { enabled: false, token: null },
-                  websiteEmbed: { enabled: true, token: embedToken },
+              websiteEmbed: { enabled: true, token: embedToken, allowedOrigins: ["https://example.com"] },
                   extensions: {},
                 },
               } as any
@@ -350,7 +379,8 @@ describe("answer feedback routes", () => {
 
     const response = await request(app)
       .put(`/api/v1/answer-feedback/public/chat/${embedToken}/messages/${MESSAGE_ID}`)
-      .set("X-Radioso-Public-Session", issueSession(embedToken, "website_embed"))
+      .set("Origin", "https://example.com")
+      .set("X-Radioso-Public-Session", issueSession(embedToken, "website_embed", "https://example.com"))
       .send({ value: "down" })
       .expect(200);
 

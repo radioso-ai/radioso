@@ -191,6 +191,9 @@ test("agent retrieval skill settings show scope first and answering controls und
   const retrievalTuningGroup = retrievalSection.getByRole("region", { name: "Retrieval tuning" });
   await expect(retrievalTuningGroup.getByText("Vector Top K", { exact: true })).toBeVisible();
   await expect(retrievalTuningGroup.getByRole("button", { name: "Override vector top K" })).toBeVisible();
+  const metadataRulesGroup = retrievalSection.getByRole("region", { name: "Metadata rules" });
+  await expect(metadataRulesGroup.getByText("Metadata Rules", { exact: true })).toBeVisible();
+  await expect(metadataRulesGroup.locator("#agent-metadata-rules-settings")).toBeVisible();
 });
 
 test("agent skills tab collapses retrieval settings when retrieval is off", async ({ page }) => {
@@ -257,6 +260,8 @@ test("agent skills tab saves, persists, and clears retrieval metadata rules", as
   const retrievalSection = page.locator("#retrieval-skill-settings");
   const metadataRulesSection = page.locator("#agent-metadata-rules-settings");
   await expect(retrievalSection).toBeVisible();
+  await expect(metadataRulesSection).toBeHidden();
+  await retrievalSection.getByRole("button", { name: "Advanced" }).click();
   await expect(metadataRulesSection).toContainText("Using workspace default");
   await expect(metadataRulesSection).toContainText("1 inherited rule");
   await expect(metadataRulesSection).toContainText("region equals emea");
@@ -292,6 +297,7 @@ test("agent skills tab saves, persists, and clears retrieval metadata rules", as
   });
 
   await page.reload();
+  await retrievalSection.getByRole("button", { name: "Advanced" }).click();
   await expect(metadataRulesSection.getByLabel("Field")).toHaveValue("region");
   await expect(metadataRulesSection.getByPlaceholder("e.g. et or example.com")).toHaveValue("eu");
 
@@ -303,7 +309,7 @@ test("agent skills tab saves, persists, and clears retrieval metadata rules", as
   await expect(metadataRulesSection.getByLabel("Field")).toHaveCount(0);
 });
 
-test("agent skills tab keeps source scope and metadata rules together", async ({ page }) => {
+test("agent skills tab keeps source scope primary and metadata rules under Advanced", async ({ page }) => {
   const agentUpdates: unknown[] = [];
 
   await seedDashboardStorage(page);
@@ -318,9 +324,15 @@ test("agent skills tab keeps source scope and metadata rules together", async ({
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
   const knowledgeScopeSection = page.locator("#agent-knowledge-scope-settings");
+  const retrievalSection = page.locator("#retrieval-skill-settings");
   await expect(knowledgeScopeSection).toBeVisible();
   await expect(knowledgeScopeSection.locator("#agent-source-scope-settings")).toBeVisible();
-  await expect(knowledgeScopeSection.locator("#agent-metadata-rules-settings")).toBeVisible();
+  await expect(knowledgeScopeSection.locator("#agent-metadata-rules-settings")).toHaveCount(0);
+  await expect(retrievalSection.locator("#agent-metadata-rules-settings")).toBeHidden();
+
+  await retrievalSection.getByRole("button", { name: "Advanced" }).click();
+  const metadataRulesGroup = retrievalSection.getByRole("region", { name: "Metadata rules" });
+  await expect(metadataRulesGroup.locator("#agent-metadata-rules-settings")).toBeVisible();
 
   await knowledgeScopeSection.getByRole("button", { name: "Selected sources" }).click();
   await knowledgeScopeSection.getByText("Release notes").click();

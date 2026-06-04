@@ -182,44 +182,6 @@ export function AssistantRetrievalSkillSettingsSection({
             sourceListError={sourceListError}
             onChange={onSourceScopeChange}
           />
-          <div id="agent-metadata-rules-settings" className="space-y-3 rounded-lg border border-border p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="space-y-1">
-                <SettingFieldHeader
-                  label={retrievalSettingDocs.metadataRules.label}
-                  description={retrievalSettingDocs.metadataRules.summary}
-                  tooltip={retrievalSettingDocs.metadataRules.details}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {metadataRulesOverridden ? 'Overridden for this agent' : 'Using workspace default'}
-                </p>
-              </div>
-              {metadataRulesOverridden ? (
-                <Button type="button" size="sm" variant="ghost" onClick={() => clearField('metadataRules')}>
-                  Clear override
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={overrideMetadataRules}
-                >
-                  Override metadata rules
-                </Button>
-              )}
-            </div>
-            {metadataRulesOverridden ? (
-              <MetadataRulesEditor
-                metadataRules={effectiveMetadataRules}
-                metadataFieldSuggestions={defaults.metadataFieldSuggestions}
-                showHeader={false}
-                onChange={(metadataRules) => setField('metadataRules', metadataRules)}
-              />
-            ) : (
-              <MetadataRulesSummary rules={defaults.metadataRules} />
-            )}
-          </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -493,6 +455,56 @@ export function AssistantRetrievalSkillSettingsSection({
                       </>
                     )}
                   </div>
+                </div>
+              </section>
+
+              <section
+                aria-labelledby="agent-metadata-rules-heading"
+                className="space-y-3 border-t border-border/60 pt-4"
+              >
+                <h4
+                  id="agent-metadata-rules-heading"
+                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                  Metadata rules
+                </h4>
+                <div id="agent-metadata-rules-settings" className="space-y-3 rounded-lg border border-border p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="space-y-1">
+                      <SettingFieldHeader
+                        label={retrievalSettingDocs.metadataRules.label}
+                        description={retrievalSettingDocs.metadataRules.summary}
+                        tooltip={retrievalSettingDocs.metadataRules.details}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {metadataRulesOverridden ? 'Overridden for this agent' : 'Using workspace default'}
+                      </p>
+                    </div>
+                    {metadataRulesOverridden ? (
+                      <Button type="button" size="sm" variant="ghost" onClick={() => clearField('metadataRules')}>
+                        Clear override
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={overrideMetadataRules}
+                      >
+                        Override metadata rules
+                      </Button>
+                    )}
+                  </div>
+                  {metadataRulesOverridden ? (
+                    <MetadataRulesEditor
+                      metadataRules={effectiveMetadataRules}
+                      metadataFieldSuggestions={defaults.metadataFieldSuggestions}
+                      showHeader={false}
+                      onChange={(metadataRules) => setField('metadataRules', metadataRules)}
+                    />
+                  ) : (
+                    <MetadataRulesSummary rules={defaults.metadataRules} />
+                  )}
                 </div>
               </section>
             </CollapsibleContent>

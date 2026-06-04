@@ -84,6 +84,7 @@ import {
   EvalSnapshotService,
 } from "../../src/modules/eval/composition.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
+import { createDefaultAgentSkillSettingsRegistry } from "../../src/app/composition/skillSettingsResolver.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import {
@@ -150,6 +151,8 @@ export const createTestEnv = (): Env => ({
   DB_POOL_CONNECTION_TIMEOUT_MS: 5_000,
   DB_STATEMENT_TIMEOUT_MS: 15_000,
   DB_QUERY_TIMEOUT_MS: 20_000,
+  DB_MIGRATION_LOCK_TIMEOUT_MS: 10_000,
+  DB_MIGRATION_STATEMENT_TIMEOUT_MS: 25_000,
   OPENAI_API_KEY: "test-key",
   OPENAI_CHAT_MODEL: "gpt-5-mini",
   OPENAI_VECTOR_MODEL: "text-embedding-3-small",
@@ -628,7 +631,7 @@ export const createTestDependencies = (overrides: {
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
-  const agentRepository = new InMemoryAgentRepository();
+  const agentRepository = new InMemoryAgentRepository(createDefaultAgentSkillSettingsRegistry());
   const agentService = new AgentService(agentRepository, workspaceRepository, retrievalSettingsService, documentSourceRepository);
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
   // Mimic an EE deployment for OSS contract/unit tests so the runtime gate on

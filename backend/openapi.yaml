@@ -654,6 +654,10 @@ components:
           maxLength: 2000
         suggestedQuestionsEnabled:
           type: boolean
+        suggestedQuestionsCount:
+          type: integer
+          minimum: 1
+          maximum: 4
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -785,6 +789,7 @@ components:
         - semanticRewriteInstructions
         - lexicalRewriteInstructions
         - suggestedQuestionsEnabled
+        - suggestedQuestionsCount
         - rerankEnabled
         - vectorTopK
         - similarityThreshold
@@ -806,6 +811,10 @@ components:
           maxLength: 2000
         suggestedQuestionsEnabled:
           type: boolean
+        suggestedQuestionsCount:
+          type: integer
+          minimum: 1
+          maximum: 4
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -905,6 +914,10 @@ components:
           maxLength: 2000
         suggestedQuestionsEnabled:
           type: boolean
+        suggestedQuestionsCount:
+          type: integer
+          minimum: 1
+          maximum: 4
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -1642,6 +1655,10 @@ components:
             lexicalRewriteInstructions:
               type: string
               maxLength: 2000
+            suggestedQuestionsCount:
+              type: integer
+              minimum: 1
+              maximum: 4
             rerankEnabled:
               type: boolean
             vectorTopK:
@@ -2193,6 +2210,9 @@ components:
               required:
                 - provider
                 - model
+            skillSettings:
+              type: object
+              additionalProperties: {}
             surfaceSettings:
               $ref: "#/components/schemas/ConversationAgentSurfaceSettings"
           required:
@@ -2213,6 +2233,7 @@ components:
             - proactiveGreetingEnabled
             - assistantBootstrapActive
             - chatModelOverride
+            - skillSettings
             - surfaceSettings
     AgentListResponse:
       type: object
@@ -2320,6 +2341,9 @@ components:
                 - provider
                 - model
             - type: "null"
+        skillSettings:
+          type: object
+          additionalProperties: {}
         surfaceSettings:
           type: object
           properties:

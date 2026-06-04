@@ -1,5 +1,10 @@
 import type { components } from '../../typescript-sdk/src/generated/types'
 import { API_BASE } from './api-client'
+import {
+  readRetrievalSkillSettingsOverride,
+  type AgentSkillSettingsMap,
+  type RetrievalSkillSettingsOverride,
+} from './retrieval-skill-settings'
 
 type ApiSchemas = components['schemas']
 type RelaxedAssistantChatResponse<T> = T extends unknown
@@ -14,6 +19,7 @@ type RelaxedAssistantChatResponse<T> = T extends unknown
   : never
 type PlatformRetrievalSettings = Omit<ApiSchemas['PlatformRetrievalSettingsSection'], 'metadataRules'> & {
   metadataRules: RetrievalMetadataRule[]
+  suggestedQuestionsCount?: number
 }
 
 export type RegisterRequest = ApiSchemas['RegisterRequest']
@@ -34,7 +40,9 @@ export type RetrievalSettings = PlatformRetrievalSettings &
   Pick<
     ApiSchemas['AssistantSettingsSection'],
     'suggestedQuestionsEnabled' | 'customInstruction'
-  >
+  > & {
+    suggestedQuestionsCount: number
+  }
 
 export type AgentChatModelOverride = NonNullable<ApiSchemas['ConversationAgent']['chatModelOverride']>
 export type AgentContactRequestDelivery = ApiSchemas['AgentContactRequestDelivery']
@@ -53,6 +61,9 @@ export type AssistantBehaviorSettings = Pick<
   branding?: AgentBrandingSettings
   sourceScope?: AgentSourceScope
   chatModelOverride?: AgentChatModelOverride | null
+  retrievalEnabled?: boolean
+  skillSettings?: AgentSkillSettingsMap
+  retrievalSkillSettings?: RetrievalSkillSettingsOverride
 }
 
 export type PlatformSettings = Omit<ApiSchemas['PlatformSettingsResponse'], 'retrieval'> & {
@@ -167,6 +178,7 @@ export const toAssistantChatPayload = (data: ChatRequest) => ({
 
 export const toRetrievalSettings = (settings: PlatformSettings): RetrievalSettings => ({
   ...settings.retrieval,
+  suggestedQuestionsCount: settings.retrieval.suggestedQuestionsCount ?? 3,
   suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
   customInstruction: settings.assistant.customInstruction,
 })
@@ -504,6 +516,9 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
   branding: agent.branding,
   sourceScope: agent.sourceScope,
   chatModelOverride: agent.chatModelOverride,
+  retrievalEnabled: agent.retrievalEnabled,
+  skillSettings: agent.skillSettings,
+  retrievalSkillSettings: readRetrievalSkillSettingsOverride(agent.skillSettings),
 })
 
 export const retrievalSettingsToAssistantBehaviorSettings = (settings: RetrievalSettings): AssistantBehaviorSettings => ({

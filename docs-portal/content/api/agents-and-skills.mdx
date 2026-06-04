@@ -34,10 +34,11 @@ Agents own:
 - suggested-question behavior
 - theme and greeting behavior
 - whether retrieval is enabled
+- per-skill settings in `skillSettings`
 - source scope
 - surface settings for authenticated chat, anonymous chat, and website embed
 
-Retrieval settings remain workspace-level. If an agent has `retrievalEnabled: true`, assistant chat may use workspace retrieval and return citations. If `retrievalEnabled: false`, the agent answers through the direct assistant path and returns diagnostics with `retrievalInvoked: false`.
+Workspace retrieval settings still provide the default retrieval layer. Agents can override fields for the `retrieval.answer` skill through `skillSettings["retrieval.answer"]`. An empty `skillSettings` map means full inherit. If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and return citations. If `retrievalEnabled: false`, the agent answers through the direct assistant path and returns diagnostics with `retrievalInvoked: false`.
 
 ## Contact requests
 

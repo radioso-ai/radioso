@@ -87,6 +87,21 @@ That separation matters because worker traffic behaves differently from chat tra
 
 In the hosted Cloud Run environments, the backend and frontend scale to zero when idle. The document worker also defaults to `worker_min_instances = 0` and is invoked by Cloud Tasks when document work is queued. Raise `worker_min_instances` only when an environment needs a continuously warm polling fallback for queue recovery.
 
+## Startup migrations
+
+The backend runs SQL migrations before it binds the HTTP port. This is intentional: the API should not report healthy or serve traffic until the schema matches the running code.
+
+Workers do not apply SQL migrations. They only check for pending migrations before starting document or crawl work. If a worker starts but the backend revision does not, treat the backend startup migration path as the first thing to inspect.
+
+Startup migration metadata checks use separate lock and statement timeout budgets:
+
+- `DB_MIGRATION_LOCK_TIMEOUT_MS`
+- `DB_MIGRATION_STATEMENT_TIMEOUT_MS`
+
+In practice, a blocked migration metadata check should now fail with an application log that names startup migrations as the failing phase. It should not look only like a platform port-listen failure. A lock timeout usually means another database session is holding or waiting on the migration metadata table. The migration SQL body disables those local metadata timeouts so large index builds and backfills can still finish.
+
+The current backend still owns migrations during startup. A separate pre-deploy migration job is a future deployment architecture improvement, not a requirement for the current production contract.
+
 ## Docs portal deployment
 
 The docs portal is its own Next.js app under `docs-portal/`. It syncs the backend OpenAPI document during build and should be deployed as a separate public service instead of being mounted into the product frontend.

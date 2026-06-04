@@ -21,6 +21,7 @@ import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./ch
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import type { DirectiveSteeringResult } from "../../directives/public.js";
+import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -232,11 +233,10 @@ export class ChatSessionPreparer {
       responseIdentity: this.resolveResponseIdentity(agent),
       responseBehavior: {
         customInstruction: agent.customInstruction,
-        suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-        suggestedQuestionsCount: 3,
         citationDisplayEnabled: agent.citationDisplayEnabled,
       },
       responseBehaviorEnabled: true,
+      agentSkillSettings: agent.skillSettings,
       metadataFilter: input.metadataFilter,
       sourceScope: agent.sourceScope,
       usageContext: {
@@ -290,7 +290,7 @@ export class ChatSessionPreparer {
         responseSettings: {
           citationDisplayEnabled: false,
           suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-          suggestedQuestionsCount: 3,
+          suggestedQuestionsCount: DEFAULT_SUGGESTED_QUESTIONS_COUNT,
           customInstruction: agent.customInstruction,
           responseLanguagePolicy: "match_user_question" as const,
         },
@@ -359,6 +359,7 @@ export class ChatSessionPreparer {
         contactRequestDelivery: DEFAULT_CONTACT_REQUEST_DELIVERY,
         retrievalEnabled: true,
         sourceScope: { mode: "all" },
+        skillSettings: {},
         logo: null,
         // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
         theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
@@ -409,6 +410,7 @@ export class ChatSessionPreparer {
       contactRequestDelivery: DEFAULT_CONTACT_REQUEST_DELIVERY,
       retrievalEnabled: true,
       sourceScope: { mode: "all" },
+      skillSettings: {},
       logo: null,
       // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
       theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,

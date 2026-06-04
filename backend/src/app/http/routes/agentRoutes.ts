@@ -90,6 +90,7 @@ export const agentBodySchema = z.object({
   assistantDefaultLocale: z.string().max(35).nullable().optional(),
   proactiveGreetingEnabled: z.boolean().optional(),
   chatModelOverride: chatModelOverrideSchema.optional(),
+  skillSettings: z.record(z.unknown()).optional(),
   surfaceSettings: surfaceSettingsSchema,
 });
 

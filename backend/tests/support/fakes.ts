@@ -39,6 +39,7 @@ import {
   validateAgentInput,
   type AgentInput,
   type AgentRecord,
+  type AgentSkillSettingsRegistry,
 } from "../../src/modules/agents/public.js";
 import type {
   BootstrapGreetingCacheRecord,
@@ -844,8 +845,10 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
   readonly items = new Map<string, AgentRecord>();
   private defaultAgentIds = new Map<string, string>();
 
+  constructor(private readonly skillSettings?: AgentSkillSettingsRegistry) {}
+
   async create(workspaceId: string, input: AgentInput): Promise<AgentRecord> {
-    const normalized = validateAgentInput(input);
+    const normalized = validateAgentInput(input, { skillSettings: this.skillSettings });
     const record: AgentRecord = {
       id: randomUUID(),
       workspaceId,
@@ -893,7 +896,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       ...current,
       ...input,
       surfaceSettings: mergeAgentSurfaceSettings(current.surfaceSettings, input.surfaceSettings),
-    });
+    }, { skillSettings: this.skillSettings });
     const updated: AgentRecord = {
       ...current,
       ...normalized,

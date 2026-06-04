@@ -112,6 +112,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         provider: z.enum(["openai", "openai-compatible", "gemini", "claude"]),
         model: z.string(),
       }).nullable(),
+      skillSettings: z.record(z.unknown()),
       surfaceSettings: ConversationAgentSurfaceSettingsSchema,
     }),
   );
@@ -163,6 +164,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
           model: z.string().min(1).max(200),
         }),
       ]).optional(),
+      skillSettings: z.record(z.unknown()).optional(),
       surfaceSettings: z.object({
         authenticatedChat: z.object({
           enabled: z.boolean().optional(),

@@ -325,6 +325,46 @@ describe('backend proxy route', () => {
     expect(denied.headers.get('vary')).toBe('Origin')
   })
 
+  it('forwards the external app origin to backend for public chat stream auth', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('event: done\ndata: {}\n\n', {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Access-Control-Allow-Origin': 'https://platform.radioso.dev',
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { POST } = await import('@/app/api/public/chat/[token]/route')
+
+    const response = await POST(new Request('http://next-internal.example/api/public/chat/token-1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://platform.radioso.dev',
+        Host: 'platform.radioso.dev',
+        'X-Forwarded-Proto': 'https, http',
+        'X-Radioso-Public-Session': 'session-token',
+      },
+      body: JSON.stringify({ message: 'Hello', stream: true }),
+    }), {
+      params: Promise.resolve({ token: 'token-1' }),
+    })
+
+    const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
+    expect(upstreamInit.headers).toMatchObject({
+      Origin: 'https://platform.radioso.dev',
+      'X-Forwarded-Host': 'platform.radioso.dev',
+      'X-Forwarded-Proto': 'https',
+      'X-Radioso-Public-Session': 'session-token',
+    })
+    expect(response.status).toBe(200)
+  })
+
   it('normalizes new authenticated chat payloads before forwarding upstream', async () => {
     vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
 

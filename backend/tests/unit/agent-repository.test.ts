@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createDefaultAgentSkillSettingsRegistry } from "../../src/app/composition/skillSettingsResolver.js";
 import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
 import {
@@ -30,6 +31,7 @@ const agentRow = (outputModes: Record<string, unknown>, overrides: Record<string
   behavior_settings: {},
   greeting_settings: {},
   output_modes: outputModes,
+  skill_settings: {},
   created_at: new Date("2026-01-01T00:00:00.000Z"),
   updated_at: new Date("2026-01-01T00:00:00.000Z"),
   ...overrides,
@@ -206,6 +208,88 @@ describe("AgentRepository", () => {
     });
   });
 
+  it("maps skill_settings from storage onto the agent record", async () => {
+    const repository = new AgentRepository({
+      queryOptional: async () => agentRow({
+        authenticatedChat: { enabled: true },
+        anonymousChat: { enabled: false, token: null },
+        websiteEmbed: websiteEmbedDefaults(),
+      }, {
+        skill_settings: {
+          "retrieval.answer": {
+            vectorTopK: 7,
+          },
+          "custom.skill": {
+            passthrough: true,
+          },
+        },
+      }),
+    } as never);
+
+    const agent = await repository.findByIdAndWorkspaceId("agent-1", "workspace-1");
+
+    expect(agent?.skillSettings).toEqual({
+      "retrieval.answer": {
+        vectorTopK: 7,
+      },
+      "custom.skill": {
+        passthrough: true,
+      },
+    });
+  });
+
+  it("loads persisted retrieval skill settings with unknown future fields", async () => {
+    const repository = new AgentRepository({
+      queryOptional: async () => agentRow({
+        authenticatedChat: { enabled: true },
+        anonymousChat: { enabled: false, token: null },
+        websiteEmbed: websiteEmbedDefaults(),
+      }, {
+        skill_settings: {
+          "retrieval.answer": {
+            vectorTopK: 7,
+            futureField: "ignored on read",
+          },
+        },
+      }),
+    } as never, undefined, createDefaultAgentSkillSettingsRegistry());
+
+    const agent = await repository.findByIdAndWorkspaceId("agent-1", "workspace-1");
+
+    expect(agent?.skillSettings).toEqual({
+      "retrieval.answer": {
+        vectorTopK: 7,
+      },
+    });
+  });
+
+  it("loads persisted retrieval skill settings by dropping invalid fields and keeping valid fields", async () => {
+    const repository = new AgentRepository({
+      queryOptional: async () => agentRow({
+        authenticatedChat: { enabled: true },
+        anonymousChat: { enabled: false, token: null },
+        websiteEmbed: websiteEmbedDefaults(),
+      }, {
+        skill_settings: {
+          "retrieval.answer": {
+            queryRewriteEnabled: false,
+            vectorTopK: 0,
+            rerankTopK: 6,
+          },
+        },
+      }),
+    } as never, undefined, createDefaultAgentSkillSettingsRegistry());
+
+    const agent = await repository.findByIdAndWorkspaceId("agent-1", "workspace-1");
+
+    expect(agent?.skillSettings).toEqual({
+      "retrieval.answer": {
+        queryRewriteEnabled: false,
+        rerankTopK: 6,
+      },
+    });
+  });
+
   it("stores manual document selection as an unassigned source filter", async () => {
     const realSourceId = "11111111-1111-1111-1111-111111111111";
     const query = vi.fn(async (text: string, _params?: unknown[]) => {
@@ -231,6 +315,11 @@ describe("AgentRepository", () => {
 
     await repository.create("workspace-1", {
       name: "Manual scoped",
+      skillSettings: {
+        "retrieval.answer": {
+          vectorTopK: 7,
+        },
+      },
       sourceScope: {
         mode: "selected",
         sourceIds: [MANUALLY_ADDED_DOCUMENTS_SOURCE_ID, realSourceId],
@@ -240,6 +329,15 @@ describe("AgentRepository", () => {
     expect(query).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining("INSERT INTO agents"),
+      expect.arrayContaining([JSON.stringify({
+        "retrieval.answer": {
+          vectorTopK: 7,
+        },
+      })]),
+    );
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("skill_settings"),
       expect.not.arrayContaining([MANUALLY_ADDED_DOCUMENTS_SOURCE_ID]),
     );
     expect(query).toHaveBeenNthCalledWith(

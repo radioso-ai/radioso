@@ -41,6 +41,7 @@ describe("settings services", () => {
     customInstruction: "",
     retrievalEnabled: true,
     sourceScope: { mode: "all" },
+    skillSettings: {},
     chatModelOverride: null,
     logo: null,
     theme: {

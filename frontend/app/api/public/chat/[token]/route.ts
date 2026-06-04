@@ -31,6 +31,19 @@ const resolveOrigin = (value: string | null) => {
   }
 }
 
+const firstHeaderValue = (value: string | null) => value?.split(',')[0]?.trim() || null
+
+const resolveRequestForwardingHeaders = (request: Request) => {
+  const url = new URL(request.url)
+  const host = firstHeaderValue(request.headers.get('x-forwarded-host'))
+    ?? firstHeaderValue(request.headers.get('host'))
+    ?? url.host
+  return {
+    host,
+    proto: firstHeaderValue(request.headers.get('x-forwarded-proto')) ?? url.protocol.replace(/:$/, ''),
+  }
+}
+
 const withCorsHeaders = (
   origin: string | null,
   headers?: HeadersInit,
@@ -63,6 +76,7 @@ export async function POST(
   const cookie = request.headers.get('cookie')
   const anonymousSession = request.headers.get(ANONYMOUS_SESSION_HEADER)
   const publicSession = request.headers.get(PUBLIC_SESSION_HEADER)
+  const forwarding = resolveRequestForwardingHeaders(request)
   const rawBody = await request.text()
   const parsedBody = rawBody ? JSON.parse(rawBody) as PublicChatProxyRequestBody : {}
   const body = JSON.stringify({
@@ -81,6 +95,8 @@ export async function POST(
       headers: {
         'Content-Type': 'application/json',
         'X-Forwarded-Prefix': '/backend',
+        'X-Forwarded-Host': forwarding.host,
+        'X-Forwarded-Proto': forwarding.proto,
         ...(requestOrigin ? { Origin: requestOrigin } : {}),
         ...(cookie ? { Cookie: cookie } : {}),
         ...(anonymousSession ? { 'X-Radioso-Anonymous-Session': anonymousSession } : {}),

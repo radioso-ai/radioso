@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, ChevronLeft, ExternalLink, FolderOpen, Globe, KeyRound, Link as LinkIcon, RefreshCw, ShieldAlert, Trash2, UserRound, Wrench } from 'lucide-react'
+import { Building2, ChevronLeft, DatabaseZap, ExternalLink, FolderOpen, Globe, KeyRound, Link as LinkIcon, RefreshCw, ShieldAlert, Trash2, UserRound, Wrench } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
 import { AssistantIdentityAppearanceSection } from '@/components/dashboard/settings/assistant-identity-appearance-section'
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
+import { AssistantRetrievalSkillSettingsSection } from '@/components/dashboard/settings/assistant-retrieval-skill-settings-section'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
 import { type AgentSectionId } from '@/lib/dashboard-areas'
@@ -38,15 +39,18 @@ import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { resolveAssistantRetrievalSettingsViewState } from '@/lib/assistant-retrieval-settings-view-state'
 import {
   accountApi,
   agentsApi,
   documentsApi,
   generalSettingsApi,
+  settingsApi,
   type AssistantBehaviorSettings,
   type AccountMembershipRole,
   type DocumentSourceListItem,
   type GeneralSettings,
+  type RetrievalSettings,
 } from '@/lib/api'
 import { isValidEmailAddress } from '@/lib/validation'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -156,6 +160,22 @@ const getContactRequestDeliveryKey = (
   })
 }
 
+const fallbackRetrievalDefaults: RetrievalSettings = {
+  queryRewriteEnabled: false,
+  semanticRewriteInstructions: '',
+  lexicalRewriteInstructions: '',
+  suggestedQuestionsEnabled: true,
+  suggestedQuestionsCount: 3,
+  rerankEnabled: false,
+  vectorTopK: 15,
+  similarityThreshold: 0.2,
+  rerankTopK: 5,
+  retrievalStrategy: 'fixed',
+  metadataRules: [],
+  metadataFieldSuggestions: [],
+  customInstruction: '',
+}
+
 const normalizeAssistantBehaviorSettingsByAgent = (agentId: string | undefined, settings: AssistantBehaviorSettings) => ({
   ...settings,
   sourceScope: agentId ? settings.sourceScope ?? { mode: 'all' } : undefined,
@@ -223,6 +243,7 @@ export function WorkspaceAssistantChannelsTab({
   const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [contactRequestEmailsText, setContactRequestEmailsText] = useState('')
+  const [retrievalDefaults, setRetrievalDefaults] = useState<RetrievalSettings | null>(null)
   const [sourceList, setSourceList] = useState<DocumentSourceListItem[]>([])
   const [sourceListError, setSourceListError] = useState<string | null>(null)
   const [isSourceListLoading, setIsSourceListLoading] = useState(false)
@@ -365,6 +386,7 @@ export function WorkspaceAssistantChannelsTab({
       setSavedAssistantBehaviorSettings(null)
       setContactRequestEmailsText('')
       setIsAssistantBehaviorLoading(false)
+      setRetrievalDefaults(null)
       return
     }
 
@@ -394,8 +416,20 @@ export function WorkspaceAssistantChannelsTab({
         }
       }
     }
+    const loadRetrievalDefaults = async () => {
+      try {
+        const defaults = await settingsApi.getRetrievalSettings({ auth: 'session' })
+        if (!active) return
+        setRetrievalDefaults(defaults)
+      } catch (error) {
+        if (!active) return
+        console.error('Failed to load retrieval defaults:', error)
+        setRetrievalDefaults(null)
+      }
+    }
 
     void loadAssistantBehaviorSettingsEffect()
+    void loadRetrievalDefaults()
     return () => {
       active = false
     }
@@ -404,7 +438,13 @@ export function WorkspaceAssistantChannelsTab({
   useEffect(() => {
     let active = true
     const loadSources = async () => {
-      if (mode !== 'assistant' || !agentId || isWorkspaceLoading || !activeWorkspaceId) {
+      if (
+        mode !== 'assistant' ||
+        !agentId ||
+        isWorkspaceLoading ||
+        !activeWorkspaceId ||
+        (agentSection !== undefined && agentSection !== 'skills')
+      ) {
         setSourceList([])
         setSourceListError(null)
         setIsSourceListLoading(false)
@@ -433,7 +473,7 @@ export function WorkspaceAssistantChannelsTab({
     return () => {
       active = false
     }
-  }, [activeWorkspaceId, agentId, isWorkspaceLoading, mode])
+  }, [activeWorkspaceId, agentId, agentSection, isWorkspaceLoading, mode])
 
   const handleAnonToggle = async (enabled: boolean) => {
     setIsAnonSaving(true)
@@ -570,6 +610,11 @@ export function WorkspaceAssistantChannelsTab({
     const origin = typeof window === 'undefined' ? 'https://your-radioso-host' : window.location.origin
     return `curl ${origin}${apiBasePath}/settings/retrieval \\\n  -H "Authorization: Bearer <token>"`
   }, [])
+  const retrievalSettingsViewState = resolveAssistantRetrievalSettingsViewState({
+    isAssistantBehaviorLoading,
+    assistantBehaviorSettings,
+  })
+  const effectiveRetrievalDefaults = retrievalDefaults ?? fallbackRetrievalDefaults
 
   const handleAssistantSettingChange = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
     if (!anonSettings) return
@@ -661,6 +706,9 @@ export function WorkspaceAssistantChannelsTab({
           assistantBehaviorSettings.contactRequestsEnabled !== savedAssistantBehaviorSettings.contactRequestsEnabled ||
           getContactRequestDeliveryKey(assistantBehaviorSettings, contactRequestEmailsText) !==
             getContactRequestDeliveryKey(savedAssistantBehaviorSettings) ||
+          assistantBehaviorSettings.retrievalEnabled !== savedAssistantBehaviorSettings.retrievalEnabled ||
+          JSON.stringify(assistantBehaviorSettings.retrievalSkillSettings ?? {}) !==
+            JSON.stringify(savedAssistantBehaviorSettings.retrievalSkillSettings ?? {}) ||
           getAssistantBehaviorSourceScopeKey(assistantBehaviorSettings) !==
             getAssistantBehaviorSourceScopeKey(savedAssistantBehaviorSettings) ||
           JSON.stringify(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) !==
@@ -996,15 +1044,13 @@ export function WorkspaceAssistantChannelsTab({
                       onAssistantLocaleInputChange={handleAssistantLocaleInputChange}
                       onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
                       isAnonSaving={isAnonSaving}
-                      sourceList={sourceList}
-                      isSourceListLoading={isSourceListLoading}
-                      sourceListError={sourceListError}
                     />
                   ) : null}
                 </div>
                 <AssistantPreviewRail
                   anonSettings={anonSettings}
                   assistantBehaviorSettings={assistantBehaviorSettings}
+                  retrievalDefaults={effectiveRetrievalDefaults}
                   channelsTabHref={channelsTabHref}
                 />
               </div>
@@ -1017,94 +1063,123 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'assistant' && showSection('skills') ? (
           <section id="assistant-skills" className="space-y-6 scroll-mt-24">
             <SettingsCard
-              icon={<Wrench className="h-5 w-5 text-primary" />}
-              title="Skills"
-              description="Capabilities the assistant can use during a chat."
+              id="contact-requests"
+              icon={<UserRound className="h-5 w-5 text-primary" />}
+              title="Contact requests"
+              description="Show a contact a human option in chat. The assistant collects the visitor's email and message, then sends the request to configured recipients and an optional webhook."
+              headerEnd={(
+                <Switch
+                  id="contactRequestsToggle"
+                  checked={assistantBehaviorSettings?.contactRequestsEnabled ?? false}
+                  onCheckedChange={(checked) =>
+                    updateAssistantBehaviorDraft((current) => ({ ...current, contactRequestsEnabled: checked }))
+                  }
+                  disabled={!assistantBehaviorSettings}
+                />
+              )}
             >
-              <div id="contact-requests" className="scroll-mt-24">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
-                      <UserRound className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="font-medium text-foreground">Contact requests</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Show a &ldquo;contact a human&rdquo; option in chat. The assistant collects the visitor&rsquo;s
-                        email and message, then sends the request to configured recipients and an optional webhook.
+              {assistantBehaviorSettings?.contactRequestsEnabled ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="contactRequestEmails">Recipient emails</Label>
+                    <Textarea
+                      id="contactRequestEmails"
+                      value={contactRequestEmailsText}
+                      onChange={(event) => {
+                        assistantBehaviorDraftVersionRef.current += 1
+                        setAssistantSettingsError(null)
+                        setContactRequestEmailsText(event.target.value)
+                      }}
+                      placeholder={'support@example.com\nescalations@example.com'}
+                      className="min-h-24"
+                      disabled={!assistantBehaviorSettings}
+                    />
+                    {contactRequestEmailTooMany ? (
+                      <p className="text-xs text-destructive">
+                        Add no more than {CONTACT_REQUEST_EMAIL_RECIPIENT_LIMIT} recipient email addresses.
                       </p>
-                    </div>
+                    ) : contactRequestEmailInvalid ? (
+                      <p className="text-xs text-destructive">
+                        Fix invalid addresses: {invalidContactRequestEmails.join(', ')}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        One email per line, or separated by commas. Empty falls back to the workspace owner.
+                      </p>
+                    )}
                   </div>
-                  <Switch
-                    id="contactRequestsToggle"
-                    checked={assistantBehaviorSettings?.contactRequestsEnabled ?? false}
-                    onCheckedChange={(checked) =>
-                      updateAssistantBehaviorDraft((current) => ({ ...current, contactRequestsEnabled: checked }))
-                    }
-                    disabled={!assistantBehaviorSettings}
-                    className="sm:mt-3"
-                  />
+                  <div className="space-y-2">
+                    <Label htmlFor="contactRequestWebhookUrl">Webhook URL</Label>
+                    <Input
+                      id="contactRequestWebhookUrl"
+                      type="url"
+                      value={contactRequestWebhookUrl}
+                      onChange={(event) => {
+                        const webhookUrl = event.target.value
+                        updateAssistantBehaviorDraft((current) => ({
+                          ...current,
+                          contactRequestDelivery: {
+                            ...(current.contactRequestDelivery ?? DEFAULT_CONTACT_REQUEST_DELIVERY),
+                            webhook: webhookUrl ? { url: webhookUrl } : null,
+                          },
+                        }))
+                      }}
+                      placeholder="https://support.example.com/radioso/contact-request"
+                      disabled={!assistantBehaviorSettings}
+                    />
+                    {contactRequestWebhookUrlInvalid ? (
+                      <p className="text-xs text-destructive">Enter a valid http(s) webhook URL.</p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Optional. Radioso signs webhook requests server-side with the app key.
+                      </p>
+                    )}
+                  </div>
                 </div>
-                {assistantBehaviorSettings?.contactRequestsEnabled ? (
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="contactRequestEmails">Recipient emails</Label>
-                      <Textarea
-                        id="contactRequestEmails"
-                        value={contactRequestEmailsText}
-                        onChange={(event) => {
-                          assistantBehaviorDraftVersionRef.current += 1
-                          setAssistantSettingsError(null)
-                          setContactRequestEmailsText(event.target.value)
-                        }}
-                        placeholder={'support@example.com\nescalations@example.com'}
-                        className="min-h-24"
-                        disabled={!assistantBehaviorSettings}
-                      />
-                      {contactRequestEmailTooMany ? (
-                        <p className="text-xs text-destructive">
-                          Add no more than {CONTACT_REQUEST_EMAIL_RECIPIENT_LIMIT} recipient email addresses.
-                        </p>
-                      ) : contactRequestEmailInvalid ? (
-                        <p className="text-xs text-destructive">
-                          Fix invalid addresses: {invalidContactRequestEmails.join(', ')}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          One email per line, or separated by commas. Empty falls back to the workspace owner.
-                        </p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="contactRequestWebhookUrl">Webhook URL</Label>
-                      <Input
-                        id="contactRequestWebhookUrl"
-                        type="url"
-                        value={contactRequestWebhookUrl}
-                        onChange={(event) => {
-                          const webhookUrl = event.target.value
-                          updateAssistantBehaviorDraft((current) => ({
-                            ...current,
-                            contactRequestDelivery: {
-                              ...(current.contactRequestDelivery ?? DEFAULT_CONTACT_REQUEST_DELIVERY),
-                              webhook: webhookUrl ? { url: webhookUrl } : null,
-                            },
-                          }))
-                        }}
-                        placeholder="https://support.example.com/radioso/contact-request"
-                        disabled={!assistantBehaviorSettings}
-                      />
-                      {contactRequestWebhookUrlInvalid ? (
-                        <p className="text-xs text-destructive">Enter a valid http(s) webhook URL.</p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          Optional. Radioso signs webhook requests server-side with the app key.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+              ) : null}
+            </SettingsCard>
+            <SettingsCard
+              id="retrieval-answers"
+              icon={<DatabaseZap className="h-5 w-5 text-primary" />}
+              title="Retrieval answers"
+              description="Ground this agent in workspace knowledge, with per-field overrides that inherit defaults until changed."
+              headerEnd={assistantBehaviorSettings ? (
+                <Switch
+                  id="retrievalEnabledToggle"
+                  checked={assistantBehaviorSettings.retrievalEnabled ?? true}
+                  onCheckedChange={(checked) =>
+                    updateAssistantBehaviorDraft((current) => ({ ...current, retrievalEnabled: checked }))
+                  }
+                />
+              ) : null}
+            >
+              {retrievalSettingsViewState === 'loading' ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Spinner className="h-4 w-4" />
+                  Loading retrieval settings...
+                </div>
+              ) : retrievalSettingsViewState === 'controls' && assistantBehaviorSettings ? (
+                <AssistantRetrievalSkillSettingsSection
+                  defaults={effectiveRetrievalDefaults}
+                  value={assistantBehaviorSettings.retrievalSkillSettings ?? {}}
+                  sourceScope={assistantBehaviorSettings.sourceScope ?? { mode: 'all' }}
+                  sourceList={sourceList}
+                  isSourceListLoading={isSourceListLoading}
+                  sourceListError={sourceListError}
+                  onSourceScopeChange={(next) =>
+                    updateAssistantBehaviorDraft((current) => ({ ...current, sourceScope: next }))
+                  }
+                  onChange={(next) =>
+                    updateAssistantBehaviorDraft((current) => ({ ...current, retrievalSkillSettings: next }))
+                  }
+                />
+              ) : retrievalSettingsViewState === 'disabled' ? (
+                null
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Failed to load retrieval settings.
+                </p>
+              )}
             </SettingsCard>
           </section>
           ) : null}

@@ -1,6 +1,8 @@
 import { getEnv, type Env } from "../config/env.js";
 import {
   createDefaultApplicationComposition,
+  createDefaultAgentSkillSettingsRegistry,
+  createRetrievalSkillSettingsResolver,
   createDefaultDocumentJobDispatcher,
   type ApplicationModule,
 } from "../composition/index.js";
@@ -61,7 +63,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   for (const extension of composition.agentSurfaceExtensions) {
     agentSurfaceExtensions.register(extension);
   }
-  const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions });
+  const agentSkillSettings = createDefaultAgentSkillSettingsRegistry();
+  const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions, agentSkillSettings });
   const access = buildAccessServices({
     auditService: infrastructure.auditService,
     repositories,
@@ -136,6 +139,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     llmRegistry,
     logger,
     retrievalSettingsService: settings.retrievalSettingsService,
+    skillSettingsResolver: createRetrievalSkillSettingsResolver(),
     telemetryService: infrastructure.telemetryService,
     usageEventRecorder: infrastructure.usageEventRecorder,
   });

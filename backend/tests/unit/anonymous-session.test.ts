@@ -499,6 +499,96 @@ describe("resolveAnonymousSession", () => {
     expect(getError()).toBeDefined();
   });
 
+  it("accepts a website embed session on a same-origin POST that carries the API's own Origin", async () => {
+    // Browsers attach the Origin header to same-origin non-GET requests (the
+    // proactive-greeting bootstrap, message sends, streaming), set to the API's
+    // own origin — not the embedding site. That value must be treated like an
+    // omitted Origin, authorizing on the signed bound origin, or every embed
+    // POST 404s on real client sites where bound origin != the API origin.
+    const workspace = await workspaceRepository.create("account-1", "Test");
+    await workspaceRepository.updateGeneralSettings(workspace.id, {
+      anonymousChatEnabled: false,
+      anonymousChatToken: "test-token-1234567890",
+      assistantName: "",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      websiteEmbedEnabled: true,
+      websiteEmbedToken: "embed-token-123",
+      websiteEmbedAllowedOrigins: ["https://client.example"],
+      websiteEmbedLauncherLabel: "Chat with us",
+      websiteEmbedLauncherPosition: "bottom-right",
+    });
+
+    const embedSession = issuePublicChatSession(SESSION_SECRET, {
+      workspaceId: workspace.id,
+      publicChatToken: "embed-token-123",
+      publicSessionId: "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
+      sourceChannel: "website_embed",
+      sourceOrigin: "https://client.example",
+    });
+
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
+    const { req, res, next, getError } = createMockReqRes(
+      { token: "embed-token-123" },
+      {},
+      {
+        // Same-origin POST: Origin is the API host, not the client site.
+        origin: "https://app.radioso.test",
+        "x-forwarded-proto": "https",
+        "x-forwarded-host": "app.radioso.test",
+        [PUBLIC_CHAT_SESSION_HEADER]: embedSession.token,
+      },
+    );
+
+    await middleware(req, res, next);
+
+    expect(getError()).toBeUndefined();
+    expect(res.locals.sourceChannel).toBe("website_embed");
+    expect(res.locals.sourceOrigin).toBe("https://client.example");
+  });
+
+  it("still rejects a third-party Origin that is neither the bound origin nor the API origin", async () => {
+    const workspace = await workspaceRepository.create("account-1", "Test");
+    await workspaceRepository.updateGeneralSettings(workspace.id, {
+      anonymousChatEnabled: false,
+      anonymousChatToken: "test-token-1234567890",
+      assistantName: "",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      websiteEmbedEnabled: true,
+      websiteEmbedToken: "embed-token-123",
+      websiteEmbedAllowedOrigins: ["https://client.example"],
+      websiteEmbedLauncherLabel: "Chat with us",
+      websiteEmbedLauncherPosition: "bottom-right",
+    });
+
+    const embedSession = issuePublicChatSession(SESSION_SECRET, {
+      workspaceId: workspace.id,
+      publicChatToken: "embed-token-123",
+      publicSessionId: "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
+      sourceChannel: "website_embed",
+      sourceOrigin: "https://client.example",
+    });
+
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
+    const { req, res, next, getError } = createMockReqRes(
+      { token: "embed-token-123" },
+      {},
+      {
+        origin: "https://evil.example.com",
+        "x-forwarded-proto": "https",
+        "x-forwarded-host": "app.radioso.test",
+        [PUBLIC_CHAT_SESSION_HEADER]: embedSession.token,
+      },
+    );
+
+    await middleware(req, res, next);
+
+    expect(getError()).toBeDefined();
+  });
+
   it("accepts a legacy website embed public session that carries the anonymous chat token", async () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateGeneralSettings(workspace.id, {

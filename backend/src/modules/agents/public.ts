@@ -41,6 +41,10 @@ export {
   AgentSurfaceExtensionRegistry,
   type AgentSurfaceExtension,
 } from "./surfaceExtensions.js";
+export {
+  AgentSkillSettingsRegistry,
+  type AgentSkillSettingsEntry,
+} from "./skillSettings.js";
 export { freezeAgent, type AgentSnapshot } from "./agentSnapshot.js";
 export { createWebsiteEmbedSurfaceExtension } from "./services/websiteEmbedSurfaceExtension.js";
 export {

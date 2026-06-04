@@ -24,6 +24,8 @@ describe("database configuration", () => {
       DB_POOL_CONNECTION_TIMEOUT_MS: "2500",
       DB_STATEMENT_TIMEOUT_MS: "9000",
       DB_QUERY_TIMEOUT_MS: "11000",
+      DB_MIGRATION_LOCK_TIMEOUT_MS: "4000",
+      DB_MIGRATION_STATEMENT_TIMEOUT_MS: "12000",
       SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
     });
 
@@ -32,6 +34,8 @@ describe("database configuration", () => {
     expect(env.DB_POOL_CONNECTION_TIMEOUT_MS).toBe(2_500);
     expect(env.DB_STATEMENT_TIMEOUT_MS).toBe(9_000);
     expect(env.DB_QUERY_TIMEOUT_MS).toBe(11_000);
+    expect(env.DB_MIGRATION_LOCK_TIMEOUT_MS).toBe(4_000);
+    expect(env.DB_MIGRATION_STATEMENT_TIMEOUT_MS).toBe(12_000);
   });
 
   it("applies safe default database pool and timeout controls", () => {
@@ -47,6 +51,8 @@ describe("database configuration", () => {
     expect(env.DB_POOL_CONNECTION_TIMEOUT_MS).toBe(5_000);
     expect(env.DB_STATEMENT_TIMEOUT_MS).toBe(15_000);
     expect(env.DB_QUERY_TIMEOUT_MS).toBe(20_000);
+    expect(env.DB_MIGRATION_LOCK_TIMEOUT_MS).toBe(10_000);
+    expect(env.DB_MIGRATION_STATEMENT_TIMEOUT_MS).toBe(25_000);
     expect(env.WORKSPACE_TOKEN_SECRET).toBeUndefined();
     expect(env.PUBLIC_CHAT_SESSION_SECRET).toBeUndefined();
   });
@@ -58,6 +64,7 @@ describe("database configuration", () => {
       connectionTimeoutMs: 3_500,
       statementTimeoutMs: 8_000,
       queryTimeoutMs: 10_000,
+      lockTimeoutMs: 6_000,
       applicationName: "radioso-test",
     });
 
@@ -66,6 +73,7 @@ describe("database configuration", () => {
     expect(database.pool.options.connectionTimeoutMillis).toBe(3_500);
     expect(database.pool.options.statement_timeout).toBe(8_000);
     expect(database.pool.options.query_timeout).toBe(10_000);
+    expect(database.pool.options.lock_timeout).toBe(6_000);
     expect(database.pool.options.application_name).toBe("radioso-test");
 
     return database.close();

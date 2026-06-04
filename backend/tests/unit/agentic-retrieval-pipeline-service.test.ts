@@ -510,7 +510,7 @@ describe("AgenticRetrievalPipelineService", () => {
     expect(typeof captured2?.similarityThreshold).toBe("number");
   });
 
-  it("populates responseSettings from workspace settings, honoring responseBehavior overrides", async () => {
+  it("populates responseSettings from resolved settings and ignores suggested-question responseBehavior fields", async () => {
     const detState: StubDeterministicState = { interpretCalls: 0, runWithoutRetrievalCalls: 0, lastRunWithoutRetrievalInput: null };
     const runner = stubRunner({
       selectedChunks: [stubChunk("c1")],
@@ -533,12 +533,12 @@ describe("AgenticRetrievalPipelineService", () => {
           suggestedQuestionsCount: 1,
           customInstruction: "override",
           citationDisplayEnabled: false,
-        },
+        } as never,
       }),
     );
 
-    expect(result.responseSettings.suggestedQuestionsEnabled).toBe(false);
-    expect(result.responseSettings.suggestedQuestionsCount).toBe(1);
+    expect(result.responseSettings.suggestedQuestionsEnabled).toBe(true);
+    expect(result.responseSettings.suggestedQuestionsCount).toBe(3);
     expect(result.responseSettings.customInstruction).toBe("override");
     expect(result.responseSettings.citationDisplayEnabled).toBe(false);
   });

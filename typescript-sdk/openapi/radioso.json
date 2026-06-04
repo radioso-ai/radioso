@@ -938,6 +938,11 @@
           "suggestedQuestionsEnabled": {
             "type": "boolean"
           },
+          "suggestedQuestionsCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
+          },
           "rerankEnabled": {
             "type": "boolean"
           },
@@ -1132,6 +1137,7 @@
           "semanticRewriteInstructions",
           "lexicalRewriteInstructions",
           "suggestedQuestionsEnabled",
+          "suggestedQuestionsCount",
           "rerankEnabled",
           "vectorTopK",
           "similarityThreshold",
@@ -1158,6 +1164,11 @@
           },
           "suggestedQuestionsEnabled": {
             "type": "boolean"
+          },
+          "suggestedQuestionsCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
           },
           "rerankEnabled": {
             "type": "boolean"
@@ -1332,6 +1343,11 @@
           },
           "suggestedQuestionsEnabled": {
             "type": "boolean"
+          },
+          "suggestedQuestionsCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
           },
           "rerankEnabled": {
             "type": "boolean"
@@ -2492,6 +2508,11 @@
                 "type": "string",
                 "maxLength": 2000
               },
+              "suggestedQuestionsCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4
+              },
               "rerankEnabled": {
                 "type": "boolean"
               },
@@ -3371,6 +3392,10 @@
                   "model"
                 ]
               },
+              "skillSettings": {
+                "type": "object",
+                "additionalProperties": {}
+              },
               "surfaceSettings": {
                 "$ref": "#/components/schemas/ConversationAgentSurfaceSettings"
               }
@@ -3393,6 +3418,7 @@
               "proactiveGreetingEnabled",
               "assistantBootstrapActive",
               "chatModelOverride",
+              "skillSettings",
               "surfaceSettings"
             ]
           }
@@ -3560,6 +3586,10 @@
                 "type": "null"
               }
             ]
+          },
+          "skillSettings": {
+            "type": "object",
+            "additionalProperties": {}
           },
           "surfaceSettings": {
             "type": "object",

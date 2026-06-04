@@ -3,18 +3,11 @@
 import { useMemo, useState } from 'react'
 import { Database, Search } from 'lucide-react'
 
+import { retrievalSettingDocs } from '@/components/dashboard/settings/settings-docs'
+import { SettingFieldHeader } from '@/components/dashboard/settings/settings-flow'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import type { AgentSourceScope, DocumentSourceListItem } from '@/lib/api'
-
-function SubsectionHeading({ title, description }: { title: string; description?: string }) {
-  return (
-    <div className="space-y-0.5">
-      <h4 className="text-sm font-semibold text-foreground">{title}</h4>
-      {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
-    </div>
-  )
-}
 
 export function AssistantSourceScopeSelector({
   sourceScope,
@@ -52,9 +45,11 @@ export function AssistantSourceScopeSelector({
   return (
     <div id="agent-source-scope-settings" className="space-y-3 rounded-lg border border-border p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <SubsectionHeading
-          title="Source scope"
-          description="Choose which workspace sources this agent can use for grounded answers."
+        <SettingFieldHeader
+          label={retrievalSettingDocs.sourceScope.label}
+          description={retrievalSettingDocs.sourceScope.summary}
+          tooltip={retrievalSettingDocs.sourceScope.details}
+          className="max-w-xl"
         />
         <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5" role="group">
           <button

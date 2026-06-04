@@ -95,11 +95,13 @@ export function MetadataRulesEditor({
   metadataFieldSuggestions,
   onChange,
   readOnly = false,
+  showHeader = true,
 }: {
   metadataRules: RetrievalMetadataRule[]
   metadataFieldSuggestions: MetadataFieldSuggestion[]
   onChange: (next: RetrievalMetadataRule[]) => void
   readOnly?: boolean
+  showHeader?: boolean
 }) {
   const addMetadataRule = () => {
     onChange([
@@ -219,24 +221,33 @@ export function MetadataRulesEditor({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-1.5">
-            <p className="text-sm font-medium text-foreground">{retrievalSettingDocs.metadataRules.label}</p>
-            <SettingTooltip
-              label={retrievalSettingDocs.metadataRules.label}
-              content={retrievalSettingDocs.metadataRules.details}
-            />
+      {showHeader ? (
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-medium text-foreground">{retrievalSettingDocs.metadataRules.label}</p>
+              <SettingTooltip
+                label={retrievalSettingDocs.metadataRules.label}
+                content={retrievalSettingDocs.metadataRules.details}
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">{retrievalSettingDocs.metadataRules.summary}</p>
           </div>
-          <p className="text-sm text-muted-foreground">{retrievalSettingDocs.metadataRules.summary}</p>
+          {!readOnly ? (
+            <Button type="button" variant="outline" size="sm" onClick={addMetadataRule}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add rule
+            </Button>
+          ) : null}
         </div>
-        {!readOnly ? (
+      ) : !readOnly ? (
+        <div className="flex justify-end">
           <Button type="button" variant="outline" size="sm" onClick={addMetadataRule}>
             <Plus className="mr-2 h-4 w-4" />
             Add rule
           </Button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {metadataRules.length === 0 ? (
         <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">

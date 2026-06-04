@@ -4,11 +4,12 @@ import { ChevronDown } from 'lucide-react'
 
 import { AssistantSourceScopeSelector } from '@/components/dashboard/settings/assistant-source-scope-selector'
 import { MetadataRulesEditor } from '@/components/dashboard/settings/metadata-rules-editor'
-import { createDefaultMetadataRule } from '@/components/dashboard/settings/retrieval-rule-helpers'
+import { getRulePreviewLabel } from '@/components/dashboard/settings/retrieval-rule-helpers'
+import { retrievalSettingDocs, type SettingDoc } from '@/components/dashboard/settings/settings-docs'
+import { SettingFieldHeader } from '@/components/dashboard/settings/settings-flow'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -17,15 +18,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import type { AgentSourceScope, DocumentSourceListItem, RetrievalSettings } from '@/lib/api'
+import type { AgentSourceScope, DocumentSourceListItem, RetrievalMetadataRule, RetrievalSettings } from '@/lib/api'
 import type { RetrievalSkillSettingsOverride, RetrievalStrategy } from '@/lib/retrieval-skill-settings'
 
 const hasOverride = <K extends keyof RetrievalSkillSettingsOverride>(
   value: RetrievalSkillSettingsOverride,
   field: K,
 ) => Object.prototype.hasOwnProperty.call(value, field)
-
-const defaultLabel = (value: string | number | boolean) => `Default: ${formatValue(value)}`
 
 const formatValue = (value: string | number | boolean) => {
   if (typeof value === 'boolean') {
@@ -37,29 +36,88 @@ const formatValue = (value: string | number | boolean) => {
   return String(value)
 }
 
+const inheritedStatus = (value: string | number | boolean) =>
+  typeof value === 'string' && value.trim().length > 24
+    ? 'Using workspace default'
+    : `Using workspace default: ${formatValue(value)}`
+
+const cloneMetadataRules = (rules: RetrievalMetadataRule[]): RetrievalMetadataRule[] =>
+  rules.map((rule) => ({
+    ...rule,
+    conditions: rule.conditions?.map((condition) => ({ ...condition })),
+  }))
+
 function FieldHeader({
-  title,
+  doc,
+  htmlFor,
   inherited,
   overridden,
   onClear,
 }: {
-  title: string
+  doc: SettingDoc
+  htmlFor?: string
   inherited: string | number | boolean
   overridden: boolean
   onClear: () => void
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <div>
-        <Label className="text-foreground">{title}</Label>
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className="space-y-1">
+        <SettingFieldHeader
+          htmlFor={htmlFor}
+          label={doc.label}
+          description={doc.summary}
+          tooltip={doc.details}
+        />
         <p className="text-xs text-muted-foreground">
-          {overridden ? 'Overridden for this agent' : defaultLabel(inherited)}
+          {overridden ? 'Overridden for this agent' : inheritedStatus(inherited)}
         </p>
       </div>
       {overridden ? (
         <Button type="button" size="sm" variant="ghost" onClick={onClear}>
           Clear override
         </Button>
+      ) : null}
+    </div>
+  )
+}
+
+function InheritedValuePreview({ value }: { value: string | number | boolean }) {
+  return (
+    <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+      {formatValue(value)}
+    </div>
+  )
+}
+
+function MetadataRulesSummary({ rules }: { rules: RetrievalMetadataRule[] }) {
+  if (rules.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+        No workspace metadata rules are configured.
+      </div>
+    )
+  }
+
+  const visibleRules = rules.slice(0, 3)
+  const remainingCount = rules.length - visibleRules.length
+
+  return (
+    <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
+      <p className="text-sm font-medium text-foreground">
+        {rules.length} inherited rule{rules.length === 1 ? '' : 's'}
+      </p>
+      <div className="space-y-1">
+        {visibleRules.map((rule) => (
+          <p key={rule.id} className="truncate text-sm text-muted-foreground">
+            {getRulePreviewLabel(rule)}
+          </p>
+        ))}
+      </div>
+      {remainingCount > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          +{remainingCount} more rule{remainingCount === 1 ? '' : 's'}
+        </p>
       ) : null}
     </div>
   )
@@ -108,12 +166,9 @@ export function AssistantRetrievalSkillSettingsSection({
   const effectiveMetadataRules = hasOverride(value, 'metadataRules')
     ? value.metadataRules ?? []
     : defaults.metadataRules
-  const hasMetadataRules = effectiveMetadataRules.length > 0
-  const addMetadataRule = () => {
-    setField('metadataRules', [
-      ...(hasOverride(value, 'metadataRules') ? value.metadataRules ?? [] : defaults.metadataRules),
-      createDefaultMetadataRule(defaults.metadataFieldSuggestions),
-    ])
+  const metadataRulesOverridden = hasOverride(value, 'metadataRules')
+  const overrideMetadataRules = () => {
+    setField('metadataRules', cloneMetadataRules(defaults.metadataRules))
   }
 
   return (
@@ -122,7 +177,8 @@ export function AssistantRetrievalSkillSettingsSection({
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2 rounded-lg border border-border p-3">
               <FieldHeader
-                title="Query rewrite"
+                doc={retrievalSettingDocs.queryRewriteEnabled}
+                htmlFor="retrievalQueryRewrite"
                 inherited={defaults.queryRewriteEnabled}
                 overridden={hasOverride(value, 'queryRewriteEnabled')}
                 onClear={() => clearField('queryRewriteEnabled')}
@@ -137,7 +193,7 @@ export function AssistantRetrievalSkillSettingsSection({
                   <SelectValue />
                 </SelectTrigger>
               <SelectContent>
-                  <SelectItem value="inherit">{defaultLabel(defaults.queryRewriteEnabled)}</SelectItem>
+                  <SelectItem value="inherit">Use workspace default</SelectItem>
                   <SelectItem value="true">On</SelectItem>
                   <SelectItem value="false">Off</SelectItem>
                 </SelectContent>
@@ -146,7 +202,8 @@ export function AssistantRetrievalSkillSettingsSection({
 
             <div className="space-y-2 rounded-lg border border-border p-3">
               <FieldHeader
-                title="Answering strategy"
+                doc={retrievalSettingDocs.retrievalStrategy}
+                htmlFor="agentRetrievalStrategy"
                 inherited={defaults.retrievalStrategy}
                 overridden={hasOverride(value, 'retrievalStrategy')}
                 onClear={() => clearField('retrievalStrategy')}
@@ -161,7 +218,7 @@ export function AssistantRetrievalSkillSettingsSection({
                   <SelectValue />
                 </SelectTrigger>
               <SelectContent>
-                  <SelectItem value="inherit">{defaultLabel(defaults.retrievalStrategy)}</SelectItem>
+                  <SelectItem value="inherit">Use workspace default</SelectItem>
                   <SelectItem value="fixed">Fixed</SelectItem>
                   <SelectItem value="reasoning">Reasoning</SelectItem>
                   <SelectItem value="auto">Auto</SelectItem>
@@ -186,13 +243,17 @@ export function AssistantRetrievalSkillSettingsSection({
             />
             <div id="agent-metadata-rules-settings" className="space-y-3 rounded-lg border border-border p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <Label className="text-foreground">Metadata rules</Label>
+                <div className="space-y-1">
+                  <SettingFieldHeader
+                    label={retrievalSettingDocs.metadataRules.label}
+                    description={retrievalSettingDocs.metadataRules.summary}
+                    tooltip={retrievalSettingDocs.metadataRules.details}
+                  />
                   <p className="text-xs text-muted-foreground">
-                    {hasOverride(value, 'metadataRules') ? 'Overridden for this agent' : 'Default rules'}
+                    {metadataRulesOverridden ? 'Overridden for this agent' : 'Using workspace default'}
                   </p>
                 </div>
-                {hasOverride(value, 'metadataRules') ? (
+                {metadataRulesOverridden ? (
                   <Button type="button" size="sm" variant="ghost" onClick={() => clearField('metadataRules')}>
                     Clear override
                   </Button>
@@ -201,25 +262,21 @@ export function AssistantRetrievalSkillSettingsSection({
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() => setField('metadataRules', defaults.metadataRules)}
+                    onClick={overrideMetadataRules}
                   >
                     Override metadata rules
                   </Button>
                 )}
               </div>
-              {hasMetadataRules ? (
+              {metadataRulesOverridden ? (
                 <MetadataRulesEditor
                   metadataRules={effectiveMetadataRules}
                   metadataFieldSuggestions={defaults.metadataFieldSuggestions}
-                  readOnly={!hasOverride(value, 'metadataRules')}
+                  showHeader={false}
                   onChange={(metadataRules) => setField('metadataRules', metadataRules)}
                 />
               ) : (
-                <div className="rounded-md border border-dashed border-border p-4">
-                  <Button type="button" size="sm" variant="outline" onClick={addMetadataRule}>
-                    Add rule
-                  </Button>
-                </div>
+                <MetadataRulesSummary rules={defaults.metadataRules} />
               )}
             </div>
           </div>
@@ -227,7 +284,8 @@ export function AssistantRetrievalSkillSettingsSection({
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2 rounded-lg border border-border p-3">
               <FieldHeader
-                title="Suggested questions"
+                doc={retrievalSettingDocs.suggestedQuestionsEnabled}
+                htmlFor="agentSuggestedQuestionsEnabled"
                 inherited={defaults.suggestedQuestionsEnabled}
                 overridden={hasOverride(value, 'suggestedQuestionsEnabled')}
                 onClear={() => clearField('suggestedQuestionsEnabled')}
@@ -242,7 +300,7 @@ export function AssistantRetrievalSkillSettingsSection({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="inherit">{defaultLabel(defaults.suggestedQuestionsEnabled)}</SelectItem>
+                  <SelectItem value="inherit">Use workspace default</SelectItem>
                   <SelectItem value="true">On</SelectItem>
                   <SelectItem value="false">Off</SelectItem>
                 </SelectContent>
@@ -251,21 +309,25 @@ export function AssistantRetrievalSkillSettingsSection({
 
             <div className="space-y-2 rounded-lg border border-border p-3">
               <FieldHeader
-                title="Suggested question count"
+                doc={retrievalSettingDocs.suggestedQuestionsCount}
+                htmlFor="suggestedQuestionsCount"
                 inherited={defaults.suggestedQuestionsCount}
                 overridden={hasOverride(value, 'suggestedQuestionsCount')}
                 onClear={() => clearField('suggestedQuestionsCount')}
               />
-              <Input
-                id="suggestedQuestionsCount"
-                aria-label="Suggested question count"
-                type="number"
-                min={1}
-                max={4}
-                value={numberValue('suggestedQuestionsCount', defaults.suggestedQuestionsCount)}
-                disabled={!hasOverride(value, 'suggestedQuestionsCount')}
-                onChange={(event) => setField('suggestedQuestionsCount', Number(event.target.value))}
-              />
+              {hasOverride(value, 'suggestedQuestionsCount') ? (
+                <Input
+                  id="suggestedQuestionsCount"
+                  aria-label="Suggested Question Count"
+                  type="number"
+                  min={1}
+                  max={4}
+                  value={numberValue('suggestedQuestionsCount', defaults.suggestedQuestionsCount)}
+                  onChange={(event) => setField('suggestedQuestionsCount', Number(event.target.value))}
+                />
+              ) : (
+                <InheritedValuePreview value={defaults.suggestedQuestionsCount} />
+              )}
               {!hasOverride(value, 'suggestedQuestionsCount') ? (
                 <Button type="button" size="sm" variant="outline" onClick={() => setField('suggestedQuestionsCount', defaults.suggestedQuestionsCount)}>
                   Override count
@@ -286,7 +348,8 @@ export function AssistantRetrievalSkillSettingsSection({
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-3">
                     <FieldHeader
-                      title="Semantic rewrite instructions"
+                      doc={retrievalSettingDocs.semanticRewriteInstructions}
+                      htmlFor="semanticRewriteInstructions"
                       inherited={defaults.semanticRewriteInstructions}
                       overridden={hasOverride(value, 'semanticRewriteInstructions')}
                       onClear={() => clearField('semanticRewriteInstructions')}
@@ -300,15 +363,19 @@ export function AssistantRetrievalSkillSettingsSection({
                         rows={3}
                       />
                     ) : (
-                      <Button type="button" size="sm" variant="outline" onClick={() => setField('semanticRewriteInstructions', defaults.semanticRewriteInstructions)}>
-                        Override semantic instructions
-                      </Button>
+                      <>
+                        <InheritedValuePreview value="Workspace default instructions" />
+                        <Button type="button" size="sm" variant="outline" onClick={() => setField('semanticRewriteInstructions', defaults.semanticRewriteInstructions)}>
+                          Override semantic instructions
+                        </Button>
+                      </>
                     )}
                   </div>
 
                   <div className="space-y-3">
                     <FieldHeader
-                      title="Lexical rewrite instructions"
+                      doc={retrievalSettingDocs.lexicalRewriteInstructions}
+                      htmlFor="lexicalRewriteInstructions"
                       inherited={defaults.lexicalRewriteInstructions}
                       overridden={hasOverride(value, 'lexicalRewriteInstructions')}
                       onClear={() => clearField('lexicalRewriteInstructions')}
@@ -322,30 +389,37 @@ export function AssistantRetrievalSkillSettingsSection({
                         rows={3}
                       />
                     ) : (
-                      <Button type="button" size="sm" variant="outline" onClick={() => setField('lexicalRewriteInstructions', defaults.lexicalRewriteInstructions)}>
-                        Override lexical instructions
-                      </Button>
+                      <>
+                        <InheritedValuePreview value="Workspace default instructions" />
+                        <Button type="button" size="sm" variant="outline" onClick={() => setField('lexicalRewriteInstructions', defaults.lexicalRewriteInstructions)}>
+                          Override lexical instructions
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
                     <FieldHeader
-                      title="Vector top K"
+                      doc={retrievalSettingDocs.vectorTopK}
+                      htmlFor="vectorTopK"
                       inherited={defaults.vectorTopK}
                       overridden={hasOverride(value, 'vectorTopK')}
                       onClear={() => clearField('vectorTopK')}
                     />
-                    <Input
-                      id="vectorTopK"
-                      aria-label="Vector top K"
-                      type="number"
-                      min={1}
-                      max={300}
-                      value={numberValue('vectorTopK', defaults.vectorTopK)}
-                      disabled={!hasOverride(value, 'vectorTopK')}
-                      onChange={(event) => setField('vectorTopK', Number(event.target.value))}
-                    />
+                    {hasOverride(value, 'vectorTopK') ? (
+                      <Input
+                        id="vectorTopK"
+                        aria-label="Vector Top K"
+                        type="number"
+                        min={1}
+                        max={300}
+                        value={numberValue('vectorTopK', defaults.vectorTopK)}
+                        onChange={(event) => setField('vectorTopK', Number(event.target.value))}
+                      />
+                    ) : (
+                      <InheritedValuePreview value={defaults.vectorTopK} />
+                    )}
                     {!hasOverride(value, 'vectorTopK') ? (
                       <Button type="button" size="sm" variant="outline" onClick={() => setField('vectorTopK', defaults.vectorTopK)}>
                         Override vector top K
@@ -354,7 +428,8 @@ export function AssistantRetrievalSkillSettingsSection({
                   </div>
                   <div className="space-y-2">
                     <FieldHeader
-                      title="Rerank"
+                      doc={retrievalSettingDocs.rerankEnabled}
+                      htmlFor="agentRerankEnabled"
                       inherited={defaults.rerankEnabled}
                       overridden={hasOverride(value, 'rerankEnabled')}
                       onClear={() => clearField('rerankEnabled')}
@@ -369,7 +444,7 @@ export function AssistantRetrievalSkillSettingsSection({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="inherit">{defaultLabel(defaults.rerankEnabled)}</SelectItem>
+                        <SelectItem value="inherit">Use workspace default</SelectItem>
                         <SelectItem value="true">On</SelectItem>
                         <SelectItem value="false">Off</SelectItem>
                       </SelectContent>
@@ -377,21 +452,25 @@ export function AssistantRetrievalSkillSettingsSection({
                   </div>
                   <div className="space-y-2">
                     <FieldHeader
-                      title="Rerank top K"
+                      doc={retrievalSettingDocs.rerankTopK}
+                      htmlFor="rerankTopK"
                       inherited={defaults.rerankTopK}
                       overridden={hasOverride(value, 'rerankTopK')}
                       onClear={() => clearField('rerankTopK')}
                     />
-                    <Input
-                      id="rerankTopK"
-                      aria-label="Rerank top K"
-                      type="number"
-                      min={1}
-                      max={50}
-                      value={numberValue('rerankTopK', defaults.rerankTopK)}
-                      disabled={!hasOverride(value, 'rerankTopK')}
-                      onChange={(event) => setField('rerankTopK', Number(event.target.value))}
-                    />
+                    {hasOverride(value, 'rerankTopK') ? (
+                      <Input
+                        id="rerankTopK"
+                        aria-label="Rerank Top K"
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={numberValue('rerankTopK', defaults.rerankTopK)}
+                        onChange={(event) => setField('rerankTopK', Number(event.target.value))}
+                      />
+                    ) : (
+                      <InheritedValuePreview value={defaults.rerankTopK} />
+                    )}
                     {!hasOverride(value, 'rerankTopK') ? (
                       <Button type="button" size="sm" variant="outline" onClick={() => setField('rerankTopK', defaults.rerankTopK)}>
                         Override rerank top K

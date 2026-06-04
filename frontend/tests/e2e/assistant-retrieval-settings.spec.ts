@@ -110,7 +110,11 @@ test("agent skills tab saves and clears retrieval skill overrides", async ({ pag
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
   const retrievalSection = page.locator("#retrieval-skill-settings");
   await expect(retrievalSection).toBeVisible();
-  await expect(retrievalSection).toContainText("Default: off");
+  await expect(retrievalSection).toContainText("Using workspace default: off");
+
+  await retrievalSection.getByRole("button", { name: "Explain Query Rewrite" }).click();
+  await expect(page.getByRole("heading", { name: "Query Rewrite" })).toBeVisible();
+  await page.keyboard.press("Escape");
 
   await page.locator("#retrievalQueryRewrite").click();
   await page.getByRole("option", { name: "On" }).click();
@@ -128,10 +132,10 @@ test("agent skills tab saves and clears retrieval skill overrides", async ({ pag
   await expect(page.locator("#retrievalQueryRewrite")).toContainText("On");
 
   await page.locator("#retrievalQueryRewrite").click();
-  await page.getByRole("option", { name: "Default: off" }).click();
+  await page.getByRole("option", { name: "Use workspace default" }).click();
 
   await expect.poll(() => JSON.stringify((agentUpdates.at(-1) as { skillSettings?: unknown } | undefined)?.skillSettings)).toBe("{}");
-  await expect(retrievalSection).toContainText("Default: off");
+  await expect(retrievalSection).toContainText("Using workspace default: off");
 });
 
 test("agent skills tab collapses retrieval settings when retrieval is off", async ({ page }) => {
@@ -164,10 +168,33 @@ test("agent skills tab collapses retrieval settings when retrieval is off", asyn
 
 test("agent skills tab saves, persists, and clears retrieval metadata rules", async ({ page }) => {
   const agentUpdates: unknown[] = [];
+  const platformSettings = basePlatformSettings();
+  platformSettings.retrieval.metadataRules = [
+    {
+      id: "workspace-region",
+      field: "region",
+      valueType: "string",
+      operator: "equals",
+      value: "emea",
+      effect: "boost",
+      enabled: true,
+      triggerMode: "always_on",
+      conditions: [
+        {
+          id: "workspace-region-condition",
+          field: "region",
+          valueType: "string",
+          operator: "equals",
+          value: "emea",
+        },
+      ],
+      combinator: "and",
+    },
+  ];
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
-    platformSettings: basePlatformSettings(),
+    platformSettings,
     agentUpdates,
   });
 
@@ -175,10 +202,15 @@ test("agent skills tab saves, persists, and clears retrieval metadata rules", as
   const retrievalSection = page.locator("#retrieval-skill-settings");
   const metadataRulesSection = page.locator("#agent-metadata-rules-settings");
   await expect(retrievalSection).toBeVisible();
-  await expect(metadataRulesSection).toContainText("Default rules");
+  await expect(metadataRulesSection).toContainText("Using workspace default");
+  await expect(metadataRulesSection).toContainText("1 inherited rule");
+  await expect(metadataRulesSection).toContainText("region equals emea");
   await expect(metadataRulesSection.getByLabel("Field")).toHaveCount(0);
 
-  await metadataRulesSection.getByRole("button", { name: "Add rule" }).click();
+  await metadataRulesSection.getByRole("button", { name: "Override metadata rules" }).click();
+  await expect(metadataRulesSection.getByLabel("Field")).toHaveValue("region");
+  await expect(metadataRulesSection.getByPlaceholder("e.g. et or example.com")).toHaveValue("emea");
+
   await metadataRulesSection.getByLabel("Field").fill("region");
   await metadataRulesSection.getByPlaceholder("e.g. et or example.com").fill("eu");
 
@@ -211,7 +243,8 @@ test("agent skills tab saves, persists, and clears retrieval metadata rules", as
   await metadataRulesSection.getByRole("button", { name: "Clear override" }).click();
 
   await expect.poll(() => JSON.stringify((agentUpdates.at(-1) as { skillSettings?: unknown } | undefined)?.skillSettings)).toBe("{}");
-  await expect(metadataRulesSection).toContainText("Default rules");
+  await expect(metadataRulesSection).toContainText("Using workspace default");
+  await expect(metadataRulesSection).toContainText("1 inherited rule");
   await expect(metadataRulesSection.getByLabel("Field")).toHaveCount(0);
 });
 

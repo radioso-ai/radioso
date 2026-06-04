@@ -2,6 +2,7 @@
 
 import { ChevronDown, DatabaseZap } from 'lucide-react'
 
+import { MetadataRulesEditor } from '@/components/dashboard/settings/metadata-rules-editor'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
@@ -192,6 +193,37 @@ export function AssistantRetrievalSkillSettingsSection({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div id="agent-metadata-rules-settings" className="space-y-3 rounded-lg border border-border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <Label className="text-foreground">Metadata rules</Label>
+                <p className="text-xs text-muted-foreground">
+                  {hasOverride(value, 'metadataRules') ? 'Overridden for this agent' : 'Inherited from default'}
+                </p>
+              </div>
+              {hasOverride(value, 'metadataRules') ? (
+                <Button type="button" size="sm" variant="ghost" onClick={() => clearField('metadataRules')}>
+                  Clear override
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setField('metadataRules', defaults.metadataRules)}
+                >
+                  Override metadata rules
+                </Button>
+              )}
+            </div>
+            <MetadataRulesEditor
+              metadataRules={hasOverride(value, 'metadataRules') ? value.metadataRules ?? [] : defaults.metadataRules}
+              metadataFieldSuggestions={defaults.metadataFieldSuggestions}
+              readOnly={!hasOverride(value, 'metadataRules')}
+              onChange={(metadataRules) => setField('metadataRules', metadataRules)}
+            />
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">

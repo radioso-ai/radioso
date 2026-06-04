@@ -12,6 +12,18 @@ describe('retrieval skill settings adapter', () => {
       [RETRIEVAL_ANSWER_SKILL_NAME]: {
         customInstruction: 'Prefer product docs.',
         queryRewriteEnabled: false,
+        metadataRules: [
+          {
+            id: 'rule-1',
+            field: 'region',
+            operator: 'equals',
+            valueType: 'string',
+            value: 'eu',
+            effect: 'boost',
+            enabled: true,
+            triggerMode: 'always_on',
+          },
+        ],
         suggestedQuestionsCount: 4,
         retrievalStrategy: 'reasoning',
         similarityThreshold: 0.9,
@@ -21,6 +33,18 @@ describe('retrieval skill settings adapter', () => {
     })).toEqual({
       customInstruction: 'Prefer product docs.',
       queryRewriteEnabled: false,
+      metadataRules: [
+        {
+          id: 'rule-1',
+          field: 'region',
+          operator: 'equals',
+          valueType: 'string',
+          value: 'eu',
+          effect: 'boost',
+          enabled: true,
+          triggerMode: 'always_on',
+        },
+      ],
       suggestedQuestionsCount: 4,
       retrievalStrategy: 'reasoning',
     })
@@ -37,50 +61,65 @@ describe('retrieval skill settings adapter', () => {
     })
   })
 
-  it('preserves sibling retrieval.answer fields when saving a behavioral override', () => {
-    const metadataRules = [
-      {
-        id: 'rule-1',
-        field: 'region',
-        operator: 'equals',
-        value: 'eu',
-        effect: 'boost',
-      },
-    ]
+  it('writes managed metadataRules overrides', () => {
+    const metadataRules = [{
+      id: 'rule-1',
+      field: 'region',
+      operator: 'equals',
+      valueType: 'string',
+      value: 'eu',
+      effect: 'boost',
+      enabled: true,
+      triggerMode: 'always_on',
+    }] as const
 
-    expect(writeRetrievalSkillSettingsOverride({
-      [RETRIEVAL_ANSWER_SKILL_NAME]: {
-        metadataRules,
-      },
-    }, {
+    expect(writeRetrievalSkillSettingsOverride(undefined, {
+      metadataRules: [...metadataRules],
       customInstruction: 'Prefer release notes.',
     })).toEqual({
       [RETRIEVAL_ANSWER_SKILL_NAME]: {
-        metadataRules,
+        metadataRules: [...metadataRules],
         customInstruction: 'Prefer release notes.',
       },
     })
   })
 
-  it('keeps retrieval.answer when clearing UI-managed fields leaves preserved fields behind', () => {
-    const metadataRules = [
-      {
-        id: 'rule-1',
-        field: 'region',
-        operator: 'equals',
-        value: 'eu',
-        effect: 'boost',
-      },
-    ]
+  it('clears managed metadataRules while preserving future sibling fields', () => {
+    const metadataRules = [{
+      id: 'rule-1',
+      field: 'region',
+      operator: 'equals',
+      valueType: 'string',
+      value: 'eu',
+      effect: 'boost',
+      enabled: true,
+      triggerMode: 'always_on',
+    }]
 
     expect(writeRetrievalSkillSettingsOverride({
       [RETRIEVAL_ANSWER_SKILL_NAME]: {
         metadataRules,
+        someFutureField: { enabled: true },
         customInstruction: 'Prefer release notes.',
       },
     }, {})).toEqual({
       [RETRIEVAL_ANSWER_SKILL_NAME]: {
-        metadataRules,
+        someFutureField: { enabled: true },
+      },
+    })
+  })
+
+  it('preserves genuinely unknown retrieval.answer fields when saving managed overrides', () => {
+    expect(writeRetrievalSkillSettingsOverride({
+      [RETRIEVAL_ANSWER_SKILL_NAME]: {
+        someFutureField: { enabled: true },
+      },
+    }, {
+      customInstruction: 'Prefer release notes.',
+    })).toEqual({
+      [RETRIEVAL_ANSWER_SKILL_NAME]: {
+        someFutureField: { enabled: true },
+        customInstruction: 'Prefer release notes.',
       },
     })
   })

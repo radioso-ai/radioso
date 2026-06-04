@@ -1,3 +1,5 @@
+import type { RetrievalMetadataRule } from './api-types'
+
 export const RETRIEVAL_ANSWER_SKILL_NAME = 'retrieval.answer'
 
 export type RetrievalStrategy = 'fixed' | 'reasoning' | 'auto'
@@ -13,6 +15,7 @@ export interface RetrievalSkillSettingsOverride {
   vectorTopK?: number
   rerankEnabled?: boolean
   rerankTopK?: number
+  metadataRules?: RetrievalMetadataRule[]
 }
 
 export type AgentSkillSettingsMap = Record<string, unknown>
@@ -28,6 +31,7 @@ const knownRetrievalSkillFields = [
   'vectorTopK',
   'rerankEnabled',
   'rerankTopK',
+  'metadataRules',
 ] as const
 
 const retrievalStrategies = new Set<RetrievalStrategy>(['fixed', 'reasoning', 'auto'])
@@ -58,6 +62,7 @@ export const readRetrievalSkillSettingsOverride = (
   if (typeof raw.vectorTopK === 'number' && Number.isInteger(raw.vectorTopK)) next.vectorTopK = raw.vectorTopK
   if (typeof raw.rerankEnabled === 'boolean') next.rerankEnabled = raw.rerankEnabled
   if (typeof raw.rerankTopK === 'number' && Number.isInteger(raw.rerankTopK)) next.rerankTopK = raw.rerankTopK
+  if (Array.isArray(raw.metadataRules)) next.metadataRules = raw.metadataRules as RetrievalMetadataRule[]
   return next
 }
 

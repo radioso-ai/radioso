@@ -30,7 +30,10 @@ export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] =
     similarityThreshold: 0.2,
     rerankTopK: 5,
     retrievalStrategy: "fixed",
-    metadataFieldSuggestions: [],
+    metadataFieldSuggestions: [
+      { field: "region", inferredType: "string" },
+      { field: "publishedAt", inferredType: "date" },
+    ],
     metadataRules: [],
   },
   channels: {

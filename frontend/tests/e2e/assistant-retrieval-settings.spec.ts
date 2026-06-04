@@ -131,3 +131,55 @@ test("agent skills tab saves and clears retrieval skill overrides", async ({ pag
   await expect.poll(() => JSON.stringify((agentUpdates.at(-1) as { skillSettings?: unknown } | undefined)?.skillSettings)).toBe("{}");
   await expect(retrievalSection).toContainText("Inherited from default");
 });
+
+test("agent skills tab saves, persists, and clears retrieval metadata rules", async ({ page }) => {
+  const agentUpdates: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    agentUpdates,
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
+  const retrievalSection = page.locator("#retrieval-skill-settings");
+  const metadataRulesSection = page.locator("#agent-metadata-rules-settings");
+  await expect(retrievalSection).toBeVisible();
+  await expect(metadataRulesSection).toContainText("Inherited from default");
+
+  await metadataRulesSection.getByRole("button", { name: "Override metadata rules" }).click();
+  await metadataRulesSection.getByRole("button", { name: "Add rule" }).click();
+  await metadataRulesSection.getByLabel("Field").fill("region");
+  await metadataRulesSection.getByPlaceholder("e.g. et or example.com").fill("eu");
+
+  await expect.poll(() => {
+    const last = agentUpdates.at(-1) as { skillSettings?: { "retrieval.answer"?: { metadataRules?: unknown[] } } } | undefined;
+    return last?.skillSettings?.["retrieval.answer"]?.metadataRules?.length ?? 0;
+  }).toBe(1);
+  expect(agentUpdates.at(-1)).toMatchObject({
+    skillSettings: {
+      "retrieval.answer": {
+        metadataRules: [
+          {
+            field: "region",
+            valueType: "string",
+            operator: "equals",
+            value: "eu",
+            effect: "boost",
+            enabled: true,
+            triggerMode: "always_on",
+          },
+        ],
+      },
+    },
+  });
+
+  await page.reload();
+  await expect(metadataRulesSection.getByLabel("Field")).toHaveValue("region");
+  await expect(metadataRulesSection.getByPlaceholder("e.g. et or example.com")).toHaveValue("eu");
+
+  await metadataRulesSection.getByRole("button", { name: "Clear override" }).click();
+
+  await expect.poll(() => JSON.stringify((agentUpdates.at(-1) as { skillSettings?: unknown } | undefined)?.skillSettings)).toBe("{}");
+  await expect(metadataRulesSection).toContainText("Inherited from default");
+});

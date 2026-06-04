@@ -5,22 +5,27 @@ import NextLink from 'next/link'
 
 import { ChatPreview, ThemeContrastWarning } from '@/components/dashboard/settings/assistant-chat-preview'
 import { DEFAULT_ASSISTANT_THEME } from '@/components/dashboard/settings/assistant-theme-form-helpers'
-import type { AssistantBehaviorSettings, GeneralSettings } from '@/lib/api'
+import type { AssistantBehaviorSettings, GeneralSettings, RetrievalSettings } from '@/lib/api'
 
 export interface AssistantPreviewRailProps {
   anonSettings: GeneralSettings
   assistantBehaviorSettings: AssistantBehaviorSettings
+  retrievalDefaults: Pick<RetrievalSettings, 'suggestedQuestionsEnabled'>
   channelsTabHref?: string
 }
 
 export function AssistantPreviewRail({
   anonSettings,
   assistantBehaviorSettings,
+  retrievalDefaults,
   channelsTabHref,
 }: AssistantPreviewRailProps) {
   const theme = assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME
   const publicChatOn = Boolean(anonSettings.anonymousChatEnabled)
   const websiteEmbedOn = Boolean(anonSettings.websiteEmbedEnabled)
+  const showSuggestedQuestions =
+    assistantBehaviorSettings.retrievalSkillSettings?.suggestedQuestionsEnabled ??
+    retrievalDefaults.suggestedQuestionsEnabled
 
   return (
     <aside className="lg:sticky lg:top-4 lg:self-start space-y-4" aria-label="Assistant preview">
@@ -32,7 +37,7 @@ export function AssistantPreviewRail({
           themeSettings={theme}
           assistantName={anonSettings.assistantName}
           logoUrl={anonSettings.assistantLogoUrl ?? null}
-          showSuggestedQuestions={assistantBehaviorSettings.suggestedQuestionsEnabled}
+          showSuggestedQuestions={showSuggestedQuestions}
           showProactiveGreeting={anonSettings.proactiveGreetingEnabled}
           assistantLinkUtmEnabled={assistantBehaviorSettings.assistantLinkUtmEnabled}
           branding={assistantBehaviorSettings.branding ?? null}

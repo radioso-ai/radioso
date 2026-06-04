@@ -165,7 +165,7 @@ curl -sS -b cookies.txt \
 
 Each workspace payload includes both `id` and `publicRouteKey`. Use `id` for API calls that require a workspace identifier. Use `publicRouteKey` when you need to inspect or build the canonical dashboard URL. If a workspace token, public chat link, or Enterprise embed token is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
 
-**Agents, assistant, and retrieval.** Use agents to configure knowledge-assistant identity, instructions, source scope, retrieval participation, and public surface settings. Chat calls use the workspace default agent unless `agentId` is provided.
+**Agents, assistant, and retrieval.** Use agents to configure knowledge-assistant identity, instructions, source scope, retrieval participation, per-skill settings, and public surface settings. Chat calls use the workspace default agent unless `agentId` is provided. Workspace retrieval settings still provide defaults; `skillSettings["retrieval.answer"]` can override retrieval behavior for one agent.
 
 ```bash
 curl -sS \

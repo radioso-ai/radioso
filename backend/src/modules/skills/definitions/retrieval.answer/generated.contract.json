@@ -102,6 +102,11 @@
         "suggestedQuestionsEnabled": {
           "type": "boolean"
         },
+        "suggestedQuestionsCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
         "rerankEnabled": {
           "type": "boolean"
         },

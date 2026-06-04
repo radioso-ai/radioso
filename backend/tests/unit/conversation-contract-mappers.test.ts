@@ -32,6 +32,7 @@ const agent = (overrides: Partial<AgentRecord> = {}): AgentRecord => ({
   contactRequestsEnabled: false,
   retrievalEnabled: true,
   sourceScope: { mode: "all" },
+  skillSettings: {},
   logo: null,
   theme: {
     brand: "#000000",

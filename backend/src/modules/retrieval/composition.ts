@@ -16,6 +16,7 @@ import { RerankService } from "./services/rerankService.js";
 import { RetrievalExecutionTelemetryService } from "./services/retrievalExecutionTelemetryService.js";
 import { RetrievalPipelineService } from "./services/retrievalPipelineService.js";
 import { RetrievalSearchService } from "./services/retrievalSearchService.js";
+import type { SkillSettingsResolver } from "./services/retrievalContextStage.js";
 
 export { ChunkingStrategyRegistry } from "./domain/chunking/chunkingStrategyRegistry.js";
 export {
@@ -109,6 +110,7 @@ export const createDefaultRetrievalServices = (input: {
   telemetryService: TelemetryService;
   ingestionSettingsService?: IngestionSettingsService;
   usageEventRecorder?: UsageEventRecorder;
+  skillSettingsResolver?: SkillSettingsResolver;
 }) => {
   const retrievalPipeline = new RetrievalPipelineService(
     input.retrievalSettingsService,
@@ -128,6 +130,7 @@ export const createDefaultRetrievalServices = (input: {
     new RetrievalExecutionTelemetryService(input.telemetryService),
     undefined,
     input.ingestionSettingsService,
+    input.skillSettingsResolver,
   );
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
 

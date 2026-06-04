@@ -2,10 +2,12 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { convertMdxDocument } from "../mdx/convertMdx.ts";
 import { convertOpenApiToDocuments } from "../openapi/convertOpenApi.ts";
+import { buildReadmeDocuments } from "../readme/buildReadmeDocuments.ts";
 
 /** The section tag stamped on each document, used to scope pruning per source. */
 export const MDX_SECTION = "mdx-docs";
 export const API_SECTION = "api-reference";
+export const README_SECTION = "repo-readme";
 
 /** A document ready to upsert through the Radioso REST API. */
 export interface DocumentInput {
@@ -19,20 +21,33 @@ export interface DocumentInput {
 export interface BuildDocumentsOptions {
   contentDir: string;
   openApiPath: string;
+  repoRoot: string;
   citationBase: string;
+  repoSourceBase: string;
   includeMdx: boolean;
   includeApi: boolean;
+  includeReadme: boolean;
 }
 
 export async function buildDocuments(options: BuildDocumentsOptions): Promise<DocumentInput[]> {
-  const citationBase = options.citationBase.replace(/\/+$/, "");
+  const commonSourceUrl = options.citationBase.replace(/\/+$/, "");
+  const repoSourceBase = options.repoSourceBase.replace(/\/+$/, "");
   const documents: DocumentInput[] = [];
 
   if (options.includeMdx) {
-    documents.push(...(await buildMdxDocuments(options.contentDir, citationBase)));
+    documents.push(...(await buildMdxDocuments(options.contentDir, commonSourceUrl)));
   }
   if (options.includeApi) {
-    documents.push(...(await buildApiDocuments(options.openApiPath, citationBase)));
+    documents.push(...(await buildApiDocuments(options.openApiPath, commonSourceUrl)));
+  }
+  if (options.includeReadme) {
+    documents.push(
+      ...(await buildReadmeDocuments({
+        repoRoot: options.repoRoot,
+        commonSourceUrl,
+        repoSourceBase,
+      })),
+    );
   }
 
   return documents;
@@ -54,8 +69,8 @@ async function buildMdxDocuments(contentDir: string, citationBase: string): Prom
       externalDocumentId: `${MDX_SECTION}:${slug || "index"}`,
       title: converted.title,
       content,
-      source: { kind: "website", url },
-      metadata: { section: MDX_SECTION, slug: slug || "index", docsUrl: url },
+      source: { kind: "website", url: citationBase },
+      metadata: { section: MDX_SECTION, slug: slug || "index", url },
     });
   }
 
@@ -69,8 +84,8 @@ async function buildApiDocuments(openApiPath: string, citationBase: string): Pro
     externalDocumentId: `${API_SECTION}:${doc.tag}`,
     title: doc.title,
     content: doc.markdown,
-    source: { kind: "website", url: doc.sourceUrl },
-    metadata: { section: API_SECTION, tag: doc.tag, docsUrl: doc.sourceUrl },
+    source: { kind: "website", url: citationBase },
+    metadata: { section: API_SECTION, tag: doc.tag, url: doc.sourceUrl },
   }));
 }
 

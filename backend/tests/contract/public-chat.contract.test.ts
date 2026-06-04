@@ -537,7 +537,11 @@ describe("public chat contract", () => {
     expect(response.status).toBe(404);
   });
 
-  it("returns a JSON service error instead of a bodyless 204 when bootstrap has no response", async () => {
+  it("returns 204 (benign no-greeting) when a bootstrap has no response", async () => {
+    // A startConversation bootstrap with no proactive greeting is a benign
+    // "no content" outcome — the website embed client treats 204 as "no
+    // greeting" and proceeds to normal chat. It must NOT be a 503 error, which
+    // the widget surfaces as a fatal "Chat Unavailable".
     const { app } = createTestApp({
       envOverrides: {
         PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
@@ -553,11 +557,8 @@ describe("public chat contract", () => {
       .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ startConversation: true, stream: false });
 
-    expect(response.status).toBe(503);
-    expect(response.body.error).toMatchObject({
-      code: "service_unavailable",
-      message: "Public chat response is unavailable.",
-    });
+    expect(response.status).toBe(204);
+    expect(response.text).toBe("");
   });
 
   it("disabled workspace returns 404", async () => {

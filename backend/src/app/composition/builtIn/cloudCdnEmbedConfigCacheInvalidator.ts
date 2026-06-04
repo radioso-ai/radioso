@@ -2,7 +2,7 @@ import {
   embedConfigCachePath,
   noopEmbedConfigCacheInvalidator,
   type EmbedConfigCacheInvalidator,
-} from "../../../modules/agents/services/embedConfigCacheInvalidator.js";
+} from "../../../modules/agents/public.js";
 
 const METADATA_TOKEN_URL =
   "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";

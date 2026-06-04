@@ -1,6 +1,7 @@
 export interface AgentSkillSettingsEntry<TSettings = unknown> {
   readonly skillName: string;
   normalize(input: unknown): TSettings;
+  parse?(input: unknown): TSettings;
 }
 
 export class AgentSkillSettingsRegistry {

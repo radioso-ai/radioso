@@ -209,7 +209,7 @@ const mapAgent = (
       },
       extensions,
     },
-  }, { skillSettings });
+  }, { skillSettings, skillSettingsMode: "read" });
 
   return {
     id: row.id,

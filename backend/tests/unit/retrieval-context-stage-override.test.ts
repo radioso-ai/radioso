@@ -240,13 +240,29 @@ describe("SkillSettingsResolver", () => {
     expect(second.rerankTopK).toBe(9);
   });
 
-  it("rejects invalid retrieval overrides through the retrieval skill settings schema", () => {
+  it("ignores unknown retrieval override fields on the turn path", () => {
     const resolver = createRetrievalSkillSettingsResolver();
 
-    expect(() =>
-      resolver.resolve("retrieval.answer", baseSettings("ws-1"), {
-        vectorTopK: 0,
-      }),
-    ).toThrow(/vectorTopK/);
+    const resolved = resolver.resolve("retrieval.answer", baseSettings("ws-1"), {
+      vectorTopK: 7,
+      futureField: "ignored",
+    });
+
+    expect(resolved.vectorTopK).toBe(7);
+    expect(resolved).not.toHaveProperty("futureField");
+  });
+
+  it("drops invalid retrieval override fields on the turn path while preserving valid fields", () => {
+    const resolver = createRetrievalSkillSettingsResolver();
+
+    const resolved = resolver.resolve("retrieval.answer", baseSettings("ws-1"), {
+      queryRewriteEnabled: false,
+      vectorTopK: 0,
+      rerankTopK: 6,
+    });
+
+    expect(resolved.queryRewriteEnabled).toBe(false);
+    expect(resolved.vectorTopK).toBe(20);
+    expect(resolved.rerankTopK).toBe(6);
   });
 });

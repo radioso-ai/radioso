@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createDefaultAgentSkillSettingsRegistry } from "../../src/app/composition/skillSettingsResolver.js";
 import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
 import {
@@ -173,6 +174,58 @@ describe("AgentRepository", () => {
       },
       "custom.skill": {
         passthrough: true,
+      },
+    });
+  });
+
+  it("loads persisted retrieval skill settings with unknown future fields", async () => {
+    const repository = new AgentRepository({
+      queryOptional: async () => agentRow({
+        authenticatedChat: { enabled: true },
+        anonymousChat: { enabled: false, token: null },
+        websiteEmbed: websiteEmbedDefaults(),
+      }, {
+        skill_settings: {
+          "retrieval.answer": {
+            vectorTopK: 7,
+            futureField: "ignored on read",
+          },
+        },
+      }),
+    } as never, undefined, createDefaultAgentSkillSettingsRegistry());
+
+    const agent = await repository.findByIdAndWorkspaceId("agent-1", "workspace-1");
+
+    expect(agent?.skillSettings).toEqual({
+      "retrieval.answer": {
+        vectorTopK: 7,
+      },
+    });
+  });
+
+  it("loads persisted retrieval skill settings by dropping invalid fields and keeping valid fields", async () => {
+    const repository = new AgentRepository({
+      queryOptional: async () => agentRow({
+        authenticatedChat: { enabled: true },
+        anonymousChat: { enabled: false, token: null },
+        websiteEmbed: websiteEmbedDefaults(),
+      }, {
+        skill_settings: {
+          "retrieval.answer": {
+            queryRewriteEnabled: false,
+            vectorTopK: 0,
+            rerankTopK: 6,
+          },
+        },
+      }),
+    } as never, undefined, createDefaultAgentSkillSettingsRegistry());
+
+    const agent = await repository.findByIdAndWorkspaceId("agent-1", "workspace-1");
+
+    expect(agent?.skillSettings).toEqual({
+      "retrieval.answer": {
+        queryRewriteEnabled: false,
+        rerankTopK: 6,
       },
     });
   });

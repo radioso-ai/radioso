@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { createDefaultAgentSkillSettingsRegistry } from "../../src/app/composition/skillSettingsResolver.js";
 import { AgentSkillSettingsRegistry, validateAgentInput } from "../../src/modules/agents/public.js";
 
 describe("agent branding normalization", () => {
@@ -105,5 +106,16 @@ describe("agent skill settings normalization", () => {
         },
       }, { skillSettings: registry }),
     ).toThrow(/retrieval\.answer settings are invalid/);
+  });
+
+  it("rejects invalid retrieval skill settings at the write boundary", () => {
+    expect(() =>
+      validateAgentInput({
+        name: "Agent",
+        skillSettings: {
+          "retrieval.answer": { vectorTopK: 0 },
+        },
+      }, { skillSettings: createDefaultAgentSkillSettingsRegistry() }),
+    ).toThrow(/vectorTopK/);
   });
 });

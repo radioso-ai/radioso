@@ -195,6 +195,27 @@ describe("agents contract", () => {
     expect(fetched.body.skillSettings).toEqual(updated.body.skillSettings);
   });
 
+  it("rejects invalid per-agent retrieval skill settings at the write boundary", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-invalid-skill-settings@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const response = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({
+        name: "Invalid retrieval tuned",
+        skillSettings: {
+          "retrieval.answer": {
+            vectorTopK: 0,
+          },
+        },
+      })
+      .expect(400);
+
+    expect(response.body.error.message).toMatch(/vectorTopK/);
+  });
+
   it("persists manually added documents in selected source scope", async () => {
     const { app } = createTestApp();
     const { token } = await issueTestToken(app, "agents-manual-source-scope@example.com");

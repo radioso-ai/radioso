@@ -1,6 +1,6 @@
-import { badRequest } from "../../shared/domain/errors.js";
 import {
   normalizeRetrievalSkillSettingsOverride,
+  parsePersistedRetrievalSkillSettingsOverride,
   type EffectiveRetrievalSkillSettings,
   type RetrievalSkillSettingsOverride,
 } from "../../modules/retrieval/public.js";
@@ -19,13 +19,7 @@ export const createRetrievalSkillSettingsResolver = (): SkillSettingsResolver =>
     if (agentOverride === undefined || agentOverride === null) {
       return defaults;
     }
-    let override: RetrievalSkillSettingsOverride;
-    try {
-      override = normalizeRetrievalSkillSettingsOverride(agentOverride);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "retrieval.answer settings are invalid";
-      throw badRequest(message);
-    }
+    const override = parsePersistedRetrievalSkillSettingsOverride(agentOverride);
     const { metadataRules, ...rest } = override;
     return {
       ...defaults,
@@ -41,6 +35,7 @@ export const createDefaultAgentSkillSettingsRegistry = (): AgentSkillSettingsReg
   registry.register({
     skillName: "retrieval.answer",
     normalize: normalizeRetrievalSkillSettingsOverride,
+    parse: parsePersistedRetrievalSkillSettingsOverride,
   });
   return registry;
 };

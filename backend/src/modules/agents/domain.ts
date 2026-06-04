@@ -35,6 +35,11 @@ export interface ValidateAgentInputOptions {
    * paths remain tolerant of data from plugins or newer deployments.
    */
   skillSettings?: AgentSkillSettingsRegistry;
+  /**
+   * Persisted agent reads must be total. In read mode, registered skill
+   * settings use their read parser when available instead of write validation.
+   */
+  skillSettingsMode?: "read" | "write";
 }
 
 export const agentSurfacePositions = ["bottom-right", "bottom-left"] as const;
@@ -425,6 +430,7 @@ const normalizeSurfaceExtensions = (
 const normalizeSkillSettings = (
   value: unknown,
   registry?: AgentSkillSettingsRegistry,
+  mode: "read" | "write" = "write",
 ): Record<string, unknown> => {
   if (value === undefined || value === null) {
     return {};
@@ -438,8 +444,13 @@ const normalizeSkillSettings = (
     const settings = registry?.get(key);
     if (settings) {
       try {
-        next[key] = settings.normalize(entry);
+        const normalize = mode === "read" && settings.parse ? settings.parse : settings.normalize;
+        next[key] = normalize.call(settings, entry);
       } catch (error) {
+        if (mode === "read") {
+          next[key] = {};
+          continue;
+        }
         if (error instanceof Error) {
           throw badRequest(error.message);
         }
@@ -618,7 +629,7 @@ export const validateAgentInput = (
     contactRequestsEnabled: input.contactRequestsEnabled ?? DEFAULT_CONTACT_REQUESTS_ENABLED,
     retrievalEnabled: input.retrievalEnabled ?? true,
     sourceScope: normalizeSourceScope(input.sourceScope),
-    skillSettings: normalizeSkillSettings(input.skillSettings, options.skillSettings),
+    skillSettings: normalizeSkillSettings(input.skillSettings, options.skillSettings, options.skillSettingsMode),
     logo: normalizeAgentLogo(input.logo),
     theme: normalizeEmbedTheme(input.theme ?? input.surfaceSettings?.websiteEmbed?.theme),
     branding: normalizeBrandingSettings(input.branding),

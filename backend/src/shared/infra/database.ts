@@ -4,6 +4,7 @@ export interface DatabaseOptions {
   poolMax?: number;
   idleTimeoutMs?: number;
   connectionTimeoutMs?: number;
+  lockTimeoutMs?: number;
   statementTimeoutMs?: number;
   queryTimeoutMs?: number;
   applicationName?: string;
@@ -18,6 +19,7 @@ export class Database {
       max: options.poolMax,
       idleTimeoutMillis: options.idleTimeoutMs,
       connectionTimeoutMillis: options.connectionTimeoutMs,
+      lock_timeout: options.lockTimeoutMs,
       statement_timeout: options.statementTimeoutMs,
       query_timeout: options.queryTimeoutMs,
       application_name: options.applicationName,

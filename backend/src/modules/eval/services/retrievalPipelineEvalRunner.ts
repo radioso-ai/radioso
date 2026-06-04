@@ -231,12 +231,10 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     const responseBehavior = agent
       ? {
           customInstruction,
-          suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-          suggestedQuestionsCount: 3,
           citationDisplayEnabled: agent.citationDisplayEnabled,
         }
       : customInstruction
-        ? { customInstruction, suggestedQuestionsEnabled: true, suggestedQuestionsCount: 3, citationDisplayEnabled: true }
+        ? { customInstruction, citationDisplayEnabled: true }
         : undefined;
 
     return {

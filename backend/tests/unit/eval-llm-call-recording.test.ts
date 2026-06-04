@@ -147,6 +147,8 @@ describe("eval LLM-call usage recording end-to-end", () => {
       skillSettings: {
         "retrieval.answer": {
           retrievalStrategy: "reasoning",
+          suggestedQuestionsEnabled: false,
+          suggestedQuestionsCount: 4,
           vectorTopK: 7,
           metadataRules: [agentRule],
         },
@@ -170,8 +172,12 @@ describe("eval LLM-call usage recording end-to-end", () => {
     });
 
     expect(pipeline.calls[0]?.agentSkillSettings).toBe(agent.skillSettings);
+    expect(pipeline.calls[0]?.responseBehavior).not.toHaveProperty("suggestedQuestionsEnabled");
+    expect(pipeline.calls[0]?.responseBehavior).not.toHaveProperty("suggestedQuestionsCount");
     expect(result.resolvedSettings).toMatchObject({
       retrievalStrategy: "reasoning",
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 4,
       vectorTopK: 7,
       metadataRules: [expect.objectContaining({ id: "audience-rule", triggerMode: "match_turn" })],
     });

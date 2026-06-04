@@ -199,8 +199,8 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
     const responseBehavior = input.request.responseBehavior;
     const responseSettings = {
       citationDisplayEnabled: responseBehavior?.citationDisplayEnabled ?? true,
-      suggestedQuestionsEnabled: responseBehavior?.suggestedQuestionsEnabled ?? input.context.result.settings.suggestedQuestionsEnabled,
-      suggestedQuestionsCount: responseBehavior?.suggestedQuestionsCount ?? input.context.result.settings.suggestedQuestionsCount,
+      suggestedQuestionsEnabled: input.context.result.settings.suggestedQuestionsEnabled,
+      suggestedQuestionsCount: input.context.result.settings.suggestedQuestionsCount,
       customInstruction: responseBehavior?.customInstruction ?? input.context.result.settings.customInstruction,
       responseLanguagePolicy: input.interpretation.result.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
     };

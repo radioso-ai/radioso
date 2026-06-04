@@ -106,10 +106,8 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
 
     const responseSettings = {
       citationDisplayEnabled: responseBehavior?.citationDisplayEnabled ?? true,
-      suggestedQuestionsEnabled:
-        responseBehavior?.suggestedQuestionsEnabled ?? settings.suggestedQuestionsEnabled,
-      suggestedQuestionsCount:
-        responseBehavior?.suggestedQuestionsCount ?? settings.suggestedQuestionsCount,
+      suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
+      suggestedQuestionsCount: settings.suggestedQuestionsCount,
       customInstruction: responseBehavior?.customInstruction ?? settings.customInstruction,
       responseLanguagePolicy: rewrittenQuery.responseLanguagePolicy,
     };

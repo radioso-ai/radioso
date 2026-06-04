@@ -326,26 +326,6 @@ export function AssistantBehaviorSection({
               }
             />
           </div>
-          <div className="flex items-start justify-between gap-4 p-3">
-            <div className="min-w-0">
-              <Label htmlFor="assistantSuggestedQuestionsEnabled" className="text-foreground">
-                Suggested follow-up questions
-              </Label>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Show grounded follow-up chips after assistant answers when useful.
-              </p>
-            </div>
-            <Switch
-              id="assistantSuggestedQuestionsEnabled"
-              checked={assistantBehaviorSettings.suggestedQuestionsEnabled}
-              onCheckedChange={(checked) =>
-                onAssistantBehaviorDraft((current) => ({
-                  ...current,
-                  suggestedQuestionsEnabled: checked,
-                }))
-              }
-            />
-          </div>
           <div className="space-y-3 p-3">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">

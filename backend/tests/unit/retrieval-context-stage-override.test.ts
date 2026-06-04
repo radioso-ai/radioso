@@ -135,6 +135,45 @@ describe("RetrievalContextStageService retrievalSettingsOverride", () => {
     expect(result.settings.rerankTopK).toBe(5);
   });
 
+  it("resolves suggested question overrides from the retrieval answer skill settings", async () => {
+    const stage = new RetrievalContextStageService(
+      { async getForWorkspace(id: string) { return baseSettings(id); } } as never,
+      new ConversationContextService(),
+      createRetrievalSkillSettingsResolver(),
+    );
+
+    const disabled = await stage.execute({
+      workspaceId: "ws-1",
+      query: "q",
+      history: [],
+      agentSkillSettings: {
+        "retrieval.answer": {
+          suggestedQuestionsEnabled: false,
+        },
+      },
+    });
+    const countOverride = await stage.execute({
+      workspaceId: "ws-1",
+      query: "q",
+      history: [],
+      agentSkillSettings: {
+        "retrieval.answer": {
+          suggestedQuestionsCount: 4,
+        },
+      },
+    });
+    const inherited = await stage.execute({
+      workspaceId: "ws-1",
+      query: "q",
+      history: [],
+    });
+
+    expect(disabled.settings.suggestedQuestionsEnabled).toBe(false);
+    expect(countOverride.settings.suggestedQuestionsCount).toBe(4);
+    expect(inherited.settings.suggestedQuestionsEnabled).toBe(true);
+    expect(inherited.settings.suggestedQuestionsCount).toBe(3);
+  });
+
   it("resolves agent metadata rules as the effective retrieval metadata rules and inherits them when absent", async () => {
     const workspaceRule = {
       id: "workspace-rule",

@@ -934,6 +934,7 @@ export function WorkspaceAssistantChannelsTab({
                 <AssistantPreviewRail
                   anonSettings={anonSettings}
                   assistantBehaviorSettings={assistantBehaviorSettings}
+                  retrievalDefaults={effectiveRetrievalDefaults}
                   channelsTabHref={channelsTabHref}
                 />
               </div>

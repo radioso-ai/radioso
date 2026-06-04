@@ -665,6 +665,7 @@ describe("agents contract", () => {
 
     await request(app)
       .post(`/api/v1/public/chat/${publicSession.body.publicChatToken}`)
+      .set("Origin", "https://side.example.com")
       .set("x-radioso-public-session", publicSession.body.publicSessionToken)
       .send({ message: "hello side agent", stream: false })
       .expect(200);

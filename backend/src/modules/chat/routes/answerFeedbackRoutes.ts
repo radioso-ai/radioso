@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../../app/server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../../app/http/middleware/requireWorkspaceSession.js";
+import { requirePublicChatPermission } from "../../../app/http/middleware/requirePermission.js";
+import type { AuthenticatedPrincipal, Permission } from "../../account/public.js";
 import { validateBody } from "../../../app/http/middleware/validate.js";
 import { resolveAnonymousSession } from "../../../app/http/middleware/resolveAnonymousSession.js";
 import { resolvePublicChatSessionSecret } from "../../../app/http/shared/publicChatSessionSecret.js";
@@ -28,6 +30,13 @@ export interface AnswerFeedbackRouteDependencies {
   };
   accountAccessService: {
     requireActiveMembership(accountId: string, userId: string): Promise<unknown>;
+    requirePermission(input: {
+      accountId: string;
+      userId?: string | null;
+      principal?: AuthenticatedPrincipal | null;
+      permission: Permission;
+      workspaceId?: string | null;
+    }): Promise<void>;
   };
   workspaceSessionService: {
     resolve(input: { accountId: string; workspaceId?: string | null }): Promise<{ accountId: string; workspaceId: string }>;
@@ -142,7 +151,7 @@ export const createAnswerFeedbackRoutes = (
     }
   });
 
-  router.put("/public/chat/:token/messages/:assistantMessageId", publicSession, validateBody(feedbackBodySchema), async (req, res, next) => {
+  router.put("/public/chat/:token/messages/:assistantMessageId", publicSession, requirePublicChatPermission(dependencies, "public_chat.feedback.write.own"), validateBody(feedbackBodySchema), async (req, res, next) => {
     try {
       const params = parseParams(publicFeedbackParamsSchema, req.params);
       const { workspaceId, agentId, anonymousSessionId } = res.locals as {
@@ -164,7 +173,7 @@ export const createAnswerFeedbackRoutes = (
     }
   });
 
-  router.delete("/public/chat/:token/messages/:assistantMessageId", publicSession, async (req, res, next) => {
+  router.delete("/public/chat/:token/messages/:assistantMessageId", publicSession, requirePublicChatPermission(dependencies, "public_chat.feedback.write.own"), async (req, res, next) => {
     try {
       const params = parseParams(publicFeedbackParamsSchema, req.params);
       const { workspaceId, agentId, anonymousSessionId } = res.locals as {

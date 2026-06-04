@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
+  FetchContactWebhookHttpClient,
   WorkspaceOwnerContactRecipientResolver,
   type ContactNotificationMailer,
   type ContactWebhookHttpClient,
@@ -19,7 +20,7 @@ const context = {
 };
 
 type SentMessage = Parameters<ContactNotificationMailer["send"]>[0];
-type WebhookRequest = Parameters<ContactWebhookHttpClient["postJson"]>[0];
+type WebhookRequest = Parameters<ContactWebhookHttpClient["post"]>[0];
 
 const recordingMailer = (): { mailer: ContactNotificationMailer; sent: SentMessage[] } => {
   const sent: SentMessage[] = [];
@@ -30,7 +31,7 @@ const recordingWebhookClient = (): { httpClient: ContactWebhookHttpClient; reque
   const requests: WebhookRequest[] = [];
   return {
     httpClient: {
-      postJson: async (request) => {
+      post: async (request) => {
         requests.push(request);
       },
     },
@@ -102,8 +103,8 @@ describe("ContactSendActionHandler", () => {
     expect(sent).toHaveLength(0);
     expect(requests).toHaveLength(1);
     expect(requests[0]!.url).toBe("https://hooks.example.com/contact");
-    expect(requests[0]!.idempotencyKey).toBe("routine-action:conv_1:contact.send:hash:webhook");
-    expect(requests[0]!.body).toEqual({
+    expect(requests[0]!.headers["Idempotency-Key"]).toBe("routine-action:conv_1:contact.send:hash:webhook");
+    expect(JSON.parse(requests[0]!.rawBody)).toEqual({
       name: "Alex",
       email: "alex@example.com",
       message: "Please call me about pricing.",
@@ -111,11 +112,14 @@ describe("ContactSendActionHandler", () => {
       conversationId: "conv_1",
       requestId: "request_1",
     });
-    const rawBody = JSON.stringify(requests[0]!.body);
+    // The signature authenticates the timestamp AND the body together, so a
+    // receiver can trust the timestamp for replay protection.
+    const rawBody = requests[0]!.rawBody;
+    const timestamp = requests[0]!.headers["X-Radioso-Timestamp"]!;
+    expect(timestamp).toMatch(/^\d+$/);
     expect(requests[0]!.headers["X-Radioso-Signature"]).toBe(
-      createHmac("sha256", signingKey).update(rawBody).digest("base64url"),
+      createHmac("sha256", signingKey).update(`${timestamp}.${rawBody}`).digest("base64url"),
     );
-    expect(requests[0]!.headers["X-Radioso-Timestamp"]).toMatch(/^\d+$/);
   });
 
   it("delivers email and webhook together when both are configured", async () => {
@@ -169,6 +173,82 @@ describe("ContactSendActionHandler", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0]!.replyTo).toBeNull();
+  });
+});
+
+describe("FetchContactWebhookHttpClient", () => {
+  const okResponse = () => new Response(null, { status: 204 });
+  const redirect = (location: string) => new Response(null, { status: 307, headers: { location } });
+
+  it("rejects (does not fetch) a URL the SSRF guard blocks", async () => {
+    const fetchSpy = vi.fn(async () => okResponse());
+    vi.stubGlobal("fetch", fetchSpy);
+    const guard = vi.fn(async (url: string) => {
+      if (url.includes("169.254.169.254") || url.includes("127.0.0.1")) {
+        throw new Error("Website URL must resolve to a publicly routable host");
+      }
+    });
+    const client = new FetchContactWebhookHttpClient(guard);
+
+    await expect(
+      client.post({ url: "http://169.254.169.254/latest/meta-data", rawBody: "{}", headers: {} }),
+    ).rejects.toThrow("publicly routable");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("re-validates every redirect hop against the guard before following", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(redirect("http://127.0.0.1/internal"))
+      .mockResolvedValue(okResponse());
+    vi.stubGlobal("fetch", fetchSpy);
+    const guard = vi.fn(async (url: string) => {
+      if (url.includes("127.0.0.1")) {
+        throw new Error("Website URL must resolve to a publicly routable host");
+      }
+    });
+    const client = new FetchContactWebhookHttpClient(guard);
+
+    // A public URL that 3xx-redirects to a private host must be blocked at the hop,
+    // never delivered. fetch ran once (the public hop); the redirect target is refused.
+    await expect(
+      client.post({ url: "https://hooks.example.com/contact", rawBody: "{}", headers: {} }),
+    ).rejects.toThrow("publicly routable");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(guard).toHaveBeenNthCalledWith(2, "http://127.0.0.1/internal");
+    vi.unstubAllGlobals();
+  });
+
+  it("sends with redirect:manual and a bounded timeout signal", async () => {
+    let observed: RequestInit | undefined;
+    const fetchSpy = vi.fn(async (_url: string, init?: RequestInit) => {
+      observed = init;
+      return okResponse();
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    const client = new FetchContactWebhookHttpClient(async () => {}, { timeoutMs: 5_000 });
+
+    await client.post({ url: "https://hooks.example.com/contact", rawBody: "{\"a\":1}", headers: { "X-A": "1" } });
+
+    expect(observed?.method).toBe("POST");
+    expect(observed?.redirect).toBe("manual");
+    expect(observed?.body).toBe("{\"a\":1}");
+    expect(observed?.signal).toBeInstanceOf(AbortSignal);
+    vi.unstubAllGlobals();
+  });
+
+  it("propagates a timed-out/aborted fetch so the action is retried", async () => {
+    const fetchSpy = vi.fn(async () => {
+      throw new DOMException("The operation was aborted.", "TimeoutError");
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    const client = new FetchContactWebhookHttpClient(async () => {});
+
+    await expect(
+      client.post({ url: "https://hooks.example.com/contact", rawBody: "{}", headers: {} }),
+    ).rejects.toThrow();
+    vi.unstubAllGlobals();
   });
 });
 

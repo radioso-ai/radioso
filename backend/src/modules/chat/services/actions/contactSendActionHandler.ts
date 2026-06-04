@@ -44,16 +44,23 @@ export interface ContactAgentLookup {
 }
 
 export interface ContactWebhookHttpClient {
-  postJson(request: {
+  post(request: {
     url: string;
-    body: Record<string, unknown>;
+    /** The exact bytes to send — already serialized and signed, so what we sign is what we send. */
+    rawBody: string;
     headers: Record<string, string>;
-    idempotencyKey?: string | null;
   }): Promise<void>;
 }
 
+/**
+ * Asserts an outbound URL resolves to a publicly routable host (SSRF guard). A host
+ * adapts the website crawler's `assertPublicWebsiteUrl` to it so this module does not
+ * depend on the crawler. Throwing rejects the URL; the worker then retries/fails.
+ */
+export type ContactWebhookUrlGuard = (url: string) => Promise<void>;
+
 export interface ContactWebhookSigner {
-  sign(rawBody: string): string;
+  sign(value: string): string;
 }
 
 /** Narrow lookups the workspace-owner resolver needs (a `WorkspaceRepository` satisfies it). */
@@ -138,25 +145,51 @@ export class ContactWebhookHmacSigner implements ContactWebhookSigner {
 export const deriveContactWebhookSigningKey = (workspaceTokenSecret: string): Buffer =>
   createHmac("sha256", workspaceTokenSecret).update(CONTACT_WEBHOOK_SIGNATURE_KEY_LABEL).digest();
 
+/** Default per-request webhook timeout — a slow endpoint must not stall action dispatch. */
+const DEFAULT_WEBHOOK_TIMEOUT_MS = 10_000;
+/** A webhook should normally not redirect; allow a couple of hops but cap them. */
+const DEFAULT_MAX_WEBHOOK_REDIRECTS = 3;
+
 export class FetchContactWebhookHttpClient implements ContactWebhookHttpClient {
-  async postJson(request: {
-    url: string;
-    body: Record<string, unknown>;
-    headers: Record<string, string>;
-    idempotencyKey?: string | null;
-  }): Promise<void> {
-    const response = await fetch(request.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...request.headers,
-        ...(request.idempotencyKey ? { "Idempotency-Key": request.idempotencyKey } : {}),
-      },
-      body: JSON.stringify(request.body),
-    });
-    if (!response.ok) {
-      throw new Error(`Contact webhook POST failed with status ${response.status}`);
+  constructor(
+    private readonly assertPublicUrl: ContactWebhookUrlGuard,
+    private readonly options: { timeoutMs?: number; maxRedirects?: number } = {},
+  ) {}
+
+  async post(request: { url: string; rawBody: string; headers: Record<string, string> }): Promise<void> {
+    const timeoutMs = this.options.timeoutMs ?? DEFAULT_WEBHOOK_TIMEOUT_MS;
+    const maxRedirects = this.options.maxRedirects ?? DEFAULT_MAX_WEBHOOK_REDIRECTS;
+    let currentUrl = request.url;
+
+    // Walk redirects manually and re-validate every hop against the SSRF policy
+    // BEFORE the request leaves the worker. `redirect: "follow"` would let fetch
+    // chase a 3xx to a private/link-local host (e.g. cloud metadata) before we
+    // could check it. A bounded timeout per hop keeps one slow endpoint from
+    // stalling the dispatch batch.
+    for (let hop = 0; hop <= maxRedirects; hop += 1) {
+      await this.assertPublicUrl(currentUrl);
+      const response = await fetch(currentUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...request.headers },
+        body: request.rawBody,
+        redirect: "manual",
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        if (!location) {
+          throw new Error(`Contact webhook redirect (${response.status}) had no location`);
+        }
+        currentUrl = new URL(location, currentUrl).toString();
+        continue;
+      }
+      if (!response.ok) {
+        throw new Error(`Contact webhook POST failed with status ${response.status}`);
+      }
+      return;
     }
+    throw new Error(`Contact webhook exceeded ${maxRedirects} redirects`);
   }
 }
 
@@ -215,7 +248,7 @@ export class ContactSendActionHandler implements ActionHandler {
         })),
       target.webhook ? this.postWebhook({
         webhook: target.webhook,
-        body: {
+        payload: {
           name,
           email,
           message,
@@ -230,21 +263,26 @@ export class ContactSendActionHandler implements ActionHandler {
 
   private async postWebhook(input: {
     webhook: AgentContactWebhook;
-    body: Record<string, unknown>;
+    payload: Record<string, unknown>;
     idempotencyKey: string;
   }): Promise<void> {
     if (!this.webhookClient || !this.webhookSigner) {
       throw new Error("Contact webhook delivery is not configured");
     }
-    const rawBody = JSON.stringify(input.body);
-    await this.webhookClient.postJson({
+    const rawBody = JSON.stringify(input.payload);
+    const timestamp = String(Date.now());
+    // Sign timestamp AND body together so a receiver can trust the timestamp for
+    // replay protection — altering it invalidates the signature. The signed bytes
+    // are exactly the bytes we send (rawBody), so receivers verify over the raw body.
+    const signature = this.webhookSigner.sign(`${timestamp}.${rawBody}`);
+    await this.webhookClient.post({
       url: input.webhook.url,
-      body: input.body,
+      rawBody,
       headers: {
-        "X-Radioso-Signature": this.webhookSigner.sign(rawBody),
-        "X-Radioso-Timestamp": String(Date.now()),
+        "X-Radioso-Signature": signature,
+        "X-Radioso-Timestamp": timestamp,
+        "Idempotency-Key": input.idempotencyKey,
       },
-      idempotencyKey: input.idempotencyKey,
     });
   }
 }

@@ -799,6 +799,7 @@ export const buildChatServices = (input: {
               env: input.env,
               logger: input.logger,
               mailService: input.mailService,
+              assertPublicWebsiteUrl: input.assertPublicWebsiteUrl,
             })
           : registration.handler,
     })),

@@ -158,6 +158,7 @@ export interface ApplicationActionHandlerRegistration {
         env: Env;
         logger: AppLogger;
         mailService: MailTransportPort;
+        assertPublicWebsiteUrl: (url: string) => Promise<void>;
       }) => ActionHandler);
 }
 

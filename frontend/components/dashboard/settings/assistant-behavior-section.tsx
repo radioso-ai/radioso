@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Bot, Database, Search } from 'lucide-react'
+import { Bot } from 'lucide-react'
 
 import { AssistantLocaleCombobox } from '@/components/dashboard/settings/assistant-locale-combobox'
 import { ModelPicker } from '@/components/dashboard/settings/model-picker'
@@ -15,7 +15,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -24,13 +23,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type {
   AgentChatModelOverride,
   AssistantBehaviorSettings,
-  DocumentSourceListItem,
   GeneralSettings,
 } from '@/lib/api'
 import {
@@ -194,9 +191,6 @@ export interface AssistantBehaviorSectionProps {
   onAssistantLocaleInputChange: (value: string) => void
   onAssistantBehaviorDraft: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void
   isAnonSaving: boolean
-  sourceList?: DocumentSourceListItem[]
-  isSourceListLoading?: boolean
-  sourceListError?: string | null
 }
 
 export function AssistantBehaviorSection({
@@ -207,13 +201,7 @@ export function AssistantBehaviorSection({
   onAssistantLocaleInputChange,
   onAssistantBehaviorDraft,
   isAnonSaving,
-  sourceList = [],
-  isSourceListLoading = false,
-  sourceListError = null,
 }: AssistantBehaviorSectionProps) {
-  const sourceScope = assistantBehaviorSettings.sourceScope ?? { mode: 'all' as const }
-  const selectedSourceIds = sourceScope.mode === 'selected' ? sourceScope.sourceIds : []
-  const [sourceSearch, setSourceSearch] = useState('')
   const [pendingPreset, setPendingPreset] = useState<InstructionPreset | null>(null)
   const [presetDraft, setPresetDraft] = useState('')
   const hasPersonaText = assistantBehaviorSettings.customInstruction.trim().length > 0
@@ -237,26 +225,6 @@ export function AssistantBehaviorSection({
       return { ...current, customInstruction: combined }
     })
     closePreset()
-  }
-
-  const filteredSources = useMemo(() => {
-    const query = sourceSearch.trim().toLowerCase()
-    if (!query) {
-      return sourceList
-    }
-    return sourceList.filter((source) =>
-      `${source.name} ${source.kind} ${source.externalId ?? ''}`.toLowerCase().includes(query),
-    )
-  }, [sourceList, sourceSearch])
-
-  const updateSourceScope = (nextSourceIds: string[]) => {
-    onAssistantBehaviorDraft((current) => ({
-      ...current,
-      sourceScope: {
-        mode: 'selected',
-        sourceIds: [...new Set(nextSourceIds)],
-      },
-    }))
   }
 
   return (
@@ -315,108 +283,6 @@ export function AssistantBehaviorSection({
             }
           />
         ) : null}
-
-        <div className="space-y-3 rounded-lg border border-border p-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <SubsectionHeading
-              title="Knowledge scope"
-              description="Choose which workspace sources this agent can use for grounded answers."
-            />
-            <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5" role="group">
-              <button
-                type="button"
-                className={`rounded-sm px-3 py-1 text-xs font-medium transition-colors ${
-                  sourceScope.mode === 'all' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                }`}
-                onClick={() =>
-                  onAssistantBehaviorDraft((current) => ({
-                    ...current,
-                    sourceScope: { mode: 'all' },
-                  }))
-                }
-              >
-                All sources
-              </button>
-              <button
-                type="button"
-                className={`rounded-sm px-3 py-1 text-xs font-medium transition-colors ${
-                  sourceScope.mode === 'selected' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                }`}
-                onClick={() =>
-                  onAssistantBehaviorDraft((current) => ({
-                    ...current,
-                    sourceScope: {
-                      mode: 'selected',
-                      sourceIds: current.sourceScope?.mode === 'selected' ? current.sourceScope.sourceIds : [],
-                    },
-                  }))
-                }
-              >
-                Selected sources
-              </button>
-            </div>
-          </div>
-
-          {sourceScope.mode === 'selected' ? (
-            <div className="space-y-3">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  value={sourceSearch}
-                  onChange={(event) => setSourceSearch(event.target.value)}
-                  placeholder="Search sources"
-                  className="pl-8"
-                />
-              </div>
-              {sourceListError ? (
-                <p className="text-sm text-destructive">{sourceListError}</p>
-              ) : isSourceListLoading ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Spinner className="h-4 w-4" />
-                  Loading sources...
-                </div>
-              ) : sourceList.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No persisted sources are available yet. Switch to all sources or add knowledge first.
-                </p>
-              ) : (
-                <div className="max-h-56 divide-y divide-border overflow-auto rounded-md border border-border">
-                  {filteredSources.length === 0 ? (
-                    <p className="p-3 text-sm text-muted-foreground">No sources match this search.</p>
-                  ) : filteredSources.map((source) => {
-                    const checked = selectedSourceIds.includes(source.id)
-                    return (
-                      <label key={source.id} className="flex cursor-pointer items-start gap-3 p-3 hover:bg-muted/40">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(event) => {
-                            updateSourceScope(event.target.checked
-                              ? [...selectedSourceIds, source.id]
-                              : selectedSourceIds.filter((sourceId) => sourceId !== source.id))
-                          }}
-                          className="mt-1 h-4 w-4 rounded border-border"
-                        />
-                        <Database className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium text-foreground">{source.name}</span>
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {source.kind} source - {source.documentCount} document{source.documentCount === 1 ? '' : 's'}
-                          </span>
-                        </span>
-                      </label>
-                    )
-                  })}
-                </div>
-              )}
-              {selectedSourceIds.length === 0 ? (
-                <p className="text-xs text-amber-700">
-                  This agent will not retrieve grounded context until at least one source is selected.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
 
         <div className="divide-y divide-border rounded-lg border border-border">
           <div className="flex items-start justify-between gap-4 p-3">

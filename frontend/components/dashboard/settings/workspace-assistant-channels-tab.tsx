@@ -337,7 +337,13 @@ export function WorkspaceAssistantChannelsTab({
   useEffect(() => {
     let active = true
     const loadSources = async () => {
-      if (mode !== 'assistant' || !agentId || isWorkspaceLoading || !activeWorkspaceId) {
+      if (
+        mode !== 'assistant' ||
+        !agentId ||
+        isWorkspaceLoading ||
+        !activeWorkspaceId ||
+        (agentSection !== undefined && agentSection !== 'skills')
+      ) {
         setSourceList([])
         setSourceListError(null)
         setIsSourceListLoading(false)
@@ -366,7 +372,7 @@ export function WorkspaceAssistantChannelsTab({
     return () => {
       active = false
     }
-  }, [activeWorkspaceId, agentId, isWorkspaceLoading, mode])
+  }, [activeWorkspaceId, agentId, agentSection, isWorkspaceLoading, mode])
 
   const handleAnonToggle = async (enabled: boolean) => {
     setIsAnonSaving(true)
@@ -897,9 +903,6 @@ export function WorkspaceAssistantChannelsTab({
                       onAssistantLocaleInputChange={handleAssistantLocaleInputChange}
                       onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
                       isAnonSaving={isAnonSaving}
-                      sourceList={sourceList}
-                      isSourceListLoading={isSourceListLoading}
-                      sourceListError={sourceListError}
                     />
                   ) : null}
                 </div>
@@ -960,6 +963,13 @@ export function WorkspaceAssistantChannelsTab({
                   retrievalEnabled={assistantBehaviorSettings.retrievalEnabled ?? true}
                   onRetrievalEnabledChange={(checked) =>
                     updateAssistantBehaviorDraft((current) => ({ ...current, retrievalEnabled: checked }))
+                  }
+                  sourceScope={assistantBehaviorSettings.sourceScope ?? { mode: 'all' }}
+                  sourceList={sourceList}
+                  isSourceListLoading={isSourceListLoading}
+                  sourceListError={sourceListError}
+                  onSourceScopeChange={(next) =>
+                    updateAssistantBehaviorDraft((current) => ({ ...current, sourceScope: next }))
                   }
                   onChange={(next) =>
                     updateAssistantBehaviorDraft((current) => ({ ...current, retrievalSkillSettings: next }))

@@ -2,6 +2,7 @@
 
 import { ChevronDown, DatabaseZap } from 'lucide-react'
 
+import { AssistantSourceScopeSelector } from '@/components/dashboard/settings/assistant-source-scope-selector'
 import { MetadataRulesEditor } from '@/components/dashboard/settings/metadata-rules-editor'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -16,7 +17,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import type { RetrievalSettings } from '@/lib/api'
+import type { AgentSourceScope, DocumentSourceListItem, RetrievalSettings } from '@/lib/api'
 import type { RetrievalSkillSettingsOverride, RetrievalStrategy } from '@/lib/retrieval-skill-settings'
 
 const hasOverride = <K extends keyof RetrievalSkillSettingsOverride>(
@@ -70,12 +71,22 @@ export function AssistantRetrievalSkillSettingsSection({
   retrievalEnabled,
   onChange,
   onRetrievalEnabledChange,
+  sourceScope,
+  sourceList = [],
+  isSourceListLoading = false,
+  sourceListError = null,
+  onSourceScopeChange,
 }: {
   defaults: RetrievalSettings
   value: RetrievalSkillSettingsOverride
   retrievalEnabled: boolean
   onChange: (next: RetrievalSkillSettingsOverride) => void
   onRetrievalEnabledChange: (enabled: boolean) => void
+  sourceScope: AgentSourceScope
+  sourceList?: DocumentSourceListItem[]
+  isSourceListLoading?: boolean
+  sourceListError?: string | null
+  onSourceScopeChange: (next: AgentSourceScope) => void
 }) {
   const setField = <K extends keyof RetrievalSkillSettingsOverride>(
     field: K,
@@ -195,35 +206,50 @@ export function AssistantRetrievalSkillSettingsSection({
             </div>
           </div>
 
-          <div id="agent-metadata-rules-settings" className="space-y-3 rounded-lg border border-border p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <Label className="text-foreground">Metadata rules</Label>
-                <p className="text-xs text-muted-foreground">
-                  {hasOverride(value, 'metadataRules') ? 'Overridden for this agent' : 'Inherited from default'}
-                </p>
-              </div>
-              {hasOverride(value, 'metadataRules') ? (
-                <Button type="button" size="sm" variant="ghost" onClick={() => clearField('metadataRules')}>
-                  Clear override
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setField('metadataRules', defaults.metadataRules)}
-                >
-                  Override metadata rules
-                </Button>
-              )}
+          <div id="agent-knowledge-scope-settings" className="space-y-4">
+            <div className="space-y-0.5">
+              <h4 className="text-sm font-semibold text-foreground">Knowledge scope</h4>
+              <p className="text-xs text-muted-foreground">
+                Configure which documents this agent can retrieve.
+              </p>
             </div>
-            <MetadataRulesEditor
-              metadataRules={hasOverride(value, 'metadataRules') ? value.metadataRules ?? [] : defaults.metadataRules}
-              metadataFieldSuggestions={defaults.metadataFieldSuggestions}
-              readOnly={!hasOverride(value, 'metadataRules')}
-              onChange={(metadataRules) => setField('metadataRules', metadataRules)}
+            <AssistantSourceScopeSelector
+              sourceScope={sourceScope}
+              sourceList={sourceList}
+              isSourceListLoading={isSourceListLoading}
+              sourceListError={sourceListError}
+              onChange={onSourceScopeChange}
             />
+            <div id="agent-metadata-rules-settings" className="space-y-3 rounded-lg border border-border p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <Label className="text-foreground">Metadata rules</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {hasOverride(value, 'metadataRules') ? 'Overridden for this agent' : 'Inherited from default'}
+                  </p>
+                </div>
+                {hasOverride(value, 'metadataRules') ? (
+                  <Button type="button" size="sm" variant="ghost" onClick={() => clearField('metadataRules')}>
+                    Clear override
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setField('metadataRules', defaults.metadataRules)}
+                  >
+                    Override metadata rules
+                  </Button>
+                )}
+              </div>
+              <MetadataRulesEditor
+                metadataRules={hasOverride(value, 'metadataRules') ? value.metadataRules ?? [] : defaults.metadataRules}
+                metadataFieldSuggestions={defaults.metadataFieldSuggestions}
+                readOnly={!hasOverride(value, 'metadataRules')}
+                onChange={(metadataRules) => setField('metadataRules', metadataRules)}
+              />
+            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">

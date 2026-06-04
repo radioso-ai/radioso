@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  baseDocumentSources,
   basePlatformSettings,
   defaultAgentId,
   installDashboardApiMocks,
@@ -182,4 +183,39 @@ test("agent skills tab saves, persists, and clears retrieval metadata rules", as
 
   await expect.poll(() => JSON.stringify((agentUpdates.at(-1) as { skillSettings?: unknown } | undefined)?.skillSettings)).toBe("{}");
   await expect(metadataRulesSection).toContainText("Inherited from default");
+});
+
+test("agent skills tab keeps source scope and metadata rules together", async ({ page }) => {
+  const agentUpdates: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    documentSources: baseDocumentSources(),
+    agentUpdates,
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior`);
+  await expect(page.locator("#assistant-behavior #agent-source-scope-settings")).toHaveCount(0);
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
+  const knowledgeScopeSection = page.locator("#agent-knowledge-scope-settings");
+  await expect(knowledgeScopeSection).toBeVisible();
+  await expect(knowledgeScopeSection.locator("#agent-source-scope-settings")).toBeVisible();
+  await expect(knowledgeScopeSection.locator("#agent-metadata-rules-settings")).toBeVisible();
+
+  await knowledgeScopeSection.getByRole("button", { name: "Selected sources" }).click();
+  await knowledgeScopeSection.getByText("Release notes").click();
+
+  await expect.poll(() => {
+    const last = agentUpdates.at(-1) as { sourceScope?: { mode?: string; sourceIds?: string[] } } | undefined;
+    return last?.sourceScope?.sourceIds?.length ?? 0;
+  }).toBe(1);
+  expect(agentUpdates.at(-1)).toMatchObject({
+    sourceScope: {
+      mode: "selected",
+      sourceIds: ["22222222-2222-4222-8222-222222222222"],
+    },
+  });
+  expect(agentUpdates.at(-1)).not.toHaveProperty("retrieval");
 });

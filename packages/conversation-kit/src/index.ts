@@ -4,6 +4,7 @@ export {
   type CreateConversationKitOptions,
   type RunConversationTurnInput,
 } from "./composition.js";
+export { RoutineRegistry, type RoutineRegistration } from "@radioso/conversation-defaults";
 export {
   createConversationKitClient,
   type ConversationKitClient,

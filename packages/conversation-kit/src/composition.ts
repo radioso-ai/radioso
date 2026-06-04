@@ -14,8 +14,15 @@ import type {
   Routine,
   SkillDefinition,
 } from "@radioso/conversation-contract";
-import { InMemoryConversationRoutineStore, InMemoryConversationStores } from "@radioso/conversation-defaults";
-import { DefaultConversationEngine } from "@radioso/conversation-engine";
+import {
+  InMemoryConversationRoutineStore,
+  InMemoryConversationStores,
+  RoutineNextStepSelector,
+  RoutineRegistry,
+  RoutineStepRenderer,
+  type RoutineRegistration,
+} from "@radioso/conversation-defaults";
+import { DefaultConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 
 import {
   createDefaultConversationDirectiveMatcher,
@@ -62,6 +69,14 @@ export interface CreateConversationKitOptions extends ConversationKitModelGatewa
   agent?: ConversationAgentConfig;
   directives?: Directive[];
   routines?: Routine[];
+  /**
+   * Routines paired with when they should *start* (the host-owned `activates` predicate,
+   * per the conversation contract). Their routines are also seeded into the authoring
+   * store so they are listable/resumable. Without a registration a routine is still
+   * authorable and resumable, but never auto-starts — activation logic lives here, not
+   * in the engine.
+   */
+  routineRegistrations?: RoutineRegistration[];
   authoringStore?: ConversationKitAuthoringStore;
   skills?: SkillDefinition[];
   localSkills?: LocalSkillRegistry;
@@ -113,7 +128,8 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
   const engine = options.engine ?? new DefaultConversationEngine();
   const agent = options.agent ?? defaultAgent();
   const directives = (options.directives ?? []).map(directiveWithId);
-  const routines = [...(options.routines ?? [])];
+  const routineRegistrations = options.routineRegistrations ?? [];
+  const routines = [...(options.routines ?? []), ...routineRegistrations.map((registration) => registration.routine)];
   const authoringStore = options.authoringStore ?? new TransientConversationKitAuthoringStore();
   seedAuthoringStore(authoringStore, agent, directives, routines);
   const skills = [...(options.skills ?? [])];
@@ -122,6 +138,14 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
   const dispatcher = options.dispatcher ?? createDefaultConversationSkillDispatcher(options.localSkills);
   const composer = options.composer ?? createModelBackedConversationComposer(modelGateway);
   const directiveCoherence = createDirectiveCoherenceGate(options.directiveCoherence, modelGateway);
+
+  // Routines become runnable, not just authorable: the runner resumes an active routine
+  // and the activator (built from registrations) starts one. The runner is rebuilt per
+  // turn from the current authoring store so routines added via CRUD are also resumable.
+  const routineSelector = new RoutineNextStepSelector(modelGateway);
+  const routineRenderer = new RoutineStepRenderer(modelGateway);
+  const routineRegistry = new RoutineRegistry(routineRegistrations);
+  const routineActivator = routineRegistry.isEmpty ? undefined : routineRegistry.activator(modelGateway);
 
   return {
     get agent() {
@@ -146,6 +170,7 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
         content: input.message,
         metadata: input.metadata,
       };
+      const routineRunner = new DefaultRoutineRunner(authoringStore.listRoutines(), routineSelector, routineRenderer);
       return engine.processTurn({
         agent: turnAgent,
         sessionId: input.sessionId ?? createId("session"),
@@ -159,6 +184,8 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
         selector,
         composer,
         routineStore,
+        routineRunner,
+        ...(routineActivator ? { routineActivator } : {}),
       });
     },
     listEvents(sessionId) {

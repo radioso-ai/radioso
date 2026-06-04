@@ -31,6 +31,7 @@ const createMockReqRes = (
     locals: {} as Record<string, unknown>,
     cookie: (_name: string, _value: string, _options: unknown) => {},
     setHeader: (_name: string, _value: string) => {},
+    vary: (_field: string) => res,
   } as unknown as Response;
   let nextError: unknown = undefined;
   const next: NextFunction = (err?: unknown) => {

@@ -445,7 +445,12 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           citationDisplayEnabled: boolean;
         };
 
-        if (req.body.startConversation) {
+        // `startConversation` requests the proactive greeting, which carries no
+        // user message. If a message is also present, the caller is starting a
+        // conversation *with* that message (a reasonable reading of the flag) —
+        // answer the message instead of silently dropping it for an empty
+        // greeting. The first message creates the conversation on its own.
+        if (req.body.startConversation && !req.body.message) {
           const bootstrap = await dependencies.assistantChatService.answer({
             workspaceId,
             agentId,

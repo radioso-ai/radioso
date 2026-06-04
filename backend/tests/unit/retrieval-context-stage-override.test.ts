@@ -135,6 +135,64 @@ describe("RetrievalContextStageService retrievalSettingsOverride", () => {
     expect(result.settings.rerankTopK).toBe(5);
   });
 
+  it("resolves agent metadata rules as the effective retrieval metadata rules and inherits them when absent", async () => {
+    const workspaceRule = {
+      id: "workspace-rule",
+      field: "region",
+      valueType: "string",
+      operator: "equals",
+      value: "eu",
+      effect: "boost",
+      enabled: true,
+      triggerMode: "always_on",
+    } as const;
+    const agentRule = {
+      id: "agent-rule",
+      field: "tier",
+      valueType: "string",
+      operator: "equals",
+      value: "gold",
+      effect: "filter",
+      enabled: true,
+      triggerMode: "always_on",
+    } as const;
+    const defaults = {
+      ...baseSettings("ws-1"),
+      metadataRules: [workspaceRule],
+    };
+    const stage = new RetrievalContextStageService(
+      { async getForWorkspace() { return defaults; } } as never,
+      new ConversationContextService(),
+      createRetrievalSkillSettingsResolver(),
+    );
+
+    const inherited = await stage.execute({
+      workspaceId: "ws-1",
+      query: "q",
+      history: [],
+      agentSkillSettings: {
+        "retrieval.answer": {
+          queryRewriteEnabled: false,
+        },
+      },
+    });
+    const overridden = await stage.execute({
+      workspaceId: "ws-1",
+      query: "q",
+      history: [],
+      agentSkillSettings: {
+        "retrieval.answer": {
+          metadataRules: [agentRule],
+        },
+      },
+    });
+
+    expect(inherited.settings.metadataRules).toEqual([workspaceRule]);
+    expect(overridden.settings.metadataRules).toHaveLength(1);
+    expect(overridden.settings.metadataRules[0]).toMatchObject(agentRule);
+    expect(overridden.settings.metadataRules).not.toEqual([workspaceRule]);
+  });
+
   it("keeps empty agent skill settings at today's workspace-default behavior", async () => {
     const defaults = baseSettings("ws-1");
     const stage = new RetrievalContextStageService(

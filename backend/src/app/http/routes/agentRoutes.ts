@@ -64,13 +64,24 @@ const chatModelOverrideSchema = z.union([
   }),
 ]);
 
-const agentBodySchema = z.object({
+const contactRequestDeliverySchema = z.object({
+  recipientEmails: z.array(z.string().max(320)).max(5).optional(),
+  webhook: z.union([
+    z.null(),
+    z.object({
+      url: z.string().max(2048),
+    }),
+  ]).optional(),
+}).optional();
+
+export const agentBodySchema = z.object({
   name: z.string().max(200).optional(),
   customInstruction: z.string().max(2000).optional(),
   suggestedQuestionsEnabled: z.boolean().optional(),
   assistantLinkUtmEnabled: z.boolean().optional(),
   citationDisplayEnabled: z.boolean().optional(),
   contactRequestsEnabled: z.boolean().optional(),
+  contactRequestDelivery: contactRequestDeliverySchema,
   theme: assistantThemeSchema.optional(),
   branding: brandingSchema,
   retrievalEnabled: z.boolean().optional(),

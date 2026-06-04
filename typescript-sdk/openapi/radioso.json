@@ -3176,6 +3176,71 @@
           }
         ]
       },
+      "AgentContactRequestDelivery": {
+        "type": "object",
+        "properties": {
+          "recipientEmails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5
+          },
+          "webhook": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "url"
+            ]
+          }
+        },
+        "required": [
+          "recipientEmails",
+          "webhook"
+        ]
+      },
+      "AgentContactRequestDeliveryRequest": {
+        "type": "object",
+        "properties": {
+          "recipientEmails": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 320
+            },
+            "maxItems": 5
+          },
+          "webhook": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2048
+                  }
+                },
+                "required": [
+                  "url"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "ConversationAgent": {
         "allOf": [
           {
@@ -3201,6 +3266,9 @@
               },
               "contactRequestsEnabled": {
                 "type": "boolean"
+              },
+              "contactRequestDelivery": {
+                "$ref": "#/components/schemas/AgentContactRequestDelivery"
               },
               "theme": {
                 "type": "object",
@@ -3339,6 +3407,7 @@
               "assistantLinkUtmEnabled",
               "citationDisplayEnabled",
               "contactRequestsEnabled",
+              "contactRequestDelivery",
               "theme",
               "branding",
               "retrievalEnabled",
@@ -3391,6 +3460,9 @@
           },
           "contactRequestsEnabled": {
             "type": "boolean"
+          },
+          "contactRequestDelivery": {
+            "$ref": "#/components/schemas/AgentContactRequestDeliveryRequest"
           },
           "theme": {
             "type": "object",

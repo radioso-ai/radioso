@@ -44,6 +44,7 @@ import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provid
 import type { AgentService, AgentSurfaceExtension } from "../../modules/agents/public.js";
 import type { TextChunkingProviderPort } from "../../modules/retrieval/public.js";
 import type { ChatActionSuggestionProvider } from "../../modules/chat/services/actionSuggestions/chatActionSuggestionProvider.js";
+import type { Env } from "../config/env.js";
 
 export type ApplicationChatActionSuggestionProviderRegistration =
   | ChatActionSuggestionProvider
@@ -98,6 +99,7 @@ export interface MailTransportPort {
     text: string;
     html?: string;
     metadata?: Record<string, string>;
+    idempotencyKey?: string | null;
   }): Promise<void>;
 }
 
@@ -153,8 +155,10 @@ export interface ApplicationActionHandlerRegistration {
         // receive the full Database (not the query-only ApplicationDatabasePort) to
         // construct whatever repositories they need.
         database: Database;
+        env: Env;
         logger: AppLogger;
         mailService: MailTransportPort;
+        assertPublicWebsiteUrl: (url: string) => Promise<void>;
       }) => ActionHandler);
 }
 

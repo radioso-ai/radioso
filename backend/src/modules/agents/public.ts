@@ -12,6 +12,8 @@ export {
   type AgentBehaviorSettings,
   type AgentBrandingSettings,
   type AgentChatModelOverride,
+  type AgentContactRequestDelivery,
+  type AgentContactWebhook,
   type AgentSourceScope,
   type Agent,
   type AgentInput,
@@ -30,6 +32,7 @@ export {
   type NormalizedAgentInput,
   type WebsiteEmbedSurfaceSettings,
 } from "./domain.js";
+export { DEFAULT_CONTACT_REQUEST_DELIVERY } from "./domain.js";
 export {
   AgentService,
   type AgentSettingsResource,

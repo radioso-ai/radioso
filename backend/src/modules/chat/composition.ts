@@ -17,10 +17,15 @@ export {
   type RoutineModelTurnContext,
 } from "./services/routines/routineChatModelGateway.js";
 export {
+  ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
+  ContactWebhookHmacSigner,
+  FetchContactWebhookHttpClient,
   WorkspaceOwnerContactRecipientResolver,
+  deriveContactWebhookSigningKey,
   type ContactNotificationMailer,
   type ContactRecipientResolver,
+  type ContactWebhookHttpClient,
   type ContactWorkspaceLookup,
   type ContactMembershipLookup,
 } from "./services/actions/contactSendActionHandler.js";

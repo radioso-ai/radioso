@@ -14,6 +14,8 @@ frontend_image = "us-central1-docker.pkg.dev/radioso-staging/radioso-staging/fro
 # mail_from_name        = "Radioso"
 
 # Optional overrides
+# project_id                  = "radioso-staging"
+# environment                 = "staging"
 # region                      = "us-central1"
 # deploy_services             = false
 # radioso_edition             = "enterprise"

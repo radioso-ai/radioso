@@ -537,6 +537,29 @@ describe("public chat contract", () => {
     expect(response.status).toBe(404);
   });
 
+  it("returns a JSON service error instead of a bodyless 204 when bootstrap has no response", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
+        PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 100,
+      },
+    });
+    const session = await issueTestSession(app, "public-chat-empty-bootstrap@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .send({ startConversation: true, stream: false });
+
+    expect(response.status).toBe(503);
+    expect(response.body.error).toMatchObject({
+      code: "service_unavailable",
+      message: "Public chat response is unavailable.",
+    });
+  });
+
   it("disabled workspace returns 404", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-chat-disabled@example.com");

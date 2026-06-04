@@ -54,6 +54,23 @@ export const shouldUseSecureAnonymousCookie = (req: Request) => {
   return !isLoopbackHost(req.get("host"));
 };
 
+const firstHeaderValue = (value: string | undefined) => value?.split(",")[0]?.trim() || undefined;
+
+// The origin the request was actually served from (the API/widget host), as
+// seen behind the reverse proxy. The embedded widget iframe is same-origin with
+// the API, so the browser stamps this value into the Origin header of its
+// non-GET requests — see publicSessionMatchesCurrentOrigin for why that must be
+// treated as a same-origin request rather than a cross-origin replay.
+export const resolveRequestAppOrigin = (req: Pick<Request, "get">): string | null => {
+  const host = firstHeaderValue(req.get("x-forwarded-host")) ?? firstHeaderValue(req.get("host"));
+  if (!host) {
+    return null;
+  }
+
+  const protocol = firstHeaderValue(req.get("x-forwarded-proto")) ?? (isLoopbackHost(host) ? "http" : "https");
+  return normalizeWebsiteEmbedOrigin(`${protocol}://${host}`);
+};
+
 // Derive a per-purpose HMAC key so the rate-limit cookie cannot be forged or
 // substituted using any other HMAC produced from the same root secret (the
 // secret is also used to issue public chat session tokens). The label is a
@@ -113,6 +130,7 @@ const publicSessionMatchesCurrentOrigin = (
   requestOriginHeader: string | undefined,
   sourceChannel: "anonymous" | "website_embed",
   sourceOrigin: string | null,
+  appOrigin: string | null,
 ) => {
   if (sourceChannel !== "website_embed") {
     return true;
@@ -135,11 +153,19 @@ const publicSessionMatchesCurrentOrigin = (
     return false;
   }
 
-  // When a request does carry an Origin (a cross-origin caller, e.g. a static
-  // site streaming directly), it must match the session's bound origin so a
-  // token issued for one origin cannot be replayed from another.
+  // When a request carries an Origin from a genuinely cross-origin caller (e.g.
+  // a static site streaming directly), it must match the session's bound origin
+  // so a token issued for one origin cannot be replayed from another.
+  //
+  // The embedded widget iframe is same-origin with the API, and browsers attach
+  // the Origin header to same-origin *non-GET* requests (POST message sends, the
+  // proactive-greeting bootstrap, streaming) — set to the API's own origin, not
+  // the embedding site. That value reveals nothing about where the widget is
+  // hosted, so it is useless for replay detection: treat it like an omitted
+  // Origin and authorize on the signed, allowlist-checked bound origin. Only an
+  // Origin that is neither our own nor the bound origin is a real replay.
   const requestOrigin = requestOriginHeader ? normalizeWebsiteEmbedOrigin(requestOriginHeader) : null;
-  if (requestOrigin && requestOrigin !== boundOrigin) {
+  if (requestOrigin && requestOrigin !== boundOrigin && requestOrigin !== appOrigin) {
     return false;
   }
 
@@ -244,7 +270,7 @@ export const resolveAnonymousSession = (
         agent.workspaceId === workspace.id &&
         publicChatSessionMatchesLaunchToken(publicSession, publicChatSessionSecret, token) &&
         publicSessionMatchesAgentSurface(agent, token, publicSession.sourceChannel) &&
-        publicSessionMatchesCurrentOrigin(agent, req.get("origin"), publicSession.sourceChannel, publicSession.sourceOrigin),
+        publicSessionMatchesCurrentOrigin(agent, req.get("origin"), publicSession.sourceChannel, publicSession.sourceOrigin, resolveRequestAppOrigin(req)),
       );
 
       if (!workspace || !agent || !publicSession || !hasValidPublicSession) {

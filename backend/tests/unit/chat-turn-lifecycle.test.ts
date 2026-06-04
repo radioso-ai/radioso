@@ -9,7 +9,6 @@ import {
   ChatTurnLifecycle,
   type AssistantTurnPersistencePort,
 } from "../../src/modules/chat/services/chatTurnLifecycle.js";
-import type { ChatIntakeResult } from "../../src/modules/chat/services/chatIntakeProvider.js";
 import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { TURN_TRACE_ENVELOPE_VERSION } from "../../src/modules/chat/services/turnTraceEnvelope.js";
@@ -201,42 +200,5 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     // The raw spine now lives only in the envelope; the dead audit key is gone.
     expect(metadata.conversationEngine).toBeUndefined();
     expect(metadata.turnTrace?.spine?.traceId).toBe("conversation-turn-1");
-  });
-});
-
-describe("ChatTurnLifecycle — intake turn synthesized spine", () => {
-  const intakeResult = (): ChatIntakeResult => ({
-    skillName: "contact.collect",
-    status: "completed",
-    skillOutcome: "collected",
-    answer: "Thanks — we'll be in touch.",
-    activitySummary: {} as ChatIntakeResult["activitySummary"],
-    activityTrace: {
-      traceId: "intake-trace",
-      startedAt: "2026-01-01T00:00:00.000Z",
-      completedAt: "2026-01-01T00:00:00.500Z",
-      stages: [],
-      links: [],
-    },
-  });
-
-  it("synthesizes a single-dispatch spine carrying the intake activity trace as a skill-intake leaf", async () => {
-    const { lifecycle, records } = harness();
-
-    await lifecycle.completeSkillIntakeTurn({
-      workspaceId: "workspace_1",
-      session: session(),
-      intakeResult: intakeResult(),
-      stream: false,
-    });
-
-    expect(records).toHaveLength(1);
-    const { turnTrace } = records[0].metadata;
-    expect(turnTrace.version).toBe(TURN_TRACE_ENVELOPE_VERSION);
-    expect(turnTrace.spine.stages).toHaveLength(1);
-    const stage = turnTrace.spine.stages[0];
-    expect(stage.id).toBe("dispatch:contact.collect");
-    expect(stage.subTrace.namespace).toBe("skill-intake");
-    expect(stage.subTrace.payload.traceId).toBe("intake-trace");
   });
 });

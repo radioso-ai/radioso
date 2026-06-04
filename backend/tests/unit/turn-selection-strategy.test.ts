@@ -8,8 +8,8 @@ import {
 const input = { session: {} as TurnSelectionInput["session"], directives: [] };
 
 describe("DefaultTurnSelectionStrategy", () => {
-  it("attempts skill intake first, then retrieval (today's order)", () => {
-    expect(new DefaultTurnSelectionStrategy().select(input)).toEqual(["skill_intake", "retrieval"]);
+  it("selects only the terminal retrieval/direct turn path", () => {
+    expect(new DefaultTurnSelectionStrategy().select(input)).toEqual(["retrieval"]);
   });
 
   it("does not depend on matched directives in v1 (the bias seam exists but is unused)", () => {
@@ -23,6 +23,6 @@ describe("DefaultTurnSelectionStrategy", () => {
         },
       ],
     };
-    expect(new DefaultTurnSelectionStrategy().select(withDirectives)).toEqual(["skill_intake", "retrieval"]);
+    expect(new DefaultTurnSelectionStrategy().select(withDirectives)).toEqual(["retrieval"]);
   });
 });

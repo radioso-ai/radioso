@@ -1,4 +1,5 @@
 import type {
+  MetadataFieldSuggestion,
   RetrievalMetadataCondition,
   RetrievalMetadataRule,
   RetrievalMetadataRuleOperator,
@@ -36,6 +37,33 @@ export const createMetadataCondition = (
   operator: overrides.operator ?? 'equals',
   value: overrides.value ?? '',
 })
+
+export const createDefaultMetadataRule = (
+  metadataFieldSuggestions: MetadataFieldSuggestion[],
+): RetrievalMetadataRule => {
+  const suggestedField = metadataFieldSuggestions[0]
+  const valueType = suggestedField?.inferredType ?? 'string'
+  const value = valueType === 'boolean' ? 'true' : ''
+
+  return syncRuleWithConditions({
+    id: globalThis.crypto?.randomUUID?.() ?? `rule-${Date.now()}`,
+    field: suggestedField?.field ?? '',
+    valueType,
+    operator: 'equals',
+    value,
+    combinator: 'and',
+    effect: 'boost',
+    enabled: true,
+    triggerMode: 'always_on',
+  }, [
+    createMetadataCondition({
+      field: suggestedField?.field ?? '',
+      valueType,
+      operator: 'equals',
+      value,
+    }),
+  ])
+}
 
 export const getRuleConditions = (rule: RetrievalMetadataRule): RetrievalMetadataCondition[] => {
   if (Array.isArray(rule.conditions) && rule.conditions.length > 0) {

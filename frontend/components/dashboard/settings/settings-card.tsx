@@ -20,7 +20,7 @@ export function SettingsCard({
   icon: ReactNode
   title: string
   description: string
-  children: ReactNode
+  children?: ReactNode
   className?: string
   contentClassName?: string
   iconClassName?: string
@@ -54,7 +54,7 @@ export function SettingsCard({
         </div>
         {headerEnd ? <div className="shrink-0">{headerEnd}</div> : null}
       </div>
-      <div className={cn('min-w-0', contentClassName)}>{children}</div>
+      {children ? <div className={cn('min-w-0', contentClassName)}>{children}</div> : null}
     </section>
   )
 }

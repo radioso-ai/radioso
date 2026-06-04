@@ -7,6 +7,7 @@ import {
 import { isKnownModelForProvider } from "../../shared/infra/llm/knownModels.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 import type { AgentSurfaceExtensionRegistry } from "./surfaceExtensions.js";
+import type { AgentSkillSettingsRegistry } from "./skillSettings.js";
 
 const AGENT_PROVIDER_NAMES: readonly LlmProviderName[] = [
   "openai",
@@ -28,6 +29,17 @@ export interface ValidateAgentInputOptions {
    * pass through opaquely — appropriate for trusted DB reads.
    */
   extensions?: AgentSurfaceExtensionRegistry;
+  /**
+   * When provided, entries in `skillSettings` are validated by the owning
+   * skill's settings normalizer. Unknown keys pass through unchanged so read
+   * paths remain tolerant of data from plugins or newer deployments.
+   */
+  skillSettings?: AgentSkillSettingsRegistry;
+  /**
+   * Persisted agent reads must be total. In read mode, registered skill
+   * settings use their read parser when available instead of write validation.
+   */
+  skillSettingsMode?: "read" | "write";
 }
 
 export const agentSurfacePositions = ["bottom-right", "bottom-left"] as const;
@@ -133,6 +145,7 @@ export interface Agent {
 export interface ConversationAgent extends Agent, AgentBehaviorSettings, AgentGreetingSettings {
   sourceScope: AgentSourceScope;
   surfaceSettings: ConversationAgentSurfaceSettings;
+  skillSettings: Record<string, unknown>;
   chatModelOverride: AgentChatModelOverride | null;
 }
 
@@ -152,6 +165,7 @@ export type AgentInput = Partial<
     | keyof AgentBehaviorSettings
     | keyof AgentGreetingSettings
     | "sourceScope"
+    | "skillSettings"
     | "chatModelOverride"
   >
 > & {
@@ -413,6 +427,42 @@ const normalizeSurfaceExtensions = (
   return next;
 };
 
+const normalizeSkillSettings = (
+  value: unknown,
+  registry?: AgentSkillSettingsRegistry,
+  mode: "read" | "write" = "write",
+): Record<string, unknown> => {
+  if (value === undefined || value === null) {
+    return {};
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest("skillSettings must be an object");
+  }
+  const next: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (entry === undefined) continue;
+    const settings = registry?.get(key);
+    if (settings) {
+      try {
+        const normalize = mode === "read" && settings.parse ? settings.parse : settings.normalize;
+        next[key] = normalize.call(settings, entry);
+      } catch (error) {
+        if (mode === "read") {
+          next[key] = {};
+          continue;
+        }
+        if (error instanceof Error) {
+          throw badRequest(error.message);
+        }
+        throw badRequest(`skillSettings.${key} is invalid`);
+      }
+    } else {
+      next[key] = entry;
+    }
+  }
+  return next;
+};
+
 const normalizeAgentLogo = (value: unknown): AgentLogo | null => {
   if (value === undefined || value === null) {
     return null;
@@ -579,6 +629,7 @@ export const validateAgentInput = (
     contactRequestsEnabled: input.contactRequestsEnabled ?? DEFAULT_CONTACT_REQUESTS_ENABLED,
     retrievalEnabled: input.retrievalEnabled ?? true,
     sourceScope: normalizeSourceScope(input.sourceScope),
+    skillSettings: normalizeSkillSettings(input.skillSettings, options.skillSettings, options.skillSettingsMode),
     logo: normalizeAgentLogo(input.logo),
     theme: normalizeEmbedTheme(input.theme ?? input.surfaceSettings?.websiteEmbed?.theme),
     branding: normalizeBrandingSettings(input.branding),

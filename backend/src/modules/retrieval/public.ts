@@ -63,6 +63,12 @@ export type {
   RetrievalSourceScope,
 } from "./domain/retrievalSourceFilter.js";
 export {
+  normalizeRetrievalSkillSettingsOverride,
+  parsePersistedRetrievalSkillSettingsOverride,
+  type EffectiveRetrievalSkillSettings,
+  type RetrievalSkillSettingsOverride,
+} from "./domain/retrievalSkillSettings.js";
+export {
   RESPONSE_INTENT,
   REWRITE_STATUS,
   REWRITE_TURN_KIND,
@@ -90,6 +96,7 @@ export {
 export { resolveContextSourceUrl } from "./services/contextSourceUrl.js";
 export type { EmbeddingGateway, EmbeddingService } from "./services/embeddingService.js";
 export type { PromptBuildResult } from "./services/promptBuilder.js";
+export type { SkillSettingsResolver } from "./services/retrievalContextStage.js";
 export type {
   QueryRewriteGateway,
   QueryRewriteGatewayFallbackResult,
@@ -133,8 +140,6 @@ export {
 
 export interface RetrievalResponseBehavior {
   customInstruction?: string;
-  suggestedQuestionsEnabled: boolean;
-  suggestedQuestionsCount: number;
   citationDisplayEnabled: boolean;
 }
 
@@ -149,6 +154,7 @@ export interface RetrievalPipelineRequest {
   metadataFilter?: Record<string, unknown>;
   sourceScope?: RetrievalSourceScope;
   usageContext?: Omit<ModelCallUsageContext, "operation">;
+  agentSkillSettings?: Record<string, unknown>;
   // When set, the retrieval pipeline runs against these settings instead of
   // reading the workspace's persisted retrieval settings. The override is
   // applied as a shallow merge over the workspace record and MUST NOT cause

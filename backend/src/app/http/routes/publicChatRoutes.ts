@@ -5,6 +5,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { sendChatSse } from "../presenters/chatPresenter.js";
 import { AppError, badRequest, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
+import { requirePublicChatPermission } from "../middleware/requirePermission.js";
 import { anonymousRateLimiters, publicChatSessionExchangeRateLimiter, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
@@ -47,6 +48,7 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "documentStorage"
   | "logger"
   | "workspaceRepository"
+  | "accountAccessService"
 >;
 
 export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies): Router => {
@@ -429,6 +431,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   router.post(
     "/:token",
     sessionMiddleware,
+    requirePublicChatPermission(dependencies, "public_chat.turn.create"),
     ...rateLimitAnonymousChat,
     validateBody(anonymousChatSchema),
     async (req, res, next) => {
@@ -455,8 +458,9 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
             pageContext: req.body.pageContext,
           });
           if (!bootstrap) {
-            res.status(204).end();
-            return;
+            throw serviceUnavailable("Public chat response is unavailable.", {
+              code: "public_chat_empty_response",
+            });
           }
           res.status(200).json(stripPublicChatCitationArtifacts(bootstrap, citationDisplayEnabled));
           return;
@@ -481,8 +485,9 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         } else {
           const result = await dependencies.assistantChatService.answer(input);
           if (!result) {
-            res.status(204).end();
-            return;
+            throw serviceUnavailable("Public chat response is unavailable.", {
+              code: "public_chat_empty_response",
+            });
           }
           res.status(200).json(stripPublicChatCitationArtifacts(result, citationDisplayEnabled));
         }
@@ -493,7 +498,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   );
 
   // GET /api/v1/public/chat/:token — list conversations for this anonymous session
-  router.get("/:token", sessionMiddleware, async (req, res, next) => {
+  router.get("/:token", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.session.read.own"), async (req, res, next) => {
     try {
       const { workspaceId, agentId, workspaceName, anonymousSessionId } = res.locals as {
         workspaceId: string;
@@ -536,7 +541,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   });
 
   // GET /api/v1/public/chat/:token/history/:conversationId — get conversation detail
-  router.get("/:token/history/:conversationId", sessionMiddleware, async (req, res, next) => {
+  router.get("/:token/history/:conversationId", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.history.read.own"), async (req, res, next) => {
     try {
       const { agentId, anonymousSessionId, citationDisplayEnabled } = res.locals as { agentId: string; anonymousSessionId: string; citationDisplayEnabled: boolean };
       const parsedParams = publicConversationParamsSchema.safeParse(req.params);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
+import { AccountAccessService, type AccountPermission } from "../../src/modules/account/services/accountAccessService.js";
 import {
   createAuditService,
   InMemoryAccountMembershipRepository,
@@ -8,6 +8,69 @@ import {
 } from "../support/fakes.js";
 
 describe("AccountAccessService", () => {
+  const publicPermissions: AccountPermission[] = [
+    "public_chat.turn.create",
+    "public_chat.session.read.own",
+    "public_chat.history.read.own",
+    "public_chat.feedback.write.own",
+  ];
+
+  it("allows public chat session principals exactly the public chat permissions", async () => {
+    const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
+    const principal = {
+      type: "public_chat_session" as const,
+      role: "public_chat" as const,
+      workspaceId: "11111111-1111-1111-1111-111111111111",
+      agentId: "22222222-2222-2222-2222-222222222222",
+      publicSessionId: "33333333-3333-3333-3333-333333333333",
+    };
+
+    for (const permission of publicPermissions) {
+      await expect(service.hasPermission({
+        accountId: "account-1",
+        principal,
+        permission,
+      })).resolves.toBe(true);
+    }
+
+    for (const permission of [
+      "workspace.chat.use",
+      "workspace.settings.read",
+      "workspace.documents.read",
+      "workspace.token.read",
+      "account.users.manage",
+    ] as AccountPermission[]) {
+      await expect(service.hasPermission({
+        accountId: "account-1",
+        principal,
+        permission,
+      })).resolves.toBe(false);
+    }
+  });
+
+  it("never grants public chat permissions to session users or workspace API tokens", async () => {
+    const userRepository = new InMemoryUserRepository();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    membershipRepository.setUserRepository(userRepository);
+    const service = new AccountAccessService(membershipRepository, createAuditService());
+    const user = await userRepository.create({ email: "member@example.com", passwordHash: "hash" });
+    await membershipRepository.create({ accountId: "account-1", userId: user.id, role: "owner" });
+
+    for (const permission of publicPermissions) {
+      await expect(service.hasPermission({
+        accountId: "account-1",
+        principal: { type: "session_user", userId: user.id },
+        permission,
+      })).resolves.toBe(false);
+
+      await expect(service.hasPermission({
+        accountId: "account-1",
+        principal: { type: "workspace_api_token", role: "admin" },
+        permission,
+      })).resolves.toBe(false);
+    }
+  });
+
   it("resolves the preferred account membership for login", async () => {
     const userRepository = new InMemoryUserRepository();
     const membershipRepository = new InMemoryAccountMembershipRepository();

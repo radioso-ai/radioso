@@ -11,6 +11,7 @@ import {
   resolveAssistantDisplayName,
 } from "../../../modules/settings/contracts/assistantBootstrap.js";
 import { defaultWebsiteEmbedSettings } from "../../../modules/settings/contracts/websiteEmbed.js";
+import { isAllowedWebsiteEmbedOrigin, normalizeWebsiteEmbedOrigin } from "../../../shared/domain/websiteEmbed.js";
 import {
   publicChatSessionMatchesLaunchToken,
   verifyPublicChatSession,
@@ -105,6 +106,25 @@ const publicSessionMatchesAgentSurface = (
   }
 
   return agent.surfaceSettings.anonymousChat.enabled && agent.surfaceSettings.anonymousChat.token === token;
+};
+
+const publicSessionMatchesCurrentOrigin = (
+  agent: PublicSessionAgent,
+  requestOriginHeader: string | undefined,
+  sourceChannel: "anonymous" | "website_embed",
+  sourceOrigin: string | null,
+) => {
+  if (sourceChannel !== "website_embed") {
+    return true;
+  }
+
+  const requestOrigin = requestOriginHeader ? normalizeWebsiteEmbedOrigin(requestOriginHeader) : null;
+  if (!requestOrigin || requestOrigin !== sourceOrigin) {
+    return false;
+  }
+
+  const websiteEmbed = getWebsiteEmbedSurfaceSettings(agent);
+  return websiteEmbed.enabled && isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, requestOrigin);
 };
 
 const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionAgent | null => {
@@ -204,7 +224,8 @@ export const resolveAnonymousSession = (
         publicSession.workspaceId === workspace.id &&
         agent.workspaceId === workspace.id &&
         publicChatSessionMatchesLaunchToken(publicSession, publicChatSessionSecret, token) &&
-        publicSessionMatchesAgentSurface(agent, token, publicSession.sourceChannel),
+        publicSessionMatchesAgentSurface(agent, token, publicSession.sourceChannel) &&
+        publicSessionMatchesCurrentOrigin(agent, req.get("origin"), publicSession.sourceChannel, publicSession.sourceOrigin),
       );
 
       if (!workspace || !agent || !publicSession || !hasValidPublicSession) {
@@ -249,6 +270,13 @@ export const resolveAnonymousSession = (
       res.locals.anonymousRateLimitIdFromCookie = Boolean(rateLimitIdFromCookie);
       res.locals.sourceChannel = publicSession?.sourceChannel ?? "anonymous";
       res.locals.sourceOrigin = publicSession?.sourceOrigin ?? null;
+      res.locals.authPrincipal = {
+        type: "public_chat_session",
+        role: "public_chat",
+        workspaceId: workspace.id,
+        agentId: agent.id,
+        publicSessionId: sessionId,
+      };
       res.locals.assistantBootstrapActive = isAgentBootstrapActive(agent);
       res.locals.assistantLogoAvailable = Boolean(agent.logo);
       res.locals.assistantTheme = agent.theme;

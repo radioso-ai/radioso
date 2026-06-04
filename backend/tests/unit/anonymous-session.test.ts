@@ -369,6 +369,7 @@ describe("resolveAnonymousSession", () => {
       { token: "embed-token-123" },
       {},
       {
+        origin: "https://example.com",
         [PUBLIC_CHAT_SESSION_HEADER]: embedSession.token,
       },
     );
@@ -410,6 +411,7 @@ describe("resolveAnonymousSession", () => {
       { token: "legacy-anonymous-token" },
       {},
       {
+        origin: "https://example.com",
         [PUBLIC_CHAT_SESSION_HEADER]: embedSession.token,
       },
     );
@@ -475,6 +477,7 @@ describe("resolveAnonymousSession", () => {
       { token: "shared-token-123" },
       {},
       {
+        origin: "https://example.com",
         [PUBLIC_CHAT_SESSION_HEADER]: embedSession.token,
       },
     );

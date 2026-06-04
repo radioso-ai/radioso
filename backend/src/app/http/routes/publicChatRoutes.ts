@@ -458,9 +458,13 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
             pageContext: req.body.pageContext,
           });
           if (!bootstrap) {
-            throw serviceUnavailable("Public chat response is unavailable.", {
-              code: "public_chat_empty_response",
-            });
+            // No proactive greeting to emit (e.g. bootstrap is inactive for this
+            // agent). This is a benign "no content" outcome, not a failure: the
+            // website embed client treats 204 as "no greeting" and proceeds to
+            // normal chat. CORS headers are already set by the public-session
+            // middleware, so the browser can read this response.
+            res.status(204).end();
+            return;
           }
           res.status(200).json(stripPublicChatCitationArtifacts(bootstrap, citationDisplayEnabled));
           return;

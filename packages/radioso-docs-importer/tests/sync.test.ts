@@ -14,27 +14,48 @@ function doc(externalDocumentId: string): DocumentInput {
 }
 
 function fakeClient(existing: ExistingDocument[]) {
+  const state = [...existing];
   const created: string[] = [];
   const deleted: string[] = [];
   const deletedSources: string[] = [];
+  const events: string[] = [];
   let calls = 0;
   const client: RadiosoDocsClient = {
     listAll: async () => {
       calls += 1;
-      return existing;
+      events.push("list");
+      return [...state];
     },
     create: async (input) => {
       created.push(input.externalDocumentId);
+      events.push(`create:${input.externalDocumentId}`);
+      const existingCommon = state.find(
+        (document) => document.externalDocumentId === input.externalDocumentId && document.sourceId === "source-common",
+      );
+      if (!existingCommon) {
+        state.push({
+          id: `id-${input.externalDocumentId}`,
+          externalDocumentId: input.externalDocumentId,
+          sourceId: "source-common",
+          metadata: input.metadata,
+        });
+      }
       return { documentId: `id-${input.externalDocumentId}`, status: "processing" };
     },
     delete: async (id) => {
       deleted.push(id);
+      events.push(`delete:${id}`);
+      const index = state.findIndex((document) => document.id === id);
+      if (index !== -1) {
+        state.splice(index, 1);
+      }
     },
     deleteSource: async (id) => {
       deletedSources.push(id);
+      events.push(`deleteSource:${id}`);
     },
   };
-  return { client, created, deleted, deletedSources, calls: () => calls };
+  return { client, created, deleted, deletedSources, events, calls: () => calls };
 }
 
 describe("syncDocuments", () => {
@@ -188,5 +209,47 @@ describe("syncDocuments", () => {
     expect(deleted).toEqual(["owned"]);
     expect(deletedSources).toEqual([]);
     expect(report.prunedSourceIds).toEqual([]);
+  });
+
+  it("prunes each legacy duplicate immediately after its common-source upsert", async () => {
+    const existing: ExistingDocument[] = [
+      { id: "legacy-a", externalDocumentId: "mdx-docs:a", sourceId: "source-a", metadata: { section: "mdx-docs" } },
+      { id: "legacy-b", externalDocumentId: "mdx-docs:b", sourceId: "source-b", metadata: { section: "mdx-docs" } },
+    ];
+    const { client, events, deleted } = fakeClient(existing);
+
+    await syncDocuments(client, [doc("mdx-docs:a"), doc("mdx-docs:b")], {
+      prune: true,
+      pruneSections: new Set(["mdx-docs"]),
+    });
+
+    expect(deleted).toEqual(["legacy-a", "legacy-b"]);
+    expect(events).toEqual([
+      "list",
+      "create:mdx-docs:a",
+      "list",
+      "delete:legacy-a",
+      "deleteSource:source-a",
+      "create:mdx-docs:b",
+      "list",
+      "delete:legacy-b",
+      "deleteSource:source-b",
+      "list",
+    ]);
+  });
+
+  it("prunes stale docs before uploading to make room under document quotas", async () => {
+    const existing: ExistingDocument[] = [
+      { id: "stale", externalDocumentId: "mdx-docs:gone", sourceId: "source-stale", metadata: { section: "mdx-docs" } },
+    ];
+    const { client, events } = fakeClient(existing);
+
+    await syncDocuments(client, [doc("mdx-docs:a")], {
+      prune: true,
+      pruneSections: new Set(["mdx-docs"]),
+    });
+
+    expect(events.slice(0, 3)).toEqual(["list", "delete:stale", "deleteSource:source-stale"]);
+    expect(events).toContain("create:mdx-docs:a");
   });
 });

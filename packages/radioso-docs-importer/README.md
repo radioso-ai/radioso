@@ -14,14 +14,22 @@ site required — and upserts them through the public REST API.
   client-side Stoplight widget, so it is not MDX; this package renders it to
   markdown, one document per OpenAPI tag (method, path, params, request/response
   schemas with local `$ref`s dereferenced).
+- **Repo READMEs** — every `README.md` / `readme.md` under the repository, excluding
+  generated and dependency directories. These are imported as raw markdown with one
+  document per README.
 
 ## Sync semantics
 
-Each document is uploaded as a `website`-sourced document with a stable
-`externalDocumentId`. The backend short-circuits unchanged pages by content hash,
-so re-running is idempotent. `--prune` removes previously imported documents that
-are no longer present, scoped strictly to documents carrying our
-`metadata.section` (`mdx-docs` / `api-reference`) — it never touches other docs.
+Every document is uploaded under one common `website` source URL, derived from
+`CITATION_BASE_URL`. Each item's deep link is stored in `metadata.url`, which is
+the field Radioso citations resolve from. The backend short-circuits unchanged
+pages by content hash, so re-running is idempotent.
+
+`--prune` removes previously imported documents that are no longer present, scoped
+strictly to documents carrying our `metadata.section` (`mdx-docs` /
+`api-reference` / `repo-readme`) — it never touches other docs. Prune is also
+source-aware: it deletes obsolete importer-owned documents that still live under
+the old per-page sources, then removes those empty legacy sources.
 
 ## Usage
 
@@ -33,6 +41,7 @@ pnpm --filter @radioso/docs-importer run import -- --dry-run
 RADIOSO_BASE_URL=https://platform.radioso.dev \
 RADIOSO_API_TOKEN=<workspace-token> \
 CITATION_BASE_URL=https://docs.radioso.dev \
+REPO_SOURCE_BASE_URL=https://github.com/radioso-ai/radioso/blob/main \
 pnpm --filter @radioso/docs-importer run import -- --prune
 ```
 
@@ -40,14 +49,16 @@ pnpm --filter @radioso/docs-importer run import -- --prune
 
 - `--dry-run` — build and list documents, upload nothing (no API token needed).
 - `--prune` — delete owned documents no longer present in the sources.
-- `--no-mdx` / `--no-api` — import only one of the two source sets.
+- `--no-mdx` / `--no-api` / `--no-readme` — skip one source set.
 
 ### Environment
 
 - `RADIOSO_BASE_URL` — target instance (e.g. `https://platform.radioso.dev`).
 - `RADIOSO_API_TOKEN` — workspace token for the destination workspace.
-- `CITATION_BASE_URL` — public docs base for `source`/citation URLs
-  (default `https://docs.radioso.dev`).
+- `CITATION_BASE_URL` — public docs base for the common website source and docs
+  citation URLs (default `https://docs.radioso.dev`).
+- `REPO_SOURCE_BASE_URL` — GitHub blob base for README citation URLs (default
+  `https://github.com/radioso-ai/radioso/blob/main`).
 
 ## Tests
 

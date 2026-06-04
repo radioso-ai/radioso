@@ -2152,6 +2152,18 @@ export interface components {
             mode: "selected";
             sourceIds: string[];
         };
+        AgentContactRequestDelivery: {
+            recipientEmails: string[];
+            webhook: {
+                url: string;
+            } | null;
+        };
+        AgentContactRequestDeliveryRequest: {
+            recipientEmails?: string[];
+            webhook?: null | {
+                url: string;
+            };
+        };
         ConversationAgent: components["schemas"]["Agent"] & {
             isDefault: boolean;
             customInstruction: string;
@@ -2159,6 +2171,7 @@ export interface components {
             assistantLinkUtmEnabled: boolean;
             citationDisplayEnabled: boolean;
             contactRequestsEnabled: boolean;
+            contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
             theme: {
                 brand: string;
                 brandText: string;
@@ -2203,6 +2216,7 @@ export interface components {
             assistantLinkUtmEnabled?: boolean;
             citationDisplayEnabled?: boolean;
             contactRequestsEnabled?: boolean;
+            contactRequestDelivery?: components["schemas"]["AgentContactRequestDeliveryRequest"];
             theme?: {
                 brand?: string;
                 brandText?: string;

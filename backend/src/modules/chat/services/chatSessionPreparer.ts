@@ -14,7 +14,7 @@ import type {
   RewriteContinuityState,
 } from "../../retrieval/public.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
-import { defaultAgentBrandingSettings, isAgentRetrievalEnabled } from "../../agents/public.js";
+import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, isAgentRetrievalEnabled } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
@@ -356,6 +356,7 @@ export class ChatSessionPreparer {
         assistantLinkUtmEnabled: true,
         citationDisplayEnabled: true,
         contactRequestsEnabled: false,
+        contactRequestDelivery: DEFAULT_CONTACT_REQUEST_DELIVERY,
         retrievalEnabled: true,
         sourceScope: { mode: "all" },
         skillSettings: {},
@@ -406,6 +407,7 @@ export class ChatSessionPreparer {
       assistantLinkUtmEnabled: true,
       citationDisplayEnabled: true,
       contactRequestsEnabled: false,
+      contactRequestDelivery: DEFAULT_CONTACT_REQUEST_DELIVERY,
       retrievalEnabled: true,
       sourceScope: { mode: "all" },
       skillSettings: {},

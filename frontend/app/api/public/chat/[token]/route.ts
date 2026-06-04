@@ -35,8 +35,11 @@ const firstHeaderValue = (value: string | null) => value?.split(',')[0]?.trim() 
 
 const resolveRequestForwardingHeaders = (request: Request) => {
   const url = new URL(request.url)
+  const host = firstHeaderValue(request.headers.get('x-forwarded-host'))
+    ?? firstHeaderValue(request.headers.get('host'))
+    ?? url.host
   return {
-    host: firstHeaderValue(request.headers.get('x-forwarded-host')) ?? url.host,
+    host,
     proto: firstHeaderValue(request.headers.get('x-forwarded-proto')) ?? url.protocol.replace(/:$/, ''),
   }
 }

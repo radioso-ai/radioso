@@ -346,7 +346,7 @@ describe('backend proxy route', () => {
       headers: {
         'Content-Type': 'application/json',
         Origin: 'https://platform.radioso.dev',
-        'X-Forwarded-Host': 'platform.radioso.dev, next-internal.example',
+        Host: 'platform.radioso.dev',
         'X-Forwarded-Proto': 'https, http',
         'X-Radioso-Public-Session': 'session-token',
       },

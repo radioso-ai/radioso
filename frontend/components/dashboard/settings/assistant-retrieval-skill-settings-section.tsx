@@ -38,8 +38,8 @@ const formatValue = (value: string | number | boolean) => {
 
 const inheritedStatus = (value: string | number | boolean) =>
   typeof value === 'string' && value.trim().length > 24
-    ? 'Using workspace default'
-    : `Using workspace default: ${formatValue(value)}`
+    ? 'Default'
+    : `Default: ${formatValue(value)}`
 
 const cloneMetadataRules = (rules: RetrievalMetadataRule[]): RetrievalMetadataRule[] =>
   rules.map((rule) => ({
@@ -174,230 +174,192 @@ export function AssistantRetrievalSkillSettingsSection({
   return (
     <div id="retrieval-skill-settings" className="space-y-4">
       <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 rounded-lg border border-border p-3">
-              <FieldHeader
-                doc={retrievalSettingDocs.queryRewriteEnabled}
-                htmlFor="retrievalQueryRewrite"
-                inherited={defaults.queryRewriteEnabled}
-                overridden={hasOverride(value, 'queryRewriteEnabled')}
-                onClear={() => clearField('queryRewriteEnabled')}
-              />
-              <Select
-                value={booleanSelectValue('queryRewriteEnabled')}
-                onValueChange={(next) =>
-                  next === 'inherit' ? clearField('queryRewriteEnabled') : setField('queryRewriteEnabled', next === 'true')
-                }
-              >
-                <SelectTrigger id="retrievalQueryRewrite" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-              <SelectContent>
-                  <SelectItem value="inherit">Use workspace default</SelectItem>
-                  <SelectItem value="true">On</SelectItem>
-                  <SelectItem value="false">Off</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2 rounded-lg border border-border p-3">
-              <FieldHeader
-                doc={retrievalSettingDocs.retrievalStrategy}
-                htmlFor="agentRetrievalStrategy"
-                inherited={defaults.retrievalStrategy}
-                overridden={hasOverride(value, 'retrievalStrategy')}
-                onClear={() => clearField('retrievalStrategy')}
-              />
-              <Select
-                value={hasOverride(value, 'retrievalStrategy') ? value.retrievalStrategy : 'inherit'}
-                onValueChange={(next) =>
-                  next === 'inherit' ? clearField('retrievalStrategy') : setField('retrievalStrategy', next as RetrievalStrategy)
-                }
-              >
-                <SelectTrigger id="agentRetrievalStrategy" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-              <SelectContent>
-                  <SelectItem value="inherit">Use workspace default</SelectItem>
-                  <SelectItem value="fixed">Fixed</SelectItem>
-                  <SelectItem value="reasoning">Reasoning</SelectItem>
-                  <SelectItem value="auto">Auto</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div id="agent-knowledge-scope-settings" className="space-y-4">
-            <div className="space-y-0.5">
-              <h4 className="text-sm font-semibold text-foreground">Knowledge scope</h4>
-              <p className="text-xs text-muted-foreground">
-                Configure which documents this agent can retrieve.
-              </p>
-            </div>
-            <AssistantSourceScopeSelector
-              sourceScope={sourceScope}
-              sourceList={sourceList}
-              isSourceListLoading={isSourceListLoading}
-              sourceListError={sourceListError}
-              onChange={onSourceScopeChange}
-            />
-            <div id="agent-metadata-rules-settings" className="space-y-3 rounded-lg border border-border p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="space-y-1">
-                  <SettingFieldHeader
-                    label={retrievalSettingDocs.metadataRules.label}
-                    description={retrievalSettingDocs.metadataRules.summary}
-                    tooltip={retrievalSettingDocs.metadataRules.details}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {metadataRulesOverridden ? 'Overridden for this agent' : 'Using workspace default'}
-                  </p>
-                </div>
-                {metadataRulesOverridden ? (
-                  <Button type="button" size="sm" variant="ghost" onClick={() => clearField('metadataRules')}>
-                    Clear override
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={overrideMetadataRules}
-                  >
-                    Override metadata rules
-                  </Button>
-                )}
+        <div id="agent-knowledge-scope-settings" className="space-y-4">
+          <AssistantSourceScopeSelector
+            sourceScope={sourceScope}
+            sourceList={sourceList}
+            isSourceListLoading={isSourceListLoading}
+            sourceListError={sourceListError}
+            onChange={onSourceScopeChange}
+          />
+          <div id="agent-metadata-rules-settings" className="space-y-3 rounded-lg border border-border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="space-y-1">
+                <SettingFieldHeader
+                  label={retrievalSettingDocs.metadataRules.label}
+                  description={retrievalSettingDocs.metadataRules.summary}
+                  tooltip={retrievalSettingDocs.metadataRules.details}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {metadataRulesOverridden ? 'Overridden for this agent' : 'Using workspace default'}
+                </p>
               </div>
               {metadataRulesOverridden ? (
-                <MetadataRulesEditor
-                  metadataRules={effectiveMetadataRules}
-                  metadataFieldSuggestions={defaults.metadataFieldSuggestions}
-                  showHeader={false}
-                  onChange={(metadataRules) => setField('metadataRules', metadataRules)}
-                />
+                <Button type="button" size="sm" variant="ghost" onClick={() => clearField('metadataRules')}>
+                  Clear override
+                </Button>
               ) : (
-                <MetadataRulesSummary rules={defaults.metadataRules} />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={overrideMetadataRules}
+                >
+                  Override metadata rules
+                </Button>
               )}
             </div>
+            {metadataRulesOverridden ? (
+              <MetadataRulesEditor
+                metadataRules={effectiveMetadataRules}
+                metadataFieldSuggestions={defaults.metadataFieldSuggestions}
+                showHeader={false}
+                onChange={(metadataRules) => setField('metadataRules', metadataRules)}
+              />
+            ) : (
+              <MetadataRulesSummary rules={defaults.metadataRules} />
+            )}
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2 rounded-lg border border-border p-3">
+            <FieldHeader
+              doc={retrievalSettingDocs.suggestedQuestionsEnabled}
+              htmlFor="agentSuggestedQuestionsEnabled"
+              inherited={defaults.suggestedQuestionsEnabled}
+              overridden={hasOverride(value, 'suggestedQuestionsEnabled')}
+              onClear={() => clearField('suggestedQuestionsEnabled')}
+            />
+            <Select
+              value={booleanSelectValue('suggestedQuestionsEnabled')}
+              onValueChange={(next) =>
+                next === 'inherit' ? clearField('suggestedQuestionsEnabled') : setField('suggestedQuestionsEnabled', next === 'true')
+              }
+            >
+              <SelectTrigger id="agentSuggestedQuestionsEnabled" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="inherit">Use workspace default</SelectItem>
+                <SelectItem value="true">On</SelectItem>
+                <SelectItem value="false">Off</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 rounded-lg border border-border p-3">
-              <FieldHeader
-                doc={retrievalSettingDocs.suggestedQuestionsEnabled}
-                htmlFor="agentSuggestedQuestionsEnabled"
-                inherited={defaults.suggestedQuestionsEnabled}
-                overridden={hasOverride(value, 'suggestedQuestionsEnabled')}
-                onClear={() => clearField('suggestedQuestionsEnabled')}
+          <div className="space-y-2 rounded-lg border border-border p-3">
+            <FieldHeader
+              doc={retrievalSettingDocs.suggestedQuestionsCount}
+              htmlFor="suggestedQuestionsCount"
+              inherited={defaults.suggestedQuestionsCount}
+              overridden={hasOverride(value, 'suggestedQuestionsCount')}
+              onClear={() => clearField('suggestedQuestionsCount')}
+            />
+            {hasOverride(value, 'suggestedQuestionsCount') ? (
+              <Input
+                id="suggestedQuestionsCount"
+                aria-label="Suggested Question Count"
+                type="number"
+                min={1}
+                max={4}
+                value={numberValue('suggestedQuestionsCount', defaults.suggestedQuestionsCount)}
+                onChange={(event) => setField('suggestedQuestionsCount', Number(event.target.value))}
               />
-              <Select
-                value={booleanSelectValue('suggestedQuestionsEnabled')}
-                onValueChange={(next) =>
-                  next === 'inherit' ? clearField('suggestedQuestionsEnabled') : setField('suggestedQuestionsEnabled', next === 'true')
-                }
+            ) : (
+              <InheritedValuePreview value={defaults.suggestedQuestionsCount} />
+            )}
+            {!hasOverride(value, 'suggestedQuestionsCount') ? (
+              <Button type="button" size="sm" variant="outline" onClick={() => setField('suggestedQuestionsCount', defaults.suggestedQuestionsCount)}>
+                Override count
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        <Collapsible>
+          <div className="rounded-lg border border-border p-3">
+            <CollapsibleTrigger asChild>
+              <Button type="button" variant="ghost" className="w-full justify-between px-0">
+                Advanced
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-5 pt-3">
+              <section
+                aria-labelledby="agent-retrieval-answering-heading"
+                className="space-y-3 border-t border-border/60 pt-4"
               >
-                <SelectTrigger id="agentSuggestedQuestionsEnabled" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherit">Use workspace default</SelectItem>
-                  <SelectItem value="true">On</SelectItem>
-                  <SelectItem value="false">Off</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2 rounded-lg border border-border p-3">
-              <FieldHeader
-                doc={retrievalSettingDocs.suggestedQuestionsCount}
-                htmlFor="suggestedQuestionsCount"
-                inherited={defaults.suggestedQuestionsCount}
-                overridden={hasOverride(value, 'suggestedQuestionsCount')}
-                onClear={() => clearField('suggestedQuestionsCount')}
-              />
-              {hasOverride(value, 'suggestedQuestionsCount') ? (
-                <Input
-                  id="suggestedQuestionsCount"
-                  aria-label="Suggested Question Count"
-                  type="number"
-                  min={1}
-                  max={4}
-                  value={numberValue('suggestedQuestionsCount', defaults.suggestedQuestionsCount)}
-                  onChange={(event) => setField('suggestedQuestionsCount', Number(event.target.value))}
-                />
-              ) : (
-                <InheritedValuePreview value={defaults.suggestedQuestionsCount} />
-              )}
-              {!hasOverride(value, 'suggestedQuestionsCount') ? (
-                <Button type="button" size="sm" variant="outline" onClick={() => setField('suggestedQuestionsCount', defaults.suggestedQuestionsCount)}>
-                  Override count
-                </Button>
-              ) : null}
-            </div>
-          </div>
-
-          <Collapsible>
-            <div className="rounded-lg border border-border p-3">
-              <CollapsibleTrigger asChild>
-                <Button type="button" variant="ghost" className="w-full justify-between px-0">
-                  Advanced retrieval tuning
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="space-y-4 pt-3">
+                <h4
+                  id="agent-retrieval-answering-heading"
+                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                  Answering
+                </h4>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-3">
+                  <div className="space-y-2 rounded-lg border border-border p-3">
                     <FieldHeader
-                      doc={retrievalSettingDocs.semanticRewriteInstructions}
-                      htmlFor="semanticRewriteInstructions"
-                      inherited={defaults.semanticRewriteInstructions}
-                      overridden={hasOverride(value, 'semanticRewriteInstructions')}
-                      onClear={() => clearField('semanticRewriteInstructions')}
+                      doc={retrievalSettingDocs.queryRewriteEnabled}
+                      htmlFor="retrievalQueryRewrite"
+                      inherited={defaults.queryRewriteEnabled}
+                      overridden={hasOverride(value, 'queryRewriteEnabled')}
+                      onClear={() => clearField('queryRewriteEnabled')}
                     />
-                    {hasOverride(value, 'semanticRewriteInstructions') ? (
-                      <Textarea
-                        id="semanticRewriteInstructions"
-                        aria-label="Semantic rewrite instructions"
-                        value={value.semanticRewriteInstructions ?? ''}
-                        onChange={(event) => setField('semanticRewriteInstructions', event.target.value.slice(0, 2000))}
-                        rows={3}
-                      />
-                    ) : (
-                      <>
-                        <InheritedValuePreview value="Workspace default instructions" />
-                        <Button type="button" size="sm" variant="outline" onClick={() => setField('semanticRewriteInstructions', defaults.semanticRewriteInstructions)}>
-                          Override semantic instructions
-                        </Button>
-                      </>
-                    )}
+                    <Select
+                      value={booleanSelectValue('queryRewriteEnabled')}
+                      onValueChange={(next) =>
+                        next === 'inherit' ? clearField('queryRewriteEnabled') : setField('queryRewriteEnabled', next === 'true')
+                      }
+                    >
+                      <SelectTrigger id="retrievalQueryRewrite" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="inherit">Use workspace default</SelectItem>
+                        <SelectItem value="true">On</SelectItem>
+                        <SelectItem value="false">Off</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="space-y-2 rounded-lg border border-border p-3">
                     <FieldHeader
-                      doc={retrievalSettingDocs.lexicalRewriteInstructions}
-                      htmlFor="lexicalRewriteInstructions"
-                      inherited={defaults.lexicalRewriteInstructions}
-                      overridden={hasOverride(value, 'lexicalRewriteInstructions')}
-                      onClear={() => clearField('lexicalRewriteInstructions')}
+                      doc={retrievalSettingDocs.retrievalStrategy}
+                      htmlFor="agentRetrievalStrategy"
+                      inherited={defaults.retrievalStrategy}
+                      overridden={hasOverride(value, 'retrievalStrategy')}
+                      onClear={() => clearField('retrievalStrategy')}
                     />
-                    {hasOverride(value, 'lexicalRewriteInstructions') ? (
-                      <Textarea
-                        id="lexicalRewriteInstructions"
-                        aria-label="Lexical rewrite instructions"
-                        value={value.lexicalRewriteInstructions ?? ''}
-                        onChange={(event) => setField('lexicalRewriteInstructions', event.target.value.slice(0, 2000))}
-                        rows={3}
-                      />
-                    ) : (
-                      <>
-                        <InheritedValuePreview value="Workspace default instructions" />
-                        <Button type="button" size="sm" variant="outline" onClick={() => setField('lexicalRewriteInstructions', defaults.lexicalRewriteInstructions)}>
-                          Override lexical instructions
-                        </Button>
-                      </>
-                    )}
+                    <Select
+                      value={hasOverride(value, 'retrievalStrategy') ? value.retrievalStrategy : 'inherit'}
+                      onValueChange={(next) =>
+                        next === 'inherit' ? clearField('retrievalStrategy') : setField('retrievalStrategy', next as RetrievalStrategy)
+                      }
+                    >
+                      <SelectTrigger id="agentRetrievalStrategy" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="inherit">Use workspace default</SelectItem>
+                        <SelectItem value="fixed">Fixed</SelectItem>
+                        <SelectItem value="reasoning">Reasoning</SelectItem>
+                        <SelectItem value="auto">Auto</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
+              </section>
+
+              <section
+                aria-labelledby="agent-retrieval-tuning-heading"
+                className="space-y-3 border-t border-border/60 pt-4"
+              >
+                <h4
+                  id="agent-retrieval-tuning-heading"
+                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                  Retrieval tuning
+                </h4>
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
                     <FieldHeader
@@ -478,9 +440,64 @@ export function AssistantRetrievalSkillSettingsSection({
                     ) : null}
                   </div>
                 </div>
-              </CollapsibleContent>
-            </div>
-          </Collapsible>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-3">
+                    <FieldHeader
+                      doc={retrievalSettingDocs.semanticRewriteInstructions}
+                      htmlFor="semanticRewriteInstructions"
+                      inherited={defaults.semanticRewriteInstructions}
+                      overridden={hasOverride(value, 'semanticRewriteInstructions')}
+                      onClear={() => clearField('semanticRewriteInstructions')}
+                    />
+                    {hasOverride(value, 'semanticRewriteInstructions') ? (
+                      <Textarea
+                        id="semanticRewriteInstructions"
+                        aria-label="Semantic rewrite instructions"
+                        value={value.semanticRewriteInstructions ?? ''}
+                        onChange={(event) => setField('semanticRewriteInstructions', event.target.value.slice(0, 2000))}
+                        rows={3}
+                      />
+                    ) : (
+                      <>
+                        <InheritedValuePreview value="Workspace default instructions" />
+                        <Button type="button" size="sm" variant="outline" onClick={() => setField('semanticRewriteInstructions', defaults.semanticRewriteInstructions)}>
+                          Override semantic instructions
+                        </Button>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <FieldHeader
+                      doc={retrievalSettingDocs.lexicalRewriteInstructions}
+                      htmlFor="lexicalRewriteInstructions"
+                      inherited={defaults.lexicalRewriteInstructions}
+                      overridden={hasOverride(value, 'lexicalRewriteInstructions')}
+                      onClear={() => clearField('lexicalRewriteInstructions')}
+                    />
+                    {hasOverride(value, 'lexicalRewriteInstructions') ? (
+                      <Textarea
+                        id="lexicalRewriteInstructions"
+                        aria-label="Lexical rewrite instructions"
+                        value={value.lexicalRewriteInstructions ?? ''}
+                        onChange={(event) => setField('lexicalRewriteInstructions', event.target.value.slice(0, 2000))}
+                        rows={3}
+                      />
+                    ) : (
+                      <>
+                        <InheritedValuePreview value="Workspace default instructions" />
+                        <Button type="button" size="sm" variant="outline" onClick={() => setField('lexicalRewriteInstructions', defaults.lexicalRewriteInstructions)}>
+                          Override lexical instructions
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </section>
+            </CollapsibleContent>
+          </div>
+        </Collapsible>
       </div>
     </div>
   )

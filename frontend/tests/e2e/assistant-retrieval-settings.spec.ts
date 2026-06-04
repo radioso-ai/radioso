@@ -110,9 +110,13 @@ test("agent skills tab saves and clears retrieval skill overrides", async ({ pag
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
   const retrievalSection = page.locator("#retrieval-skill-settings");
   await expect(retrievalSection).toBeVisible();
-  await expect(retrievalSection).toContainText("Using workspace default: off");
+  // Pre-expand sanity: a visible inherited default (Suggested questions). Query
+  // rewrite's "Default: off" lives inside the collapsed Advanced group, asserted
+  // there after expanding (and again after clear, below).
+  await expect(retrievalSection).toContainText("Default: on");
 
-  await retrievalSection.getByRole("button", { name: "Explain Query Rewrite" }).click();
+  await retrievalSection.getByRole("button", { name: "Advanced" }).click();
+  await retrievalSection.getByRole("region", { name: "Answering" }).getByRole("button", { name: "Explain Query Rewrite" }).click();
   await expect(page.getByRole("heading", { name: "Query Rewrite" })).toBeVisible();
   await page.keyboard.press("Escape");
 
@@ -129,13 +133,64 @@ test("agent skills tab saves and clears retrieval skill overrides", async ({ pag
   });
 
   await page.reload();
+  await retrievalSection.getByRole("button", { name: "Advanced" }).click();
   await expect(page.locator("#retrievalQueryRewrite")).toContainText("On");
 
   await page.locator("#retrievalQueryRewrite").click();
   await page.getByRole("option", { name: "Use workspace default" }).click();
 
   await expect.poll(() => JSON.stringify((agentUpdates.at(-1) as { skillSettings?: unknown } | undefined)?.skillSettings)).toBe("{}");
-  await expect(retrievalSection).toContainText("Using workspace default: off");
+  await expect(retrievalSection.getByRole("region", { name: "Answering" })).toContainText("Default: off");
+});
+
+test("agent retrieval skill settings show scope first and answering controls under Advanced", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    documentSources: baseDocumentSources(),
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
+  const retrievalSection = page.locator("#retrieval-skill-settings");
+  await expect(retrievalSection).toBeVisible();
+
+  const sourceScope = retrievalSection.locator("#agent-source-scope-settings");
+  const suggestedQuestions = retrievalSection.getByText("Suggested Questions", { exact: true });
+  const advancedButton = retrievalSection.getByRole("button", { name: "Advanced" });
+  await expect(sourceScope).toBeVisible();
+  await expect(suggestedQuestions).toBeVisible();
+  await expect(advancedButton).toBeVisible();
+  await expect(retrievalSection.getByRole("heading", { name: "Knowledge scope", exact: true })).toHaveCount(0);
+
+  await expect.poll(async () =>
+    sourceScope.evaluate((sourceElement) => {
+      const root = sourceElement.closest("#retrieval-skill-settings");
+      const suggested = root?.querySelector("#agentSuggestedQuestionsEnabled");
+      const advanced = Array.from(root?.querySelectorAll("button") ?? []).find((button) =>
+        button.textContent?.trim() === "Advanced",
+      );
+      if (!suggested || !advanced) {
+        return false;
+      }
+      const sourceBeforeSuggested = Boolean(
+        sourceElement.compareDocumentPosition(suggested) & Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      const suggestedBeforeAdvanced = Boolean(
+        suggested.compareDocumentPosition(advanced) & Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      return sourceBeforeSuggested && suggestedBeforeAdvanced;
+    }),
+  ).toBe(true);
+
+  await expect(page.locator("#retrievalQueryRewrite")).toBeHidden();
+  await advancedButton.click();
+
+  const answeringGroup = retrievalSection.getByRole("region", { name: "Answering" });
+  await expect(answeringGroup.getByText("Query Rewrite", { exact: true })).toBeVisible();
+  await expect(answeringGroup.getByText("Answering Strategy", { exact: true })).toBeVisible();
+  const retrievalTuningGroup = retrievalSection.getByRole("region", { name: "Retrieval tuning" });
+  await expect(retrievalTuningGroup.getByText("Vector Top K", { exact: true })).toBeVisible();
+  await expect(retrievalTuningGroup.getByRole("button", { name: "Override vector top K" })).toBeVisible();
 });
 
 test("agent skills tab collapses retrieval settings when retrieval is off", async ({ page }) => {

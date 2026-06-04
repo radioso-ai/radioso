@@ -118,13 +118,32 @@ const publicSessionMatchesCurrentOrigin = (
     return true;
   }
 
-  const requestOrigin = requestOriginHeader ? normalizeWebsiteEmbedOrigin(requestOriginHeader) : null;
-  if (!requestOrigin || requestOrigin !== sourceOrigin) {
+  const websiteEmbed = getWebsiteEmbedSurfaceSettings(agent);
+  if (!websiteEmbed.enabled) {
     return false;
   }
 
-  const websiteEmbed = getWebsiteEmbedSurfaceSettings(agent);
-  return websiteEmbed.enabled && isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, requestOrigin);
+  // Authorization rides on the session's bound origin, which is signed and was
+  // validated against the allowlist at issuance. Re-checking it against the
+  // current allowlist means removing an origin (or disabling embed) revokes
+  // existing sessions. The bound origin — not the live request Origin — is the
+  // source of truth, because the embedded widget iframe is served from the same
+  // host as the API and browsers omit the Origin header on its same-origin
+  // requests.
+  const boundOrigin = sourceOrigin ? normalizeWebsiteEmbedOrigin(sourceOrigin) : null;
+  if (!boundOrigin || !isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, boundOrigin)) {
+    return false;
+  }
+
+  // When a request does carry an Origin (a cross-origin caller, e.g. a static
+  // site streaming directly), it must match the session's bound origin so a
+  // token issued for one origin cannot be replayed from another.
+  const requestOrigin = requestOriginHeader ? normalizeWebsiteEmbedOrigin(requestOriginHeader) : null;
+  if (requestOrigin && requestOrigin !== boundOrigin) {
+    return false;
+  }
+
+  return true;
 };
 
 const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionAgent | null => {

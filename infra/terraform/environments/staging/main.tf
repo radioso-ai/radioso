@@ -19,12 +19,12 @@ terraform {
 }
 
 provider "google" {
-  project = "radioso-staging"
+  project = var.project_id
   region  = var.region
 }
 
 provider "google-beta" {
-  project = "radioso-staging"
+  project = var.project_id
   region  = var.region
 }
 
@@ -36,8 +36,8 @@ import {
 module "radioso" {
   source = "../.."
 
-  project_id      = "radioso-staging"
-  environment     = "staging"
+  project_id      = var.project_id
+  environment     = var.environment
   region          = var.region
   deploy_services = var.deploy_services
 
@@ -55,8 +55,8 @@ module "radioso" {
   db_tier                = var.db_tier
   db_deletion_protection = false
 
-  worker_task_queue_name                = "radioso-staging-document-processing"
-  worker_crawl_task_queue_name          = "radioso-staging-website-crawls"
+  worker_task_queue_name                = "radioso-${var.environment}-document-processing"
+  worker_crawl_task_queue_name          = "radioso-${var.environment}-website-crawls"
   worker_task_max_dispatches_per_second = var.worker_task_max_dispatches_per_second
   worker_task_max_concurrent_dispatches = var.worker_task_max_concurrent_dispatches
   document_processing_job_lease_ms      = var.document_processing_job_lease_ms

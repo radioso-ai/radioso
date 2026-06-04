@@ -1,3 +1,15 @@
+variable "project_id" {
+  description = "GCP project ID for the live deployment."
+  type        = string
+  default     = "radioso-494120"
+}
+
+variable "environment" {
+  description = "Environment name used for resource naming and runtime config."
+  type        = string
+  default     = "live"
+}
+
 variable "region" {
   description = "GCP region for the live deployment."
   type        = string

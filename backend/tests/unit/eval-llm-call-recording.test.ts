@@ -4,9 +4,12 @@ import { ChatGatewayLlmJudge } from "../../src/modules/eval/services/evalJudge.j
 import { RetrievalPipelineEvalRunner } from "../../src/modules/eval/services/retrievalPipelineEvalRunner.js";
 import { AnswerPresentationService } from "../../src/modules/chat/services/answerPresentationService.js";
 import { resolveCitationArtifacts } from "../../src/modules/chat/services/implicitCitationSupport.js";
+import { createRetrievalSkillSettingsResolver } from "../../src/app/composition/skillSettingsResolver.js";
 import type { LlmCapabilityResolver } from "../../src/shared/infra/llm/capabilityResolver.js";
 import type { ChatGateway } from "../../src/modules/chat/contracts/index.js";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
+import type { AgentSnapshot } from "../../src/modules/agents/public.js";
+import type { RetrievalPipelineRequest } from "../../src/modules/retrieval/public.js";
 
 const fixedPipelineResult = {
   rewrittenQuery: "q",
@@ -30,6 +33,22 @@ const buildPipeline = () => ({
   async runInterpreted() { return fixedPipelineResult; },
   async runWithoutRetrieval() { return fixedPipelineResult; },
 });
+
+const buildCapturingPipeline = () => {
+  const calls: RetrievalPipelineRequest[] = [];
+  return {
+    calls,
+    pipeline: {
+      async run(input: RetrievalPipelineRequest) {
+        calls.push(input);
+        return fixedPipelineResult;
+      },
+      async interpret() { return { request: {} as never, interpretation: { result: {} } }; },
+      async runInterpreted() { return fixedPipelineResult; },
+      async runWithoutRetrieval() { return fixedPipelineResult; },
+    },
+  };
+};
 
 const buildChatGateway = (answerText: string): { gateway: ChatGateway; calls: ChatGatewayInput[] } => {
   const calls: ChatGatewayInput[] = [];
@@ -87,7 +106,83 @@ const buildAnswerPresentation = () => {
   };
 };
 
+const buildAgentSnapshot = (overrides: Partial<AgentSnapshot> = {}): AgentSnapshot => ({
+  agentId: "agent-1",
+  name: "Support Bot",
+  customInstruction: "",
+  greetingInstruction: "",
+  assistantDefaultLocale: null,
+  retrievalEnabled: true,
+  suggestedQuestionsEnabled: true,
+  citationDisplayEnabled: true,
+  sourceScope: { mode: "all" },
+  skillSettings: {},
+  chatModelOverride: null,
+  ...overrides,
+});
+
 describe("eval LLM-call usage recording end-to-end", () => {
+  it("replays per-agent retrieval skill settings and records the same resolved settings", async () => {
+    const agentRule = {
+      id: "audience-rule",
+      field: "audience",
+      valueType: "string",
+      operator: "equals",
+      value: "partner",
+      conditions: [
+        {
+          id: "audience-condition",
+          field: "audience",
+          valueType: "string",
+          operator: "equals",
+          value: "partner",
+        },
+      ],
+      effect: "filter",
+      enabled: true,
+      triggerMode: "match_turn",
+      triggerInstruction: "Use for partner-specific questions",
+    } as const;
+    const agent = buildAgentSnapshot({
+      skillSettings: {
+        "retrieval.answer": {
+          retrievalStrategy: "reasoning",
+          suggestedQuestionsEnabled: false,
+          suggestedQuestionsCount: 4,
+          vectorTopK: 7,
+          metadataRules: [agentRule],
+        },
+      },
+    });
+    const pipeline = buildCapturingPipeline();
+    const runner = new RetrievalPipelineEvalRunner(
+      pipeline.pipeline,
+      buildChatGateway("unused").gateway,
+      buildResolver(),
+      buildSettingsService(),
+      buildAnswerPresentation(),
+      createRetrievalSkillSettingsResolver(),
+    );
+
+    const result = await runner.retrieve({
+      workspaceId: "ws-1",
+      query: "partner policy",
+      history: [],
+      context: { agent },
+    });
+
+    expect(pipeline.calls[0]?.agentSkillSettings).toBe(agent.skillSettings);
+    expect(pipeline.calls[0]?.responseBehavior).not.toHaveProperty("suggestedQuestionsEnabled");
+    expect(pipeline.calls[0]?.responseBehavior).not.toHaveProperty("suggestedQuestionsCount");
+    expect(result.resolvedSettings).toMatchObject({
+      retrievalStrategy: "reasoning",
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 4,
+      vectorTopK: 7,
+      metadataRules: [expect.objectContaining({ id: "audience-rule", triggerMode: "match_turn" })],
+    });
+  });
+
   it("threads eval usage context through the full_assistant answer gateway call", async () => {
     const chat = buildChatGateway("the answer");
     const runner = new RetrievalPipelineEvalRunner(

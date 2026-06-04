@@ -30,7 +30,10 @@ export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] =
     similarityThreshold: 0.2,
     rerankTopK: 5,
     retrievalStrategy: "fixed",
-    metadataFieldSuggestions: [],
+    metadataFieldSuggestions: [
+      { field: "region", inferredType: "string" },
+      { field: "publishedAt", inferredType: "date" },
+    ],
     metadataRules: [],
   },
   channels: {
@@ -100,6 +103,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   retrievalEnabled: true,
   sourceScope: { mode: "all" },
   chatModelOverride: null,
+  skillSettings: {},
   surfaceSettings: {
     authenticatedChat: {
       enabled: true,
@@ -181,6 +185,33 @@ const emptyDocumentSources = {
   sources: [],
 };
 
+export const baseDocumentSources = (): ApiSchemas["DocumentSourceListResponse"] => ({
+  sources: [
+    {
+      id: "11111111-1111-4111-8111-111111111111",
+      kind: "upload",
+      name: "Course guide",
+      externalId: null,
+      lastSyncStatus: null,
+      lastSyncedAt: null,
+      documentCount: 1,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    },
+    {
+      id: "22222222-2222-4222-8222-222222222222",
+      kind: "website",
+      name: "Release notes",
+      externalId: "https://example.com/releases",
+      lastSyncStatus: "completed",
+      lastSyncedAt: nowIso,
+      documentCount: 3,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    },
+  ],
+});
+
 const emptyCrawlJobs = {
   jobs: [],
   total: 0,
@@ -234,6 +265,7 @@ export const installDashboardApiMocks = async (
     historyList?: unknown;
     historyItems?: unknown;
     searchHistory?: unknown;
+    documentSources?: unknown;
     conversationDetail?: unknown;
     agentUpdates?: unknown[];
     requestLog?: string[];
@@ -278,6 +310,7 @@ export const installDashboardApiMocks = async (
     hasMore: false,
   };
   const searchHistory = options.searchHistory ?? emptySearchHistory;
+  const documentSources = options.documentSources ?? emptyDocumentSources;
   const historyItems = options.historyItems ?? {
     items: Array.isArray((historyList as { conversations?: unknown[] }).conversations)
       ? (historyList as { conversations: Array<{ id: string; updatedAt: string }> }).conversations.map((conversation) => ({
@@ -355,7 +388,7 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/document/sources") {
-      await json(route, emptyDocumentSources);
+      await json(route, documentSources);
       return;
     }
 

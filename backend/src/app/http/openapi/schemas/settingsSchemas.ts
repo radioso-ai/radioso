@@ -35,6 +35,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
       semanticRewriteInstructions: z.string().max(2000),
       lexicalRewriteInstructions: z.string().max(2000),
       suggestedQuestionsEnabled: z.boolean(),
+      suggestedQuestionsCount: z.number().int().min(1).max(4),
       rerankEnabled: z.boolean(),
       vectorTopK: z.number().int().min(1).max(300),
       similarityThreshold: z.number().min(0).max(1),

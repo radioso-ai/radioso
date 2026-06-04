@@ -1222,8 +1222,6 @@ describe("chat retrieval domain", () => {
         responseBehaviorEnabled: true,
         responseBehavior: {
           customInstruction: "Help visitors choose meditation retreats and courses.",
-          suggestedQuestionsEnabled: true,
-          suggestedQuestionsCount: 3,
           citationDisplayEnabled: true,
         },
       },

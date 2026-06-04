@@ -137,6 +137,172 @@ describe("agents contract", () => {
       .expect(400);
   });
 
+  it("accepts and returns per-agent skill settings", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-skill-settings@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const created = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({
+        name: "Retrieval tuned",
+        skillSettings: {
+          "retrieval.answer": {
+            queryRewriteEnabled: false,
+            vectorTopK: 7,
+          },
+          "custom.skill": {
+            enabled: true,
+          },
+        },
+      })
+      .expect(201);
+
+    expect(created.body.skillSettings).toEqual({
+      "retrieval.answer": {
+        queryRewriteEnabled: false,
+        vectorTopK: 7,
+      },
+      "custom.skill": {
+        enabled: true,
+      },
+    });
+
+    const updated = await request(app)
+      .put(`/api/v1/agents/${created.body.id}`)
+      .set("Authorization", authorization)
+      .send({
+        skillSettings: {
+          "retrieval.answer": {
+            rerankEnabled: true,
+          },
+        },
+      })
+      .expect(200);
+
+    expect(updated.body.skillSettings).toEqual({
+      "retrieval.answer": {
+        rerankEnabled: true,
+      },
+    });
+
+    const fetched = await request(app)
+      .get(`/api/v1/agents/${created.body.id}`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(fetched.body.skillSettings).toEqual(updated.body.skillSettings);
+  });
+
+  it("rejects invalid per-agent retrieval skill settings at the write boundary", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-invalid-skill-settings@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const response = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({
+        name: "Invalid retrieval tuned",
+        skillSettings: {
+          "retrieval.answer": {
+            vectorTopK: 0,
+          },
+        },
+      })
+      .expect(400);
+
+    expect(response.body.error.message).toMatch(/vectorTopK/);
+  });
+
+  it("rejects per-agent match-turn metadata rules without a trigger instruction", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-invalid-match-turn-rule@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const response = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({
+        name: "Invalid match turn rule",
+        skillSettings: {
+          "retrieval.answer": {
+            metadataRules: [
+              {
+                id: "audience-rule",
+                field: "audience",
+                valueType: "string",
+                operator: "equals",
+                value: "partner",
+                conditions: [
+                  {
+                    id: "audience-condition",
+                    field: "audience",
+                    valueType: "string",
+                    operator: "equals",
+                    value: "partner",
+                  },
+                ],
+                effect: "filter",
+                enabled: true,
+                triggerMode: "match_turn",
+              },
+            ],
+          },
+        },
+      })
+      .expect(400);
+
+    expect(response.body.error.message).toMatch(/triggerInstruction/);
+  });
+
+  it("accepts per-agent match-turn metadata rules with a trigger instruction", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-valid-match-turn-rule@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const response = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({
+        name: "Valid match turn rule",
+        skillSettings: {
+          "retrieval.answer": {
+            metadataRules: [
+              {
+                id: "audience-rule",
+                field: "audience",
+                valueType: "string",
+                operator: "equals",
+                value: "partner",
+                conditions: [
+                  {
+                    id: "audience-condition",
+                    field: "audience",
+                    valueType: "string",
+                    operator: "equals",
+                    value: "partner",
+                  },
+                ],
+                effect: "filter",
+                enabled: true,
+                triggerMode: "match_turn",
+                triggerInstruction: "Use for partner-specific questions",
+              },
+            ],
+          },
+        },
+      })
+      .expect(201);
+
+    expect(response.body.skillSettings["retrieval.answer"].metadataRules[0]).toMatchObject({
+      id: "audience-rule",
+      triggerMode: "match_turn",
+      triggerInstruction: "Use for partner-specific questions",
+    });
+  });
+
   it("persists manually added documents in selected source scope", async () => {
     const { app } = createTestApp();
     const { token } = await issueTestToken(app, "agents-manual-source-scope@example.com");

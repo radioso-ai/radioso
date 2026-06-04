@@ -32,6 +32,7 @@ export interface RetrievalPipelineRequest {
   sourceFilter?: RetrievalSourceFilter;
   execution?: RetrievalExecutionMetadata;
   usageContext?: Omit<ModelCallUsageContext, "operation">;
+  agentSkillSettings?: Record<string, unknown>;
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
 }
 

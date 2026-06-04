@@ -504,6 +504,7 @@ describe("EvalRunService.execute (retrieval_only)", () => {
         suggestedQuestionsEnabled: true,
         citationDisplayEnabled: true,
         sourceScope: { mode: "selected", sourceIds: ["src-1", "src-2"] },
+        skillSettings: {},
         chatModelOverride: null,
       },
     });

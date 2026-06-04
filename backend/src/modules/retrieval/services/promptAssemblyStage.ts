@@ -7,8 +7,6 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
   execute(input: ContextSelectionStageResult) {
     const includeResponseBehavior = input.request.responseBehaviorEnabled ?? input.request.responseIdentity !== null;
     const responseBehavior = input.request.responseBehavior;
-    const suggestedQuestionsEnabled = responseBehavior?.suggestedQuestionsEnabled ?? input.settings.suggestedQuestionsEnabled;
-    const suggestedQuestionsCount = responseBehavior?.suggestedQuestionsCount ?? input.settings.suggestedQuestionsCount;
     const customInstruction = responseBehavior?.customInstruction ?? input.settings.customInstruction;
     const prompt = this.promptBuilder.build({
       query: input.request.query,
@@ -33,8 +31,8 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       citations: prompt.citations,
       responseSettings: {
         citationDisplayEnabled: responseBehavior?.citationDisplayEnabled ?? true,
-        suggestedQuestionsEnabled: includeResponseBehavior ? suggestedQuestionsEnabled : false,
-        suggestedQuestionsCount: includeResponseBehavior ? suggestedQuestionsCount : 0,
+        suggestedQuestionsEnabled: includeResponseBehavior ? input.settings.suggestedQuestionsEnabled : false,
+        suggestedQuestionsCount: includeResponseBehavior ? input.settings.suggestedQuestionsCount : 0,
         customInstruction: includeResponseBehavior ? customInstruction : undefined,
         responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
       },

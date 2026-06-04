@@ -21,7 +21,7 @@ import { CandidatePreparationStageService } from "./candidatePreparationStage.js
 import { ContextSelectionStageService } from "./contextSelectionStage.js";
 import { PromptAssemblyStageService } from "./promptAssemblyStage.js";
 import { QueryInterpretationStageService } from "./queryInterpretationStage.js";
-import { RetrievalContextStageService } from "./retrievalContextStage.js";
+import { RetrievalContextStageService, type SkillSettingsResolver } from "./retrievalContextStage.js";
 import { RetrievalDiagnosticsStageService } from "./retrievalDiagnosticsStage.js";
 import { RetrievalPipelineActivityTraceBuilder } from "./retrievalPipelineActivityTraceBuilder.js";
 import { MetadataRuleScoringService } from "./metadataRuleScoringService.js";
@@ -108,10 +108,12 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
     retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
     _semanticQueryConstraintService?: unknown,
     ingestionSettingsService?: IngestionSettingsService,
+    skillSettingsResolver?: SkillSettingsResolver,
   ) {
     this.retrievalContextStage = new RetrievalContextStageService(
       retrievalSettingsService,
       conversationContextService,
+      skillSettingsResolver,
     );
     this.queryInterpretationStage = new QueryInterpretationStageService(queryRewriteService);
     this.candidateRetrievalStage = new CandidateRetrievalStageService(
@@ -197,8 +199,8 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
     const responseBehavior = input.request.responseBehavior;
     const responseSettings = {
       citationDisplayEnabled: responseBehavior?.citationDisplayEnabled ?? true,
-      suggestedQuestionsEnabled: responseBehavior?.suggestedQuestionsEnabled ?? input.context.result.settings.suggestedQuestionsEnabled,
-      suggestedQuestionsCount: responseBehavior?.suggestedQuestionsCount ?? input.context.result.settings.suggestedQuestionsCount,
+      suggestedQuestionsEnabled: input.context.result.settings.suggestedQuestionsEnabled,
+      suggestedQuestionsCount: input.context.result.settings.suggestedQuestionsCount,
       customInstruction: responseBehavior?.customInstruction ?? input.context.result.settings.customInstruction,
       responseLanguagePolicy: input.interpretation.result.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
     };

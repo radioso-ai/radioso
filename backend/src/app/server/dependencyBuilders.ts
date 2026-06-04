@@ -5,7 +5,7 @@ import { ActionRequestRepository } from "../../db/repositories/actionRequestRepo
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
-import type { AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
+import type { AgentSkillSettingsRegistry, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
@@ -124,6 +124,7 @@ import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 import { WorkspaceService, WorkspaceSummaryService } from "../../modules/workspace/public.js";
+import type { SkillSettingsResolver } from "../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import {
@@ -226,11 +227,14 @@ export const buildInfrastructure = (input: {
 
 export const buildRepositories = (
   database: Database,
-  options: { agentSurfaceExtensions?: AgentSurfaceExtensionRegistry } = {},
+  options: {
+    agentSurfaceExtensions?: AgentSurfaceExtensionRegistry;
+    agentSkillSettings?: AgentSkillSettingsRegistry;
+  } = {},
 ) => ({
   accountMembershipRepository: new AccountMembershipRepository(database),
   accountRepository: new AccountRepository(database),
-  agentRepository: new AgentRepository(database, options.agentSurfaceExtensions),
+  agentRepository: new AgentRepository(database, options.agentSurfaceExtensions, options.agentSkillSettings),
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database),
   chunkRepository: new ChunkRepository(database, new PgVectorChunkStorage()),
   conversationRepository: new ConversationRepository(database),
@@ -558,6 +562,7 @@ export const buildRetrievalServices = (input: {
   llmRegistry: LlmProviderRegistry;
   logger: AppLogger;
   retrievalSettingsService: RetrievalSettingsService;
+  skillSettingsResolver?: SkillSettingsResolver;
   telemetryService: TelemetryService;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
 }) => {

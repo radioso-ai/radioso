@@ -20,6 +20,7 @@ import type {
   WebsiteEmbedThemeSettings,
   WorkspaceIngestionReprocessResponse,
 } from './api-types'
+import { writeRetrievalSkillSettingsOverride } from './retrieval-skill-settings'
 
 export const settingsApi = {
   async getRetrievalSettings(options: { auth?: 'apiToken' | 'session' } = {}): Promise<RetrievalSettings> {
@@ -43,6 +44,7 @@ export const settingsApi = {
           queryRewriteEnabled: payload.queryRewriteEnabled,
           semanticRewriteInstructions: payload.semanticRewriteInstructions,
           lexicalRewriteInstructions: payload.lexicalRewriteInstructions,
+          suggestedQuestionsCount: payload.suggestedQuestionsCount,
           rerankEnabled: payload.rerankEnabled,
           vectorTopK: payload.vectorTopK,
           similarityThreshold: payload.similarityThreshold,
@@ -277,9 +279,13 @@ export const agentsApi = {
       assistantLinkUtmEnabled: data.assistantLinkUtmEnabled,
       citationDisplayEnabled: data.citationDisplayEnabled,
       contactRequestsEnabled: data.contactRequestsEnabled,
+      retrievalEnabled: data.retrievalEnabled,
       theme: data.theme,
       branding: data.branding,
       sourceScope: data.sourceScope,
+      skillSettings: data.retrievalSkillSettings
+        ? writeRetrievalSkillSettingsOverride(data.skillSettings, data.retrievalSkillSettings)
+        : data.skillSettings,
       // null = clear back to workspace fallback; undefined = leave unchanged.
       chatModelOverride: data.chatModelOverride === undefined ? undefined : data.chatModelOverride,
     }))

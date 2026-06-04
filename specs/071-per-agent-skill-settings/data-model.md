@@ -26,7 +26,7 @@ The retrieval skill's existing `settingsSchema` (`retrieval.answer/generated.con
 | `suggestedQuestionsEnabled` / `suggestedQuestionsCount` | behavioral | canonical home (FR-014) |
 | `retrievalStrategy` | behavioral | `fixed` \| `reasoning` \| `auto` |
 | `metadataRules` | behavioral (doc scoping) | now per-agent |
-| **`sourceScope`** | behavioral (doc scoping) | **NEW in the override** (D4): `{mode:"all"}` \| `{mode:"selected",sourceIds}` |
+| ~~`sourceScope`~~ | doc scoping | **NOT in the override (option B, revised)** — stays in dedicated per-agent storage + workspace-membership validation; surfaced in the unified "which docs" UI, not folded into JSONB |
 | `vectorTopK` | operational (advanced) | system default unless set |
 | `rerankEnabled` / `rerankTopK` | operational (advanced) | system default unless set |
 | ~~`similarityThreshold`~~ | model-coupled | **removed from the override** — owned by system/model layer, FR-004 |
@@ -84,7 +84,7 @@ For each `retrieval_settings` row (`workspace_id`), for each agent in that works
 | `vector_top_k` | `vectorTopK` | copy if ≠ default |
 | `rerank_enabled` / `rerank_top_k` | `rerankEnabled` / `rerankTopK` | copy if ≠ default |
 | `similarity_threshold` | — | **not copied to override**; if ≠ new model default, preserve effective value via the system/model layer (parity, see Edge Cases) |
-| `agent.sourceScope` (already per-agent) | `sourceScope` | move into the override home |
+| `agent.sourceScope` | — | **not migrated** (option B): stays in its dedicated per-agent storage |
 
 Untuned workspace (all defaults) ⇒ agents migrate to `{}`. The migration is the **only** place values are
 snapshotted per-agent; at runtime, unset fields inherit.

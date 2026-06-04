@@ -46,13 +46,13 @@ As someone creating a new assistant, I want retrieval **on by default** and work
 
 As an operator, I want an agent's document scope and metadata rules configured together on the agent, so "which docs can this assistant retrieve" stops being split across the agent, the workspace, and per-call filters.
 
-**Why this priority**: Resolves an existing three-way split (`agent.sourceScope` top-level / workspace `metadataRules` / per-call `metadataFilter`) and is a prerequisite for deleting the workspace record (US4).
+**Why this priority**: `sourceScope` is already per-agent but lives apart from `metadataRules` (workspace) and the new retrieval UI. US3 makes `metadataRules` per-agent and unifies both under one "which docs" UI **without relocating `sourceScope`'s dedicated storage** (option B). Prerequisite for deleting the workspace record (US4).
 
-**Independent Test**: On one agent, set both `sourceScope` and a `metadataRules` boost; on another, set neither. Assert each agent retrieves according to its own consolidated doc-scope settings and the two do not interfere.
+**Independent Test**: On one agent, set both `sourceScope` and a `metadataRules` boost; on another, set neither. Assert each agent retrieves according to its own doc-scope settings and the two do not interfere.
 
 **Acceptance Scenarios**:
 
-1. **Given** `sourceScope` folded into the retrieval skill settings, **When** an agent restricts to selected sources, **Then** only those sources are retrieved for that agent.
+1. **Given** `sourceScope` kept in its dedicated per-agent storage and surfaced in the unified "which docs" UI, **When** an agent restricts to selected sources, **Then** only those sources are retrieved for that agent (behavior unchanged from today).
 2. **Given** per-agent `metadataRules`, **When** a rule boosts/filters, **Then** it applies only to that agent's turns.
 
 ---
@@ -128,7 +128,7 @@ As an administrator, if my organization relies on a workspace-wide retrieval **f
 - **FR-003**: Per-agent overrides MUST be read/written via the **agent** surface (PATCH), not via workspace-scoped retrieval endpoints.
 - **FR-004**: Retrieval defaults MUST be owned by the system / embedding-model layer. `similarityThreshold` MUST be model-coupled and MUST NOT be an agent-configurable field.
 - **FR-005**: Retrieval MUST be enabled by default for new agents, and an empty `skillSettings` MUST yield working grounded retrieval with no configuration.
-- **FR-006**: `sourceScope` MUST move into the retrieval skill settings and `metadataRules` MUST become per-agent, so "which docs" has a single per-agent home; per-call `metadataFilter` (API callers) is unaffected.
+- **FR-006** *(revised to option B, 2026-06-04)*: `metadataRules` MUST become per-agent (the override schema already carries it). `sourceScope` MUST **remain** in its dedicated per-agent storage + workspace-membership validation and MUST NOT be folded into the JSONB override (it already has normalized storage, validation, and ~5 consumers — folding it in is a risky downgrade). Both MUST be surfaced **together in one "which docs" UI** so configuration is unified. Per-call `metadataFilter` (API callers) is unaffected.
 - **FR-007**: The workspace `retrieval_settings` record, its settings page, and the `get_retrieval_settings` / `update_retrieval_settings` REST endpoints and MCP tools MUST be removed.
 - **FR-008**: The knowledge base MUST retain ingestion settings only (chunking, parsing, embedding model, connectors) and own no retrieval/query-time config.
 - **FR-009**: Migration MUST snapshot each workspace's tuned retrieval values into every agent's `skillSettings`, only where they differ from the new defaults; untuned workspaces' agents MUST migrate to empty `skillSettings`. Effective behavior MUST be preserved (including effective `similarityThreshold`).

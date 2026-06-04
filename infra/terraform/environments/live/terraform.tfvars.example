@@ -14,6 +14,8 @@ frontend_image = "us-central1-docker.pkg.dev/radioso-494120/radioso-live/fronten
 # mail_from_name        = "Radioso"
 
 # Optional overrides
+# project_id                  = "radioso-494120"
+# environment                 = "live"
 # region                      = "us-central1"
 # deploy_services             = false
 # radioso_edition             = "enterprise"

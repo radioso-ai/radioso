@@ -51,7 +51,7 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../composition/applicationModule.js";
-import type { ChatIntakeProviderPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
+import type { PublicChatActionAdvertiserPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillCatalogService } from "../../modules/skills/public.js";
 import type { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
@@ -77,7 +77,7 @@ export interface AppDependencies {
   productAnalyticsService: ProductAnalyticsPort;
   capabilityPolicy: CapabilityPolicy;
   usageLimitPolicy: UsageLimitPolicy;
-  chatIntakeProvider: ChatIntakeProviderPort;
+  publicChatActionAdvertiser: PublicChatActionAdvertiserPort;
   contactHistoryProvider: ContactHistoryProviderPort;
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;

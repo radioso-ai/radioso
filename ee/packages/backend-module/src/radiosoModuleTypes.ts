@@ -21,7 +21,7 @@ export interface ApplicationModuleRegistrationContext {
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
   registerUsageEventRecorder?(recorder: ApplicationUsageEventRecorderRegistration): void;
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHandler): void;
-  registerChatIntakeProvider?(provider: ApplicationChatIntakeProviderRegistration): void;
+  registerPublicChatActionAdvertiser?(provider: ApplicationPublicChatActionAdvertiserRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
   registerSkillDefinition?(definition: SkillDefinition): void;
@@ -425,29 +425,6 @@ export interface ActivityTrace {
   summary?: ActivitySummary;
 }
 
-export interface ChatIntakeReceiptField {
-  name: string;
-  displayName: string;
-  value: string;
-}
-
-export interface ChatIntakeReceipt {
-  fields: ChatIntakeReceiptField[];
-  statusLabel?: string;
-}
-
-export interface ChatIntakeResult {
-  skillName: string;
-  status: SkillTurnStatus;
-  skillOutcome?: string;
-  display?: SkillDisplayMetadata;
-  stateId?: string;
-  answer: string;
-  activitySummary: ActivitySummary;
-  activityTrace: ActivityTrace;
-  receipt?: ChatIntakeReceipt;
-}
-
 export interface PublicChatIntakeAction {
   skillName: string;
   intentName: string;
@@ -465,27 +442,8 @@ export interface ChatInputMetadata {
   intent?: ChatInputIntentMetadata;
 }
 
-export interface ChatIntakeProvider {
-  handle(input: {
-    workspaceId: string;
-    accountId?: string | null;
-    agentId?: string | null;
-    conversationId: string;
-    userMessageId: string;
-    query: string;
-    history: Array<{
-      id: string;
-      role: "user" | "assistant" | "system";
-      content: string;
-      createdAt: Date;
-    }>;
-    sourceChannel?: string | null;
-    sourceOrigin?: string | null;
-    anonymousSessionId?: string | null;
-    userExpectedLocale?: string | null;
-    inputMetadata?: ChatInputMetadata;
-  }): Promise<ChatIntakeResult | null>;
-  getPublicIntakeActions?(input: {
+export interface PublicChatActionAdvertiser {
+  getPublicIntakeActions(input: {
     workspaceId: string;
     agentId?: string | null;
     sourceChannel?: string | null;
@@ -568,8 +526,8 @@ export type ApplicationChatActionSuggestionProviderRegistration =
       };
     }) => ChatActionSuggestionProvider);
 
-export type ApplicationChatIntakeProviderRegistration =
-  | ChatIntakeProvider
+export type ApplicationPublicChatActionAdvertiserRegistration =
+  | PublicChatActionAdvertiser
   | ((context: {
       database: UsageLimitDatabasePort;
       chatGateway: ChatGateway;
@@ -630,7 +588,7 @@ export type ApplicationChatIntakeProviderRegistration =
       mailService: MailTransport;
       dashboardBaseUrl: string | null;
       assertPublicWebsiteUrl: AgentWizardUrlPolicy;
-    }) => ChatIntakeProvider);
+    }) => PublicChatActionAdvertiser);
 
 export interface MailTransport {
   send(message: {

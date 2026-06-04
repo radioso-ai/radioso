@@ -31,7 +31,7 @@ const session = (turnRoute: string): PreparedSession =>
   }) as unknown as PreparedSession;
 
 const strategy: TurnSelectionStrategy = {
-  select: () => ["skill_intake", "retrieval"],
+  select: () => ["retrieval"],
 };
 
 describe("ChatTurnSkillSelector", () => {
@@ -55,7 +55,7 @@ describe("ChatTurnSkillSelector", () => {
       { skillName: "social_only.answer", reason: "turn_selection_strategy" },
     ]);
     // The path-layer strategy informs the reason, not which skill is chosen.
-    expect(decision.reason).toBe("candidates:skill_intake,retrieval");
+    expect(decision.reason).toBe("candidates:retrieval");
   });
 
   it("throws when no terminal skill is registered", () => {

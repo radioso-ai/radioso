@@ -9,7 +9,7 @@ import {
   type RetrievalSettingsRecord,
 } from "../../modules/settings/contracts/retrieval.js";
 import { AgentSkillSettingsRegistry } from "../../modules/agents/public.js";
-import type { SkillSettingsResolver } from "../../modules/retrieval/services/retrievalContextStage.js";
+import type { SkillSettingsResolver } from "../../modules/retrieval/public.js";
 
 export const createRetrievalSkillSettingsResolver = (): SkillSettingsResolver => ({
   resolve(skill, defaults, agentOverride) {

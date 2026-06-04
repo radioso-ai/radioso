@@ -10,6 +10,7 @@ import {
   type FinalPromptContext,
   type RetrievalPipelineRequest,
   type RetrievalPipelineService,
+  type SkillSettingsResolver,
 } from "../../retrieval/public.js";
 import type {
   RetrievalSettingsRecord,
@@ -17,7 +18,6 @@ import type {
 } from "../../settings/contracts/retrieval.js";
 import { freezeRetrievalSettings } from "../../settings/contracts/retrieval.js";
 import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
-import type { SkillSettingsResolver } from "../../retrieval/services/retrievalContextStage.js";
 import type { LlmCapabilityResolver } from "../../../shared/infra/llm/capabilityResolver.js";
 import type { EvalRunModelOverride } from "../domain/types.js";
 import type { EvalReplayContext, EvalRetrievalRunnerPort } from "./evalRunner.js";

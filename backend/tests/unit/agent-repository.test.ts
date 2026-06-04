@@ -57,6 +57,66 @@ describe("AgentRepository", () => {
     expect(agent?.assistantLinkUtmEnabled).toBe(true);
   });
 
+  it("defaults contact request delivery when stored behavior predates the setting", async () => {
+    const repository = new AgentRepository({
+      queryOptional: async () => agentRow({
+        authenticatedChat: { enabled: true },
+        anonymousChat: { enabled: false, token: null },
+        websiteEmbed: websiteEmbedDefaults(),
+      }),
+    } as never);
+
+    const agent = await repository.findByIdAndWorkspaceId("agent-1", "workspace-1");
+
+    expect(agent?.contactRequestDelivery).toEqual({
+      recipientEmails: [],
+      webhook: null,
+    });
+  });
+
+  it("persists contact request delivery in behavior settings", async () => {
+    const query = vi.fn(async (text: string, _params?: unknown[]) => {
+      if (text.includes("INSERT INTO agents")) {
+        return {
+          rows: [
+            agentRow({
+              authenticatedChat: { enabled: true },
+              anonymousChat: { enabled: false, token: null },
+              websiteEmbed: websiteEmbedDefaults(),
+            }, {
+              behavior_settings: {
+                contactRequestDelivery: {
+                  recipientEmails: ["sales@example.com"],
+                  webhook: { url: "https://hooks.example.com/contact" },
+                },
+              },
+            }),
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+    const repository = new AgentRepository({
+      withTransaction: async (callback: (client: { query: typeof query }) => Promise<unknown>) => callback({ query }),
+    } as never);
+
+    await repository.create("workspace-1", {
+      name: "Support",
+      contactRequestDelivery: {
+        recipientEmails: ["sales@example.com"],
+        webhook: { url: "https://hooks.example.com/contact" },
+      },
+    });
+
+    const insertParams = query.mock.calls[0]?.[1] as unknown[] | undefined;
+    expect(JSON.parse(insertParams?.[5] as string)).toMatchObject({
+      contactRequestDelivery: {
+        recipientEmails: ["sales@example.com"],
+        webhook: { url: "https://hooks.example.com/contact" },
+      },
+    });
+  });
+
   it("parses registered surface extension data on read before mapping website embed settings", async () => {
     const parsedWebsiteEmbed: WebsiteEmbedSurfaceSettings = {
       ...websiteEmbedDefaults(),
@@ -232,7 +292,7 @@ describe("AgentRepository", () => {
 
   it("stores manual document selection as an unassigned source filter", async () => {
     const realSourceId = "11111111-1111-1111-1111-111111111111";
-    const query = vi.fn(async (text: string) => {
+    const query = vi.fn(async (text: string, _params?: unknown[]) => {
       if (text.includes("INSERT INTO agents")) {
         return {
           rows: [

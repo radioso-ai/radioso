@@ -40,6 +40,60 @@ Agents own:
 
 Workspace retrieval settings still provide the default retrieval layer. Agents can override fields for the `retrieval.answer` skill through `skillSettings["retrieval.answer"]`. An empty `skillSettings` map means full inherit. If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and return citations. If `retrievalEnabled: false`, the agent answers through the direct assistant path and returns diagnostics with `retrievalInvoked: false`.
 
+## Contact requests
+
+An agent can offer a "contact a human" option in chat. It is off by default and turned on per agent with `contactRequestsEnabled`. When it is on, the assistant collects the visitor's email and message, then delivers the request out of band.
+
+You configure where requests go with `contactRequestDelivery`:
+
+- `recipientEmails`: up to 5 email addresses. Each is emailed a copy of the request. When the list is empty, Radioso falls back to the workspace owner.
+- `webhook`: an optional `{ "url": "https://..." }`. When set, Radioso also POSTs the request to that URL. Email and webhook both fire when both are configured.
+
+Example agent update fragment:
+
+```json
+{
+  "contactRequestsEnabled": true,
+  "contactRequestDelivery": {
+    "recipientEmails": ["support@example.com", "ops@example.com"],
+    "webhook": { "url": "https://example.com/hooks/contact" }
+  }
+}
+```
+
+### Webhook payload and signature
+
+The webhook receives a JSON body:
+
+```json
+{
+  "name": "Ada",
+  "email": "ada@example.com",
+  "message": "Please call me back.",
+  "workspaceId": "...",
+  "conversationId": "...",
+  "requestId": "..."
+}
+```
+
+Two headers let you verify the request:
+
+- `X-Radioso-Signature`: a base64url HMAC-SHA256 over the timestamp and the raw body.
+- `X-Radioso-Timestamp`: the send time in epoch milliseconds.
+
+The timestamp is part of the signed value, so it cannot be changed without breaking the signature. You can use it for replay protection — for example, reject requests older than a few minutes.
+
+The signing key is not the raw deployment secret. It is derived once from the deployment's `WORKSPACE_TOKEN_SECRET` so the secret itself never leaves the server:
+
+```text
+signingKey = HMAC_SHA256(WORKSPACE_TOKEN_SECRET, "radioso/contact-webhook-signature/v1")
+expected   = base64url(HMAC_SHA256(signingKey, timestamp + "." + rawBody))
+```
+
+To verify, read the `X-Radioso-Timestamp` header and the exact raw bytes of the body, compute `expected`, and compare it to `X-Radioso-Signature` with a constant-time check. Read the raw body before parsing it as JSON, because re-serializing can change the bytes and break the comparison.
+
+Radioso sends the request with `POST`, follows redirects only to publicly routable hosts, and applies a short delivery timeout. Point the webhook at a stable public endpoint.
+
 ## Skills
 
 The skills catalog is read-only. It helps API, SDK, MCP, and assistant clients understand what work is available and which stable contract owns it.

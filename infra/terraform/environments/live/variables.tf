@@ -151,6 +151,12 @@ variable "metrics_auth_token" {
   default     = null
 }
 
+variable "product_analytics_sinks" {
+  description = "Comma-separated product analytics sink list for live."
+  type        = string
+  default     = "audit,posthog"
+}
+
 variable "error_sinks" {
   description = "Comma-separated error sink list for live."
   type        = string

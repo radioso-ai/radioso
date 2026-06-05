@@ -234,8 +234,27 @@ This keeps external crash tooling optional without weakening the product's defau
 
 ### Current implementation
 
-The current backend slice already routes unhandled request failures through the
-shared error service in [`backend/src/app/http/middleware/errorHandler.ts`](../backend/src/app/http/middleware/errorHandler.ts).
+Errors reach the shared error service (and therefore every configured sink,
+including the optional PostHog/Sentry exporters) from four places, so capture is
+not limited to the HTTP request path:
+
+- **Unhandled HTTP request failures** — the error handler middleware in
+  [`backend/src/app/http/middleware/errorHandler.ts`](../backend/src/app/http/middleware/errorHandler.ts)
+  (`errorType: http.request.unhandled`).
+- **Browser errors** — posted to `/api/v1/observability/frontend-errors`
+  (`frontend.*.unhandled`).
+- **Process-level crashes** — every entrypoint installs
+  [`installProcessErrorHandlers`](../backend/src/runtime/processErrorHandlers.ts),
+  which reports `process.uncaughtException` and `process.unhandledRejection`
+  before exiting with code 1. Without this, a crash or a floating promise
+  rejection would terminate the process with no error-sink record.
+- **Background worker loops** — the document-processing poll tick
+  (`document.worker.tick_failed`) and the action-dispatch outbox drain
+  (`action.dispatch.drain_failed`) report the otherwise-swallowed infrastructure
+  failures that never surface as HTTP errors. Per-document job failures keep
+  their existing retry/audit/telemetry handling and are not reported here, to
+  avoid turning expected transient failures into error-sink noise.
+
 Analytics and errors persist through audit-backed sinks first, and optional
 exporters fan out afterward.
 

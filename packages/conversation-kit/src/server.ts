@@ -2,9 +2,9 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { once } from "node:events";
 
 import type { ConversationAgentConfig, Directive, Routine } from "@radioso/conversation-contract";
+import { DirectiveCoherenceError } from "@radioso/conversation-defaults";
 
 import { createConversationKit, type ConversationKit, type CreateConversationKitOptions } from "./composition.js";
-import { DirectiveCoherenceError } from "./coherence.js";
 import { parseTurnRequestBody, isRecord, type TurnResponseBody } from "./httpTypes.js";
 import { createConversationKitClient, type ConversationKitClient } from "./sdk.js";
 

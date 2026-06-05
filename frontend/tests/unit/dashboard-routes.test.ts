@@ -8,6 +8,7 @@ import {
   parseDashboardRoute,
   retargetDashboardRouteToWorkspace,
 } from '@/lib/dashboard-routes'
+import { agentSectionFromRoute, agentSectionRoute } from '@/lib/dashboard-areas'
 
 describe('dashboard route state', () => {
   it('builds a canonical agent route with workspace key and selected tab state', () => {
@@ -106,6 +107,17 @@ describe('dashboard route state', () => {
     })
 
     expect(href).toBe('/w/workspace-nine-abc123/agents?tab=channels&anchor=website-embed')
+  })
+
+  it('maps the directives agent section to the assistant directives anchor', () => {
+    expect(agentSectionRoute('directives')).toEqual({
+      agentTab: 'behavior',
+      anchor: 'assistant-directives',
+    })
+    expect(agentSectionFromRoute({
+      agentTab: 'behavior',
+      anchor: 'assistant-directives',
+    })).toBe('directives')
   })
 
   it('parses only UUID agent path segments', () => {

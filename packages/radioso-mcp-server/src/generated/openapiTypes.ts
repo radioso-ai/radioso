@@ -646,6 +646,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/directives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List directives for an agent */
+        get: operations["listAgentDirectives"];
+        put?: never;
+        /** Create an authored directive for an agent */
+        post: operations["createAgentDirective"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/directives/{directiveId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete an authored directive for an agent */
+        delete: operations["deleteAgentDirective"];
+        options?: never;
+        head?: never;
+        /** Update an authored directive for an agent */
+        patch: operations["updateAgentDirective"];
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/assistant-logo": {
         parameters: {
             query?: never;
@@ -2276,6 +2312,88 @@ export interface components {
                     };
                 };
             };
+        };
+        AuthoredDirectiveCondition: {
+            /** @enum {string} */
+            kind: "always";
+        } | {
+            /** @enum {string} */
+            kind: "contextual";
+            description: string;
+        };
+        AuthoredDirectiveCreateRequest: {
+            name: string;
+            condition: components["schemas"]["AuthoredDirectiveCondition"];
+            action: string;
+            requiredCapabilities?: string[];
+            dependsOn?: string[];
+            excludes?: string[];
+            description?: string | null;
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        AuthoredDirectiveUpdateRequest: {
+            name?: string;
+            condition?: components["schemas"]["AuthoredDirectiveCondition"];
+            action?: string;
+            requiredCapabilities?: string[];
+            dependsOn?: string[];
+            excludes?: string[];
+            description?: string | null;
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        AuthoredDirective: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            agentId: string;
+            name: string;
+            condition: components["schemas"]["AuthoredDirectiveCondition"];
+            action: string;
+            priority: number | null;
+            /** @enum {string|null} */
+            criticality: "low" | "medium" | "high" | null;
+            requiredCapabilities: string[];
+            dependsOn: string[];
+            excludes: string[];
+            routes: string[];
+            description: string | null;
+            metadata: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        BuiltInDirective: {
+            name: string;
+            condition: components["schemas"]["AuthoredDirectiveCondition"];
+            action: string;
+            priority: number | null;
+            /** @enum {string|null} */
+            criticality: "low" | "medium" | "high" | null;
+            description: string | null;
+        };
+        DirectiveCoherenceVerdict: {
+            coherent: boolean;
+            conflicts: {
+                directiveId?: string;
+                directiveName: string;
+                reason: string;
+            }[];
+            rationale: string;
+        };
+        DirectiveListResponse: {
+            directives: components["schemas"]["AuthoredDirective"][];
+            builtIns: components["schemas"]["BuiltInDirective"][];
+        };
+        AuthoredDirectiveSaveResponse: {
+            directive: components["schemas"]["AuthoredDirective"];
+            coherence: components["schemas"]["DirectiveCoherenceVerdict"];
         };
         PublicChatSessionResponse: {
             /** Format: uuid */
@@ -5497,6 +5615,210 @@ export interface operations {
             };
             /** @description Agent not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentDirectives: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Directives returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectiveListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentDirective: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthoredDirectiveCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Directive created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthoredDirectiveSaveResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Directive name already exists for this agent */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentDirective: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                directiveId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Directive deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or directive not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgentDirective: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                directiveId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthoredDirectiveUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Directive updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthoredDirectiveSaveResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or directive not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Directive name already exists for this agent */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

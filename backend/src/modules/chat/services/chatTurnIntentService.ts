@@ -2,14 +2,9 @@ import {
   RESPONSE_INTENT,
   type ResponseIntent,
 } from "../../retrieval/public.js";
+import { CHAT_TURN_ROUTE, type ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
 
-export const CHAT_TURN_ROUTE = {
-  RETRIEVAL: "retrieval",
-  SOCIAL_ONLY: "social_only",
-  ASSISTANT_IDENTITY: "assistant_identity",
-} as const;
-
-export type ChatTurnRoute = (typeof CHAT_TURN_ROUTE)[keyof typeof CHAT_TURN_ROUTE];
+export { CHAT_TURN_ROUTE, type ChatTurnRoute };
 
 export class ChatTurnIntentService {
   resolve(input: { responseIntent?: ResponseIntent }): ChatTurnRoute {

@@ -21,7 +21,7 @@ describe("composeGroundedAnswerSystemPrompt — directive steering", () => {
 
   it("renders matched directive actions into the system prompt", () => {
     const steering: SteeringRule[] = [
-      { action: "slow down and confirm before acting", criticality: "high", source: "directive", lifespan: "response" },
+      { action: "slow down and confirm before acting", source: "directive", lifespan: "response" },
       { action: "prefer concrete examples", source: "directive", lifespan: "response" },
     ];
     const { systemPrompt } = composeGroundedAnswerSystemPrompt({ ...baseInput, steering });

@@ -12,7 +12,6 @@ export const authoredDirectiveToDirective = (
   options: AuthoredDirectiveMappingOptions = {},
 ): Directive => {
   const priority = "priority" in directive ? directive.priority : null;
-  const criticality = "criticality" in directive ? directive.criticality : null;
   return {
     ...("id" in directive ? { id: directive.id } : {}),
     name: directive.name,
@@ -21,7 +20,6 @@ export const authoredDirectiveToDirective = (
     ...(priority === null
       ? options.defaultPriority === undefined ? {} : { priority: options.defaultPriority }
       : { priority }),
-    ...(criticality === null ? {} : { criticality }),
     requiredCapabilities: directive.requiredCapabilities,
     dependsOn: directive.dependsOn,
     excludes: directive.excludes,

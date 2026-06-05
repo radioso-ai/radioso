@@ -2281,14 +2281,12 @@ describe("chat retrieval domain", () => {
               {
                 action: "Represent the organization as its assistant.",
                 priority: 80,
-                criticality: "high",
                 source: "directive",
                 lifespan: "response",
               },
               {
                 action: "Use supported links inline with human-readable text.",
                 priority: 90,
-                criticality: "high",
                 source: "directive",
                 lifespan: "response",
               },

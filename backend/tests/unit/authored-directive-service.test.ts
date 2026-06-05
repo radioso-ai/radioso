@@ -34,7 +34,6 @@ const persistedDirective = (input: AuthoredDirectiveInput, overrides: Partial<Au
     condition: input.condition,
     action: input.action,
     priority: null,
-    criticality: null,
     requiredCapabilities: input.requiredCapabilities ?? [],
     dependsOn: input.dependsOn ?? [],
     excludes: input.excludes ?? [],

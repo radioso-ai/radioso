@@ -3852,17 +3852,6 @@
               "null"
             ]
           },
-          "criticality": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "low",
-              "medium",
-              "high"
-            ]
-          },
           "requiredCapabilities": {
             "type": "array",
             "items": {
@@ -3913,7 +3902,6 @@
           "condition",
           "action",
           "priority",
-          "criticality",
           "requiredCapabilities",
           "dependsOn",
           "excludes",
@@ -3942,17 +3930,6 @@
               "null"
             ]
           },
-          "criticality": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "low",
-              "medium",
-              "high"
-            ]
-          },
           "description": {
             "type": [
               "string",
@@ -3965,7 +3942,6 @@
           "condition",
           "action",
           "priority",
-          "criticality",
           "description"
         ]
       },

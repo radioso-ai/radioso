@@ -1783,7 +1783,7 @@ components:
       properties:
         provider:
           type: string
-          enum: &a20
+          enum: &a19
             - openai
             - openai-compatible
             - gemini
@@ -2523,14 +2523,6 @@ components:
           type:
             - integer
             - "null"
-        criticality:
-          type:
-            - string
-            - "null"
-          enum: &a12
-            - low
-            - medium
-            - high
         requiredCapabilities:
           type: array
           items:
@@ -2567,7 +2559,6 @@ components:
         - condition
         - action
         - priority
-        - criticality
         - requiredCapabilities
         - dependsOn
         - excludes
@@ -2589,11 +2580,6 @@ components:
           type:
             - integer
             - "null"
-        criticality:
-          type:
-            - string
-            - "null"
-          enum: *a12
         description:
           type:
             - string
@@ -2603,7 +2589,6 @@ components:
         - condition
         - action
         - priority
-        - criticality
         - description
     DirectiveCoherenceVerdict:
       type: object
@@ -3745,7 +3730,7 @@ components:
               type: string
             selectionMode:
               type: string
-              enum: &a15
+              enum: &a14
                 - deterministic
                 - probabilistic
             selectionReason:
@@ -3756,7 +3741,7 @@ components:
               maximum: 1
             callerSurface:
               type: string
-              enum: &a16
+              enum: &a15
                 - assistant
                 - retrieval_api
                 - sdk
@@ -3793,7 +3778,7 @@ components:
                 - used
             outcome:
               type: string
-              enum: &a17
+              enum: &a16
                 - success
                 - unsupported
                 - forbidden
@@ -3830,14 +3815,14 @@ components:
                     additionalProperties: {}
                 evidenceStatus:
                   type: string
-                  enum: &a13
+                  enum: &a12
                     - found
                     - missing
                     - partial
                     - not_applicable
                 supportStatus:
                   type: string
-                  enum: &a14
+                  enum: &a13
                     - supported
                     - unsupported
                     - not_checked
@@ -4297,10 +4282,10 @@ components:
             additionalProperties: {}
         evidenceStatus:
           type: string
-          enum: *a13
+          enum: *a12
         supportStatus:
           type: string
-          enum: *a14
+          enum: *a13
         groundingOutcome:
           type: string
     SkillDiagnosticDefinition:
@@ -4314,7 +4299,7 @@ components:
           type: string
         selectionMode:
           type: string
-          enum: *a15
+          enum: *a14
         selectionReason:
           type: string
         selectionConfidence:
@@ -4323,7 +4308,7 @@ components:
           maximum: 1
         callerSurface:
           type: string
-          enum: *a16
+          enum: *a15
         capabilityChecks:
           type: array
           items:
@@ -4354,7 +4339,7 @@ components:
             - used
         outcome:
           type: string
-          enum: *a17
+          enum: *a16
         error:
           type: object
           properties:
@@ -4386,10 +4371,10 @@ components:
                 additionalProperties: {}
             evidenceStatus:
               type: string
-              enum: *a13
+              enum: *a12
             supportStatus:
               type: string
-              enum: *a14
+              enum: *a13
             groundingOutcome:
               type: string
       required:
@@ -4438,7 +4423,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a16
+            enum: *a15
         requiredCapabilities:
           type: array
           items:
@@ -4465,7 +4450,7 @@ components:
               type: array
               items:
                 type: string
-                enum: *a16
+                enum: *a15
             intent:
               type: object
               properties:
@@ -5347,7 +5332,7 @@ components:
           format: uuid
         value:
           type: string
-          enum: &a18
+          enum: &a17
             - up
             - down
         comment:
@@ -5356,7 +5341,7 @@ components:
             - "null"
         actorType:
           type: string
-          enum: &a19
+          enum: &a18
             - authenticated_user
             - api_token
             - anonymous_user
@@ -5416,14 +5401,14 @@ components:
           format: uuid
         value:
           type: string
-          enum: *a18
+          enum: *a17
         comment:
           type:
             - string
             - "null"
         actorType:
           type: string
-          enum: *a19
+          enum: *a18
         actorId:
           type: string
         accountId:
@@ -7313,7 +7298,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a20
+            enum: *a19
           required: true
           name: provider
           in: path
@@ -7354,7 +7339,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a20
+            enum: *a19
           required: true
           name: provider
           in: path
@@ -7896,7 +7881,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - &a21
+        - &a20
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -7920,7 +7905,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a21
+        - *a20
       parameters:
         - schema:
             type: string

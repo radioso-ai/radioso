@@ -259,6 +259,36 @@ export interface AgentWizardCrawlerLimits {
   maxLimit: number;
 }
 
+export interface WizardAnalysisResult {
+  suggestedName: string;
+  suggestedCustomInstruction: string;
+  suggestedGreetingMessage: string;
+  suggestedChunkingStrategy: {
+    strategy: "fixed_window" | "structured_semantic";
+    reasoning: string;
+  };
+  screenshotBase64: string | null;
+  screenshotUnavailableReason: string | null;
+  faviconUrl: string | null;
+  pagesAnalyzed: Array<{ url: string; title: string | null }>;
+  sourceUrl: string;
+  suggestedLocale: string | null;
+  suggestedPrivacyPolicyUrl: string | null;
+  suggestedContactEmail: string | null;
+}
+
+export interface WizardCreateInput {
+  websiteUrl: string;
+  name: string;
+  customInstruction?: string;
+  greetingInstruction?: string;
+  chunkingStrategy?: "fixed_window" | "structured_semantic";
+  faviconUrl?: string | null;
+  assistantDefaultLocale?: string | null;
+  privacyPolicyUrl?: string | null;
+  contactEmail?: string | null;
+}
+
 export interface AgentWizardCrawlerPort {
   fetchPageWithScreenshot(
     url: string,

@@ -10,6 +10,7 @@ import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import {
   agentSurfacePositions,
+  authoredDirectiveInputSchema,
 } from "../../../modules/agents/public.js";
 import {
   ASSISTANT_LOGO_MIME_TYPES,
@@ -20,6 +21,14 @@ import {
 const agentParamsSchema = z.object({
   agentId: z.string().uuid(),
 });
+
+const agentDirectiveParamsSchema = z.object({
+  agentId: z.string().uuid(),
+  directiveId: z.string().uuid(),
+});
+
+const authoredDirectiveBodySchema = authoredDirectiveInputSchema.omit({ routes: true });
+const authoredDirectivePatchBodySchema = authoredDirectiveBodySchema.partial().strict();
 
 const surfaceSettingsSchema = z.object({
   authenticatedChat: z.object({
@@ -96,7 +105,7 @@ export const agentBodySchema = z.object({
 
 export { llmProviderNames as agentLlmProviderNames, chatModelOverrideSchema as agentChatModelOverrideSchema };
 
-type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "agentService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
+type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "agentService" | "authoredDirectiveService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
 
 export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router => {
   const router = Router();
@@ -130,6 +139,67 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       const parsed = agentParamsSchema.parse(req.params);
       const agent = await dependencies.agentService.get(workspaceId, parsed.agentId);
       res.status(200).json(agent);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:agentId/directives", workspaceSession, agentRead, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsed = agentParamsSchema.parse(req.params);
+      const directives = await dependencies.authoredDirectiveService.list(workspaceId, parsed.agentId);
+      res.status(200).json({ directives });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post(
+    "/:agentId/directives",
+    workspaceSession,
+    agentManage,
+    validateBody(authoredDirectiveBodySchema),
+    async (req, res, next) => {
+      try {
+        const { workspaceId } = res.locals as { workspaceId: string };
+        const parsed = agentParamsSchema.parse(req.params);
+        const result = await dependencies.authoredDirectiveService.create(workspaceId, parsed.agentId, req.body);
+        res.status(201).json(result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.patch(
+    "/:agentId/directives/:directiveId",
+    workspaceSession,
+    agentManage,
+    validateBody(authoredDirectivePatchBodySchema),
+    async (req, res, next) => {
+      try {
+        const { workspaceId } = res.locals as { workspaceId: string };
+        const parsed = agentDirectiveParamsSchema.parse(req.params);
+        const result = await dependencies.authoredDirectiveService.update(
+          workspaceId,
+          parsed.agentId,
+          parsed.directiveId,
+          req.body,
+        );
+        res.status(200).json(result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.delete("/:agentId/directives/:directiveId", workspaceSession, agentManage, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsed = agentDirectiveParamsSchema.parse(req.params);
+      await dependencies.authoredDirectiveService.delete(workspaceId, parsed.agentId, parsed.directiveId);
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

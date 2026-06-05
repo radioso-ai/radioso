@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
-import { agentSurfacePositions } from "../../../../modules/agents/public.js";
+import { agentSurfacePositions, authoredDirectiveCriticalities } from "../../../../modules/agents/public.js";
 import { skillDisplayMetadataSchema } from "../../../../modules/skills/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
@@ -194,6 +194,96 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     agentId: z.string().uuid(),
   });
 
+  const AuthoredDirectiveParamsSchema = z.object({
+    agentId: z.string().uuid(),
+    directiveId: z.string().uuid(),
+  });
+
+  const AuthoredDirectiveConditionSchema = registry.register(
+    "AuthoredDirectiveCondition",
+    z.discriminatedUnion("kind", [
+      z.object({
+        kind: z.literal("always"),
+      }),
+      z.object({
+        kind: z.literal("contextual"),
+        description: z.string().min(1).max(2000),
+      }),
+    ]),
+  );
+
+  const AuthoredDirectiveRequestBaseSchema = z.object({
+    name: z.string().min(1).max(200),
+    condition: AuthoredDirectiveConditionSchema,
+    action: z.string().min(1).max(4000),
+    priority: z.number().int().nullable().optional(),
+    criticality: z.enum(authoredDirectiveCriticalities).nullable().optional(),
+    requiredCapabilities: z.array(z.string().min(1).max(200)).optional(),
+    dependsOn: z.array(z.string().min(1).max(200)).optional(),
+    excludes: z.array(z.string().min(1).max(200)).optional(),
+    description: z.string().min(1).max(1000).nullable().optional(),
+    metadata: z.record(z.unknown()).optional(),
+  }).strict();
+
+  const AuthoredDirectiveCreateRequestSchema = registry.register(
+    "AuthoredDirectiveCreateRequest",
+    AuthoredDirectiveRequestBaseSchema,
+  );
+
+  const AuthoredDirectiveUpdateRequestSchema = registry.register(
+    "AuthoredDirectiveUpdateRequest",
+    AuthoredDirectiveRequestBaseSchema.partial().strict(),
+  );
+
+  const AuthoredDirectiveResponseSchema = registry.register(
+    "AuthoredDirective",
+    z.object({
+      id: z.string().uuid(),
+      agentId: z.string().uuid(),
+      name: z.string(),
+      condition: AuthoredDirectiveConditionSchema,
+      action: z.string(),
+      priority: z.number().int().nullable(),
+      criticality: z.enum(authoredDirectiveCriticalities).nullable(),
+      requiredCapabilities: z.array(z.string()),
+      dependsOn: z.array(z.string()),
+      excludes: z.array(z.string()),
+      routes: z.array(z.string()),
+      description: z.string().nullable(),
+      metadata: z.record(z.unknown()),
+      createdAt: z.string().datetime(),
+      updatedAt: z.string().datetime(),
+    }),
+  );
+
+  const DirectiveCoherenceVerdictSchema = registry.register(
+    "DirectiveCoherenceVerdict",
+    z.object({
+      coherent: z.boolean(),
+      conflicts: z.array(z.object({
+        directiveId: z.string().optional(),
+        directiveName: z.string(),
+        reason: z.string(),
+      })),
+      rationale: z.string(),
+    }),
+  );
+
+  const AuthoredDirectiveListResponseSchema = registry.register(
+    "AuthoredDirectiveListResponse",
+    z.object({
+      directives: z.array(AuthoredDirectiveResponseSchema),
+    }),
+  );
+
+  const AuthoredDirectiveSaveResponseSchema = registry.register(
+    "AuthoredDirectiveSaveResponse",
+    z.object({
+      directive: AuthoredDirectiveResponseSchema,
+      coherence: DirectiveCoherenceVerdictSchema,
+    }),
+  );
+
   const PublicChatSessionResponseSchema = registry.register(
     "PublicChatSessionResponse",
     z.object({
@@ -252,6 +342,14 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     AgentListResponseSchema,
     ConversationAgentRequestSchema,
     AgentParamsSchema,
+    AuthoredDirectiveConditionSchema,
+    AuthoredDirectiveCreateRequestSchema,
+    AuthoredDirectiveListResponseSchema,
+    AuthoredDirectiveParamsSchema,
+    AuthoredDirectiveResponseSchema,
+    AuthoredDirectiveSaveResponseSchema,
+    AuthoredDirectiveUpdateRequestSchema,
+    DirectiveCoherenceVerdictSchema,
     PublicChatSessionResponseSchema,
     PublicChatSessionRequestSchema,
     WorkspaceIngestionReprocessResponseSchema,

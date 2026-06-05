@@ -1783,7 +1783,7 @@ components:
       properties:
         provider:
           type: string
-          enum: &a19
+          enum: &a20
             - openai
             - openai-compatible
             - gemini
@@ -2395,6 +2395,249 @@ components:
                   type: object
                   additionalProperties:
                     type: string
+    AuthoredDirectiveCondition:
+      oneOf:
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum:
+                - always
+          required:
+            - kind
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum:
+                - contextual
+            description:
+              type: string
+              minLength: 1
+              maxLength: 2000
+          required:
+            - kind
+            - description
+    AuthoredDirectiveCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        condition:
+          $ref: "#/components/schemas/AuthoredDirectiveCondition"
+        action:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        priority:
+          type:
+            - integer
+            - "null"
+        criticality:
+          type:
+            - string
+            - "null"
+          enum: &a12
+            - low
+            - medium
+            - high
+        requiredCapabilities:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+        dependsOn:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+        excludes:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+        description:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 1000
+        metadata:
+          type: object
+          additionalProperties: {}
+      required:
+        - name
+        - condition
+        - action
+      additionalProperties: false
+    AuthoredDirectiveUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        condition:
+          $ref: "#/components/schemas/AuthoredDirectiveCondition"
+        action:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        priority:
+          type:
+            - integer
+            - "null"
+        criticality:
+          type:
+            - string
+            - "null"
+          enum: *a12
+        requiredCapabilities:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+        dependsOn:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+        excludes:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+        description:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 1000
+        metadata:
+          type: object
+          additionalProperties: {}
+      additionalProperties: false
+    AuthoredDirective:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        agentId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        condition:
+          $ref: "#/components/schemas/AuthoredDirectiveCondition"
+        action:
+          type: string
+        priority:
+          type:
+            - integer
+            - "null"
+        criticality:
+          type:
+            - string
+            - "null"
+          enum: *a12
+        requiredCapabilities:
+          type: array
+          items:
+            type: string
+        dependsOn:
+          type: array
+          items:
+            type: string
+        excludes:
+          type: array
+          items:
+            type: string
+        routes:
+          type: array
+          items:
+            type: string
+        description:
+          type:
+            - string
+            - "null"
+        metadata:
+          type: object
+          additionalProperties: {}
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - agentId
+        - name
+        - condition
+        - action
+        - priority
+        - criticality
+        - requiredCapabilities
+        - dependsOn
+        - excludes
+        - routes
+        - description
+        - metadata
+        - createdAt
+        - updatedAt
+    DirectiveCoherenceVerdict:
+      type: object
+      properties:
+        coherent:
+          type: boolean
+        conflicts:
+          type: array
+          items:
+            type: object
+            properties:
+              directiveId:
+                type: string
+              directiveName:
+                type: string
+              reason:
+                type: string
+            required:
+              - directiveName
+              - reason
+        rationale:
+          type: string
+      required:
+        - coherent
+        - conflicts
+        - rationale
+    AuthoredDirectiveListResponse:
+      type: object
+      properties:
+        directives:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthoredDirective"
+      required:
+        - directives
+    AuthoredDirectiveSaveResponse:
+      type: object
+      properties:
+        directive:
+          $ref: "#/components/schemas/AuthoredDirective"
+        coherence:
+          $ref: "#/components/schemas/DirectiveCoherenceVerdict"
+      required:
+        - directive
+        - coherence
     PublicChatSessionResponse:
       type: object
       properties:
@@ -3486,7 +3729,7 @@ components:
               type: string
             selectionMode:
               type: string
-              enum: &a14
+              enum: &a15
                 - deterministic
                 - probabilistic
             selectionReason:
@@ -3497,7 +3740,7 @@ components:
               maximum: 1
             callerSurface:
               type: string
-              enum: &a15
+              enum: &a16
                 - assistant
                 - retrieval_api
                 - sdk
@@ -3534,7 +3777,7 @@ components:
                 - used
             outcome:
               type: string
-              enum: &a16
+              enum: &a17
                 - success
                 - unsupported
                 - forbidden
@@ -3571,14 +3814,14 @@ components:
                     additionalProperties: {}
                 evidenceStatus:
                   type: string
-                  enum: &a12
+                  enum: &a13
                     - found
                     - missing
                     - partial
                     - not_applicable
                 supportStatus:
                   type: string
-                  enum: &a13
+                  enum: &a14
                     - supported
                     - unsupported
                     - not_checked
@@ -4038,10 +4281,10 @@ components:
             additionalProperties: {}
         evidenceStatus:
           type: string
-          enum: *a12
+          enum: *a13
         supportStatus:
           type: string
-          enum: *a13
+          enum: *a14
         groundingOutcome:
           type: string
     SkillDiagnosticDefinition:
@@ -4055,7 +4298,7 @@ components:
           type: string
         selectionMode:
           type: string
-          enum: *a14
+          enum: *a15
         selectionReason:
           type: string
         selectionConfidence:
@@ -4064,7 +4307,7 @@ components:
           maximum: 1
         callerSurface:
           type: string
-          enum: *a15
+          enum: *a16
         capabilityChecks:
           type: array
           items:
@@ -4095,7 +4338,7 @@ components:
             - used
         outcome:
           type: string
-          enum: *a16
+          enum: *a17
         error:
           type: object
           properties:
@@ -4127,10 +4370,10 @@ components:
                 additionalProperties: {}
             evidenceStatus:
               type: string
-              enum: *a12
+              enum: *a13
             supportStatus:
               type: string
-              enum: *a13
+              enum: *a14
             groundingOutcome:
               type: string
       required:
@@ -4179,7 +4422,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a15
+            enum: *a16
         requiredCapabilities:
           type: array
           items:
@@ -4206,7 +4449,7 @@ components:
               type: array
               items:
                 type: string
-                enum: *a15
+                enum: *a16
             intent:
               type: object
               properties:
@@ -5069,7 +5312,7 @@ components:
           format: uuid
         value:
           type: string
-          enum: &a17
+          enum: &a18
             - up
             - down
         comment:
@@ -5078,7 +5321,7 @@ components:
             - "null"
         actorType:
           type: string
-          enum: &a18
+          enum: &a19
             - authenticated_user
             - api_token
             - anonymous_user
@@ -5138,14 +5381,14 @@ components:
           format: uuid
         value:
           type: string
-          enum: *a17
+          enum: *a18
         comment:
           type:
             - string
             - "null"
         actorType:
           type: string
-          enum: *a18
+          enum: *a19
         actorId:
           type: string
         accountId:
@@ -7035,7 +7278,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a19
+            enum: *a20
           required: true
           name: provider
           in: path
@@ -7076,7 +7319,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a19
+            enum: *a20
           required: true
           name: provider
           in: path
@@ -7280,6 +7523,172 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/directives:
+    get:
+      tags:
+        - Agents
+      summary: List authored directives for an agent
+      operationId: listAgentDirectives
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: Directives returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthoredDirectiveListResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Agents
+      summary: Create an authored directive for an agent
+      operationId: createAgentDirective
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthoredDirectiveCreateRequest"
+      responses:
+        "201":
+          description: Directive created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthoredDirectiveSaveResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/directives/{directiveId}:
+    patch:
+      tags:
+        - Agents
+      summary: Update an authored directive for an agent
+      operationId: updateAgentDirective
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: directiveId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthoredDirectiveUpdateRequest"
+      responses:
+        "200":
+          description: Directive updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthoredDirectiveSaveResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent or directive not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - Agents
+      summary: Delete an authored directive for an agent
+      operationId: deleteAgentDirective
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: directiveId
+          in: path
+      responses:
+        "204":
+          description: Directive deleted
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent or directive not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/assistant-logo:
     post:
       tags:
@@ -7440,7 +7849,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - &a20
+        - &a21
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -7464,7 +7873,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a20
+        - *a21
       parameters:
         - schema:
             type: string

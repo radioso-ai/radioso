@@ -81,6 +81,80 @@ export const registerAgentsPaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/directives",
+    tags: ["Agents"],
+    summary: "List authored directives for an agent",
+    operationId: "listAgentDirectives",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: { description: "Directives returned", content: { "application/json": { schema: schemas.AuthoredDirectiveListResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/directives",
+    tags: ["Agents"],
+    summary: "Create an authored directive for an agent",
+    operationId: "createAgentDirective",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.AgentParamsSchema,
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.AuthoredDirectiveCreateRequestSchema } },
+      },
+    },
+    responses: {
+      201: { description: "Directive created", content: { "application/json": { schema: schemas.AuthoredDirectiveSaveResponseSchema } } },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "patch",
+    path: "/api/v1/agents/{agentId}/directives/{directiveId}",
+    tags: ["Agents"],
+    summary: "Update an authored directive for an agent",
+    operationId: "updateAgentDirective",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.AuthoredDirectiveParamsSchema,
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.AuthoredDirectiveUpdateRequestSchema } },
+      },
+    },
+    responses: {
+      200: { description: "Directive updated", content: { "application/json": { schema: schemas.AuthoredDirectiveSaveResponseSchema } } },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or directive not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/agents/{agentId}/directives/{directiveId}",
+    tags: ["Agents"],
+    summary: "Delete an authored directive for an agent",
+    operationId: "deleteAgentDirective",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AuthoredDirectiveParamsSchema },
+    responses: {
+      204: { description: "Directive deleted" },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or directive not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/agents/{agentId}/assistant-logo",
     tags: ["Agents"],

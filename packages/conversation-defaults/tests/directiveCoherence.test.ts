@@ -74,4 +74,29 @@ describe("directive coherence", () => {
     expect(error.message).toBe("conversation_kit_directive_coherence_conflict");
     expect(error.code).toBe("conversation_kit_directive_coherence_conflict");
   });
+
+  it("fails open when the model does not return a structured verdict", async () => {
+    const gateway: ConversationModelGateway = {
+      complete: vi.fn(async () => ({ text: "not json" })),
+    };
+    const checker = createDirectiveCoherenceChecker({ modelGateway: gateway });
+
+    const verdict = await checker.check({
+      agent: { id: "agent_support", name: "Support" },
+      candidate: directive({
+        name: "candidate",
+        action: "Use operator behavior.",
+      }),
+      existingDirectives: [directive({
+        name: "existing",
+        action: "Use existing behavior.",
+      })],
+    });
+
+    expect(verdict).toEqual({
+      coherent: true,
+      conflicts: [],
+      rationale: "Coherence check unavailable.",
+    });
+  });
 });

@@ -38,6 +38,11 @@ export {
   type AgentSettingsResource,
 } from "./services/agentService.js";
 export {
+  AuthoredDirectiveService,
+  type AuthoredDirectiveSaveResult,
+  type AuthoredDirectiveServiceOptions,
+} from "./services/authoredDirectiveService.js";
+export {
   AgentSurfaceExtensionRegistry,
   type AgentSurfaceExtension,
 } from "./surfaceExtensions.js";

@@ -599,6 +599,147 @@ describe("agents contract", () => {
       .expect(404);
   });
 
+  it("manages authored directives on an agent and returns advisory coherence verdicts", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-directives-crud@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({ name: "Directive authoring" })
+      .expect(201);
+
+    const create = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/directives`)
+      .set("Authorization", authorization)
+      .send({
+        name: "operator-formality",
+        condition: { kind: "always" },
+        action: "Use a formal register.",
+        requiredCapabilities: ["retrieval.answer"],
+      })
+      .expect(201);
+
+    expect(create.body).toMatchObject({
+      directive: {
+        id: expect.any(String),
+        agentId: agent.body.id,
+        name: "operator-formality",
+        condition: { kind: "always" },
+        action: "Use a formal register.",
+        requiredCapabilities: ["retrieval.answer"],
+        routes: [],
+      },
+      coherence: {
+        coherent: true,
+        conflicts: [],
+        rationale: expect.any(String),
+      },
+    });
+
+    const list = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/directives`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(list.body.directives).toHaveLength(1);
+    expect(list.body.directives[0]).toMatchObject({
+      id: create.body.directive.id,
+      name: "operator-formality",
+    });
+
+    const update = await request(app)
+      .patch(`/api/v1/agents/${agent.body.id}/directives/${create.body.directive.id}`)
+      .set("Authorization", authorization)
+      .send({
+        action: "Use a warm formal register.",
+      })
+      .expect(200);
+
+    expect(update.body).toMatchObject({
+      directive: {
+        id: create.body.directive.id,
+        action: "Use a warm formal register.",
+      },
+      coherence: {
+        coherent: true,
+        conflicts: [],
+      },
+    });
+
+    await request(app)
+      .delete(`/api/v1/agents/${agent.body.id}/directives/${create.body.directive.id}`)
+      .set("Authorization", authorization)
+      .expect(204);
+
+    await request(app)
+      .delete(`/api/v1/agents/${agent.body.id}/directives/${create.body.directive.id}`)
+      .set("Authorization", authorization)
+      .expect(404);
+  });
+
+  it("denies authored directive access across workspaces", async () => {
+    const { app } = createTestApp();
+    const first = await issueTestToken(app, "agents-directives-first@example.com");
+    const second = await issueTestToken(app, "agents-directives-second@example.com");
+    const firstAuthorization = `Bearer ${first.token}`;
+    const secondAuthorization = `Bearer ${second.token}`;
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", firstAuthorization)
+      .send({ name: "First workspace directive agent" })
+      .expect(201);
+
+    await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/directives`)
+      .set("Authorization", secondAuthorization)
+      .expect(404);
+
+    await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/directives`)
+      .set("Authorization", secondAuthorization)
+      .send({
+        name: "cross-workspace",
+        condition: { kind: "always" },
+        action: "Should not save.",
+      })
+      .expect(404);
+  });
+
+  it("rejects malformed authored directive requests and keeps routes out of the v1 body", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-directives-malformed@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({ name: "Malformed directive agent" })
+      .expect(201);
+
+    await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/directives`)
+      .set("Authorization", authorization)
+      .send({
+        name: "missing-action",
+        condition: { kind: "always" },
+      })
+      .expect(400);
+
+    await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/directives`)
+      .set("Authorization", authorization)
+      .send({
+        name: "routes-not-public",
+        condition: { kind: "always" },
+        action: "This includes a field v1 does not expose.",
+        routes: ["retrieval_answer"],
+      })
+      .expect(400);
+  });
+
   it("rejects website embed copy packs above the locale cap", async () => {
     const { app } = createTestApp();
     const { token } = await issueTestToken(app, "agents-copy-locale-cap@example.com");

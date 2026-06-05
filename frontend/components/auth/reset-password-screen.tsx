@@ -51,7 +51,7 @@ export function ResetPasswordScreen({ token }: { token?: string }) {
     try {
       const response = await authApi.confirmPasswordReset({ token: token ?? '', password })
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-      await login(response.email, response.userId, response.accountId)
+      await login(response.email, response.userId, response.accountId, response.organizationName)
       router.replace(buildDashboardHref(response.accountId, {
         section: 'agents',
         workspaceId: response.workspaceId,

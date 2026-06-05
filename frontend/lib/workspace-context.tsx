@@ -17,7 +17,7 @@ import {
   type AccessibleAccountSummary,
   type Workspace,
 } from '@/lib/api'
-import { useAuth } from '@/lib/auth-context'
+import { mergeStoredAccountOrganizationNames, useAuth } from '@/lib/auth-context'
 
 interface WorkspaceContextValue {
   workspaces: Workspace[]
@@ -65,7 +65,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const refreshAccounts = useCallback(async () => {
     try {
       const response = await accountApi.listAccounts()
-      setAccounts(response.accounts)
+      const storage = typeof window === 'undefined' ? null : window.localStorage
+      setAccounts(mergeStoredAccountOrganizationNames(response.accounts, storage))
       setAccountsLoadFailed(false)
     } catch {
       setAccounts([])

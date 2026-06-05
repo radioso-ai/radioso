@@ -106,7 +106,7 @@ export default function WorkspaceDashboardPage() {
           const response = await accountApi.switchAccount(resolved.accountId, resolved.workspaceId)
           if (cancelled) return
           seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-          await login(user.email, response.userId, response.accountId)
+          await login(user.email, response.userId, response.accountId, response.organizationName)
         } else {
           seedWorkspaceSession(resolved.workspaceId, resolved.workspaceKey)
         }

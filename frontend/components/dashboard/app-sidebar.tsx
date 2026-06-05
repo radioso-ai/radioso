@@ -52,7 +52,10 @@ const navItems = [
 export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: AppSidebarProps) {
   const { user } = useAuth()
   const { activeWorkspace, activeWorkspaceId, accounts } = useWorkspace()
-  const organizationName = accounts.find((account) => account.accountId === accountId)?.organizationName ?? 'radioso'
+  const organizationName =
+    user?.accountId === accountId && user.organizationName
+      ? user.organizationName
+      : accounts.find((account) => account.accountId === accountId)?.organizationName ?? 'radioso'
   const userDisplayName = user?.email?.split('@')[0] || 'User'
   const userInitial = userDisplayName.charAt(0).toUpperCase() || 'U'
 

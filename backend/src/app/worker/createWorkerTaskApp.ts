@@ -4,6 +4,7 @@ import { createHttpLogger } from "../../shared/observability/logger.js";
 import { createRequestTelemetryMiddleware } from "../../shared/observability/telemetry/telemetryService.js";
 import { badRequest } from "../../shared/domain/errors.js";
 import { createErrorHandler } from "../http/middleware/errorHandler.js";
+import { createHttpTracingMiddleware } from "../http/middleware/tracingMiddleware.js";
 import type { AppDependencies } from "../server/types.js";
 import { createDocumentWorkerTaskRoutes } from "./documentWorkerTaskRoutes.js";
 
@@ -12,6 +13,7 @@ export const createWorkerTaskApp = (dependencies: AppDependencies) => {
 
   app.disable("x-powered-by");
   app.use(createHttpLogger(dependencies.logger));
+  app.use(createHttpTracingMiddleware());
   app.use(createRequestTelemetryMiddleware(dependencies.telemetryService));
   app.use(express.json({ limit: "1mb" }));
   app.use((error: unknown, _req: express.Request, _res: express.Response, next: express.NextFunction) => {

@@ -136,6 +136,24 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const TurnTraceOpenTelemetryCorrelationSchema = registry.register(
+    "TurnTraceOpenTelemetryCorrelation",
+    z.object({
+      traceId: z.string().openapi({
+        description: "Active OpenTelemetry trace id for correlating this product diagnostic turn with exported traces.",
+      }),
+      spanId: z.string().openapi({
+        description: "Active OpenTelemetry span id at the point the turn trace envelope was built.",
+      }),
+      sampled: z.boolean().openapi({
+        description: "Whether the active OpenTelemetry span context was sampled.",
+      }),
+    }).openapi({
+      description:
+        "Debug-only OpenTelemetry correlation. Contains primitive trace identity only; no SDK span objects or payload data are embedded.",
+    }),
+  );
+
   const TurnTraceEnvelopeSchema = registry.register(
     "TurnTraceEnvelope",
     z.object({
@@ -143,6 +161,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         description: "Envelope generation marker. 0 = synthesized from a legacy turn; >=1 = engine-emitted spine.",
       }),
       spine: ConversationTraceSchema,
+      openTelemetry: TurnTraceOpenTelemetryCorrelationSchema.optional(),
       summary: z.record(z.unknown()).optional(),
     }),
   );
@@ -441,6 +460,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     CapabilitySubTraceSchema,
     ConversationTraceStageSchema,
     ConversationTraceSchema,
+    TurnTraceOpenTelemetryCorrelationSchema,
     TurnTraceEnvelopeSchema,
     AssistantChatDebugSchema,
     ChatResponseSchema,

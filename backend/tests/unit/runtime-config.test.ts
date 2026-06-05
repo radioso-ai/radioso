@@ -146,8 +146,43 @@ describe("runtime configuration", () => {
     expect(env.METRICS_PATH).toBe("/metrics");
     expect(env.METRICS_AUTH_TOKEN).toBeUndefined();
     expect(env.OTEL_ENABLED).toBe(false);
+    expect(env.OTEL_EXPORTER_OTLP_ENDPOINT).toBeUndefined();
+    expect(env.OTEL_TRACES_SAMPLER).toBeUndefined();
+    expect(env.OTEL_TRACES_SAMPLER_ARG).toBeUndefined();
     expect(env.PRODUCT_ANALYTICS_SINKS).toBe("audit");
     expect(env.ERROR_SINKS).toBe("audit");
+  });
+
+  it("requires an OTLP endpoint when tracing is enabled", () => {
+    expect(() => getEnv({
+      ...baseEnv,
+      OTEL_ENABLED: "true",
+    })).toThrow(/OTEL_EXPORTER_OTLP_ENDPOINT/);
+  });
+
+  it("accepts standard OpenTelemetry sampler settings when tracing is enabled", () => {
+    const env = getEnv({
+      ...baseEnv,
+      OTEL_ENABLED: "true",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318/v1/traces",
+      OTEL_TRACES_SAMPLER: "parentbased_traceidratio",
+      OTEL_TRACES_SAMPLER_ARG: "0.25",
+    });
+
+    expect(env.OTEL_ENABLED).toBe(true);
+    expect(env.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("http://localhost:4318/v1/traces");
+    expect(env.OTEL_TRACES_SAMPLER).toBe("parentbased_traceidratio");
+    expect(env.OTEL_TRACES_SAMPLER_ARG).toBe("0.25");
+  });
+
+  it("rejects invalid sampler arguments when tracing is enabled", () => {
+    expect(() => getEnv({
+      ...baseEnv,
+      OTEL_ENABLED: "true",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318/v1/traces",
+      OTEL_TRACES_SAMPLER: "traceidratio",
+      OTEL_TRACES_SAMPLER_ARG: "2",
+    })).toThrow(/OTEL_TRACES_SAMPLER_ARG/);
   });
 
   it("rejects a CONNECTOR_ENCRYPTION_KEY that does not decode to 32 bytes", () => {

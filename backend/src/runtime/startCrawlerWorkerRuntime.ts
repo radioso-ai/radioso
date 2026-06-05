@@ -5,6 +5,7 @@ import { ensureNoPendingMigrations, type MigrationTimeoutOptions } from "../db/r
 import { createLogger, type AppLogger } from "../shared/observability/logger.js";
 import type { AppDependencies } from "../app/server/types.js";
 import type { RuntimeHandle } from "./types.js";
+import { startRuntimeTracing, stopRuntimeTracing } from "./tracing.js";
 
 export interface StartCrawlerWorkerRuntimeOptions {
   env: Env;
@@ -22,6 +23,7 @@ export const startCrawlerWorkerRuntime = async (
     lockTimeoutMs: options.env.DB_MIGRATION_LOCK_TIMEOUT_MS,
     statementTimeoutMs: options.env.DB_MIGRATION_STATEMENT_TIMEOUT_MS,
   });
+  startRuntimeTracing(options.env, logger, "crawler-worker");
 
   const dependencies = options.buildDependencies
     ? options.buildDependencies(options.env)
@@ -40,9 +42,13 @@ export const startCrawlerWorkerRuntime = async (
       }
       shuttingDown = true;
       dependencies.logger.info({ role: "crawler-worker", signal }, "Radioso crawler worker shutting down");
-      await dependencies.websiteCrawlJobConsumer?.stop();
-      await dependencies.websiteCrawlWorker.stop();
-      await dependencies.applicationModules.shutdownAll();
+      try {
+        await dependencies.websiteCrawlJobConsumer?.stop();
+        await dependencies.websiteCrawlWorker.stop();
+        await dependencies.applicationModules.shutdownAll();
+      } finally {
+        await stopRuntimeTracing();
+      }
     },
   };
 };

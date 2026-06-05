@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { ConversationTrace } from "@radioso/conversation-contract";
 
@@ -6,6 +6,7 @@ import {
   TURN_TRACE_ENVELOPE_VERSION,
   attachCapabilitySubTrace,
   buildTurnTraceEnvelope,
+  setTurnTraceOpenTelemetryCorrelationReader,
   synthesizeDispatchSpine,
 } from "../../src/modules/chat/services/turnTraceEnvelope.js";
 
@@ -136,11 +137,16 @@ describe("envelope shape is pinned (forcing function for version bumps)", () => 
 });
 
 describe("buildTurnTraceEnvelope", () => {
+  afterEach(() => {
+    setTurnTraceOpenTelemetryCorrelationReader(undefined);
+  });
+
   it("stamps the current envelope version and carries the spine", () => {
     const envelope = buildTurnTraceEnvelope({ spine: spine() });
     expect(envelope.version).toBe(TURN_TRACE_ENVELOPE_VERSION);
     expect(envelope.spine.traceId).toBe("conversation-turn-1");
     expect(envelope.summary).toBeUndefined();
+    expect(envelope.openTelemetry).toBeUndefined();
   });
 
   it("accepts a generic summary roll-up and a version override", () => {
@@ -151,5 +157,56 @@ describe("buildTurnTraceEnvelope", () => {
     });
     expect(envelope.version).toBe(0);
     expect(envelope.summary).toEqual({ outcome: "answered" });
+  });
+
+  it("does not stamp synthesized legacy envelopes with the current request trace", () => {
+    setTurnTraceOpenTelemetryCorrelationReader({
+      getActiveOpenTelemetryCorrelation: () => ({
+        traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+        spanId: "00f067aa0ba902b7",
+        sampled: true,
+      }),
+    });
+
+    expect(buildTurnTraceEnvelope({ spine: spine(), version: 0 })).not.toHaveProperty("openTelemetry");
+  });
+
+  it("adds active OpenTelemetry correlation when a reader is wired", () => {
+    setTurnTraceOpenTelemetryCorrelationReader({
+      getActiveOpenTelemetryCorrelation: () => ({
+        traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+        spanId: "00f067aa0ba902b7",
+        sampled: true,
+      }),
+    });
+
+    expect(buildTurnTraceEnvelope({ spine: spine() })).toMatchObject({
+      openTelemetry: {
+        traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+        spanId: "00f067aa0ba902b7",
+        sampled: true,
+      },
+    });
+  });
+
+  it("omits OpenTelemetry correlation when the reader has no active trace", () => {
+    setTurnTraceOpenTelemetryCorrelationReader({
+      getActiveOpenTelemetryCorrelation: () => undefined,
+    });
+
+    expect(buildTurnTraceEnvelope({ spine: spine() })).not.toHaveProperty("openTelemetry");
+  });
+
+  it("omits malformed OpenTelemetry correlation instead of embedding SDK-shaped data", () => {
+    setTurnTraceOpenTelemetryCorrelationReader({
+      getActiveOpenTelemetryCorrelation: () => ({
+        traceId: "trace",
+        spanId: "",
+        sampled: true,
+        sdkSpan: { unsafe: true },
+      } as never),
+    });
+
+    expect(buildTurnTraceEnvelope({ spine: spine() })).not.toHaveProperty("openTelemetry");
   });
 });

@@ -1,10 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AppError } from "../../src/shared/domain/errors.js";
 import { LLM_DEFAULTS } from "../../src/shared/domain/behaviorConfig.js";
 import { AGENT_STEP_MAX_INPUT_TOKENS } from "../../src/shared/agent-runtime/index.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
+import { initializeTracing, shutdownTracing } from "../../src/shared/observability/tracing/index.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
 
 const usageContext = {
@@ -36,7 +38,60 @@ const expectAppError = async (promise: Promise<unknown>): Promise<AppError> => {
   throw new Error("Expected AppError");
 };
 
+class RecordingExporter implements SpanExporter {
+  readonly spans: ReadableSpan[] = [];
+
+  export(spans: ReadableSpan[], callback: Parameters<SpanExporter["export"]>[1]): void {
+    this.spans.push(...spans);
+    callback({ code: 0 });
+  }
+
+  shutdown(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
 describe("ModelInferencePipelineService", () => {
+  afterEach(async () => {
+    await shutdownTracing();
+  });
+
+  it("exports a privacy-safe provider span for non-streaming calls", async () => {
+    const exporter = new RecordingExporter();
+    initializeTracing({
+      enabled: true,
+      environment: "test",
+      otlpEndpoint: "http://localhost:4318/v1/traces",
+      runtimeRole: "api",
+      serviceName: "radioso-api",
+      spanExporter: exporter,
+    });
+    const complete = vi.fn(async () => textResult("Answer"));
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      complete,
+      stream: vi.fn(() => streamResult(["Answer"])),
+    };
+    const pipeline = new ModelInferencePipelineService(client);
+
+    await pipeline.complete({
+      operation: usageContext,
+      prompt: "private prompt",
+    });
+
+    expect(exporter.spans).toHaveLength(1);
+    expect(exporter.spans[0]?.name).toBe("llm.provider.complete");
+    expect(exporter.spans[0]?.attributes).toMatchObject({
+      "llm.provider": "openai",
+      "llm.model": "gpt-test",
+      "llm.operation": "answer",
+      "llm.provider.outcome": "succeeded",
+      "radioso.request_id": "request-1",
+      "radioso.workspace_id": "workspace-1",
+    });
+    expect(JSON.stringify(exporter.spans[0]?.attributes)).not.toContain("private prompt");
+  });
+
   it("rejects oversized non-streaming prompts before calling the provider", async () => {
     const complete = vi.fn(async () => textResult("Answer"));
     const client: TextGenerationClient = {

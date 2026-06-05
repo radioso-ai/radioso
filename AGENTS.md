@@ -148,6 +148,8 @@ Treat high file count as a smell. If a small feature wants to touch many files, 
 
 Watch for tactical tells that signal dodged design work: "for now," "the cheap one," "land this and refactor later," "minimum viable." When they appear, ask whether the shortcut is real wisdom or avoidance.
 
+For backend feature work, explicitly review whether the change needs logs, metrics, telemetry events, audit events, or OpenTelemetry spans. Add or update observability when the change introduces a new runtime path, worker job, queue handoff, provider call, integration, failure mode, operator-relevant latency, retry, fallback, skip, degradation behavior, or support/debug correlation need across requests, jobs, conversations, documents, or workspaces. Do not add noisy logs or high-cardinality metrics by default. Observability output must avoid raw prompts, completions, document content, retrieved chunks, tokens, credentials, cookies, and connection strings. If no observability is needed, note why in the spec, plan, or PR summary.
+
 ## Code Style
 
 - Prefer small, named modules over large orchestration files. If a service mixes persistence, orchestration, audit, analytics, and formatting concerns, extract the most self-contained concern first.

@@ -7,8 +7,125 @@ import { RetrievalContextStageService } from "../../src/modules/retrieval/servic
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { RetrievalDiagnosticsStageService } from "../../src/modules/retrieval/services/retrievalDiagnosticsStage.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
+import {
+  buildCandidatePreparationTraceAttributes,
+  buildCandidateRetrievalTraceAttributes,
+  buildContextSelectionTraceAttributes,
+  buildQueryInterpretationTraceAttributes,
+  buildRetrievalPipelineTraceAttributes,
+} from "../../src/modules/retrieval/services/retrievalPipelineStages.js";
 
 describe("retrieval pipeline stages", () => {
+  it("builds privacy-safe bounded retrieval span attributes", () => {
+    const request = {
+      workspaceId: "workspace-1",
+      query: "What is the admin password?",
+      history: [
+        {
+          id: "message-1",
+          conversationId: "conversation-1",
+          workspaceId: "workspace-1",
+          role: "user",
+          content: "secret conversation text",
+          createdAt: new Date(),
+        },
+      ],
+      execution: {
+        surface: "assistant",
+        path: "assistant_retrieval",
+        retrievalInvoked: true,
+      },
+      usageContext: {
+        workspaceId: "workspace-1",
+        requestId: "request-1",
+        surface: "assistant",
+        attemptKey: "attempt-1",
+      },
+    };
+    const pipelineAttributes = buildRetrievalPipelineTraceAttributes(request);
+
+    expect(pipelineAttributes).toMatchObject({
+      "radioso.workspace_id": "workspace-1",
+      "radioso.request_id": "request-1",
+      "retrieval.execution.surface": "assistant",
+      "retrieval.execution.path": "assistant_retrieval",
+      "retrieval.history.count": 1,
+    });
+    expect(JSON.stringify(pipelineAttributes)).not.toContain("admin password");
+    expect(JSON.stringify(pipelineAttributes)).not.toContain("secret conversation text");
+
+    const interpretationResult = {
+      request,
+      rewrittenQuery: {
+        status: "fallback",
+        retrievalEligible: true,
+        confidence: 0.62,
+      },
+      responseIntent: "retrieval",
+      promptHistory: [{}, {}, {}],
+      promptHistoryReset: false,
+      triggerAnalysis: {
+        status: "applied",
+        consideredRules: new Array(1_500).fill({}),
+        matchedRuleIds: new Array(1_500).fill("rule"),
+        unmatchedRuleIds: [],
+        matchCount: 1_500,
+        matcherVersion: "test",
+      },
+    };
+    expect(buildQueryInterpretationTraceAttributes(interpretationResult)).toMatchObject({
+      "retrieval.rewrite.status": "fallback",
+      "retrieval.response.intent": "retrieval",
+      "retrieval.query_history.count": 3,
+      "retrieval.trigger.match_count": 1_000,
+      "retrieval.trigger.considered_rule.count": 1_000,
+    });
+
+    const candidateRetrievalResult = {
+      ...interpretationResult,
+      originalContexts: new Array(1_500).fill({}),
+      rewrittenContexts: [],
+      lexicalContexts: [{}, {}],
+      retrievalBranches: [{}, {}, {}],
+      vectorFallbackApplied: false,
+      activeRetrievalSubqueries: new Array(1_500).fill({}),
+    };
+    expect(buildCandidateRetrievalTraceAttributes(candidateRetrievalResult)).toMatchObject({
+      "retrieval.candidates.semantic_original.count": 1_000,
+      "retrieval.candidates.semantic_rewritten.count": 0,
+      "retrieval.candidates.lexical.count": 2,
+      "retrieval.branch.count": 3,
+      "retrieval.subquery.count": 1_000,
+    });
+
+    const candidatePreparationResult = {
+      ...candidateRetrievalResult,
+      normalizedCandidates: new Array(4).fill({}),
+      mergedCandidates: new Array(5).fill({}),
+      scoredCandidates: new Array(6).fill({}),
+      appliedConstraints: new Array(7).fill({}),
+      candidateFallbackApplied: true,
+    };
+    expect(buildCandidatePreparationTraceAttributes(candidatePreparationResult)).toMatchObject({
+      "retrieval.candidates.normalized.count": 4,
+      "retrieval.candidates.merged.count": 5,
+      "retrieval.candidates.scored.count": 6,
+      "retrieval.constraint.count": 7,
+      "retrieval.candidate_fallback.applied": true,
+    });
+
+    expect(buildContextSelectionTraceAttributes({
+      ...candidatePreparationResult,
+      rerankStatus: "skipped",
+      rerankedContexts: new Array(2).fill({}),
+      contexts: new Array(1).fill({}),
+    } as never)).toMatchObject({
+      "retrieval.rerank.status": "skipped",
+      "retrieval.candidates.reranked.count": 2,
+      "retrieval.context.final.count": 1,
+    });
+  });
+
   it("keeps structured query literals during query interpretation", async () => {
     const stage = new QueryInterpretationStageService(new QueryRewriteService());
 

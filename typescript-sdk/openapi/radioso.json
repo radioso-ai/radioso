@@ -7223,6 +7223,29 @@
           "stages"
         ]
       },
+      "TurnTraceOpenTelemetryCorrelation": {
+        "type": "object",
+        "properties": {
+          "traceId": {
+            "type": "string",
+            "description": "Active OpenTelemetry trace id for correlating this product diagnostic turn with exported traces."
+          },
+          "spanId": {
+            "type": "string",
+            "description": "Active OpenTelemetry span id at the point the turn trace envelope was built."
+          },
+          "sampled": {
+            "type": "boolean",
+            "description": "Whether the active OpenTelemetry span context was sampled."
+          }
+        },
+        "required": [
+          "traceId",
+          "spanId",
+          "sampled"
+        ],
+        "description": "Debug-only OpenTelemetry correlation. Contains primitive trace identity only; no SDK span objects or payload data are embedded."
+      },
       "TurnTraceEnvelope": {
         "type": "object",
         "properties": {
@@ -7232,6 +7255,9 @@
           },
           "spine": {
             "$ref": "#/components/schemas/ConversationTrace"
+          },
+          "openTelemetry": {
+            "$ref": "#/components/schemas/TurnTraceOpenTelemetryCorrelation"
           },
           "summary": {
             "type": "object",

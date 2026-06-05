@@ -267,6 +267,37 @@ module.exports = {
       },
     },
     {
+      name: "no-opentelemetry-sdk-outside-tracing",
+      severity: "error",
+      comment:
+        "OpenTelemetry SDK/API imports are isolated to shared observability tracing. Product modules must use the tracing operations facade.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/shared/observability/tracing/",
+        ],
+      },
+      to: {
+        path: "^@opentelemetry/",
+      },
+    },
+    {
+      name: "no-tracing-lifecycle-outside-runtime-and-facade",
+      severity: "error",
+      comment:
+        "Tracing lifecycle/exporter helpers are runtime wiring concerns. Product modules use operations.ts instead of importing tracing/index.ts directly.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/runtime/tracing\\.ts$",
+          "^src/shared/observability/tracing/",
+        ],
+      },
+      to: {
+        path: "^src/shared/observability/tracing/index\\.ts$",
+      },
+    },
+    {
       name: "no-capability-resolver-outside-model-layer",
       severity: "error",
       comment:

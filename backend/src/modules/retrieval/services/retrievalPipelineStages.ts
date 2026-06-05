@@ -141,3 +141,176 @@ export interface PromptAssemblyStage {
 export interface RetrievalDiagnosticsStage {
   execute(input: PromptAssemblyStageResult): Promise<import("../domain/retrievalPipelineTypes.js").RetrievalExecutionDiagnostics>;
 }
+
+export type TraceAttributes = Record<string, unknown>;
+
+type TraceRetrievalPipelineRequest = {
+  workspaceId?: unknown;
+  history?: Array<unknown>;
+  usageContext?: {
+    requestId?: unknown;
+    surface?: unknown;
+    attemptKey?: unknown;
+  };
+  execution?: {
+    surface?: unknown;
+    path?: unknown;
+    retrievalInvoked?: unknown;
+  };
+};
+
+type TraceRetrievalContextInput = {
+  request?: TraceRetrievalPipelineRequest;
+  contextWindow?: {
+    selectedMessages?: Array<unknown>;
+    truncated?: boolean;
+  };
+};
+
+type TraceQueryInterpretationInput = TraceRetrievalContextInput & {
+  rewrittenQuery?: {
+    status?: unknown;
+    retrievalEligible?: unknown;
+  };
+  responseIntent?: unknown;
+  promptHistory?: Array<unknown>;
+  promptHistoryReset?: unknown;
+  triggerAnalysis?: {
+    status?: unknown;
+    matchCount?: number;
+    consideredRules?: Array<unknown>;
+  };
+};
+
+type TraceCandidateRetrievalInput = TraceQueryInterpretationInput & {
+  originalContexts?: Array<unknown>;
+  rewrittenContexts?: Array<unknown>;
+  lexicalContexts?: Array<unknown>;
+  retrievalBranches?: Array<unknown>;
+  activeRetrievalSubqueries?: Array<unknown>;
+  vectorFallbackApplied?: unknown;
+};
+
+type TraceCandidatePreparationInput = TraceCandidateRetrievalInput & {
+  normalizedCandidates?: Array<unknown>;
+  mergedCandidates?: Array<unknown>;
+  scoredCandidates?: Array<unknown>;
+  appliedConstraints?: Array<unknown>;
+  candidateFallbackApplied?: unknown;
+};
+
+type TraceContextSelectionInput = TraceCandidatePreparationInput & {
+  rerankStatus?: unknown;
+  rerankedContexts?: Array<unknown>;
+  contexts?: Array<unknown>;
+};
+
+type TracePromptAssemblyInput = TraceContextSelectionInput & {
+  citations?: Array<unknown>;
+  responseSettings?: {
+    citationDisplayEnabled?: unknown;
+    suggestedQuestionsEnabled?: unknown;
+    suggestedQuestionsCount?: number;
+    responseLanguagePolicy?: unknown;
+  };
+};
+
+export const RETRIEVAL_TRACE_SPAN_NAMES = {
+  pipelineRun: "retrieval.pipeline.run",
+  pipelineInterpret: "retrieval.pipeline.interpret",
+  pipelineRunInterpreted: "retrieval.pipeline.run_interpreted",
+  pipelineNoRetrieval: "retrieval.pipeline.no_retrieval",
+  context: "retrieval.stage.context",
+  queryInterpretation: "retrieval.stage.query_interpretation",
+  answerShapeSelection: "retrieval.stage.answer_shape_selection",
+  candidateRetrieval: "retrieval.stage.candidate_retrieval",
+  candidatePreparation: "retrieval.stage.candidate_preparation",
+  contextSelection: "retrieval.stage.context_selection",
+  promptAssembly: "retrieval.stage.prompt_assembly",
+  diagnostics: "retrieval.stage.diagnostics",
+  telemetry: "retrieval.telemetry.completed",
+} as const;
+
+const MAX_TRACE_COUNT = 1_000;
+
+const boundedTraceCount = (value: number | undefined): number =>
+  Math.min(MAX_TRACE_COUNT, Math.max(0, value ?? 0));
+
+const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
+  Object.fromEntries(
+    Object.entries(attributes).filter(([, value]) => value !== undefined && value !== null),
+  ) as TraceAttributes;
+
+export const buildRetrievalPipelineTraceAttributes = (request?: TraceRetrievalPipelineRequest): TraceAttributes => {
+  if (!request) {
+    return {};
+  }
+
+  return compactTraceAttributes({
+    "radioso.workspace_id": request.workspaceId,
+    "radioso.request_id": request.usageContext?.requestId,
+    "retrieval.execution.surface": request.execution?.surface ?? request.usageContext?.surface ?? "retrieval",
+    "retrieval.execution.path": request.execution?.path ?? request.usageContext?.attemptKey ?? "pipeline",
+    "retrieval.execution.invoked": request.execution?.retrievalInvoked,
+    "retrieval.history.count": boundedTraceCount(request.history?.length),
+  });
+};
+
+export const buildRetrievalContextTraceAttributes = (result: TraceRetrievalContextInput): TraceAttributes =>
+  compactTraceAttributes({
+    ...buildRetrievalPipelineTraceAttributes(result.request),
+    "retrieval.context.selected_message.count": boundedTraceCount(result.contextWindow?.selectedMessages?.length),
+    "retrieval.context.truncated": result.contextWindow?.truncated,
+  });
+
+export const buildQueryInterpretationTraceAttributes = (result: TraceQueryInterpretationInput): TraceAttributes =>
+  compactTraceAttributes({
+    ...buildRetrievalPipelineTraceAttributes(result.request),
+    "retrieval.rewrite.status": result.rewrittenQuery?.status,
+    "retrieval.rewrite.eligible": result.rewrittenQuery?.retrievalEligible,
+    "retrieval.response.intent": result.responseIntent,
+    "retrieval.query_history.count": boundedTraceCount(result.promptHistory?.length),
+    "retrieval.query_history.reset": result.promptHistoryReset,
+    "retrieval.trigger.status": result.triggerAnalysis?.status,
+    "retrieval.trigger.match_count": boundedTraceCount(result.triggerAnalysis?.matchCount),
+    "retrieval.trigger.considered_rule.count": boundedTraceCount(result.triggerAnalysis?.consideredRules?.length),
+  });
+
+export const buildCandidateRetrievalTraceAttributes = (result: TraceCandidateRetrievalInput): TraceAttributes =>
+  compactTraceAttributes({
+    ...buildQueryInterpretationTraceAttributes(result),
+    "retrieval.candidates.semantic_original.count": boundedTraceCount(result.originalContexts?.length),
+    "retrieval.candidates.semantic_rewritten.count": boundedTraceCount(result.rewrittenContexts?.length),
+    "retrieval.candidates.lexical.count": boundedTraceCount(result.lexicalContexts?.length),
+    "retrieval.branch.count": boundedTraceCount(result.retrievalBranches?.length),
+    "retrieval.subquery.count": boundedTraceCount(result.activeRetrievalSubqueries?.length),
+    "retrieval.vector_fallback.applied": result.vectorFallbackApplied,
+  });
+
+export const buildCandidatePreparationTraceAttributes = (result: TraceCandidatePreparationInput): TraceAttributes =>
+  compactTraceAttributes({
+    ...buildCandidateRetrievalTraceAttributes(result),
+    "retrieval.candidates.normalized.count": boundedTraceCount(result.normalizedCandidates?.length),
+    "retrieval.candidates.merged.count": boundedTraceCount(result.mergedCandidates?.length),
+    "retrieval.candidates.scored.count": boundedTraceCount(result.scoredCandidates?.length),
+    "retrieval.constraint.count": boundedTraceCount(result.appliedConstraints?.length),
+    "retrieval.candidate_fallback.applied": result.candidateFallbackApplied,
+  });
+
+export const buildContextSelectionTraceAttributes = (result: TraceContextSelectionInput): TraceAttributes =>
+  compactTraceAttributes({
+    ...buildCandidatePreparationTraceAttributes(result),
+    "retrieval.rerank.status": result.rerankStatus,
+    "retrieval.candidates.reranked.count": boundedTraceCount(result.rerankedContexts?.length),
+    "retrieval.context.final.count": boundedTraceCount(result.contexts?.length),
+  });
+
+export const buildPromptAssemblyTraceAttributes = (result: TracePromptAssemblyInput): TraceAttributes =>
+  compactTraceAttributes({
+    ...buildContextSelectionTraceAttributes(result),
+    "retrieval.assembly.citation.count": boundedTraceCount(result.citations?.length),
+    "retrieval.response.citation_display.enabled": result.responseSettings?.citationDisplayEnabled,
+    "retrieval.response.suggested_questions.enabled": result.responseSettings?.suggestedQuestionsEnabled,
+    "retrieval.response.suggested_questions.count": boundedTraceCount(result.responseSettings?.suggestedQuestionsCount),
+    "retrieval.response.language_policy": result.responseSettings?.responseLanguagePolicy,
+  });

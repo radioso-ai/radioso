@@ -8,6 +8,7 @@ import { buildDependencies } from "../app/server/dependencies.js";
 import { ensureNoPendingMigrations, type MigrationTimeoutOptions } from "../db/runMigrations.js";
 import { createLogger, type AppLogger } from "../shared/observability/logger.js";
 import type { RuntimeHandle } from "./types.js";
+import { startRuntimeTracing, stopRuntimeTracing } from "./tracing.js";
 
 interface ServerLike {
   close(callback?: (error?: Error) => void): void;
@@ -31,6 +32,7 @@ export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOpti
     lockTimeoutMs: options.env.DB_MIGRATION_LOCK_TIMEOUT_MS,
     statementTimeoutMs: options.env.DB_MIGRATION_STATEMENT_TIMEOUT_MS,
   });
+  startRuntimeTracing(options.env, logger, "document-worker-task-server");
 
   const dependencies = (options.buildDependencies ?? buildDependencies)(options.env);
   dependencies.logger.info({ role: "worker-task" }, "Radioso worker task runtime starting");
@@ -59,7 +61,11 @@ export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOpti
           resolve();
         });
       });
-      await dependencies.applicationModules.shutdownAll();
+      try {
+        await dependencies.applicationModules.shutdownAll();
+      } finally {
+        await stopRuntimeTracing();
+      }
     },
   };
 };

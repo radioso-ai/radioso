@@ -10,6 +10,7 @@ import { createConnectorChatPort } from "../modules/connectors/services/connecto
 import { createLogger, type AppLogger } from "../shared/observability/logger.js";
 import type { AppDependencies } from "../app/server/types.js";
 import type { RuntimeHandle } from "./types.js";
+import { startRuntimeTracing, stopRuntimeTracing } from "./tracing.js";
 
 interface ServerLike {
   close(callback?: (error?: Error) => void): void;
@@ -30,6 +31,7 @@ const defaultListen = (app: Express, port: number, onListening: () => void): Ser
 
 export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<RuntimeHandle> => {
   const logger = options.logger ?? createLogger();
+  startRuntimeTracing(options.env, logger, "api");
   const migrationOptions = {
     lockTimeoutMs: options.env.DB_MIGRATION_LOCK_TIMEOUT_MS,
     statementTimeoutMs: options.env.DB_MIGRATION_STATEMENT_TIMEOUT_MS,
@@ -49,6 +51,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
       migrationStatementTimeoutMs: migrationOptions.statementTimeoutMs,
       err: error,
     }, "Radioso API startup migrations failed");
+    await stopRuntimeTracing();
     throw error;
   }
 
@@ -91,8 +94,12 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
         });
       });
 
-      await dependencies.applicationModules.shutdownAll();
-      await dependencies.connectorRegistry.shutdownAll();
+      try {
+        await dependencies.applicationModules.shutdownAll();
+        await dependencies.connectorRegistry.shutdownAll();
+      } finally {
+        await stopRuntimeTracing();
+      }
     },
   };
 };

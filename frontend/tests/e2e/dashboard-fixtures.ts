@@ -10,6 +10,13 @@ export const defaultAgentId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
 
 export const nowIso = "2026-04-26T12:00:00.000Z";
 
+type AuthoredDirectiveFixture = ApiSchemas["AuthoredDirective"];
+type DirectiveMutationFixture = {
+  method: "POST" | "PATCH" | "DELETE";
+  directiveId?: string;
+  body?: unknown;
+};
+
 export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] => ({
   assistant: {
     assistantName: "Marta",
@@ -189,6 +196,49 @@ const emptyDocumentSources = {
   sources: [],
 };
 
+const buildDirective = (input: Partial<AuthoredDirectiveFixture> & Pick<AuthoredDirectiveFixture, "id" | "name" | "action">): AuthoredDirectiveFixture => ({
+  agentId: defaultAgentId,
+  condition: { kind: "always" },
+  priority: null,
+  criticality: null,
+  requiredCapabilities: [],
+  dependsOn: [],
+  excludes: [],
+  routes: [],
+  description: null,
+  metadata: {},
+  createdAt: nowIso,
+  updatedAt: nowIso,
+  ...input,
+});
+
+const baseBuiltInDirectives = (): AuthoredDirectiveFixture[] => [
+  buildDirective({
+    id: "11111111-1111-4111-8111-111111111111",
+    name: "concise-readable-formatting",
+    action: "Prefer short paragraphs and answer directly.",
+    priority: 60,
+    criticality: "medium",
+    description: "Default readable answer formatting for public assistant replies.",
+  }),
+  buildDirective({
+    id: "22222222-2222-4222-8222-222222222222",
+    name: "represent-organization",
+    action: "Represent the organization as its assistant.",
+    priority: 80,
+    criticality: "high",
+    description: "Speak as the represented organization for grounded retrieval answers.",
+  }),
+  buildDirective({
+    id: "33333333-3333-4333-8333-333333333333",
+    name: "inline-supported-links",
+    action: "Use available source URLs as inline links in grounded answers.",
+    priority: 90,
+    criticality: "high",
+    description: "Use available source URLs as inline links in grounded answers.",
+  }),
+];
+
 export const baseDocumentSources = (): ApiSchemas["DocumentSourceListResponse"] => ({
   sources: [
     {
@@ -272,6 +322,8 @@ export const installDashboardApiMocks = async (
     documentSources?: unknown;
     conversationDetail?: unknown;
     agentUpdates?: unknown[];
+    directiveUpdates?: DirectiveMutationFixture[];
+    directives?: AuthoredDirectiveFixture[];
     requestLog?: string[];
     providerEncryptionConfigured?: boolean;
     providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
@@ -307,6 +359,9 @@ export const installDashboardApiMocks = async (
   const settingsUpdates = options.settingsUpdates;
   const ingestionSettingsUpdates = options.ingestionSettingsUpdates;
   const agentUpdates = options.agentUpdates;
+  let directives = options.directives ?? baseBuiltInDirectives();
+  let nextDirectiveIndex = 1;
+  const directiveUpdates = options.directiveUpdates;
   const historyList = options.historyList ?? {
     conversations: [],
     total: 0,
@@ -479,6 +534,90 @@ export const installDashboardApiMocks = async (
           updatedAt: nowIso,
         };
         await json(route, agentSettings);
+        return;
+      }
+    }
+
+    if (path === `/agents/${defaultAgentId}/directives`) {
+      if (request.method() === "GET") {
+        await json(route, { directives });
+        return;
+      }
+
+      if (request.method() === "POST") {
+        const body = request.postDataJSON() as ApiSchemas["AuthoredDirectiveCreateRequest"];
+        directiveUpdates?.push({ method: "POST", body });
+        const directive = buildDirective({
+          id: `44444444-4444-4444-8444-${String(nextDirectiveIndex).padStart(12, "0")}`,
+          name: body.name,
+          condition: body.condition,
+          action: body.action,
+          priority: body.priority ?? null,
+          criticality: body.criticality ?? null,
+        });
+        nextDirectiveIndex += 1;
+        directives = [...directives, directive];
+        const hasConflict = directive.name.toLowerCase().includes("conflict") || directive.action.toLowerCase().includes("verbose");
+        await json(route, {
+          directive,
+          coherence: hasConflict
+            ? {
+                coherent: false,
+                conflicts: [{ directiveName: "concise-readable-formatting", reason: "Both directives steer answer length in opposite directions." }],
+                rationale: "The saved directive may conflict with a formatting rule.",
+              }
+            : {
+                coherent: true,
+                conflicts: [],
+                rationale: "No conflicts were detected.",
+              },
+        }, 201);
+        return;
+      }
+    }
+
+    if (path.startsWith(`/agents/${defaultAgentId}/directives/`)) {
+      const directiveId = path.replace(`/agents/${defaultAgentId}/directives/`, "");
+
+      if (request.method() === "PATCH") {
+        const body = request.postDataJSON() as ApiSchemas["AuthoredDirectiveUpdateRequest"];
+        directiveUpdates?.push({ method: "PATCH", directiveId, body });
+        const existing = directives.find((directive) => directive.id === directiveId);
+        if (!existing) {
+          await json(route, { error: { code: "not_found", message: "Directive not found" } }, 404);
+          return;
+        }
+        const directive = {
+          ...existing,
+          ...body,
+          condition: body.condition ?? existing.condition,
+          priority: "priority" in body ? body.priority ?? null : existing.priority,
+          criticality: "criticality" in body ? body.criticality ?? null : existing.criticality,
+          updatedAt: nowIso,
+        };
+        directives = directives.map((item) => item.id === directiveId ? directive : item);
+        const hasConflict = directive.name.toLowerCase().includes("conflict") || directive.action.toLowerCase().includes("verbose");
+        await json(route, {
+          directive,
+          coherence: hasConflict
+            ? {
+                coherent: false,
+                conflicts: [{ directiveName: "concise-readable-formatting", reason: "Both directives steer answer length in opposite directions." }],
+                rationale: "The saved directive may conflict with a formatting rule.",
+              }
+            : {
+                coherent: true,
+                conflicts: [],
+                rationale: "No conflicts were detected.",
+              },
+        });
+        return;
+      }
+
+      if (request.method() === "DELETE") {
+        directiveUpdates?.push({ method: "DELETE", directiveId });
+        directives = directives.filter((directive) => directive.id !== directiveId);
+        await route.fulfill({ status: 204, contentType: "application/json", body: "" });
         return;
       }
     }

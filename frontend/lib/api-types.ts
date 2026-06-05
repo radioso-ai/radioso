@@ -46,6 +46,14 @@ export type RetrievalSettings = PlatformRetrievalSettings &
 
 export type AgentChatModelOverride = NonNullable<ApiSchemas['ConversationAgent']['chatModelOverride']>
 export type AgentContactRequestDelivery = ApiSchemas['AgentContactRequestDelivery']
+export type DirectiveCondition = ApiSchemas['AuthoredDirectiveCondition']
+export type DirectiveCriticality = NonNullable<ApiSchemas['AuthoredDirective']['criticality']>
+export type Directive = ApiSchemas['AuthoredDirective']
+export type DirectiveCreateRequest = ApiSchemas['AuthoredDirectiveCreateRequest']
+export type DirectiveUpdateRequest = ApiSchemas['AuthoredDirectiveUpdateRequest']
+export type DirectiveCoherence = ApiSchemas['DirectiveCoherenceVerdict']
+export type DirectiveMutationResponse = ApiSchemas['AuthoredDirectiveSaveResponse']
+export type DirectiveListResponse = ApiSchemas['AuthoredDirectiveListResponse']
 
 export type AssistantBehaviorSettings = Pick<
   RetrievalSettings,

@@ -39,7 +39,7 @@ describe("authored directive domain validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects invalid criticality and route values", () => {
+  it("rejects priority and criticality on authored input", () => {
     expect(authoredDirectiveInputSchema.safeParse({
       name: "bad-criticality",
       condition: { kind: "always" },
@@ -48,6 +48,16 @@ describe("authored directive domain validation", () => {
       routes: ["retrieval"],
     }).success).toBe(false);
 
+    expect(authoredDirectiveInputSchema.safeParse({
+      name: "priority-dial",
+      condition: { kind: "always" },
+      action: "Use the configured behavior.",
+      priority: 50,
+      routes: ["retrieval"],
+    }).success).toBe(false);
+  });
+
+  it("rejects invalid route values", () => {
     expect(authoredDirectiveInputSchema.safeParse({
       name: "bad-route",
       condition: { kind: "always" },

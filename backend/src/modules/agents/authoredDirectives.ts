@@ -57,8 +57,6 @@ export const authoredDirectiveInputSchema = z.object({
     }),
   condition: authoredDirectiveConditionSchema,
   action: trimmedText(AUTHORED_DIRECTIVE_LIMITS.action),
-  priority: z.number().int().optional().nullable().transform((value) => value ?? null),
-  criticality: z.enum(authoredDirectiveCriticalities).optional().nullable().transform((value) => value ?? null),
   requiredCapabilities: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.capabilityName),
   dependsOn: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.relationshipName),
   excludes: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.relationshipName),

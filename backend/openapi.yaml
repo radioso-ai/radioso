@@ -2431,18 +2431,6 @@ components:
           type: string
           minLength: 1
           maxLength: 4000
-        priority:
-          type:
-            - integer
-            - "null"
-        criticality:
-          type:
-            - string
-            - "null"
-          enum: &a12
-            - low
-            - medium
-            - high
         requiredCapabilities:
           type: array
           items:
@@ -2488,15 +2476,6 @@ components:
           type: string
           minLength: 1
           maxLength: 4000
-        priority:
-          type:
-            - integer
-            - "null"
-        criticality:
-          type:
-            - string
-            - "null"
-          enum: *a12
         requiredCapabilities:
           type: array
           items:
@@ -2548,7 +2527,10 @@ components:
           type:
             - string
             - "null"
-          enum: *a12
+          enum: &a12
+            - low
+            - medium
+            - high
         requiredCapabilities:
           type: array
           items:

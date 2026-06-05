@@ -10,21 +10,25 @@ export interface AuthoredDirectiveMappingOptions {
 export const authoredDirectiveToDirective = (
   directive: AuthoredDirective | NormalizedAuthoredDirectiveInput,
   options: AuthoredDirectiveMappingOptions = {},
-): Directive => ({
-  ...("id" in directive ? { id: directive.id } : {}),
-  name: directive.name,
-  condition: directive.condition,
-  action: directive.action,
-  ...(directive.priority === null
-    ? options.defaultPriority === undefined ? {} : { priority: options.defaultPriority }
-    : { priority: directive.priority }),
-  ...(directive.criticality === null ? {} : { criticality: directive.criticality }),
-  requiredCapabilities: directive.requiredCapabilities,
-  dependsOn: directive.dependsOn,
-  excludes: directive.excludes,
-  ...(directive.description === null ? {} : { description: directive.description }),
-  metadata: directive.metadata,
-});
+): Directive => {
+  const priority = "priority" in directive ? directive.priority : null;
+  const criticality = "criticality" in directive ? directive.criticality : null;
+  return {
+    ...("id" in directive ? { id: directive.id } : {}),
+    name: directive.name,
+    condition: directive.condition,
+    action: directive.action,
+    ...(priority === null
+      ? options.defaultPriority === undefined ? {} : { priority: options.defaultPriority }
+      : { priority }),
+    ...(criticality === null ? {} : { criticality }),
+    requiredCapabilities: directive.requiredCapabilities,
+    dependsOn: directive.dependsOn,
+    excludes: directive.excludes,
+    ...(directive.description === null ? {} : { description: directive.description }),
+    metadata: directive.metadata,
+  };
+};
 
 export const authoredDirectiveToSteeringDirective = (
   directive: AuthoredDirective,

@@ -66,8 +66,6 @@ describeIfDatabase("agent directives persistence", () => {
       name: "formal-register",
       condition: { kind: "contextual", description: "When answering procurement questions" },
       action: "Use a formal register.",
-      priority: 50,
-      criticality: "medium",
       requiredCapabilities: ["retrieval.answer"],
       dependsOn: [],
       excludes: [],
@@ -77,6 +75,8 @@ describeIfDatabase("agent directives persistence", () => {
     });
 
     expect(created.id).toEqual(expect.any(String));
+    expect(created.priority).toBeNull();
+    expect(created.criticality).toBeNull();
     const loaded = await agentRepository.findByIdAndWorkspaceId(agent.id, workspace.id);
     expect(loaded?.authoredDirectives ?? []).toHaveLength(1);
     expect((loaded?.authoredDirectives ?? [])[0]).toMatchObject({
@@ -90,10 +90,10 @@ describeIfDatabase("agent directives persistence", () => {
 
     const updated = await agentRepository.updateDirective(agent.id, workspace.id, created.id, {
       action: "Use a precise formal register.",
-      criticality: "high",
     });
     expect(updated.action).toBe("Use a precise formal register.");
-    expect(updated.criticality).toBe("high");
+    expect(updated.priority).toBeNull();
+    expect(updated.criticality).toBeNull();
 
     expect(await agentRepository.deleteDirective(agent.id, workspace.id, created.id)).toBe(true);
     expect(await agentRepository.listDirectives(agent.id, workspace.id)).toEqual([]);

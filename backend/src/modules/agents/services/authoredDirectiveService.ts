@@ -73,8 +73,6 @@ export class AuthoredDirectiveService {
       name: input.name ?? existing.name,
       condition: input.condition ?? existing.condition,
       action: input.action ?? existing.action,
-      priority: Object.prototype.hasOwnProperty.call(input, "priority") ? input.priority : existing.priority,
-      criticality: Object.prototype.hasOwnProperty.call(input, "criticality") ? input.criticality : existing.criticality,
       requiredCapabilities: input.requiredCapabilities ?? existing.requiredCapabilities,
       dependsOn: input.dependsOn ?? existing.dependsOn,
       excludes: input.excludes ?? existing.excludes,

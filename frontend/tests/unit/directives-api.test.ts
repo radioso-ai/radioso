@@ -77,8 +77,6 @@ describe('directivesApi', () => {
       name: 'handoff-tone',
       condition: { kind: 'always' },
       action: 'Be specific.',
-      priority: 50,
-      criticality: 'medium',
     })
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -90,8 +88,6 @@ describe('directivesApi', () => {
           name: 'handoff-tone',
           condition: { kind: 'always' },
           action: 'Be specific.',
-          priority: 50,
-          criticality: 'medium',
         }),
       }),
     )
@@ -106,7 +102,6 @@ describe('directivesApi', () => {
 
     await directivesApi.updateDirective('agent-1', 'directive-1', {
       action: 'Use the account tier when escalating.',
-      priority: null,
     })
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -116,7 +111,6 @@ describe('directivesApi', () => {
         credentials: 'omit',
         body: JSON.stringify({
           action: 'Use the account tier when escalating.',
-          priority: null,
         }),
       }),
     )

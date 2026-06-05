@@ -2325,9 +2325,6 @@ export interface components {
             name: string;
             condition: components["schemas"]["AuthoredDirectiveCondition"];
             action: string;
-            priority?: number | null;
-            /** @enum {string|null} */
-            criticality?: "low" | "medium" | "high" | null;
             requiredCapabilities?: string[];
             dependsOn?: string[];
             excludes?: string[];
@@ -2340,9 +2337,6 @@ export interface components {
             name?: string;
             condition?: components["schemas"]["AuthoredDirectiveCondition"];
             action?: string;
-            priority?: number | null;
-            /** @enum {string|null} */
-            criticality?: "low" | "medium" | "high" | null;
             requiredCapabilities?: string[];
             dependsOn?: string[];
             excludes?: string[];

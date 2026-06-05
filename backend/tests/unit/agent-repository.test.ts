@@ -361,7 +361,7 @@ describe("AgentRepository", () => {
             condition_description: null,
             action: "Use a formal register.",
             priority: null,
-            criticality: "medium",
+            criticality: null,
             required_capabilities: [],
             depends_on: [],
             excludes: [],
@@ -383,7 +383,6 @@ describe("AgentRepository", () => {
       name: "formal-register",
       condition: { kind: "always" },
       action: "Use a formal register.",
-      criticality: "medium",
       routes: ["retrieval"],
     });
 
@@ -393,6 +392,7 @@ describe("AgentRepository", () => {
     expect(insertCall?.[0]).toContain("condition_kind");
     expect(insertCall?.[0]).toContain("required_capabilities");
     expect(insertCall?.[0]).not.toMatch(/behavior_settings|skill_settings|greeting_settings|output_modes/);
+    expect(insertCall?.[1]).not.toContain("medium");
   });
 
   it("loads authored directives in the single agent query and maps them onto the agent record", async () => {

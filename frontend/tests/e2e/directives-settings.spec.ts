@@ -22,9 +22,6 @@ test("agent directives settings create, edit, warn, delete, and persist", async 
   await page.getByRole("button", { name: "New directive" }).click();
   await page.getByLabel("Name").fill("handoff-tone");
   await page.getByLabel("Action").fill("When handing off to support, be calm and specific.");
-  await page.getByLabel("Priority").fill("55");
-  await page.getByLabel("Criticality").click();
-  await page.getByRole("option", { name: "Medium" }).click();
   await page.getByRole("button", { name: "Save directive" }).click();
 
   await expect(page.getByText("handoff-tone")).toBeVisible();
@@ -36,8 +33,6 @@ test("agent directives settings create, edit, warn, delete, and persist", async 
       name: "handoff-tone",
       condition: { kind: "always" },
       action: "When handing off to support, be calm and specific.",
-      priority: 55,
-      criticality: "medium",
     },
   });
 
@@ -59,8 +54,6 @@ test("agent directives settings create, edit, warn, delete, and persist", async 
     body: {
       name: "conflict-tone",
       action: "Always be verbose, expansive, and include long explanations.",
-      priority: 55,
-      criticality: "medium",
     },
   });
 

@@ -618,7 +618,6 @@ describe("agents contract", () => {
         name: "operator-formality",
         condition: { kind: "always" },
         action: "Use a formal register.",
-        requiredCapabilities: ["retrieval.answer"],
       })
       .expect(201);
 
@@ -629,7 +628,9 @@ describe("agents contract", () => {
         name: "operator-formality",
         condition: { kind: "always" },
         action: "Use a formal register.",
-        requiredCapabilities: ["retrieval.answer"],
+        priority: null,
+        criticality: null,
+        requiredCapabilities: [],
         routes: [],
       },
       coherence: {

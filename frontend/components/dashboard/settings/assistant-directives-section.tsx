@@ -33,7 +33,6 @@ import {
   type DirectiveCoherence,
   type DirectiveCondition,
   type DirectiveCreateRequest,
-  type DirectiveCriticality,
   type DirectiveUpdateRequest,
 } from '@/lib/api'
 
@@ -42,8 +41,6 @@ type DirectiveFormState = {
   conditionKind: DirectiveCondition['kind']
   conditionDescription: string
   action: string
-  criticality: DirectiveCriticality | 'none'
-  priority: string
 }
 
 const emptyForm: DirectiveFormState = {
@@ -51,8 +48,6 @@ const emptyForm: DirectiveFormState = {
   conditionKind: 'always',
   conditionDescription: '',
   action: '',
-  criticality: 'none',
-  priority: '',
 }
 
 const directiveToForm = (directive: Directive): DirectiveFormState => ({
@@ -60,8 +55,6 @@ const directiveToForm = (directive: Directive): DirectiveFormState => ({
   conditionKind: directive.condition.kind,
   conditionDescription: directive.condition.kind === 'contextual' ? directive.condition.description : '',
   action: directive.action,
-  criticality: directive.criticality ?? 'none',
-  priority: directive.priority === null ? '' : String(directive.priority),
 })
 
 const formToPayload = (form: DirectiveFormState): DirectiveCreateRequest => {
@@ -74,15 +67,11 @@ const formToPayload = (form: DirectiveFormState): DirectiveCreateRequest => {
     name: form.name.trim(),
     condition,
     action: form.action.trim(),
-    criticality: form.criticality === 'none' ? null : form.criticality,
-    priority: form.priority.trim() === '' ? null : Number(form.priority),
   }
 }
 
 const describeCondition = (condition: DirectiveCondition): string =>
   condition.kind === 'always' ? 'Always applies' : `When: ${condition.description}`
-
-const describePriority = (priority: number | null): string => priority === null ? 'No priority' : `Priority ${priority}`
 
 function CoherencePanel({ coherence }: { coherence: DirectiveCoherence }) {
   if (coherence.coherent) {
@@ -136,8 +125,7 @@ function DirectiveRow({
             ) : null}
           </div>
           <p className="text-xs text-muted-foreground">
-            {describeCondition(directive.condition)} · {describePriority(directive.priority)} ·{' '}
-            {directive.criticality ?? 'No criticality'}
+            {describeCondition(directive.condition)}
           </p>
           {'description' in directive && directive.description ? (
             <p className="text-xs text-muted-foreground">{directive.description}</p>
@@ -183,9 +171,6 @@ export function AssistantDirectivesSection({
     if (!form.action.trim()) return 'Action is required.'
     if (form.conditionKind === 'contextual' && !form.conditionDescription.trim()) {
       return 'Contextual directives need a condition description.'
-    }
-    if (form.priority.trim() !== '' && !Number.isFinite(Number(form.priority))) {
-      return 'Priority must be a number.'
     }
     return null
   }, [form])
@@ -365,7 +350,7 @@ export function AssistantDirectivesSection({
                 maxLength={120}
               />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
               <div className="space-y-2">
                 <Label htmlFor="directiveConditionKind">Condition</Label>
                 <Select
@@ -382,16 +367,6 @@ export function AssistantDirectivesSection({
                     <SelectItem value="contextual">Contextual</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="directivePriority">Priority</Label>
-                <Input
-                  id="directivePriority"
-                  type="number"
-                  value={form.priority}
-                  onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))}
-                  placeholder="Optional"
-                />
               </div>
             </div>
             {form.conditionKind === 'contextual' ? (
@@ -415,25 +390,6 @@ export function AssistantDirectivesSection({
                 onChange={(event) => setForm((current) => ({ ...current, action: event.target.value }))}
                 className="min-h-28"
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="directiveCriticality">Criticality</Label>
-              <Select
-                value={form.criticality}
-                onValueChange={(value) =>
-                  setForm((current) => ({ ...current, criticality: value as DirectiveFormState['criticality'] }))
-                }
-              >
-                <SelectTrigger id="directiveCriticality">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Optional</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
             {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
           </div>

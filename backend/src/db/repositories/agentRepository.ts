@@ -605,14 +605,14 @@ export class AgentRepository implements AgentRepositoryPort {
            $4,
            $5,
            $6,
-           $7,
-           $8,
+           NULL,
+           NULL,
+           $7::text[],
+           $8::text[],
            $9::text[],
            $10::text[],
-           $11::text[],
-           $12::text[],
-           $13,
-           $14::jsonb
+           $11,
+           $12::jsonb
          FROM agents
          WHERE agents.id = $1
            AND agents.workspace_id = $2
@@ -624,8 +624,6 @@ export class AgentRepository implements AgentRepositoryPort {
           directive.condition.kind,
           directive.condition.kind === "contextual" ? directive.condition.description : null,
           directive.action,
-          directive.priority,
-          directive.criticality,
           directive.requiredCapabilities,
           directive.dependsOn,
           directive.excludes,
@@ -656,8 +654,6 @@ export class AgentRepository implements AgentRepositoryPort {
       name: input.name ?? existing.name,
       condition: input.condition ?? existing.condition,
       action: input.action ?? existing.action,
-      priority: hasOwn(input, "priority") ? input.priority : existing.priority,
-      criticality: hasOwn(input, "criticality") ? input.criticality : existing.criticality,
       requiredCapabilities: input.requiredCapabilities ?? existing.requiredCapabilities,
       dependsOn: input.dependsOn ?? existing.dependsOn,
       excludes: input.excludes ?? existing.excludes,
@@ -671,14 +667,12 @@ export class AgentRepository implements AgentRepositoryPort {
            condition_kind = $5,
            condition_description = $6,
            action = $7,
-           priority = $8,
-           criticality = $9,
-           required_capabilities = $10::text[],
-           depends_on = $11::text[],
-           excludes = $12::text[],
-           routes = $13::text[],
-           description = $14,
-           metadata = $15::jsonb,
+           required_capabilities = $8::text[],
+           depends_on = $9::text[],
+           excludes = $10::text[],
+           routes = $11::text[],
+           description = $12,
+           metadata = $13::jsonb,
            updated_at = NOW()
        FROM agents
        WHERE agent_directives.id = $1
@@ -694,8 +688,6 @@ export class AgentRepository implements AgentRepositoryPort {
         directive.condition.kind,
         directive.condition.kind === "contextual" ? directive.condition.description : null,
         directive.action,
-        directive.priority,
-        directive.criticality,
         directive.requiredCapabilities,
         directive.dependsOn,
         directive.excludes,

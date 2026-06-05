@@ -555,8 +555,6 @@ export const installDashboardApiMocks = async (
           name: body.name,
           condition: body.condition,
           action: body.action,
-          priority: body.priority ?? null,
-          criticality: body.criticality ?? null,
         });
         nextDirectiveIndex += 1;
         directives = [...directives, directive];
@@ -594,8 +592,6 @@ export const installDashboardApiMocks = async (
           ...existing,
           ...body,
           condition: body.condition ?? existing.condition,
-          priority: "priority" in body ? body.priority ?? null : existing.priority,
-          criticality: "criticality" in body ? body.criticality ?? null : existing.criticality,
           updatedAt: nowIso,
         };
         directives = directives.map((item) => item.id === directiveId ? directive : item);
